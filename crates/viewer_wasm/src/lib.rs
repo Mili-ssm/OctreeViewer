@@ -1,0 +1,12 @@
+mod controller;
+
+pub use controller::{
+    RenderInstanceSnapshot, RenderSceneSnapshot, ViewerConfig, ViewerController, ViewerError,
+    ViewerStats,
+};
+
+#[cfg(target_arch = "wasm32")]
+mod bindings;
+
+#[cfg(target_arch = "wasm32")]
+pub use bindings::WasmVoxelViewer;

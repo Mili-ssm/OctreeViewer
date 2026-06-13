@@ -1,0 +1,9 @@
+[package]
+name = "viewer_render_wgpu"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+viewer_core = { path = "../viewer_core" }
+wgpu.workspace = true

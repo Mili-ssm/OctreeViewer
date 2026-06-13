@@ -1,0 +1,3 @@
+[alias]
+check-web = "check -p viewer_wasm --target wasm32-unknown-unknown"
+test-core = "test -p viewer_core"
