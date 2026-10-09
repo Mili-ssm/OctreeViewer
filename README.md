@@ -516,7 +516,10 @@ todavía.
   Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
   El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
 - [x] Ajustar el tamaño base de cada punto a la extensión y densidad del bloque para evitar cubos de una
-  unidad que oculten nubes pequeñas. El formato v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
+  unidad que oculten nubes pequeñas. Para nubes grandes se estima el espaciado a partir de la extensión
+  central de una muestra determinista; nubes pequeñas usan todas sus posiciones válidas. Un único
+  tamaño global no puede eliminar huecos y solapamientos a la vez en escaneos con densidades muy
+  distintas. El formato v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
   la extensión máxima a 100 unidades de render sin cambiar XYZ, origen ni CRS; versiones antiguas
   usan factor 1. Cámara, shader, frustum y error proyectado LOD aplican el mismo factor.
 - [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 4 millones de
@@ -547,6 +550,13 @@ Prueba 32 orientaciones oblicuas sobre los bounds raíz, calcula la ocupación p
 conserva aquella con mayor cobertura. Abrir una nube y pulsar «Fit scene» encuadran la extensión
 completa aunque el corte LOD visible sea parcial. La heurística garantiza incluir sus bounds; no
 optimiza el contorno real de nubes cóncavas o con outliers.
+
+**Tamaño de voxeles de visualización (2026-10-10):** el tamaño base aproxima el espaciado a partir de la
+extensión y la cantidad de puntos, con dimensión estimada por los ejes con extensión apreciable. Para
+hasta 256 puntos válidos usa todos los puntos; en nubes mayores, una muestra determinista de hasta 256
+posiciones usa el rango entre percentiles 5 y 95 para reducir la influencia de outliers. La heurística
+reduce huecos y solapamientos en distribuciones regulares. Puede ser menos precisa en nubes inclinadas
+o con densidad muy variable; un tamaño global ajustable no resuelve simultáneamente todas las escalas.
 
 **Diagnóstico Bunny (2026-10-10):** el `.oct` original tiene extensión local máxima `0,15575`,
 mientras el renderer asignaba un cubo de lado `1` a cada punto. La hipótesis era que los cubos

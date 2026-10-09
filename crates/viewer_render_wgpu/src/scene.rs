@@ -70,7 +70,7 @@ pub struct RenderScene {
 
 impl RenderScene {
     pub fn from_points(points: &[Point]) -> Self {
-        let point_size = point_glyph_size(points.iter().map(|point| point.position));
+        let point_size = point_glyph_size(points);
         let instances: Vec<_> = points
             .iter()
             .map(|point| InstanceRaw {
@@ -113,7 +113,7 @@ impl RenderScene {
 
     pub fn from_point_block(block: &PointBlock) -> Self {
         let points = block.points().points();
-        let point_size = point_glyph_size(points.iter().map(|point| point.position));
+        let point_size = point_glyph_size(points);
         let intensity = scalar_attribute(block.attributes(), "intensity", points.len());
         let classification = scalar_attribute(block.attributes(), "classification", points.len());
         let instances: Vec<_> = points
@@ -201,30 +201,77 @@ impl RenderScene {
     }
 }
 
-fn point_glyph_size(positions: impl Iterator<Item = [f32; 3]>) -> f32 {
+fn point_glyph_size(points: &[Point]) -> f32 {
     const DEGENERATE_GLYPH_SIZE: f32 = 1.0e-5;
-    let mut count = 0_u32;
-    let mut min = [f32::INFINITY; 3];
-    let mut max = [f32::NEG_INFINITY; 3];
-    for position in positions {
-        count = count.saturating_add(1);
-        for axis in 0..3 {
-            min[axis] = min[axis].min(position[axis]);
-            max[axis] = max[axis].max(position[axis]);
-        }
-    }
-    if count == 0 {
+    const SAMPLE_SIZE: usize = 256;
+
+    if points.len() < 2 {
         return DEGENERATE_GLYPH_SIZE;
     }
 
-    let extent = (0..3)
-        .map(|axis| max[axis] - min[axis])
-        .fold(0.0_f32, f32::max);
-    if extent.is_finite() && extent > 0.0 {
-        extent / (count as f32).sqrt()
-    } else {
-        DEGENERATE_GLYPH_SIZE
+    let mut sample = Vec::with_capacity(SAMPLE_SIZE.min(points.len()));
+    let mut random_state = 0x6a09_e667_f3bc_c909_u64;
+    let mut finite_count = 0_usize;
+    for point in points {
+        let position = point.position;
+        if position.iter().any(|value| !value.is_finite()) {
+            continue;
+        }
+        let index = finite_count;
+        finite_count += 1;
+        let position = position.map(f64::from);
+        if sample.len() < SAMPLE_SIZE {
+            sample.push(position);
+        } else {
+            random_state = splitmix64(random_state);
+            let replacement = (random_state % (index as u64 + 1)) as usize;
+            if replacement < SAMPLE_SIZE {
+                sample[replacement] = position;
+            }
+        }
     }
+
+    if sample.len() < 2 {
+        return DEGENERATE_GLYPH_SIZE;
+    }
+
+    let mut ranges = [0.0_f64; 3];
+    for axis in 0..3 {
+        let mut coordinates: Vec<_> = sample.iter().map(|position| position[axis]).collect();
+        coordinates.sort_by(f64::total_cmp);
+        let (low, high) = if finite_count > SAMPLE_SIZE {
+            let tail = (coordinates.len() - 1) / 20;
+            (coordinates[tail], coordinates[coordinates.len() - 1 - tail])
+        } else {
+            (coordinates[0], coordinates[coordinates.len() - 1])
+        };
+        ranges[axis] = high - low;
+    }
+    ranges.sort_by(f64::total_cmp);
+    let largest_extent = ranges[2];
+    if largest_extent <= 0.0 || !largest_extent.is_finite() {
+        DEGENERATE_GLYPH_SIZE
+    } else {
+        let dimension = ranges
+            .iter()
+            .filter(|extent| **extent > largest_extent * 1.0e-4)
+            .count();
+        let estimated_count = finite_count.saturating_sub(1).max(1) as f64;
+        let sample_extent_correction = if finite_count > SAMPLE_SIZE {
+            1.25
+        } else {
+            1.0
+        };
+        (largest_extent * sample_extent_correction / estimated_count.powf(1.0 / dimension as f64))
+            .clamp(f64::from(DEGENERATE_GLYPH_SIZE), f64::from(f32::MAX)) as f32
+    }
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 fn scalar_attribute(
@@ -452,7 +499,7 @@ mod tests {
         assert_eq!(scene.instances()[1].classification, 7.0);
         assert_eq!(scene.instances()[1].center[2], 5.0);
         assert_eq!(scene.elevation_range(), Some([2.0, 5.0]));
-        assert!((scene.instances()[0].size - 3.0 / 2.0_f32.sqrt()).abs() < 1e-6);
+        assert!((scene.instances()[0].size - 3.0).abs() < 1e-6);
     }
 
     #[test]
@@ -466,7 +513,63 @@ mod tests {
 
         let scene = RenderScene::from_points(&points);
 
-        assert!((scene.instances()[0].size - 0.05).abs() < 1e-6);
+        assert!((scene.instances()[0].size - 0.1 / 3.0_f32.cbrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn estimated_glyphs_approximate_regular_two_and_three_dimensional_spacing() {
+        let two_dimensional = (0..64)
+            .flat_map(|x| {
+                (0..64).map(move |y| Point::new([x as f32, y as f32, 0.0], ColorRgb::new(1, 2, 3)))
+            })
+            .collect::<Vec<_>>();
+        let three_dimensional = (0..16)
+            .flat_map(|x| {
+                (0..16).flat_map(move |y| {
+                    (0..16).map(move |z| {
+                        Point::new([x as f32, y as f32, z as f32], ColorRgb::new(1, 2, 3))
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for (name, points) in [("2D", &two_dimensional), ("3D", &three_dimensional)] {
+            let scene = RenderScene::from_points(points);
+            assert!(
+                (scene.instances()[0].size - 1.0).abs() < 0.25,
+                "{name} estimated spacing={}",
+                scene.instances()[0].size
+            );
+        }
+    }
+
+    #[test]
+    fn sampled_spacing_is_deterministic_and_robust_to_outliers() {
+        let grid = (0..64)
+            .flat_map(|x| {
+                (0..64).map(move |y| Point::new([x as f32, y as f32, 0.0], ColorRgb::new(1, 2, 3)))
+            })
+            .collect::<Vec<_>>();
+        let baseline = RenderScene::from_points(&grid).instances()[0].size;
+        let with_outlier = grid
+            .iter()
+            .copied()
+            .chain([Point::new(
+                [100_000.0, -100_000.0, 0.0],
+                ColorRgb::new(1, 2, 3),
+            )])
+            .collect::<Vec<_>>();
+
+        let outlier_size = RenderScene::from_points(&with_outlier).instances()[0].size;
+
+        assert!(
+            (outlier_size - baseline).abs() < 0.25,
+            "size={outlier_size}"
+        );
+        assert_eq!(
+            baseline,
+            RenderScene::from_points(&grid).instances()[0].size
+        );
     }
 
     #[test]
