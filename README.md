@@ -75,7 +75,7 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Pendientes las fixtures y la política explícita de compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 
 ## Qué significará “feature complete”
@@ -221,9 +221,9 @@ compatibles entre versiones.
   tamaños antes de reservar memoria.
 - [x] Implementar escritor que genere archivos deterministas cuando sea posible, cierre correctamente
   el índice y no publique como válido un resultado parcial.
-- [ ] Añadir fixtures pequeños, grandes sintéticos, archivos malformados y pruebas de round-trip,
+- [x] Añadir fixtures pequeños, grandes sintéticos, archivos malformados y pruebas de round-trip,
   lectura selectiva, corrupción, límites de tamaño y compatibilidad de versiones.
-- [ ] Documentar política de compatibilidad: qué versiones se leen, cómo se migra, qué campos pueden
+- [x] Documentar política de compatibilidad: qué versiones se leen, cómo se migra, qué campos pueden
   ampliarse y cómo se preservan atributos desconocidos.
 
 **Cierre:** el lector recupera un bloque seleccionado sin leer el archivo completo; los datos

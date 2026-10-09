@@ -176,11 +176,12 @@ accidental corruption; it is not an authenticity mechanism. Opening validates th
 index checksum, directory ranges and hierarchy. A block checksum is verified when that block is read;
 unrequested payload bytes need not be read during open.
 
-Version 1 readers accept only version `1`, the exact header and footer lengths above, zero header
-flags, and codecs `0` or `1`. A future incompatible layout uses a new version. New readers must preserve
-unknown attribute names when their primitive type is supported; unsupported types, versions, flags
-or codecs produce explicit errors. The format crate must publish configurable limits for index size,
-schema strings, node/block counts and decoded block size, and reject over-limit files before large
+Version 1 writers emit version `1`; readers accept only version `1`, the exact header and footer
+lengths above, zero header flags, and codecs `0` or `1`. Version 1 has no extension sections: adding
+fields, changing field meanings or changing required encodings requires a new format version. Unknown
+tags, versions, flags and codecs produce explicit errors. Readers preserve attribute names and values
+when their primitive type is supported. The format crate exposes configurable limits for index size,
+schema strings, node/block counts and decoded block size, and rejects over-limit files before large
 reservations.
 
 ## Determinism and incomplete output

@@ -529,11 +529,16 @@ fn parse_index(
             || quantization_error < 0.0
             || block_origin.iter().any(|value| !value.is_finite())
             || scale.iter().any(|value| !value.is_finite() || *value < 0.0)
-            || payload_length > limits.max_block_bytes
         {
             return Err(FormatError::MalformedIndex(
                 "invalid block directory values",
             ));
+        }
+        if payload_length > limits.max_block_bytes {
+            return Err(FormatError::BlockExceedsLimit {
+                requested: payload_length,
+                limit: limits.max_block_bytes,
+            });
         }
         let point_count_usize =
             usize::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
@@ -967,6 +972,27 @@ mod tests {
     }
 
     #[test]
+    fn rejects_corrupt_index_and_blocks_over_the_configured_limit() {
+        let mut bytes = format_bytes();
+        let index_offset = u64::from_le_bytes(
+            bytes[bytes.len() - 32..bytes.len() - 24]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        bytes[index_offset] ^= 1;
+        assert!(matches!(
+            FormatReader::new(Cursor::new(bytes)),
+            Err(FormatError::InvalidChecksum("index"))
+        ));
+
+        let limits = FormatReaderLimits::new(1024, 1, 10, 10, 10, 10, 100).unwrap();
+        assert!(matches!(
+            FormatReader::with_limits(Cursor::new(format_bytes()), limits),
+            Err(FormatError::BlockExceedsLimit { limit: 1, .. })
+        ));
+    }
+
+    #[test]
     fn rejects_truncated_and_invalid_version_files() {
         let mut truncated = format_bytes();
         truncated.pop();
@@ -1027,6 +1053,54 @@ mod tests {
         assert_eq!(
             block.attributes()[0].values(),
             &AttributeValues::U16(vec![128; 4096])
+        );
+    }
+
+    #[test]
+    fn round_trips_a_larger_synthetic_block() {
+        let block_id = BlockId::new(77);
+        let point_count = 65_536;
+        let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
+        let node = SpatialNode::new(
+            NodeId::new(0),
+            None,
+            0,
+            bounds,
+            point_count,
+            0.0,
+            vec![block_id],
+        )
+        .unwrap();
+        let hierarchy = SpatialHierarchy::new(vec![node], Vec::new(), Some(point_count)).unwrap();
+        let metadata = FormatMetadata::new(
+            DatasetMetadata::new(CoordinateFrame::new([0.0; 3]).unwrap(), hierarchy),
+            None,
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        let source = SourcePointBlock::new(
+            block_id,
+            vec![[0.25, 0.5, 0.75]; point_count as usize],
+            vec![ColorRgb::new(20, 40, 60); point_count as usize],
+            Vec::new(),
+        );
+        let mut writer = FormatWriter::new(
+            Cursor::new(Vec::new()),
+            metadata,
+            FormatWriterOptions::new(0.0, 4 * 1024 * 1024).unwrap(),
+        )
+        .unwrap();
+        writer.write_block(source).unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
+
+        let block = reader.read_block(block_id).unwrap();
+        assert_eq!(block.points().len(), point_count as usize);
+        assert_eq!(block.points().points()[0].position, [0.25, 0.5, 0.75]);
+        assert_eq!(
+            block.points().points()[point_count as usize - 1].color,
+            ColorRgb::new(20, 40, 60)
         );
     }
 
