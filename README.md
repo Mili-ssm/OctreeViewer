@@ -4,7 +4,7 @@ Visor extensible de nubes LiDAR y nubes de puntos 3D, construido en Rust y ejecu
 navegador mediante WebAssembly. El proyecto está en una fase temprana: hoy contiene un núcleo de
 voxelización en memoria, una importación LAS/LAZ incremental, un lector espacial por bloques y una
 demo WebGPU 3D con worker, navegación y perfiles LOD. Aún no puede explorar datasets de cientos de GB
-de extremo a extremo ni ofrece progreso/cancelación de lecturas.
+de extremo a extremo; la demo informa bytes únicos leídos y permite cancelar reiniciando el worker.
 
 ## Intención del proyecto
 
@@ -80,7 +80,7 @@ una versión publicada.
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
 | `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, presupuesto configurable y frustum/error proyectado de cámara. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
 | `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU y carga bajo demanda de bloques v1/v2 al corte LOD. | El host aún debe crear el worker, gestionar sus mensajes/estados y presentar la demo con datos propios. |
-| `examples/web-host` | Demo WebGPU en worker, con muestra sintética, apertura de formato local, navegación y perfiles LOD. | No muestra progreso de bytes ni permite cancelar una lectura síncrona; no se ha validado visualmente con GPU en navegador. |
+| `examples/web-host` | Demo WebGPU en worker, con muestra sintética, apertura de formato local, progreso por rangos, cancelación y perfiles LOD. | La cancelación termina y recrea el worker; no se ha validado visualmente con GPU en navegador. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 | `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
@@ -520,9 +520,9 @@ y presentar estado.
   transferido al worker. Si falla una lectura, conserva el corte actual y devuelve el error.
 - [x] Ejecutar lectura, decodificación, selección y render en un worker con `OffscreenCanvas`; se
   cargan solo los bloques del corte visible y la UI principal conserva controles responsivos.
-- [ ] Completar el protocolo con progreso de bytes, cancelación durante lectura y contrapresión de
-  solicitudes; hoy la lectura de bloques es síncrona dentro del worker y se comunica al terminar o
-  fallar una operación.
+- [ ] Completar el protocolo con contrapresión de solicitudes; la lectura de bloques sigue siendo
+  síncrona dentro del worker. La demo informa rangos únicos leídos y cancela terminando/recreando el
+  worker, lo que reinicia el visor y descarta el dataset abierto.
 - [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
   y ciclo de vida claros entre JS y WASM.
 - [x] Soportar archivos locales del formato propio en la demo. Definir por separado si el producto
@@ -540,8 +540,9 @@ y presentar estado.
   demo ejecuta visor, lector y renderer en worker.
 - [x] Mostrar estadísticas de puntos/bloques visibles, cobertura LOD, bloques pendientes, bytes de
   instancias y tiempo CPU del worker. La memoria de caché aún no se expone a la demo.
-- [ ] Añadir progreso de lectura, cancelación/reintento dedicado y ejemplos reproducibles de archivo
-  local accesibles por teclado.
+- [x] Mostrar los bytes únicos leídos del archivo y cancelar una lectura terminando/recreando el
+  worker y su canvas. La operación puede reiniciarse seleccionando otra vez el archivo.
+- [ ] Añadir ejemplos reproducibles de archivo local accesibles por teclado.
 - [ ] Añadir pruebas de bindings, ciclo de vida y concurrencia; comprobar que callbacks/eventos no
   bloqueen la UI y que los errores llegan al usuario.
 
@@ -562,8 +563,11 @@ el perfil. La selección se recalcula antes de `renderFrame` tras cambios de cá
 bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`. En el camino de formato,
 los bloques que faltan se leen antes del cambio atómico del corte. `clear()` cierra el dataset LOD.
 Las estadísticas incluyen bloques/puntos visibles, presupuesto, IDs de bloques pendientes, cobertura
-y nodos omitidos por presupuesto. La demo ya ejecuta lector y renderer en un worker; quedan pendientes
-el progreso por bytes, la cancelación y el protocolo de contrapresión.
+y nodos omitidos por presupuesto. La demo ya ejecuta lector y renderer en un worker; informa bytes
+únicos cubiertos por rangos de 256 KiB. No es un porcentaje de finalización: la lectura busca
+cabeceras e índice y luego solo bloques seleccionados. Cancelar termina el worker síncrono,
+reemplaza el canvas transferido y vuelve a crear el visor; la apertura debe iniciarse otra vez. La
+contrapresión de solicitudes sigue pendiente.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
 no realiza copias proporcionales al tamaño total de la nube.
@@ -574,7 +578,7 @@ no realiza copias proporcionales al tamaño total de la nube.
 
 - [x] Reemplazar la proyección Canvas 2D por el canvas 3D y el renderer real para la muestra sintética.
 - [x] Añadir selección de archivo, estados de carga/error y resumen de nodos con controles etiquetados.
-  El progreso por bytes y la cancelación/reintento dedicado siguen pendientes.
+  Muestra bytes únicos leídos y permite cancelar/reintentar reiniciando el worker y el canvas.
 - [x] Mostrar puntos, bloques visibles, cobertura, bloques pendientes, bytes GPU y tiempo CPU del
   worker. Faltan el nivel LOD y la memoria/caché conocida.
 - [x] Documentar el contrato del worker y WASM en el README de la demo; falta añadir un archivo
@@ -587,10 +591,11 @@ entender límites/errores sin editar el código de la demo.
 
 **Estado actual:** la demo transfiere el canvas a un worker, crea allí el renderer WebGPU y abre
 archivos del formato v1/v2 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
-y cambia el corte de forma atómica. Muestra estado, resumen del índice, puntos/bloques visibles,
+y cambia el corte de forma atómica. Informa bytes únicos leídos en rangos de 256 KiB (sin
+interpretarlos como porcentaje de finalización); cancelar termina/recrea el worker y permite reintentar
+seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles,
 cobertura, bytes subidos y tiempo síncrono del worker; permite navegar, cambiar perfil, color y tamaño.
-La cancelación durante lectura, el progreso por bytes, el reporte de memoria de caché y la validación
-visual en navegador siguen pendientes.
+El reporte de memoria de caché y la validación visual en navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

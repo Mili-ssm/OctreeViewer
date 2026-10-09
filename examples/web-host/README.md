@@ -23,7 +23,8 @@ The host transfers the canvas with `transferControlToOffscreen()`, then the work
 The camera fits dataset bounds and supports orbit, pan, zoom, and resize. Drag to orbit, use Shift+drag
 to pan, and scroll to zoom; keyboard users can focus the canvas and use arrow keys, Shift+arrows,
 `+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and
-OffscreenCanvas support. Recreating a transferred canvas requires reloading the page.
+OffscreenCanvas support. The host recreates a transferred canvas by replacing it and starting a new
+worker.
 
 The demo exposes RGB, intensity, elevation, and classification color modes, plus a point-size
 multiplier from `0.1` to `4`. The renderer API accepts `0.1` to `10`. Project-format files preserve
@@ -33,5 +34,7 @@ with a default 4 million point budget; `performance` targets 2 px and defaults t
 
 The stats panel reports visible points/instances/blocks, LOD coverage, pending block count, cumulative
 bytes written to instance buffers, and the synchronous CPU time spent inside the worker's
-`renderFrame()`. This does not measure GPU execution or display latency. Reads currently report when
-they finish or fail; byte-level progress and cancellation are pending.
+`renderFrame()`. This does not measure GPU execution or display latency. File reads report unique
+bytes fetched in 256 KiB ranges. This is not a completion percentage: the reader seeks through
+metadata and selected blocks, so it may never read the full file. Cancel terminates the synchronous
+worker, replaces its transferred canvas, and starts a fresh viewer; select the file again to retry.

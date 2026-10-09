@@ -1,5 +1,6 @@
-const canvas = document.getElementById("viewer-canvas");
+let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
+const cancelButton = document.getElementById("cancel-load");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
 const statsRoot = document.getElementById("stats");
@@ -22,6 +23,19 @@ let pointerMode = "orbit";
 let cameraDelta = emptyCameraDelta();
 let latestLodStats = null;
 let datasetName = "Synthetic sample";
+let loadingFile = false;
+
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes)) return "unknown";
+    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+    }
+    return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
 
 function emptyCameraDelta() {
     return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0 };
@@ -80,16 +94,26 @@ function stopRendering() {
     }
 }
 
-function handleWorkerMessage({ data }) {
+function handleWorkerMessage(event) {
+    if (event.currentTarget !== worker) return;
+    const { data } = event;
     if (data.type === "ready") {
         ready = true;
         fileInput.disabled = false;
-        reloadButton.textContent = "Reload page";
+        reloadButton.textContent = "Recreate viewer";
         statusRoot.textContent = "Renderer ready · synthetic sample";
         startRendering();
     } else if (data.type === "status") {
         statusRoot.textContent = data.message;
+    } else if (data.type === "fileReadProgress") {
+        const read = Number(data.uniqueBytes);
+        const total = Number(data.fileBytes);
+        loadingFile = true;
+        cancelButton.hidden = false;
+        statusRoot.textContent = `Read ranges: ${formatBytes(read)} of ${formatBytes(total)} (unique bytes)`;
     } else if (data.type === "dataset") {
+        loadingFile = false;
+        cancelButton.hidden = true;
         datasetName = data.name;
         latestLodStats = data.lod;
         fileInput.disabled = false;
@@ -97,13 +121,13 @@ function handleWorkerMessage({ data }) {
         statusRoot.textContent = `${data.name}: loaded ${data.opened.nodeCount} nodes`;
     } else if (data.type === "datasetOpened") {
         datasetName = data.name;
-        fileInput.disabled = false;
-        lodProfile.disabled = false;
         statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
         statusRoot.textContent = `LOD profile: ${data.lod.profile}`;
     } else if (data.type === "stats") {
+        loadingFile = false;
+        cancelButton.hidden = true;
         framePending = false;
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
         if (data.frameStatus?.status !== lastFrameStatus) {
@@ -113,6 +137,8 @@ function handleWorkerMessage({ data }) {
         latestLodStats = data.lod ?? latestLodStats;
         updateStats(data);
     } else if (data.type === "frame") {
+        loadingFile = false;
+        cancelButton.hidden = true;
         framePending = false;
         renderCallMs = data.renderCallMs;
         if (data.frameStatus !== lastFrameStatus) {
@@ -120,12 +146,14 @@ function handleWorkerMessage({ data }) {
             statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
     } else if (data.type === "error") {
+        loadingFile = false;
+        cancelButton.hidden = true;
         fileInput.disabled = false;
         statusRoot.textContent = `${data.operation} failed: ${data.message}`;
         if (data.operation === "frame" || data.operation === "init") {
             frameFailed = true;
             stopRendering();
-            reloadButton.textContent = "Reload page";
+            reloadButton.textContent = "Recreate viewer";
         }
     }
 }
@@ -142,9 +170,12 @@ function createWorkerViewer() {
         worker = new Worker(new URL("./viewer-worker.js", import.meta.url), { type: "module" });
         worker.addEventListener("message", handleWorkerMessage);
         worker.addEventListener("error", (event) => {
+            if (event.currentTarget !== worker) return;
             frameFailed = true;
+            loadingFile = false;
+            cancelButton.hidden = true;
             stopRendering();
-            statusRoot.textContent = `Renderer worker failed: ${event.message}. Reload the page to retry.`;
+            statusRoot.textContent = `Renderer worker failed: ${event.message}. Recreate the viewer to retry.`;
         });
         const offscreen = canvas.transferControlToOffscreen();
         worker.postMessage({
@@ -156,14 +187,47 @@ function createWorkerViewer() {
             pointSize: Number(pointSize.value),
         }, [offscreen]);
         reloadButton.disabled = false;
-        reloadButton.textContent = "Reload page";
+        reloadButton.textContent = "Recreate viewer";
     } catch (error) {
-        statusRoot.textContent = `Renderer initialization failed: ${error}. Reload the page to retry.`;
+        loadingFile = false;
+        cancelButton.hidden = true;
+        statusRoot.textContent = `Renderer initialization failed: ${error}. Recreate the viewer to retry.`;
         reloadButton.disabled = false;
     }
 }
 
-reloadButton.addEventListener("click", () => window.location.reload());
+function recreateViewer() {
+    stopRendering();
+    if (worker) worker.terminate();
+    worker = null;
+    ready = false;
+    frameFailed = false;
+    framePending = false;
+    loadingFile = false;
+    cancelButton.hidden = true;
+    fileInput.disabled = true;
+    lodProfile.disabled = true;
+    latestLodStats = null;
+    datasetName = "Synthetic sample";
+    cameraDelta = emptyCameraDelta();
+    const replacement = canvas.cloneNode(false);
+    replacement.width = canvas.width;
+    replacement.height = canvas.height;
+    canvas.replaceWith(replacement);
+    canvas = replacement;
+    bindCanvasInteractions();
+    resize();
+    createWorkerViewer();
+}
+
+function cancelFileLoad() {
+    if (!loadingFile) return;
+    recreateViewer();
+    statusRoot.textContent = "File load cancelled · viewer restarted";
+}
+
+reloadButton.addEventListener("click", recreateViewer);
+cancelButton.addEventListener("click", cancelFileLoad);
 colorMode.addEventListener("change", () => {
     if (ready) worker.postMessage({ type: "color", value: colorMode.value });
 });
@@ -182,6 +246,9 @@ fileInput.addEventListener("change", () => {
     if (!ready || !file) return;
     fileInput.disabled = true;
     fileInput.value = "";
+    loadingFile = true;
+    cancelButton.hidden = false;
+    statusRoot.textContent = `Opening ${file.name}…`;
     worker.postMessage({
         type: "openFile",
         file,
@@ -192,6 +259,7 @@ fileInput.addEventListener("change", () => {
 fitButton.addEventListener("click", () => {
     if (ready) worker.postMessage({ type: "fit" });
 });
+function bindCanvasInteractions() {
 canvas.addEventListener("pointerdown", (event) => {
     if (!ready || event.button !== 0) return;
     event.preventDefault();
@@ -252,7 +320,9 @@ canvas.addEventListener("keydown", (event) => {
     }
     event.preventDefault();
 });
+}
 window.addEventListener("resize", resize);
 
+bindCanvasInteractions();
 resize();
 createWorkerViewer();

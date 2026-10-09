@@ -1,7 +1,7 @@
 use serde_wasm_bindgen::to_value;
 use std::io::{self, Read, Seek, SeekFrom};
 use viewer_core::{BlockId, ColorRgb, DatasetSource, Point, PointBatch, PointBlock};
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
 use crate::{
@@ -23,7 +23,7 @@ impl WasmLasImportSession {
     /// Opens a LAS or LAZ Blob. Construct this class in a dedicated Web Worker.
     #[wasm_bindgen(constructor)]
     pub fn new(file: Blob) -> Result<WasmLasImportSession, JsValue> {
-        let source = BrowserBlobReader::new(file)?;
+        let source = BrowserBlobReader::new(file, false)?;
         let inner =
             LasPointStream::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
         Ok(Self { inner })
@@ -66,16 +66,34 @@ struct BrowserBlobReader {
     position: u64,
     cached_start: u64,
     cache: Vec<u8>,
+    report_progress: bool,
+    loaded_chunks: Vec<u64>,
+    loaded_unique_bytes: u64,
+    last_progress_at_ms: f64,
 }
 
 impl BrowserBlobReader {
-    fn new(blob: Blob) -> Result<Self, JsValue> {
+    fn new(blob: Blob, report_progress: bool) -> Result<Self, JsValue> {
         let size = blob.size();
         if !size.is_finite() || size < 0.0 || size > u64::MAX as f64 {
             return Err(JsValue::from_str(
                 "file size is outside the supported range",
             ));
         }
+
+        let loaded_chunks = if report_progress {
+            let chunk_count = (size as u64).div_ceil(FILE_CACHE_BYTES);
+            let word_count = usize::try_from(chunk_count.div_ceil(u64::BITS as u64))
+                .map_err(|_| JsValue::from_str("file progress index is too large"))?;
+            let mut chunks = Vec::new();
+            chunks
+                .try_reserve_exact(word_count)
+                .map_err(|_| JsValue::from_str("unable to allocate file progress index"))?;
+            chunks.resize(word_count, 0);
+            chunks
+        } else {
+            Vec::new()
+        };
 
         Ok(Self {
             blob,
@@ -84,6 +102,10 @@ impl BrowserBlobReader {
             position: 0,
             cached_start: u64::MAX,
             cache: Vec::new(),
+            report_progress,
+            loaded_chunks,
+            loaded_unique_bytes: 0,
+            last_progress_at_ms: 0.0,
         })
     }
 
@@ -102,6 +124,40 @@ impl BrowserBlobReader {
         self.cache.resize((end - start) as usize, 0);
         array.copy_to(&mut self.cache);
         self.cached_start = start;
+        if self.report_progress {
+            let chunk_index = usize::try_from(start / FILE_CACHE_BYTES)
+                .map_err(|_| io::Error::other("file progress index is too large"))?;
+            let word = chunk_index / u64::BITS as usize;
+            let mask = 1_u64 << (chunk_index % u64::BITS as usize);
+            let seen = self.loaded_chunks[word] & mask != 0;
+            if !seen {
+                self.loaded_chunks[word] |= mask;
+                self.loaded_unique_bytes += end - start;
+            }
+            let now = js_sys::Date::now();
+            if seen || now - self.last_progress_at_ms < 100.0 {
+                return Ok(());
+            }
+            self.last_progress_at_ms = now;
+            let progress = js_sys::Object::new();
+            let _ = js_sys::Reflect::set(
+                &progress,
+                &"type".into(),
+                &JsValue::from_str("fileReadProgress"),
+            );
+            let _ = js_sys::Reflect::set(
+                &progress,
+                &"uniqueBytes".into(),
+                &JsValue::from_str(&self.loaded_unique_bytes.to_string()),
+            );
+            let _ = js_sys::Reflect::set(
+                &progress,
+                &"fileBytes".into(),
+                &JsValue::from_str(&self.file_size.to_string()),
+            );
+            let scope: web_sys::DedicatedWorkerGlobalScope = js_sys::global().unchecked_into();
+            let _ = scope.post_message(&progress);
+        }
         Ok(())
     }
 }
@@ -332,7 +388,7 @@ impl WasmVoxelViewer {
         file: Blob,
         cache_bytes: u32,
     ) -> Result<JsValue, JsValue> {
-        let source = BrowserBlobReader::new(file)?;
+        let source = BrowserBlobReader::new(file, true)?;
         let reader =
             FormatReader::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
         let hierarchy_stats = reader.metadata().hierarchy().stats();
