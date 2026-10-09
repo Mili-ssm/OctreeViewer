@@ -2,6 +2,7 @@ use std::io::{Read, Seek};
 
 use las::{PointData, PointDataBuilder, Reader};
 use thiserror::Error;
+use viewer_core::{CoordinateFrame, CoordinateFrameError};
 
 const MAX_POINTS_PER_CHUNK: u64 = 65_536;
 const MAX_INPUT_BYTES_PER_CHUNK: usize = 8 * 1024 * 1024;
@@ -35,7 +36,7 @@ pub struct LasPointChunk {
 pub struct LasPointStream {
     reader: Reader,
     buffer: PointData,
-    origin: [f64; 3],
+    coordinate_frame: CoordinateFrame,
     total_points: u64,
     processed_points: u64,
     record_len: usize,
@@ -54,6 +55,10 @@ impl LasPointStream {
         if origin.iter().any(|coordinate| !coordinate.is_finite()) {
             return Err(LasImportError::InvalidBounds);
         }
+        let coordinate_frame = CoordinateFrame::new(origin).map_err(|error| match error {
+            CoordinateFrameError::InvalidOrigin(_) => LasImportError::InvalidBounds,
+            CoordinateFrameError::PositionOutOfRange(_) => unreachable!("origin was validated"),
+        })?;
 
         let total_points = reader.header().number_of_points();
         let record_len = usize::from(reader.header().point_format().len());
@@ -62,7 +67,7 @@ impl LasPointStream {
         Ok(Self {
             reader,
             buffer,
-            origin,
+            coordinate_frame,
             total_points,
             processed_points: 0,
             record_len,
@@ -72,7 +77,7 @@ impl LasPointStream {
     }
 
     pub fn origin(&self) -> [f64; 3] {
-        self.origin
+        self.coordinate_frame.origin()
     }
 
     pub fn total_points(&self) -> u64 {
@@ -96,7 +101,7 @@ impl LasPointStream {
             colors: Vec::new(),
             processed_points: self.processed_points,
             total_points: self.total_points,
-            origin: self.origin,
+            origin: self.coordinate_frame.origin(),
             done: self.done,
         };
         if self.done {
@@ -121,7 +126,7 @@ impl LasPointStream {
             let coordinates = self.buffer.x().zip(self.buffer.y()).zip(self.buffer.z());
             if let Some(rgb) = self.buffer.rgb() {
                 for (((x, y), z), (red, green, blue)) in coordinates.zip(rgb) {
-                    push_position(&mut chunk.positions, [x, y, z], self.origin)?;
+                    push_position(&mut chunk.positions, [x, y, z], self.coordinate_frame)?;
                     chunk.colors.extend_from_slice(&[
                         (red >> 8) as u8,
                         (green >> 8) as u8,
@@ -130,7 +135,7 @@ impl LasPointStream {
                 }
             } else {
                 for (((x, y), z), intensity) in coordinates.zip(self.buffer.intensity()) {
-                    push_position(&mut chunk.positions, [x, y, z], self.origin)?;
+                    push_position(&mut chunk.positions, [x, y, z], self.coordinate_frame)?;
                     let gray = (intensity >> 8) as u8;
                     chunk.colors.extend_from_slice(&[gray, gray, gray]);
                 }
@@ -153,15 +158,16 @@ impl LasPointStream {
 fn push_position(
     positions: &mut Vec<f32>,
     world_position: [f64; 3],
-    origin: [f64; 3],
+    coordinate_frame: CoordinateFrame,
 ) -> Result<(), LasImportError> {
-    let local = std::array::from_fn(|axis| world_position[axis] - origin[axis]);
-    let local_f32 = local.map(|coordinate| coordinate as f32);
-    if local.iter().any(|coordinate| !coordinate.is_finite())
-        || local_f32.iter().any(|coordinate| !coordinate.is_finite())
-    {
-        return Err(LasImportError::PositionOutOfRange(local));
-    }
+    let local_f32 = coordinate_frame
+        .to_local(world_position)
+        .map_err(|error| match error {
+            CoordinateFrameError::PositionOutOfRange(position) => {
+                LasImportError::PositionOutOfRange(position)
+            }
+            CoordinateFrameError::InvalidOrigin(_) => unreachable!("frame origins are validated"),
+        })?;
     positions.extend_from_slice(&local_f32);
     Ok(())
 }

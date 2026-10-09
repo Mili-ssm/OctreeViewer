@@ -1,5 +1,52 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+/// Translation between dataset coordinates and the local `f32` render space.
+///
+/// Keeping the origin in `f64` lets callers subtract large world coordinates before
+/// narrowing positions to the precision used by the renderer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CoordinateFrame {
+    origin: [f64; 3],
+}
+
+impl CoordinateFrame {
+    pub fn new(origin: [f64; 3]) -> Result<Self, CoordinateFrameError> {
+        if origin.iter().any(|coordinate| !coordinate.is_finite()) {
+            return Err(CoordinateFrameError::InvalidOrigin(origin));
+        }
+        Ok(Self { origin })
+    }
+
+    pub const fn origin(&self) -> [f64; 3] {
+        self.origin
+    }
+
+    pub fn to_local(self, world: [f64; 3]) -> Result<[f32; 3], CoordinateFrameError> {
+        let local = std::array::from_fn(|axis| world[axis] - self.origin[axis]);
+        let local_f32 = local.map(|coordinate| coordinate as f32);
+        if world.iter().any(|coordinate| !coordinate.is_finite())
+            || local.iter().any(|coordinate| !coordinate.is_finite())
+            || local_f32.iter().any(|coordinate| !coordinate.is_finite())
+        {
+            return Err(CoordinateFrameError::PositionOutOfRange(local));
+        }
+        Ok(local_f32)
+    }
+
+    pub fn to_world(self, local: [f32; 3]) -> [f64; 3] {
+        std::array::from_fn(|axis| self.origin[axis] + f64::from(local[axis]))
+    }
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum CoordinateFrameError {
+    #[error("coordinate frame origin must be finite, got {0:?}")]
+    InvalidOrigin([f64; 3]),
+    #[error("position cannot be represented in local f32 coordinates, got {0:?}")]
+    PositionOutOfRange([f64; 3]),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorRgb {
@@ -137,7 +184,40 @@ impl Aabb {
 
 #[cfg(test)]
 mod tests {
-    use super::{Aabb, ColorRgb};
+    use super::{Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError};
+
+    #[test]
+    fn coordinate_frame_subtracts_large_world_origin_before_narrowing() {
+        let origin = [1_000_000_000_000.0, -2_000_000_000_000.0, 50.0];
+        let frame = CoordinateFrame::new(origin).unwrap();
+
+        assert_eq!(
+            frame.to_local([origin[0] + 1.0, origin[1] - 2.0, 53.5]),
+            Ok([1.0, -2.0, 3.5])
+        );
+        assert_eq!(
+            frame.to_world([1.0, -2.0, 3.5]),
+            [origin[0] + 1.0, origin[1] - 2.0, 53.5]
+        );
+    }
+
+    #[test]
+    fn coordinate_frame_rejects_invalid_origins_and_unrepresentable_positions() {
+        assert!(matches!(
+            CoordinateFrame::new([0.0, f64::NAN, 0.0]),
+            Err(CoordinateFrameError::InvalidOrigin(_))
+        ));
+
+        let frame = CoordinateFrame::new([0.0; 3]).unwrap();
+        assert!(matches!(
+            frame.to_local([f64::MAX, 0.0, 0.0]),
+            Err(CoordinateFrameError::PositionOutOfRange(_))
+        ));
+        assert!(matches!(
+            frame.to_local([f64::INFINITY, 0.0, 0.0]),
+            Err(CoordinateFrameError::PositionOutOfRange(_))
+        ));
+    }
 
     #[test]
     fn converts_srgb_channels_to_linear_light() {

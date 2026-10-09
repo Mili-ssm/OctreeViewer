@@ -125,7 +125,7 @@ umbrales acordados. Hasta entonces, “más eficiente que Potree” sigue siendo
 **Característica:** representar datasets y consultas sin depender de una estructura residente
 completa en memoria.
 
-- [ ] Revisar el modelo de coordenadas: conservar coordenadas enteras/escala/desplazamiento o una
+- [x] Revisar el modelo de coordenadas: conservar coordenadas enteras/escala/desplazamiento o una
   precisión equivalente antes de convertir a coordenadas locales de renderizado.
 - [x] Definir la semántica base de AABB: validar coordenadas finitas y ordenadas; contención e
   intersección incluyen los bordes, y las cajas inválidas no coinciden en consultas.
@@ -148,6 +148,12 @@ completa en memoria.
 AABB y frustum recorren en profundidad de forma determinista y podan subárboles disjuntos, sin
 materializar puntos. La consulta frustum es conservadora y devuelve candidatos, no una selección LOD.
 La jerarquía aún no carga bloques desde almacenamiento ni implementa LOD o presupuestos.
+
+El origen del dataset se conserva en `f64` y `CoordinateFrame` resta ese origen antes de convertir
+posiciones a `f32` local para renderizado; la importación LAS usa el mismo contrato y las pruebas
+cubren coordenadas mundiales grandes con desplazamientos pequeños. La precisión final local sigue
+limitada por `f32` y por la extensión del dataset; hace falta fijar el error geométrico aceptable para
+el producto antes de seleccionar LOD.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.

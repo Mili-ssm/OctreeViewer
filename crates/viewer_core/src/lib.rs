@@ -3,7 +3,9 @@ mod spatial;
 mod visibility;
 mod voxel_store;
 
-pub use geometry::{Aabb, ColorRgb, Point, PointBatch, VoxelCoord};
+pub use geometry::{
+    Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,
+};
 pub use spatial::{
     AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, NodeId, SpatialBounds,
     SpatialError, SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats,
