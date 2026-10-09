@@ -144,9 +144,10 @@
         <button id="cancel-load" type="button" hidden>Cancel file load</button>
         <button id="fit-scene" type="button">Fit scene</button>
         <section class="panel" aria-label="Dataset options">
+            <button id="open-sample" type="button" disabled>Open built-in sample · 4,096 points</button>
             <label for="dataset-file">Open project dataset</label>
             <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
-            <small id="dataset-help">The v1/v2 file is read in the worker. The current visible cut is kept if a block read fails.</small>
+            <small id="dataset-help">The built-in sample is a local v1/v2 file. Choose another project file with the keyboard-accessible file picker. Reads run in the worker.</small>
         </section>
         <section class="panel" aria-label="Rendering options">
             <label for="lod-profile">LOD profile</label>

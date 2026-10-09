@@ -1,6 +1,7 @@
 let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
 const cancelButton = document.getElementById("cancel-load");
+const sampleButton = document.getElementById("open-sample");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
 const statsRoot = document.getElementById("stats");
@@ -26,6 +27,7 @@ let cameraDelta = emptyCameraDelta();
 let latestLodStats = null;
 let datasetName = "Synthetic sample";
 let loadingFile = false;
+let sampleFetchController = null;
 
 function formatBytes(bytes) {
     if (!Number.isFinite(bytes)) return "unknown";
@@ -118,6 +120,7 @@ function handleWorkerMessage(event) {
     if (data.type === "ready") {
         ready = true;
         fileInput.disabled = false;
+        sampleButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
         statusRoot.textContent = "Renderer ready · synthetic sample";
         startRendering();
@@ -138,6 +141,7 @@ function handleWorkerMessage(event) {
         datasetName = data.name;
         latestLodStats = data.lod;
         fileInput.disabled = false;
+        sampleButton.disabled = false;
         lodProfile.disabled = false;
         statusRoot.textContent = `${data.name}: loaded ${data.opened.nodeCount} nodes`;
     } else if (data.type === "datasetOpened") {
@@ -170,6 +174,7 @@ function handleWorkerMessage(event) {
         loadingFile = false;
         cancelButton.hidden = true;
         fileInput.disabled = false;
+        sampleButton.disabled = false;
         statusRoot.textContent = `${data.operation} failed: ${data.message}`;
         if (data.operation === "frame" || data.operation === "init") {
             frameFailed = true;
@@ -219,6 +224,8 @@ function createWorkerViewer() {
 
 function recreateViewer() {
     stopRendering();
+    sampleFetchController?.abort();
+    sampleFetchController = null;
     if (worker) worker.terminate();
     worker = null;
     ready = false;
@@ -229,6 +236,7 @@ function recreateViewer() {
     loadingFile = false;
     cancelButton.hidden = true;
     fileInput.disabled = true;
+    sampleButton.disabled = true;
     lodProfile.disabled = true;
     latestLodStats = null;
     datasetName = "Synthetic sample";
@@ -264,10 +272,10 @@ lodProfile.addEventListener("change", () => {
         queueWorkerCommand("profile", { value: lodProfile.value });
     }
 });
-fileInput.addEventListener("change", () => {
-    const [file] = fileInput.files ?? [];
+function openProjectFile(file) {
     if (!ready || !file) return;
     fileInput.disabled = true;
+    sampleButton.disabled = true;
     fileInput.value = "";
     loadingFile = true;
     cancelButton.hidden = false;
@@ -278,6 +286,43 @@ fileInput.addEventListener("change", () => {
         profile: lodProfile.value,
         cacheBytes: 256 * 1024 * 1024,
     });
+}
+
+fileInput.addEventListener("change", () => {
+    const [file] = fileInput.files ?? [];
+    openProjectFile(file);
+});
+sampleButton.addEventListener("click", async () => {
+    if (!ready) return;
+    sampleButton.disabled = true;
+    fileInput.disabled = true;
+    loadingFile = true;
+    cancelButton.hidden = false;
+    statusRoot.textContent = "Fetching the built-in sample file…";
+    const controller = new AbortController();
+    sampleFetchController = controller;
+    try {
+        const response = await fetch(new URL("./sample.oct", import.meta.url), {
+            signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const file = new File([await response.arrayBuffer()], "web-host-sample.oct", {
+            type: "application/octet-stream",
+        });
+        if (sampleFetchController !== controller) return;
+        sampleFetchController = null;
+        openProjectFile(file);
+    } catch (error) {
+        if (sampleFetchController !== controller) return;
+        sampleFetchController = null;
+        loadingFile = false;
+        cancelButton.hidden = true;
+        fileInput.disabled = false;
+        sampleButton.disabled = false;
+        if (error.name !== "AbortError") {
+            statusRoot.textContent = `Sample download failed: ${error}`;
+        }
+    }
 });
 fitButton.addEventListener("click", () => {
     queueWorkerCommand("fit");

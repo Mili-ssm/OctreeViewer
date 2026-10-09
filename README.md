@@ -594,8 +594,8 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
   Muestra bytes únicos leídos y permite cancelar/reintentar reiniciando el worker y el canvas.
 - [x] Mostrar puntos, bloques visibles, cobertura, bloques pendientes, bytes GPU y tiempo CPU del
   worker. Faltan el nivel LOD y la memoria/caché conocida.
-- [x] Documentar el contrato del worker y WASM en el README de la demo; falta añadir un archivo
-  pequeño de muestra reproducible.
+- [x] Documentar el contrato del worker y WASM, generar un `.oct` sintético reproducible e incluir
+  un botón accesible por teclado para abrirlo; el selector local acepta otros archivos.
 - [x] Mantener la demo como consumidor de la API pública; el único código de geometría JavaScript
   genera el dataset sintético ya existente.
 
@@ -608,7 +608,9 @@ y cambia el corte de forma atómica. Informa bytes únicos leídos en rangos de 
 interpretarlos como porcentaje de finalización); cancelar termina/recrea el worker y permite reintentar
 seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles,
 cobertura, bytes subidos y tiempo síncrono del worker; permite navegar, cambiar perfil, color y tamaño.
-El reporte de memoria de caché y la validación visual en navegador siguen pendientes.
+Incluye un archivo sintético `.oct` de 4.096 puntos, generable desde un ejemplo Rust, y un control de
+teclado para cargarlo. El reporte de memoria de caché y la validación visual en navegador siguen
+pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

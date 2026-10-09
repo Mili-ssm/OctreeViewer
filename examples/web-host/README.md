@@ -12,6 +12,13 @@ cd crates/viewer_wasm
 wasm-pack build --target web --out-dir ../../pkg
 ```
 
+The repository includes `sample.oct`, a deterministic 4,096-point dataset. Regenerate it from the
+workspace root with:
+
+```bash
+cargo run --offline -p viewer_format --example create_web_sample -- examples/web-host/sample.oct
+```
+
 ## Serve the demo
 
 Use any static file server rooted at the repository. Then open `examples/web-host/index.html`. WebGPU
@@ -25,6 +32,10 @@ to pan, and scroll to zoom; keyboard users can focus the canvas and use arrow ke
 `+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and
 OffscreenCanvas support. The host recreates a transferred canvas by replacing it and starting a new
 worker.
+
+Use the keyboard-accessible **Open built-in sample** button to load the included v1/v2 file, or focus
+the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
+wave grid and does not depend on external or licensed point-cloud data.
 
 The demo exposes RGB, intensity, elevation, and classification color modes, plus a point-size
 multiplier from `0.1` to `4`. The renderer API accepts `0.1` to `10`. Project-format files preserve
