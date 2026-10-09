@@ -75,7 +75,7 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificación v1, cuantizador `u32` y codec LZ4 independiente por bloque con fallback sin compresión, medido en sintéticos ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | No hay lector, escritor, convertidor ni fixtures del formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32 incremental y mediciones sintéticas ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | El lector, escritor y fixtures del formato están pendientes. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 
 ## Qué significará “feature complete”
