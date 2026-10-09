@@ -57,6 +57,8 @@
         }
 
         button:focus-visible,
+        select:focus-visible,
+        input:focus-visible,
         canvas:focus-visible {
             outline: 3px solid #38bdf8;
             outline-offset: 3px;
@@ -80,6 +82,25 @@
             margin-top: 18px;
         }
 
+        .panel label {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0 6px;
+        }
+
+        .panel select,
+        .panel input {
+            width: 100%;
+            font: inherit;
+        }
+
+        .panel small {
+            display: block;
+            margin-top: 8px;
+            line-height: 1.4;
+            color: #cbd5e1;
+        }
+
         .stats {
             display: grid;
             gap: 8px;
@@ -101,6 +122,19 @@
         </p>
         <button id="reload-scene" type="button">Recreate viewer</button>
         <button id="fit-scene" type="button">Fit scene</button>
+        <section class="panel" aria-label="Rendering options">
+            <label for="color-mode">Color</label>
+            <select id="color-mode">
+                <option value="rgb">RGB</option>
+                <option value="intensity">Intensity</option>
+                <option value="elevation">Elevation</option>
+                <option value="classification">Classification</option>
+            </select>
+            <label for="point-size">Point size <output id="point-size-value">1.0×</output></label>
+            <input id="point-size" type="range" min="0.1" max="4" step="0.1" value="1"
+                aria-describedby="render-options-help" />
+            <small id="render-options-help">Missing intensity falls back to grayscale RGB; missing classification keeps RGB.</small>
+        </section>
         <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>
         <p id="camera-help">
             Drag to orbit, Shift+drag to pan, scroll to zoom. Focus the canvas and use arrow keys;
@@ -115,6 +149,8 @@
             <pre>await WasmVoxelViewer.create(canvas, voxelSize)
 viewer.resize(width, height)
 viewer.replacePoints(positions, colors)
+viewer.setColorMode("rgb")
+viewer.setPointSize(1.0)
 viewer.fitScene()
 viewer.orbit(dx, dy) / viewer.pan(dx, dy) / viewer.zoom(delta)
 viewer.renderFrame()</pre>

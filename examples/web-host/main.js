@@ -5,6 +5,9 @@ const reloadButton = document.getElementById("reload-scene");
 const fitButton = document.getElementById("fit-scene");
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
+const colorMode = document.getElementById("color-mode");
+const pointSize = document.getElementById("point-size");
+const pointSizeValue = document.getElementById("point-size-value");
 
 await init();
 
@@ -103,6 +106,8 @@ async function createViewer() {
 
     try {
         viewer = await WasmVoxelViewer.create(canvas, 0.6);
+        viewer.setColorMode(colorMode.value);
+        viewer.setPointSize(Number(pointSize.value));
         resize();
         const { positions, colors } = createSamplePointCloud();
         viewer.replacePoints(positions, colors);
@@ -122,6 +127,14 @@ async function createViewer() {
 }
 
 reloadButton.addEventListener("click", () => void createViewer());
+colorMode.addEventListener("change", () => {
+    if (viewer) viewer.setColorMode(colorMode.value);
+});
+pointSize.addEventListener("input", () => {
+    const size = Number(pointSize.value);
+    pointSizeValue.value = `${size.toFixed(1)}×`;
+    if (viewer) viewer.setPointSize(size);
+});
 fitButton.addEventListener("click", () => {
     if (viewer) viewer.fitScene();
 });

@@ -9,6 +9,8 @@ pub(crate) struct ResidentBlockInfo {
     pub id: BlockId,
     pub instance_count: usize,
     pub bounds: Option<SceneBounds>,
+    pub intensity_range: Option<[f32; 2]>,
+    pub elevation_range: Option<[f32; 2]>,
 }
 
 #[derive(Debug)]
@@ -19,6 +21,8 @@ pub(crate) struct BlockSyncPlan {
     pub visible_instance_count: usize,
     pub uploaded_bytes: u64,
     pub visible_bounds: Option<SceneBounds>,
+    pub visible_intensity_range: Option<[f32; 2]>,
+    pub visible_elevation_range: Option<[f32; 2]>,
 }
 
 pub(crate) fn plan_block_sync(
@@ -42,19 +46,23 @@ pub(crate) fn plan_block_sync(
     let mut visible_instance_count = 0_usize;
     let mut uploaded_bytes = 0_u64;
     let mut visible_bounds = None;
+    let mut visible_intensity_range = None;
+    let mut visible_elevation_range = None;
     for id in &selected {
         if let Some(block) = resident_by_id.get(id) {
             visible_instance_count = visible_instance_count
                 .checked_add(block.instance_count)
                 .ok_or(GpuRendererError::InvalidSceneSize)?;
             visible_bounds = merge_bounds(visible_bounds, block.bounds);
+            visible_intensity_range = merge_range(visible_intensity_range, block.intensity_range);
+            visible_elevation_range = merge_range(visible_elevation_range, block.elevation_range);
             continue;
         }
 
         let payload = cache
             .peek(*id)
             .ok_or(GpuRendererError::MissingBlockPayload(*id))?;
-        let scene = RenderScene::from_points(payload.points().points());
+        let scene = RenderScene::from_point_block(payload);
         let instance_count = scene.instance_count();
         let bytes = instance_count
             .checked_mul(std::mem::size_of::<crate::InstanceRaw>())
@@ -73,6 +81,8 @@ pub(crate) fn plan_block_sync(
             .checked_add(bytes)
             .ok_or(GpuRendererError::InvalidSceneSize)?;
         visible_bounds = merge_bounds(visible_bounds, scene.bounds());
+        visible_intensity_range = merge_range(visible_intensity_range, scene.intensity_range());
+        visible_elevation_range = merge_range(visible_elevation_range, scene.elevation_range());
         added.push((*id, scene));
     }
 
@@ -83,7 +93,19 @@ pub(crate) fn plan_block_sync(
         visible_instance_count,
         uploaded_bytes,
         visible_bounds,
+        visible_intensity_range,
+        visible_elevation_range,
     })
+}
+
+fn merge_range(current: Option<[f32; 2]>, next: Option<[f32; 2]>) -> Option<[f32; 2]> {
+    match (current, next) {
+        (Some([min, max]), Some([next_min, next_max])) => {
+            Some([min.min(next_min), max.max(next_max)])
+        }
+        (Some(range), None) | (None, Some(range)) => Some(range),
+        (None, None) => None,
+    }
 }
 
 fn merge_bounds(current: Option<SceneBounds>, next: Option<SceneBounds>) -> Option<SceneBounds> {
@@ -150,6 +172,8 @@ mod tests {
                     min: [-0.5; 3],
                     max: [0.5; 3],
                 }),
+                intensity_range: None,
+                elevation_range: None,
             },
             ResidentBlockInfo {
                 id: BlockId::new(2),
@@ -158,6 +182,8 @@ mod tests {
                     min: [1.5, -0.5, -0.5],
                     max: [3.5, 0.5, 0.5],
                 }),
+                intensity_range: None,
+                elevation_range: None,
             },
         ];
         let same =
@@ -188,6 +214,8 @@ mod tests {
                 min: [-0.5; 3],
                 max: [0.5; 3],
             }),
+            intensity_range: None,
+            elevation_range: None,
         }];
         let empty = plan_block_sync(&current, &[], &cache, 1024).unwrap();
         assert!(empty.selected.is_empty());
@@ -205,6 +233,8 @@ mod tests {
                 min: [-0.5; 3],
                 max: [0.5; 3],
             }),
+            intensity_range: None,
+            elevation_range: None,
         }];
         let empty_cache = DecodedBlockCache::new(1024);
         assert_eq!(

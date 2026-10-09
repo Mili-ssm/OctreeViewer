@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
 use crate::{LasPointStream, RenderSceneSnapshot, ViewerConfig, ViewerController, ViewerError};
-use viewer_render_wgpu::{RendererConfig, SurfaceRenderer};
+use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
 
@@ -252,6 +252,33 @@ impl WasmVoxelViewer {
     pub fn clear(&mut self) {
         self.inner.clear();
         self.gpu_scene_dirty = true;
+    }
+
+    #[wasm_bindgen(js_name = setColorMode)]
+    pub fn set_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
+        let mode = ColorMode::parse(&mode).ok_or_else(|| {
+            JsValue::from_str("color mode must be rgb, intensity, elevation, or classification")
+        })?;
+        self.gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .set_color_mode(mode);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = setPointSize)]
+    pub fn set_point_size(&mut self, size: f32) -> Result<(), JsValue> {
+        if !size.is_finite() || !(0.1..=10.0).contains(&size) {
+            return Err(JsValue::from_str(
+                "point size multiplier must be between 0.1 and 10",
+            ));
+        }
+        self.gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .set_point_size(size)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = stats)]

@@ -6,7 +6,7 @@ use viewer_core::{BlockId, DecodedBlockCache};
 use wgpu::util::DeviceExt;
 
 use crate::{
-    CameraFrame, InstanceRaw, OrbitCamera, RenderScene, RendererConfig, SceneBounds,
+    CameraFrame, ColorMode, InstanceRaw, OrbitCamera, RenderScene, RendererConfig, SceneBounds,
     VOXEL_SHADER_WGSL, block_sync::ResidentBlockInfo, block_sync::plan_block_sync,
     instance_buffer_layout,
 };
@@ -18,6 +18,7 @@ pub enum GpuRendererError {
     DeviceRequest(String),
     InvalidSceneSize,
     InvalidSceneData,
+    InvalidPointSize,
     InvalidBlockData(BlockId),
     MissingBlockPayload(BlockId),
     PipelineValidation(String),
@@ -31,6 +32,9 @@ impl std::fmt::Display for GpuRendererError {
             Self::DeviceRequest(error) => write!(f, "GPU device request failed: {error}"),
             Self::InvalidSceneSize => f.write_str("scene exceeds supported GPU buffer limits"),
             Self::InvalidSceneData => f.write_str("scene contains invalid render data"),
+            Self::InvalidPointSize => {
+                f.write_str("point size multiplier must be finite and between 0.1 and 10")
+            }
             Self::InvalidBlockData(id) => write!(f, "block {id:?} contains invalid render data"),
             Self::MissingBlockPayload(id) => {
                 write!(f, "block {id:?} is not resident in the CPU cache")
@@ -55,6 +59,8 @@ pub enum FrameStatus {
 struct ViewProjection {
     matrix: [[f32; 4]; 4],
     render_origin: [f32; 4],
+    style: [f32; 4],
+    intensity_range: [f32; 4],
 }
 
 #[repr(C)]
@@ -69,6 +75,8 @@ struct GpuInstanceBuffer {
     capacity: u64,
     instance_count: u32,
     bounds: Option<SceneBounds>,
+    intensity_range: Option<[f32; 2]>,
+    elevation_range: Option<[f32; 2]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -141,6 +149,10 @@ pub struct SurfaceRenderer<'window> {
     suspended: bool,
     camera: OrbitCamera,
     scene_bounds: Option<SceneBounds>,
+    intensity_range: Option<[f32; 2]>,
+    elevation_range: Option<[f32; 2]>,
+    color_mode: ColorMode,
+    point_size: f32,
 }
 
 impl<'window> SurfaceRenderer<'window> {
@@ -293,6 +305,8 @@ impl<'window> SurfaceRenderer<'window> {
                 capacity: size_of::<InstanceRaw>() as u64,
                 instance_count: 0,
                 bounds: None,
+                intensity_range: None,
+                elevation_range: None,
             }),
             block_buffers: HashMap::new(),
             visible_block_ids: Vec::new(),
@@ -304,6 +318,10 @@ impl<'window> SurfaceRenderer<'window> {
             suspended: width == 0 || height == 0,
             camera: OrbitCamera::default(),
             scene_bounds: None,
+            intensity_range: None,
+            elevation_range: None,
+            color_mode: ColorMode::Rgb,
+            point_size: 1.0,
         })
     }
 
@@ -336,6 +354,8 @@ impl<'window> SurfaceRenderer<'window> {
             }
             buffer.instance_count = count;
             buffer.bounds = bounds;
+            buffer.intensity_range = scene.intensity_range();
+            buffer.elevation_range = scene.elevation_range();
         }
         if self.scene_buffer.is_none() {
             self.scene_buffer = Some(create_instance_buffer(
@@ -353,6 +373,8 @@ impl<'window> SurfaceRenderer<'window> {
         self.visible_instance_count = scene.instance_count();
         self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
         self.scene_bounds = bounds;
+        self.intensity_range = scene.intensity_range();
+        self.elevation_range = scene.elevation_range();
         Ok(bytes)
     }
 
@@ -371,6 +393,8 @@ impl<'window> SurfaceRenderer<'window> {
                 id: *id,
                 instance_count: buffer.instance_count as usize,
                 bounds: buffer.bounds,
+                intensity_range: buffer.intensity_range,
+                elevation_range: buffer.elevation_range,
             })
             .collect();
         let plan = plan_block_sync(
@@ -403,6 +427,8 @@ impl<'window> SurfaceRenderer<'window> {
         self.visible_block_ids = plan.selected;
         self.visible_instance_count = plan.visible_instance_count;
         self.scene_bounds = plan.visible_bounds;
+        self.intensity_range = plan.visible_intensity_range;
+        self.elevation_range = plan.visible_elevation_range;
         self.scene_buffer = None;
         self.uploaded_bytes = self.uploaded_bytes.saturating_add(plan.uploaded_bytes);
 
@@ -422,6 +448,8 @@ impl<'window> SurfaceRenderer<'window> {
         self.visible_block_ids.clear();
         self.visible_instance_count = 0;
         self.scene_bounds = None;
+        self.intensity_range = None;
+        self.elevation_range = None;
         self.uploaded_bytes = 0;
     }
 
@@ -431,6 +459,26 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn visible_instance_count(&self) -> usize {
         self.visible_instance_count
+    }
+
+    pub fn set_color_mode(&mut self, mode: ColorMode) {
+        self.color_mode = mode;
+    }
+
+    pub fn color_mode(&self) -> ColorMode {
+        self.color_mode
+    }
+
+    pub fn set_point_size(&mut self, size: f32) -> Result<(), GpuRendererError> {
+        if !size.is_finite() || !(0.1..=10.0).contains(&size) {
+            return Err(GpuRendererError::InvalidPointSize);
+        }
+        self.point_size = size;
+        Ok(())
+    }
+
+    pub fn point_size(&self) -> f32 {
+        self.point_size
     }
 
     pub fn fit_scene(&mut self, scene: &RenderScene) -> bool {
@@ -524,6 +572,15 @@ impl<'window> SurfaceRenderer<'window> {
             bytemuck::bytes_of(&ViewProjection {
                 matrix: view_projection,
                 render_origin,
+                style: [
+                    self.color_mode.shader_value(),
+                    self.point_size,
+                    self.elevation_range.map_or(0.0, |range| range[0]),
+                    self.elevation_range.map_or(1.0, |range| range[1]),
+                ],
+                intensity_range: self
+                    .intensity_range
+                    .map_or([0.0, 1.0, 0.0, 0.0], |range| [range[0], range[1], 0.0, 0.0]),
             }),
         );
         let view = frame.texture.create_view(&Default::default());
@@ -644,6 +701,8 @@ fn create_instance_buffer(
         capacity,
         instance_count,
         bounds,
+        intensity_range: scene.intensity_range(),
+        elevation_range: scene.elevation_range(),
     })
 }
 

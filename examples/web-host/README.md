@@ -21,3 +21,9 @@ Shift+drag to pan, and scroll to zoom; keyboard users can focus the canvas and u
 Shift+arrows, `+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser and
 GPU with WebGPU support. Bounds currently come from loaded instances; local file loading is not
 implemented yet. Renderer initialization and frame errors can be recovered by recreating the viewer.
+
+The demo exposes RGB, intensity, elevation, and classification color modes, plus a point-size
+multiplier from `0.1` to `4`. The renderer API accepts `0.1` to `10`. Intensity and classification
+need scalar attributes from `PointBlock`; the current synthetic sample only has RGB, so missing
+intensity uses grayscale luminance and missing classification keeps RGB. Hosts can call
+`viewer.setColorMode("elevation")` and `viewer.setPointSize(1.2)`.

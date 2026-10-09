@@ -478,8 +478,9 @@ todavía.
 - [ ] Conectar `LodTransitionPlan` y `DecodedBlockCache` del visor/WASM a esta ruta; hoy el host aún
   entrega una escena completa. El presupuesto GPU y la carga desde formato se definen en pendientes
   posteriores.
-- [ ] Añadir modos iniciales de color (RGB, intensidad, elevación y clasificación cuando exista) y
-  tamaño de punto configurable.
+- [x] Añadir modos de color RGB, intensidad, elevación y clasificación cuando existe el atributo.
+  Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
+  El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
 - [ ] Definir presupuesto de puntos/instancias, gestión de recursos y comportamiento si la GPU no
   soporta los límites esperados.
 - [ ] Añadir diagnóstico de tiempo de frame, bytes subidos y cantidad visible; el shader actual es un
@@ -488,10 +489,11 @@ todavía.
 **Cierre:** el host presenta una nube real en 3D, permite navegarla y el número de bloques y bytes
 subidos corresponde a la selección visible, no al tamaño total del dataset.
 
-**Estado actual:** la primera presentación GPU y la subida explícita de escenas están implementadas
-en `viewer_render_wgpu`; el buffer de instancias se reutiliza y crece según necesidad. La escena usa
-cubos instanciados como visualización inicial. No se ha verificado presentación visual en un host con
-GPU; cámara, puntos LiDAR, carga por bloques y conexión WASM siguen pendientes.
+**Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color y tamaño
+configurable; conserva buffers por bloque para cortes explícitos. El host WASM ofrece controles de
+color y tamaño para la muestra. Los atributos de intensidad/clasificación solo llegan por
+`PointBlock`; la muestra sintética suministra posiciones y RGB. No se ha verificado presentación
+visual en un navegador con GPU, y la conexión de la carga WASM con los bloques LOD sigue pendiente.
 
 ### Fase 6 — Orquestación WASM (`viewer_wasm`)
 
