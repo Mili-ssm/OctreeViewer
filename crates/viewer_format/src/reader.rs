@@ -959,6 +959,14 @@ mod tests {
         .unwrap()
     }
 
+    #[test]
+    fn shared_dataset_metadata_reuses_the_same_hierarchy_allocation() {
+        let metadata = metadata();
+        let first = metadata.shared_dataset();
+        let second = metadata.shared_dataset();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+    }
+
     fn source_block() -> SourcePointBlock {
         let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
         let column =

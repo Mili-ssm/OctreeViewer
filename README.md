@@ -79,7 +79,7 @@ una versión publicada.
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
 | `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, presupuesto configurable y frustum/error proyectado de cámara. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
-| `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ, presentación WebGPU y puente LOD para metadatos y bloques RGB ya decodificados. | El host aún debe leer el formato, transferir atributos y actualizar la selección tras cambios de cámara o llegada de bloques. |
+| `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU y carga bajo demanda de bloques v1/v2 al corte LOD. | El host aún debe crear el worker, gestionar sus mensajes/estados y presentar la demo con datos propios. |
 | `examples/web-host` | Demo WebGPU de datos sintéticos con navegación, color y tamaño configurable. | No abre archivos ni conecta la selección LOD del core. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
@@ -512,8 +512,10 @@ puente. No se ha verificado presentación visual en un navegador con GPU.
 **Característica:** exponer una API estable y asíncrona al host para abrir datasets, gestionar lecturas
 y presentar estado.
 
-- [ ] Conectar el lector del formato y las solicitudes espaciales al puente LOD; ahora el host
-  proporciona metadatos y bloques ya decodificados.
+- [x] Conectar `FormatReader` v1/v2 al puente LOD: abre el índice, selecciona desde cámara y lee los
+  bloques faltantes del corte antes de publicarlo. `openFormatDataset` usa `FileReaderSync`, por lo que
+  el host debe ejecutar el visor en un worker; `createOffscreen` permite presentar en un canvas
+  transferido al worker. Si falla una lectura, conserva el corte actual y devuelve el error.
 - [ ] Mover lectura y decodificación a workers; definir mensajes para progreso, errores, cancelación,
   disponibilidad de bloques y contrapresión.
 - [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
@@ -536,18 +538,23 @@ y presentar estado.
 
 #### Contrato del puente LOD WASM actual
 
-El host abre el índice residente con `openLodDataset({ coordinateOrigin, semantics, cacheBytes,
-sourcePointCount?, nodes })`. Cada nodo contiene `id`, `parent`, `level`, `min`, `max`, `pointCount`,
-`geometricError` y `blocks`; los identificadores y conteos `u64` son strings decimales. `min`/`max`
-están en coordenadas del dataset; `insertLodBlock(id, positions, colors)` recibe posiciones `f32`
-locales a `coordinateOrigin` y RGB intercalado, en arrays tipados. Después de insertar bloques o
-Después de insertar bloques, el host llama `updateLod("quality" | "performance", pointBudget?)` para
-seleccionar y guardar el perfil. La selección se vuelve a calcular antes de `renderFrame` tras cambios
-de cámara o llegada de bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`.
-`clear()` cierra también el dataset LOD.
-Las estadísticas incluyen bloques/puntos visibles, presupuesto, bloques pendientes, cobertura y
-nodos omitidos por presupuesto. Los atributos adicionales, la lectura de `viewer_format` y la
-integración automática con la demo siguen pendientes.
+Hay dos entradas. Para datos propios ya decodificados, el host abre el índice residente con
+`openLodDataset({ coordinateOrigin, semantics, cacheBytes, sourcePointCount?, nodes })`. Cada nodo
+contiene `id`, `parent`, `level`, `min`, `max`, `pointCount`, `geometricError` y `blocks`; los IDs y
+conteos `u64` son strings decimales. `min`/`max` están en coordenadas del dataset;
+`insertLodBlock(id, positions, colors)` recibe posiciones `f32` locales a `coordinateOrigin` y RGB
+intercalado en arrays tipados. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
+Blob con el lector v1/v2. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
+las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
+WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
+
+Después de abrir un dataset, `updateLod("quality" | "performance", pointBudget?)` selecciona y guarda
+el perfil. La selección se recalcula antes de `renderFrame` tras cambios de cámara o llegada de
+bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`. En el camino de formato,
+los bloques que faltan se leen antes del cambio atómico del corte. `clear()` cierra el dataset LOD.
+Las estadísticas incluyen bloques/puntos visibles, presupuesto, bloques pendientes, cobertura y nodos
+omitidos por presupuesto. Integrar worker y render en la demo, exponer progreso/cancelación y mostrar
+estados al usuario siguen pendientes.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
 no realiza copias proporcionales al tamaño total de la nube.

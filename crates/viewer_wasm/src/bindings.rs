@@ -1,11 +1,14 @@
 use serde_wasm_bindgen::to_value;
 use std::io::{self, Read, Seek, SeekFrom};
-use viewer_core::{BlockId, ColorRgb, Point, PointBatch, PointBlock};
+use viewer_core::{BlockId, ColorRgb, DatasetSource, Point, PointBatch, PointBlock};
 use wasm_bindgen::prelude::*;
 use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
-use crate::{LasPointStream, RenderSceneSnapshot, ViewerConfig, ViewerController, ViewerError};
-use crate::{LodDataset, lod_metadata::LodDatasetDescriptor};
+use crate::{
+    LasPointStream, LodDataset, LodViewStats, RenderSceneSnapshot, ViewerConfig, ViewerController,
+    ViewerError, lod_metadata::LodDatasetDescriptor,
+};
+use viewer_format::FormatReader;
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
@@ -156,6 +159,7 @@ pub struct WasmVoxelViewer {
     gpu_renderer: Option<SurfaceRenderer<'static>>,
     gpu_scene_dirty: bool,
     lod_dataset: Option<LodDataset>,
+    format_reader: Option<FormatReader<BrowserBlobReader>>,
     lod_config: Option<(f64, u64)>,
     lod_dirty: bool,
 }
@@ -175,6 +179,7 @@ impl WasmVoxelViewer {
             gpu_renderer: None,
             gpu_scene_dirty: true,
             lod_dataset: None,
+            format_reader: None,
             lod_config: None,
             lod_dirty: false,
         })
@@ -190,6 +195,30 @@ impl WasmVoxelViewer {
         let instance = wgpu::Instance::default();
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let renderer = SurfaceRenderer::new(
+            &instance,
+            surface,
+            RendererConfig::default(),
+            canvas.width(),
+            canvas.height(),
+        )
+        .await
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        viewer.gpu_renderer = Some(renderer);
+        Ok(viewer)
+    }
+
+    /// Creates a renderer for a host-transferred canvas in a dedicated Web Worker.
+    #[wasm_bindgen(js_name = createOffscreen)]
+    pub async fn create_offscreen(
+        canvas: web_sys::OffscreenCanvas,
+        voxel_size: f32,
+    ) -> Result<WasmVoxelViewer, JsValue> {
+        let mut viewer = Self::new(voxel_size)?;
+        let instance = wgpu::Instance::default();
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::OffscreenCanvas(canvas.clone()))
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
         let renderer = SurfaceRenderer::new(
             &instance,
@@ -280,6 +309,7 @@ impl WasmVoxelViewer {
             renderer.clear_dataset();
         }
         self.lod_dataset = Some(dataset);
+        self.format_reader = None;
         self.lod_config = None;
         self.lod_dirty = false;
         self.gpu_scene_dirty = false;
@@ -289,6 +319,54 @@ impl WasmVoxelViewer {
             &"status".into(),
             &JsValue::from_str("metadata_ready"),
         )?;
+        Ok(result.into())
+    }
+
+    /// Opens the project's random-access format from a Blob; call from a dedicated worker.
+    #[wasm_bindgen(js_name = openFormatDataset)]
+    pub fn open_format_dataset(
+        &mut self,
+        file: Blob,
+        cache_bytes: u32,
+    ) -> Result<JsValue, JsValue> {
+        let source = BrowserBlobReader::new(file)?;
+        let reader =
+            FormatReader::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let hierarchy_stats = reader.metadata().hierarchy().stats();
+        let metadata = reader.format_metadata().shared_dataset();
+        let dataset = LodDataset::from_shared_metadata(metadata, cache_bytes as usize);
+        if let Some(renderer) = &mut self.gpu_renderer {
+            renderer.clear_dataset();
+        }
+        self.lod_dataset = Some(dataset);
+        self.format_reader = Some(reader);
+        self.lod_config = None;
+        self.lod_dirty = false;
+        self.gpu_scene_dirty = false;
+
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &result,
+            &"status".into(),
+            &JsValue::from_str("format_ready"),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"nodeCount".into(),
+            &JsValue::from_f64(hierarchy_stats.node_count as f64),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"maxLevel".into(),
+            &JsValue::from_f64(f64::from(hierarchy_stats.max_level)),
+        )?;
+        if let Some(source_points) = hierarchy_stats.source_point_count {
+            js_sys::Reflect::set(
+                &result,
+                &"sourcePointCount".into(),
+                &JsValue::from_str(&source_points.to_string()),
+            )?;
+        }
         Ok(result.into())
     }
 
@@ -366,17 +444,7 @@ impl WasmVoxelViewer {
             .unwrap_or(default_point_budget);
         self.lod_config = Some((max_error_pixels, point_budget));
         self.lod_dirty = false;
-        let renderer = self
-            .gpu_renderer
-            .as_mut()
-            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        let dataset = self
-            .lod_dataset
-            .as_mut()
-            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
-        let stats = dataset
-            .update_view(renderer, max_error_pixels, point_budget)
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let stats = self.update_lod_view(max_error_pixels, point_budget)?;
         let value = js_sys::Object::new();
         js_sys::Reflect::set(&value, &"profile".into(), &JsValue::from_str(&profile))?;
         js_sys::Reflect::set(
@@ -399,11 +467,11 @@ impl WasmVoxelViewer {
             &"pointBudget".into(),
             &JsValue::from_str(&stats.point_budget.to_string()),
         )?;
-        js_sys::Reflect::set(
-            &value,
-            &"pendingBlocks".into(),
-            &JsValue::from_f64(stats.pending_blocks as f64),
-        )?;
+        let pending_block_ids = js_sys::Array::new();
+        for block_id in stats.pending_block_ids {
+            pending_block_ids.push(&JsValue::from_str(&block_id.get().to_string()));
+        }
+        js_sys::Reflect::set(&value, &"pendingBlockIds".into(), &pending_block_ids)?;
         js_sys::Reflect::set(
             &value,
             &"uncoveredNodes".into(),
@@ -575,6 +643,16 @@ impl WasmVoxelViewer {
         let Some((max_error_pixels, point_budget)) = self.lod_config else {
             return Ok(());
         };
+        self.lod_dirty = false;
+        self.update_lod_view(max_error_pixels, point_budget)
+            .map(|_| ())
+    }
+
+    fn update_lod_view(
+        &mut self,
+        max_error_pixels: f64,
+        point_budget: u64,
+    ) -> Result<LodViewStats, JsValue> {
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -583,10 +661,19 @@ impl WasmVoxelViewer {
             .lod_dataset
             .as_mut()
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
-        self.lod_dirty = false;
+        let mut format_reader = self.format_reader.as_mut();
         dataset
-            .update_view(renderer, max_error_pixels, point_budget)
-            .map(|_| ())
+            .update_view_with_loader(renderer, max_error_pixels, point_budget, |block_id| {
+                format_reader
+                    .as_mut()
+                    .map(|reader| {
+                        reader
+                            .read_block(block_id)
+                            .map(Some)
+                            .map_err(|error| error.to_string())
+                    })
+                    .unwrap_or(Ok(None))
+            })
             .map_err(|error| JsValue::from_str(&error.to_string()))
     }
 
@@ -598,6 +685,7 @@ impl WasmVoxelViewer {
         }
         self.lod_config = None;
         self.lod_dirty = false;
+        self.format_reader = None;
     }
 }
 

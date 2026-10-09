@@ -1,14 +1,14 @@
+use std::sync::Arc;
 use thiserror::Error;
 use viewer_core::{
-    BlockId, CacheInsertRejection, DecodedBlockCache, LodSelectionConfig, LodSelectionError,
-    LodTransitionPlanner, PointBlock, SpatialHierarchy,
+    BlockId, CacheInsertRejection, CoordinateFrame, DatasetMetadata, DecodedBlockCache,
+    LodSelectionConfig, LodSelectionError, LodTransitionPlanner, PointBlock, SpatialHierarchy,
 };
 use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer};
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
-    coordinate_origin: [f64; 3],
-    hierarchy: SpatialHierarchy,
+    metadata: Arc<DatasetMetadata>,
     cache: DecodedBlockCache,
     planner: LodTransitionPlanner,
 }
@@ -18,7 +18,7 @@ pub struct LodViewStats {
     pub visible_blocks: usize,
     pub visible_points: u64,
     pub point_budget: u64,
-    pub pending_blocks: usize,
+    pub pending_block_ids: Vec<BlockId>,
     pub uncovered_nodes: usize,
     pub budget_omitted_nodes: usize,
 }
@@ -29,6 +29,10 @@ pub enum LodDatasetError {
     InvalidCoordinateOrigin,
     #[error("block {0:?} is not referenced by the dataset hierarchy")]
     UnknownBlock(BlockId),
+    #[error("block reader returned {actual:?} for requested block {requested:?}")]
+    UnexpectedBlock { requested: BlockId, actual: BlockId },
+    #[error("block read failed: {0}")]
+    BlockRead(String),
     #[error("camera viewport is zero-sized or unavailable")]
     CameraUnavailable,
     #[error("decoded block was not cached: {0:?}")]
@@ -45,20 +49,25 @@ impl LodDataset {
         hierarchy: SpatialHierarchy,
         cache_bytes: usize,
     ) -> Result<Self, LodDatasetError> {
-        if coordinate_origin.iter().any(|value| !value.is_finite()) {
-            return Err(LodDatasetError::InvalidCoordinateOrigin);
-        }
-        Ok(Self {
-            coordinate_origin,
-            hierarchy,
+        let coordinate_frame = CoordinateFrame::new(coordinate_origin)
+            .map_err(|_| LodDatasetError::InvalidCoordinateOrigin)?;
+        Ok(Self::from_shared_metadata(
+            Arc::new(DatasetMetadata::new(coordinate_frame, hierarchy)),
+            cache_bytes,
+        ))
+    }
+
+    pub fn from_shared_metadata(metadata: Arc<DatasetMetadata>, cache_bytes: usize) -> Self {
+        Self {
+            metadata,
             cache: DecodedBlockCache::new(cache_bytes),
             planner: LodTransitionPlanner::new(),
-        })
+        }
     }
 
     pub fn insert_block(&mut self, block: PointBlock) -> Result<usize, LodDatasetError> {
         let id = block.id();
-        if !self.hierarchy.references_block(id) {
+        if !self.metadata.hierarchy().references_block(id) {
             return Err(LodDatasetError::UnknownBlock(id));
         }
         let result = self.cache.insert(block);
@@ -78,17 +87,30 @@ impl LodDataset {
         max_error_pixels: f64,
         point_budget: u64,
     ) -> Result<LodViewStats, LodDatasetError> {
+        self.update_view_with_loader(renderer, max_error_pixels, point_budget, |_| Ok(None))
+    }
+
+    pub fn update_view_with_loader(
+        &mut self,
+        renderer: &mut SurfaceRenderer<'_>,
+        max_error_pixels: f64,
+        point_budget: u64,
+        mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+    ) -> Result<LodViewStats, LodDatasetError> {
         let config = LodSelectionConfig::new(max_error_pixels, point_budget)?;
         let frustum = renderer
-            .spatial_frustum(self.coordinate_origin)
+            .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
-        let target = match self.hierarchy.select_lod(&frustum, config, |node| {
-            renderer.projected_error_pixels(
-                node.bounds(),
-                node.geometric_error(),
-                self.coordinate_origin,
-            )
-        }) {
+        let target = match self
+            .metadata
+            .hierarchy()
+            .select_lod(&frustum, config, |node| {
+                renderer.projected_error_pixels(
+                    node.bounds(),
+                    node.geometric_error(),
+                    self.metadata.coordinate_frame().origin(),
+                )
+            }) {
             Ok(target) => target,
             Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
                 renderer.sync_visible_blocks(&[], &self.cache)?;
@@ -97,14 +119,31 @@ impl LodDataset {
             }
             Err(error) => return Err(LodDatasetError::Selection(error)),
         };
-        let plan = self.planner.prepare(&self.hierarchy, &target, &self.cache);
+        let initial_plan = self
+            .planner
+            .prepare(self.metadata.hierarchy(), &target, &self.cache);
+        for requested in initial_plan.pending_blocks() {
+            let Some(block) = load_block(*requested).map_err(LodDatasetError::BlockRead)? else {
+                continue;
+            };
+            if block.id() != *requested {
+                return Err(LodDatasetError::UnexpectedBlock {
+                    requested: *requested,
+                    actual: block.id(),
+                });
+            }
+            self.insert_block(block)?;
+        }
+        let plan = self
+            .planner
+            .prepare(self.metadata.hierarchy(), &target, &self.cache);
         renderer.sync_visible_blocks(plan.block_ids(), &self.cache)?;
         self.planner.commit(&plan, &mut self.cache);
         let stats = LodViewStats {
             visible_blocks: plan.block_ids().len(),
             visible_points: plan.point_count(),
             point_budget: plan.point_budget(),
-            pending_blocks: plan.pending_blocks().len(),
+            pending_block_ids: plan.pending_blocks().to_vec(),
             uncovered_nodes: plan.uncovered_nodes().len(),
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
         };

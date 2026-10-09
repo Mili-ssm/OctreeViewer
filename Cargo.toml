@@ -26,6 +26,7 @@ web-sys = { version = "0.3", features = [
 	"Blob",
 	"FileReaderSync",
 	"HtmlCanvasElement",
+	"OffscreenCanvas",
 	"console",
 ] }
 wgpu = "24"

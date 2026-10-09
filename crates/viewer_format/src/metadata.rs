@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use viewer_core::{AttributeValues, DatasetMetadata, NodeId};
 
 /// Extra file-level metadata not interpreted by spatial queries.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormatMetadata {
-    dataset: DatasetMetadata,
+    dataset: Arc<DatasetMetadata>,
     crs: Option<String>,
     sampling_policy: Option<String>,
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
@@ -25,15 +26,19 @@ impl FormatMetadata {
             }
         }
         Ok(Self {
-            dataset,
+            dataset: Arc::new(dataset),
             crs,
             sampling_policy,
             node_attribute_ranges: ranges,
         })
     }
 
-    pub const fn dataset(&self) -> &DatasetMetadata {
+    pub fn dataset(&self) -> &DatasetMetadata {
         &self.dataset
+    }
+
+    pub fn shared_dataset(&self) -> Arc<DatasetMetadata> {
+        Arc::clone(&self.dataset)
     }
 
     pub fn crs(&self) -> Option<&str> {
@@ -60,7 +65,7 @@ impl FormatMetadata {
 
     pub(crate) fn with_dataset(&self, dataset: DatasetMetadata) -> Self {
         Self {
-            dataset,
+            dataset: Arc::new(dataset),
             crs: self.crs.clone(),
             sampling_policy: self.sampling_policy.clone(),
             node_attribute_ranges: self.node_attribute_ranges.clone(),
