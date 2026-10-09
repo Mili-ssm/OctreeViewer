@@ -120,6 +120,17 @@ recorded quantization error is a conservative maximum Euclidean distance from in
 to the exact `f32` positions produced by the reader's decoding operation. It is added to the
 producer's geometric-error bound. Scale/origin choices must cover all points in that block.
 
+### Coordinate storage cost
+
+Three `u32` coordinates use 12 bytes per point, the same as three `f32` coordinates and half the
+24 bytes of three `f64` coordinates. Version 1 therefore reduces coordinate storage relative to
+`f64`, but does not claim a size reduction relative to the current `f32` render representation. Each
+block adds 56 bytes for its three `f64` origins, three `f64` scales and `f64` error bound, before its
+directory entry. This transform overhead is amortized after five points per block when comparing
+only coordinate values against `f64`. RGB adds 3 bytes per point; each attribute adds its declared
+primitive width times its component count. Smaller integer attribute types are preserved as
+declared rather than widened.
+
 ### Footer (40 bytes)
 
 | Field | Type | Meaning |

@@ -951,6 +951,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "viewer_format"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "viewer_render_wgpu"
 version = "0.1.0"
 dependencies = [
