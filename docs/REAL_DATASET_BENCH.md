@@ -77,6 +77,21 @@ La lectura se ejecutó en una pasada, reteniendo un bloque decodificado cada vez
 agrupa I/O, CRC, LZ4 y reconstrucción; no mide por separado el coste de CPU del codec ni la primera
 vista interactiva.
 
+### Espacio temporal de conversión
+
+En una conversión adicional de la misma revisión, se muestreó cada 100 ms el tamaño de los archivos
+regulares bajo el workspace `*.work` y del archivo de salida temporal `*.tmp` junto al destino. La
+suma máxima observada fue **8.980.927.112 B (8,37 GiB)**, a los 33,35 s; en esa muestra, todo el
+espacio correspondía al workspace de spools y el archivo de salida temporal todavía no existía. La
+conversión terminó en 99,68 s con 81.682.329 puntos y las opciones por defecto. El `.oct` producido
+para esta medición se eliminó después.
+
+El muestreo puede no capturar picos que duren menos de 100 ms; el valor es un máximo observado en una
+ejecución, no un límite garantizado. Mantener al menos 16 GiB libres sigue siendo la recomendación
+operativa para esta fuente y configuración, con margen sobre el pico medido. La medición no justifica
+por sí sola añadir paralelismo: este queda pendiente hasta comparar tiempo y disco con colas acotadas
+y contrapresión.
+
 ### Memoria esperable para render
 
 En la ruta actual, `Point` ocupa 16 B y `InstanceRaw` 32 B. Mantener los 81.682.329 puntos como

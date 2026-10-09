@@ -15,9 +15,11 @@ tamaño. El JSON de metadatos y el procedimiento sí quedan versionados.
 El conversor lee COPC secuencialmente y replantea los puntos en su propio octree; no retiene la
 jerarquía COPC. La conversión usa los valores por defecto: 262.144 puntos por bloque, error de
 cuantización máximo 0,01 y presupuesto controlado estimado de 512 MiB. Los spools se escriben junto
-al `.oct`; 55 bytes por punto requieren unos 4,49 GB solo para el spool inicial, y algunas fases
-mantienen temporalmente spool de padre e hijos a la vez. Deja al menos 16 GiB libres para esta
-ejecución y revisa el espacio temporal antes de repetirla.
+al `.oct`; 55 bytes por punto requieren unos 4,49 GB solo para el spool inicial. En una conversión
+medida, los temporales alcanzaron 8,37 GiB observados mientras algunas fases mantenían spools de
+padres e hijos a la vez. La medida usó muestreo de 100 ms, por lo que puede omitir picos breves; deja
+al menos 16 GiB libres y revisa el espacio disponible antes de repetirla. Resultados y método en
+[`REAL_DATASET_BENCH.md`](../../docs/REAL_DATASET_BENCH.md).
 
 ## Ejecutar
 

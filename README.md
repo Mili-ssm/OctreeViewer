@@ -253,7 +253,9 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Medir tiempo de conversión por fase, puntos/s, RSS pico, ratio de compresión y lectura de
   bloques con un dataset real de 81,7 millones de puntos; resultados y comandos reproducibles en
   [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
-- [ ] Medir espacio temporal de disco con datasets reales; añadir paralelismo solo con colas
+- [x] Medir el pico de espacio temporal de disco con un dataset real; registrar método, resolución
+  del muestreo y límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+- [ ] Evaluar si el paralelismo mejora conversión y espacio temporal; si se añade, usar colas
   acotadas y contrapresión.
 - [ ] Medir el coste de memoria de las representaciones y estructuras intermedias; evitar tipos más
   anchos, copias y buffers sobredimensionados cuando una alternativa compacta mantenga los contratos
@@ -314,13 +316,15 @@ filas anteriores: añadir una fila por versión o cambio relevante, indicando re
 Los resultados detallados, métricas por fase y estimaciones de memoria están en
 [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 
-| Fecha / revisión | Dataset y configuración | Conversión | Salida / ratio LAZ | Ratio payload LZ4 | RSS conversión | Lectura de todos los bloques | RSS lectura |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 2026-10-09 / working tree inicial | Belvedere Glacier 2009; 81.682.329 puntos; release; opciones por defecto | 100,12 s; 815.872 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 37.612 KiB | 9,81 s; índice 2,87 ms | 27.024 KiB |
+| Fecha / revisión | Dataset y configuración | Conversión | Salida / ratio LAZ | Ratio payload LZ4 | RSS conversión | Pico disco temporal | Lectura de todos los bloques | RSS lectura |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2026-10-09 / `3761ed3` | Belvedere Glacier 2009; 81.682.329 puntos; release; opciones por defecto | 100,12 s; 815.872 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 37.612 KiB | 8.980.927.112 B (8,37 GiB; muestreo 100 ms) | 9,81 s; índice 2,87 ms | 27.024 KiB |
 
-La referencia se midió en Linux x86_64, AMD Ryzen AI 9 365 (20 hilos lógicos), Rust 1.99.0. Es una
-ejecución inicial, con la lectura realizada después de convertir en el mismo equipo; no representa una
-lectura con caché fría ni una garantía de rendimiento. Para comparar un cambio, usa el mismo LAZ,
+La referencia de rendimiento se midió en Linux x86_64, AMD Ryzen AI 9 365 (20 hilos lógicos), Rust
+1.99.0. El pico de disco temporal se midió en una conversión adicional de la misma revisión,
+configuración y equipo. Son ejecuciones iniciales, con la lectura realizada después de convertir en
+el mismo equipo; no representan una lectura con caché fría ni una garantía de rendimiento. Para
+comparar un cambio, usa el mismo LAZ,
 equipo, opciones y comandos; ejecuta tres veces la versión de referencia y el cambio, y compara las
 medianas de conversión, lectura y RSS. Registra también la revisión (`git rev-parse --short HEAD`),
 fecha, configuración y cualquier diferencia del entorno. No cambies la referencia aceptada hasta
