@@ -236,7 +236,7 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 
 - [x] Implementar primero un ejecutable nativo de conversión; no exigir a la aplicación WASM leer y
   convertir la fuente completa antes de mostrar la nube.
-- [ ] Crear un pipeline por etapas: inspección de metadatos, lectura, construcción del índice/LOD,
+- [x] Crear un pipeline por etapas: inspección de metadatos, lectura, construcción del índice/LOD,
   codificación y escritura de bloques.
 - [ ] Medir e imponer límites de memoria por buffers, colas, compresión y ordenamiento; permitir
   paralelismo acotado con contrapresión.
@@ -255,6 +255,8 @@ de la fuente. La salida publica mediante un enlace al archivo temporal validado 
 ya existe. Esta primera versión usa un solo nodo raíz, conserva intensidad `u16` y RGB `u16` cuando
 existe, y avisa de las dimensiones LAS/LAZ y metadatos CRS que no conserva. El tamaño de payload se
 limita por bloque; la memoria del directorio todavía crece con el número de bloques.
+La implementación separa inspección de cabecera, planificación de nodo/esquema, lectura y escritura
+secuencial, y validación/publicación; la planificación espacial actual solo crea una raíz sin LOD.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.

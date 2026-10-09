@@ -70,6 +70,27 @@ pub struct ConversionReport {
     pub omitted_dimensions: Vec<String>,
 }
 
+struct SourceInfo {
+    bounds: SpatialBounds,
+    frame: CoordinateFrame,
+    point_count: u64,
+    record_length: usize,
+    point_format: las::point::Format,
+    has_rgb: bool,
+    has_crs: bool,
+}
+
+struct ConversionPlan {
+    metadata: FormatMetadata,
+    schema: Vec<AttributeDescriptor>,
+    bounds: SpatialBounds,
+    frame: CoordinateFrame,
+    point_count: u64,
+    block_count: u64,
+    points_per_block: u64,
+    omitted_dimensions: Vec<String>,
+}
+
 #[derive(Debug, Error)]
 pub enum ConvertError {
     #[error(transparent)]
@@ -119,41 +140,8 @@ pub fn convert_file(
     }
 
     let mut reader = Reader::from_path(input_path)?;
-    let header = reader.header();
-    let source_bounds = header.bounds();
-    let bounds_min = [
-        source_bounds.min.x,
-        source_bounds.min.y,
-        source_bounds.min.z,
-    ];
-    let bounds_max = [
-        source_bounds.max.x,
-        source_bounds.max.y,
-        source_bounds.max.z,
-    ];
-    let bounds = SpatialBounds::new(bounds_min, bounds_max)
-        .map_err(|_| ConvertError::InvalidHeaderBounds)?;
-    let frame = CoordinateFrame::new(bounds_min)?;
-    let point_count = header.number_of_points();
-    let record_length = usize::from(header.point_format().len()).max(1);
-    let max_points_by_input_bytes = (MAX_INPUT_BYTES_PER_BATCH / record_length).max(1) as u64;
-    let points_per_block = options.points_per_block.min(max_points_by_input_bytes);
-    let block_count = point_count.div_ceil(points_per_block);
-    if block_count > MAX_BLOCKS || block_count > u64::from(u32::MAX) {
-        return Err(ConvertError::TooManyBlocks(block_count));
-    }
-
-    let block_ids = (0..block_count).map(BlockId::new).collect::<Vec<_>>();
-    let root = SpatialNode::new(NodeId::new(0), None, 0, bounds, point_count, 0.0, block_ids)?;
-    let schema = source_schema(header.point_format().has_color);
-    let hierarchy = SpatialHierarchy::new(vec![root], schema.clone(), Some(point_count))?;
-    let metadata = FormatMetadata::new(
-        DatasetMetadata::new(frame, hierarchy),
-        None,
-        Some("sequential LAS/LAZ import; flat root; no spatial LOD".to_owned()),
-        Vec::new(),
-    )?;
-    let omitted_dimensions = omitted_dimensions(header.point_format(), header.has_crs_vlrs());
+    let source = inspect_source(&reader)?;
+    let plan = ConversionPlan::build(source, options)?;
     let mut temporary = create_temporary_output(output_path)?;
     let temporary_path = temporary.path.to_owned();
     let file = temporary
@@ -162,27 +150,115 @@ pub fn convert_file(
         .expect("temporary output file is present");
     let mut writer = FormatWriter::new(
         file,
-        metadata,
+        plan.metadata.clone(),
         FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
             .map_err(ConvertError::Format)?,
     )?;
+    stream_blocks(&mut reader, &mut writer, &plan)?;
+    let output = writer.finish()?;
+    output.sync_all()?;
+    drop(output);
+    let output_bytes = publish_output(&temporary_path, output_path)?;
+    drop(temporary);
+
+    Ok(ConversionReport {
+        point_count: plan.point_count,
+        block_count: plan.block_count,
+        output_bytes,
+        omitted_dimensions: plan.omitted_dimensions,
+    })
+}
+
+fn inspect_source(reader: &Reader) -> Result<SourceInfo, ConvertError> {
+    let header = reader.header();
+    let source_bounds = header.bounds();
+    let min = [
+        source_bounds.min.x,
+        source_bounds.min.y,
+        source_bounds.min.z,
+    ];
+    let max = [
+        source_bounds.max.x,
+        source_bounds.max.y,
+        source_bounds.max.z,
+    ];
+    let bounds = SpatialBounds::new(min, max).map_err(|_| ConvertError::InvalidHeaderBounds)?;
+    Ok(SourceInfo {
+        bounds,
+        frame: CoordinateFrame::new(min)?,
+        point_count: header.number_of_points(),
+        record_length: usize::from(header.point_format().len()).max(1),
+        point_format: *header.point_format(),
+        has_rgb: header.point_format().has_color,
+        has_crs: header.has_crs_vlrs(),
+    })
+}
+
+impl ConversionPlan {
+    fn build(source: SourceInfo, options: ConvertOptions) -> Result<Self, ConvertError> {
+        let max_points_by_input_bytes =
+            (MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64;
+        let points_per_block = options.points_per_block.min(max_points_by_input_bytes);
+        let block_count = source.point_count.div_ceil(points_per_block);
+        if block_count > MAX_BLOCKS || block_count > u64::from(u32::MAX) {
+            return Err(ConvertError::TooManyBlocks(block_count));
+        }
+
+        let block_ids = (0..block_count).map(BlockId::new).collect::<Vec<_>>();
+        let root = SpatialNode::new(
+            NodeId::new(0),
+            None,
+            0,
+            source.bounds,
+            source.point_count,
+            0.0,
+            block_ids,
+        )?;
+        let schema = source_schema(source.has_rgb);
+        let hierarchy =
+            SpatialHierarchy::new(vec![root], schema.clone(), Some(source.point_count))?;
+        let metadata = FormatMetadata::new(
+            DatasetMetadata::new(source.frame, hierarchy),
+            None,
+            Some("sequential LAS/LAZ import; flat root; no spatial LOD".to_owned()),
+            Vec::new(),
+        )?;
+        let omitted_dimensions = omitted_dimensions(&source.point_format, source.has_crs);
+
+        Ok(Self {
+            metadata,
+            schema,
+            bounds: source.bounds,
+            frame: source.frame,
+            point_count: source.point_count,
+            block_count,
+            points_per_block,
+            omitted_dimensions,
+        })
+    }
+}
+
+fn stream_blocks(
+    reader: &mut Reader,
+    writer: &mut FormatWriter<File>,
+    plan: &ConversionPlan,
+) -> Result<(), ConvertError> {
     let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
     let mut processed = 0_u64;
-
-    while processed < point_count {
-        let requested = points_per_block.min(point_count - processed);
+    while processed < plan.point_count {
+        let requested = plan.points_per_block.min(plan.point_count - processed);
         let read = reader.fill_points(requested, &mut point_data)?;
         if read != requested {
             return Err(ConvertError::PointCountMismatch {
-                expected: point_count,
+                expected: plan.point_count,
                 actual: processed + read,
             });
         }
         let count = usize::try_from(read).map_err(|_| ConvertError::PointCountMismatch {
-            expected: point_count,
+            expected: plan.point_count,
             actual: processed + read,
         })?;
-        let positions = point_positions(&point_data, frame, bounds, processed)?;
+        let positions = point_positions(&point_data, plan.frame, plan.bounds, processed)?;
         let intensities = point_data.intensity().collect::<Vec<_>>();
         let (colors, rgb_values) = match point_data.rgb() {
             Some(values) => {
@@ -209,48 +285,28 @@ pub fn convert_file(
                 (colors, None)
             }
         };
-        let mut attributes = Vec::with_capacity(schema.len());
+        let mut attributes = Vec::with_capacity(plan.schema.len());
         attributes.push(AttributeColumn::new(
-            schema[0].clone(),
+            plan.schema[0].clone(),
             AttributeValues::U16(intensities),
             count,
         )?);
         if let Some(rgb_values) = rgb_values {
             attributes.push(AttributeColumn::new(
-                schema[1].clone(),
+                plan.schema[1].clone(),
                 AttributeValues::U16(rgb_values),
                 count,
             )?);
         }
         writer.write_block(SourcePointBlock::new(
-            BlockId::new(processed / points_per_block),
+            BlockId::new(processed / plan.points_per_block),
             positions,
             colors,
             attributes,
         ))?;
         processed += read;
     }
-
-    let output = writer.finish()?;
-    output.sync_all()?;
-    drop(output);
-    validate_output(&temporary_path)?;
-    let output_bytes = fs::metadata(&temporary_path)?.len();
-    fs::hard_link(&temporary_path, output_path).map_err(|error| {
-        if error.kind() == io::ErrorKind::AlreadyExists || output_path.exists() {
-            ConvertError::OutputExists(output_path.to_owned())
-        } else {
-            ConvertError::Io(error)
-        }
-    })?;
-    drop(temporary);
-
-    Ok(ConversionReport {
-        point_count,
-        block_count,
-        output_bytes,
-        omitted_dimensions,
-    })
+    Ok(())
 }
 
 fn source_schema(has_rgb: bool) -> Vec<AttributeDescriptor> {
@@ -334,6 +390,19 @@ fn validate_output(path: &Path) -> Result<(), ConvertError> {
         reader.read_block(block_id)?;
     }
     Ok(())
+}
+
+fn publish_output(temporary_path: &Path, output_path: &Path) -> Result<u64, ConvertError> {
+    validate_output(temporary_path)?;
+    let output_bytes = fs::metadata(temporary_path)?.len();
+    fs::hard_link(temporary_path, output_path).map_err(|error| {
+        if error.kind() == io::ErrorKind::AlreadyExists || output_path.exists() {
+            ConvertError::OutputExists(output_path.to_owned())
+        } else {
+            ConvertError::Io(error)
+        }
+    })?;
+    Ok(output_bytes)
 }
 
 struct TemporaryOutput {
