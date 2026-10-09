@@ -1,20 +1,20 @@
 use std::{
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use las::{PointData, PointDataBuilder, Reader};
+use las::Reader;
 use thiserror::Error;
 use viewer_core::{
-    AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, SpatialBounds, SpatialHierarchy,
-    SpatialNode,
+    AttributeDataType, AttributeDescriptor, BlockId, CoordinateFrame, DatasetSource, SpatialBounds,
 };
-use viewer_format::{
-    FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions, SourcePointBlock,
-};
+use viewer_format::{FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions};
+
+mod spatial;
+use spatial::{PlannedBlock, SpatialPlan, Workspace, build_spatial_plan};
 
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
@@ -101,6 +101,8 @@ pub struct ConversionReport {
 pub enum ConversionStage {
     InspectingInput,
     PlanningMetadata,
+    PlanningSpatialIndex,
+    BuildingSpatialHierarchy,
     ReadingAndWritingBlocks,
     ValidatingOutput,
     PublishingOutput,
@@ -126,12 +128,11 @@ struct SourceInfo {
 
 struct ConversionPlan {
     metadata: FormatMetadata,
-    schema: Vec<AttributeDescriptor>,
-    bounds: SpatialBounds,
     frame: CoordinateFrame,
     point_count: u64,
     block_count: u64,
-    points_per_block: u64,
+    blocks: Vec<PlannedBlock>,
+    source_block_ids: Vec<BlockId>,
     omitted_dimensions: Vec<String>,
     estimated_peak_memory_bytes: u64,
 }
@@ -170,6 +171,8 @@ pub enum ConvertError {
     TooManyBlocks(u64),
     #[error("LAS/LAZ point data ended after {actual} points; header declared {expected}")]
     PointCountMismatch { expected: u64, actual: u64 },
+    #[error("conversion size or identifier count overflowed")]
+    SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]
     PointOutsideHeaderBounds {
         point_index: u64,
@@ -181,8 +184,8 @@ pub enum ConvertError {
     TemporaryPathUnavailable(PathBuf),
 }
 
-/// Converts LAS/LAZ to the native v1 format using one root node and sequential blocks.
-/// Point payload memory is bounded by the configured block size and LAS record buffer.
+/// Converts LAS/LAZ to the native v1 format with an adaptive octree and additive LOD samples.
+/// Point payload memory is bounded by the configured block size and spatial-index workspace.
 pub fn convert_file(
     input_path: &Path,
     output_path: &Path,
@@ -228,7 +231,10 @@ where
         },
         0,
     )?;
-    let plan = ConversionPlan::build(source, options)?;
+    let workspace = Workspace::create(output_path)?;
+    let spatial_plan =
+        build_spatial_plan(&mut reader, &source, options, &workspace, &mut on_progress)?;
+    let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
     let mut temporary = create_temporary_output(output_path)?;
     let temporary_path = temporary.path.to_owned();
     let file = temporary
@@ -241,13 +247,7 @@ where
         FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
             .map_err(ConvertError::Format)?,
     )?;
-    stream_blocks(
-        &mut reader,
-        &mut writer,
-        &plan,
-        &temporary_path,
-        &mut on_progress,
-    )?;
+    stream_blocks(&mut writer, &plan, &temporary_path, &mut on_progress)?;
     let output = writer.finish()?;
     output.sync_all()?;
     drop(output);
@@ -256,6 +256,8 @@ where
         &temporary_path,
         output_path,
         plan.point_count,
+        &plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>(),
+        &plan.source_block_ids,
         file_length,
         &mut on_progress,
     )?;
@@ -302,72 +304,28 @@ fn inspect_source(reader: &Reader) -> Result<SourceInfo, ConvertError> {
 }
 
 impl ConversionPlan {
-    fn build(source: SourceInfo, options: ConvertOptions) -> Result<Self, ConvertError> {
-        let max_points_by_input_bytes =
-            (MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64;
-        let points_per_block = options.points_per_block.min(max_points_by_input_bytes);
-        let block_count = source.point_count.div_ceil(points_per_block);
-        if block_count > MAX_BLOCKS || block_count > u64::from(u32::MAX) {
-            return Err(ConvertError::TooManyBlocks(block_count));
-        }
-        let estimated_peak_memory_bytes = options
-            .points_per_block
-            .min(max_points_by_input_bytes)
-            .checked_mul(ESTIMATED_WORKING_BYTES_PER_POINT)
-            .and_then(|working| {
-                block_count
-                    .checked_mul(ESTIMATED_DIRECTORY_BYTES_PER_BLOCK)
-                    .and_then(|directory| working.checked_add(directory))
-            })
-            .and_then(|total| total.checked_add(ESTIMATED_FIXED_OVERHEAD_BYTES))
-            .ok_or(ConvertError::MemoryBudgetExceeded {
-                requested: u64::MAX,
-                limit: options.max_memory_bytes,
-            })?;
-        if estimated_peak_memory_bytes > options.max_memory_bytes {
-            return Err(ConvertError::MemoryBudgetExceeded {
-                requested: estimated_peak_memory_bytes,
-                limit: options.max_memory_bytes,
-            });
-        }
-
-        let block_ids = (0..block_count).map(BlockId::new).collect::<Vec<_>>();
-        let root = SpatialNode::new(
-            NodeId::new(0),
-            None,
-            0,
-            source.bounds,
-            source.point_count,
-            0.0,
-            block_ids,
-        )?;
-        let schema = source_schema(&source.point_format);
-        let hierarchy =
-            SpatialHierarchy::new(vec![root], schema.clone(), Some(source.point_count))?;
-        let metadata = FormatMetadata::new(
-            DatasetMetadata::new(source.frame, hierarchy),
-            None,
-            Some("sequential LAS/LAZ import; flat root; no spatial LOD".to_owned()),
-            Vec::new(),
-        )?;
-        let omitted_dimensions = omitted_dimensions(&source.point_format, source.has_crs);
-
-        Ok(Self {
-            metadata,
-            schema,
-            bounds: source.bounds,
-            frame: source.frame,
-            point_count: source.point_count,
+    fn from_spatial(spatial: SpatialPlan, frame: CoordinateFrame) -> Self {
+        let block_count = spatial.blocks.len() as u64;
+        let source_block_ids = spatial
+            .blocks
+            .iter()
+            .filter(|block| block.is_source_points)
+            .map(|block| block.id)
+            .collect();
+        Self {
+            metadata: spatial.metadata,
+            frame,
+            point_count: spatial.point_count,
             block_count,
-            points_per_block,
-            omitted_dimensions,
-            estimated_peak_memory_bytes,
-        })
+            blocks: spatial.blocks,
+            source_block_ids,
+            omitted_dimensions: spatial.omitted_dimensions,
+            estimated_peak_memory_bytes: spatial.estimated_peak_memory_bytes,
+        }
     }
 }
 
 fn stream_blocks(
-    reader: &mut Reader,
     writer: &mut FormatWriter<File>,
     plan: &ConversionPlan,
     temporary_path: &Path,
@@ -383,141 +341,12 @@ fn stream_blocks(
         },
         0,
     )?;
-    let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
     let mut processed = 0_u64;
-    while processed < plan.point_count {
-        let requested = plan.points_per_block.min(plan.point_count - processed);
-        let read = reader.fill_points(requested, &mut point_data)?;
-        if read != requested {
-            return Err(ConvertError::PointCountMismatch {
-                expected: plan.point_count,
-                actual: processed + read,
-            });
+    for block in &plan.blocks {
+        writer.write_block(block.read(plan.frame)?)?;
+        if block.is_source_points {
+            processed += block.point_count() as u64;
         }
-        let count = usize::try_from(read).map_err(|_| ConvertError::PointCountMismatch {
-            expected: plan.point_count,
-            actual: processed + read,
-        })?;
-        let positions = point_positions(&point_data, plan.frame, plan.bounds, processed)?;
-        let intensities = point_data.intensity().collect::<Vec<_>>();
-        let classifications = point_data.classification().collect::<Vec<_>>();
-        let return_numbers = point_data.return_number().collect::<Vec<_>>();
-        let returns_per_pulse = point_data.number_of_returns().collect::<Vec<_>>();
-        let scan_angles = point_data.scan_angle_degrees().collect::<Vec<_>>();
-        let user_data = point_data.user_data().collect::<Vec<_>>();
-        let point_source_ids = point_data.point_source_id().collect::<Vec<_>>();
-        let gps_times = point_data.gps_time().map(Iterator::collect::<Vec<_>>);
-        let nir_values = point_data.nir().map(Iterator::collect::<Vec<_>>);
-        let (colors, rgb_values) = match point_data.rgb() {
-            Some(values) => {
-                let mut colors = Vec::with_capacity(count);
-                let mut rgb_values = Vec::with_capacity(count.saturating_mul(3));
-                for (red, green, blue) in values {
-                    colors.push(ColorRgb::new(
-                        (red >> 8) as u8,
-                        (green >> 8) as u8,
-                        (blue >> 8) as u8,
-                    ));
-                    rgb_values.extend_from_slice(&[red, green, blue]);
-                }
-                (colors, Some(rgb_values))
-            }
-            None => {
-                let colors = intensities
-                    .iter()
-                    .map(|intensity| {
-                        let gray = (intensity >> 8) as u8;
-                        ColorRgb::new(gray, gray, gray)
-                    })
-                    .collect();
-                (colors, None)
-            }
-        };
-        let mut attributes = Vec::with_capacity(plan.schema.len());
-        let mut schema_index = 0;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::U16(intensities),
-            count,
-        )?;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::U8(classifications),
-            count,
-        )?;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::U8(return_numbers),
-            count,
-        )?;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::U8(returns_per_pulse),
-            count,
-        )?;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::F32(scan_angles),
-            count,
-        )?;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::U8(user_data),
-            count,
-        )?;
-        push_attribute(
-            &mut attributes,
-            &plan.schema,
-            &mut schema_index,
-            AttributeValues::U16(point_source_ids),
-            count,
-        )?;
-        if let Some(gps_times) = gps_times {
-            push_attribute(
-                &mut attributes,
-                &plan.schema,
-                &mut schema_index,
-                AttributeValues::F64(gps_times),
-                count,
-            )?;
-        }
-        if let Some(rgb_values) = rgb_values {
-            push_attribute(
-                &mut attributes,
-                &plan.schema,
-                &mut schema_index,
-                AttributeValues::U16(rgb_values),
-                count,
-            )?;
-        }
-        if let Some(nir_values) = nir_values {
-            push_attribute(
-                &mut attributes,
-                &plan.schema,
-                &mut schema_index,
-                AttributeValues::U16(nir_values),
-                count,
-            )?;
-        }
-        writer.write_block(SourcePointBlock::new(
-            BlockId::new(processed / plan.points_per_block),
-            positions,
-            colors,
-            attributes,
-        ))?;
-        processed += read;
         emit_progress(
             on_progress,
             ConversionProgress {
@@ -529,22 +358,12 @@ fn stream_blocks(
             processed,
         )?;
     }
-    Ok(())
-}
-
-fn push_attribute(
-    attributes: &mut Vec<AttributeColumn>,
-    schema: &[AttributeDescriptor],
-    schema_index: &mut usize,
-    values: AttributeValues,
-    point_count: usize,
-) -> Result<(), ConvertError> {
-    let descriptor = schema
-        .get(*schema_index)
-        .ok_or(ConvertError::InvalidAttributeSchema)?
-        .clone();
-    attributes.push(AttributeColumn::new(descriptor, values, point_count)?);
-    *schema_index += 1;
+    if processed != plan.point_count {
+        return Err(ConvertError::PointCountMismatch {
+            expected: plan.point_count,
+            actual: processed,
+        });
+    }
     Ok(())
 }
 
@@ -574,35 +393,6 @@ fn descriptor(name: &str, data_type: AttributeDataType, components: u32) -> Attr
     AttributeDescriptor::new(name, data_type, components).expect("static attribute schema is valid")
 }
 
-fn point_positions(
-    data: &PointData,
-    frame: CoordinateFrame,
-    bounds: SpatialBounds,
-    processed: u64,
-) -> Result<Vec<[f64; 3]>, ConvertError> {
-    let mut positions = Vec::with_capacity(data.len());
-    let coordinates = data.x().zip(data.y()).zip(data.z());
-    for (offset, ((x, y), z)) in coordinates.enumerate() {
-        let world = [x, y, z];
-        let local = std::array::from_fn(|axis| world[axis] - frame.origin()[axis]);
-        if world.iter().any(|coordinate| !coordinate.is_finite())
-            || local.iter().any(|coordinate| !coordinate.is_finite())
-        {
-            return Err(ConvertError::CoordinateFrame(
-                viewer_core::CoordinateFrameError::PositionOutOfRange(local),
-            ));
-        }
-        if (0..3).any(|axis| world[axis] < bounds.min()[axis] || world[axis] > bounds.max()[axis]) {
-            return Err(ConvertError::PointOutsideHeaderBounds {
-                point_index: processed + offset as u64,
-                position: world,
-            });
-        }
-        positions.push(local);
-    }
-    Ok(positions)
-}
-
 fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String> {
     let mut dimensions = vec![
         "synthetic/key-point/withheld/overlap flags".to_owned(),
@@ -626,16 +416,13 @@ fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String>
 fn validate_output(
     path: &Path,
     total_points: u64,
+    block_ids: &[BlockId],
+    source_block_ids: &[BlockId],
     file_length: u64,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
     let mut reader = FormatReader::new(File::open(path)?)?;
-    let root = reader
-        .metadata()
-        .hierarchy()
-        .node(NodeId::new(0))
-        .expect("converter emits the root node");
-    let block_ids = root.blocks().to_vec();
+    let source_blocks = source_block_ids.iter().copied().collect::<HashSet<_>>();
     emit_progress(
         on_progress,
         ConversionProgress {
@@ -648,7 +435,10 @@ fn validate_output(
     )?;
     let mut validated_points = 0;
     for block_id in block_ids {
-        validated_points += reader.read_block(block_id)?.points().len() as u64;
+        let block_points = reader.read_block(*block_id)?.points().len() as u64;
+        if source_blocks.contains(block_id) {
+            validated_points += block_points;
+        }
         emit_progress(
             on_progress,
             ConversionProgress {
@@ -660,6 +450,12 @@ fn validate_output(
             validated_points,
         )?;
     }
+    if validated_points != total_points {
+        return Err(ConvertError::PointCountMismatch {
+            expected: total_points,
+            actual: validated_points,
+        });
+    }
     Ok(())
 }
 
@@ -667,10 +463,19 @@ fn publish_output(
     temporary_path: &Path,
     output_path: &Path,
     point_count: u64,
+    block_ids: &[BlockId],
+    source_block_ids: &[BlockId],
     file_length: u64,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<u64, ConvertError> {
-    validate_output(temporary_path, point_count, file_length, on_progress)?;
+    validate_output(
+        temporary_path,
+        point_count,
+        block_ids,
+        source_block_ids,
+        file_length,
+        on_progress,
+    )?;
     let output_bytes = fs::metadata(temporary_path)?.len();
     emit_progress(
         on_progress,
@@ -849,7 +654,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.point_count, 5);
-        assert_eq!(report.block_count, 3);
+        assert!(report.block_count >= 4);
         assert!(report.estimated_peak_memory_bytes <= 512 * 1024 * 1024);
         assert!(
             !report
@@ -876,22 +681,50 @@ mod tests {
         assert_eq!(completed.bytes_written, report.output_bytes);
 
         let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
-        let hierarchy = reader.metadata().hierarchy();
-        assert_eq!(hierarchy.node(NodeId::new(0)).unwrap().blocks().len(), 3);
-        for (index, block_id) in [BlockId::new(0), BlockId::new(1), BlockId::new(2)]
-            .into_iter()
-            .enumerate()
-        {
+        let (root_block_ids, root_error, node_count) = {
+            let hierarchy = reader.metadata().hierarchy();
+            let root = hierarchy.node(NodeId::new(0)).unwrap();
+            (
+                root.blocks().to_vec(),
+                root.geometric_error(),
+                hierarchy.stats().node_count,
+            )
+        };
+        assert_eq!(root_block_ids.len(), 1);
+        assert!(root_error > 0.0);
+        assert!(node_count > 1);
+        let root_sample = reader.read_block(root_block_ids[0]).unwrap();
+        assert!(root_sample.points().len() <= 512);
+        for index in 0..5 {
+            let source_position = [index as f64 * 0.25, (index % 3) as f64, (index % 5) as f64];
+            let nearest_distance = root_sample
+                .points()
+                .points()
+                .iter()
+                .map(|sample| {
+                    (0..3)
+                        .map(|axis| {
+                            (source_position[axis] - f64::from(sample.position[axis])).powi(2)
+                        })
+                        .sum::<f64>()
+                        .sqrt()
+                })
+                .fold(f64::INFINITY, f64::min);
+            assert!(nearest_distance <= root_error);
+        }
+        let mut all_source_ids = std::collections::BTreeSet::new();
+        let mut source_values = [false; 5];
+        for block_number in 0..report.block_count {
+            let block_id = BlockId::new(block_number);
             let block = reader.read_block(block_id).unwrap();
             let intensity = block.attributes()[0].values();
             let AttributeValues::U16(values) = intensity else {
                 panic!("intensity must remain u16");
             };
-            assert_eq!(values[0], (index as u16 * 2).wrapping_mul(10_000));
             let AttributeValues::U8(classification) = block.attributes()[1].values() else {
                 panic!("classification must remain u8");
             };
-            assert_eq!(classification, &[2, 2][..block.points().len()]);
+            assert!(classification.iter().all(|value| *value == 2));
             let AttributeValues::U8(return_numbers) = block.attributes()[2].values() else {
                 panic!("return number must remain u8");
             };
@@ -903,17 +736,40 @@ mod tests {
             let AttributeValues::U8(user_data) = block.attributes()[5].values() else {
                 panic!("user data must remain u8");
             };
-            assert_eq!(user_data[0], index as u8 * 2 + 7);
             let AttributeValues::U16(source_ids) = block.attributes()[6].values() else {
                 panic!("point source ID must remain u16");
             };
-            assert_eq!(source_ids[0], 100 + (index as u16 * 2));
+            for ((source_id, intensity), user_data) in source_ids.iter().zip(values).zip(user_data)
+            {
+                all_source_ids.insert(*source_id);
+                let index = usize::from(*source_id - 100);
+                if index < source_values.len()
+                    && *intensity == index as u16 * 10_000
+                    && *user_data == index as u8 + 7
+                {
+                    source_values[index] = true;
+                }
+            }
             let AttributeValues::U16(rgb) = block.attributes()[7].values() else {
                 panic!("RGB must remain u16");
             };
-            assert_eq!(&rgb[..3], &[0x1200, 0xAB00, 0xFF00]);
-            assert_eq!(block.points().points()[0].color.r, 0x12);
+            let (colors, remainder) = rgb.as_chunks::<3>();
+            assert!(remainder.is_empty());
+            assert!(
+                colors
+                    .iter()
+                    .all(|color| color == &[0x1200, 0xAB00, 0xFF00])
+            );
+            assert!(
+                block
+                    .points()
+                    .points()
+                    .iter()
+                    .all(|point| point.color == viewer_core::ColorRgb::new(0x12, 0xAB, 0xFF))
+            );
         }
+        assert_eq!(all_source_ids, (100..105).collect());
+        assert!(source_values.into_iter().all(|found| found));
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -924,18 +780,25 @@ mod tests {
         let output = dir.join("result.oct");
         fixture(&input, false, false, 3);
         let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
-        assert_eq!(report.block_count, 2);
 
         let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
-        let last = reader.read_block(BlockId::new(1)).unwrap();
-        let AttributeValues::U16(intensity) = last.attributes()[0].values() else {
-            panic!("intensity must remain u16");
-        };
-        assert_eq!(intensity, &[20_000]);
-        assert_eq!(
-            last.points().points()[0].color,
-            viewer_core::ColorRgb::new(78, 78, 78)
-        );
+        let mut found_last_point = false;
+        for block_number in 0..report.block_count {
+            let block = reader.read_block(BlockId::new(block_number)).unwrap();
+            let AttributeValues::U16(intensity) = block.attributes()[0].values() else {
+                panic!("intensity must remain u16");
+            };
+            if intensity.contains(&20_000)
+                && block
+                    .points()
+                    .points()
+                    .iter()
+                    .any(|point| point.color == viewer_core::ColorRgb::new(78, 78, 78))
+            {
+                found_last_point = true;
+            }
+        }
+        assert!(found_last_point);
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1015,6 +878,116 @@ mod tests {
         ));
         assert!(!output.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn identical_positions_remain_full_resolution_without_deep_empty_splits() {
+        let dir = test_dir();
+        let input = dir.join("identical.las");
+        let output = dir.join("result.oct");
+        let header = Builder::from((1, 2)).into_header().unwrap();
+        let mut writer = Writer::from_path(&input, header).unwrap();
+        for intensity in [1, 2, 3, 4, 5] {
+            writer
+                .write_point(Point {
+                    x: 10.0,
+                    y: 20.0,
+                    z: 30.0,
+                    intensity,
+                    ..Point::default()
+                })
+                .unwrap();
+        }
+        drop(writer);
+
+        let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
+        assert_eq!(report.point_count, 5);
+        assert_eq!(report.block_count, 3);
+        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let root_blocks = {
+            let hierarchy = reader.metadata().hierarchy();
+            assert_eq!(hierarchy.stats().node_count, 1);
+            let root = hierarchy.node(NodeId::new(0)).unwrap();
+            assert_eq!(root.point_count(), 5);
+            root.blocks().to_vec()
+        };
+        assert_eq!(root_blocks.len(), 3);
+        let mut intensities = Vec::new();
+        for block_id in root_blocks {
+            let block = reader.read_block(block_id).unwrap();
+            let AttributeValues::U16(values) = block.attributes()[0].values() else {
+                panic!("intensity must remain u16");
+            };
+            intensities.extend_from_slice(values);
+        }
+        intensities.sort_unstable();
+        assert_eq!(intensities, [1, 2, 3, 4, 5]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lod_voxels_average_color_and_copy_other_attributes_from_nearest_point() {
+        let dir = test_dir();
+        let input = dir.join("colors.las");
+        let output = dir.join("result.oct");
+        let mut builder = Builder::from((1, 2));
+        builder.point_format = Format::new(2).unwrap();
+        let mut writer = Writer::from_path(&input, builder.into_header().unwrap()).unwrap();
+        for (position, intensity, source_id, color) in [
+            ([0.05, 0.05, 0.05], 10, 11, Color::new(0, 0, 0)),
+            (
+                [0.06, 0.06, 0.06],
+                20,
+                22,
+                Color::new(u16::MAX, u16::MAX, u16::MAX),
+            ),
+            ([1.0, 1.0, 1.0], 30, 33, Color::new(0, 0, 0)),
+        ] {
+            writer
+                .write_point(Point {
+                    x: position[0],
+                    y: position[1],
+                    z: position[2],
+                    intensity,
+                    point_source_id: source_id,
+                    color: Some(color),
+                    ..Point::default()
+                })
+                .unwrap();
+        }
+        drop(writer);
+
+        convert_file(&input, &output, ConvertOptions::new(1, 0.01).unwrap()).unwrap();
+        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let (root_block_id, max_level) = {
+            let hierarchy = reader.metadata().hierarchy();
+            (
+                hierarchy.node(NodeId::new(0)).unwrap().blocks()[0],
+                hierarchy.stats().max_level,
+            )
+        };
+        assert!(max_level > 1);
+        let root_sample = reader.read_block(root_block_id).unwrap();
+        let averaged_sample = root_sample
+            .points()
+            .points()
+            .iter()
+            .position(|point| point.color == viewer_core::ColorRgb::new(128, 128, 128))
+            .expect("the two clustered source colors are averaged");
+        let AttributeValues::U16(intensity) = root_sample.attributes()[0].values() else {
+            panic!("intensity must remain u16");
+        };
+        assert_eq!(intensity[averaged_sample], 20);
+        let AttributeValues::U16(source_ids) = root_sample.attributes()[6].values() else {
+            panic!("point source ID must remain u16");
+        };
+        assert_eq!(source_ids[averaged_sample], 22);
+        let AttributeValues::U16(rgb) = root_sample.attributes()[7].values() else {
+            panic!("RGB must remain u16");
+        };
+        let rgb = &rgb[averaged_sample * 3..averaged_sample * 3 + 3];
+        assert_eq!(rgb, &[0x8000; 3]);
         fs::remove_dir_all(dir).unwrap();
     }
 

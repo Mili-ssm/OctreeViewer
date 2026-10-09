@@ -73,7 +73,9 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         }
         if matches!(
             progress.stage,
-            ConversionStage::ReadingAndWritingBlocks | ConversionStage::ValidatingOutput
+            ConversionStage::PlanningSpatialIndex
+                | ConversionStage::ReadingAndWritingBlocks
+                | ConversionStage::ValidatingOutput
         ) && progress.total_points > 0
         {
             let percent = progress.points_processed.saturating_mul(100) / progress.total_points;
@@ -107,7 +109,7 @@ fn print_help() {
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]\n\
          Defaults: 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB.\n\
-         COPC input is read sequentially and flattened into one root node. EPT datasets are not supported.\n\
+         COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. EPT datasets are not supported.\n\
          The converter preserves intensity and RGB16, and reports omitted LAS dimensions."
     );
 }
