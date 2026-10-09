@@ -14,6 +14,8 @@ const pointSizeValue = document.getElementById("point-size-value");
 const lodProfile = document.getElementById("lod-profile");
 
 let worker = null;
+let canvasTransferred = false;
+let viewportSize = null;
 const commandQueue = new CoalescedCommandQueue((type, values) => {
     worker.postMessage({ type, ...values });
 });
@@ -58,9 +60,12 @@ function resize() {
     const width = Math.max(0, Math.floor(canvas.clientWidth * pixelRatio));
     const height = Math.max(0, Math.floor(canvas.clientHeight * pixelRatio));
 
-    if (canvas.width !== width || canvas.height !== height) {
+    if (!canvasTransferred && (canvas.width !== width || canvas.height !== height)) {
         canvas.width = width;
         canvas.height = height;
+    }
+    if (viewportSize?.[0] !== width || viewportSize?.[1] !== height) {
+        viewportSize = [width, height];
         queueWorkerCommand("resize", { width, height });
     }
 }
@@ -85,7 +90,7 @@ function updateStats(message) {
         `decoded cache: ${cache}`,
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
-        `viewport: ${canvas.width} x ${canvas.height}`,
+        `viewport: ${viewportSize?.join(" x ") ?? "—"}`,
     ].join("\n");
 }
 
@@ -119,6 +124,12 @@ function handleWorkerMessage(event) {
         fileInput.disabled = false;
         sampleButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
+        if (viewportSize) {
+            queueWorkerCommand("resize", {
+                width: viewportSize[0],
+                height: viewportSize[1],
+            });
+        }
         statusRoot.textContent = "Renderer ready · synthetic sample";
         startRendering();
     } else if (data.type === "commandAck") {
@@ -200,6 +211,7 @@ function createWorkerViewer() {
             statusRoot.textContent = `Renderer worker failed: ${event.message}. Recreate the viewer to retry.`;
         });
         const offscreen = canvas.transferControlToOffscreen();
+        canvasTransferred = true;
         worker.postMessage({
             type: "init",
             canvas: offscreen,
@@ -241,6 +253,8 @@ function recreateViewer() {
     replacement.height = canvas.height;
     canvas.replaceWith(replacement);
     canvas = replacement;
+    canvasTransferred = false;
+    viewportSize = null;
     bindCanvasInteractions();
     resize();
     createWorkerViewer();

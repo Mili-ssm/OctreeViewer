@@ -637,8 +637,11 @@ interpretarlos como porcentaje de finalización); cancelar termina/recrea el wor
 seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles, nivel
 LOD más profundo, cobertura, bytes subidos, caché decodificada usada/límite y tiempo síncrono del
 worker; permite navegar, cambiar perfil, color y tamaño. Incluye un archivo sintético `.oct` de 4.096
-puntos, generable desde un ejemplo Rust, y un control de teclado para cargarlo. La validación visual
-en navegador sigue pendiente.
+puntos, generable desde un ejemplo Rust, y un control de teclado para cargarlo. Chromium con WebGPU
+cargó la muestra y presentó frames; el redimensionado del canvas y el layout móvil se comprobaron en
+viewport de escritorio y de 500 px. La captura headless no permitió confirmar visualmente los puntos,
+y Firefox no expuso `navigator.gpu` en este entorno; la validación visual y de compatibilidad siguen
+pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 
