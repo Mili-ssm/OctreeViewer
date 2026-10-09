@@ -128,8 +128,10 @@ frente a Potree.
 - [x] Definir los 500 GB como tamaño del archivo fuente LAS/LAZ antes de convertir, en bytes decimales;
   registrar el tamaño `.oct` por separado. El registro existente de Belvedere incluye ambos tamaños,
   puntos, atributos, CRS y distribución; ampliar la ficha al añadir datasets de benchmark.
-- [ ] Definir entornos objetivo: navegador, sistema operativo, memoria RAM/GPU, almacenamiento local o
-  remoto y disponibilidad de lectura por rangos.
+- [x] Elegir Chrome y Firefox con WebGPU como navegadores objetivo; el host necesita también
+  `OffscreenCanvas` para ejecutar el visor en el worker.
+- [ ] Definir sistemas operativos y mínimos de RAM/GPU; decidir si la primera versión admite solo
+  archivos locales o también lectura remota por rangos.
 - [x] Elegir métricas: tiempo de conversión, apertura y primera vista útil; memoria RAM/GPU; bytes
   solicitados, leídos y subidos; latencia de navegación y frame p50/p95/p99; calidad visual y
   estabilidad. Las mediciones de cada fase indicarán qué métricas puede observar realmente su entorno.
@@ -679,7 +681,8 @@ cambian alcance, rendimiento y compatibilidad:
 
 - ¿La primera versión abre únicamente archivos locales o también datos remotos mediante peticiones
   por rango?
-- ¿Qué plataformas, navegadores, RAM y clases de GPU son hardware oficialmente objetivo?
+- ¿Qué sistemas operativos, mínimos de RAM y clases de GPU forman el perfil oficial? Chrome y Firefox
+  con WebGPU son los navegadores elegidos, pero sus flujos aún no se han verificado en navegador real.
 - ¿Qué dimensiones LAS/LAZ se deben preservar en v1 y cuáles pueden convertirse o descartarse con
   aviso explícito?
 - ¿La salida es un contenedor único, un conjunto de archivos o ambos? Esta decisión afecta escrituras

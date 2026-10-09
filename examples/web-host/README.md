@@ -24,7 +24,9 @@ cargo run --offline -p viewer_format --example create_web_sample -- examples/web
 Use any static file server rooted at the repository. Then open `examples/web-host/index.html`. WebGPU
 and module workers require a secure context such as `localhost` or HTTPS.
 
-The host transfers the canvas with `transferControlToOffscreen()`, then the worker calls
+The target browsers are Chrome and Firefox builds that support WebGPU and `OffscreenCanvas`; browser
+interaction and GPU rendering still require real-browser validation. The host transfers the canvas
+with `transferControlToOffscreen()`, then the worker calls
 `WasmVoxelViewer.createOffscreen`. Select a project-format v1/v2 file to call `openFormatDataset` and
 `updateLod`; requested blocks are read and decoded in the worker before each atomic visible-cut swap.
 The camera fits dataset bounds and supports orbit, pan, zoom, and resize. Drag to orbit, use Shift+drag
