@@ -75,7 +75,7 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificación binaria v1 y cuantizador `u32` con cota de error comprobada en [`docs/FORMAT_V1.md`](docs/FORMAT_V1.md). | No hay lector, escritor, convertidor ni fixtures del formato. La cuantización conserva 12 bytes por XYZ, igual que `f32`; el ahorro de almacenamiento solo aplica frente a coordenadas `f64`. |
+| Formato propio | Especificación v1, cuantizador `u32` y codec LZ4 independiente por bloque con fallback sin compresión, medido en sintéticos ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | No hay lector, escritor, convertidor ni fixtures del formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 
 ## Qué significará “feature complete”
@@ -214,7 +214,7 @@ compatibles entre versiones.
   escala y precisión de cuantización por dataset o bloque, comenzar evaluando coordenadas `u32` y
   reconstruirlas a `f32` local al preparar los datos para renderizado. El error de cuantización debe
   quedar acotado y reflejarse en las cotas de error geométrico.
-- [ ] Elegir compresión por bloque independiente para poder leer y descartar datos sin descomprimir el
+- [x] Elegir compresión por bloque independiente para poder leer y descartar datos sin descomprimir el
   archivo entero; medir ratio, coste de CPU y coste de lectura.
 - [ ] Incluir detección de truncamiento/corrupción y mecanismo de integridad por bloque o índice.
 - [ ] Implementar lector con acceso aleatorio, lectura parcial y validación explícita de versiones y

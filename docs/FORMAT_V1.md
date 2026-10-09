@@ -66,7 +66,11 @@ point_count * (12 coordinate bytes + 3 RGB bytes)
 ```
 
 Every multiplication and sum must be checked before allocation or I/O. The block CRC covers the
-entire payload, from its first coordinate byte through its final attribute byte.
+stored payload bytes. For codec `0`, the stored payload is the uncompressed sequence above. For
+codec `1`, the whole sequence is encoded as one independent LZ4 block, with no shared dictionary or
+size prefix. The expected decoded length is calculated from the point count and schema before
+allocation. The writer uses codec `1` only when it produces fewer bytes than codec `0`; otherwise it
+stores the raw sequence. Implementations use the safe block API from `lz4_flex`.
 
 ### Index
 
@@ -87,7 +91,7 @@ The index starts with the eight bytes `OCTVIDX1`, followed by these fields in or
 7. Block count (`u64`) and directory records in ascending `BlockId` order. Each record contains ID
    (`u64`), offset (`u64`), payload length (`u64`), point count (`u64`), quantization error (`f64`),
    local-coordinate origin (three `f64` values), per-axis scale (three `f64` values), codec (`u8`,
-   version 1 requires `0`), and payload CRC (`u32`).
+   `0=none`, `1=LZ4 block`), and payload CRC (`u32`).
 
 Every indexed block must be referenced by at least one node; node references and directory IDs must
 be unique where required and must resolve. The stored point count of a node describes that node's
@@ -131,6 +135,24 @@ only coordinate values against `f64`. RGB adds 3 bytes per point; each attribute
 primitive width times its component count. Smaller integer attribute types are preserved as
 declared rather than widened.
 
+### Initial compression measurement
+
+The checked-in `codec_bench` example measures five encode/decode iterations in release mode for one
+4,456,448-byte block (262,144 points, 12 coordinate bytes, RGB and one `u16` attribute per point).
+It compares a structured grid with mostly repeated RGB values against deterministic high-entropy
+bytes. The result table records the mean elapsed time per iteration; timings are a local
+microbenchmark, not a performance guarantee or a replacement for real LAS/LAZ fixtures.
+
+| Payload | Stored bytes | Stored/raw ratio | Encode ms | Decode ms | Selected codec |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Structured grid | 2,617,998 | 0.587 | 6.56 | 2.17 | LZ4 block |
+| High entropy | 4,456,448 | 1.000 | 1.64 | 0.89 | Raw fallback |
+
+Measured with `lz4_flex 0.14.0`, Rust `1.99.0`, release profile, on an AMD Ryzen AI 9 365 system.
+The fallback preserves the original size on incompressible data; the encode time still includes an
+LZ4 trial. Repeat `cargo run -p viewer_format --release --example codec_bench` on target systems
+before making throughput claims.
+
 ### Footer (40 bytes)
 
 | Field | Type | Meaning |
@@ -155,7 +177,7 @@ index checksum, directory ranges and hierarchy. A block checksum is verified whe
 unrequested payload bytes need not be read during open.
 
 Version 1 readers accept only version `1`, the exact header and footer lengths above, zero header
-flags, and codec `0`. A future incompatible layout uses a new version. New readers must preserve
+flags, and codecs `0` or `1`. A future incompatible layout uses a new version. New readers must preserve
 unknown attribute names when their primitive type is supported; unsupported types, versions, flags
 or codecs produce explicit errors. The format crate must publish configurable limits for index size,
 schema strings, node/block counts and decoded block size, and reject over-limit files before large
@@ -171,6 +193,7 @@ finalization.
 
 ## Explicit limits of version 1
 
-The index is loaded into memory. Blocks are uncompressed. CRC does not protect against malicious
-tampering. CRS and sampling-policy text are preserved but not interpreted. The format does not
-define an external LAS attribute mapping or a converter's sampling algorithm.
+The index is loaded into memory. Compression is per block and does not share history between blocks.
+CRC does not protect against malicious tampering. CRS and sampling-policy text are preserved but not
+interpreted. The format does not define an external LAS attribute mapping or a converter's sampling
+algorithm.
