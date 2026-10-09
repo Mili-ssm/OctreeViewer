@@ -77,6 +77,7 @@ una versión publicada.
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
 | Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 en bloques secuenciales. Conserva intensidad y RGB16, limita puntos por bloque y valida el archivo antes de publicarlo. | Emite un único nodo raíz sin partición espacial/LOD; descarta otras dimensiones y CRS con aviso. El índice y directorio de bloques permanecen en RAM. |
 
 ## Qué significará “feature complete”
 
@@ -229,11 +230,11 @@ compatibles entre versiones.
 **Cierre:** el lector recupera un bloque seleccionado sin leer el archivo completo; los datos
 conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan con errores claros.
 
-### Fase 3 — Conversor de datasets grandes (`viewer_convert`, crate o binario propuesto)
+### Fase 3 — Conversor de datasets grandes (`viewer_convert`)
 
 **Característica:** crear el formato propio desde LAS/LAZ sin almacenar toda la nube en RAM.
 
-- [ ] Implementar primero un ejecutable nativo de conversión; no exigir a la aplicación WASM leer y
+- [x] Implementar primero un ejecutable nativo de conversión; no exigir a la aplicación WASM leer y
   convertir la fuente completa antes de mostrar la nube.
 - [ ] Crear un pipeline por etapas: inspección de metadatos, lectura, construcción del índice/LOD,
   codificación y escritura de bloques.
@@ -247,6 +248,13 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   forma explícita los que se descartan o transforman.
 - [ ] Aceptar primero LAS/LAZ como fuentes requeridas; evaluar COPC/EPT como entrada interoperable y
   fuente para pruebas, según soporte y calidad de las bibliotecas elegidas.
+
+Uso inicial: `cargo run -p viewer_convert -- INPUT.las OUTPUT.oct [--points-per-block N] [--max-error E]`.
+Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
+de la fuente. La salida publica mediante un enlace al archivo temporal validado y falla si el destino
+ya existe. Esta primera versión usa un solo nodo raíz, conserva intensidad `u16` y RGB `u16` cuando
+existe, y avisa de las dimensiones LAS/LAZ y metadatos CRS que no conserva. El tamaño de payload se
+limita por bloque; la memoria del directorio todavía crece con el número de bloques.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.
@@ -357,8 +365,8 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 | Componente | Responsabilidad final | Dependencias principales |
 | --- | --- | --- |
 | `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
-| `viewer_format` (propuesto) | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
-| `viewer_convert` (propuesto) | Conversión fuera de memoria desde LAS/LAZ y construcción de jerarquía/LOD. | Lector LAS/LAZ, `viewer_core`, `viewer_format`. |
+| `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
+| `viewer_convert` | Conversión nativa secuencial LAS/LAZ por bloques y publicación validada del formato. | `las`, `viewer_core`, `viewer_format`; jerarquía/LOD y procesamiento reanudable pendientes. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
 | `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |

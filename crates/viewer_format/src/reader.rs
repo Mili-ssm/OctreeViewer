@@ -224,11 +224,13 @@ impl<R: Read + Seek> FormatReader<R> {
         };
 
         let mut cursor = SliceCursor::new(&raw);
-        let point_capacity = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
-        let mut points = Vec::new();
-        points.try_reserve_exact(point_capacity).map_err(|_| {
-            FormatError::AllocationFailed(point_capacity * std::mem::size_of::<Point>())
-        })?;
+        let position_capacity = allocation_capacity(point_count, std::mem::size_of::<[f32; 3]>())?;
+        let mut positions = Vec::new();
+        positions
+            .try_reserve_exact(position_capacity)
+            .map_err(|_| {
+                FormatError::AllocationFailed(position_capacity * std::mem::size_of::<[f32; 3]>())
+            })?;
         for _ in 0..point_count {
             let mut quantized = [0_u32; 3];
             for value in &mut quantized {
@@ -255,6 +257,14 @@ impl<R: Read + Seek> FormatReader<R> {
                     "decoded position is outside its node bounds",
                 ));
             }
+            positions.push(position);
+        }
+        let point_capacity = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
+        let mut points = Vec::new();
+        points.try_reserve_exact(point_capacity).map_err(|_| {
+            FormatError::AllocationFailed(point_capacity * std::mem::size_of::<Point>())
+        })?;
+        for position in positions {
             let color = ColorRgb::new(cursor.u8()?, cursor.u8()?, cursor.u8()?);
             points.push(Point::new(position, color));
         }

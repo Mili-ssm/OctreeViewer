@@ -1,0 +1,14 @@
+[package]
+name = "viewer_convert"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "viewer_convert"
+path = "src/main.rs"
+
+[dependencies]
+las.workspace = true
+thiserror.workspace = true
+viewer_core = { path = "../viewer_core" }
+viewer_format = { path = "../viewer_format" }

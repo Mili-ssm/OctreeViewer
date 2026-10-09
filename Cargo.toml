@@ -2,6 +2,7 @@
 members = [
 	"crates/viewer_core",
 	"crates/viewer_format",
+	"crates/viewer_convert",
 	"crates/viewer_render_wgpu",
 	"crates/viewer_wasm",
 ]
