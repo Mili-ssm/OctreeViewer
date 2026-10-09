@@ -6,7 +6,10 @@ use std::{
 };
 
 use las::{PointDataBuilder, Reader as LasReader};
-use viewer_core::{DatasetSource, NodeId, SpatialBounds, SpatialNode};
+use viewer_core::{
+    DatasetSource, FrustumPlane, LodSelectionConfig, NodeId, SpatialBounds, SpatialFrustum,
+    SpatialNode,
+};
 use viewer_format::FormatReader;
 
 const LOD_GRID: usize = 8;
@@ -15,14 +18,15 @@ const ALLOWED_DIVISIONS: [u8; 3] = [2, 4, 8];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
-    if !(2..=5).contains(&arguments.len()) {
+    if arguments.len() < 2 {
         eprintln!(
-            "Usage: spatial_quality_bench SOURCE DATASET.oct [--metadata-only] [--spatial-divisions 2|4|8]"
+            "Usage: spatial_quality_bench SOURCE DATASET.oct [--metadata-only] [--spatial-divisions 2|4|8] [--point-budget N]"
         );
         return Err("expected source and converted dataset".into());
     }
     let mut metadata_only = false;
     let mut divisions = 2_u8;
+    let mut point_budgets = Vec::new();
     let mut index = 2;
     while index < arguments.len() {
         match arguments[index].to_string_lossy().as_ref() {
@@ -38,17 +42,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()?;
                 index += 2;
             }
+            "--point-budget" => {
+                point_budgets.push(
+                    arguments
+                        .get(index + 1)
+                        .ok_or("missing value for --point-budget")?
+                        .to_string_lossy()
+                        .parse::<u64>()?,
+                );
+                index += 2;
+            }
             option => return Err(format!("unknown option: {option}").into()),
         }
     }
     if !ALLOWED_DIVISIONS.contains(&divisions) {
         return Err("spatial divisions must be 2, 4, or 8".into());
     }
+    if metadata_only && !point_budgets.is_empty() {
+        return Err("--metadata-only cannot be combined with --point-budget".into());
+    }
     analyze(
         Path::new(&arguments[0]),
         Path::new(&arguments[1]),
         metadata_only,
         divisions,
+        point_budgets,
     )
 }
 
@@ -57,6 +75,7 @@ fn analyze(
     dataset: &Path,
     metadata_only: bool,
     divisions: u8,
+    point_budgets: Vec<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut source_reader = LasReader::from_path(source)?;
     let source_header = source_reader.header().clone();
@@ -160,6 +179,35 @@ fn analyze(
         }
     }
 
+    let budget_selections = point_budgets
+        .iter()
+        .map(|budget| {
+            let frustum = SpatialFrustum::new(vec![
+                FrustumPlane::new([1.0, 0.0, 0.0], -root_region.min()[0])?,
+                FrustumPlane::new([-1.0, 0.0, 0.0], root_region.max()[0])?,
+                FrustumPlane::new([0.0, 1.0, 0.0], -root_region.min()[1])?,
+                FrustumPlane::new([0.0, -1.0, 0.0], root_region.max()[1])?,
+                FrustumPlane::new([0.0, 0.0, 1.0], -root_region.min()[2])?,
+                FrustumPlane::new([0.0, 0.0, -1.0], root_region.max()[2])?,
+            ])?;
+            let config = LodSelectionConfig::new(0.0, *budget)?;
+            Ok::<_, Box<dyn std::error::Error>>((
+                *budget,
+                hierarchy.select_lod(&frustum, config, |node| node.geometric_error())?,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let selected_budget_nodes = budget_selections
+        .iter()
+        .map(|(_, selection)| {
+            selection
+                .node_ids()
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+
     let strides = [1_u32, 2, 3]
         .into_iter()
         .filter(|level| *level <= hierarchy.stats().max_level)
@@ -227,6 +275,10 @@ fn analyze(
         .iter()
         .map(|stride| (*stride, QualityMetrics::default()))
         .collect::<BTreeMap<_, _>>();
+    let mut budget_metrics = point_budgets
+        .iter()
+        .map(|_| QualityMetrics::default())
+        .collect::<Vec<_>>();
     let mut point_data = PointDataBuilder::new()
         .for_header(source_reader.header())
         .build();
@@ -290,6 +342,34 @@ fn analyze(
                         .expect("known stride")
                         .record_transition(delta);
                 }
+                for (selected, metric) in selected_budget_nodes.iter().zip(&mut budget_metrics) {
+                    let mut selected_node = root;
+                    while !selected.contains(&selected_node) {
+                        if !children.contains_key(&selected_node) {
+                            return Err(format!(
+                                "budget cut does not cover source point at node {selected_node:?}"
+                            )
+                            .into());
+                        }
+                        let key =
+                            child_index_position(position, regions[&selected_node], divisions);
+                        selected_node = *child_keys
+                            .get(&(selected_node, key))
+                            .ok_or_else(|| format!("budget cut maps source point to missing child {key} under {selected_node:?}"))?;
+                    }
+                    let node = node_by_id[&selected_node];
+                    let represented = if children.contains_key(&selected_node) {
+                        let cell = sample_index(position, regions[&selected_node]);
+                        representatives
+                            .get(&(selected_node, cell))
+                            .copied()
+                            .ok_or_else(|| format!("missing budget-cut representative for node {selected_node:?}, cell {cell}"))?
+                    } else {
+                        position
+                    };
+                    let residual = std::array::from_fn(|axis| represented[axis] - position[axis]);
+                    metric.record(residual, node.geometric_error());
+                }
             }
             point_index += 1;
         }
@@ -332,6 +412,29 @@ fn analyze(
                 metric.max_transition,
             );
         }
+    }
+    for ((_, selection), metric) in budget_selections.iter().zip(&budget_metrics) {
+        println!(
+            "point_budget={} selected_points={} budget_usage_percent={:.6} source_point_ratio_percent={:.6} selected_nodes={} budget_limited_nodes={} sample_points={}",
+            selection.point_budget(),
+            selection.point_count(),
+            selection.point_count() as f64 / selection.point_budget().max(1) as f64 * 100.0,
+            selection.point_count() as f64 / source_count.max(1) as f64 * 100.0,
+            selection.node_ids().len(),
+            selection.budget_limited().len(),
+            metric.samples,
+        );
+        println!(
+            "point_budget={} residual_mean_xyz={:.6},{:.6},{:.6} residual_rmse={:.6} residual_p95={:.6} residual_max_observed={:.6} declared_error_violations={}",
+            selection.point_budget(),
+            metric.mean_residual()[0],
+            metric.mean_residual()[1],
+            metric.mean_residual()[2],
+            metric.rmse(),
+            metric.percentile(0.95),
+            metric.max_error,
+            metric.declared_error_violations,
+        );
     }
     let original_payload = storage.iter().map(|stats| stats.stored_bytes).sum::<u64>();
     let original_file_bytes = std::fs::metadata(dataset)?.len();

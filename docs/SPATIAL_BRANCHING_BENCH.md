@@ -200,6 +200,44 @@ La prueba de equivalencia de workers también cubre partición 4×4×4; la opci�
 en los checkpoints y no se puede cambiar al reanudar. Los manifiestos V1 antiguos se leen como factor
 2.
 
+## Cortes directos con presupuestos iguales
+
+El ejemplo acepta varios `--point-budget` en una pasada. Se generaron las salidas directas 4×4×4 y
+8×8×8 indicadas arriba y se compararon con el `.oct` 2×2×2 guardado:
+
+```sh
+cargo run --release -p viewer_convert -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz /tmp/belv-direct-4.oct --spatial-divisions 4
+cargo run --release -p viewer_convert -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz /tmp/belv-direct-8.oct --spatial-divisions 8
+cargo run --release -p viewer_convert --example spatial_quality_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz data/datasets/belv_2009_digital-aerial_pcd_copc.oct --point-budget 1000000 --point-budget 4000000
+cargo run --release -p viewer_convert --example spatial_quality_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz /tmp/belv-direct-4.oct --spatial-divisions 4 --point-budget 1000000 --point-budget 4000000
+cargo run --release -p viewer_convert --example spatial_quality_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz /tmp/belv-direct-8.oct --spatial-divisions 8 --point-budget 1000000 --point-budget 4000000
+```
+
+Cada corte usa la selección LOD del núcleo, un frustum que cubre el dataset completo y presupuesto
+estricto. El selector refina primero el nodo con mayor error geométrico declarado, usando tolerancia
+cero; al exceder el presupuesto conserva el corte previo en esa rama. El error se mide en la misma
+muestra estable de 995.791 puntos fuente (hash e intervalo idénticos en las variantes). El frustum
+completo y la prioridad por error mundial sirven para comparar de forma reproducible, pero no
+representan una cámara ni equivalen a un objetivo de error en píxeles. La salida contabiliza
+presupuesto usado, nodos seleccionados y nodos cuya refinación quedó limitada por el presupuesto.
+
+Medición del 9 de octubre de 2026 con el mismo hardware y versiones de la sección anterior:
+
+| Divisiones/eje | Presupuesto | Puntos seleccionados | Uso del presupuesto | Nodos | Nodos limitados | RMSE | p95 | Máximo observado | Violaciones de error declarado |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 1 M | 997.985 | 99,80 % | 100 | 82 | 45,246 | 64,680 | 81,661 | 0 |
+| 4 | 1 M | 971.199 | 97,12 % | 41 | 22 | 92,552 | 130,258 | 163,049 | 0 |
+| 8 | 1 M | 915.526 | 91,55 % | 81 | 69 | 46,974 | 65,126 | 81,661 | 0 |
+| 2 | 4 M | 3.993.767 | 99,84 % | 146 | 97 | 41,721 | 63,643 | 81,661 | 0 |
+| 4 | 4 M | 3.903.596 | 97,59 % | 89 | 44 | 85,512 | 128,703 | 163,049 | 0 |
+| 8 | 4 M | 3.914.315 | 97,86 % | 295 | 66 | 46,112 | 64,971 | 81,661 | 0 |
+
+El factor 4 da mayor error observado en ambos presupuestos para esta política de selección; 2 y 8
+quedan cerca, con ventaja pequeña de 2 en RMSE. El selector añade hijos por rama como unidad, por lo
+que puede quedar capacidad sin usar. No hay violaciones en los puntos muestreados; esto no prueba una
+cota global. La comparación numérica queda cerrada, pero la revisión visual en navegador sigue
+pendiente y el valor predeterminado permanece en 2×2×2.
+
 ## Lectura y límites
 
 - En los datos uniformes y la rejilla, el modo adaptativo con 8 mejora la selección espacial frente

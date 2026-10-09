@@ -83,7 +83,7 @@ una versión publicada.
 | `examples/web-host` | Demo WebGPU en worker, con muestra sintética, apertura de formato local, progreso por rangos, cancelación y perfiles LOD. | La cancelación termina y recrea el worker; no se ha validado visualmente con GPU en navegador. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
+| `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. La comparación numérica de cortes iguales está registrada; falta evaluación visual. |
 
 ## Qué significará “feature complete”
 
@@ -289,8 +289,11 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Añadir particiones adaptativas directas 2×2×2, 4×4×4 y 8×8×8 al conversor; registrar tamaño,
   bloques, tiempo y error sobre el COPC Belvedere real. El benchmark separa estas ejecuciones del
   estudio anterior, que conservaba una misma partición de hojas.
-- [ ] Comparar cortes directos con presupuestos visibles equivalentes y revisar calidad visual antes
-  de cambiar el valor predeterminado, que sigue en 2×2×2.
+- [x] Comparar cortes directos con presupuestos iguales de 1 M y 4 M de puntos sobre Belvedere;
+  registrar presupuesto usado, error observado y límites de la selección en
+  [SPATIAL_BRANCHING_BENCH.md](docs/SPATIAL_BRANCHING_BENCH.md).
+- [ ] Revisar visualmente los cortes directos en navegador antes de cambiar el valor predeterminado,
+  que sigue en 2×2×2.
 - [x] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
   forma explícita los que se descartan o transforman.
 - [x] Aceptar LAS/LAZ y COPC como entrada secuencial interoperable; el fixture COPC de 107 puntos de
