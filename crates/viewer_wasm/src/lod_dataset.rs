@@ -2,7 +2,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use viewer_core::{
     BlockId, CacheInsertRejection, CoordinateFrame, DatasetMetadata, DecodedBlockCache,
-    LodSelectionConfig, LodSelectionError, LodTransitionPlanner, PointBlock, SpatialHierarchy,
+    LodSelectionConfig, LodSelectionError, LodTransitionPlanner, NodeId, PointBlock,
+    SpatialHierarchy,
 };
 use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer};
 
@@ -18,6 +19,9 @@ pub struct LodViewStats {
     pub visible_blocks: usize,
     pub visible_points: u64,
     pub point_budget: u64,
+    pub max_visible_level: Option<u32>,
+    pub cache_bytes: usize,
+    pub cache_budget_bytes: usize,
     pub pending_block_ids: Vec<BlockId>,
     pub uncovered_nodes: usize,
     pub budget_omitted_nodes: usize,
@@ -158,6 +162,9 @@ impl LodDataset {
             visible_blocks: plan.block_ids().len(),
             visible_points: plan.point_count(),
             point_budget: plan.point_budget(),
+            max_visible_level: max_visible_level(self.metadata.hierarchy(), plan.node_ids()),
+            cache_bytes: self.cache.used_bytes(),
+            cache_budget_bytes: self.cache.max_bytes(),
             pending_block_ids: plan.pending_blocks().to_vec(),
             uncovered_nodes: plan.uncovered_nodes().len(),
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
@@ -168,6 +175,13 @@ impl LodDataset {
     pub fn cache_bytes(&self) -> usize {
         self.cache.used_bytes()
     }
+}
+
+fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
+    node_ids
+        .iter()
+        .filter_map(|id| hierarchy.node(*id).map(|node| node.level()))
+        .max()
 }
 
 #[cfg(test)]
@@ -238,5 +252,18 @@ mod tests {
     fn reports_cache_budget_for_bounding_external_block_imports() {
         let dataset = dataset(4096);
         assert_eq!(dataset.block_cache_budget_bytes(), 4096);
+    }
+
+    #[test]
+    fn reports_the_deepest_level_in_the_visible_cut() {
+        let dataset = dataset(4096);
+        assert_eq!(
+            super::max_visible_level(dataset.metadata.hierarchy(), &[NodeId::new(1)]),
+            Some(0)
+        );
+        assert_eq!(
+            super::max_visible_level(dataset.metadata.hierarchy(), &[]),
+            None
+        );
     }
 }

@@ -43,9 +43,10 @@ their attributes for color modes; the synthetic sample only has RGB, so missing 
 grayscale luminance and missing classification keeps RGB. `quality` targets 1/16 px projected error
 with a default 4 million point budget; `performance` targets 2 px and defaults to 1 million points.
 
-The stats panel reports visible points/instances/blocks, LOD coverage, pending block count, cumulative
-bytes written to instance buffers, and the synchronous CPU time spent inside the worker's
-`renderFrame()`. This does not measure GPU execution or display latency. File reads report unique
+The stats panel reports visible points/instances/blocks, deepest visible LOD level, LOD coverage,
+pending block count, decoded CPU cache usage/budget, cumulative bytes written to instance buffers, and
+the synchronous CPU time spent inside the worker's `renderFrame()`. This does not measure GPU
+execution or display latency. File reads report unique
 bytes fetched in 256 KiB ranges. This is not a completion percentage: the reader seeks through
 metadata and selected blocks, so it may never read the full file. Cancel terminates the synchronous
 worker, replaces its transferred canvas, and starts a fresh viewer; select the file again to retry.

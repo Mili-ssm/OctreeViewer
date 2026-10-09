@@ -543,8 +543,8 @@ y presentar estado.
   visual con datasets reales.
 - [x] Integrar selección de archivo local, mensajes de carga/error y resumen de nodos del índice; la
   demo ejecuta visor, lector y renderer en worker.
-- [x] Mostrar estadísticas de puntos/bloques visibles, cobertura LOD, bloques pendientes, bytes de
-  instancias y tiempo CPU del worker. La memoria de caché aún no se expone a la demo.
+- [x] Mostrar estadísticas de puntos/bloques visibles, nivel LOD más profundo, cobertura, bloques
+  pendientes, uso/presupuesto de caché decodificada, bytes GPU y tiempo CPU del worker.
 - [x] Mostrar los bytes únicos leídos del archivo y cancelar una lectura terminando/recreando el
   worker y su canvas. La operación puede reiniciarse seleccionando otra vez el archivo.
 - [x] Añadir un `.oct` reproducible y controles accesibles por teclado para cargarlo o elegir otro archivo.
@@ -575,8 +575,10 @@ Después de abrir un dataset, `updateLod("quality" | "performance", pointBudget?
 el perfil. La selección se recalcula antes de `renderFrame` tras cambios de cámara o llegada de
 bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`. En el camino de formato,
 los bloques que faltan se leen antes del cambio atómico del corte. `clear()` cierra el dataset LOD.
-Las estadísticas incluyen bloques/puntos visibles, presupuesto, IDs de bloques pendientes, cobertura
-y nodos omitidos por presupuesto. La demo ya ejecuta lector y renderer en un worker; informa bytes
+Las estadísticas incluyen bloques/puntos visibles, máximo nivel del corte (`maxVisibleLevel`),
+presupuesto, uso y límite de caché decodificada (`cacheBytes`/`cacheBudgetBytes` como strings
+decimales), IDs de bloques pendientes, cobertura y nodos omitidos por presupuesto. La demo ya ejecuta
+lector y renderer en un worker; informa bytes
 únicos cubiertos por rangos de 256 KiB. No es un porcentaje de finalización: la lectura busca
 cabeceras e índice y luego solo bloques seleccionados. Cancelar termina el worker síncrono,
 reemplaza el canvas transferido y vuelve a crear el visor; la apertura debe iniciarse otra vez. La demo
@@ -594,8 +596,8 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
 - [x] Reemplazar la proyección Canvas 2D por el canvas 3D y el renderer real para la muestra sintética.
 - [x] Añadir selección de archivo, estados de carga/error y resumen de nodos con controles etiquetados.
   Muestra bytes únicos leídos y permite cancelar/reintentar reiniciando el worker y el canvas.
-- [x] Mostrar puntos, bloques visibles, cobertura, bloques pendientes, bytes GPU y tiempo CPU del
-  worker. Faltan el nivel LOD y la memoria/caché conocida.
+- [x] Mostrar puntos, bloques visibles, nivel LOD más profundo, cobertura, bloques pendientes,
+  caché CPU usada/presupuesto, bytes GPU y tiempo CPU del worker.
 - [x] Documentar el contrato del worker y WASM, generar un `.oct` sintético reproducible e incluir
   un botón accesible por teclado para abrirlo; el selector local acepta otros archivos.
 - [x] Mantener la demo como consumidor de la API pública; el único código de geometría JavaScript
@@ -608,11 +610,11 @@ entender límites/errores sin editar el código de la demo.
 archivos del formato v1/v2 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
 y cambia el corte de forma atómica. Informa bytes únicos leídos en rangos de 256 KiB (sin
 interpretarlos como porcentaje de finalización); cancelar termina/recrea el worker y permite reintentar
-seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles,
-cobertura, bytes subidos y tiempo síncrono del worker; permite navegar, cambiar perfil, color y tamaño.
-Incluye un archivo sintético `.oct` de 4.096 puntos, generable desde un ejemplo Rust, y un control de
-teclado para cargarlo. El reporte de memoria de caché y la validación visual en navegador siguen
-pendientes.
+seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles, nivel
+LOD más profundo, cobertura, bytes subidos, caché decodificada usada/límite y tiempo síncrono del
+worker; permite navegar, cambiar perfil, color y tamaño. Incluye un archivo sintético `.oct` de 4.096
+puntos, generable desde un ejemplo Rust, y un control de teclado para cargarlo. La validación visual
+en navegador sigue pendiente.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

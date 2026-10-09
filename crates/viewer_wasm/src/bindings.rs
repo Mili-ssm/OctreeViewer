@@ -815,6 +815,23 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         &"pointBudget".into(),
         &JsValue::from_str(&stats.point_budget.to_string()),
     )?;
+    js_sys::Reflect::set(
+        &value,
+        &"maxVisibleLevel".into(),
+        &stats
+            .max_visible_level
+            .map_or(JsValue::NULL, |level| JsValue::from_f64(f64::from(level))),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"cacheBytes".into(),
+        &JsValue::from_str(&stats.cache_bytes.to_string()),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"cacheBudgetBytes".into(),
+        &JsValue::from_str(&stats.cache_budget_bytes.to_string()),
+    )?;
     let pending_block_ids = js_sys::Array::new();
     for block_id in &stats.pending_block_ids {
         pending_block_ids.push(&JsValue::from_str(&block_id.get().to_string()));

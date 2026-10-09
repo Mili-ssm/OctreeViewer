@@ -71,13 +71,18 @@ function updateStats(message) {
     const coverage = lod
         ? `${lod.coverageComplete ? "complete" : "incomplete"} (${lod.uncoveredNodes} uncovered)`
         : "not using LOD";
+    const cache = lod
+        ? `${formatBytes(Number(lod.cacheBytes))} / ${formatBytes(Number(lod.cacheBudgetBytes))}`
+        : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
         `visible points: ${points}`,
         `visible instances: ${message.gpu.visibleInstances}`,
         `visible blocks: ${message.gpu.visibleBlocks}`,
+        `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
         `LOD coverage: ${coverage}`,
         `pending blocks: ${lod?.pendingBlockIds.length ?? 0}`,
+        `decoded cache: ${cache}`,
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
         `viewport: ${canvas.width} x ${canvas.height}`,
