@@ -253,9 +253,13 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
   forma explícita los que se descartan o transforman.
 - [x] Aceptar LAS/LAZ y COPC como entrada secuencial interoperable; el fixture COPC de 107 puntos de
-  `las 0.11.1` se convierte correctamente. COPC se aplana en una raíz y no conserva su jerarquía.
-- [ ] Evaluar EPT como dataset de entrada con múltiples archivos, jerarquía externa y datos por nodo.
-  Definir su mapeo al formato propio antes de implementarlo.
+  `las 0.11.1` se convierte correctamente. COPC se aplana en una raíz y no conserva su jerarquía;
+  consultar la [especificación COPC](https://copc.io/) para conservar acceso espacial en una versión
+  futura.
+- [x] Evaluar EPT: es un dataset de varios archivos (`ept.json`, jerarquía y datos por nodo), no una
+  ruta LAS/LAZ única ([especificación EPT](https://entwine.io/en/latest/entwine-point-tile.html)).
+- [ ] Implementar entrada EPT tras definir una abstracción de dataset y cómo preservar su jerarquía
+  aditiva en el formato propio.
 
 Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
