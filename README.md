@@ -495,9 +495,11 @@ todavía.
   y reintento/recreación; Rust crea y presenta en la `Surface` WebGPU.
 - [x] Implementar cámara orbital con encuadre explícito de escena/dataset, orbit, pan, zoom y resize.
   Usa Z como eje vertical, calcula bounds y cámara en `f64` y resta un origen local en el shader antes de
-  proyectar. En cortes LOD encuadra los bounds del dataset; en la escena completa encuadra instancias.
-  Preserva la precisión local disponible; no recupera precisión perdida al convertir coordenadas
-  globales a `f32`.
+  proyectar. El encuadre inicial prueba orientaciones oblicuas y selecciona la que más ocupa la pantalla
+  sin cortar las esquinas del AABB. Reencuadrar usa siempre los bounds raíz completos, aunque haya un
+  corte LOD cargado. El cálculo usa los límites del dataset y no conoce la distribución interna de los
+  puntos; conserva la precisión local disponible y no recupera precisión perdida al convertir
+  coordenadas globales a `f32`.
 - [x] Añadir `SurfaceRenderer::sync_visible_blocks`: recibe IDs de un corte renderizable y la caché
   CPU, deduplica, conserva buffers compartidos, sube solo bloques nuevos y libera los retirados.
   Repetir el mismo corte no escribe instancias; datos inválidos o ausentes preservan el corte anterior.
@@ -539,6 +541,12 @@ llamada CPU al renderer. `FormatReader` preserva la escala visual v3 al abrir ar
 bloques sin archivo usan escala 1. Chrome/WebGPU presentó visualmente el Bunny y el escáner costero
 Outer Banks en dos ángulos por dataset. Los atributos de intensidad/clasificación aún no se transfieren
 por el puente de bloques RGB.
+
+**Encuadre inicial (2026-10-10):** el ajuste ya no usa una esfera conservadora alrededor de la nube.
+Prueba 32 orientaciones oblicuas sobre los bounds raíz, calcula la ocupación proyectada del AABB y
+conserva aquella con mayor cobertura. Abrir una nube y pulsar «Fit scene» encuadran la extensión
+completa aunque el corte LOD visible sea parcial. La heurística garantiza incluir sus bounds; no
+optimiza el contorno real de nubes cóncavas o con outliers.
 
 **Diagnóstico Bunny (2026-10-10):** el `.oct` original tiene extensión local máxima `0,15575`,
 mientras el renderer asignaba un cubo de lado `1` a cada punto. La hipótesis era que los cubos

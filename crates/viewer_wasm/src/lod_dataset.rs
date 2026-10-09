@@ -107,14 +107,10 @@ impl LodDataset {
         if renderer.set_visual_scale(self.visual_scale).is_err() {
             return false;
         }
-        if renderer.visible_block_count() > 0 {
-            renderer.fit_visible_blocks()
-        } else {
-            renderer.fit_spatial_bounds(
-                self.metadata.hierarchy().stats().root_bounds,
-                self.metadata.coordinate_frame().origin(),
-            )
-        }
+        renderer.fit_spatial_bounds(
+            self.metadata.hierarchy().stats().root_bounds,
+            self.metadata.coordinate_frame().origin(),
+        )
     }
 
     pub fn update_view(

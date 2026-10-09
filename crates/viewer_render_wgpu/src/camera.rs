@@ -62,9 +62,60 @@ impl OrbitCamera {
         }
         let radius = radius.max(0.001);
         let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
-        let horizontal_fov = 2.0 * ((VERTICAL_FOV * 0.5).tan() * aspect).atan();
-        let limiting_half_fov = (VERTICAL_FOV.min(horizontal_fov)) * 0.5;
-        let distance = radius / limiting_half_fov.sin() * 1.08;
+        let tan_vertical = (VERTICAL_FOV * 0.5).tan();
+        let tan_horizontal = tan_vertical * aspect;
+        let corners = bounds_corners(min, max, target);
+        let mut best: Option<(f64, f64, f64)> = None;
+        for pitch_degrees in [30.0_f64, 45.0, 60.0, 75.0] {
+            let pitch = pitch_degrees.to_radians();
+            for yaw_degrees in (0..360).step_by(45) {
+                let yaw = f64::from(yaw_degrees).to_radians();
+                let direction = camera_direction(yaw, pitch);
+                let right = DVec3::new(yaw.cos(), -yaw.sin(), 0.0);
+                let forward = -direction;
+                let up = forward.cross(right).normalize();
+                let mut distance = radius * 0.005;
+                let mut max_depth_offset = f64::NEG_INFINITY;
+                for corner in &corners {
+                    let depth_offset = corner.dot(direction);
+                    max_depth_offset = max_depth_offset.max(depth_offset);
+                    let horizontal = corner.dot(right).abs() / tan_horizontal;
+                    let vertical = corner.dot(up).abs() / tan_vertical;
+                    distance = distance.max(depth_offset + horizontal);
+                    distance = distance.max(depth_offset + vertical);
+                }
+                distance = distance.max(max_depth_offset + radius * 0.005) * 1.04;
+                let occupancy = projected_bounds_area(
+                    &corners,
+                    direction,
+                    right,
+                    up,
+                    distance,
+                    tan_horizontal,
+                    tan_vertical,
+                );
+                if occupancy.is_finite()
+                    && best.is_none_or(|(best_occupancy, _, _)| occupancy > best_occupancy)
+                {
+                    best = Some((occupancy, yaw, pitch));
+                }
+            }
+        }
+        let Some((_, yaw, pitch)) = best else {
+            return false;
+        };
+        let direction = camera_direction(yaw, pitch);
+        let right = DVec3::new(yaw.cos(), -yaw.sin(), 0.0);
+        let up = (-direction).cross(right).normalize();
+        let mut distance = radius * 0.005;
+        let mut max_depth_offset = f64::NEG_INFINITY;
+        for corner in &corners {
+            let depth_offset = corner.dot(direction);
+            max_depth_offset = max_depth_offset.max(depth_offset);
+            distance = distance.max(depth_offset + corner.dot(right).abs() / tan_horizontal);
+            distance = distance.max(depth_offset + corner.dot(up).abs() / tan_vertical);
+        }
+        distance = distance.max(max_depth_offset + radius * 0.005) * 1.04;
         if !distance.is_finite() || distance > f64::from(f32::MAX) * 0.1 {
             return false;
         }
@@ -72,8 +123,8 @@ impl OrbitCamera {
         self.target = target;
         self.radius = radius;
         self.distance = distance;
-        self.yaw = 0.0;
-        self.pitch = 0.55;
+        self.yaw = yaw;
+        self.pitch = pitch;
         self.fitted = true;
         true
     }
@@ -243,6 +294,52 @@ impl OrbitCamera {
     }
 }
 
+fn camera_direction(yaw: f64, pitch: f64) -> DVec3 {
+    DVec3::new(
+        yaw.sin() * pitch.cos(),
+        yaw.cos() * pitch.cos(),
+        pitch.sin(),
+    )
+}
+
+fn bounds_corners(min: DVec3, max: DVec3, target: DVec3) -> [DVec3; 8] {
+    std::array::from_fn(|index| {
+        DVec3::new(
+            if index & 1 == 0 { min.x } else { max.x },
+            if index & 2 == 0 { min.y } else { max.y },
+            if index & 4 == 0 { min.z } else { max.z },
+        ) - target
+    })
+}
+
+fn projected_bounds_area(
+    corners: &[DVec3; 8],
+    direction: DVec3,
+    right: DVec3,
+    up: DVec3,
+    distance: f64,
+    tan_horizontal: f64,
+    tan_vertical: f64,
+) -> f64 {
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for corner in corners {
+        let depth = distance - corner.dot(direction);
+        if !depth.is_finite() || depth <= 0.0 {
+            return 0.0;
+        }
+        let x = corner.dot(right) / depth / tan_horizontal;
+        let y = corner.dot(up) / depth / tan_vertical;
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    (max_x - min_x) * (max_y - min_y)
+}
+
 fn plane(normal: DVec3, point: DVec3) -> Option<FrustumPlane> {
     let normal = normal.normalize();
     FrustumPlane::new(normal.to_array(), -normal.dot(point)).ok()
@@ -284,6 +381,44 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fits_an_elongated_scene_tightly_without_clipping_its_corners() {
+        let bounds = SceneBounds {
+            min: [-50.0, -5.0, -5.0],
+            max: [50.0, 5.0, 5.0],
+        };
+        let viewport = [1600, 900];
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(bounds, viewport));
+        let frame = camera.frame(viewport).unwrap();
+        let matrix = Mat4::from_cols_array_2d(&frame.view_projection);
+        let origin = glam::Vec3::from_array(frame.render_origin[..3].try_into().unwrap());
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+
+        for x in [bounds.min[0], bounds.max[0]] {
+            for y in [bounds.min[1], bounds.max[1]] {
+                for z in [bounds.min[2], bounds.max[2]] {
+                    let relative = glam::Vec3::new(x as f32, y as f32, z as f32) - origin;
+                    let clip = matrix * relative.extend(1.0);
+                    let ndc = clip / clip.w;
+                    assert!(ndc.x.abs() <= 1.0, "x={}", ndc.x);
+                    assert!(ndc.y.abs() <= 1.0, "y={}", ndc.y);
+                    assert!((0.0..=1.0).contains(&ndc.z), "z={}", ndc.z);
+                    min_x = min_x.min(ndc.x);
+                    max_x = max_x.max(ndc.x);
+                    min_y = min_y.min(ndc.y);
+                    max_y = max_y.max(ndc.y);
+                }
+            }
+        }
+
+        let screen_coverage = (max_x - min_x) * (max_y - min_y);
+        assert!(screen_coverage > 0.1, "coverage={screen_coverage}");
     }
 
     #[test]
