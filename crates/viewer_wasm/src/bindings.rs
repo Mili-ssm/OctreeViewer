@@ -367,7 +367,12 @@ impl WasmVoxelViewer {
         js_sys::Reflect::set(
             &stats,
             &"visibleInstances".into(),
-            &JsValue::from_f64(self.inner.stats().instance_count as f64),
+            &JsValue::from_f64(renderer.visible_instance_count() as f64),
+        )?;
+        js_sys::Reflect::set(
+            &stats,
+            &"visibleBlocks".into(),
+            &JsValue::from_f64(renderer.visible_block_count() as f64),
         )?;
         Ok(stats.into())
     }

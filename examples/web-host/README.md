@@ -27,3 +27,7 @@ multiplier from `0.1` to `4`. The renderer API accepts `0.1` to `10`. Intensity 
 need scalar attributes from `PointBlock`; the current synthetic sample only has RGB, so missing
 intensity uses grayscale luminance and missing classification keeps RGB. Hosts can call
 `viewer.setColorMode("elevation")` and `viewer.setPointSize(1.2)`.
+
+The stats panel reports visible instances/blocks, cumulative bytes written to instance buffers, and
+the synchronous JS/WASM time spent inside `renderFrame()`. This call duration is CPU-side and does
+not measure GPU execution or display latency.

@@ -488,17 +488,20 @@ todavía.
   nuevos. El límite solo estima buffers de instancias del renderer; no mide ni garantiza VRAM libre.
   Si se excede, devuelve un error tipado con requerido/límite y conserva la selección anterior; no
   reduce LOD por su cuenta.
-- [ ] Añadir diagnóstico de tiempo de frame, bytes subidos y cantidad visible; el shader actual es un
-  punto de partida, no un renderer completo.
+- [x] Exponer instancias/bloques visibles y bytes acumulados de instancia en `gpuStats()`. La demo
+  muestra además el tiempo síncrono de la llamada JS/WASM a `renderFrame`; es una medida CPU y no
+  representa duración de ejecución GPU ni latencia de presentación. No se solicitan GPU timestamps.
+  El shader sigue siendo un punto de partida, no un renderer completo.
 
 **Cierre:** el host presenta una nube real en 3D, permite navegarla y el número de bloques y bytes
 subidos corresponde a la selección visible, no al tamaño total del dataset.
 
 **Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color y tamaño
-configurable; conserva buffers por bloque para cortes explícitos. El host WASM ofrece controles de
-color y tamaño para la muestra. Los atributos de intensidad/clasificación solo llegan por
-`PointBlock`; la muestra sintética suministra posiciones y RGB. No se ha verificado presentación
-visual en un navegador con GPU, y la conexión de la carga WASM con los bloques LOD sigue pendiente.
+configurable y presupuesto estricto de instancias/buffers; conserva buffers por bloque para cortes
+explícitos. El host WASM expone instancias/bloques visibles y bytes subidos; la demo muestra el tiempo
+de llamada CPU al renderer. Los atributos de intensidad/clasificación solo llegan por `PointBlock`;
+la muestra sintética suministra posiciones y RGB. No se ha verificado presentación visual en un
+navegador con GPU, y la conexión de la carga WASM con los bloques LOD sigue pendiente.
 
 ### Fase 6 — Orquestación WASM (`viewer_wasm`)
 
@@ -542,10 +545,11 @@ no realiza copias proporcionales al tamaño total de la nube.
 entender límites/errores sin editar el código de la demo.
 
 **Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia,
-muestra estado, instancias y bytes transferidos, permite navegar con puntero, rueda o teclado, y
-expone modos de color y tamaño. Si falla la inicialización o un frame, permite crear de nuevo el
-visor. El renderer ya reconcilia cortes por bloque desde la caché del core, pero la demo todavía no
-usa esa ruta. Archivos locales, bounds de dataset y validación en navegador siguen pendientes.
+muestra estado, instancias/bloques visibles, bytes transferidos y tiempo de llamada CPU, permite
+navegar con puntero, rueda o teclado, y expone modos de color y tamaño. Si falla la inicialización o
+un frame, permite crear de nuevo el visor. El renderer ya reconcilia cortes por bloque desde la caché
+del core, pero la demo todavía no usa esa ruta. Archivos locales, bounds de dataset y validación en
+navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

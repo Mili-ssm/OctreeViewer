@@ -15,6 +15,7 @@ let viewer = null;
 let animationFrame = 0;
 let lastFrameStatus = "";
 let frameCount = 0;
+let lastRenderCallMs = null;
 let activePointer = null;
 let lastPointer = [0, 0];
 let pointerMode = "orbit";
@@ -67,8 +68,10 @@ function updateStats() {
     const gpuStats = viewer.gpuStats();
     statsRoot.textContent = [
         `points: ${stats.point_count}`,
-        `instances: ${stats.instance_count}`,
-        `uploaded bytes: ${gpuStats.uploadedBytes}`,
+        `visible instances: ${gpuStats.visibleInstances}`,
+        `visible blocks: ${gpuStats.visibleBlocks}`,
+        `total uploaded bytes: ${gpuStats.uploadedBytes}`,
+        `render call: ${lastRenderCallMs === null ? "—" : `${lastRenderCallMs.toFixed(2)} ms`}`,
         `viewport: ${stats.viewport_size[0]} x ${stats.viewport_size[1]}`,
     ].join("\n");
 }
@@ -82,7 +85,9 @@ function stopRendering() {
 
 function renderFrame() {
     try {
+        const startedAt = performance.now();
         const status = viewer.renderFrame();
+        lastRenderCallMs = performance.now() - startedAt;
         if (status !== lastFrameStatus) {
             statusRoot.textContent = `Renderer: ${status}`;
             lastFrameStatus = status;
@@ -113,6 +118,7 @@ async function createViewer() {
         viewer.replacePoints(positions, colors);
         viewer.fitScene();
         frameCount = 0;
+        lastRenderCallMs = null;
         lastFrameStatus = "";
         updateStats();
         reloadButton.textContent = "Recreate viewer";
