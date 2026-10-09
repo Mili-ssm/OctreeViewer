@@ -130,8 +130,9 @@ frente a Potree.
   puntos, atributos, CRS y distribución; ampliar la ficha al añadir datasets de benchmark.
 - [ ] Definir entornos objetivo: navegador, sistema operativo, memoria RAM/GPU, almacenamiento local o
   remoto y disponibilidad de lectura por rangos.
-- [ ] Elegir métricas: tiempo de conversión, tiempo hasta primera imagen, memoria pico, bytes leídos,
-  latencia de consulta/navegación, FPS o tiempo de frame, calidad visual y estabilidad.
+- [x] Elegir métricas: tiempo de conversión, apertura y primera vista útil; memoria RAM/GPU; bytes
+  solicitados, leídos y subidos; latencia de navegación y frame p50/p95/p99; calidad visual y
+  estabilidad. Las mediciones de cada fase indicarán qué métricas puede observar realmente su entorno.
 - [ ] Crear una comparación repetible con Potree y datos equivalentes. Registrar versiones, comandos,
   opciones, hardware y resultados; no comparar cifras de entornos distintos.
 - [ ] Establecer umbrales de aceptación para cada métrica después de una primera medición de referencia.
