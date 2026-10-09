@@ -236,6 +236,7 @@ impl BlockRequestScheduler {
         };
 
         if completion == RequestCompletion::Discarded
+            && !self.completed.contains(&ticket.block_id)
             && let Some(distance) = self.current_priority(ticket.block_id)
         {
             self.insert_pending(ticket.block_id, distance);
@@ -257,6 +258,34 @@ impl BlockRequestScheduler {
         }
         self.pending_by_block.remove(&block_id);
         self.insert_pending(block_id, self.priorities[&block_id]);
+        true
+    }
+
+    /// Forgets a delivered block after its decoded payload leaves the cache.
+    /// If the current view still needs it, the block becomes pending again.
+    pub fn invalidate_completed(&mut self, block_id: BlockId) -> bool {
+        if !self.completed.remove(&block_id) {
+            return false;
+        }
+        if self.selected.contains(&block_id)
+            && !self.active_by_block.contains_key(&block_id)
+            && !self.pending_by_block.contains_key(&block_id)
+            && !self.failed.contains(&block_id)
+            && let Some(distance) = self.current_priority(block_id)
+        {
+            self.insert_pending(block_id, distance);
+        }
+        true
+    }
+
+    /// Marks a currently selected block as already resident, removing queued rereads.
+    pub fn mark_cached(&mut self, block_id: BlockId) -> bool {
+        if !self.selected.contains(&block_id) {
+            return false;
+        }
+        self.remove_pending(block_id);
+        self.failed.remove(&block_id);
+        self.completed.insert(block_id);
         true
     }
 

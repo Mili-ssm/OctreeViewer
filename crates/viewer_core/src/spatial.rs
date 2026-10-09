@@ -551,6 +551,12 @@ impl SpatialHierarchy {
         self.nodes.get(&id).map(|indexed| &indexed.metadata)
     }
 
+    pub(crate) fn child_ids(&self, id: NodeId) -> &[NodeId] {
+        self.nodes
+            .get(&id)
+            .map_or(&[], |indexed| indexed.children.as_slice())
+    }
+
     pub fn attributes(&self) -> &[AttributeDescriptor] {
         &self.attributes
     }

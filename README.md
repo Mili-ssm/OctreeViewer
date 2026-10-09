@@ -77,7 +77,7 @@ una versión publicada.
 
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
-| `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques y caché LRU acotada. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
+| `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
@@ -411,8 +411,8 @@ y reanudarse, y produce un archivo validado y abierto por el lector del formato.
   en curso y cancelación lógica de bloques que dejan de ser relevantes.
 - [x] Añadir caché acotada de bloques descomprimidos con política LRU, presupuesto de bytes estimados y
   estadísticas observables.
-- [ ] Gestionar transiciones LOD sin huecos notorios ni duplicación excesiva de puntos; especificar el
-  comportamiento en los bordes de bloques.
+- [x] Gestionar transiciones LOD por subárbol con cambio atómico, fallbacks disponibles y diagnóstico
+  de regiones sin cobertura; especificar el comportamiento en los bordes de bloques.
 - [ ] Hacer que la consulta solo devuelva bloques dentro del presupuesto, y exponer los motivos de
   omisión/atraso para diagnóstico.
 
@@ -425,9 +425,22 @@ bloques deduplicadas, ordenadas por distancia a la AABB más cercana, con un má
 El consumidor ejecuta los tickets; al cambiar la vista se quitan pendientes obsoletos y se marcan
 activas para descarte al completar. Una lectura síncrona no se interrumpe y conserva su plaza hasta
 finalizar. `DecodedBlockCache` conserva bloques descomprimidos bajo un presupuesto de bytes estimados,
-expulsa por LRU y expone hits, misses, inserciones, expulsiones y rechazos por tamaño. La estimación
-incluye capacidades de payload e información inline del bloque; excluye allocator, índice y memoria
-del proceso. Los fallos del scheduler admiten reintento explícito. No hay executor multihilo ni
+expulsa por LRU y expone hits, misses, inserciones, expulsiones y rechazos por tamaño o protección.
+La estimación incluye capacidades de payload e información inline del bloque; excluye allocator, índice y memoria
+del proceso. `LodTransitionPlanner` conserva el corte visible: en jerarquías de reemplazo mantiene
+el padre hasta que todos los bloques del corte hijo estén disponibles, y cambia cada subárbol de
+forma atómica; al reducir detalle conserva los hijos hasta que llega el padre y señala cobertura no
+demostrada si cambia la región visible mientras falta ese padre. En jerarquías aditivas
+mantiene los ancestros y agrega cada payload hijo cuando todos sus bloques están disponibles. Las
+ramas independientes pueden avanzar por separado. Protege el corte activo frente a expulsiones; si
+el presupuesto no permite cargar el nuevo corte, se rechaza la inserción y se conserva el actual.
+El plan expone bloques pendientes, fallbacks y nodos sin representación residente. Las AABB se
+consultan de forma inclusiva y conservadora; el lector no vuelve a recortar puntos por los límites
+de bloque. El conversor asigna planos internos a la celda superior y preserva el máximo exterior,
+pero el núcleo no elimina duplicados de datasets arbitrarios. Al procesar `CacheInsertResult`, el
+consumidor debe pasar sus bloques expulsados a `BlockRequestScheduler::invalidate_completed` para
+permitir recargarlos; para bloques seleccionados que ya estén en caché, debe llamar `mark_cached` y
+evitar lecturas duplicadas. Los fallos admiten reintento explícito. No hay executor multihilo ni
 integración con cámara/WASM todavía.
 
 ### Fase 5 — Presentación 3D (`viewer_render_wgpu`)
@@ -517,7 +530,7 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 
 | Componente | Responsabilidad final | Dependencias principales |
 | --- | --- | --- |
-| `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta, planificación priorizada y caché de bloques independiente de plataforma. | Modelo compartido; no depende de WASM, DOM, I/O ni `wgpu`; el executor queda fuera. |
+| `viewer_core` | Geometría, atributos, jerarquía, LOD, transición de cortes, consulta, planificación priorizada y caché de bloques independiente de plataforma. | Modelo compartido; no depende de WASM, DOM, I/O ni `wgpu`; el executor queda fuera. |
 | `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
 | `viewer_convert` | Conversión LAS/LAZ por bloques y EPT local `laszip` aditivo, publicación validada, checkpoints LAS/LAZ, particiones 2/4/8 y paralelismo acotado. | `las`, `serde_json`, `viewer_core`, `viewer_format`; EPT remoto/otros codecs y evaluación de calidad visual siguen pendientes. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |

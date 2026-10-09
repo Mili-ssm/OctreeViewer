@@ -94,6 +94,46 @@ fn prioritizes_nearest_visible_blocks_and_enforces_in_flight_limit() {
 }
 
 #[test]
+fn invalidating_a_delivered_block_requeues_it_when_the_view_still_needs_it() {
+    let hierarchy = two_leaf_hierarchy();
+    let mut scheduler = BlockRequestScheduler::new(1).unwrap();
+    update(&mut scheduler, &hierarchy, 0.0, 2.0, [0.5; 3]);
+    let request = scheduler.take_next().unwrap().unwrap();
+    assert_eq!(request.ticket().block_id(), BlockId::new(11));
+    assert_eq!(
+        scheduler
+            .complete(request.ticket(), Ok(BlockId::new(11)))
+            .unwrap(),
+        RequestCompletion::Delivered
+    );
+
+    assert!(scheduler.invalidate_completed(BlockId::new(11)));
+    assert!(!scheduler.invalidate_completed(BlockId::new(11)));
+    assert_eq!(scheduler.pending_count(), 1);
+    assert_eq!(
+        scheduler.take_next().unwrap().unwrap().ticket().block_id(),
+        BlockId::new(11)
+    );
+}
+
+#[test]
+fn cached_visible_blocks_are_not_queued_until_the_cache_invalidates_them() {
+    let hierarchy = two_leaf_hierarchy();
+    let mut scheduler = BlockRequestScheduler::new(1).unwrap();
+    update(&mut scheduler, &hierarchy, 0.0, 2.0, [0.5; 3]);
+    assert!(scheduler.mark_cached(BlockId::new(11)));
+    assert_eq!(scheduler.pending_count(), 0);
+    assert!(scheduler.take_next().unwrap().is_none());
+
+    assert!(scheduler.invalidate_completed(BlockId::new(11)));
+    assert_eq!(scheduler.pending_count(), 1);
+    assert_eq!(
+        scheduler.take_next().unwrap().unwrap().ticket().block_id(),
+        BlockId::new(11)
+    );
+}
+
+#[test]
 fn cancels_obsolete_reads_and_discards_stale_results_without_freeing_slots_early() {
     let hierarchy = two_leaf_hierarchy();
     let mut scheduler = BlockRequestScheduler::new(1).unwrap();
