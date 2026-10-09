@@ -524,8 +524,11 @@ y presentar estado.
   como máximo un comando en vuelo y el último valor pendiente por tipo. Los frames siguen limitados a
   uno en vuelo. La lectura de bloques permanece síncrona dentro del worker; cancelar termina/recrea el
   worker y descarta el dataset abierto.
-- [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
-  y ciclo de vida claros entre JS y WASM.
+- [x] Acotar la entrada `insertLodBlock`: convierte posiciones/colores en lotes de 16.384 puntos y
+  limita la reserva del bloque al presupuesto de caché; al insertarlo, la caché Rust conserva su
+  propia `PointBlock`. El host retiene los arrays de entrada durante la llamada, así que no es zero-copy.
+- [ ] Aplicar lotes y límites equivalentes a las API de escena completa (`replacePoints`/`appendPoints`)
+  y a `readNext`; definir la propiedad de buffers en esos contratos.
 - [x] Soportar archivos locales del formato propio en la demo. Definir por separado si el producto
   debe aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren
   contrato específico.
@@ -554,7 +557,9 @@ Hay dos entradas. Para datos propios ya decodificados, el host abre el índice r
 contiene `id`, `parent`, `level`, `min`, `max`, `pointCount`, `geometricError` y `blocks`; los IDs y
 conteos `u64` son strings decimales. `min`/`max` están en coordenadas del dataset;
 `insertLodBlock(id, positions, colors)` recibe posiciones `f32` locales a `coordinateOrigin` y RGB
-intercalado en arrays tipados. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
+intercalado en arrays tipados; los convierte en lotes de hasta 16.384 puntos a una `PointBlock` propia
+de Rust y rechaza bloques cuyo payload excede `cacheBytes`. El host conserva los arrays mientras dura
+la llamada. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
 Blob con el lector v1/v2. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
 las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
@@ -572,7 +577,8 @@ limita comandos repetibles a uno en vuelo y un valor pendiente por tipo, y no en
 vez; las lecturas siguen siendo síncronas dentro del worker.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
-no realiza copias proporcionales al tamaño total de la nube.
+no copia el archivo o todos sus puntos a JS. La API LOD externa copia un bloque a la vez dentro del
+presupuesto configurado; las API de escena completa mantienen su contrato de arrays por ahora.
 
 ### Fase 7 — Aplicación de referencia y extensibilidad (`examples/web-host`)
 

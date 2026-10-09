@@ -81,6 +81,14 @@ impl LodDataset {
         Ok(result.accounted_bytes)
     }
 
+    pub fn block_cache_budget_bytes(&self) -> usize {
+        self.cache.max_bytes()
+    }
+
+    pub fn references_block(&self, id: BlockId) -> bool {
+        self.metadata.hierarchy().references_block(id)
+    }
+
     pub fn fit_camera(&self, renderer: &mut SurfaceRenderer<'_>) -> bool {
         renderer.fit_spatial_bounds(
             self.metadata.hierarchy().stats().root_bounds,
@@ -224,5 +232,11 @@ mod tests {
             dataset.insert_block(block_with_points(10, 2)),
             Err(LodDatasetError::CacheRejected(_))
         ));
+    }
+
+    #[test]
+    fn reports_cache_budget_for_bounding_external_block_imports() {
+        let dataset = dataset(4096);
+        assert_eq!(dataset.block_cache_budget_bytes(), 4096);
     }
 }

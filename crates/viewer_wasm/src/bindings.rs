@@ -12,6 +12,7 @@ use viewer_format::FormatReader;
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
+const LOD_IMPORT_BATCH_POINTS: usize = 16_384;
 
 #[wasm_bindgen]
 pub struct WasmLasImportSession {
@@ -442,26 +443,76 @@ impl WasmVoxelViewer {
             .parse::<u64>()
             .map(BlockId::new)
             .map_err(|_| JsValue::from_str("blockId must be an unsigned 64-bit integer string"))?;
-        let positions = positions.to_vec();
-        let colors = colors.to_vec();
-        if positions.len() % 3 != 0 || colors.len() != positions.len() {
+        let position_components = positions.length() as usize;
+        let color_components = colors.length() as usize;
+        if position_components % 3 != 0 || color_components != position_components {
             return Err(JsValue::from_str(
                 "positions and colors must contain three values per point",
             ));
         }
-        if positions.iter().any(|value| !value.is_finite()) {
-            return Err(JsValue::from_str("block positions must be finite"));
+        let point_count = position_components / 3;
+        let dataset = self
+            .lod_dataset
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        if !dataset.references_block(block_id) {
+            return Err(JsValue::from_str(
+                "blockId is not referenced by the dataset",
+            ));
         }
-        let points = positions
-            .chunks_exact(3)
-            .zip(colors.chunks_exact(3))
-            .map(|(position, color)| {
-                Point::new(
+        let budget_bytes = dataset.block_cache_budget_bytes();
+        let requested_bytes = point_count
+            .checked_mul(std::mem::size_of::<Point>())
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<PointBlock>()))
+            .ok_or_else(|| JsValue::from_str("block size exceeds the cache budget"))?;
+        if requested_bytes > budget_bytes {
+            return Err(JsValue::from_str(&format!(
+                "block needs at least {requested_bytes} bytes, cache budget is {budget_bytes}"
+            )));
+        }
+
+        let mut points = Vec::new();
+        points
+            .try_reserve_exact(point_count)
+            .map_err(|_| JsValue::from_str("unable to allocate decoded point block"))?;
+        let staged_points = point_count.min(LOD_IMPORT_BATCH_POINTS);
+        let mut position_batch = vec![0.0_f32; staged_points * 3];
+        let mut color_batch = vec![0_u8; staged_points * 3];
+        let mut point_offset = 0;
+        while point_offset < point_count {
+            let batch_points = (point_count - point_offset).min(LOD_IMPORT_BATCH_POINTS);
+            let batch_components = batch_points * 3;
+            let component_start = (point_offset * 3) as u32;
+            let component_end = component_start + batch_components as u32;
+            positions
+                .subarray(component_start, component_end)
+                .copy_to(&mut position_batch[..batch_components]);
+            colors
+                .subarray(component_start, component_end)
+                .copy_to(&mut color_batch[..batch_components]);
+            for (position, color) in position_batch[..batch_components]
+                .chunks_exact(3)
+                .zip(color_batch[..batch_components].chunks_exact(3))
+            {
+                if position.iter().any(|value| !value.is_finite()) {
+                    return Err(JsValue::from_str("block positions must be finite"));
+                }
+                points.push(Point::new(
                     [position[0], position[1], position[2]],
                     ColorRgb::new(color[0], color[1], color[2]),
-                )
-            })
-            .collect();
+                ));
+            }
+            point_offset += batch_points;
+        }
+        let allocated_bytes = points
+            .capacity()
+            .saturating_mul(std::mem::size_of::<Point>())
+            .saturating_add(std::mem::size_of::<PointBlock>());
+        if allocated_bytes > budget_bytes {
+            return Err(JsValue::from_str(
+                "decoded block allocation exceeds the cache budget",
+            ));
+        }
         let dataset = self
             .lod_dataset
             .as_mut()
