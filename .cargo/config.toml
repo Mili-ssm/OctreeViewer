@@ -1,3 +1,8 @@
 [alias]
 check-web = "check -p viewer_wasm --target wasm32-unknown-unknown"
 test-core = "test -p viewer_core"
+test-fast = "test --workspace --profile fast"
+check-all = "check --workspace --all-targets"
+bench-visibility = "run --profile perf -p viewer_core --example visibility_bench"
+bench-codec = "run --profile perf -p viewer_format --example codec_bench"
+bench-spatial = "run --profile perf -p viewer_format --example spatial_branching_bench"

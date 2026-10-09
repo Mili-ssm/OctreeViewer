@@ -36,3 +36,18 @@ wgpu = "24"
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+# Lower compile overhead for frequent local test runs. Use `cargo test --workspace`
+# as the unoptimized compiler-default baseline when comparing timings.
+[profile.fast]
+inherits = "dev"
+debug = 0
+incremental = true
+
+# Optimized native benchmark iteration without the full release LTO cost.
+# Record this profile explicitly; results are not interchangeable with `release`.
+[profile.perf]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+codegen-units = 16

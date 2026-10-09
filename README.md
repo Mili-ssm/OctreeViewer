@@ -44,6 +44,12 @@ se incluyen y qué hardware y navegador forman parte del objetivo.
   descomprimirse y descartarse por separado.
 - **Nivel de detalle:** seleccionar detalle según cámara, tamaño proyectado y presupuesto, no solo
   cantidad total de puntos.
+- **Granularidad visual objetivo:** en condiciones normales, ajustar el LOD dentro de un rango
+  orientativo que va de una densidad alta de aproximadamente 2 vóxeles por píxel a una representación
+  gruesa donde cada vóxel ocupa alrededor de 16 × 16 píxeles proyectados. Este rango expresa a la vez
+  la cantidad de representantes que puede llegar a dibujarse y el tamaño visual de cada celda; no es
+  una densidad fija ni una garantía para toda cámara, viewport o dataset. La selección concreta debe
+  seguir el error proyectado y los presupuestos de puntos/GPU, y validarse visualmente con datos reales.
 - **Contratos pequeños:** separar geometría, almacenamiento, lectura, consulta espacial y
   presentación para poder extenderlos sin acoplar el núcleo a WASM o `wgpu`.
 - **Métricas antes de promesas:** toda afirmación de escala o rendimiento debe venir acompañada de
@@ -686,11 +692,40 @@ cambian alcance, rendimiento y compatibilidad:
 
 ## Desarrollo y validación
 
-Checks existentes para el workspace:
+Perfiles Cargo para separar iteración rápida y mediciones optimizadas:
+
+| Perfil | Uso | Compilación |
+| --- | --- | --- |
+| `fast` | Tests frecuentes (`cargo test-fast`) | Hereda `dev`, omite símbolos de depuración y mantiene habilitada la compilación incremental. |
+| `perf` | Benchmarks nativos (`cargo bench-visibility`, `cargo bench-codec`, `cargo bench-spatial`) | Hereda `release`, usa `opt-level=3`, LTO thin y 16 unidades de código. |
+| `release` | Artefactos actuales y referencia de tamaño/WASM | Mantiene `opt-level="s"`, LTO completo y una unidad de código. |
+
+`fast` y `perf` generan artefactos separados en `target/fast` y `target/perf`. `perf` facilita
+iteraciones de benchmark y no sustituye las cifras de `release`; registra siempre el perfil, la
+revisión, el dataset y el equipo. Los aliases de `.cargo/config.toml` también ofrecen
+`cargo check-all` para compilar todos los targets.
+
+Para medir la selección de vóxeles visibles frente a ordenar todos los candidatos y truncar:
 
 ```bash
+cargo bench-visibility
+```
+
+El benchmark sintético genera 200.000 vóxeles y compara medianas de nueve muestras intercaladas
+por presupuesto. En Linux x86-64 con AMD Ryzen AI 9 365, tres ejecuciones del perfil `perf` dieron
+una mejora de 2,79–2,83× para límite 256, 2,72–2,86× para 4.096 y 1,75× para 65.536. Son resultados
+de microbenchmark local, no una predicción del tiempo de frame en navegador. La consulta limitada
+usa unos 8 bytes temporales por candidato para conservar el orden de empates y asigna el resultado
+final aparte, proporcionalmente al límite solicitado.
+
+Checks del workspace y comandos de iteración:
+
+```bash
+cargo test-fast
 cargo test --workspace
 cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo check-all
 cargo check -p viewer_wasm --target wasm32-unknown-unknown
 ```
 

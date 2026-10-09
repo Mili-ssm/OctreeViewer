@@ -32,13 +32,21 @@ fn invalid_batch_does_not_partially_change_store() {
     let mut store = SparseVoxelStore::new(config);
     store.insert_batch(&vec![point([0.0; 3])].into()).unwrap();
 
-    let batch: PointBatch = vec![point([1.0; 3]), point([f32::NAN, 0.0, 0.0])].into();
+    let batch: PointBatch = vec![
+        Point::new([0.2, 0.2, 0.2], ColorRgb::new(255, 0, 0)),
+        point([1.0; 3]),
+        point([f32::NAN, 0.0, 0.0]),
+    ]
+    .into();
     assert!(matches!(
         store.insert_batch(&batch),
         Err(VoxelizationError::InvalidPointPosition(_))
     ));
     assert_eq!(store.point_count(), 1);
     assert_eq!(store.voxel_count(), 1);
+    let existing = store.voxels();
+    assert_eq!(existing[0].point_count, 1);
+    assert_eq!(existing[0].color, ColorRgb::new(10, 20, 30));
 }
 
 #[test]
@@ -71,8 +79,9 @@ fn zero_limit_returns_no_voxels_and_limits_are_stable() {
         .insert_batch(
             &vec![
                 point([2.0, 0.0, 0.0]),
-                point([0.0; 3]),
+                point([3.0, 0.0, 0.0]),
                 point([1.0, 0.0, 0.0]),
+                point([0.0; 3]),
             ]
             .into(),
         )
@@ -95,4 +104,43 @@ fn zero_limit_returns_no_voxels_and_limits_are_stable() {
     assert_eq!(first, second);
     assert_eq!(first.len(), 1);
     assert_eq!(first.voxels()[0].center, [0.5; 3]);
+}
+
+#[test]
+fn limited_visibility_returns_sorted_prefix_and_handles_large_limits() {
+    let config = VoxelizationConfig::new(1.0, [0.0; 3]).unwrap();
+    let mut store = SparseVoxelStore::new(config);
+    store
+        .insert_batch(
+            &vec![
+                point([2.0, 0.0, 0.0]),
+                point([3.0, 0.0, 0.0]),
+                point([1.0, 0.0, 0.0]),
+                point([0.0; 3]),
+            ]
+            .into(),
+        )
+        .unwrap();
+
+    let first_two = store.build_visible_batch(VisibilityQuery {
+        bounds: None,
+        limit: Some(2),
+    });
+    let all = store.build_visible_batch(VisibilityQuery::default());
+    assert_eq!(first_two.voxels(), &all.voxels()[..2]);
+    assert_eq!(
+        first_two
+            .voxels()
+            .iter()
+            .map(|voxel| voxel.center[0])
+            .collect::<Vec<_>>(),
+        [0.5, 1.5]
+    );
+    for limit in [4, 10] {
+        let at_or_above_count = store.build_visible_batch(VisibilityQuery {
+            bounds: None,
+            limit: Some(limit),
+        });
+        assert_eq!(at_or_above_count, all);
+    }
 }

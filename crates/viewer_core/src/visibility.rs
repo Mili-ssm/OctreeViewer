@@ -49,33 +49,46 @@ impl SparseVoxelStore {
             return VisibleVoxelBatch::new(Vec::new());
         }
 
-        let mut visible = Vec::new();
-
-        for voxel in self.iter_voxels() {
-            if let Some(bounds) = query.bounds
-                && !bounds.contains_point(voxel.center)
-            {
-                continue;
-            }
-
-            visible.push(VisibleVoxel {
+        let visible = self
+            .iter_voxels()
+            .filter(|voxel| {
+                query
+                    .bounds
+                    .is_none_or(|bounds| bounds.contains_point(voxel.center))
+            })
+            .map(|voxel| VisibleVoxel {
                 center: voxel.center,
                 size: voxel.size,
                 color: voxel.color,
                 point_count: voxel.point_count,
             });
-        }
 
-        visible.sort_by(|left, right| {
-            left.center[0]
-                .total_cmp(&right.center[0])
-                .then_with(|| left.center[1].total_cmp(&right.center[1]))
-                .then_with(|| left.center[2].total_cmp(&right.center[2]))
-        });
         if let Some(limit) = query.limit {
-            visible.truncate(limit);
+            let mut visible = visible.enumerate().collect::<Vec<_>>();
+            if limit < visible.len() {
+                visible.select_nth_unstable_by(limit, compare_indexed_visible);
+                visible.truncate(limit);
+            }
+            visible.sort_unstable_by(compare_indexed_visible);
+            VisibleVoxelBatch::new(visible.into_iter().map(|(_, voxel)| voxel).collect())
+        } else {
+            let mut visible = visible.collect::<Vec<_>>();
+            visible.sort_by(compare_visible);
+            VisibleVoxelBatch::new(visible)
         }
-
-        VisibleVoxelBatch::new(visible)
     }
+}
+
+fn compare_visible(left: &VisibleVoxel, right: &VisibleVoxel) -> std::cmp::Ordering {
+    left.center[0]
+        .total_cmp(&right.center[0])
+        .then_with(|| left.center[1].total_cmp(&right.center[1]))
+        .then_with(|| left.center[2].total_cmp(&right.center[2]))
+}
+
+fn compare_indexed_visible(
+    (left_index, left): &(usize, VisibleVoxel),
+    (right_index, right): &(usize, VisibleVoxel),
+) -> std::cmp::Ordering {
+    compare_visible(left, right).then_with(|| left_index.cmp(right_index))
 }
