@@ -228,10 +228,14 @@ compatibles entre versiones.
   escala y precisión de cuantización por dataset o bloque, comenzar evaluando coordenadas `u32` y
   reconstruirlas a `f32` local al preparar los datos para renderizado. El error de cuantización debe
   quedar acotado y reflejarse en las cotas de error geométrico.
-- [ ] Evaluar para una iteración futura coordenadas enteras menores que `u32` relativas al nodo o
-  voxel; reconstruir la posición global acumulando las posiciones relativas a través de la jerarquía.
-  Adoptar esta opción solo si el rango y la precisión se pueden garantizar y la reducción medida de
-  memoria compensa la complejidad.
+- [x] Medir un candidato `u16` afín por bloque sobre Belvedere y reservar fallback `u32` por bloque
+  cuando exceda el umbral candidato de 0,01. El error incremental máximo fue 0,0349; 19 de 1.343
+  bloques requirieron fallback y el ahorro teórico de coordenadas sin comprimir fue 490.227.702 B.
+  El ensayo parte de la salida `.oct` actual, no de LAS original, y no mide el efecto de compresión;
+  por eso no cambia el formato ni demuestra el error total ([informe](docs/COORDINATE_WIDTH_BENCH.md)).
+- [ ] Evaluar coordenadas menores que `u32` relativas al nodo o voxel, reconstruyendo posiciones a
+  través de la jerarquía. Repetir con LAS original y varias distribuciones; adoptar solo si se puede
+  garantizar el límite total de error y medir la reducción real del payload comprimido.
 - [x] Elegir compresión por bloque independiente para poder leer y descartar datos sin descomprimir el
   archivo entero; medir ratio, coste de CPU y coste de lectura.
 - [x] Incluir detección de truncamiento/corrupción y mecanismo de integridad por bloque o índice.
