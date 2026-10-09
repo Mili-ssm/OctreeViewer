@@ -1,7 +1,8 @@
 # Experimento de ramificación espacial
 
-Estado: comparativa sintética completada; informa la selección futura de partición y LOD, pero no
-fija la política de producción.
+Estado: comparativa sintética y conversiones directas 2/4/8 completadas. Los resultados informan la
+selección de partición, pero no fijan la política de producción; falta validar cortes con presupuestos
+visibles equivalentes y revisar calidad visual.
 
 Repetir con:
 
@@ -82,6 +83,12 @@ Para una lectura rápida de nodos y bytes retenidos, sin volver a recorrer la fu
 cargo run --release -p viewer_convert --example spatial_quality_bench -- SOURCE DATASET.oct --metadata-only
 ```
 
+Para analizar una conversión directa 4×4×4 u 8×8×8, indique la misma opción usada al convertir:
+
+```sh
+cargo run --release -p viewer_convert --example spatial_quality_bench -- SOURCE DATASET.oct --spatial-divisions 4
+```
+
 El factor 2/4/8 por eje agrupa uno, dos o tres niveles binarios del octree existente. Cada candidato
 conserva la raíz, nodos internos en múltiplos del nivel agrupado y todas las hojas; los nodos
 conservados se conectarían a su ancestro conservado más cercano. No se genera un `.oct` candidato:
@@ -138,8 +145,60 @@ En estas tres fuentes, conservar niveles más profundos reduce el error observad
 especialmente en Z para las teselas costeras. El payload retenido y su ratio LZ4 cambian muy poco;
 además, 8 divisiones no siempre retienen menos bytes o nodos que 4 porque las hojas adaptativas no
 coinciden con los mismos niveles. No se observó una violación de la cota geométrica entre los puntos
-muestreados. El resultado apoya evaluar profundidad y calidad por separado de compresión; no fija el
-factor de producción ni demuestra cómo cambiarían los resultados con particiones directas distintas.
+muestreados. El resultado apoya evaluar profundidad y calidad por separado de compresión. Sus cifras
+describen retención de niveles en una jerarquía binaria y no predicen las salidas directas medidas a
+continuación.
+
+## Conversiones adaptativas directas 2/4/8
+
+El conversor ahora crea realmente 2×2×2, 4×4×4 u 8×8×8 hijos por nodo; usa 2 por defecto. Para
+repetir la conversión y la evaluación de calidad del COPC Belvedere:
+
+```sh
+cargo run --release -p viewer_convert -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz /tmp/belv.oct --spatial-divisions 8
+cargo run --release -p viewer_convert --example spatial_quality_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.laz /tmp/belv.oct --spatial-divisions 8
+```
+
+Mediciones del 9 de octubre de 2026 en Linux x86-64, AMD Ryzen AI 9 365, Rust 1.99.0, misma fuente y
+opciones de conversión salvo divisiones, una ejecución por variante. `/usr/bin/time -v` midió el
+tiempo total y RSS. El análisis de calidad muestreó 995.791 de los 81.682.329 puntos fuente, con el
+mismo hash e intervalo de muestreo en las tres conversiones.
+
+| Divisiones/eje | Tiempo | Archivo `.oct` | Bloques | Payload LZ4 | Ratio payload | Memoria estimada | RSS pico |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 99,68 s | 1.596.356.685 B | 1.343 | 1.596.095.673 B | 0,476453 | 60 MiB | 36,3 MiB |
+| 4 | 83,91 s | 1.592.927.212 B | 4.435 | 1.592.066.352 B | 0,475281 | 63 MiB | 39,5 MiB |
+| 8 | 68,67 s | 1.592.150.607 B | 5.140 | 1.591.152.977 B | 0,475086 | 67 MiB | 39,8 MiB |
+
+El factor 2 nuevo conservó exactamente el número de bloques y los bytes del payload de la salida
+histórica; el archivo total cambió en 11 bytes por la descripción de la política de muestreo. Los
+factores 4 y 8 redujeron el tamaño total en aproximadamente 0,21 % y 0,26 %, pero multiplicaron el
+número de bloques por 3,3× y 3,8×. En esta ejecución, el tiempo bajó aproximadamente 16 % y 31 %;
+son mediciones de una sola pasada, no una garantía de rendimiento. No se midió el pico de spools en
+disco de las variantes directas.
+
+| División/eje | Nivel medido | Celdas nominales/eje | RMSE | p95 | Máximo observado | Máximo de error declarado | Violaciones |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 1 | 2 | 190,205 | 261,881 | 324,585 | 328,199 | 0 |
+| 2 | 2 | 4 | 94,407 | 130,713 | 163,049 | 164,100 | 0 |
+| 2 | 3 | 8 | 46,974 | 65,126 | 81,661 | 82,050 | 0 |
+| 4 | 1 | 4 | 94,407 | 130,713 | 163,049 | 164,100 | 0 |
+| 4 | 2 | 16 | 21,694 | 32,287 | 40,871 | 41,025 | 0 |
+| 4 | 3 | 64 | 0,000 | 0,000 | 0,000 | 0,000 | 0 |
+| 8 | 1 | 8 | 46,974 | 65,126 | 81,661 | 82,050 | 0 |
+| 8 | 2 | 64 | 0,000 | 0,000 | 0,000 | 0,000 | 0 |
+
+Los niveles mostrados no representan cortes de igual tamaño físico entre todas las variantes. Los
+cortes de nivel 3 para factor 4 y nivel 2 para factor 8 ya llegan a hojas completas en esta nube, por
+eso su residuo muestreado es cero salvo la cuantización de coordenadas. En los primeros niveles, los
+errores bajan al aumentar las divisiones, aunque el número de bloques y la complejidad del índice
+suben. El estudio previo de jerarquías equivalentes conserva las mismas hojas y no se debe confundir
+con esta conversión directa.
+
+La salida directa 2×2×2 generada en esta medición tiene payload idéntico a la referencia guardada.
+La prueba de equivalencia de workers también cubre partición 4×4×4; la opción de división se guarda
+en los checkpoints y no se puede cambiar al reanudar. Los manifiestos V1 antiguos se leen como factor
+2.
 
 ## Lectura y límites
 

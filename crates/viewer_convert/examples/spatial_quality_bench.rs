@@ -11,23 +11,44 @@ use viewer_format::FormatReader;
 
 const LOD_GRID: usize = 8;
 const MAX_SAMPLE_POINTS: u64 = 1_000_000;
+const ALLOWED_DIVISIONS: [u8; 3] = [2, 4, 8];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = env::args_os().skip(1).collect::<Vec<_>>();
-    if !(2..=3).contains(&arguments.len()) {
-        eprintln!("Usage: spatial_quality_bench SOURCE DATASET.oct [--metadata-only]");
+    if !(2..=5).contains(&arguments.len()) {
+        eprintln!(
+            "Usage: spatial_quality_bench SOURCE DATASET.oct [--metadata-only] [--spatial-divisions 2|4|8]"
+        );
         return Err("expected source and converted dataset".into());
     }
-    let metadata_only = arguments
-        .get(2)
-        .is_some_and(|argument| argument == "--metadata-only");
-    if arguments.len() == 3 && !metadata_only {
-        return Err("unknown option".into());
+    let mut metadata_only = false;
+    let mut divisions = 2_u8;
+    let mut index = 2;
+    while index < arguments.len() {
+        match arguments[index].to_string_lossy().as_ref() {
+            "--metadata-only" => {
+                metadata_only = true;
+                index += 1;
+            }
+            "--spatial-divisions" => {
+                divisions = arguments
+                    .get(index + 1)
+                    .ok_or("missing value for --spatial-divisions")?
+                    .to_string_lossy()
+                    .parse()?;
+                index += 2;
+            }
+            option => return Err(format!("unknown option: {option}").into()),
+        }
+    }
+    if !ALLOWED_DIVISIONS.contains(&divisions) {
+        return Err("spatial divisions must be 2, 4, or 8".into());
     }
     analyze(
         Path::new(&arguments[0]),
         Path::new(&arguments[1]),
         metadata_only,
+        divisions,
     )
 }
 
@@ -35,6 +56,7 @@ fn analyze(
     source: &Path,
     dataset: &Path,
     metadata_only: bool,
+    divisions: u8,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut source_reader = LasReader::from_path(source)?;
     let source_header = source_reader.header().clone();
@@ -67,14 +89,6 @@ fn analyze(
     if origin != source_min {
         return Err("source bounds origin does not match the converted dataset".into());
     }
-    if hierarchy.stats().max_level < 3 {
-        return Err(format!(
-            "dataset hierarchy reaches level {}, but comparison requires at least level 3; convert with a smaller --points-per-block value",
-            hierarchy.stats().max_level
-        )
-        .into());
-    }
-
     let nodes = hierarchy
         .query(hierarchy.stats().root_bounds)
         .collect::<Vec<_>>();
@@ -104,10 +118,10 @@ fn analyze(
         };
         for child_id in child_ids {
             let child = node_by_id[child_id];
-            let key = child_index(child.bounds(), parent_region);
-            let region = child_bounds(parent_region, key);
+            let key = child_index(child.bounds(), parent_region, divisions);
+            let region = child_bounds(parent_region, key, divisions);
             if child_keys.insert((parent_id, key), *child_id).is_some() {
-                return Err(format!("two child nodes occupy octant {key} of {parent_id:?}").into());
+                return Err(format!("two child nodes occupy cell {key} of {parent_id:?}").into());
             }
             regions.insert(*child_id, region);
             pending.push(*child_id);
@@ -146,7 +160,10 @@ fn analyze(
         }
     }
 
-    let strides = [1_u32, 2, 3];
+    let strides = [1_u32, 2, 3]
+        .into_iter()
+        .filter(|level| *level <= hierarchy.stats().max_level)
+        .collect::<Vec<_>>();
     let retained_stats = strides
         .iter()
         .map(|stride| {
@@ -228,13 +245,13 @@ fn analyze(
                 let position = [x, y, z];
                 let mut selected = root;
                 let mut cut_positions = BTreeMap::new();
-                for stride in strides {
-                    while node_by_id[&selected].level() < stride {
+                for stride in &strides {
+                    while node_by_id[&selected].level() < *stride {
                         if !children.contains_key(&selected) {
                             break;
                         }
                         let region = regions[&selected];
-                        let key = child_index_position(position, midpoint(region));
+                        let key = child_index_position(position, region, divisions);
                         let Some(child_id) = child_keys.get(&(selected, key)) else {
                             let known = child_keys
                                 .keys()
@@ -257,19 +274,19 @@ fn analyze(
                         } else {
                             position
                         };
-                    cut_positions.insert(stride, represented);
+                    cut_positions.insert(*stride, represented);
                     let residual = std::array::from_fn(|axis| represented[axis] - position[axis]);
                     metrics
-                        .get_mut(&stride)
+                        .get_mut(stride)
                         .expect("known stride")
                         .record(residual, node.geometric_error());
                 }
-                for pair in [(1, 2), (2, 3)] {
-                    let left = cut_positions[&pair.0];
-                    let right = cut_positions[&pair.1];
+                for pair in strides.windows(2) {
+                    let left = cut_positions[&pair[0]];
+                    let right = cut_positions[&pair[1]];
                     let delta = std::array::from_fn(|axis| right[axis] - left[axis]);
                     metrics
-                        .get_mut(&pair.1)
+                        .get_mut(&pair[1])
                         .expect("known stride")
                         .record_transition(delta);
                 }
@@ -279,6 +296,8 @@ fn analyze(
     }
 
     println!("source_points={source_count}");
+    println!("spatial_divisions={divisions}");
+    println!("maximum_hierarchy_level={}", hierarchy.stats().max_level);
     println!("sample_points={}", metrics[&1].samples);
     println!("sample_stride={sample_stride}");
     println!("sampling=stable_hash(source_point_index) % sample_stride == 0");
@@ -288,8 +307,8 @@ fn analyze(
     {
         let metric = &metrics[&stride];
         println!(
-            "stride={stride} equivalent_divisions_per_axis={} retained_nodes={node_count} retained_blocks={block_count} retained_payload_bytes={payload_bytes} retained_raw_payload_bytes={raw_payload_bytes} retained_compression_ratio={:.6} retained_payload_points={point_count}",
-            1_u32 << stride,
+            "stride={stride} nominal_cells_per_axis={} retained_nodes={node_count} retained_blocks={block_count} retained_payload_bytes={payload_bytes} retained_raw_payload_bytes={raw_payload_bytes} retained_compression_ratio={:.6} retained_payload_points={point_count}",
+            u32::from(divisions).pow(stride),
             payload_bytes as f64 / raw_payload_bytes.max(1) as f64
         );
         println!(
@@ -303,7 +322,7 @@ fn analyze(
             metric.max_declared_error,
             metric.declared_error_violations,
         );
-        if stride > 1 {
+        if stride > strides[0] {
             println!(
                 "stride={stride} transition_mean_xyz={:.6},{:.6},{:.6} transition_p95={:.6} transition_max_observed={:.6}",
                 metric.mean_transition()[0],
@@ -419,39 +438,42 @@ fn cube_bounds(bounds: SpatialBounds) -> SpatialBounds {
     SpatialBounds::new(min, max).expect("source bounds are finite and ordered")
 }
 
-fn child_index(bounds: SpatialBounds, parent: SpatialBounds) -> usize {
+fn child_index(bounds: SpatialBounds, parent: SpatialBounds, divisions: u8) -> usize {
     let center = std::array::from_fn::<_, 3, _>(|axis| {
         bounds.min()[axis] + (bounds.max()[axis] - bounds.min()[axis]) / 2.0
     });
-    child_index_position(center, midpoint(parent))
+    child_index_position(center, parent, divisions)
 }
 
-fn midpoint(bounds: SpatialBounds) -> [f64; 3] {
-    std::array::from_fn(|axis| bounds.min()[axis] + (bounds.max()[axis] - bounds.min()[axis]) / 2.0)
+fn child_index_position(position: [f64; 3], bounds: SpatialBounds, divisions: u8) -> usize {
+    let count = usize::from(divisions);
+    let mut cell = [0; 3];
+    for axis in 0..3 {
+        let span = bounds.max()[axis] - bounds.min()[axis];
+        let cell_side = span / f64::from(divisions);
+        let scaled = ((position[axis] - bounds.min()[axis]) / cell_side).floor();
+        cell[axis] = (scaled as usize).min(count - 1);
+    }
+    (cell[0] * count + cell[1]) * count + cell[2]
 }
 
-fn child_index_position(position: [f64; 3], middle: [f64; 3]) -> usize {
-    (usize::from(position[0] >= middle[0]) << 2)
-        | (usize::from(position[1] >= middle[1]) << 1)
-        | usize::from(position[2] >= middle[2])
-}
-
-fn child_bounds(bounds: SpatialBounds, child: usize) -> SpatialBounds {
-    let middle = std::array::from_fn::<_, 3, _>(|axis| {
-        bounds.min()[axis] + (bounds.max()[axis] - bounds.min()[axis]) / 2.0
-    });
+fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBounds {
+    let count = usize::from(divisions);
+    let cell = [
+        child / (count * count),
+        (child / count) % count,
+        child % count,
+    ];
     let min = std::array::from_fn(|axis| {
-        if child & (1 << (2 - axis)) == 0 {
-            bounds.min()[axis]
-        } else {
-            middle[axis]
-        }
+        let span = bounds.max()[axis] - bounds.min()[axis];
+        bounds.min()[axis] + cell[axis] as f64 * span / count as f64
     });
     let max = std::array::from_fn(|axis| {
-        if child & (1 << (2 - axis)) == 0 {
-            middle[axis]
-        } else {
+        if cell[axis] + 1 == count {
             bounds.max()[axis]
+        } else {
+            let span = bounds.max()[axis] - bounds.min()[axis];
+            bounds.min()[axis] + (cell[axis] + 1) as f64 * span / count as f64
         }
     });
     SpatialBounds::new(min, max).expect("child partition lies within its parent")

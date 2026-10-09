@@ -24,7 +24,7 @@ use super::{
 };
 
 const SPOOL_RECORD_BYTES: u64 = 55;
-const CHILD_COUNT: usize = 8;
+const CHILD_SPOOL_BUFFER_BYTES: usize = 8 * 1024;
 const SAMPLE_GRID_SIZE: usize = 8;
 const MAX_SPATIAL_DEPTH: u32 = 32;
 const PLANNED_NODE_BYTES: u64 = 256;
@@ -252,7 +252,7 @@ pub(crate) fn build_spatial_plan(
         .points_per_block()
         .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
     check_memory_budget(
-        estimate_memory(point_limit, 0, 0)?,
+        estimate_memory(point_limit, 0, 0, options.spatial_divisions())?,
         options.max_memory_budget_bytes(),
     )?;
     let root_bounds = cube_bounds(source.bounds);
@@ -260,6 +260,7 @@ pub(crate) fn build_spatial_plan(
         workspace,
         point_limit,
         memory_budget: options.max_memory_budget_bytes(),
+        spatial_divisions: options.spatial_divisions(),
         frame: source.frame,
         has_gps_time: source.point_format.has_gps_time,
         has_color: source.point_format.has_color,
@@ -284,10 +285,15 @@ pub(crate) fn build_spatial_plan(
         point_limit,
         builder.node_records.len(),
         builder.output_blocks.len(),
+        options.spatial_divisions(),
     )?
     .checked_add(
         (builder.workers_used.saturating_sub(1) as u64)
-            .checked_mul(SPATIAL_WORKER_OVERHEAD_BYTES)
+            .checked_mul(
+                SPATIAL_WORKER_OVERHEAD_BYTES
+                    .checked_add(child_spool_buffer_bytes(options.spatial_divisions())?)
+                    .ok_or(ConvertError::SizeOverflow)?,
+            )
             .ok_or(ConvertError::SizeOverflow)?,
     )
     .ok_or(ConvertError::SizeOverflow)?;
@@ -316,7 +322,12 @@ pub(crate) fn build_spatial_plan(
     let metadata = FormatMetadata::new(
         DatasetMetadata::new(source.frame, hierarchy),
         None,
-        Some("adaptive 2x2x2 octree; full-resolution leaves; 8x8x8 voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point".to_owned()),
+        Some(format!(
+            "adaptive {}x{}x{} spatial partition; full-resolution leaves; 8x8x8 voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
+            options.spatial_divisions(),
+            options.spatial_divisions(),
+            options.spatial_divisions()
+        )),
         Vec::new(),
     )?;
     Ok(SpatialPlan {
@@ -345,6 +356,51 @@ struct RootChildTask {
     bounds: SpatialBounds,
 }
 
+struct ChildSpool {
+    path: PathBuf,
+    point_count: u64,
+    buffer: Vec<u8>,
+    created: bool,
+}
+
+impl ChildSpool {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            point_count: 0,
+            buffer: Vec::with_capacity(CHILD_SPOOL_BUFFER_BYTES),
+            created: false,
+        }
+    }
+
+    fn write_point(&mut self, point: &SpoolPoint) -> Result<(), ConvertError> {
+        if self.buffer.len() + SPOOL_RECORD_BYTES as usize > CHILD_SPOOL_BUFFER_BYTES {
+            self.flush()?;
+        }
+        write_point(&mut self.buffer, point)?;
+        self.point_count += 1;
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), ConvertError> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+        let mut options = OpenOptions::new();
+        options.write(true);
+        if self.created {
+            options.append(true);
+        } else {
+            options.create_new(true);
+        }
+        let mut file = options.open(&self.path)?;
+        file.write_all(&self.buffer)?;
+        self.buffer.clear();
+        self.created = true;
+        Ok(())
+    }
+}
+
 struct BranchOutput {
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
@@ -360,6 +416,7 @@ struct SpatialBuilder<'a> {
     workspace: &'a Workspace,
     point_limit: u64,
     memory_budget: u64,
+    spatial_divisions: u8,
     frame: super::CoordinateFrame,
     has_gps_time: bool,
     has_color: bool,
@@ -390,8 +447,10 @@ impl SpatialBuilder<'_> {
             return Ok(id);
         }
 
-        let mut children: [Option<(PathBuf, u64)>; CHILD_COUNT] = std::array::from_fn(|_| None);
-        let mut writers: [Option<BufWriter<File>>; CHILD_COUNT] = std::array::from_fn(|_| None);
+        let child_count = usize::from(self.spatial_divisions).pow(3);
+        let mut children = (0..child_count)
+            .map(|_| None)
+            .collect::<Vec<Option<ChildSpool>>>();
         let mut samples = BTreeMap::<usize, SampleAccumulator>::new();
         let sample_cell_size = cube_side(bounds) / SAMPLE_GRID_SIZE as f64;
         let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
@@ -407,29 +466,14 @@ impl SpatialBuilder<'_> {
             if scanned.is_multiple_of(self.point_limit) {
                 self.emit_plan_progress()?;
             }
-            let child_key = child_index(point.position, bounds);
-            let (child_path, _) = children[child_key].get_or_insert_with(|| {
-                (
+            let child_key = child_index(point.position, bounds, self.spatial_divisions);
+            let child = children[child_key].get_or_insert_with(|| {
+                ChildSpool::new(
                     self.workspace
                         .file(&format!("node-{}-child-{child_key}.spool", id.get())),
-                    0,
                 )
             });
-            if writers[child_key].is_none() {
-                writers[child_key] = Some(BufWriter::new(
-                    OpenOptions::new()
-                        .create_new(true)
-                        .write(true)
-                        .open(child_path)?,
-                ));
-            }
-            write_point(
-                writers[child_key]
-                    .as_mut()
-                    .expect("child writer was created"),
-                &point,
-            )?;
-            children[child_key].as_mut().expect("child path exists").1 += 1;
+            child.write_point(&point)?;
 
             let voxel_key = sample_index(point.position, bounds);
             let center = voxel_center(voxel_key, bounds);
@@ -442,8 +486,8 @@ impl SpatialBuilder<'_> {
                 actual: scanned,
             });
         }
-        for writer in writers.into_iter().flatten() {
-            writer.into_inner().map_err(|error| error.into_error())?;
+        for child in children.iter_mut().flatten() {
+            child.flush()?;
         }
 
         if source_bounds
@@ -451,7 +495,7 @@ impl SpatialBuilder<'_> {
             .all(|axis_bounds| axis_bounds[0] == axis_bounds[1])
         {
             for child in children.into_iter().flatten() {
-                fs::remove_file(child.0)?;
+                fs::remove_file(child.path)?;
             }
             self.add_leaf(id, spool_path, source_count, bounds, parent, level)?;
             return Ok(id);
@@ -501,18 +545,20 @@ impl SpatialBuilder<'_> {
 
         let mut child_tasks = Vec::new();
         for (child_key, child) in children.into_iter().enumerate() {
-            let Some((child_path, child_count)) = child else {
+            let Some(child) = child else {
                 continue;
             };
-            if child_count == 0 {
-                fs::remove_file(child_path)?;
+            if child.point_count == 0 {
+                if child.created {
+                    fs::remove_file(child.path)?;
+                }
                 continue;
             }
             child_tasks.push(RootChildTask {
                 key: child_key,
-                path: child_path,
-                point_count: child_count,
-                bounds: child_bounds(bounds, child_key),
+                path: child.path,
+                point_count: child.point_count,
+                bounds: child_bounds(bounds, child_key, self.spatial_divisions),
             });
         }
         if level == 0 && self.parallel_workers > 1 && child_tasks.len() > 1 {
@@ -552,6 +598,7 @@ impl SpatialBuilder<'_> {
                 self.node_records.len(),
                 self.output_blocks.len(),
                 batch_count,
+                self.spatial_divisions,
             )?;
             self.workers_used = self.workers_used.max(batch_count);
 
@@ -563,6 +610,7 @@ impl SpatialBuilder<'_> {
             let has_gps_time = self.has_gps_time;
             let has_color = self.has_color;
             let has_nir = self.has_nir;
+            let spatial_divisions = self.spatial_divisions;
             let source_point_count = self.source_point_count;
             let mut outputs = Vec::with_capacity(batch_count);
             let mut first_error = None;
@@ -586,6 +634,7 @@ impl SpatialBuilder<'_> {
                                 workspace: &branch_workspace,
                                 point_limit,
                                 memory_budget: worker_memory_budget,
+                                spatial_divisions,
                                 frame,
                                 has_gps_time,
                                 has_color,
@@ -789,7 +838,12 @@ impl SpatialBuilder<'_> {
 
     fn ensure_memory(&self, node_count: usize, block_count: usize) -> Result<(), ConvertError> {
         check_memory_budget(
-            estimate_memory(self.point_limit, node_count, block_count)?,
+            estimate_memory(
+                self.point_limit,
+                node_count,
+                block_count,
+                self.spatial_divisions,
+            )?,
             self.memory_budget,
         )
     }
@@ -1143,31 +1197,40 @@ fn cube_side(bounds: SpatialBounds) -> f64 {
         .fold(0.0, f64::max)
 }
 
-fn child_index(position: [f64; 3], bounds: SpatialBounds) -> usize {
-    let middle = std::array::from_fn::<_, 3, _>(|axis| {
-        bounds.min()[axis] + (bounds.max()[axis] - bounds.min()[axis]) / 2.0
-    });
-    (usize::from(position[0] >= middle[0]) << 2)
-        | (usize::from(position[1] >= middle[1]) << 1)
-        | usize::from(position[2] >= middle[2])
+fn child_index(position: [f64; 3], bounds: SpatialBounds, divisions: u8) -> usize {
+    let mut cell = [0_usize; 3];
+    for axis in 0..3 {
+        let min = bounds.min()[axis];
+        let max = bounds.max()[axis];
+        if divisions == 2 {
+            let middle = min + (max - min) / 2.0;
+            cell[axis] = usize::from(position[axis] >= middle);
+        } else {
+            let cell_side = (max - min) / f64::from(divisions);
+            let scaled = ((position[axis] - min) / cell_side).floor();
+            cell[axis] = (scaled as usize).min(usize::from(divisions) - 1);
+        }
+    }
+    (cell[0] * usize::from(divisions) + cell[1]) * usize::from(divisions) + cell[2]
 }
 
-fn child_bounds(bounds: SpatialBounds, child: usize) -> SpatialBounds {
-    let middle = std::array::from_fn::<_, 3, _>(|axis| {
-        bounds.min()[axis] + (bounds.max()[axis] - bounds.min()[axis]) / 2.0
-    });
+fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBounds {
+    let divisions = usize::from(divisions);
+    let cell = [
+        child / (divisions * divisions),
+        (child / divisions) % divisions,
+        child % divisions,
+    ];
     let min = std::array::from_fn(|axis| {
-        if child & (1 << (2 - axis)) == 0 {
-            bounds.min()[axis]
-        } else {
-            middle[axis]
-        }
+        let span = bounds.max()[axis] - bounds.min()[axis];
+        bounds.min()[axis] + cell[axis] as f64 * span / divisions as f64
     });
     let max = std::array::from_fn(|axis| {
-        if child & (1 << (2 - axis)) == 0 {
-            middle[axis]
-        } else {
+        if cell[axis] + 1 == divisions {
             bounds.max()[axis]
+        } else {
+            let span = bounds.max()[axis] - bounds.min()[axis];
+            bounds.min()[axis] + (cell[axis] + 1) as f64 * span / divisions as f64
         }
     });
     SpatialBounds::new(min, max).expect("child bounds are within the parent")
@@ -1225,6 +1288,7 @@ fn estimate_memory(
     point_limit: u64,
     node_count: usize,
     block_count: usize,
+    spatial_divisions: u8,
 ) -> Result<u64, ConvertError> {
     let node_bytes = u64::try_from(node_count)
         .map_err(|_| ConvertError::SizeOverflow)?
@@ -1240,11 +1304,20 @@ fn estimate_memory(
     let sample_accumulators = (SAMPLE_GRID_SIZE.pow(3) as u64)
         .checked_mul(256)
         .ok_or(ConvertError::SizeOverflow)?;
+    let child_spool_buffers = child_spool_buffer_bytes(spatial_divisions)?;
     working_bytes
         .checked_add(node_bytes)
         .and_then(|bytes| bytes.checked_add(block_bytes))
         .and_then(|bytes| bytes.checked_add(sample_accumulators))
+        .and_then(|bytes| bytes.checked_add(child_spool_buffers))
         .and_then(|bytes| bytes.checked_add(super::ESTIMATED_FIXED_OVERHEAD_BYTES))
+        .ok_or(ConvertError::SizeOverflow)
+}
+
+fn child_spool_buffer_bytes(spatial_divisions: u8) -> Result<u64, ConvertError> {
+    u64::from(spatial_divisions)
+        .checked_pow(3)
+        .and_then(|children| children.checked_mul(CHILD_SPOOL_BUFFER_BYTES as u64))
         .ok_or(ConvertError::SizeOverflow)
 }
 
@@ -1254,13 +1327,23 @@ fn branch_memory_budget(
     completed_nodes: usize,
     completed_blocks: usize,
     worker_count: usize,
+    spatial_divisions: u8,
 ) -> Result<u64, ConvertError> {
-    let base = estimate_memory(point_limit, 0, 0)?;
-    let current = estimate_memory(point_limit, completed_nodes, completed_blocks)?;
+    let base = estimate_memory(point_limit, 0, 0, spatial_divisions)?;
+    let current = estimate_memory(
+        point_limit,
+        completed_nodes,
+        completed_blocks,
+        spatial_divisions,
+    )?;
     let current_index = current.saturating_sub(base);
     let workers = u64::try_from(worker_count).map_err(|_| ConvertError::SizeOverflow)?;
     let worker_overhead = workers
         .checked_mul(SPATIAL_WORKER_OVERHEAD_BYTES)
+        .ok_or(ConvertError::SizeOverflow)?;
+    let additional_spool_buffers = workers
+        .saturating_sub(1)
+        .checked_mul(child_spool_buffer_bytes(spatial_divisions)?)
         .ok_or(ConvertError::SizeOverflow)?;
     let reserved = base
         .checked_add(
@@ -1269,6 +1352,7 @@ fn branch_memory_budget(
                 .ok_or(ConvertError::SizeOverflow)?,
         )
         .and_then(|bytes| bytes.checked_add(worker_overhead))
+        .and_then(|bytes| bytes.checked_add(additional_spool_buffers))
         .ok_or(ConvertError::SizeOverflow)?;
     let available =
         total_budget
@@ -1287,5 +1371,68 @@ fn check_memory_budget(requested: u64, limit: u64) -> Result<(), ConvertError> {
         Err(ConvertError::MemoryBudgetExceeded { requested, limit })
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod partition_tests {
+    use super::*;
+
+    #[test]
+    fn adaptive_cells_cover_centers_and_assign_internal_planes_to_upper_cell() {
+        let bounds = SpatialBounds::new([-4.0, 2.0, -8.0], [4.0, 10.0, 0.0]).unwrap();
+        for divisions in [2, 4, 8] {
+            let divisions_usize = usize::from(divisions);
+            for x in 0..divisions_usize {
+                for y in 0..divisions_usize {
+                    for z in 0..divisions_usize {
+                        let key = (x * divisions_usize + y) * divisions_usize + z;
+                        let child = child_bounds(bounds, key, divisions);
+                        let position = std::array::from_fn(|axis| {
+                            (child.min()[axis] + child.max()[axis]) / 2.0
+                        });
+                        assert_eq!(child_index(position, bounds, divisions), key);
+                        for axis in 0..3 {
+                            assert!(position[axis] >= child.min()[axis]);
+                            assert!(position[axis] <= child.max()[axis]);
+                            if [x, y, z][axis] + 1 < divisions_usize {
+                                let plane = child.max()[axis];
+                                let mut on_plane = position;
+                                on_plane[axis] = plane;
+                                let next_key = child_index(on_plane, bounds, divisions);
+                                let expected_cell = [x, y, z][axis] + 1;
+                                let actual_cell = match axis {
+                                    0 => next_key / (divisions_usize * divisions_usize),
+                                    1 => (next_key / divisions_usize) % divisions_usize,
+                                    _ => next_key % divisions_usize,
+                                };
+                                assert_eq!(actual_cell, expected_cell);
+                            }
+                        }
+                    }
+                }
+            }
+            assert_eq!(
+                child_index(bounds.max(), bounds, divisions),
+                divisions_usize.pow(3) - 1
+            );
+        }
+    }
+
+    #[test]
+    fn binary_partition_keeps_midpoint_and_key_order() {
+        let bounds = SpatialBounds::new([0.0; 3], [8.0; 3]).unwrap();
+        assert_eq!(child_index([3.0; 3], bounds, 2), 0);
+        assert_eq!(child_index([4.0; 3], bounds, 2), 7);
+        let upper = child_bounds(bounds, 7, 2);
+        assert_eq!(upper.min(), [4.0; 3]);
+        assert_eq!(upper.max(), [8.0; 3]);
+    }
+
+    #[test]
+    fn fanout_spool_memory_is_bounded_for_supported_divisions() {
+        assert_eq!(child_spool_buffer_bytes(2).unwrap(), 64 * 1024);
+        assert_eq!(child_spool_buffer_bytes(4).unwrap(), 512 * 1024);
+        assert_eq!(child_spool_buffer_bytes(8).unwrap(), 4 * 1024 * 1024);
     }
 }

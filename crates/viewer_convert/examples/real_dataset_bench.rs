@@ -13,33 +13,50 @@ use viewer_render_wgpu::InstanceRaw;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     match arguments.first().and_then(|value| value.to_str()) {
-        Some("convert") if arguments.len() == 3 || arguments.len() == 4 => {
+        Some("convert") if (3..=5).contains(&arguments.len()) => {
             let workers = arguments
                 .get(3)
                 .map(|value| value.to_string_lossy().parse())
                 .transpose()?
                 .unwrap_or(1);
-            convert(Path::new(&arguments[1]), Path::new(&arguments[2]), workers)
+            let divisions = arguments
+                .get(4)
+                .map(|value| value.to_string_lossy().parse())
+                .transpose()?
+                .unwrap_or(2);
+            convert(
+                Path::new(&arguments[1]),
+                Path::new(&arguments[2]),
+                workers,
+                divisions,
+            )
         }
         Some("read") if arguments.len() == 2 || arguments.len() == 3 => {
             read(Path::new(&arguments[1]), arguments.get(2).map(Path::new))
         }
         _ => {
             eprintln!(
-                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]"
+                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]"
             );
             Err("invalid arguments".into())
         }
     }
 }
 
-fn convert(input: &Path, output: &Path, workers: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn convert(
+    input: &Path,
+    output: &Path,
+    workers: usize,
+    divisions: u8,
+) -> Result<(), Box<dyn std::error::Error>> {
     let input_bytes = fs::metadata(input)?.len();
     let started = Instant::now();
     let mut current_stage = None;
     let mut stage_started = started;
     let mut stage_times = Vec::new();
-    let options = ConvertOptions::default().with_spatial_workers(workers)?;
+    let options = ConvertOptions::default()
+        .with_spatial_workers(workers)?
+        .with_spatial_divisions(divisions)?;
     let report = convert_file_with_progress(input, output, options, |progress| {
         if current_stage != Some(progress.stage) {
             if let Some(stage) = current_stage {
@@ -56,6 +73,7 @@ fn convert(input: &Path, output: &Path, workers: usize) -> Result<(), Box<dyn st
     let elapsed = started.elapsed();
     println!("mode=convert");
     println!("spatial_workers={workers}");
+    println!("spatial_divisions={divisions}");
     println!("input_bytes={input_bytes}");
     println!("output_bytes={}", report.output_bytes);
     println!("source_points={}", report.point_count);

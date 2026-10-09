@@ -38,6 +38,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut max_error = ConvertOptions::default().max_quantization_error();
     let mut max_memory_bytes = ConvertOptions::default().max_memory_budget_bytes();
     let mut spatial_workers = ConvertOptions::default().spatial_workers();
+    let mut spatial_divisions = ConvertOptions::default().spatial_divisions();
     let mut checkpoint_mode = None;
     let mut index = 2;
     while index < arguments.len() {
@@ -66,6 +67,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                     .ok_or("memory budget overflows bytes")?;
             }
             "--spatial-workers" => spatial_workers = value.to_string_lossy().parse()?,
+            "--spatial-divisions" => spatial_divisions = value.to_string_lossy().parse()?,
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;
@@ -73,7 +75,8 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 
     let options =
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
-            .with_spatial_workers(spatial_workers)?;
+            .with_spatial_workers(spatial_workers)?
+            .with_spatial_divisions(spatial_divisions)?;
     if let Some(mode) = checkpoint_mode {
         eprintln!(
             "{} checkpoint for {}",
@@ -148,8 +151,9 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 
 fn print_help() {
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-workers N] [--checkpoint|--resume]\n\
-         Defaults: 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB.\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint|--resume]\n\
+         Defaults: 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
+         --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 4 bounded workers for root subtrees; the default is 1.\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. EPT datasets are not supported.\n\
