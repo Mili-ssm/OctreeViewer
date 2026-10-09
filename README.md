@@ -248,8 +248,9 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Permitir reconstrucción segura desde la fuente tras cancelación; validar el resultado antes de
   publicar.
 - [ ] Añadir checkpoints durables y reanudación que conserve el trabajo ya procesado.
-- [x] Comparar particiones 2×2×2, 4×4×4 y 8×8×8 con nubes sintéticas y compresión LZ4; registrar
-  metodología, métricas y límites en [SPATIAL_BRANCHING_BENCH.md](docs/SPATIAL_BRANCHING_BENCH.md).
+- [x] Comparar particiones 2×2×2, 4×4×4 y 8×8×8 con nubes sintéticas, resoluciones equivalentes,
+  compresión LZ4 y consultas ancladas en puntos reales; registrar metodología, métricas y límites en
+  [SPATIAL_BRANCHING_BENCH.md](docs/SPATIAL_BRANCHING_BENCH.md).
 - [ ] Elegir e implementar una estrategia de partición y LOD que preserve representación útil en
   zonas densas y dispersas; validar error geométrico, sesgo, compresión y transiciones con LAS/LAZ
   representativos antes de fijar el branching factor.
