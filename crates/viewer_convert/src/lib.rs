@@ -13,8 +13,11 @@ use viewer_core::{
 };
 use viewer_format::{FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions};
 
+mod checkpoint;
 mod spatial;
-use spatial::{PlannedBlock, SpatialPlan, Workspace, build_spatial_plan};
+use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
+pub use checkpoint::{CheckpointError, CheckpointMode};
+use spatial::{PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, spool_source};
 
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
@@ -182,6 +185,8 @@ pub enum ConvertError {
     OutputExists(PathBuf),
     #[error("could not allocate a temporary output path beside {0}")]
     TemporaryPathUnavailable(PathBuf),
+    #[error(transparent)]
+    Checkpoint(#[from] CheckpointError),
 }
 
 /// Converts LAS/LAZ to the native v1 format with an adaptive octree and additive LOD samples.
@@ -205,12 +210,42 @@ pub fn convert_file_with_progress<F>(
 where
     F: FnMut(ConversionProgress) -> bool,
 {
-    if output_path.exists() {
+    convert_file_inner(input_path, output_path, options, None, &mut on_progress)
+}
+
+/// Converts a file while retaining completed phase checkpoints for explicit resume.
+pub fn convert_file_with_checkpoint<F>(
+    input_path: &Path,
+    output_path: &Path,
+    options: ConvertOptions,
+    mode: CheckpointMode,
+    mut on_progress: F,
+) -> Result<ConversionReport, ConvertError>
+where
+    F: FnMut(ConversionProgress) -> bool,
+{
+    convert_file_inner(
+        input_path,
+        output_path,
+        options,
+        Some(mode),
+        &mut on_progress,
+    )
+}
+
+fn convert_file_inner(
+    input_path: &Path,
+    output_path: &Path,
+    options: ConvertOptions,
+    checkpoint_mode: Option<CheckpointMode>,
+    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+) -> Result<ConversionReport, ConvertError> {
+    if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
 
     emit_progress(
-        &mut on_progress,
+        on_progress,
         ConversionProgress {
             stage: ConversionStage::InspectingInput,
             points_processed: 0,
@@ -221,8 +256,28 @@ where
     )?;
     let mut reader = Reader::from_path(input_path)?;
     let source = inspect_source(&reader)?;
+    let mut checkpoint = if let Some(mode) = checkpoint_mode {
+        let source_fingerprint = fingerprint_file(input_path)?;
+        Some(Checkpoint::open(
+            output_path,
+            mode,
+            source_fingerprint,
+            options.points_per_block(),
+            options.max_quantization_error(),
+            options.max_memory_budget_bytes(),
+        )?)
+    } else {
+        None
+    };
+    if output_path.exists()
+        && checkpoint.as_ref().is_none_or(|checkpoint| {
+            !matches!(checkpoint.stage(), CheckpointStage::OutputReady { .. })
+        })
+    {
+        return Err(ConvertError::OutputExists(output_path.to_owned()));
+    }
     emit_progress(
-        &mut on_progress,
+        on_progress,
         ConversionProgress {
             stage: ConversionStage::PlanningMetadata,
             points_processed: 0,
@@ -231,27 +286,136 @@ where
         },
         0,
     )?;
-    let workspace = Workspace::create(output_path)?;
+    if checkpoint
+        .as_ref()
+        .is_some_and(|checkpoint| matches!(checkpoint.stage(), CheckpointStage::OutputReady { .. }))
+    {
+        let checkpoint = checkpoint.expect("output-ready conversion has a checkpoint");
+        checkpoint.verify_output()?;
+        checkpoint.verify_input(input_path)?;
+        let (candidate_fingerprint, point_count, block_count, estimated_memory_bytes) = checkpoint
+            .output_ready_details()
+            .expect("output-ready checkpoint has report details");
+        let candidate_path = checkpoint.candidate_path();
+        let (block_ids, source_block_ids) = output_block_ids(&candidate_path)?;
+        let candidate_length = candidate_fingerprint.bytes;
+        let output_bytes = if output_path.exists() {
+            if fingerprint_file(output_path)? != candidate_fingerprint {
+                return Err(ConvertError::OutputExists(output_path.to_owned()));
+            }
+            validate_output(
+                output_path,
+                point_count,
+                &block_ids,
+                &source_block_ids,
+                candidate_length,
+                on_progress,
+            )?;
+            candidate_length
+        } else {
+            publish_output(
+                &candidate_path,
+                output_path,
+                point_count,
+                &block_ids,
+                &source_block_ids,
+                candidate_length,
+                on_progress,
+            )?
+        };
+        checkpoint.complete()?;
+        let _ = on_progress(ConversionProgress {
+            stage: ConversionStage::Complete,
+            points_processed: point_count,
+            total_points: point_count,
+            bytes_written: output_bytes,
+        });
+        return Ok(ConversionReport {
+            point_count,
+            block_count,
+            output_bytes,
+            estimated_peak_memory_bytes: estimated_memory_bytes,
+            omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+        });
+    }
+
+    let workspace = if let Some(checkpoint) = checkpoint.as_ref() {
+        Workspace::create_at(&checkpoint.root().join("plan"))?
+    } else {
+        Workspace::create(output_path)?
+    };
+    let source_spool = if let Some(checkpoint) = checkpoint.as_mut() {
+        match checkpoint.stage() {
+            CheckpointStage::Started => {
+                let path = checkpoint.source_path();
+                spool_source(&mut reader, &source, options, &path, on_progress)?;
+                checkpoint.commit_source()?;
+            }
+            CheckpointStage::SourceReady(_) => checkpoint.verify_source()?,
+            CheckpointStage::OutputReady { .. } => {
+                unreachable!("output-ready checkpoint was handled above");
+            }
+        }
+        let path = workspace.file("source.spool");
+        if matches!(checkpoint.stage(), CheckpointStage::SourceReady(_)) {
+            link_or_copy(&checkpoint.source_path(), &path)?;
+        }
+        path
+    } else {
+        let path = workspace.file("source.spool");
+        spool_source(&mut reader, &source, options, &path, on_progress)?;
+        path
+    };
     let spatial_plan =
-        build_spatial_plan(&mut reader, &source, options, &workspace, &mut on_progress)?;
+        build_spatial_plan(&source, options, &workspace, &source_spool, on_progress)?;
     let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
-    let mut temporary = create_temporary_output(output_path)?;
-    let temporary_path = temporary.path.to_owned();
-    let file = temporary
-        .file
-        .take()
-        .expect("temporary output file is present");
+    let mut temporary = if checkpoint.is_none() {
+        Some(create_temporary_output(output_path)?)
+    } else {
+        None
+    };
+    let temporary_path = if let Some(checkpoint) = checkpoint.as_ref() {
+        let candidate = checkpoint.candidate_path();
+        let _ = fs::remove_file(&candidate);
+        candidate
+    } else {
+        temporary
+            .as_ref()
+            .expect("non-checkpoint conversion has a temporary output")
+            .path
+            .to_owned()
+    };
+    let file = if let Some(temporary) = temporary.as_mut() {
+        temporary
+            .file
+            .take()
+            .expect("temporary output file is present")
+    } else {
+        OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&temporary_path)?
+    };
     let mut writer = FormatWriter::new(
         file,
         plan.metadata.clone(),
         FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
             .map_err(ConvertError::Format)?,
     )?;
-    stream_blocks(&mut writer, &plan, &temporary_path, &mut on_progress)?;
+    stream_blocks(&mut writer, &plan, &temporary_path, on_progress)?;
     let output = writer.finish()?;
     output.sync_all()?;
     drop(output);
     let file_length = fs::metadata(&temporary_path)?.len();
+    if let Some(checkpoint) = checkpoint.as_mut() {
+        checkpoint.verify_input(input_path)?;
+        checkpoint.commit_output(
+            plan.point_count,
+            plan.block_count,
+            plan.estimated_peak_memory_bytes,
+        )?;
+    }
     let output_bytes = publish_output(
         &temporary_path,
         output_path,
@@ -259,9 +423,12 @@ where
         &plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>(),
         &plan.source_block_ids,
         file_length,
-        &mut on_progress,
+        on_progress,
     )?;
     drop(temporary);
+    if let Some(checkpoint) = checkpoint {
+        checkpoint.complete()?;
+    }
 
     let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,
@@ -389,6 +556,39 @@ fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {
     schema
 }
 
+fn output_block_ids(path: &Path) -> Result<(Vec<BlockId>, Vec<BlockId>), ConvertError> {
+    let reader = FormatReader::new(File::open(path)?)?;
+    let block_ids = reader
+        .block_storage_stats()?
+        .into_iter()
+        .map(|block| block.id)
+        .collect();
+    let hierarchy = reader.format_metadata().dataset().hierarchy();
+    let nodes = hierarchy
+        .query(hierarchy.stats().root_bounds)
+        .collect::<Vec<_>>();
+    let parent_ids = nodes
+        .iter()
+        .filter_map(|node| node.parent())
+        .collect::<HashSet<_>>();
+    let source_block_ids = nodes
+        .iter()
+        .filter(|node| !parent_ids.contains(&node.id()))
+        .flat_map(|node| node.blocks().iter().copied())
+        .collect();
+    Ok((block_ids, source_block_ids))
+}
+
+fn link_or_copy(source: &Path, destination: &Path) -> Result<(), ConvertError> {
+    match fs::hard_link(source, destination) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            fs::copy(source, destination)?;
+            Ok(())
+        }
+    }
+}
+
 fn descriptor(name: &str, data_type: AttributeDataType, components: u32) -> AttributeDescriptor {
     AttributeDescriptor::new(name, data_type, components).expect("static attribute schema is valid")
 }
@@ -494,6 +694,11 @@ fn publish_output(
             ConvertError::Io(error)
         }
     })?;
+    let parent = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    File::open(parent)?.sync_all()?;
     Ok(output_bytes)
 }
 
@@ -559,6 +764,7 @@ fn create_temporary_output(output_path: &Path) -> Result<TemporaryOutput, Conver
 mod tests {
     use std::{
         fs,
+        io::{Read, Seek, SeekFrom, Write},
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
     };
@@ -568,7 +774,8 @@ mod tests {
     use viewer_format::FormatReader;
 
     use super::{
-        ConversionStage, ConvertError, ConvertOptions, convert_file, convert_file_with_progress,
+        CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions,
+        convert_file, convert_file_with_checkpoint, convert_file_with_progress,
     };
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1028,6 +1235,156 @@ mod tests {
             .expect("a cancelled conversion can be rebuilt from its source");
         assert_eq!(rebuilt.point_count, 5);
         assert!(output.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn resumes_from_the_completed_source_spool_and_rejects_changed_options() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        let expected = dir.join("expected.oct");
+        let mut checkpoint_dir = output.as_os_str().to_owned();
+        checkpoint_dir.push(".checkpoint");
+        let checkpoint_dir = PathBuf::from(checkpoint_dir);
+        fixture(&input, false, false, 5);
+        let options = ConvertOptions::new(2, 0.01).unwrap();
+
+        let cancelled = convert_file_with_checkpoint(
+            &input,
+            &output,
+            options,
+            CheckpointMode::Create,
+            |event| event.stage != ConversionStage::BuildingSpatialHierarchy,
+        );
+        assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+        assert!(checkpoint_dir.join("source.spool").is_file());
+        assert!(!output.exists());
+
+        let changed_options = ConvertOptions::new(3, 0.01).unwrap();
+        assert!(matches!(
+            convert_file_with_checkpoint(
+                &input,
+                &output,
+                changed_options,
+                CheckpointMode::Resume,
+                |_| true
+            ),
+            Err(ConvertError::Checkpoint(CheckpointError::Mismatch))
+        ));
+        assert!(checkpoint_dir.join("source.spool").is_file());
+
+        let mut reread_source = false;
+        let report = convert_file_with_checkpoint(
+            &input,
+            &output,
+            options,
+            CheckpointMode::Resume,
+            |event| {
+                reread_source |= event.stage == ConversionStage::PlanningSpatialIndex;
+                true
+            },
+        )
+        .unwrap();
+        assert_eq!(report.point_count, 5);
+        assert!(!reread_source);
+        assert!(output.exists());
+        assert!(!checkpoint_dir.exists());
+
+        convert_file(&input, &expected, options).unwrap();
+        assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_run() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        let expected = dir.join("expected.oct");
+        let mut checkpoint_dir = output.as_os_str().to_owned();
+        checkpoint_dir.push(".checkpoint");
+        let checkpoint_dir = PathBuf::from(checkpoint_dir);
+        fixture(&input, false, false, 5);
+        let options = ConvertOptions::new(2, 0.01).unwrap();
+
+        let cancelled = convert_file_with_checkpoint(
+            &input,
+            &output,
+            options,
+            CheckpointMode::Create,
+            |event| event.stage != ConversionStage::ValidatingOutput,
+        );
+        assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+        let candidate = checkpoint_dir.join("candidate.oct");
+        assert!(candidate.is_file());
+        let candidate_bytes = fs::read(&candidate).unwrap();
+        let mut corrupted = candidate_bytes.clone();
+        *corrupted.last_mut().unwrap() ^= 1;
+        fs::write(&candidate, corrupted).unwrap();
+        assert!(matches!(
+            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
+                true
+            }),
+            Err(ConvertError::Checkpoint(CheckpointError::Invalid(_)))
+        ));
+        assert!(candidate.exists());
+        fs::write(&candidate, candidate_bytes).unwrap();
+        fs::hard_link(&candidate, &output).unwrap();
+
+        let report =
+            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
+                true
+            })
+            .unwrap();
+        assert_eq!(report.point_count, 5);
+        assert!(!checkpoint_dir.exists());
+
+        convert_file(&input, &expected, options).unwrap();
+        assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_changed_input_and_preserves_the_checkpoint() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        let mut checkpoint_dir = output.as_os_str().to_owned();
+        checkpoint_dir.push(".checkpoint");
+        let checkpoint_dir = PathBuf::from(checkpoint_dir);
+        fixture(&input, false, false, 5);
+        let options = ConvertOptions::new(2, 0.01).unwrap();
+
+        let cancelled = convert_file_with_checkpoint(
+            &input,
+            &output,
+            options,
+            CheckpointMode::Create,
+            |event| event.stage != ConversionStage::BuildingSpatialHierarchy,
+        );
+        assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&input)
+            .unwrap();
+        file.seek(SeekFrom::End(-1)).unwrap();
+        let mut last_byte = [0];
+        file.read_exact(&mut last_byte).unwrap();
+        last_byte[0] ^= 1;
+        file.seek(SeekFrom::End(-1)).unwrap();
+        file.write_all(&last_byte).unwrap();
+        file.sync_all().unwrap();
+
+        assert!(matches!(
+            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
+                true
+            }),
+            Err(ConvertError::Checkpoint(CheckpointError::Mismatch))
+        ));
+        assert!(checkpoint_dir.join("source.spool").is_file());
+        assert!(!output.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

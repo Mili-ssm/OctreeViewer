@@ -83,7 +83,7 @@ una versión publicada.
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
 | Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con octree LOD adaptativo 2×2×2, hojas a resolución completa y muestras de color agregadas en nodos internos. Conserva atributos estándar y usa puntos fuente cercanos para los atributos no agregados. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. La política 2×2×2 sigue pendiente de validación con LAS/LAZ representativos. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con octree LOD adaptativo 2×2×2, hojas a resolución completa y muestras de color agregadas en nodos internos. Conserva atributos estándar, usa puntos fuente cercanos para atributos no agregados y ofrece reanudación opcional por fases. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. La política 2×2×2 sigue pendiente de validación con LAS/LAZ representativos. |
 
 ## Qué significará “feature complete”
 
@@ -267,7 +267,10 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Conectar la cancelación de la CLI a Ctrl+C con manejo portable de señales.
 - [x] Permitir reconstrucción segura desde la fuente tras cancelación; validar el resultado antes de
   publicar.
-- [ ] Añadir checkpoints durables y reanudación que conserve el trabajo ya procesado.
+- [x] Añadir checkpoints durables por fases: conservar el spool de fuente completo y el candidato
+  `.oct` completo; tras una interrupción de jerarquía/escritura se repite esa fase desde el spool,
+  y tras una interrupción de validación/publicación se reutiliza el candidato. No se reanudan nodos
+  ni bloques individuales.
 - [x] Comparar particiones 2×2×2, 4×4×4 y 8×8×8 con nubes sintéticas, resoluciones equivalentes,
   compresión LZ4 y consultas ancladas en puntos reales; registrar metodología, métricas y límites en
   [SPATIAL_BRANCHING_BENCH.md](docs/SPATIAL_BRANCHING_BENCH.md).
@@ -288,13 +291,24 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [ ] Implementar entrada EPT tras definir una abstracción de dataset y cómo preservar su jerarquía
   aditiva en el formato propio.
 
-Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]`.
+Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--checkpoint | --resume]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
 de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación incluye
 192 bytes por punto del bloque, 512 bytes por bloque del índice, 256 bytes por nodo, espacio para una
 grilla LOD de 512 celdas y 16 MiB fijos; no equivale al RSS total ni incluye el allocator o la
 biblioteca LAS/LAZ. La construcción usa spools temporales en disco que pueden ocupar más que la fuente;
-se limpian al completar o cancelar cooperativamente, aunque un cierre abrupto puede dejarlos.
+en modo normal se limpian al completar o cancelar cooperativamente, aunque un cierre abrupto puede
+dejarlos. Con `--checkpoint`, el conversor crea `OUTPUT.oct.checkpoint`; vuelve a ejecutar con
+`--resume`, la misma entrada y las mismas opciones para continuar. Un checkpoint incompatible o una
+salida existente distinta se rechazan sin sobrescribirla. Al completar se elimina el directorio del
+checkpoint. El spool y el candidato completo pueden coexistir, así que esta modalidad requiere más
+espacio temporal que la conversión normal; no se ha medido aún su pico con el dataset de 81,7 millones
+de puntos.
+
+La identidad de fuente se comprueba leyendo todos sus bytes con una huella FNV-1a de 128 bits. Es una
+comprobación local de cambios accidentales, no una firma criptográfica. El manifiesto y los archivos
+se sincronizan antes de avanzar de fase; la sincronización de directorios para resistencia a pérdida
+de alimentación está implementada en Unix y no se promete con el mismo alcance en otras plataformas.
 
 La planificación crea un octree adaptativo 2×2×2: las hojas conservan todos los puntos fuente y cada
 nodo interno almacena hasta 512 representantes en centros de voxel. El color y RGB16 se promedian por
@@ -307,8 +321,9 @@ Extra Bytes y CRS VLR que no se conservan.
 
 La CLI muestra las fases y progreso de lectura, planificación espacial, escritura y validación;
 `convert_file_with_progress` ofrece los mismos eventos y permite cancelar devolviendo `false`. Ctrl+C
-solicita cancelación y espera al siguiente límite seguro. Los checkpoints durables y la reanudación
-siguen pendientes.
+solicita cancelación y espera al siguiente límite seguro. En modo checkpoint se conserva el último
+límite completo; la validación vuelve a comprobar el candidato antes de publicar. La comprobación de
+identidad vuelve a leer la fuente, pero reanudar desde el spool evita volver a decodificar sus puntos.
 
 #### Registro de rendimiento
 
@@ -466,7 +481,7 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 | --- | --- | --- |
 | `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
 | `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
-| `viewer_convert` | Conversión nativa secuencial LAS/LAZ por bloques y publicación validada del formato. | `las`, `viewer_core`, `viewer_format`; jerarquía/LOD y procesamiento reanudable pendientes. |
+| `viewer_convert` | Conversión nativa secuencial LAS/LAZ por bloques, publicación validada y reanudación opcional por fases. | `las`, `viewer_core`, `viewer_format`; validación del branching factor con fuentes representativas pendiente. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
 | `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |

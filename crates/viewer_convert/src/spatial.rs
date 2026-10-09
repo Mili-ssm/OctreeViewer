@@ -193,8 +193,18 @@ impl Workspace {
         ))
     }
 
-    fn file(&self, name: &str) -> PathBuf {
+    pub(crate) fn file(&self, name: &str) -> PathBuf {
         self.path.join(name)
+    }
+
+    pub fn create_at(path: &Path) -> Result<Self, ConvertError> {
+        if path.exists() {
+            fs::remove_dir_all(path)?;
+        }
+        fs::create_dir(path)?;
+        Ok(Self {
+            path: path.to_owned(),
+        })
     }
 }
 
@@ -205,13 +215,12 @@ impl Drop for Workspace {
 }
 
 pub(crate) fn build_spatial_plan(
-    reader: &mut Reader,
     source: &SourceInfo,
     options: ConvertOptions,
     workspace: &Workspace,
+    source_path: &Path,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<SpatialPlan, ConvertError> {
-    let source_path = workspace.file("source.spool");
     let point_limit = options
         .points_per_block()
         .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
@@ -219,8 +228,6 @@ pub(crate) fn build_spatial_plan(
         estimate_memory(point_limit, 0, 0)?,
         options.max_memory_budget_bytes(),
     )?;
-    spool_source(reader, source, point_limit, &source_path, on_progress)?;
-
     let root_bounds = cube_bounds(source.bounds);
     let mut builder = SpatialBuilder {
         workspace,
@@ -236,7 +243,13 @@ pub(crate) fn build_spatial_plan(
         on_progress,
         source_point_count: source.point_count,
     };
-    builder.build_node(source_path, source.point_count, root_bounds, None, 0)?;
+    builder.build_node(
+        source_path.to_owned(),
+        source.point_count,
+        root_bounds,
+        None,
+        0,
+    )?;
 
     let estimated_peak_memory_bytes = estimate_memory(
         point_limit,
@@ -335,9 +348,9 @@ where
         let mut source_reader = BufReader::new(File::open(&spool_path)?);
         while let Some(point) = read_point_if_present(&mut source_reader)? {
             scanned += 1;
-            for axis in 0..3 {
-                source_bounds[axis][0] = source_bounds[axis][0].min(point.position[axis]);
-                source_bounds[axis][1] = source_bounds[axis][1].max(point.position[axis]);
+            for (axis, axis_bounds) in source_bounds.iter_mut().enumerate() {
+                axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
+                axis_bounds[1] = axis_bounds[1].max(point.position[axis]);
             }
             if scanned.is_multiple_of(self.point_limit) {
                 self.emit_plan_progress()?;
@@ -581,13 +594,16 @@ fn average(sum: u128, count: u64) -> u128 {
     (sum + u128::from(count / 2)) / u128::from(count)
 }
 
-fn spool_source(
+pub(crate) fn spool_source(
     reader: &mut Reader,
     source: &SourceInfo,
-    point_limit: u64,
+    options: ConvertOptions,
     spool_path: &Path,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
+    let point_limit = options
+        .points_per_block()
+        .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
     let mut writer = BufWriter::new(File::create(spool_path)?);
     let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
     let mut processed = 0_u64;
@@ -613,7 +629,10 @@ fn spool_source(
             processed,
         )?;
     }
-    writer.into_inner().map_err(|error| error.into_error())?;
+    writer
+        .into_inner()
+        .map_err(|error| error.into_error())?
+        .sync_all()?;
     Ok(())
 }
 
