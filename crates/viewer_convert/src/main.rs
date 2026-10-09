@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
-use viewer_convert::{ConvertOptions, convert_file};
+use viewer_convert::{ConversionStage, ConvertOptions, convert_file_with_progress};
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -47,7 +47,31 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 
     let options =
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?;
-    let report = convert_file(&input, &output, options)?;
+    let mut previous_stage = None;
+    let mut next_percent = 0;
+    let report = convert_file_with_progress(&input, &output, options, |progress| {
+        if previous_stage != Some(progress.stage) {
+            eprintln!("{:?}", progress.stage);
+            previous_stage = Some(progress.stage);
+            next_percent = 0;
+        }
+        if matches!(
+            progress.stage,
+            ConversionStage::ReadingAndWritingBlocks | ConversionStage::ValidatingOutput
+        ) && progress.total_points > 0
+        {
+            let percent = progress.points_processed.saturating_mul(100) / progress.total_points;
+            if percent >= next_percent || percent == 100 {
+                eprintln!(
+                    "  {}/{} points ({} MiB written; {percent}%)",
+                    progress.points_processed,
+                    progress.total_points,
+                    progress.bytes_written / (1024 * 1024)
+                );
+                next_percent = percent.saturating_add(10);
+            }
+        }
+    })?;
     eprintln!(
         "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {}",
         report.point_count,

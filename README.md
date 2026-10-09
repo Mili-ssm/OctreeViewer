@@ -241,7 +241,8 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Imponer límites de puntos/buffers por bloque y un presupuesto para la memoria controlada por
   bloque e índice; reportar la estimación antes de publicar.
 - [ ] Medir RSS pico con datasets reales y añadir paralelismo solo con colas acotadas y contrapresión.
-- [ ] Mantener progreso por fase, puntos procesados, bytes escritos, cancelación y reporte de errores.
+- [x] Informar fases, puntos procesados, bytes escritos y errores en la API/CLI.
+- [ ] Añadir cancelación cooperativa durante lectura, codificación y validación.
 - [ ] Guardar checkpoints o permitir reanudar/reconstruir el trabajo sin corromper un archivo final.
 - [ ] Definir estrategia de partición y LOD que preserve representación útil tanto en zonas densas
   como dispersas; medir sesgo y artefactos introducidos por muestreo.
@@ -261,6 +262,8 @@ dimensiones LAS/LAZ y metadatos CRS que no conserva. La memoria del directorio t
 número de bloques.
 La implementación separa inspección de cabecera, planificación de nodo/esquema, lectura y escritura
 secuencial, y validación/publicación; la planificación espacial actual solo crea una raíz sin LOD.
+La CLI muestra las fases y actualiza puntos/bytes en pasos del 10%; `convert_file_with_progress`
+ofrece los mismos eventos a otros consumidores. La cancelación cooperativa todavía no está expuesta.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.
