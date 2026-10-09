@@ -3,8 +3,8 @@
 Visor extensible de nubes LiDAR y nubes de puntos 3D, construido en Rust y ejecutable en el
 navegador mediante WebAssembly. El proyecto está en una fase temprana: hoy contiene un núcleo de
 voxelización en memoria, una importación LAS/LAZ incremental, preparación de datos de escena y una
-demo web 2D. Aún no es un visor 3D ni puede abrir y explorar datasets de cientos de GB de extremo a
-extremo.
+demo WebGPU 3D con navegación y modos de color. Aún no conecta el formato espacial al host ni puede
+explorar datasets de cientos de GB de extremo a extremo.
 
 ## Intención del proyecto
 
@@ -78,9 +78,9 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, cámara orbital y buffers GPU por bloque seleccionado. | El visor WASM aún no conecta su LOD/caché al renderer; la escena sintética sigue en un buffer completo. |
+| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque y presupuesto configurable de instancias/buffers. | El visor WASM aún no conecta su LOD/caché al renderer; el límite GPU contabiliza buffers de instancias, no VRAM total. |
 | `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ desde `Blob` y presentación WebGPU sobre canvas del host. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
-| `examples/web-host` | Demo WebGPU de datos sintéticos integrada con el renderer Rust. | No abre archivos ni implementa controles de cámara. |
+| `examples/web-host` | Demo WebGPU de datos sintéticos con navegación, color y tamaño configurable. | No abre archivos ni conecta la selección LOD del core. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 | `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
@@ -476,13 +476,18 @@ todavía.
   Los IDs son locales al dataset: hay que llamar `clear_dataset` al cambiarlo. Los bloques se tratan
   como inmutables mientras residan en GPU.
 - [ ] Conectar `LodTransitionPlan` y `DecodedBlockCache` del visor/WASM a esta ruta; hoy el host aún
-  entrega una escena completa. El presupuesto GPU y la carga desde formato se definen en pendientes
-  posteriores.
+  entrega una escena completa. La carga desde formato sigue pendiente; el presupuesto GPU de abajo
+  ya está definido y se aplicará a los cortes al completar esta conexión.
 - [x] Añadir modos de color RGB, intensidad, elevación y clasificación cuando existe el atributo.
   Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
   El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
-- [ ] Definir presupuesto de puntos/instancias, gestión de recursos y comportamiento si la GPU no
-  soporta los límites esperados.
+- [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 4 millones de
+  instancias visibles y 256 MiB de capacidad agregada para buffers de instancias. Cada buffer también
+  respeta `max_buffer_size` del dispositivo y el límite `u32` de cada draw. La capacidad se redondea
+  a potencias de dos y el chequeo de cambios atómicos incluye el pico temporal de buffers antiguos y
+  nuevos. El límite solo estima buffers de instancias del renderer; no mide ni garantiza VRAM libre.
+  Si se excede, devuelve un error tipado con requerido/límite y conserva la selección anterior; no
+  reduce LOD por su cuenta.
 - [ ] Añadir diagnóstico de tiempo de frame, bytes subidos y cantidad visible; el shader actual es un
   punto de partida, no un renderer completo.
 
@@ -510,6 +515,9 @@ y presentar estado.
   específico.
 - [ ] Exponer operaciones útiles sin acoplar el host a estructuras internas: abrir/cerrar, encuadrar,
   mover cámara, definir modo de color, consultar estadísticas y cancelar.
+- [ ] Cuando el host use la selección LOD, ofrecer perfiles Quality y Performance que ajusten juntos
+  el error/presupuesto visible y los límites GPU. Usar como rango inicial acordado 2 voxeles por píxel
+  (2:1) hasta 1 voxel por cada 16 píxeles (1:16), y validar el impacto visual con datasets reales.
 - [ ] Añadir pruebas de bindings, ciclo de vida y concurrencia; comprobar que callbacks/eventos no
   bloqueen la UI y que los errores llegan al usuario.
 
@@ -534,10 +542,10 @@ no realiza copias proporcionales al tamaño total de la nube.
 entender límites/errores sin editar el código de la demo.
 
 **Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia,
-muestra estado, instancias y bytes transferidos, y permite navegar con puntero, rueda o teclado. Si
-falla la inicialización o un frame, permite crear de nuevo el visor. El renderer ya reconcilia cortes
-por bloque desde la caché del core, pero la demo todavía no usa esa ruta. Archivos locales, bounds de
-dataset y validación en navegador siguen pendientes.
+muestra estado, instancias y bytes transferidos, permite navegar con puntero, rueda o teclado, y
+expone modos de color y tamaño. Si falla la inicialización o un frame, permite crear de nuevo el
+visor. El renderer ya reconcilia cortes por bloque desde la caché del core, pero la demo todavía no
+usa esa ruta. Archivos locales, bounds de dataset y validación en navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

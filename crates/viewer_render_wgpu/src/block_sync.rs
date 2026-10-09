@@ -2,12 +2,16 @@ use std::collections::{BTreeSet, HashMap};
 
 use viewer_core::{BlockId, DecodedBlockCache};
 
-use crate::{GpuRendererError, RenderScene, SceneBounds};
+use crate::{
+    GpuBudget, GpuRendererError, RenderScene, SceneBounds,
+    budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ResidentBlockInfo {
     pub id: BlockId,
     pub instance_count: usize,
+    pub capacity: u64,
     pub bounds: Option<SceneBounds>,
     pub intensity_range: Option<[f32; 2]>,
     pub elevation_range: Option<[f32; 2]>,
@@ -30,6 +34,8 @@ pub(crate) fn plan_block_sync(
     requested_ids: &[BlockId],
     cache: &DecodedBlockCache,
     max_buffer_size: u64,
+    budget: GpuBudget,
+    other_buffer_bytes: u64,
 ) -> Result<BlockSyncPlan, GpuRendererError> {
     let current_ids: BTreeSet<_> = resident.iter().map(|block| block.id).collect();
     let selected: Vec<_> = requested_ids
@@ -48,11 +54,17 @@ pub(crate) fn plan_block_sync(
     let mut visible_bounds = None;
     let mut visible_intensity_range = None;
     let mut visible_elevation_range = None;
+    let current_bytes = resident.iter().try_fold(other_buffer_bytes, |sum, block| {
+        sum.checked_add(block.capacity)
+            .ok_or(GpuRendererError::InvalidSceneSize)
+    })?;
+    let mut added_capacity = 0_u64;
     for id in &selected {
         if let Some(block) = resident_by_id.get(id) {
             visible_instance_count = visible_instance_count
                 .checked_add(block.instance_count)
                 .ok_or(GpuRendererError::InvalidSceneSize)?;
+            check_visible_instances(visible_instance_count, budget.max_visible_instances)?;
             visible_bounds = merge_bounds(visible_bounds, block.bounds);
             visible_intensity_range = merge_range(visible_intensity_range, block.intensity_range);
             visible_elevation_range = merge_range(visible_elevation_range, block.elevation_range);
@@ -62,21 +74,30 @@ pub(crate) fn plan_block_sync(
         let payload = cache
             .peek(*id)
             .ok_or(GpuRendererError::MissingBlockPayload(*id))?;
+        visible_instance_count = visible_instance_count
+            .checked_add(payload.points().len())
+            .ok_or(GpuRendererError::InvalidSceneSize)?;
+        check_visible_instances(visible_instance_count, budget.max_visible_instances)?;
         let scene = RenderScene::from_point_block(payload);
         let instance_count = scene.instance_count();
         let bytes = instance_count
             .checked_mul(std::mem::size_of::<crate::InstanceRaw>())
             .and_then(|bytes| u64::try_from(bytes).ok())
             .ok_or(GpuRendererError::InvalidSceneSize)?;
-        if bytes > max_buffer_size || u32::try_from(instance_count).is_err() {
+        if u32::try_from(instance_count).is_err() {
             return Err(GpuRendererError::InvalidSceneSize);
         }
+        let capacity = buffer_capacity(
+            bytes,
+            std::mem::size_of::<crate::InstanceRaw>() as u64,
+            max_buffer_size,
+        )?;
+        added_capacity = added_capacity
+            .checked_add(capacity)
+            .ok_or(GpuRendererError::InvalidSceneSize)?;
         if instance_count != 0 && scene.bounds().is_none() {
             return Err(GpuRendererError::InvalidBlockData(*id));
         }
-        visible_instance_count = visible_instance_count
-            .checked_add(instance_count)
-            .ok_or(GpuRendererError::InvalidSceneSize)?;
         uploaded_bytes = uploaded_bytes
             .checked_add(bytes)
             .ok_or(GpuRendererError::InvalidSceneSize)?;
@@ -85,6 +106,8 @@ pub(crate) fn plan_block_sync(
         visible_elevation_range = merge_range(visible_elevation_range, scene.elevation_range());
         added.push((*id, scene));
     }
+    check_visible_instances(visible_instance_count, budget.max_visible_instances)?;
+    check_peak_bytes(current_bytes, added_capacity, budget.max_bytes)?;
 
     Ok(BlockSyncPlan {
         selected,
@@ -126,8 +149,24 @@ fn merge_bounds(current: Option<SceneBounds>, next: Option<SceneBounds>) -> Opti
 mod tests {
     use viewer_core::{BlockId, ColorRgb, DecodedBlockCache, Point, PointBatch, PointBlock};
 
-    use super::{ResidentBlockInfo, plan_block_sync};
-    use crate::SceneBounds;
+    use super::{ResidentBlockInfo, plan_block_sync as plan_block_sync_with_budget};
+    use crate::{GpuBudget, SceneBounds};
+
+    fn plan_block_sync(
+        resident: &[ResidentBlockInfo],
+        requested_ids: &[BlockId],
+        cache: &DecodedBlockCache,
+        max_buffer_size: u64,
+    ) -> Result<super::BlockSyncPlan, crate::GpuRendererError> {
+        plan_block_sync_with_budget(
+            resident,
+            requested_ids,
+            cache,
+            max_buffer_size,
+            GpuBudget::default(),
+            0,
+        )
+    }
 
     fn block(id: u64, positions: &[[f32; 3]]) -> PointBlock {
         let points = positions
@@ -168,6 +207,7 @@ mod tests {
             ResidentBlockInfo {
                 id: BlockId::new(1),
                 instance_count: 1,
+                capacity: 64,
                 bounds: Some(SceneBounds {
                     min: [-0.5; 3],
                     max: [0.5; 3],
@@ -178,6 +218,7 @@ mod tests {
             ResidentBlockInfo {
                 id: BlockId::new(2),
                 instance_count: 2,
+                capacity: 128,
                 bounds: Some(SceneBounds {
                     min: [1.5, -0.5, -0.5],
                     max: [3.5, 0.5, 0.5],
@@ -210,6 +251,7 @@ mod tests {
         let current = [ResidentBlockInfo {
             id: BlockId::new(1),
             instance_count: 1,
+            capacity: 64,
             bounds: Some(SceneBounds {
                 min: [-0.5; 3],
                 max: [0.5; 3],
@@ -229,6 +271,7 @@ mod tests {
         let current = [ResidentBlockInfo {
             id: BlockId::new(1),
             instance_count: 1,
+            capacity: 64,
             bounds: Some(SceneBounds {
                 min: [-0.5; 3],
                 max: [0.5; 3],
@@ -245,6 +288,57 @@ mod tests {
 
         let cache = cache([block(2, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])]);
         assert!(plan_block_sync(&current, &[BlockId::new(2)], &cache, 1).is_err());
+        assert_eq!(current[0].id, BlockId::new(1));
+    }
+
+    #[test]
+    fn rejects_instance_and_transition_peak_budgets_before_planning_a_cut() {
+        let cache = cache([block(2, &[[2.0, 0.0, 0.0]])]);
+        let current = [ResidentBlockInfo {
+            id: BlockId::new(1),
+            instance_count: 1,
+            capacity: 64,
+            bounds: Some(SceneBounds {
+                min: [-0.5; 3],
+                max: [0.5; 3],
+            }),
+            intensity_range: None,
+            elevation_range: None,
+        }];
+
+        let peak_budget = GpuBudget {
+            max_bytes: 127,
+            max_visible_instances: 4,
+        };
+        assert_eq!(
+            plan_block_sync_with_budget(
+                &current,
+                &[BlockId::new(2)],
+                &cache,
+                1024,
+                peak_budget,
+                0,
+            )
+                .unwrap_err(),
+            crate::GpuRendererError::GpuBudgetExceeded {
+                required_bytes: 128,
+                max_bytes: 127,
+            }
+        );
+
+        let instance_budget = GpuBudget {
+            max_bytes: 1024,
+            max_visible_instances: 0,
+        };
+        assert_eq!(
+            plan_block_sync_with_budget(&[], &[BlockId::new(2)], &cache, 1024, instance_budget, 0,)
+                .unwrap_err(),
+            crate::GpuRendererError::VisibleInstanceLimitExceeded {
+                requested_instances: 1,
+                max_instances: 0,
+            }
+        );
+
         assert_eq!(current[0].id, BlockId::new(1));
     }
 

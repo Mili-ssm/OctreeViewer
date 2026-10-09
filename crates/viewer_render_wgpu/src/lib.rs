@@ -1,8 +1,10 @@
 mod block_sync;
+mod budget;
 mod camera;
 mod gpu;
 mod scene;
 
+pub use budget::GpuBudget;
 pub use camera::{CameraFrame, OrbitCamera};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, SurfaceRenderer};
 pub use scene::{
@@ -15,6 +17,7 @@ use viewer_core::{Point, VisibleVoxelBatch};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RendererConfig {
     pub clear_color: wgpu::Color,
+    pub gpu_budget: GpuBudget,
 }
 
 impl Default for RendererConfig {
@@ -26,6 +29,7 @@ impl Default for RendererConfig {
                 b: 0.08,
                 a: 1.0,
             },
+            gpu_budget: GpuBudget::default(),
         }
     }
 }
