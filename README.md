@@ -139,8 +139,8 @@ completa en memoria.
 - [x] Añadir consulta conservadora por frustum sobre límites de nodos, con poda de subárboles.
 - [x] Seleccionar nodos por nivel de detalle y presupuesto; mantener AABB como consulta simple útil
   para recorte.
-- [ ] Separar voxelización/agregación de la representación persistente de puntos. La voxelización
-  debe seguir disponible como reducción de densidad opcional, no como único camino de renderizado.
+- [x] Separar voxelización/agregación del camino de puntos: `PointBatch` se puede renderizar sin
+  reducción; la voxelización sigue disponible como modo explícito de reducción de densidad.
 - [ ] Definir límites de datos y errores: coordenadas inválidas, límites desbordados, archivos
   truncados, atributos ausentes y conteos grandes.
 - [ ] Diseñar contratos pequeños para leer fuentes, solicitar bloques y proporcionar atributos. Evitar
@@ -169,6 +169,11 @@ cobertura. Si el corte visible base excede el presupuesto se devuelve un error; 
 o no hay resolución disponible, el resultado lo informa. La selección opera sobre conteos de puntos
 representantes, no sobre bytes o memoria. La política de muestreo y su generación en el conversor
 siguen pendientes, por lo que aún no hay una ruta de datos real que garantice estos contratos.
+
+`ViewerController` y `WasmVoxelViewer` ahora renderizan puntos sin agregarlos por defecto. La ruta
+opcional `replaceVoxelizedPoints`/`appendVoxelizedPoints` conserva la reducción de densidad. Ambos
+caminos siguen almacenando la escena actual en memoria; la lectura de bloques persistentes y acotados
+pertenece a `viewer_format` y a las fases posteriores.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.

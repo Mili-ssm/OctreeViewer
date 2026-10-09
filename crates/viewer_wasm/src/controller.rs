@@ -69,6 +69,8 @@ impl From<InstanceRaw> for RenderInstanceSnapshot {
 pub enum ViewerError {
     #[error(transparent)]
     InvalidVoxelization(#[from] VoxelizationError),
+    #[error("point position must contain only finite coordinates, got {0:?}")]
+    InvalidPointPosition([f32; 3]),
     #[error("positions length must be a multiple of 3, got {0}")]
     InvalidPositionComponentCount(usize),
     #[error("colors length must equal point count * 3, got {actual} for {point_count} points")]
@@ -77,8 +79,15 @@ pub enum ViewerError {
 
 #[derive(Debug, Clone)]
 pub struct ViewerController {
-    store: SparseVoxelStore,
+    data: ViewerData,
+    voxel_config: VoxelizationConfig,
     renderer: WgpuRenderer,
+}
+
+#[derive(Debug, Clone)]
+enum ViewerData {
+    RawPoints(Vec<Point>),
+    Voxelized(SparseVoxelStore),
 }
 
 impl ViewerController {
@@ -88,29 +97,64 @@ impl ViewerController {
         renderer.resize(config.viewport_size[0], config.viewport_size[1]);
 
         Ok(Self {
-            store: SparseVoxelStore::new(voxel_config),
+            data: ViewerData::RawPoints(Vec::new()),
+            voxel_config,
             renderer,
         })
     }
 
     pub fn replace_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
         let batch = build_point_batch(positions, colors)?;
-        let mut replacement = SparseVoxelStore::new(self.store.config());
-        replacement.insert_batch(&batch)?;
-        self.store = replacement;
+        self.data = ViewerData::RawPoints(batch.points().to_vec());
         self.refresh_scene();
         Ok(())
     }
 
     pub fn append_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
         let batch = build_point_batch(positions, colors)?;
-        self.store.insert_batch(&batch)?;
+        match &mut self.data {
+            ViewerData::RawPoints(points) => points.extend_from_slice(batch.points()),
+            ViewerData::Voxelized(store) => store.insert_batch(&batch)?,
+        }
+        self.refresh_scene();
+        Ok(())
+    }
+
+    pub fn replace_voxelized_points(
+        &mut self,
+        positions: &[f32],
+        colors: &[u8],
+    ) -> Result<(), ViewerError> {
+        let batch = build_point_batch(positions, colors)?;
+        let mut replacement = SparseVoxelStore::new(self.voxel_config);
+        replacement.insert_batch(&batch)?;
+        self.data = ViewerData::Voxelized(replacement);
+        self.refresh_scene();
+        Ok(())
+    }
+
+    pub fn append_voxelized_points(
+        &mut self,
+        positions: &[f32],
+        colors: &[u8],
+    ) -> Result<(), ViewerError> {
+        let batch = build_point_batch(positions, colors)?;
+        let mut replacement = match &self.data {
+            ViewerData::RawPoints(points) => {
+                let mut store = SparseVoxelStore::new(self.voxel_config);
+                store.insert_batch(&PointBatch::new(points.clone()))?;
+                store
+            }
+            ViewerData::Voxelized(store) => store.clone(),
+        };
+        replacement.insert_batch(&batch)?;
+        self.data = ViewerData::Voxelized(replacement);
         self.refresh_scene();
         Ok(())
     }
 
     pub fn clear(&mut self) {
-        self.store.clear();
+        self.data = ViewerData::RawPoints(Vec::new());
         self.refresh_scene();
     }
 
@@ -128,18 +172,29 @@ impl ViewerController {
 
     pub fn stats(&self) -> ViewerStats {
         let scene = self.renderer.scene();
+        let (point_count, voxel_count) = match &self.data {
+            ViewerData::RawPoints(points) => (points.len() as u64, 0),
+            ViewerData::Voxelized(store) => (store.point_count(), store.voxel_count()),
+        };
 
         ViewerStats {
-            point_count: self.store.point_count(),
-            voxel_count: self.store.voxel_count(),
+            point_count,
+            voxel_count,
             instance_count: scene.instance_count(),
             viewport_size: self.renderer.viewport_size(),
         }
     }
 
     fn refresh_scene(&mut self) {
-        let batch = self.store.build_visible_batch(VisibilityQuery::default());
-        self.renderer.update_scene(&batch);
+        match &self.data {
+            ViewerData::RawPoints(points) => {
+                self.renderer.update_points(points);
+            }
+            ViewerData::Voxelized(store) => {
+                let batch = store.build_visible_batch(VisibilityQuery::default());
+                self.renderer.update_scene(&batch);
+            }
+        }
     }
 }
 
@@ -162,12 +217,16 @@ fn build_point_batch(positions: &[f32], colors: &[u8]) -> Result<PointBatch, Vie
         .chunks_exact(3)
         .zip(colors.chunks_exact(3))
         .map(|(position, color)| {
-            Point::new(
-                [position[0], position[1], position[2]],
+            let position = [position[0], position[1], position[2]];
+            if position.iter().any(|coordinate| !coordinate.is_finite()) {
+                return Err(ViewerError::InvalidPointPosition(position));
+            }
+            Ok(Point::new(
+                position,
                 ColorRgb::new(color[0], color[1], color[2]),
-            )
+            ))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(PointBatch::new(points))
 }
@@ -175,7 +234,6 @@ fn build_point_batch(positions: &[f32], colors: &[u8]) -> Result<PointBatch, Vie
 #[cfg(test)]
 mod tests {
     use super::{ViewerConfig, ViewerController, ViewerError};
-    use viewer_core::VoxelizationError;
 
     #[test]
     fn replaces_points_and_builds_instances() {
@@ -192,9 +250,10 @@ mod tests {
 
         let stats = viewer.stats();
         assert_eq!(stats.point_count, 2);
-        assert_eq!(stats.voxel_count, 2);
+        assert_eq!(stats.voxel_count, 0);
         assert_eq!(stats.instance_count, 2);
         assert_eq!(stats.viewport_size, [640, 480]);
+        assert_eq!(viewer.render_scene().instances()[0].center, [0.1, 0.1, 0.1]);
     }
 
     #[test]
@@ -234,11 +293,51 @@ mod tests {
 
         assert!(matches!(
             viewer.replace_points(&[f32::NAN, 0.0, 0.0], &[1, 2, 3]),
-            Err(ViewerError::InvalidVoxelization(
-                VoxelizationError::InvalidPointPosition(_)
-            ))
+            Err(ViewerError::InvalidPointPosition(_))
         ));
         assert_eq!(viewer.stats().point_count, 1);
+        assert_eq!(viewer.stats().voxel_count, 0);
+    }
+
+    #[test]
+    fn voxelization_is_an_explicit_density_reduction_path() {
+        let mut viewer = ViewerController::new(ViewerConfig::default()).unwrap();
+        let positions = [0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 1.2, 0.1, 0.1];
+        let colors = [255, 0, 0, 0, 255, 0, 0, 0, 255];
+
+        viewer.replace_points(&positions, &colors).unwrap();
+        assert_eq!(viewer.stats().point_count, 3);
+        assert_eq!(viewer.stats().voxel_count, 0);
+        assert_eq!(viewer.stats().instance_count, 3);
+
+        viewer
+            .replace_voxelized_points(&positions, &colors)
+            .unwrap();
+        assert_eq!(viewer.stats().point_count, 3);
+        assert_eq!(viewer.stats().voxel_count, 2);
+        assert_eq!(viewer.stats().instance_count, 2);
+    }
+
+    #[test]
+    fn appending_voxelized_points_converts_the_current_raw_data_atomically() {
+        let mut viewer = ViewerController::new(ViewerConfig::default()).unwrap();
+        viewer
+            .replace_points(&[0.1, 0.1, 0.1], &[255, 0, 0])
+            .unwrap();
+
+        viewer
+            .append_voxelized_points(&[0.2, 0.2, 0.2], &[0, 255, 0])
+            .unwrap();
+        assert_eq!(viewer.stats().point_count, 2);
         assert_eq!(viewer.stats().voxel_count, 1);
+        assert_eq!(viewer.stats().instance_count, 1);
+
+        let previous_scene = viewer.render_scene().clone();
+        assert!(
+            viewer
+                .append_voxelized_points(&[f32::NAN, 0.0, 0.0], &[1, 2, 3])
+                .is_err()
+        );
+        assert_eq!(viewer.render_scene(), &previous_scene);
     }
 }

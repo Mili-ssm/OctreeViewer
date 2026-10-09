@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use viewer_core::VisibleVoxelBatch;
+use viewer_core::{Point, VisibleVoxelBatch};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
@@ -20,6 +20,19 @@ pub struct RenderScene {
 }
 
 impl RenderScene {
+    pub fn from_points(points: &[Point]) -> Self {
+        let instances = points
+            .iter()
+            .map(|point| InstanceRaw {
+                center: point.position,
+                size: 1.0,
+                color: point.color.to_linear_rgba(),
+            })
+            .collect();
+
+        Self { instances }
+    }
+
     pub fn from_visible_batch(batch: &VisibleVoxelBatch) -> Self {
         let instances = batch
             .voxels()

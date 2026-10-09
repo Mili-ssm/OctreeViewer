@@ -184,6 +184,28 @@ impl WasmVoxelViewer {
             .map_err(viewer_error_to_js)
     }
 
+    #[wasm_bindgen(js_name = replaceVoxelizedPoints)]
+    pub fn replace_voxelized_points(
+        &mut self,
+        positions: Vec<f32>,
+        colors: Vec<u8>,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .replace_voxelized_points(&positions, &colors)
+            .map_err(viewer_error_to_js)
+    }
+
+    #[wasm_bindgen(js_name = appendVoxelizedPoints)]
+    pub fn append_voxelized_points(
+        &mut self,
+        positions: Vec<f32>,
+        colors: Vec<u8>,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .append_voxelized_points(&positions, &colors)
+            .map_err(viewer_error_to_js)
+    }
+
     #[wasm_bindgen(js_name = clear)]
     pub fn clear(&mut self) {
         self.inner.clear();

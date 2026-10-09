@@ -2,7 +2,7 @@ mod scene;
 
 pub use scene::{InstanceRaw, RenderScene, RenderStats, VOXEL_SHADER_WGSL, instance_buffer_layout};
 
-use viewer_core::VisibleVoxelBatch;
+use viewer_core::{Point, VisibleVoxelBatch};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RendererConfig {
@@ -62,6 +62,11 @@ impl WgpuRenderer {
 
     pub fn update_scene(&mut self, batch: &VisibleVoxelBatch) -> &RenderScene {
         self.scene = RenderScene::from_visible_batch(batch);
+        &self.scene
+    }
+
+    pub fn update_points(&mut self, points: &[Point]) -> &RenderScene {
+        self.scene = RenderScene::from_points(points);
         &self.scene
     }
 
