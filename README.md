@@ -252,10 +252,12 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   como dispersas; medir sesgo y artefactos introducidos por muestreo.
 - [x] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
   forma explícita los que se descartan o transforman.
-- [ ] Aceptar primero LAS/LAZ como fuentes requeridas; evaluar COPC/EPT como entrada interoperable y
-  fuente para pruebas, según soporte y calidad de las bibliotecas elegidas.
+- [x] Aceptar LAS/LAZ y COPC como entrada secuencial interoperable; el fixture COPC de 107 puntos de
+  `las 0.11.1` se convierte correctamente. COPC se aplana en una raíz y no conserva su jerarquía.
+- [ ] Evaluar EPT como dataset de entrada con múltiples archivos, jerarquía externa y datos por nodo.
+  Definir su mapeo al formato propio antes de implementarlo.
 
-Uso inicial: `cargo run -p viewer_convert -- INPUT.las OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]`.
+Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
 de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación reserva
 192 bytes por punto del bloque, 512 bytes por entrada del directorio y 16 MiB fijos; no equivale al
