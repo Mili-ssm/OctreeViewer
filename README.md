@@ -148,7 +148,7 @@ completa en memoria.
 - [x] Tratar truncamiento LAS/LAZ como error terminal de la sesión de importación; cuando falta RGB,
   usar intensidad en escala de grises como fallback documentado.
 - [x] Mantener conteos de fuente y payload en `u64`, con cobertura de valores mayores que `u32`.
-- [ ] Diseñar contratos pequeños para leer fuentes, solicitar bloques y proporcionar atributos. Evitar
+- [x] Diseñar contratos pequeños para leer fuentes, solicitar bloques y proporcionar atributos. Evitar
   hacer que `viewer_core` dependa de WASM, DOM o tipos de `wgpu`.
 
 **Progreso:** el índice residente valida raíces, padres, niveles y contención de límites; las consultas
@@ -169,6 +169,13 @@ color agregado, y su error máximo queda acotado por la semidiagonal más el red
 tamaño de celda para mantener grillas anidadas. El conversor deberá aplicar la política y almacenar
 el máximo de esas cotas por nodo. El consumidor debe proporcionar la tolerancia en píxeles para cada
 vista; `select_lod` no inventa un umbral global.
+
+`DatasetSource` expone metadatos y lee bloques identificados por `BlockId` bajo demanda, sin acoplar
+el núcleo a archivos, red, WASM ni `wgpu`. Cada `PointBlock` lleva un lote de puntos y columnas de
+atributos tipadas; las columnas comprueban el tipo y el número de componentes por punto. La lectura
+es síncrona en este contrato base, por lo que el consumidor decide si la ejecuta en un worker o hilo.
+El formato propio aún debe implementar este contrato y validar que los bloques coinciden con el
+esquema y la jerarquía.
 
 `SpatialHierarchy::select_lod` proyecta el error mediante una función suministrada por el consumidor,
 elige un corte visible sin mezclar padre e hijos y refina por mayor error mientras el reemplazo entero
