@@ -242,7 +242,9 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   bloque e índice; reportar la estimación antes de publicar.
 - [ ] Medir RSS pico con datasets reales y añadir paralelismo solo con colas acotadas y contrapresión.
 - [x] Informar fases, puntos procesados, bytes escritos y errores en la API/CLI.
-- [ ] Añadir cancelación cooperativa durante lectura, codificación y validación.
+- [x] Permitir cancelación cooperativa desde el callback entre bloques y durante validación; limpiar
+  el temporal y no publicar una salida parcial.
+- [ ] Conectar la cancelación de la CLI a Ctrl+C con manejo portable de señales.
 - [ ] Guardar checkpoints o permitir reanudar/reconstruir el trabajo sin corromper un archivo final.
 - [ ] Definir estrategia de partición y LOD que preserve representación útil tanto en zonas densas
   como dispersas; medir sesgo y artefactos introducidos por muestreo.
@@ -263,7 +265,7 @@ número de bloques.
 La implementación separa inspección de cabecera, planificación de nodo/esquema, lectura y escritura
 secuencial, y validación/publicación; la planificación espacial actual solo crea una raíz sin LOD.
 La CLI muestra las fases y actualiza puntos/bytes en pasos del 10%; `convert_file_with_progress`
-ofrece los mismos eventos a otros consumidores. La cancelación cooperativa todavía no está expuesta.
+ofrece los mismos eventos y permite cancelar devolviendo `false`. Falta conectar Ctrl+C en la CLI.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.

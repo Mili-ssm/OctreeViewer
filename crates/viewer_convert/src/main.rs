@@ -71,6 +71,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                 next_percent = percent.saturating_add(10);
             }
         }
+        true
     })?;
     eprintln!(
         "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {}",

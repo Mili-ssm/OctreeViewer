@@ -161,6 +161,8 @@ pub enum ConvertError {
     InvalidMemoryBudget,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
     MemoryBudgetExceeded { requested: u64, limit: u64 },
+    #[error("conversion cancelled after processing {points_processed} points")]
+    Cancelled { points_processed: u64 },
     #[error("LAS/LAZ header bounds are invalid")]
     InvalidHeaderBounds,
     #[error("LAS/LAZ point count requires {0} blocks, exceeding the limit of {MAX_BLOCKS}")]
@@ -185,9 +187,11 @@ pub fn convert_file(
     output_path: &Path,
     options: ConvertOptions,
 ) -> Result<ConversionReport, ConvertError> {
-    convert_file_with_progress(input_path, output_path, options, |_| {})
+    convert_file_with_progress(input_path, output_path, options, |_| true)
 }
 
+/// Converts a file and reports progress after each phase and completed block.
+/// Return `false` from the callback to cancel before the output is published.
 pub fn convert_file_with_progress<F>(
     input_path: &Path,
     output_path: &Path,
@@ -195,26 +199,34 @@ pub fn convert_file_with_progress<F>(
     mut on_progress: F,
 ) -> Result<ConversionReport, ConvertError>
 where
-    F: FnMut(ConversionProgress),
+    F: FnMut(ConversionProgress) -> bool,
 {
     if output_path.exists() {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
 
-    on_progress(ConversionProgress {
-        stage: ConversionStage::InspectingInput,
-        points_processed: 0,
-        total_points: 0,
-        bytes_written: 0,
-    });
+    emit_progress(
+        &mut on_progress,
+        ConversionProgress {
+            stage: ConversionStage::InspectingInput,
+            points_processed: 0,
+            total_points: 0,
+            bytes_written: 0,
+        },
+        0,
+    )?;
     let mut reader = Reader::from_path(input_path)?;
     let source = inspect_source(&reader)?;
-    on_progress(ConversionProgress {
-        stage: ConversionStage::PlanningMetadata,
-        points_processed: 0,
-        total_points: source.point_count,
-        bytes_written: 0,
-    });
+    emit_progress(
+        &mut on_progress,
+        ConversionProgress {
+            stage: ConversionStage::PlanningMetadata,
+            points_processed: 0,
+            total_points: source.point_count,
+            bytes_written: 0,
+        },
+        0,
+    )?;
     let plan = ConversionPlan::build(source, options)?;
     let mut temporary = create_temporary_output(output_path)?;
     let temporary_path = temporary.path.to_owned();
@@ -248,7 +260,7 @@ where
     )?;
     drop(temporary);
 
-    on_progress(ConversionProgress {
+    let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,
         points_processed: plan.point_count,
         total_points: plan.point_count,
@@ -359,14 +371,18 @@ fn stream_blocks(
     writer: &mut FormatWriter<File>,
     plan: &ConversionPlan,
     temporary_path: &Path,
-    on_progress: &mut impl FnMut(ConversionProgress),
+    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
-    on_progress(ConversionProgress {
-        stage: ConversionStage::ReadingAndWritingBlocks,
-        points_processed: 0,
-        total_points: plan.point_count,
-        bytes_written: fs::metadata(temporary_path)?.len(),
-    });
+    emit_progress(
+        on_progress,
+        ConversionProgress {
+            stage: ConversionStage::ReadingAndWritingBlocks,
+            points_processed: 0,
+            total_points: plan.point_count,
+            bytes_written: fs::metadata(temporary_path)?.len(),
+        },
+        0,
+    )?;
     let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
     let mut processed = 0_u64;
     while processed < plan.point_count {
@@ -429,12 +445,16 @@ fn stream_blocks(
             attributes,
         ))?;
         processed += read;
-        on_progress(ConversionProgress {
-            stage: ConversionStage::ReadingAndWritingBlocks,
-            points_processed: processed,
-            total_points: plan.point_count,
-            bytes_written: fs::metadata(temporary_path)?.len(),
-        });
+        emit_progress(
+            on_progress,
+            ConversionProgress {
+                stage: ConversionStage::ReadingAndWritingBlocks,
+                points_processed: processed,
+                total_points: plan.point_count,
+                bytes_written: fs::metadata(temporary_path)?.len(),
+            },
+            processed,
+        )?;
     }
     Ok(())
 }
@@ -512,7 +532,7 @@ fn validate_output(
     path: &Path,
     total_points: u64,
     file_length: u64,
-    on_progress: &mut impl FnMut(ConversionProgress),
+    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
     let mut reader = FormatReader::new(File::open(path)?)?;
     let root = reader
@@ -521,21 +541,29 @@ fn validate_output(
         .node(NodeId::new(0))
         .expect("converter emits the root node");
     let block_ids = root.blocks().to_vec();
-    on_progress(ConversionProgress {
-        stage: ConversionStage::ValidatingOutput,
-        points_processed: 0,
-        total_points,
-        bytes_written: file_length,
-    });
+    emit_progress(
+        on_progress,
+        ConversionProgress {
+            stage: ConversionStage::ValidatingOutput,
+            points_processed: 0,
+            total_points,
+            bytes_written: file_length,
+        },
+        0,
+    )?;
     let mut validated_points = 0;
     for block_id in block_ids {
         validated_points += reader.read_block(block_id)?.points().len() as u64;
-        on_progress(ConversionProgress {
-            stage: ConversionStage::ValidatingOutput,
-            points_processed: validated_points,
-            total_points,
-            bytes_written: file_length,
-        });
+        emit_progress(
+            on_progress,
+            ConversionProgress {
+                stage: ConversionStage::ValidatingOutput,
+                points_processed: validated_points,
+                total_points,
+                bytes_written: file_length,
+            },
+            validated_points,
+        )?;
     }
     Ok(())
 }
@@ -545,16 +573,20 @@ fn publish_output(
     output_path: &Path,
     point_count: u64,
     file_length: u64,
-    on_progress: &mut impl FnMut(ConversionProgress),
+    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<u64, ConvertError> {
     validate_output(temporary_path, point_count, file_length, on_progress)?;
     let output_bytes = fs::metadata(temporary_path)?.len();
-    on_progress(ConversionProgress {
-        stage: ConversionStage::PublishingOutput,
-        points_processed: point_count,
-        total_points: point_count,
-        bytes_written: output_bytes,
-    });
+    emit_progress(
+        on_progress,
+        ConversionProgress {
+            stage: ConversionStage::PublishingOutput,
+            points_processed: point_count,
+            total_points: point_count,
+            bytes_written: output_bytes,
+        },
+        point_count,
+    )?;
     fs::hard_link(temporary_path, output_path).map_err(|error| {
         if error.kind() == io::ErrorKind::AlreadyExists || output_path.exists() {
             ConvertError::OutputExists(output_path.to_owned())
@@ -563,6 +595,18 @@ fn publish_output(
         }
     })?;
     Ok(output_bytes)
+}
+
+fn emit_progress(
+    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    progress: ConversionProgress,
+    points_processed: u64,
+) -> Result<(), ConvertError> {
+    if on_progress(progress) {
+        Ok(())
+    } else {
+        Err(ConvertError::Cancelled { points_processed })
+    }
 }
 
 struct TemporaryOutput {
@@ -671,7 +715,10 @@ mod tests {
             &input,
             &output,
             ConvertOptions::new(2, 0.01).unwrap(),
-            |event| progress.push(event),
+            |event| {
+                progress.push(event);
+                true
+            },
         )
         .unwrap();
         assert_eq!(report.point_count, 5);
@@ -773,6 +820,41 @@ mod tests {
         assert!(matches!(
             convert_file(&input, &output, options),
             Err(ConvertError::MemoryBudgetExceeded { limit: 1, .. })
+        ));
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cancellation_removes_the_temporary_file_without_publishing_output() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        fixture(&input, false, false, 5);
+        let mut cancelled = false;
+        let result = convert_file_with_progress(
+            &input,
+            &output,
+            ConvertOptions::new(2, 0.01).unwrap(),
+            |event| {
+                if event.stage == ConversionStage::ReadingAndWritingBlocks
+                    && event.points_processed >= 2
+                {
+                    cancelled = true;
+                    false
+                } else {
+                    true
+                }
+            },
+        );
+
+        assert!(cancelled);
+        assert!(matches!(
+            result,
+            Err(ConvertError::Cancelled {
+                points_processed: 2
+            })
         ));
         assert!(!output.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
