@@ -1,0 +1,451 @@
+use std::num::NonZeroU64;
+
+use bytemuck::{Pod, Zeroable};
+use wgpu::util::DeviceExt;
+
+use crate::{InstanceRaw, RenderScene, RendererConfig, VOXEL_SHADER_WGSL, instance_buffer_layout};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GpuRendererError {
+    NoCompatibleAdapter,
+    UnsupportedSurface,
+    DeviceRequest(String),
+    InvalidSceneSize,
+    PipelineValidation(String),
+}
+
+impl std::fmt::Display for GpuRendererError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoCompatibleAdapter => f.write_str("no GPU adapter supports this surface"),
+            Self::UnsupportedSurface => f.write_str("surface has no usable presentation format"),
+            Self::DeviceRequest(error) => write!(f, "GPU device request failed: {error}"),
+            Self::InvalidSceneSize => f.write_str("scene exceeds supported GPU buffer limits"),
+            Self::PipelineValidation(error) => write!(f, "GPU pipeline is invalid: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for GpuRendererError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameStatus {
+    Presented,
+    SkippedTimeout,
+    Reconfigured,
+    Suspended,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ViewProjection {
+    matrix: [[f32; 4]; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct CubeVertex {
+    position: [f32; 3],
+    normal: [f32; 3],
+}
+
+const CUBE_VERTICES: [CubeVertex; 8] = [
+    CubeVertex {
+        position: [-0.5, -0.5, -0.5],
+        normal: [-1.0, -1.0, -1.0],
+    },
+    CubeVertex {
+        position: [0.5, -0.5, -0.5],
+        normal: [1.0, -1.0, -1.0],
+    },
+    CubeVertex {
+        position: [0.5, 0.5, -0.5],
+        normal: [1.0, 1.0, -1.0],
+    },
+    CubeVertex {
+        position: [-0.5, 0.5, -0.5],
+        normal: [-1.0, 1.0, -1.0],
+    },
+    CubeVertex {
+        position: [-0.5, -0.5, 0.5],
+        normal: [-1.0, -1.0, 1.0],
+    },
+    CubeVertex {
+        position: [0.5, -0.5, 0.5],
+        normal: [1.0, -1.0, 1.0],
+    },
+    CubeVertex {
+        position: [0.5, 0.5, 0.5],
+        normal: [1.0, 1.0, 1.0],
+    },
+    CubeVertex {
+        position: [-0.5, 0.5, 0.5],
+        normal: [-1.0, 1.0, 1.0],
+    },
+];
+
+const CUBE_INDICES: [u16; 36] = [
+    0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5, 3, 0,
+    4, 3, 4, 7,
+];
+
+/// GPU renderer for a surface owned by the calling application.
+pub struct SurfaceRenderer<'window> {
+    surface: wgpu::Surface<'window>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_config: wgpu::SurfaceConfiguration,
+    pipeline: wgpu::RenderPipeline,
+    depth_texture: wgpu::Texture,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
+    instance_capacity: u64,
+    instance_count: u32,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
+    clear_color: wgpu::Color,
+    uploaded_bytes: u64,
+    suspended: bool,
+}
+
+impl<'window> SurfaceRenderer<'window> {
+    /// Initializes GPU resources for the supplied host-created surface.
+    /// The instance used to create that surface must be passed here as well.
+    pub async fn new(
+        instance: &wgpu::Instance,
+        surface: wgpu::Surface<'window>,
+        config: RendererConfig,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, GpuRendererError> {
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .ok_or(GpuRendererError::NoCompatibleAdapter)?;
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("octree-viewer-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_defaults()
+                        .using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
+                },
+                None,
+            )
+            .await
+            .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
+
+        let (surface_config, pipeline_format) = surface_config(&surface, &adapter, width, height)?;
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("octree-viewer-voxel-shader"),
+            source: wgpu::ShaderSource::Wgsl(VOXEL_SHADER_WGSL.into()),
+        });
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("octree-viewer-view-projection"),
+            size: std::mem::size_of::<ViewProjection>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("octree-viewer-uniform-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(std::mem::size_of::<ViewProjection>() as u64),
+                },
+                count: None,
+            }],
+        });
+        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("octree-viewer-uniforms"),
+            layout: &uniform_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("octree-viewer-pipeline-layout"),
+            bind_group_layouts: &[&uniform_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("octree-viewer-pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<CubeVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                    },
+                    instance_buffer_layout(),
+                ],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: pipeline_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview: None,
+            cache: None,
+        });
+        if let Some(error) = device.pop_error_scope().await {
+            return Err(GpuRendererError::PipelineValidation(error.to_string()));
+        }
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("octree-viewer-cube-vertices"),
+            contents: bytemuck::cast_slice(&CUBE_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("octree-viewer-cube-indices"),
+            contents: bytemuck::cast_slice(&CUBE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("octree-viewer-instances"),
+            size: std::mem::size_of::<InstanceRaw>() as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let depth_texture = create_depth_texture(&device, &surface_config);
+        surface.configure(&device, &surface_config);
+
+        Ok(Self {
+            surface,
+            device,
+            queue,
+            surface_config,
+            pipeline,
+            depth_texture,
+            vertex_buffer,
+            index_buffer,
+            instance_buffer,
+            instance_capacity: std::mem::size_of::<InstanceRaw>() as u64,
+            instance_count: 0,
+            uniform_buffer,
+            uniform_bind_group,
+            clear_color: config.clear_color,
+            uploaded_bytes: 0,
+            suspended: width == 0 || height == 0,
+        })
+    }
+
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.surface_config.format
+    }
+
+    /// Uploads one scene and returns the bytes written. Existing GPU storage is reused when it fits.
+    pub fn upload_scene(&mut self, scene: &RenderScene) -> Result<u64, GpuRendererError> {
+        let bytes = scene
+            .instance_count()
+            .checked_mul(std::mem::size_of::<InstanceRaw>())
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .ok_or(GpuRendererError::InvalidSceneSize)?;
+        if bytes > self.device.limits().max_buffer_size {
+            return Err(GpuRendererError::InvalidSceneSize);
+        }
+        let count = u32::try_from(scene.instance_count())
+            .map_err(|_| GpuRendererError::InvalidSceneSize)?;
+        if bytes > 0 {
+            if bytes > self.instance_capacity {
+                let capacity = bytes
+                    .checked_next_power_of_two()
+                    .ok_or(GpuRendererError::InvalidSceneSize)?
+                    .min(self.device.limits().max_buffer_size);
+                if capacity < bytes {
+                    return Err(GpuRendererError::InvalidSceneSize);
+                }
+                self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("octree-viewer-instances"),
+                    size: capacity,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.instance_capacity = capacity;
+            }
+            self.queue.write_buffer(
+                &self.instance_buffer,
+                0,
+                bytemuck::cast_slice(scene.instances()),
+            );
+        }
+        self.instance_count = count;
+        self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
+        Ok(bytes)
+    }
+
+    pub fn uploaded_bytes(&self) -> u64 {
+        self.uploaded_bytes
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) -> FrameStatus {
+        if width == 0 || height == 0 {
+            self.suspended = true;
+            return FrameStatus::Suspended;
+        }
+        if self.surface_config.width == width && self.surface_config.height == height {
+            self.suspended = false;
+            return FrameStatus::Presented;
+        }
+        self.surface_config.width = width;
+        self.surface_config.height = height;
+        self.surface.configure(&self.device, &self.surface_config);
+        self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+        self.suspended = false;
+        FrameStatus::Reconfigured
+    }
+
+    /// Presents a frame using a column-major view-projection matrix.
+    pub fn render(
+        &mut self,
+        view_projection: [[f32; 4]; 4],
+    ) -> Result<FrameStatus, wgpu::SurfaceError> {
+        if self.suspended {
+            return Ok(FrameStatus::Suspended);
+        }
+        let frame = match self.surface.get_current_texture() {
+            Ok(frame) => frame,
+            Err(wgpu::SurfaceError::Timeout) => return Ok(FrameStatus::SkippedTimeout),
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                self.surface.configure(&self.device, &self.surface_config);
+                self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+                return Ok(FrameStatus::Reconfigured);
+            }
+            Err(error) => return Err(error),
+        };
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::bytes_of(&ViewProjection {
+                matrix: view_projection,
+            }),
+        );
+        let view = frame.texture.create_view(&Default::default());
+        let depth_view = self.depth_texture.create_view(&Default::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("octree-viewer-frame"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("octree-viewer-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(self.clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..self.instance_count);
+        }
+        self.queue.submit([encoder.finish()]);
+        let suboptimal = frame.suboptimal;
+        frame.present();
+        if suboptimal {
+            self.surface.configure(&self.device, &self.surface_config);
+            self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+            return Ok(FrameStatus::Reconfigured);
+        }
+        Ok(FrameStatus::Presented)
+    }
+}
+
+fn surface_config(
+    surface: &wgpu::Surface<'_>,
+    adapter: &wgpu::Adapter,
+    width: u32,
+    height: u32,
+) -> Result<(wgpu::SurfaceConfiguration, wgpu::TextureFormat), GpuRendererError> {
+    let mut config = surface
+        .get_default_config(adapter, width.max(1), height.max(1))
+        .ok_or(GpuRendererError::UnsupportedSurface)?;
+    let capabilities = surface.get_capabilities(adapter);
+    config.format = capabilities
+        .formats
+        .iter()
+        .copied()
+        .find(wgpu::TextureFormat::is_srgb)
+        .unwrap_or(config.format);
+    config.present_mode = if capabilities
+        .present_modes
+        .contains(&wgpu::PresentMode::Fifo)
+    {
+        wgpu::PresentMode::Fifo
+    } else {
+        config.present_mode
+    };
+    Ok((config.clone(), config.format))
+}
+
+fn create_depth_texture(
+    device: &wgpu::Device,
+    config: &wgpu::SurfaceConfiguration,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("octree-viewer-depth"),
+        size: wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Depth32Float,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    })
+}

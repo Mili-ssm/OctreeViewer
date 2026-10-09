@@ -1,5 +1,7 @@
+mod gpu;
 mod scene;
 
+pub use gpu::{FrameStatus, GpuRendererError, SurfaceRenderer};
 pub use scene::{InstanceRaw, RenderScene, RenderStats, VOXEL_SHADER_WGSL, instance_buffer_layout};
 
 use viewer_core::{Point, VisibleVoxelBatch};
