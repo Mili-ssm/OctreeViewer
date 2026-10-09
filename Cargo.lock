@@ -1086,7 +1086,9 @@ dependencies = [
  "viewer_core",
  "viewer_render_wgpu",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
+ "wgpu",
 ]
 
 [[package]]

@@ -78,9 +78,9 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, renderer GPU para una superficie del host, pipeline y presentación de escenas. | La cámara y la integración con el host WASM aún están pendientes. |
-| `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
-| `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
+| `viewer_render_wgpu` | Conversión a instancias, renderer GPU para una superficie del host, pipeline y presentación de escenas. | La cámara y navegación aún están pendientes. |
+| `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ desde `Blob` y presentación WebGPU sobre canvas del host. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
+| `examples/web-host` | Demo WebGPU de datos sintéticos integrada con el renderer Rust. | No abre archivos ni implementa controles de cámara. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 | `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
@@ -461,10 +461,11 @@ todavía.
 - [x] Inicializar adaptador compatible, dispositivo, formato, pipeline, geometría y recursos GPU para
   una `Surface` creada por el host; presentar escenas instanciadas con profundidad. `SurfaceRenderer`
   devuelve errores de inicialización, suspende frames con tamaño cero y reconfigura ante superficies
-  `Lost`/`Outdated`. El host debe crear el `Instance` y la `Surface`, reintentar después de una
-  reconfiguración y crear otro renderer si debe reemplazar la superficie o el dispositivo.
-- [ ] Conectar el host WASM y el canvas a `SurfaceRenderer`, incluyendo resize y recuperación del ciclo
-  de vida de la superficie.
+  `Lost`/`Outdated`. Quien integra `SurfaceRenderer` directamente crea el `Instance` y la `Surface`;
+  la factoría WASM recibe el canvas y los crea internamente. El host reintenta después de una
+  reconfiguración y recrea el visor si debe reemplazar la superficie o el dispositivo.
+- [x] Conectar el host WASM y el canvas a `SurfaceRenderer`: el host mantiene el canvas, gestiona resize
+  y reintento/recreación; Rust crea y presenta en la `Surface` WebGPU.
 - [ ] Implementar cámara y controles de navegación adecuados a escalas y coordenadas LiDAR, con
   encuadre inicial al dataset y precisión numérica estable cerca/lejos del origen.
 - [ ] Subir solo bloques seleccionados; actualizar y reutilizar buffers en lugar de reconstruir y
@@ -509,7 +510,7 @@ no realiza copias proporcionales al tamaño total de la nube.
 
 **Característica:** demostrar el flujo completo y servir como integración mínima mantenible.
 
-- [ ] Reemplazar la proyección Canvas 2D por el canvas 3D y el renderer real.
+- [x] Reemplazar la proyección Canvas 2D por el canvas 3D y el renderer real para la muestra sintética.
 - [ ] Añadir selección de archivo, estados de conversión/carga, progreso, cancelar/reintentar y resumen
   de metadatos con acciones accesibles por teclado.
 - [ ] Mostrar estadísticas de forma útil: puntos totales, bloques solicitados/visibles, nivel LOD,
@@ -521,6 +522,11 @@ no realiza copias proporcionales al tamaño total de la nube.
 
 **Cierre:** una persona puede seleccionar un archivo convertido, ver progreso, navegar la nube y
 entender límites/errores sin editar el código de la demo.
+
+**Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia y
+muestra estado, instancias y bytes transferidos. Si falla la inicialización o un frame, permite crear
+de nuevo el visor. El encuadre es fijo para la muestra sintética; archivos locales, navegación y
+validación en navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

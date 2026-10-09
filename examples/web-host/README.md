@@ -1,7 +1,8 @@
 # web-host demo
 
 This folder demonstrates the embeddable contract for the viewer. The host owns the `canvas`,
-instantiates the WASM module, uploads raw point buffers, and asks Rust for a voxel scene snapshot.
+instantiates the WASM module and renderer, and uploads raw point buffers. Rust draws the scene to the
+canvas with WebGPU; JavaScript does not copy the render instances back for drawing.
 
 ## Build the WASM package
 
@@ -15,5 +16,6 @@ wasm-pack build --target web --out-dir ../../pkg
 
 Use any static file server rooted at the repository. Then open `examples/web-host/index.html`.
 
-The current demo renders a host-side debug projection. The next iteration should replace that 2D
-projection with the Rust-side `wgpu` renderer while keeping the same host contract.
+The demo uses a fixed oblique matrix for its synthetic sample and retries renderer initialization or
+recreates the viewer after a rendering error. It requires a browser and GPU with WebGPU support. Camera
+navigation and local file loading are not implemented yet.

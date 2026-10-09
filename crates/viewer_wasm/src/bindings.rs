@@ -1,9 +1,10 @@
 use serde_wasm_bindgen::to_value;
 use std::io::{self, Read, Seek, SeekFrom};
 use wasm_bindgen::prelude::*;
-use web_sys::{Blob, FileReaderSync};
+use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
 use crate::{LasPointStream, RenderSceneSnapshot, ViewerConfig, ViewerController, ViewerError};
+use viewer_render_wgpu::{RendererConfig, SurfaceRenderer};
 
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
 
@@ -150,6 +151,8 @@ fn js_error_to_io(error: JsValue) -> io::Error {
 #[wasm_bindgen]
 pub struct WasmVoxelViewer {
     inner: ViewerController,
+    gpu_renderer: Option<SurfaceRenderer<'static>>,
+    gpu_scene_dirty: bool,
 }
 
 #[wasm_bindgen]
@@ -162,26 +165,61 @@ impl WasmVoxelViewer {
         })
         .map_err(viewer_error_to_js)?;
 
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            gpu_renderer: None,
+            gpu_scene_dirty: true,
+        })
+    }
+
+    /// Creates a viewer that renders directly to the host-owned canvas.
+    #[wasm_bindgen]
+    pub async fn create(
+        canvas: HtmlCanvasElement,
+        voxel_size: f32,
+    ) -> Result<WasmVoxelViewer, JsValue> {
+        let mut viewer = Self::new(voxel_size)?;
+        let instance = wgpu::Instance::default();
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let renderer = SurfaceRenderer::new(
+            &instance,
+            surface,
+            RendererConfig::default(),
+            canvas.width(),
+            canvas.height(),
+        )
+        .await
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        viewer.gpu_renderer = Some(renderer);
+        Ok(viewer)
     }
 
     #[wasm_bindgen(js_name = resize)]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.inner.resize(width, height);
+        if let Some(renderer) = &mut self.gpu_renderer {
+            renderer.resize(width, height);
+        }
     }
 
     #[wasm_bindgen(js_name = replacePoints)]
     pub fn replace_points(&mut self, positions: Vec<f32>, colors: Vec<u8>) -> Result<(), JsValue> {
         self.inner
             .replace_points(&positions, &colors)
-            .map_err(viewer_error_to_js)
+            .map_err(viewer_error_to_js)?;
+        self.gpu_scene_dirty = true;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = appendPoints)]
     pub fn append_points(&mut self, positions: Vec<f32>, colors: Vec<u8>) -> Result<(), JsValue> {
         self.inner
             .append_points(&positions, &colors)
-            .map_err(viewer_error_to_js)
+            .map_err(viewer_error_to_js)?;
+        self.gpu_scene_dirty = true;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = replaceVoxelizedPoints)]
@@ -192,7 +230,9 @@ impl WasmVoxelViewer {
     ) -> Result<(), JsValue> {
         self.inner
             .replace_voxelized_points(&positions, &colors)
-            .map_err(viewer_error_to_js)
+            .map_err(viewer_error_to_js)?;
+        self.gpu_scene_dirty = true;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = appendVoxelizedPoints)]
@@ -203,12 +243,15 @@ impl WasmVoxelViewer {
     ) -> Result<(), JsValue> {
         self.inner
             .append_voxelized_points(&positions, &colors)
-            .map_err(viewer_error_to_js)
+            .map_err(viewer_error_to_js)?;
+        self.gpu_scene_dirty = true;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = clear)]
     pub fn clear(&mut self) {
         self.inner.clear();
+        self.gpu_scene_dirty = true;
     }
 
     #[wasm_bindgen(js_name = stats)]
@@ -220,6 +263,57 @@ impl WasmVoxelViewer {
     pub fn render_scene(&self) -> Result<JsValue, JsValue> {
         let scene = RenderSceneSnapshot::from(self.inner.render_scene());
         to_value(&scene).map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = renderFrame)]
+    pub fn render_frame(&mut self, matrix: Vec<f32>) -> Result<String, JsValue> {
+        if matrix.len() != 16 || matrix.iter().any(|value| !value.is_finite()) {
+            return Err(JsValue::from_str(
+                "view-projection matrix must contain 16 finite column-major values",
+            ));
+        }
+        let matrix: [[f32; 4]; 4] =
+            std::array::from_fn(|column| std::array::from_fn(|row| matrix[column * 4 + row]));
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        if self.gpu_scene_dirty {
+            renderer
+                .upload_scene(self.inner.render_scene())
+                .map_err(|error| JsValue::from_str(&error.to_string()))?;
+            self.gpu_scene_dirty = false;
+        }
+        renderer
+            .render(matrix)
+            .map(|status| match status {
+                viewer_render_wgpu::FrameStatus::Presented => "presented",
+                viewer_render_wgpu::FrameStatus::SkippedTimeout => "skipped_timeout",
+                viewer_render_wgpu::FrameStatus::Reconfigured => "reconfigured",
+                viewer_render_wgpu::FrameStatus::Suspended => "suspended",
+            })
+            .map(str::to_owned)
+            .map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = gpuStats)]
+    pub fn gpu_stats(&self) -> Result<JsValue, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let stats = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &stats,
+            &"uploadedBytes".into(),
+            &JsValue::from_str(&renderer.uploaded_bytes().to_string()),
+        )?;
+        js_sys::Reflect::set(
+            &stats,
+            &"visibleInstances".into(),
+            &JsValue::from_f64(self.inner.stats().instance_count as f64),
+        )?;
+        Ok(stats.into())
     }
 }
 

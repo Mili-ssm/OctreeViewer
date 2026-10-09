@@ -89,21 +89,21 @@
     <aside>
         <h1>Embeddable voxel viewer</h1>
         <p>
-            This host owns the canvas and feeds position/color buffers into the WASM module. The
-            current visualization is a host-side debug projection of the voxel snapshot returned by
-            Rust.
+            This host owns the canvas and feeds position/color buffers into the WASM module. Rust
+            presents the synthetic point cloud through WebGPU.
         </p>
-        <button id="reload-scene" type="button">Reload sample cloud</button>
+        <button id="reload-scene" type="button">Recreate viewer</button>
+        <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>
         <section class="panel">
             <strong>Stats</strong>
             <div class="stats" id="stats"></div>
         </section>
         <section class="panel">
             <strong>Integration contract</strong>
-            <pre>new WasmVoxelViewer(voxelSize)
+            <pre>await WasmVoxelViewer.create(canvas, voxelSize)
 viewer.resize(width, height)
 viewer.replacePoints(positions, colors)
-viewer.renderScene()</pre>
+viewer.renderFrame(viewProjection)</pre>
         </section>
     </aside>
     <main>
