@@ -350,6 +350,8 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) depth: f32,
 };
 
 struct CameraUniform {
@@ -369,6 +371,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(local_position, 1.0);
+    out.depth = out.clip_position.z / out.clip_position.w;
+    out.normal = input.normal;
     let rgb_intensity = dot(input.instance_color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     var color = input.instance_color;
     if camera.style.x == 1.0 {
@@ -396,6 +400,12 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    if camera.intensity_range.z > 0.5 {
+        let light_direction = normalize(vec3<f32>(-0.35, -0.45, 0.82));
+        let face_light = 0.68 + 0.32 * max(dot(normalize(input.normal), light_direction), 0.0);
+        let depth_light = 1.0 - 0.12 * clamp(input.depth, 0.0, 1.0);
+        return vec4<f32>(input.color.rgb * face_light * depth_light, input.color.a);
+    }
     return input.color;
 }
 "#;

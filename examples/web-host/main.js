@@ -12,6 +12,7 @@ const colorMode = document.getElementById("color-mode");
 const pointSize = document.getElementById("point-size");
 const pointSizeValue = document.getElementById("point-size-value");
 const lodProfile = document.getElementById("lod-profile");
+const depthShading = document.getElementById("depth-shading");
 
 let worker = null;
 let canvasTransferred = false;
@@ -219,6 +220,7 @@ function createWorkerViewer() {
             height: canvas.height,
             colorMode: colorMode.value,
             pointSize: Number(pointSize.value),
+            depthShading: depthShading.checked,
         }, [offscreen]);
         reloadButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
@@ -275,6 +277,9 @@ pointSize.addEventListener("input", () => {
     const size = Number(pointSize.value);
     pointSizeValue.value = `${size.toFixed(1)}×`;
     queueWorkerCommand("pointSize", { value: size });
+});
+depthShading.addEventListener("change", () => {
+    queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
 lodProfile.addEventListener("change", () => {
     if (ready && datasetName !== "Synthetic sample") {

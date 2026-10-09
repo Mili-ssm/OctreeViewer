@@ -209,6 +209,7 @@ pub struct SurfaceRenderer<'window> {
     elevation_range: Option<[f32; 2]>,
     color_mode: ColorMode,
     point_size: f32,
+    depth_shading: bool,
     visual_scale: f64,
 }
 
@@ -284,7 +285,7 @@ impl<'window> SurfaceRenderer<'window> {
             label: Some("octree-viewer-uniform-layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -390,6 +391,7 @@ impl<'window> SurfaceRenderer<'window> {
             elevation_range: None,
             color_mode: ColorMode::Rgb,
             point_size: 1.0,
+            depth_shading: true,
             visual_scale: 1.0,
         })
     }
@@ -599,6 +601,10 @@ impl<'window> SurfaceRenderer<'window> {
         self.point_size
     }
 
+    pub fn set_depth_shading(&mut self, enabled: bool) {
+        self.depth_shading = enabled;
+    }
+
     pub fn fit_scene(&mut self, scene: &RenderScene) -> bool {
         self.scene_bounds = scene.bounds();
         self.display_bounds().is_some_and(|bounds| {
@@ -793,7 +799,9 @@ impl<'window> SurfaceRenderer<'window> {
                 ],
                 intensity_range: self
                     .intensity_range
-                    .map_or([0.0, 1.0, 0.0, 0.0], |range| [range[0], range[1], 0.0, 0.0]),
+                    .map_or([0.0, 1.0, f32::from(self.depth_shading), 0.0], |range| {
+                        [range[0], range[1], f32::from(self.depth_shading), 0.0]
+                    }),
             }),
         );
         let view = frame.texture.create_view(&Default::default());

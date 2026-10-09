@@ -558,6 +558,11 @@ posiciones usa el rango entre percentiles 5 y 95 para reducir la influencia de o
 reduce huecos y solapamientos en distribuciones regulares. Puede ser menos precisa en nubes inclinadas
 o con densidad muy variable; un tamaño global ajustable no resuelve simultáneamente todas las escalas.
 
+**Sombreado de profundidad (2026-10-10):** la demo incluye una casilla para activar o desactivar un
+sombreado ligero por orientación de las caras y profundidad de cámara. Usa el shader de voxeles existente,
+sin una pasada extra ni texturas intermedias; aporta una señal de volumen con coste reducido. Es un efecto
+visual aproximado, no oclusión ambiental física ni sombreado entre puntos.
+
 **Diagnóstico Bunny (2026-10-10):** el `.oct` original tiene extensión local máxima `0,15575`,
 mientras el renderer asignaba un cubo de lado `1` a cada punto. La hipótesis era que los cubos
 solapados dejaban la cámara dentro de la geometría y el culling ocultaba la nube; al dimensionar el

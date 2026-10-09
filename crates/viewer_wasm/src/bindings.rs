@@ -589,6 +589,15 @@ impl WasmVoxelViewer {
         Ok(())
     }
 
+    #[wasm_bindgen(js_name = setDepthShading)]
+    pub fn set_depth_shading(&mut self, enabled: bool) -> Result<(), JsValue> {
+        self.gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .set_depth_shading(enabled);
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name = stats)]
     pub fn stats(&self) -> Result<JsValue, JsValue> {
         to_value(&self.inner.stats()).map_err(|error| JsValue::from_str(&error.to_string()))

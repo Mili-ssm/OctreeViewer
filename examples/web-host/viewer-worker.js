@@ -3,7 +3,7 @@ import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 let viewer = null;
 let profile = "quality";
 let renderedFrames = 0;
-const coalescedCommands = new Set(["resize", "color", "pointSize", "profile", "fit"]);
+const coalescedCommands = new Set(["resize", "color", "pointSize", "depthShading", "profile", "fit"]);
 
 function samplePointCloud() {
     const positions = [];
@@ -49,6 +49,7 @@ async function handleMessage({ data }) {
                 viewer.resize(data.width, data.height);
                 viewer.setColorMode(data.colorMode);
                 viewer.setPointSize(data.pointSize);
+                viewer.setDepthShading(data.depthShading);
                 const sample = samplePointCloud();
                 viewer.replacePoints(sample.positions, sample.colors);
                 viewer.fitScene();
@@ -63,6 +64,9 @@ async function handleMessage({ data }) {
                 break;
             case "pointSize":
                 viewer.setPointSize(data.value);
+                break;
+            case "depthShading":
+                viewer.setDepthShading(data.value);
                 break;
             case "profile": {
                 profile = data.value;

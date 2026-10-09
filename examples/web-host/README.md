@@ -45,6 +45,9 @@ multiplier from `0.1` to `4`. The renderer API accepts `0.1` to `10`. Project-fo
 their attributes for color modes; the synthetic sample only has RGB, so missing intensity uses
 grayscale luminance and missing classification keeps RGB. `quality` targets 1/16 px projected error
 with a default 4 million point budget; `performance` targets 2 px and defaults to 1 million points.
+Depth shading is enabled by default and can be disabled in Rendering options. It uses face orientation
+and camera depth in the existing voxel shader; it is a lightweight depth cue, not physical ambient
+occlusion.
 
 The stats panel reports visible points/instances/blocks, deepest visible LOD level, LOD coverage,
 pending block count, decoded CPU cache usage/budget, cumulative bytes written to instance buffers, and
