@@ -266,14 +266,7 @@ impl WasmVoxelViewer {
     }
 
     #[wasm_bindgen(js_name = renderFrame)]
-    pub fn render_frame(&mut self, matrix: Vec<f32>) -> Result<String, JsValue> {
-        if matrix.len() != 16 || matrix.iter().any(|value| !value.is_finite()) {
-            return Err(JsValue::from_str(
-                "view-projection matrix must contain 16 finite column-major values",
-            ));
-        }
-        let matrix: [[f32; 4]; 4] =
-            std::array::from_fn(|column| std::array::from_fn(|row| matrix[column * 4 + row]));
+    pub fn render_frame(&mut self) -> Result<String, JsValue> {
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -285,7 +278,7 @@ impl WasmVoxelViewer {
             self.gpu_scene_dirty = false;
         }
         renderer
-            .render(matrix)
+            .render()
             .map(|status| match status {
                 viewer_render_wgpu::FrameStatus::Presented => "presented",
                 viewer_render_wgpu::FrameStatus::SkippedTimeout => "skipped_timeout",
@@ -294,6 +287,42 @@ impl WasmVoxelViewer {
             })
             .map(str::to_owned)
             .map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = fitScene)]
+    pub fn fit_scene(&mut self) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        Ok(renderer.fit_scene(self.inner.render_scene()))
+    }
+
+    #[wasm_bindgen(js_name = orbit)]
+    pub fn orbit(&mut self, delta_x: f64, delta_y: f64) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        Ok(renderer.orbit_camera(delta_x, delta_y))
+    }
+
+    #[wasm_bindgen(js_name = pan)]
+    pub fn pan(&mut self, delta_x: f64, delta_y: f64) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        Ok(renderer.pan_camera(delta_x, delta_y))
+    }
+
+    #[wasm_bindgen(js_name = zoom)]
+    pub fn zoom(&mut self, delta: f64) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        Ok(renderer.zoom_camera(delta))
     }
 
     #[wasm_bindgen(js_name = gpuStats)]

@@ -3,7 +3,10 @@ use std::num::NonZeroU64;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::{InstanceRaw, RenderScene, RendererConfig, VOXEL_SHADER_WGSL, instance_buffer_layout};
+use crate::{
+    CameraFrame, InstanceRaw, OrbitCamera, RenderScene, RendererConfig, SceneBounds,
+    VOXEL_SHADER_WGSL, instance_buffer_layout,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GpuRendererError {
@@ -40,6 +43,7 @@ pub enum FrameStatus {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct ViewProjection {
     matrix: [[f32; 4]; 4],
+    render_origin: [f32; 4],
 }
 
 #[repr(C)]
@@ -107,6 +111,8 @@ pub struct SurfaceRenderer<'window> {
     clear_color: wgpu::Color,
     uploaded_bytes: u64,
     suspended: bool,
+    camera: OrbitCamera,
+    scene_bounds: Option<SceneBounds>,
 }
 
 impl<'window> SurfaceRenderer<'window> {
@@ -262,6 +268,8 @@ impl<'window> SurfaceRenderer<'window> {
             clear_color: config.clear_color,
             uploaded_bytes: 0,
             suspended: width == 0 || height == 0,
+            camera: OrbitCamera::default(),
+            scene_bounds: None,
         })
     }
 
@@ -306,7 +314,34 @@ impl<'window> SurfaceRenderer<'window> {
         }
         self.instance_count = count;
         self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
+        self.scene_bounds = scene.bounds();
         Ok(bytes)
+    }
+
+    pub fn fit_scene(&mut self, scene: &RenderScene) -> bool {
+        self.scene_bounds = scene.bounds();
+        self.scene_bounds.is_some_and(|bounds| {
+            self.camera.fit(
+                bounds,
+                [self.surface_config.width, self.surface_config.height],
+            )
+        })
+    }
+
+    pub fn orbit_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
+        self.camera.orbit(delta_x, delta_y)
+    }
+
+    pub fn pan_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
+        self.camera.pan(
+            delta_x,
+            delta_y,
+            [self.surface_config.width, self.surface_config.height],
+        )
+    }
+
+    pub fn zoom_camera(&mut self, delta: f64) -> bool {
+        self.camera.zoom(delta)
     }
 
     pub fn uploaded_bytes(&self) -> u64 {
@@ -326,18 +361,29 @@ impl<'window> SurfaceRenderer<'window> {
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
         self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+        if !self.camera.is_fitted()
+            && let Some(bounds) = self.scene_bounds
+        {
+            self.camera.fit(bounds, [width, height]);
+        }
         self.suspended = false;
         FrameStatus::Reconfigured
     }
 
-    /// Presents a frame using a column-major view-projection matrix.
-    pub fn render(
-        &mut self,
-        view_projection: [[f32; 4]; 4],
-    ) -> Result<FrameStatus, wgpu::SurfaceError> {
+    /// Presents a frame with the current camera.
+    pub fn render(&mut self) -> Result<FrameStatus, wgpu::SurfaceError> {
         if self.suspended {
             return Ok(FrameStatus::Suspended);
         }
+        let Some(CameraFrame {
+            view_projection,
+            render_origin,
+        }) = self
+            .camera
+            .frame([self.surface_config.width, self.surface_config.height])
+        else {
+            return Ok(FrameStatus::Suspended);
+        };
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Timeout) => return Ok(FrameStatus::SkippedTimeout),
@@ -353,6 +399,7 @@ impl<'window> SurfaceRenderer<'window> {
             0,
             bytemuck::bytes_of(&ViewProjection {
                 matrix: view_projection,
+                render_origin,
             }),
         );
         let view = frame.texture.create_view(&Default::default());

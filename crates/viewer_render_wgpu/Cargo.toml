@@ -5,5 +5,9 @@ edition.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
+glam.workspace = true
 viewer_core = { path = "../viewer_core" }
 wgpu.workspace = true
+
+[dev-dependencies]
+naga = { version = "24", features = ["wgsl-in"] }

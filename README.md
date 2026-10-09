@@ -78,7 +78,7 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, renderer GPU para una superficie del host, pipeline y presentación de escenas. | La cámara y navegación aún están pendientes. |
+| `viewer_render_wgpu` | Conversión a instancias, cámara orbital local y renderer GPU para superficies del host. | El encuadre usa la escena cargada; LOD y bounds de dataset aún no están conectados. |
 | `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ desde `Blob` y presentación WebGPU sobre canvas del host. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo WebGPU de datos sintéticos integrada con el renderer Rust. | No abre archivos ni implementa controles de cámara. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
@@ -466,8 +466,10 @@ todavía.
   reconfiguración y recrea el visor si debe reemplazar la superficie o el dispositivo.
 - [x] Conectar el host WASM y el canvas a `SurfaceRenderer`: el host mantiene el canvas, gestiona resize
   y reintento/recreación; Rust crea y presenta en la `Surface` WebGPU.
-- [ ] Implementar cámara y controles de navegación adecuados a escalas y coordenadas LiDAR, con
-  encuadre inicial al dataset y precisión numérica estable cerca/lejos del origen.
+- [x] Implementar cámara orbital con encuadre explícito de la escena, orbit, pan, zoom y resize. Usa
+  Z como eje vertical, calcula bounds y cámara en `f64` y resta un origen local en el shader antes de
+  proyectar. Preserva la precisión local disponible; no recupera precisión perdida al convertir
+  coordenadas globales a `f32`. El encuadre se limita a las instancias cargadas, no a bounds de dataset.
 - [ ] Subir solo bloques seleccionados; actualizar y reutilizar buffers en lugar de reconstruir y
   serializar la escena completa en cada cambio.
 - [ ] Añadir modos iniciales de color (RGB, intensidad, elevación y clasificación cuando exista) y
@@ -523,10 +525,10 @@ no realiza copias proporcionales al tamaño total de la nube.
 **Cierre:** una persona puede seleccionar un archivo convertido, ver progreso, navegar la nube y
 entender límites/errores sin editar el código de la demo.
 
-**Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia y
-muestra estado, instancias y bytes transferidos. Si falla la inicialización o un frame, permite crear
-de nuevo el visor. El encuadre es fijo para la muestra sintética; archivos locales, navegación y
-validación en navegador siguen pendientes.
+**Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia,
+muestra estado, instancias y bytes transferidos, y permite navegar con puntero, rueda o teclado. Si
+falla la inicialización o un frame, permite crear de nuevo el visor. Archivos locales, bounds de
+dataset y validación en navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

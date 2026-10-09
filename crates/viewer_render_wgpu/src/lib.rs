@@ -1,8 +1,12 @@
+mod camera;
 mod gpu;
 mod scene;
 
+pub use camera::{CameraFrame, OrbitCamera};
 pub use gpu::{FrameStatus, GpuRendererError, SurfaceRenderer};
-pub use scene::{InstanceRaw, RenderScene, RenderStats, VOXEL_SHADER_WGSL, instance_buffer_layout};
+pub use scene::{
+    InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL, instance_buffer_layout,
+};
 
 use viewer_core::{Point, VisibleVoxelBatch};
 

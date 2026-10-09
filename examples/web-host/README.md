@@ -16,6 +16,8 @@ wasm-pack build --target web --out-dir ../../pkg
 
 Use any static file server rooted at the repository. Then open `examples/web-host/index.html`.
 
-The demo uses a fixed oblique matrix for its synthetic sample and retries renderer initialization or
-recreates the viewer after a rendering error. It requires a browser and GPU with WebGPU support. Camera
-navigation and local file loading are not implemented yet.
+The Rust camera fits the loaded scene and supports orbit, pan, zoom, and resize. Drag to orbit, use
+Shift+drag to pan, and scroll to zoom; keyboard users can focus the canvas and use the arrow keys,
+Shift+arrows, `+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser and
+GPU with WebGPU support. Bounds currently come from loaded instances; local file loading is not
+implemented yet. Renderer initialization and frame errors can be recovered by recreating the viewer.

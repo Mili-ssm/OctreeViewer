@@ -53,6 +53,13 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
             box-shadow: 0 25px 90px rgba(0, 0, 0, 0.35);
+            touch-action: none;
+        }
+
+        button:focus-visible,
+        canvas:focus-visible {
+            outline: 3px solid #38bdf8;
+            outline-offset: 3px;
         }
 
         button {
@@ -93,7 +100,12 @@
             presents the synthetic point cloud through WebGPU.
         </p>
         <button id="reload-scene" type="button">Recreate viewer</button>
+        <button id="fit-scene" type="button">Fit scene</button>
         <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>
+        <p id="camera-help">
+            Drag to orbit, Shift+drag to pan, scroll to zoom. Focus the canvas and use arrow keys;
+            hold Shift to pan, use +/− to zoom, and Home to fit.
+        </p>
         <section class="panel">
             <strong>Stats</strong>
             <div class="stats" id="stats"></div>
@@ -103,11 +115,15 @@
             <pre>await WasmVoxelViewer.create(canvas, voxelSize)
 viewer.resize(width, height)
 viewer.replacePoints(positions, colors)
-viewer.renderFrame(viewProjection)</pre>
+viewer.fitScene()
+viewer.orbit(dx, dy) / viewer.pan(dx, dy) / viewer.zoom(delta)
+viewer.renderFrame()</pre>
         </section>
     </aside>
     <main>
-        <canvas id="viewer-canvas" width="1280" height="720"></canvas>
+        <canvas id="viewer-canvas" width="1280" height="720" tabindex="0"
+            aria-label="3D point cloud. Drag to orbit, Shift+drag to pan, scroll to zoom."
+            aria-describedby="camera-help"></canvas>
     </main>
     <script type="module" src="./main.js"></script>
 </body>

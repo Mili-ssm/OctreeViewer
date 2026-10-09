@@ -1070,6 +1070,8 @@ name = "viewer_render_wgpu"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "glam",
+ "naga",
  "viewer_core",
  "wgpu",
 ]
