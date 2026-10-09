@@ -5,14 +5,15 @@ use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
 use crate::{
-    LasPointStream, LodDataset, LodViewStats, RenderSceneSnapshot, ViewerConfig, ViewerController,
-    ViewerError, lod_metadata::LodDatasetDescriptor,
+    LasPointStream, LodDataset, LodViewStats, RenderInstanceSnapshot, RenderSceneSnapshot,
+    ViewerConfig, ViewerController, ViewerError, lod_metadata::LodDatasetDescriptor,
 };
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
-const LOD_IMPORT_BATCH_POINTS: usize = 16_384;
+const WASM_POINT_BATCH_POINTS: usize = 16_384;
+const MAX_WASM_TRANSFER_INSTANCES: usize = 16_384;
 
 #[wasm_bindgen]
 pub struct WasmLasImportSession {
@@ -302,19 +303,29 @@ impl WasmVoxelViewer {
     }
 
     #[wasm_bindgen(js_name = replacePoints)]
-    pub fn replace_points(&mut self, positions: Vec<f32>, colors: Vec<u8>) -> Result<(), JsValue> {
-        self.inner
-            .replace_points(&positions, &colors)
-            .map_err(viewer_error_to_js)?;
+    pub fn replace_points(
+        &mut self,
+        positions: js_sys::Float32Array,
+        colors: js_sys::Uint8Array,
+    ) -> Result<(), JsValue> {
+        let points = points_from_typed_arrays(&positions, &colors, raw_scene_point_limit())?;
+        self.inner.replace_points_owned(points);
         self.gpu_scene_dirty = true;
         self.clear_lod_dataset();
         Ok(())
     }
 
     #[wasm_bindgen(js_name = appendPoints)]
-    pub fn append_points(&mut self, positions: Vec<f32>, colors: Vec<u8>) -> Result<(), JsValue> {
+    pub fn append_points(
+        &mut self,
+        positions: js_sys::Float32Array,
+        colors: js_sys::Uint8Array,
+    ) -> Result<(), JsValue> {
+        let remaining_points = raw_scene_point_limit()
+            .saturating_sub(usize::try_from(self.inner.stats().point_count).unwrap_or(usize::MAX));
+        let points = points_from_typed_arrays(&positions, &colors, remaining_points)?;
         self.inner
-            .append_points(&positions, &colors)
+            .append_points_owned(points)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
         self.clear_lod_dataset();
@@ -324,11 +335,12 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = replaceVoxelizedPoints)]
     pub fn replace_voxelized_points(
         &mut self,
-        positions: Vec<f32>,
-        colors: Vec<u8>,
+        positions: js_sys::Float32Array,
+        colors: js_sys::Uint8Array,
     ) -> Result<(), JsValue> {
+        let points = points_from_typed_arrays(&positions, &colors, raw_scene_point_limit())?;
         self.inner
-            .replace_voxelized_points(&positions, &colors)
+            .replace_voxelized_points_owned(points)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
         self.clear_lod_dataset();
@@ -338,11 +350,14 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = appendVoxelizedPoints)]
     pub fn append_voxelized_points(
         &mut self,
-        positions: Vec<f32>,
-        colors: Vec<u8>,
+        positions: js_sys::Float32Array,
+        colors: js_sys::Uint8Array,
     ) -> Result<(), JsValue> {
+        let remaining_points = raw_scene_point_limit()
+            .saturating_sub(usize::try_from(self.inner.stats().point_count).unwrap_or(usize::MAX));
+        let points = points_from_typed_arrays(&positions, &colors, remaining_points)?;
         self.inner
-            .append_voxelized_points(&positions, &colors)
+            .append_voxelized_points_owned(points)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
         self.clear_lod_dataset();
@@ -471,39 +486,7 @@ impl WasmVoxelViewer {
             )));
         }
 
-        let mut points = Vec::new();
-        points
-            .try_reserve_exact(point_count)
-            .map_err(|_| JsValue::from_str("unable to allocate decoded point block"))?;
-        let staged_points = point_count.min(LOD_IMPORT_BATCH_POINTS);
-        let mut position_batch = vec![0.0_f32; staged_points * 3];
-        let mut color_batch = vec![0_u8; staged_points * 3];
-        let mut point_offset = 0;
-        while point_offset < point_count {
-            let batch_points = (point_count - point_offset).min(LOD_IMPORT_BATCH_POINTS);
-            let batch_components = batch_points * 3;
-            let component_start = (point_offset * 3) as u32;
-            let component_end = component_start + batch_components as u32;
-            positions
-                .subarray(component_start, component_end)
-                .copy_to(&mut position_batch[..batch_components]);
-            colors
-                .subarray(component_start, component_end)
-                .copy_to(&mut color_batch[..batch_components]);
-            for (position, color) in position_batch[..batch_components]
-                .chunks_exact(3)
-                .zip(color_batch[..batch_components].chunks_exact(3))
-            {
-                if position.iter().any(|value| !value.is_finite()) {
-                    return Err(JsValue::from_str("block positions must be finite"));
-                }
-                points.push(Point::new(
-                    [position[0], position[1], position[2]],
-                    ColorRgb::new(color[0], color[1], color[2]),
-                ));
-            }
-            point_offset += batch_points;
-        }
+        let points = points_from_typed_arrays(&positions, &colors, point_count)?;
         let allocated_bytes = points
             .capacity()
             .saturating_mul(std::mem::size_of::<Point>())
@@ -607,9 +590,48 @@ impl WasmVoxelViewer {
     }
 
     #[wasm_bindgen(js_name = renderScene)]
+    /// Returns a complete diagnostic snapshot only when it fits the transfer batch limit.
     pub fn render_scene(&self) -> Result<JsValue, JsValue> {
+        if self.inner.render_scene().instance_count() > MAX_WASM_TRANSFER_INSTANCES {
+            return Err(JsValue::from_str(
+                "renderScene is limited to 16384 instances; use renderSceneBatch",
+            ));
+        }
         let scene = RenderSceneSnapshot::from(self.inner.render_scene());
         to_value(&scene).map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = renderSceneBatch)]
+    /// Returns a bounded diagnostic page of the current CPU render scene.
+    pub fn render_scene_batch(&self, start: u32, count: u32) -> Result<JsValue, JsValue> {
+        if count == 0 || count as usize > MAX_WASM_TRANSFER_INSTANCES {
+            return Err(JsValue::from_str(
+                "renderSceneBatch count must be between 1 and 16384",
+            ));
+        }
+        let instances = self.inner.render_scene().instances();
+        let start = (start as usize).min(instances.len());
+        let end = start.saturating_add(count as usize).min(instances.len());
+        let scene = RenderSceneSnapshot {
+            instances: instances[start..end]
+                .iter()
+                .copied()
+                .map(RenderInstanceSnapshot::from)
+                .collect(),
+        };
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(&result, &"start".into(), &JsValue::from_f64(start as f64))?;
+        js_sys::Reflect::set(
+            &result,
+            &"total".into(),
+            &JsValue::from_f64(instances.len() as f64),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"instances".into(),
+            &to_value(&scene.instances).map_err(|error| JsValue::from_str(&error.to_string()))?,
+        )?;
+        Ok(result.into())
     }
 
     #[wasm_bindgen(js_name = renderFrame)]
@@ -814,6 +836,64 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         &JsValue::from_f64(stats.budget_omitted_nodes as f64),
     )?;
     Ok(value.into())
+}
+
+fn raw_scene_point_limit() -> usize {
+    RendererConfig::default().gpu_budget.max_visible_instances
+}
+
+fn points_from_typed_arrays(
+    positions: &js_sys::Float32Array,
+    colors: &js_sys::Uint8Array,
+    max_points: usize,
+) -> Result<Vec<Point>, JsValue> {
+    let position_components = positions.length() as usize;
+    let color_components = colors.length() as usize;
+    if position_components % 3 != 0 || color_components != position_components {
+        return Err(JsValue::from_str(
+            "positions and colors must contain three values per point",
+        ));
+    }
+    let point_count = position_components / 3;
+    if point_count > max_points {
+        return Err(JsValue::from_str(&format!(
+            "point batch has {point_count} points, limit is {max_points}"
+        )));
+    }
+    let mut points = Vec::new();
+    points
+        .try_reserve_exact(point_count)
+        .map_err(|_| JsValue::from_str("unable to allocate decoded point batch"))?;
+    let staged_points = point_count.min(WASM_POINT_BATCH_POINTS);
+    let mut position_batch = vec![0.0_f32; staged_points * 3];
+    let mut color_batch = vec![0_u8; staged_points * 3];
+    let mut point_offset = 0;
+    while point_offset < point_count {
+        let batch_points = (point_count - point_offset).min(WASM_POINT_BATCH_POINTS);
+        let batch_components = batch_points * 3;
+        let component_start = (point_offset * 3) as u32;
+        let component_end = component_start + batch_components as u32;
+        positions
+            .subarray(component_start, component_end)
+            .copy_to(&mut position_batch[..batch_components]);
+        colors
+            .subarray(component_start, component_end)
+            .copy_to(&mut color_batch[..batch_components]);
+        for (position, color) in position_batch[..batch_components]
+            .chunks_exact(3)
+            .zip(color_batch[..batch_components].chunks_exact(3))
+        {
+            if position.iter().any(|value| !value.is_finite()) {
+                return Err(JsValue::from_str("block positions must be finite"));
+            }
+            points.push(Point::new(
+                [position[0], position[1], position[2]],
+                ColorRgb::new(color[0], color[1], color[2]),
+            ));
+        }
+        point_offset += batch_points;
+    }
+    Ok(points)
 }
 
 fn viewer_error_to_js(error: ViewerError) -> JsValue {

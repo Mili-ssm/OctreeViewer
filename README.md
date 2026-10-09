@@ -524,11 +524,12 @@ y presentar estado.
   como máximo un comando en vuelo y el último valor pendiente por tipo. Los frames siguen limitados a
   uno en vuelo. La lectura de bloques permanece síncrona dentro del worker; cancelar termina/recrea el
   worker y descarta el dataset abierto.
-- [x] Acotar la entrada `insertLodBlock`: convierte posiciones/colores en lotes de 16.384 puntos y
-  limita la reserva del bloque al presupuesto de caché; al insertarlo, la caché Rust conserva su
-  propia `PointBlock`. El host retiene los arrays de entrada durante la llamada, así que no es zero-copy.
-- [ ] Aplicar lotes y límites equivalentes a las API de escena completa (`replacePoints`/`appendPoints`)
-  y a `readNext`; definir la propiedad de buffers en esos contratos.
+- [x] Limitar transferencias WASM: `replacePoints`/`appendPoints` y `insertLodBlock` convierten
+  arrays tipados en lotes temporales de 16.384 puntos, con un máximo de puntos de escena tomado del
+  presupuesto GPU y límite de bloque tomado de `cacheBytes`. Rust conserva los puntos al terminar;
+  el host retiene los arrays durante la llamada. `readNext` limita cada respuesta a 65.536 puntos y
+  8 MiB de registros fuente. `renderSceneBatch` limita la salida a 16.384 instancias; `renderScene`
+  rechaza escenas mayores. No se comparte memoria zero-copy.
 - [x] Soportar archivos locales del formato propio en la demo. Definir por separado si el producto
   debe aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren
   contrato específico.
@@ -559,7 +560,11 @@ conteos `u64` son strings decimales. `min`/`max` están en coordenadas del datas
 `insertLodBlock(id, positions, colors)` recibe posiciones `f32` locales a `coordinateOrigin` y RGB
 intercalado en arrays tipados; los convierte en lotes de hasta 16.384 puntos a una `PointBlock` propia
 de Rust y rechaza bloques cuyo payload excede `cacheBytes`. El host conserva los arrays mientras dura
-la llamada. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
+la llamada. `replacePoints`/`appendPoints` y sus variantes voxelizadas reciben los mismos typed arrays;
+limitan cada escena de entrada al máximo de instancias GPU configurado y mueven los puntos a Rust.
+`readNext` devuelve lotes limitados a 65.536 puntos/8 MiB de registros fuente. Para leer una escena de
+diagnóstico desde JS, usa `renderSceneBatch(start, count)` con hasta 16.384 instancias; `renderScene()`
+solo funciona hasta ese tamaño. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
 Blob con el lector v1/v2. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
 las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
@@ -577,8 +582,8 @@ limita comandos repetibles a uno en vuelo y un valor pendiente por tipo, y no en
 vez; las lecturas siguen siendo síncronas dentro del worker.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
-no copia el archivo o todos sus puntos a JS. La API LOD externa copia un bloque a la vez dentro del
-presupuesto configurado; las API de escena completa mantienen su contrato de arrays por ahora.
+no copia el archivo o todos sus puntos a JS. Las transferencias tipadas usan staging Rust acotado y
+límites explícitos; la demo de archivo local permanece en la ruta directa `FormatReader`→caché→GPU.
 
 ### Fase 7 — Aplicación de referencia y extensibilidad (`examples/web-host`)
 

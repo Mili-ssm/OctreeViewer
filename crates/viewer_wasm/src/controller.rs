@@ -105,16 +105,31 @@ impl ViewerController {
 
     pub fn replace_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
         let batch = build_point_batch(positions, colors)?;
-        self.data = ViewerData::RawPoints(batch.points().to_vec());
-        self.refresh_scene();
+        self.replace_points_owned(batch.into_points());
         Ok(())
+    }
+
+    /// Replaces the raw scene by taking ownership of its point allocation.
+    pub fn replace_points_owned(&mut self, points: Vec<Point>) {
+        self.data = ViewerData::RawPoints(points);
+        self.refresh_scene();
     }
 
     pub fn append_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
         let batch = build_point_batch(positions, colors)?;
         match &mut self.data {
-            ViewerData::RawPoints(points) => points.extend_from_slice(batch.points()),
+            ViewerData::RawPoints(points) => points.extend(batch.into_points()),
             ViewerData::Voxelized(store) => store.insert_batch(&batch)?,
+        }
+        self.refresh_scene();
+        Ok(())
+    }
+
+    /// Appends an owned point batch without retaining an intermediate copy.
+    pub fn append_points_owned(&mut self, points: Vec<Point>) -> Result<(), ViewerError> {
+        match &mut self.data {
+            ViewerData::RawPoints(existing) => existing.extend(points),
+            ViewerData::Voxelized(store) => store.insert_batch(&PointBatch::new(points))?,
         }
         self.refresh_scene();
         Ok(())
@@ -128,6 +143,17 @@ impl ViewerController {
         let batch = build_point_batch(positions, colors)?;
         let mut replacement = SparseVoxelStore::new(self.voxel_config);
         replacement.insert_batch(&batch)?;
+        self.data = ViewerData::Voxelized(replacement);
+        self.refresh_scene();
+        Ok(())
+    }
+
+    pub fn replace_voxelized_points_owned(
+        &mut self,
+        points: Vec<Point>,
+    ) -> Result<(), ViewerError> {
+        let mut replacement = SparseVoxelStore::new(self.voxel_config);
+        replacement.insert_batch(&PointBatch::new(points))?;
         self.data = ViewerData::Voxelized(replacement);
         self.refresh_scene();
         Ok(())
@@ -148,6 +174,21 @@ impl ViewerController {
             ViewerData::Voxelized(store) => store.clone(),
         };
         replacement.insert_batch(&batch)?;
+        self.data = ViewerData::Voxelized(replacement);
+        self.refresh_scene();
+        Ok(())
+    }
+
+    pub fn append_voxelized_points_owned(&mut self, points: Vec<Point>) -> Result<(), ViewerError> {
+        let mut replacement = match &self.data {
+            ViewerData::RawPoints(points) => {
+                let mut store = SparseVoxelStore::new(self.voxel_config);
+                store.insert_batch(&PointBatch::new(points.clone()))?;
+                store
+            }
+            ViewerData::Voxelized(store) => store.clone(),
+        };
+        replacement.insert_batch(&PointBatch::new(points))?;
         self.data = ViewerData::Voxelized(replacement);
         self.refresh_scene();
         Ok(())
@@ -233,6 +274,8 @@ fn build_point_batch(positions: &[f32], colors: &[u8]) -> Result<PointBatch, Vie
 
 #[cfg(test)]
 mod tests {
+    use viewer_core::{ColorRgb, Point};
+
     use super::{ViewerConfig, ViewerController, ViewerError};
 
     #[test]
@@ -254,6 +297,18 @@ mod tests {
         assert_eq!(stats.instance_count, 2);
         assert_eq!(stats.viewport_size, [640, 480]);
         assert_eq!(viewer.render_scene().instances()[0].center, [0.1, 0.1, 0.1]);
+    }
+
+    #[test]
+    fn replaces_and_appends_owned_points_without_changing_the_dataset_contract() {
+        let mut viewer = ViewerController::new(ViewerConfig::default()).unwrap();
+        viewer.replace_points_owned(vec![Point::new([0.0; 3], ColorRgb::new(1, 2, 3))]);
+        viewer
+            .append_points_owned(vec![Point::new([1.0; 3], ColorRgb::new(4, 5, 6))])
+            .unwrap();
+
+        assert_eq!(viewer.stats().point_count, 2);
+        assert_eq!(viewer.render_scene().instance_count(), 2);
     }
 
     #[test]

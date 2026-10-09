@@ -117,6 +117,11 @@ impl PointBatch {
         &self.points
     }
 
+    /// Transfers the owned point allocation to the caller without cloning it.
+    pub fn into_points(self) -> Vec<Point> {
+        self.points
+    }
+
     pub(crate) fn allocated_bytes(&self) -> usize {
         self.points.capacity() * std::mem::size_of::<Point>()
     }

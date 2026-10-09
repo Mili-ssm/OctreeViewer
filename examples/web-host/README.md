@@ -41,3 +41,10 @@ worker, replaces its transferred canvas, and starts a fresh viewer; select the f
 The host keeps at most one worker command of each repeatable kind in flight and replaces its pending
 value with the latest input. It also allows only one frame request in flight; file reads remain
 synchronous inside the worker.
+
+The generic WASM point APIs accept typed arrays and stage them in batches of 16,384 points into
+Rust-owned storage. Full-scene inputs are limited by the renderer's visible-instance budget;
+`readNext` is limited to 65,536 points and 8 MiB of source records per response. Use
+`renderSceneBatch(start, count)` for diagnostic snapshots, with at most 16,384 instances per call.
+These APIs copy across JS/WASM memory; the local-format viewing path reads selected blocks directly in
+Rust and avoids materializing the full file in JS.
