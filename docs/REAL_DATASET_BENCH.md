@@ -92,6 +92,29 @@ operativa para esta fuente y configuración, con margen sobre el pico medido. La
 por sí sola añadir paralelismo: este queda pendiente hasta comparar tiempo y disco con colas acotadas
 y contrapresión.
 
+### Línea de base para evaluar paralelismo
+
+El 9 de octubre de 2026 se repitió una conversión serial con `real_dataset_bench` en la revisión
+`35c4ead` (release, mismas opciones y fuente); el resultado de esta ejecución fue:
+
+| Medida | Resultado |
+| --- | ---: |
+| Tiempo total | 84,78 s (963.492 puntos/s) |
+| CPU del proceso (`/usr/bin/time`) | 99 % de un CPU durante la ejecución |
+| RSS pico | 36.736 KiB |
+| Planificación espacial | 20,56 s |
+| Construcción de jerarquía | 39,23 s |
+| Lectura y escritura de bloques | 14,24 s |
+| Validación | 10,50 s |
+| Salida | 1.596.356.674 B; idéntica en tamaño, bloques y payload a la referencia |
+
+La planificación y la jerarquía ocuparon 59,79 s (70,5 % del tiempo medido), y el proceso serial
+usó aproximadamente un CPU pese a que el equipo expone 20 hilos lógicos. Esto identifica una zona
+con potencial de aceleración, pero una sola repetición no prueba que una versión paralela sea más
+rápida. Tampoco se midió el pico temporal de esta repetición; la referencia disponible sigue siendo
+8,37 GiB y una estrategia que prolongue la vida de spools puede aumentarlo. El siguiente paso es un
+prototipo comparativo acotado, no activar paralelismo en producción sin datos de tiempo y disco.
+
 ### Memoria esperable para render
 
 En la ruta actual, `Point` ocupa 16 B y `InstanceRaw` 32 B. Mantener los 81.682.329 puntos como

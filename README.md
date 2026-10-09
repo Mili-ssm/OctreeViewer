@@ -255,8 +255,10 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 - [x] Medir el pico de espacio temporal de disco con un dataset real; registrar método, resolución
   del muestreo y límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
-- [ ] Evaluar si el paralelismo mejora conversión y espacio temporal; si se añade, usar colas
-  acotadas y contrapresión.
+- [x] Repetir la línea de base serial para decidir dónde evaluar paralelismo; registrar tiempo,
+  RSS y fases en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+- [ ] Comparar una alternativa paralela con colas acotadas y contrapresión; medir rendimiento y
+  pico temporal antes de decidir si se integra.
 - [x] Medir el coste de memoria de las representaciones e intermedios en un dataset real y eliminar
   las copias de atributos y puntos del spool que no aportaban al formato; registrar mediciones y
   límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md). Mantener la estimación conservadora
