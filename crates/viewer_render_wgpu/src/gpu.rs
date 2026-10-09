@@ -1,11 +1,14 @@
 use std::num::NonZeroU64;
+use std::{collections::HashMap, mem::size_of};
 
 use bytemuck::{Pod, Zeroable};
+use viewer_core::{BlockId, DecodedBlockCache};
 use wgpu::util::DeviceExt;
 
 use crate::{
     CameraFrame, InstanceRaw, OrbitCamera, RenderScene, RendererConfig, SceneBounds,
-    VOXEL_SHADER_WGSL, instance_buffer_layout,
+    VOXEL_SHADER_WGSL, block_sync::ResidentBlockInfo, block_sync::plan_block_sync,
+    instance_buffer_layout,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +17,9 @@ pub enum GpuRendererError {
     UnsupportedSurface,
     DeviceRequest(String),
     InvalidSceneSize,
+    InvalidSceneData,
+    InvalidBlockData(BlockId),
+    MissingBlockPayload(BlockId),
     PipelineValidation(String),
 }
 
@@ -24,6 +30,11 @@ impl std::fmt::Display for GpuRendererError {
             Self::UnsupportedSurface => f.write_str("surface has no usable presentation format"),
             Self::DeviceRequest(error) => write!(f, "GPU device request failed: {error}"),
             Self::InvalidSceneSize => f.write_str("scene exceeds supported GPU buffer limits"),
+            Self::InvalidSceneData => f.write_str("scene contains invalid render data"),
+            Self::InvalidBlockData(id) => write!(f, "block {id:?} contains invalid render data"),
+            Self::MissingBlockPayload(id) => {
+                write!(f, "block {id:?} is not resident in the CPU cache")
+            }
             Self::PipelineValidation(error) => write!(f, "GPU pipeline is invalid: {error}"),
         }
     }
@@ -51,6 +62,22 @@ struct ViewProjection {
 struct CubeVertex {
     position: [f32; 3],
     normal: [f32; 3],
+}
+
+struct GpuInstanceBuffer {
+    buffer: wgpu::Buffer,
+    capacity: u64,
+    instance_count: u32,
+    bounds: Option<SceneBounds>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BlockUploadStats {
+    pub visible_block_count: usize,
+    pub visible_instance_count: usize,
+    pub uploaded_block_count: usize,
+    pub removed_block_count: usize,
+    pub uploaded_bytes: u64,
 }
 
 const CUBE_VERTICES: [CubeVertex; 8] = [
@@ -103,9 +130,10 @@ pub struct SurfaceRenderer<'window> {
     depth_texture: wgpu::Texture,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    instance_buffer: wgpu::Buffer,
-    instance_capacity: u64,
-    instance_count: u32,
+    scene_buffer: Option<GpuInstanceBuffer>,
+    block_buffers: HashMap<BlockId, GpuInstanceBuffer>,
+    visible_block_ids: Vec<BlockId>,
+    visible_instance_count: usize,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     clear_color: wgpu::Color,
@@ -242,9 +270,9 @@ impl<'window> SurfaceRenderer<'window> {
             contents: bytemuck::cast_slice(&CUBE_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let scene_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("octree-viewer-instances"),
-            size: std::mem::size_of::<InstanceRaw>() as u64,
+            size: size_of::<InstanceRaw>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -260,9 +288,15 @@ impl<'window> SurfaceRenderer<'window> {
             depth_texture,
             vertex_buffer,
             index_buffer,
-            instance_buffer,
-            instance_capacity: std::mem::size_of::<InstanceRaw>() as u64,
-            instance_count: 0,
+            scene_buffer: Some(GpuInstanceBuffer {
+                buffer: scene_buffer,
+                capacity: size_of::<InstanceRaw>() as u64,
+                instance_count: 0,
+                bounds: None,
+            }),
+            block_buffers: HashMap::new(),
+            visible_block_ids: Vec::new(),
+            visible_instance_count: 0,
             uniform_buffer,
             uniform_bind_group,
             clear_color: config.clear_color,
@@ -279,47 +313,137 @@ impl<'window> SurfaceRenderer<'window> {
 
     /// Uploads one scene and returns the bytes written. Existing GPU storage is reused when it fits.
     pub fn upload_scene(&mut self, scene: &RenderScene) -> Result<u64, GpuRendererError> {
-        let bytes = scene
-            .instance_count()
-            .checked_mul(std::mem::size_of::<InstanceRaw>())
-            .and_then(|bytes| u64::try_from(bytes).ok())
-            .ok_or(GpuRendererError::InvalidSceneSize)?;
-        if bytes > self.device.limits().max_buffer_size {
-            return Err(GpuRendererError::InvalidSceneSize);
-        }
-        let count = u32::try_from(scene.instance_count())
-            .map_err(|_| GpuRendererError::InvalidSceneSize)?;
-        if bytes > 0 {
-            if bytes > self.instance_capacity {
-                let capacity = bytes
-                    .checked_next_power_of_two()
-                    .ok_or(GpuRendererError::InvalidSceneSize)?
-                    .min(self.device.limits().max_buffer_size);
-                if capacity < bytes {
-                    return Err(GpuRendererError::InvalidSceneSize);
-                }
-                self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("octree-viewer-instances"),
-                    size: capacity,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-                self.instance_capacity = capacity;
+        let (bytes, count, bounds) =
+            scene_upload_metadata(scene, self.device.limits().max_buffer_size)?;
+        let current_capacity = self
+            .scene_buffer
+            .as_ref()
+            .map_or(0, |buffer| buffer.capacity);
+        if bytes > current_capacity {
+            self.scene_buffer = Some(create_instance_buffer(
+                &self.device,
+                &self.queue,
+                scene,
+                bytes,
+                count,
+                bounds,
+                self.device.limits().max_buffer_size,
+            )?);
+        } else if let Some(buffer) = &mut self.scene_buffer {
+            if bytes > 0 {
+                self.queue
+                    .write_buffer(&buffer.buffer, 0, bytemuck::cast_slice(scene.instances()));
             }
-            self.queue.write_buffer(
-                &self.instance_buffer,
-                0,
-                bytemuck::cast_slice(scene.instances()),
+            buffer.instance_count = count;
+            buffer.bounds = bounds;
+        }
+        if self.scene_buffer.is_none() {
+            self.scene_buffer = Some(create_instance_buffer(
+                &self.device,
+                &self.queue,
+                scene,
+                bytes,
+                count,
+                bounds,
+                self.device.limits().max_buffer_size,
+            )?);
+        }
+        self.block_buffers.clear();
+        self.visible_block_ids.clear();
+        self.visible_instance_count = scene.instance_count();
+        self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
+        self.scene_bounds = bounds;
+        Ok(bytes)
+    }
+
+    /// Synchronizes GPU residency to a deduplicated renderable block cut.
+    /// IDs are dataset-local; call `clear_dataset` before using IDs from another dataset.
+    /// The previous cut remains active if validation fails.
+    pub fn sync_visible_blocks(
+        &mut self,
+        block_ids: &[BlockId],
+        cache: &DecodedBlockCache,
+    ) -> Result<BlockUploadStats, GpuRendererError> {
+        let resident: Vec<_> = self
+            .block_buffers
+            .iter()
+            .map(|(id, buffer)| ResidentBlockInfo {
+                id: *id,
+                instance_count: buffer.instance_count as usize,
+                bounds: buffer.bounds,
+            })
+            .collect();
+        let plan = plan_block_sync(
+            &resident,
+            block_ids,
+            cache,
+            self.device.limits().max_buffer_size,
+        )?;
+        let mut additions = HashMap::with_capacity(plan.added.len());
+        for (id, scene) in &plan.added {
+            let (bytes, count, bounds) =
+                scene_upload_metadata(scene, self.device.limits().max_buffer_size)?;
+            additions.insert(
+                *id,
+                create_instance_buffer(
+                    &self.device,
+                    &self.queue,
+                    scene,
+                    bytes,
+                    count,
+                    bounds,
+                    self.device.limits().max_buffer_size,
+                )?,
             );
         }
-        self.instance_count = count;
-        self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
-        self.scene_bounds = scene.bounds();
-        Ok(bytes)
+
+        self.block_buffers
+            .retain(|id, _| plan.selected.binary_search(id).is_ok());
+        self.block_buffers.extend(additions);
+        self.visible_block_ids = plan.selected;
+        self.visible_instance_count = plan.visible_instance_count;
+        self.scene_bounds = plan.visible_bounds;
+        self.scene_buffer = None;
+        self.uploaded_bytes = self.uploaded_bytes.saturating_add(plan.uploaded_bytes);
+
+        Ok(BlockUploadStats {
+            visible_block_count: self.visible_block_ids.len(),
+            visible_instance_count: self.visible_instance_count,
+            uploaded_block_count: plan.added.len(),
+            removed_block_count: plan.removed.len(),
+            uploaded_bytes: plan.uploaded_bytes,
+        })
+    }
+
+    /// Drops scene and block GPU data before opening another dataset.
+    pub fn clear_dataset(&mut self) {
+        self.scene_buffer = None;
+        self.block_buffers.clear();
+        self.visible_block_ids.clear();
+        self.visible_instance_count = 0;
+        self.scene_bounds = None;
+        self.uploaded_bytes = 0;
+    }
+
+    pub fn visible_block_count(&self) -> usize {
+        self.visible_block_ids.len()
+    }
+
+    pub fn visible_instance_count(&self) -> usize {
+        self.visible_instance_count
     }
 
     pub fn fit_scene(&mut self, scene: &RenderScene) -> bool {
         self.scene_bounds = scene.bounds();
+        self.scene_bounds.is_some_and(|bounds| {
+            self.camera.fit(
+                bounds,
+                [self.surface_config.width, self.surface_config.height],
+            )
+        })
+    }
+
+    pub fn fit_visible_blocks(&mut self) -> bool {
         self.scene_bounds.is_some_and(|bounds| {
             self.camera.fit(
                 bounds,
@@ -434,9 +558,26 @@ impl<'window> SurfaceRenderer<'window> {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..self.instance_count);
+            if let Some(buffer) = &self.scene_buffer {
+                if buffer.instance_count > 0 {
+                    pass.set_vertex_buffer(1, buffer.buffer.slice(..));
+                    pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..buffer.instance_count);
+                }
+            } else {
+                for block_id in &self.visible_block_ids {
+                    if let Some(buffer) = self.block_buffers.get(block_id)
+                        && buffer.instance_count > 0
+                    {
+                        pass.set_vertex_buffer(1, buffer.buffer.slice(..));
+                        pass.draw_indexed(
+                            0..CUBE_INDICES.len() as u32,
+                            0,
+                            0..buffer.instance_count,
+                        );
+                    }
+                }
+            }
         }
         self.queue.submit([encoder.finish()]);
         let suboptimal = frame.suboptimal;
@@ -448,6 +589,62 @@ impl<'window> SurfaceRenderer<'window> {
         }
         Ok(FrameStatus::Presented)
     }
+}
+
+fn scene_upload_metadata(
+    scene: &RenderScene,
+    max_buffer_size: u64,
+) -> Result<(u64, u32, Option<SceneBounds>), GpuRendererError> {
+    let bytes = scene
+        .instance_count()
+        .checked_mul(size_of::<InstanceRaw>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or(GpuRendererError::InvalidSceneSize)?;
+    if bytes > max_buffer_size {
+        return Err(GpuRendererError::InvalidSceneSize);
+    }
+    let instance_count =
+        u32::try_from(scene.instance_count()).map_err(|_| GpuRendererError::InvalidSceneSize)?;
+    let bounds = scene.bounds();
+    if instance_count > 0 && bounds.is_none() {
+        return Err(GpuRendererError::InvalidSceneData);
+    }
+    Ok((bytes, instance_count, bounds))
+}
+
+fn create_instance_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    scene: &RenderScene,
+    bytes: u64,
+    instance_count: u32,
+    bounds: Option<SceneBounds>,
+    max_buffer_size: u64,
+) -> Result<GpuInstanceBuffer, GpuRendererError> {
+    let minimum_size = size_of::<InstanceRaw>() as u64;
+    let required_size = bytes.max(minimum_size);
+    let capacity = required_size
+        .checked_next_power_of_two()
+        .unwrap_or(max_buffer_size)
+        .min(max_buffer_size);
+    if capacity < required_size {
+        return Err(GpuRendererError::InvalidSceneSize);
+    }
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("octree-viewer-instances"),
+        size: capacity,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    if bytes > 0 {
+        queue.write_buffer(&buffer, 0, bytemuck::cast_slice(scene.instances()));
+    }
+    Ok(GpuInstanceBuffer {
+        buffer,
+        capacity,
+        instance_count,
+        bounds,
+    })
 }
 
 fn surface_config(

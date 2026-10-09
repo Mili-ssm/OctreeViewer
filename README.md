@@ -78,7 +78,7 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, cámara orbital local y renderer GPU para superficies del host. | El encuadre usa la escena cargada; LOD y bounds de dataset aún no están conectados. |
+| `viewer_render_wgpu` | Conversión a instancias, cámara orbital y buffers GPU por bloque seleccionado. | El visor WASM aún no conecta su LOD/caché al renderer; la escena sintética sigue en un buffer completo. |
 | `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ desde `Blob` y presentación WebGPU sobre canvas del host. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo WebGPU de datos sintéticos integrada con el renderer Rust. | No abre archivos ni implementa controles de cámara. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
@@ -470,8 +470,14 @@ todavía.
   Z como eje vertical, calcula bounds y cámara en `f64` y resta un origen local en el shader antes de
   proyectar. Preserva la precisión local disponible; no recupera precisión perdida al convertir
   coordenadas globales a `f32`. El encuadre se limita a las instancias cargadas, no a bounds de dataset.
-- [ ] Subir solo bloques seleccionados; actualizar y reutilizar buffers en lugar de reconstruir y
-  serializar la escena completa en cada cambio.
+- [x] Añadir `SurfaceRenderer::sync_visible_blocks`: recibe IDs de un corte renderizable y la caché
+  CPU, deduplica, conserva buffers compartidos, sube solo bloques nuevos y libera los retirados.
+  Repetir el mismo corte no escribe instancias; datos inválidos o ausentes preservan el corte anterior.
+  Los IDs son locales al dataset: hay que llamar `clear_dataset` al cambiarlo. Los bloques se tratan
+  como inmutables mientras residan en GPU.
+- [ ] Conectar `LodTransitionPlan` y `DecodedBlockCache` del visor/WASM a esta ruta; hoy el host aún
+  entrega una escena completa. El presupuesto GPU y la carga desde formato se definen en pendientes
+  posteriores.
 - [ ] Añadir modos iniciales de color (RGB, intensidad, elevación y clasificación cuando exista) y
   tamaño de punto configurable.
 - [ ] Definir presupuesto de puntos/instancias, gestión de recursos y comportamiento si la GPU no
@@ -527,7 +533,8 @@ entender límites/errores sin editar el código de la demo.
 
 **Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia,
 muestra estado, instancias y bytes transferidos, y permite navegar con puntero, rueda o teclado. Si
-falla la inicialización o un frame, permite crear de nuevo el visor. Archivos locales, bounds de
+falla la inicialización o un frame, permite crear de nuevo el visor. El renderer ya reconcilia cortes
+por bloque desde la caché del core, pero la demo todavía no usa esa ruta. Archivos locales, bounds de
 dataset y validación en navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad

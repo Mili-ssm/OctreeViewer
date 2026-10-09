@@ -1,9 +1,10 @@
+mod block_sync;
 mod camera;
 mod gpu;
 mod scene;
 
 pub use camera::{CameraFrame, OrbitCamera};
-pub use gpu::{FrameStatus, GpuRendererError, SurfaceRenderer};
+pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, SurfaceRenderer};
 pub use scene::{
     InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL, instance_buffer_layout,
 };
