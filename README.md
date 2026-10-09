@@ -130,6 +130,8 @@ frente a Potree.
   puntos, atributos, CRS y distribución; ampliar la ficha al añadir datasets de benchmark.
 - [x] Elegir Chrome y Firefox con WebGPU como navegadores objetivo; el host necesita también
   `OffscreenCanvas` para ejecutar el visor en el worker.
+- [x] Registrar la máquina local disponible como referencia de benchmark, sin tratarla como mínimo de
+  soporte ([perfil observado](docs/REAL_DATASET_BENCH.md#máquina-de-referencia-local)).
 - [ ] Definir sistemas operativos y mínimos de RAM/GPU; decidir si la primera versión admite solo
   archivos locales o también lectura remota por rangos.
 - [x] Elegir métricas: tiempo de conversión, apertura y primera vista útil; memoria RAM/GPU; bytes

@@ -154,6 +154,24 @@ en CPU**. Crear una copia completa de instancias para el snapshot añade al meno
 valores implican al menos **6,09 GiB de geometría simultánea en CPU** si se crea ese snapshot completo,
 más la reserva hipotética de GPU de 2,43 GiB. Son multiplicaciones de tamaños de tipo y conteo de
 puntos, no mediciones de RAM/GPU del renderer: no existe aún un camino de presentación GPU conectado.
+
+## Máquina de referencia local
+
+Instantánea observada el 9 de octubre de 2026 para reproducir trabajo local en este checkout; sirve
+como perfil de benchmark, no como mínimo de soporte ni como declaración de compatibilidad:
+
+| Componente | Referencia |
+| --- | --- |
+| Sistema operativo | Fedora Linux 44 Workstation, x86_64 |
+| CPU | AMD Ryzen AI 9 365, 10 núcleos / 20 hilos lógicos |
+| RAM visible al sistema | 30,4 GiB |
+| GPU | AMD Radeon 880M integrada; memoria compartida con RAM |
+| Almacenamiento del checkout | NVMe local, Btrfs |
+| Firefox instalado | 157.0; no se ha validado aquí WebGPU con la demo |
+
+Las tablas de conversión y lectura no miden GPU. Para la validación de navegador faltan ejecutar el
+host en Chrome y Firefox con WebGPU; el objetivo tampoco fija aún sistemas operativos ni mínimos de
+RAM/GPU.
 Una ruta que lea solo bloques LOD visibles y mantenga caché limitada debe presupuestarse por bytes de
 bloques seleccionados; el máximo payload bruto individual observado fue 9.396.257 B (8,96 MiB), pero
 falta integrar y medir esa ruta de extremo a extremo.
