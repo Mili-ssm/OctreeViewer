@@ -73,12 +73,13 @@ impl LodTransitionPlanner {
         Self::default()
     }
 
-    /// Resolves target nodes against cache residency and protects the returned cut.
-    pub fn update(
-        &mut self,
+    /// Resolves target nodes against cache residency without changing the active cut
+    /// or cache protection. Call [`Self::commit`] after downstream consumers accept it.
+    pub fn prepare(
+        &self,
         hierarchy: &SpatialHierarchy,
         target: &LodSelection,
-        cache: &mut DecodedBlockCache,
+        cache: &DecodedBlockCache,
     ) -> LodTransitionPlan {
         let target_nodes = target.node_ids().iter().copied().collect::<HashSet<_>>();
         let active_nodes = self.active_nodes.iter().copied().collect::<HashSet<_>>();
@@ -159,7 +160,7 @@ impl LodTransitionPlanner {
         result
             .fallback_nodes
             .retain(|node_id| admitted_node_ids.contains(node_id));
-        let plan = LodTransitionPlan {
+        LodTransitionPlan {
             node_ids: admitted_nodes,
             block_ids: admitted_blocks.into_iter().collect(),
             point_count,
@@ -168,9 +169,25 @@ impl LodTransitionPlanner {
             fallback_nodes: result.fallback_nodes,
             uncovered_nodes: uncovered_nodes.into_iter().collect(),
             budget_omitted_nodes,
-        };
+        }
+    }
+
+    /// Activates a previously prepared cut and protects its resident payloads.
+    pub fn commit(&mut self, plan: &LodTransitionPlan, cache: &mut DecodedBlockCache) {
         self.active_nodes.clone_from(&plan.node_ids);
         cache.set_protected_blocks(plan.block_ids.iter().copied());
+    }
+
+    /// Resolves and immediately activates a cut. Prefer [`Self::prepare`] and
+    /// [`Self::commit`] when a renderer must accept the cut before it becomes active.
+    pub fn update(
+        &mut self,
+        hierarchy: &SpatialHierarchy,
+        target: &LodSelection,
+        cache: &mut DecodedBlockCache,
+    ) -> LodTransitionPlan {
+        let plan = self.prepare(hierarchy, target, cache);
+        self.commit(&plan, cache);
         plan
     }
 

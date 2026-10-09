@@ -618,6 +618,46 @@ impl<'window> SurfaceRenderer<'window> {
         self.camera.zoom(delta)
     }
 
+    /// Returns the current camera frustum in dataset coordinates.
+    pub fn spatial_frustum(
+        &self,
+        coordinate_origin: [f64; 3],
+    ) -> Option<viewer_core::SpatialFrustum> {
+        let viewport = [self.surface_config.width, self.surface_config.height];
+        let frustum = self.camera.spatial_frustum(viewport)?;
+        let planes = frustum
+            .planes()
+            .iter()
+            .map(|plane| {
+                let normal = plane.normal();
+                viewer_core::FrustumPlane::new(
+                    normal,
+                    plane.offset()
+                        - (0..3)
+                            .map(|axis| normal[axis] * coordinate_origin[axis])
+                            .sum::<f64>(),
+                )
+                .ok()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        viewer_core::SpatialFrustum::new(planes).ok()
+    }
+
+    /// Projects dataset-space node error using the current camera and viewport.
+    pub fn projected_error_pixels(
+        &self,
+        bounds: viewer_core::SpatialBounds,
+        geometric_error: f64,
+        coordinate_origin: [f64; 3],
+    ) -> f64 {
+        self.camera.projected_error_pixels(
+            bounds,
+            geometric_error,
+            coordinate_origin,
+            [self.surface_config.width, self.surface_config.height],
+        )
+    }
+
     pub fn uploaded_bytes(&self) -> u64 {
         self.uploaded_bytes
     }

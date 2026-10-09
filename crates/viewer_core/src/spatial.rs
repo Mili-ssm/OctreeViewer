@@ -556,6 +556,13 @@ impl SpatialHierarchy {
         self.nodes.get(&id).map(|indexed| &indexed.metadata)
     }
 
+    /// Checks whether any node references the dataset-local block identifier.
+    pub fn references_block(&self, block_id: BlockId) -> bool {
+        self.nodes
+            .values()
+            .any(|indexed| indexed.metadata.blocks.contains(&block_id))
+    }
+
     pub(crate) fn child_ids(&self, id: NodeId) -> &[NodeId] {
         self.nodes
             .get(&id)

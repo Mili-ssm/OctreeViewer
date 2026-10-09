@@ -1,9 +1,11 @@
 use serde_wasm_bindgen::to_value;
 use std::io::{self, Read, Seek, SeekFrom};
+use viewer_core::{BlockId, ColorRgb, Point, PointBatch, PointBlock};
 use wasm_bindgen::prelude::*;
 use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
 use crate::{LasPointStream, RenderSceneSnapshot, ViewerConfig, ViewerController, ViewerError};
+use crate::{LodDataset, lod_metadata::LodDatasetDescriptor};
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
@@ -153,6 +155,9 @@ pub struct WasmVoxelViewer {
     inner: ViewerController,
     gpu_renderer: Option<SurfaceRenderer<'static>>,
     gpu_scene_dirty: bool,
+    lod_dataset: Option<LodDataset>,
+    lod_config: Option<(f64, u64)>,
+    lod_dirty: bool,
 }
 
 #[wasm_bindgen]
@@ -169,6 +174,9 @@ impl WasmVoxelViewer {
             inner,
             gpu_renderer: None,
             gpu_scene_dirty: true,
+            lod_dataset: None,
+            lod_config: None,
+            lod_dirty: false,
         })
     }
 
@@ -202,6 +210,7 @@ impl WasmVoxelViewer {
         if let Some(renderer) = &mut self.gpu_renderer {
             renderer.resize(width, height);
         }
+        self.lod_dirty = self.lod_dataset.is_some();
     }
 
     #[wasm_bindgen(js_name = replacePoints)]
@@ -210,6 +219,7 @@ impl WasmVoxelViewer {
             .replace_points(&positions, &colors)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
+        self.clear_lod_dataset();
         Ok(())
     }
 
@@ -219,6 +229,7 @@ impl WasmVoxelViewer {
             .append_points(&positions, &colors)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
+        self.clear_lod_dataset();
         Ok(())
     }
 
@@ -232,6 +243,7 @@ impl WasmVoxelViewer {
             .replace_voxelized_points(&positions, &colors)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
+        self.clear_lod_dataset();
         Ok(())
     }
 
@@ -245,6 +257,7 @@ impl WasmVoxelViewer {
             .append_voxelized_points(&positions, &colors)
             .map_err(viewer_error_to_js)?;
         self.gpu_scene_dirty = true;
+        self.clear_lod_dataset();
         Ok(())
     }
 
@@ -252,6 +265,161 @@ impl WasmVoxelViewer {
     pub fn clear(&mut self) {
         self.inner.clear();
         self.gpu_scene_dirty = true;
+        self.clear_lod_dataset();
+    }
+
+    /// Opens resident hierarchy metadata for decoded block streaming.
+    #[wasm_bindgen(js_name = openLodDataset)]
+    pub fn open_lod_dataset(&mut self, descriptor: JsValue) -> Result<JsValue, JsValue> {
+        let descriptor: LodDatasetDescriptor = serde_wasm_bindgen::from_value(descriptor)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let dataset = descriptor
+            .build()
+            .map_err(|error| JsValue::from_str(&error))?;
+        if let Some(renderer) = &mut self.gpu_renderer {
+            renderer.clear_dataset();
+        }
+        self.lod_dataset = Some(dataset);
+        self.lod_config = None;
+        self.lod_dirty = false;
+        self.gpu_scene_dirty = false;
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &result,
+            &"status".into(),
+            &JsValue::from_str("metadata_ready"),
+        )?;
+        Ok(result.into())
+    }
+
+    /// Inserts one decoded RGB block. Position coordinates are local to coordinateOrigin.
+    #[wasm_bindgen(js_name = insertLodBlock)]
+    pub fn insert_lod_block(
+        &mut self,
+        block_id: String,
+        positions: js_sys::Float32Array,
+        colors: js_sys::Uint8Array,
+    ) -> Result<usize, JsValue> {
+        let block_id = block_id
+            .parse::<u64>()
+            .map(BlockId::new)
+            .map_err(|_| JsValue::from_str("blockId must be an unsigned 64-bit integer string"))?;
+        let positions = positions.to_vec();
+        let colors = colors.to_vec();
+        if positions.len() % 3 != 0 || colors.len() != positions.len() {
+            return Err(JsValue::from_str(
+                "positions and colors must contain three values per point",
+            ));
+        }
+        if positions.iter().any(|value| !value.is_finite()) {
+            return Err(JsValue::from_str("block positions must be finite"));
+        }
+        let points = positions
+            .chunks_exact(3)
+            .zip(colors.chunks_exact(3))
+            .map(|(position, color)| {
+                Point::new(
+                    [position[0], position[1], position[2]],
+                    ColorRgb::new(color[0], color[1], color[2]),
+                )
+            })
+            .collect();
+        let dataset = self
+            .lod_dataset
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let accounted_bytes = dataset
+            .insert_block(PointBlock::new(
+                block_id,
+                PointBatch::new(points),
+                Vec::new(),
+            ))
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        self.lod_dirty = self.lod_config.is_some();
+        Ok(accounted_bytes)
+    }
+
+    /// Selects a camera-aware cut using a built-in quality or performance profile.
+    #[wasm_bindgen(js_name = updateLod)]
+    pub fn update_lod(
+        &mut self,
+        profile: String,
+        point_budget: Option<String>,
+    ) -> Result<JsValue, JsValue> {
+        let (max_error_pixels, default_point_budget) = match profile.as_str() {
+            "quality" => (1.0 / 16.0, 4_000_000),
+            "performance" => (2.0, 1_000_000),
+            _ => {
+                return Err(JsValue::from_str(
+                    "LOD profile must be quality or performance",
+                ));
+            }
+        };
+        let point_budget = point_budget
+            .as_deref()
+            .map(|value| {
+                value.parse::<u64>().map_err(|_| {
+                    JsValue::from_str("pointBudget must be an unsigned 64-bit integer string")
+                })
+            })
+            .transpose()?
+            .unwrap_or(default_point_budget);
+        self.lod_config = Some((max_error_pixels, point_budget));
+        self.lod_dirty = false;
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let dataset = self
+            .lod_dataset
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let stats = dataset
+            .update_view(renderer, max_error_pixels, point_budget)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let value = js_sys::Object::new();
+        js_sys::Reflect::set(&value, &"profile".into(), &JsValue::from_str(&profile))?;
+        js_sys::Reflect::set(
+            &value,
+            &"maxErrorPixels".into(),
+            &JsValue::from_f64(max_error_pixels),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"visibleBlocks".into(),
+            &JsValue::from_f64(stats.visible_blocks as f64),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"visiblePoints".into(),
+            &JsValue::from_str(&stats.visible_points.to_string()),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"pointBudget".into(),
+            &JsValue::from_str(&stats.point_budget.to_string()),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"pendingBlocks".into(),
+            &JsValue::from_f64(stats.pending_blocks as f64),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"uncoveredNodes".into(),
+            &JsValue::from_f64(stats.uncovered_nodes as f64),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"coverageComplete".into(),
+            &JsValue::from_bool(stats.uncovered_nodes == 0),
+        )?;
+        js_sys::Reflect::set(
+            &value,
+            &"budgetOmittedNodes".into(),
+            &JsValue::from_f64(stats.budget_omitted_nodes as f64),
+        )?;
+        Ok(value.into())
     }
 
     #[wasm_bindgen(js_name = setColorMode)]
@@ -294,11 +462,12 @@ impl WasmVoxelViewer {
 
     #[wasm_bindgen(js_name = renderFrame)]
     pub fn render_frame(&mut self) -> Result<String, JsValue> {
+        self.refresh_lod_if_dirty()?;
         let renderer = self
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        if self.gpu_scene_dirty {
+        if self.gpu_scene_dirty && self.lod_dataset.is_none() {
             renderer
                 .upload_scene(self.inner.render_scene())
                 .map_err(|error| JsValue::from_str(&error.to_string()))?;
@@ -322,7 +491,15 @@ impl WasmVoxelViewer {
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        Ok(renderer.fit_scene(self.inner.render_scene()))
+        let fitted = if self.lod_dataset.is_some() {
+            renderer.fit_visible_blocks()
+        } else {
+            renderer.fit_scene(self.inner.render_scene())
+        };
+        if fitted && self.lod_dataset.is_some() {
+            self.lod_dirty = self.lod_config.is_some();
+        }
+        Ok(fitted)
     }
 
     #[wasm_bindgen(js_name = orbit)]
@@ -331,7 +508,11 @@ impl WasmVoxelViewer {
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        Ok(renderer.orbit_camera(delta_x, delta_y))
+        let changed = renderer.orbit_camera(delta_x, delta_y);
+        if changed && self.lod_dataset.is_some() {
+            self.lod_dirty = self.lod_config.is_some();
+        }
+        Ok(changed)
     }
 
     #[wasm_bindgen(js_name = pan)]
@@ -340,7 +521,11 @@ impl WasmVoxelViewer {
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        Ok(renderer.pan_camera(delta_x, delta_y))
+        let changed = renderer.pan_camera(delta_x, delta_y);
+        if changed && self.lod_dataset.is_some() {
+            self.lod_dirty = self.lod_config.is_some();
+        }
+        Ok(changed)
     }
 
     #[wasm_bindgen(js_name = zoom)]
@@ -349,7 +534,11 @@ impl WasmVoxelViewer {
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        Ok(renderer.zoom_camera(delta))
+        let changed = renderer.zoom_camera(delta);
+        if changed && self.lod_dataset.is_some() {
+            self.lod_dirty = self.lod_config.is_some();
+        }
+        Ok(changed)
     }
 
     #[wasm_bindgen(js_name = gpuStats)]
@@ -375,6 +564,40 @@ impl WasmVoxelViewer {
             &JsValue::from_f64(renderer.visible_block_count() as f64),
         )?;
         Ok(stats.into())
+    }
+}
+
+impl WasmVoxelViewer {
+    fn refresh_lod_if_dirty(&mut self) -> Result<(), JsValue> {
+        if !self.lod_dirty {
+            return Ok(());
+        }
+        let Some((max_error_pixels, point_budget)) = self.lod_config else {
+            return Ok(());
+        };
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let dataset = self
+            .lod_dataset
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        self.lod_dirty = false;
+        dataset
+            .update_view(renderer, max_error_pixels, point_budget)
+            .map(|_| ())
+            .map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    fn clear_lod_dataset(&mut self) {
+        if self.lod_dataset.take().is_some()
+            && let Some(renderer) = &mut self.gpu_renderer
+        {
+            renderer.clear_dataset();
+        }
+        self.lod_config = None;
+        self.lod_dirty = false;
     }
 }
 

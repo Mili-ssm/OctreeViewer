@@ -1,4 +1,5 @@
 use glam::{DMat4, DVec3};
+use viewer_core::{FrustumPlane, SpatialBounds, SpatialFrustum};
 
 use crate::SceneBounds;
 
@@ -158,9 +159,93 @@ impl OrbitCamera {
         })
     }
 
+    /// Builds the current view frustum in local render coordinates.
+    pub fn spatial_frustum(&self, viewport: [u32; 2]) -> Option<SpatialFrustum> {
+        if viewport[0] == 0 || viewport[1] == 0 {
+            return None;
+        }
+        let (position, forward, right, up) = self.basis();
+        let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
+        let horizontal_half_fov = ((VERTICAL_FOV * 0.5).tan() * aspect).atan();
+        let (near, far) = self.clip_distances();
+        let side_planes = [
+            forward * horizontal_half_fov.cos() + right * horizontal_half_fov.sin(),
+            forward * horizontal_half_fov.cos() - right * horizontal_half_fov.sin(),
+            forward * (VERTICAL_FOV * 0.5).cos() + up * (VERTICAL_FOV * 0.5).sin(),
+            forward * (VERTICAL_FOV * 0.5).cos() - up * (VERTICAL_FOV * 0.5).sin(),
+        ];
+        let mut planes = side_planes
+            .into_iter()
+            .map(|normal| plane(normal, position))
+            .collect::<Option<Vec<_>>>()?;
+        planes.push(plane(forward, position + forward * near)?);
+        planes.push(plane(-forward, position + forward * far)?);
+        SpatialFrustum::new(planes).ok()
+    }
+
+    /// Projects a dataset-space geometric error conservatively into pixels.
+    pub fn projected_error_pixels(
+        &self,
+        bounds: SpatialBounds,
+        geometric_error: f64,
+        coordinate_origin: [f64; 3],
+        viewport: [u32; 2],
+    ) -> f64 {
+        if viewport[0] == 0
+            || viewport[1] == 0
+            || !geometric_error.is_finite()
+            || geometric_error < 0.0
+        {
+            return f64::INFINITY;
+        }
+        // Hierarchy bounds use dataset coordinates; the renderer camera uses local ones.
+        let min: [f64; 3] =
+            std::array::from_fn(|axis| bounds.min()[axis] - coordinate_origin[axis]);
+        let max: [f64; 3] =
+            std::array::from_fn(|axis| bounds.max()[axis] - coordinate_origin[axis]);
+        let center = DVec3::from_array(std::array::from_fn(|axis| (min[axis] + max[axis]) * 0.5));
+        let half_diagonal =
+            DVec3::from_array(std::array::from_fn(|axis| (max[axis] - min[axis]) * 0.5)).length();
+        let (position, forward, _, _) = self.basis();
+        let nearest_depth = ((center - position).dot(forward) - half_diagonal - geometric_error)
+            .max(self.clip_distances().0);
+        let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
+        let tan_vertical = (VERTICAL_FOV * 0.5).tan();
+        let tan_horizontal = tan_vertical * aspect;
+        let off_axis_scale = (1.0 + tan_vertical.powi(2) + tan_horizontal.powi(2)).sqrt();
+        geometric_error * f64::from(viewport[1]) * off_axis_scale
+            / (2.0 * tan_vertical * nearest_depth)
+    }
+
+    fn basis(&self) -> (DVec3, DVec3, DVec3, DVec3) {
+        let offset = DVec3::new(
+            self.yaw.sin() * self.pitch.cos(),
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+        ) * self.distance;
+        let position = self.target + offset;
+        let forward = -offset.normalize();
+        let right = DVec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0).normalize();
+        let up = forward.cross(right).normalize();
+        (position, forward, right, up)
+    }
+
+    fn clip_distances(&self) -> (f64, f64) {
+        let near = (self.distance - self.radius * 1.2)
+            .max(self.radius * 0.001)
+            .max(0.001);
+        let far = (self.distance + self.radius * 2.0).max(near * 2.0);
+        (near, far)
+    }
+
     pub fn is_fitted(&self) -> bool {
         self.fitted
     }
+}
+
+fn plane(normal: DVec3, point: DVec3) -> Option<FrustumPlane> {
+    let normal = normal.normalize();
+    FrustumPlane::new(normal.to_array(), -normal.dot(point)).ok()
 }
 
 #[cfg(test)]
@@ -266,5 +351,32 @@ mod tests {
         };
         assert!(!camera.fit(invalid_bounds, [800, 600]));
         assert_eq!(camera, fitted);
+    }
+
+    #[test]
+    fn spatial_frustum_tracks_fitted_scene_and_projected_error_changes_with_depth() {
+        use viewer_core::SpatialBounds;
+
+        let scene = SceneBounds {
+            min: [-1.0; 3],
+            max: [1.0; 3],
+        };
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(scene, [800, 600]));
+        let frustum = camera.spatial_frustum([800, 600]).unwrap();
+        let scene_bounds = SpatialBounds::new(scene.min, scene.max).unwrap();
+        assert!(frustum.intersects(&scene_bounds));
+
+        let nearby = SpatialBounds::new([-0.5; 3], [0.5; 3]).unwrap();
+        let (_, forward, _, _) = camera.basis();
+        let distant_center = camera.target + forward * 1000.0;
+        let distant = SpatialBounds::new(
+            (distant_center - glam::DVec3::splat(0.5)).to_array(),
+            (distant_center + glam::DVec3::splat(0.5)).to_array(),
+        )
+        .unwrap();
+        let nearby_error = camera.projected_error_pixels(nearby, 0.1, [0.0; 3], [800, 600]);
+        let distant_error = camera.projected_error_pixels(distant, 0.1, [0.0; 3], [800, 600]);
+        assert!(nearby_error > distant_error);
     }
 }

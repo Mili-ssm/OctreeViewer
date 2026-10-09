@@ -78,8 +78,8 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque y presupuesto configurable de instancias/buffers. | El visor WASM aún no conecta su LOD/caché al renderer; el límite GPU contabiliza buffers de instancias, no VRAM total. |
-| `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ desde `Blob` y presentación WebGPU sobre canvas del host. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
+| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, presupuesto configurable y frustum/error proyectado de cámara. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
+| `viewer_wasm` | Bindings para el visor, sesión incremental LAS/LAZ, presentación WebGPU y puente LOD para metadatos y bloques RGB ya decodificados. | El host aún debe leer el formato, transferir atributos y actualizar la selección tras cambios de cámara o llegada de bloques. |
 | `examples/web-host` | Demo WebGPU de datos sintéticos con navegación, color y tamaño configurable. | No abre archivos ni conecta la selección LOD del core. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
@@ -475,9 +475,12 @@ todavía.
   Repetir el mismo corte no escribe instancias; datos inválidos o ausentes preservan el corte anterior.
   Los IDs son locales al dataset: hay que llamar `clear_dataset` al cambiarlo. Los bloques se tratan
   como inmutables mientras residan en GPU.
-- [ ] Conectar `LodTransitionPlan` y `DecodedBlockCache` del visor/WASM a esta ruta; hoy el host aún
-  entrega una escena completa. La carga desde formato sigue pendiente; el presupuesto GPU de abajo
-  ya está definido y se aplicará a los cortes al completar esta conexión.
+- [x] Conectar `LodTransitionPlan` y `DecodedBlockCache` del visor/WASM a esta ruta. `openLodDataset`,
+  `insertLodBlock` y `updateLod` admiten metadatos y bloques RGB decodificados; la selección usa
+  frustum y error proyectado de cámara. Se prepara el corte CPU, se valida/sube atómicamente a GPU y
+  solo después se confirma la protección de caché. Si el corte base excede el presupuesto estricto,
+  se vacía el corte anterior y se devuelve el diagnóstico; un rechazo GPU conserva el corte y plan
+  previos. La lectura del formato sigue pendiente.
 - [x] Añadir modos de color RGB, intensidad, elevación y clasificación cuando existe el atributo.
   Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
   El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
@@ -498,17 +501,19 @@ subidos corresponde a la selección visible, no al tamaño total del dataset.
 
 **Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color y tamaño
 configurable y presupuesto estricto de instancias/buffers; conserva buffers por bloque para cortes
-explícitos. El host WASM expone instancias/bloques visibles y bytes subidos; la demo muestra el tiempo
-de llamada CPU al renderer. Los atributos de intensidad/clasificación solo llegan por `PointBlock`;
-la muestra sintética suministra posiciones y RGB. No se ha verificado presentación visual en un
-navegador con GPU, y la conexión de la carga WASM con los bloques LOD sigue pendiente.
+LOD. El host WASM expone instancias/bloques visibles y bytes subidos; la demo muestra el tiempo de
+llamada CPU al renderer. El puente LOD acepta coordenadas locales `f32` y RGB por bloque; `updateLod`
+aplica el perfil y la selección se recalcula antes del siguiente `renderFrame` después de cambios de
+cámara o llegada de bloques. Los atributos de intensidad/clasificación aún no se transfieren por este
+puente. No se ha verificado presentación visual en un navegador con GPU.
 
 ### Fase 6 — Orquestación WASM (`viewer_wasm`)
 
 **Característica:** exponer una API estable y asíncrona al host para abrir datasets, gestionar lecturas
 y presentar estado.
 
-- [ ] Conectar lector del formato y solicitudes espaciales con el controlador del visor.
+- [ ] Conectar el lector del formato y las solicitudes espaciales al puente LOD; ahora el host
+  proporciona metadatos y bloques ya decodificados.
 - [ ] Mover lectura y decodificación a workers; definir mensajes para progreso, errores, cancelación,
   disponibilidad de bloques y contrapresión.
 - [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
@@ -516,13 +521,33 @@ y presentar estado.
 - [ ] Soportar fuente local seleccionada por el usuario; definir por separado si el producto debe
   aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren contrato
   específico.
-- [ ] Exponer operaciones útiles sin acoplar el host a estructuras internas: abrir/cerrar, encuadrar,
-  mover cámara, definir modo de color, consultar estadísticas y cancelar.
-- [ ] Cuando el host use la selección LOD, ofrecer perfiles Quality y Performance que ajusten juntos
-  el error/presupuesto visible y los límites GPU. Usar como rango inicial acordado 2 voxeles por píxel
-  (2:1) hasta 1 voxel por cada 16 píxeles (1:16), y validar el impacto visual con datasets reales.
+- [x] Exponer apertura de metadatos, inserción de bloques RGB decodificados, actualización LOD,
+  encuadre y movimiento de cámara. Los IDs y conteos `u64` se intercambian como strings para evitar
+  pérdida de precisión en JavaScript.
+- [x] Añadir perfiles `performance` y `quality`: error proyectado de 2 px y 1/16 px, con presupuestos
+  de puntos por defecto de 1 millón y 4 millones. El host puede pasar otro presupuesto; ambos perfiles
+  siguen limitados por el presupuesto GPU estricto del renderer. Son una aproximación al rango
+  acordado de 2:1 a 1:16 voxeles/píxel, no una garantía de densidad exacta. Falta validar el efecto
+  visual con datasets reales.
+- [ ] Integrar la API en la demo y mostrar progreso/cobertura pendiente; hoy la demo sigue siendo
+  sintética y no invoca el puente LOD.
 - [ ] Añadir pruebas de bindings, ciclo de vida y concurrencia; comprobar que callbacks/eventos no
   bloqueen la UI y que los errores llegan al usuario.
+
+#### Contrato del puente LOD WASM actual
+
+El host abre el índice residente con `openLodDataset({ coordinateOrigin, semantics, cacheBytes,
+sourcePointCount?, nodes })`. Cada nodo contiene `id`, `parent`, `level`, `min`, `max`, `pointCount`,
+`geometricError` y `blocks`; los identificadores y conteos `u64` son strings decimales. `min`/`max`
+están en coordenadas del dataset; `insertLodBlock(id, positions, colors)` recibe posiciones `f32`
+locales a `coordinateOrigin` y RGB intercalado, en arrays tipados. Después de insertar bloques o
+Después de insertar bloques, el host llama `updateLod("quality" | "performance", pointBudget?)` para
+seleccionar y guardar el perfil. La selección se vuelve a calcular antes de `renderFrame` tras cambios
+de cámara o llegada de bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`.
+`clear()` cierra también el dataset LOD.
+Las estadísticas incluyen bloques/puntos visibles, presupuesto, bloques pendientes, cobertura y
+nodos omitidos por presupuesto. Los atributos adicionales, la lectura de `viewer_format` y la
+integración automática con la demo siguen pendientes.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
 no realiza copias proporcionales al tamaño total de la nube.

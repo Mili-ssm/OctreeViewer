@@ -185,6 +185,48 @@ fn protected_active_cut_blocks_an_over_budget_transition_without_eviction() {
 }
 
 #[test]
+fn prepared_cut_does_not_change_active_cache_protection_until_commit() {
+    let hierarchy = hierarchy(HierarchySemantics::Replacement);
+    let root = block(10);
+    let child_a = block(20);
+    let child_b = block(30);
+    let budget = root.estimated_memory_bytes()
+        + child_a.estimated_memory_bytes()
+        + child_b.estimated_memory_bytes();
+    let mut cache = DecodedBlockCache::new(budget);
+    cache.insert(root);
+    cache.insert(child_a);
+    cache.insert(child_b);
+    let mut planner = LodTransitionPlanner::new();
+
+    let root_target = target(&hierarchy, false, 10);
+    planner.update(&hierarchy, &root_target, &mut cache);
+
+    let child_target = target(&hierarchy, true, 10);
+    let _child_plan = planner.prepare(&hierarchy, &child_target, &cache);
+    assert!(cache.insert(block(40)).cached);
+    assert!(cache.contains(BlockId::new(10)));
+    assert!(!cache.contains(BlockId::new(20)));
+    assert_eq!(
+        planner.prepare(&hierarchy, &root_target, &cache).node_ids(),
+        [NodeId::new(1)]
+    );
+
+    planner.reset(&mut cache);
+    cache.clear();
+    cache.insert(block(10));
+    cache.insert(block(20));
+    cache.insert(block(30));
+    planner.update(&hierarchy, &root_target, &mut cache);
+    let child_plan = planner.prepare(&hierarchy, &child_target, &cache);
+    planner.commit(&child_plan, &mut cache);
+    assert!(cache.insert(block(40)).cached);
+    assert!(!cache.contains(BlockId::new(10)));
+    assert!(cache.contains(BlockId::new(20)));
+    assert!(cache.contains(BlockId::new(30)));
+}
+
+#[test]
 fn additive_transition_keeps_available_ancestors_and_reports_missing_children() {
     let hierarchy = hierarchy(HierarchySemantics::Additive);
     let mut cache = DecodedBlockCache::new(10_000);
