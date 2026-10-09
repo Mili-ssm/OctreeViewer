@@ -576,8 +576,10 @@ y presentar estado.
 - [x] Añadir un `.oct` reproducible y controles accesibles por teclado para cargarlo o elegir otro archivo.
 - [x] Probar la cola coalescente de comandos (último valor, tipos separados y reset) con `node:test`;
   los contratos Rust de caché, transiciones LOD e importación LAS tienen tests de ciclo de vida.
-- [ ] Probar bindings, cancelación y propagación de errores en navegador real; la validación de sintaxis
-  JS y las pruebas unitarias no demuestran que una UI WebGPU permanezca interactiva.
+- [x] Comprobar en Chromium real los bindings WASM con la muestra `.oct`, la propagación de un archivo
+  inválido y la cancelación de la descarga de la muestra, que recrea el visor.
+- [ ] Comprobar la cancelación durante una lectura síncrona de archivo local y repetir los flujos en
+  Firefox; la captura headless tampoco confirma todavía la presentación visual de los puntos.
 
 #### Contrato del puente LOD WASM actual
 
