@@ -67,6 +67,80 @@ resolución. El factor 8 elimina entre 30 y 72 nodos respecto a tres niveles bin
 abarata el índice sintético, mientras que una jerarquía binaria conserva más puntos donde podrían
 ubicarse muestras LOD; el benchmark no mide el valor visual ni los bytes de esas muestras.
 
+## Datos reales: jerarquías de resolución equivalente
+
+El ejemplo `viewer_convert/examples/spatial_quality_bench.rs` evalúa los mismos cortes en una
+conversión real:
+
+```sh
+cargo run --release -p viewer_convert --example spatial_quality_bench -- SOURCE DATASET.oct
+```
+
+Para una lectura rápida de nodos y bytes retenidos, sin volver a recorrer la fuente:
+
+```sh
+cargo run --release -p viewer_convert --example spatial_quality_bench -- SOURCE DATASET.oct --metadata-only
+```
+
+El factor 2/4/8 por eje agrupa uno, dos o tres niveles binarios del octree existente. Cada candidato
+conserva la raíz, nodos internos en múltiplos del nivel agrupado y todas las hojas; los nodos
+conservados se conectarían a su ancestro conservado más cercano. No se genera un `.oct` candidato:
+los bytes LZ4 reportados son la suma exacta de los payloads que quedarían, mientras que el nuevo
+índice/cabecera no se vuelve a serializar. La comparación conserva la partición de hojas 2×2×2 y no
+simula la partición adaptativa directa 4×4×4 u 8×8×8.
+
+La calidad se mide sobre puntos fuente seleccionados por un hash estable del índice, hasta un millón
+por dataset. Cada punto se asigna a su hoja o muestra LOD en la grilla 8×8×8 de su nodo. El residuo
+con signo es `representante - fuente`; RMSE, p95 y máximo son distancias euclidianas observadas en la
+muestra. El error declarado es el máximo de los nodos seleccionados en esa misma muestra. Las hojas
+se tratan como representación exacta a efectos del residuo; su error de cuantización sigue dentro de
+la cota declarada. El salto de transición compara, para los mismos puntos, los representantes de
+cortes sucesivos (2→4 y 4→8). Estos máximos son observados, no cotas globales ni una evaluación visual.
+
+Para las dos teselas USGS se convirtió con `--points-per-block 10000` para que datasets menores que
+el límite predeterminado de 262.144 puntos generasen niveles LOD. Belvedere usa la conversión por
+defecto ya medida en [REAL_DATASET_BENCH.md](REAL_DATASET_BENCH.md). Las coordenadas se expresan en
+las unidades de cada fuente. Para repetir una tesela pequeña desde la raíz del repositorio:
+
+```sh
+cargo run --release -p viewer_convert -- data/samples/fs_e432_n4002_18.las /tmp/fs_e432.oct --points-per-block 10000
+cargo run --release -p viewer_convert --example spatial_quality_bench -- data/samples/fs_e432_n4002_18.las /tmp/fs_e432.oct
+```
+
+La medición se ejecutó el 9 de octubre de 2026 en Linux x86-64, AMD Ryzen AI 9 365, Rust 1.99.0.
+El análisis completo relee secuencialmente la fuente; no mide tiempo de conversión ni RSS.
+
+| Dataset / muestra | Divisiones/eje | Nodos conservados | Payload LZ4 retenido | Payload bruto retenido | Ratio LZ4 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| USGS `fs_e432_n4002_18` (149.730 puntos) | 2 | 55 | 3.063.713 B | 5.264.735 B | 0,581931 |
+|  | 4 | 46 | 3.056.095 B | 5.248.110 B | 0,582323 |
+|  | 8 | 48 | 3.059.368 B | 5.255.670 B | 0,582108 |
+| USGS `fs_e430_n4008_18` (111.190 puntos) | 2 | 47 | 2.259.661 B | 3.911.880 B | 0,577641 |
+|  | 4 | 39 | 2.253.172 B | 3.897.880 B | 0,578051 |
+|  | 8 | 41 | 2.256.029 B | 3.904.355 B | 0,577824 |
+| Belvedere COPC LAZ (81.682.329 puntos; muestra 995.791) | 2 | 1.343 | 1.596.095.673 B | 3.349.954.651 B | 0,476453 |
+|  | 4 | 1.270 | 1.596.010.185 B | 3.349.733.948 B | 0,476459 |
+|  | 8 | 1.153 | 1.595.798.740 B | 3.349.186.188 B | 0,476474 |
+
+| Dataset | Divisiones/eje | Sesgo medio XYZ | RMSE | p95 observado | Máximo observado | Error declarado máx. | Violaciones muestreadas | Salto p95 / máximo observado |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| USGS `fs_e432_n4002_18` | 2 | 0,105 / −0,237 / 57,644 | 77,127 | 94,993 | 107,485 | 108,251 | 0 | — |
+|  | 4 | 0,196 / 0,046 / 25,495 | 36,175 | 46,069 | 53,589 | 54,126 | 0 | 54,126 / 106,024 |
+|  | 8 | 0,006 / −0,026 / 6,588 | 13,290 | 21,194 | 26,517 | 27,063 | 0 | 43,158 / 53,589 |
+| USGS `fs_e430_n4008_18` | 2 | −0,071 / −0,209 / 58,231 | 77,595 | 95,111 | 107,529 | 108,251 | 0 | — |
+|  | 4 | −0,217 / −0,178 / 24,347 | 35,391 | 46,187 | 53,415 | 54,126 | 0 | 77,302 / 107,096 |
+|  | 8 | −0,039 / −0,021 / 7,012 | 13,636 | 21,704 | 26,516 | 27,063 | 0 | 42,454 / 53,415 |
+| Belvedere COPC LAZ | 2 | 3,169 / −0,400 / −1,125 | 190,205 | 261,881 | 324,585 | 328,199 | 0 | — |
+|  | 4 | 0,628 / −0,002 / −0,399 | 94,407 | 130,713 | 163,049 | 164,100 | 0 | 164,100 / 318,499 |
+|  | 8 | 0,149 / 0,023 / 0,013 | 46,974 | 65,126 | 81,661 | 82,050 | 0 | 82,050 / 161,162 |
+
+En estas tres fuentes, conservar niveles más profundos reduce el error observado y el sesgo medio,
+especialmente en Z para las teselas costeras. El payload retenido y su ratio LZ4 cambian muy poco;
+además, 8 divisiones no siempre retienen menos bytes o nodos que 4 porque las hojas adaptativas no
+coinciden con los mismos niveles. No se observó una violación de la cota geométrica entre los puntos
+muestreados. El resultado apoya evaluar profundidad y calidad por separado de compresión; no fija el
+factor de producción ni demuestra cómo cambiarían los resultados con particiones directas distintas.
+
 ## Lectura y límites
 
 - En los datos uniformes y la rejilla, el modo adaptativo con 8 mejora la selección espacial frente
@@ -81,7 +155,7 @@ ubicarse muestras LOD; el benchmark no mide el valor visual ni los bytes de esas
   generación LOD fuera de memoria con octrees adaptativos y discuten los efectos de densidad desigual
   y localidad de entrada ([Computer Graphics Forum, 2020](https://doi.org/10.1111/cgf.14134)).
 
-Medición en Linux x86-64, AMD Ryzen AI 9 365, Rust 1.99.0, perfil `release`. La construcción y
+Medición sintética en Linux x86-64, AMD Ryzen AI 9 365, Rust 1.99.0, perfil `release`. La construcción y
 codificación en memoria tarda pocos milisegundos y no sirve para comparar rendimiento de producción.
 El benchmark no usa LAS/LAZ reales, no incluye lectura/escritura en disco, RSS, índice del formato,
 muestras internas, error geométrico, transiciones LOD ni calidad visual. La elección de producción

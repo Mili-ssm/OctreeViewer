@@ -83,7 +83,7 @@ una versión publicada.
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
 | Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con octree LOD adaptativo 2×2×2, hojas a resolución completa, muestras de color agregadas y procesamiento paralelo acotado opcional de subárboles raíz. Conserva atributos estándar, usa puntos fuente cercanos para atributos no agregados y ofrece reanudación por fases. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. La política 2×2×2 sigue pendiente de validación con LAS/LAZ representativos. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con octree LOD adaptativo 2×2×2, hojas a resolución completa, muestras de color agregadas y procesamiento paralelo acotado opcional de subárboles raíz. Conserva atributos estándar, usa puntos fuente cercanos para atributos no agregados y ofrece reanudación por fases. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. Se midió calidad sobre tres fuentes reales con jerarquías equivalentes; faltan particiones adaptativas directas y evaluación visual. |
 
 ## Qué significará “feature complete”
 
@@ -281,9 +281,13 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Implementar octree adaptativo 2×2×2 con hojas a resolución completa y muestras LOD en grillas
   8×8×8 de voxeles ocupados; agrega color por voxel, toma los demás atributos del punto fuente más
   cercano y declara error geométrico conservador.
-- [ ] Validar sesgo, error geométrico, compresión y transiciones con LAS/LAZ representativos antes
-  de fijar definitivamente el branching factor; la comparación sintética inicial está en
+- [x] Medir sesgo, error geométrico observado, compresión de payloads y saltos entre niveles sobre
+  un COPC LAZ de 81,7 millones de puntos y dos teselas LAS USGS; la herramienta y los límites de la
+  comparación de jerarquías equivalentes están en
   [SPATIAL_BRANCHING_BENCH.md](docs/SPATIAL_BRANCHING_BENCH.md).
+- [ ] Comparar particiones adaptativas directas de 2×2×2, 4×4×4 y 8×8×8 en el conversor antes de
+  fijar el branching factor de producción. El estudio real conserva una partición octree común y
+  solo cambia qué niveles intermedios retiene; no sustituye esta comparación.
 - [x] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
   forma explícita los que se descartan o transforman.
 - [x] Aceptar LAS/LAZ y COPC como entrada secuencial interoperable; el fixture COPC de 107 puntos de
@@ -490,7 +494,7 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 | --- | --- | --- |
 | `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
 | `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
-| `viewer_convert` | Conversión nativa LAS/LAZ por bloques, publicación validada, reanudación por fases y paralelismo espacial opcional acotado. | `las`, `viewer_core`, `viewer_format`; validación del branching factor con fuentes representativas pendiente. |
+| `viewer_convert` | Conversión nativa LAS/LAZ por bloques, publicación validada, reanudación por fases, paralelismo espacial opcional acotado y benchmark real de calidad LOD. | `las`, `viewer_core`, `viewer_format`; comparar particiones adaptativas directas y validar calidad visual antes de fijar el branching factor. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
 | `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |
