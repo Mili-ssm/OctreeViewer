@@ -199,6 +199,12 @@ impl AttributeDescriptor {
 }
 
 /// Metadata for one hierarchy node. `point_count` counts this node's payload only.
+///
+/// `geometric_error` is the conservative maximum distance, in the same coordinate
+/// units as [`SpatialBounds`], between source points represented by this node's
+/// payload and their rendered representatives. A converter that samples points
+/// must compute this bound from the source data; a viewer must not infer it from the
+/// node level or point count.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpatialNode {
     id: NodeId,

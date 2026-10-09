@@ -132,7 +132,9 @@ completa en memoria.
 - [x] Definir el contrato base del nodo espacial (ID opaco, padre, nivel, límites, conteo del payload,
   error geométrico, referencias a bloques), esquema de atributos y estadísticas sin sumar muestras
   entre niveles. `SpatialHierarchy` valida la estructura y deriva el orden de hijos.
-- [ ] Acordar unidad y calibración del error geométrico y la política de muestreo antes de usarlo para
+- [x] Definir la unidad del error geométrico: distancia máxima conservadora en las mismas unidades
+  que los límites del dataset, calculada a partir de los datos fuente.
+- [ ] Elegir la política de muestreo y la tolerancia visual en píxeles antes de usar el error para
   seleccionar LOD.
 - [x] Añadir consulta conservadora por frustum sobre límites de nodos, con poda de subárboles.
 - [ ] Seleccionar nodos por nivel de detalle y presupuesto; mantener AABB como consulta simple útil
@@ -152,8 +154,11 @@ La jerarquía aún no carga bloques desde almacenamiento ni implementa LOD o pre
 El origen del dataset se conserva en `f64` y `CoordinateFrame` resta ese origen antes de convertir
 posiciones a `f32` local para renderizado; la importación LAS usa el mismo contrato y las pruebas
 cubren coordenadas mundiales grandes con desplazamientos pequeños. La precisión final local sigue
-limitada por `f32` y por la extensión del dataset; hace falta fijar el error geométrico aceptable para
-el producto antes de seleccionar LOD.
+limitada por `f32` y por la extensión del dataset. `SpatialNode::geometric_error` se define como la
+distancia máxima conservadora entre puntos fuente representados y sus representantes renderizados,
+en las mismas unidades que los límites del dataset; el conversor debe calcularla a partir de los
+datos. La tolerancia visual en píxeles y la política concreta de muestreo se fijarán al implementar
+el selector LOD.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.
