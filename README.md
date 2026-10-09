@@ -238,8 +238,9 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   convertir la fuente completa antes de mostrar la nube.
 - [x] Crear un pipeline por etapas: inspección de metadatos, lectura, construcción del índice/LOD,
   codificación y escritura de bloques.
-- [ ] Medir e imponer límites de memoria por buffers, colas, compresión y ordenamiento; permitir
-  paralelismo acotado con contrapresión.
+- [x] Imponer límites de puntos/buffers por bloque y un presupuesto para la memoria controlada por
+  bloque e índice; reportar la estimación antes de publicar.
+- [ ] Medir RSS pico con datasets reales y añadir paralelismo solo con colas acotadas y contrapresión.
 - [ ] Mantener progreso por fase, puntos procesados, bytes escritos, cancelación y reporte de errores.
 - [ ] Guardar checkpoints o permitir reanudar/reconstruir el trabajo sin corromper un archivo final.
 - [ ] Definir estrategia de partición y LOD que preserve representación útil tanto en zonas densas
@@ -249,12 +250,15 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [ ] Aceptar primero LAS/LAZ como fuentes requeridas; evaluar COPC/EPT como entrada interoperable y
   fuente para pruebas, según soporte y calidad de las bibliotecas elegidas.
 
-Uso inicial: `cargo run -p viewer_convert -- INPUT.las OUTPUT.oct [--points-per-block N] [--max-error E]`.
+Uso inicial: `cargo run -p viewer_convert -- INPUT.las OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
-de la fuente. La salida publica mediante un enlace al archivo temporal validado y falla si el destino
-ya existe. Esta primera versión usa un solo nodo raíz, conserva intensidad `u16` y RGB `u16` cuando
-existe, y avisa de las dimensiones LAS/LAZ y metadatos CRS que no conserva. El tamaño de payload se
-limita por bloque; la memoria del directorio todavía crece con el número de bloques.
+de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación reserva
+128 bytes por punto del bloque, 512 bytes por entrada del directorio y 16 MiB fijos; no equivale al
+RSS total del proceso ni incluye memoria interna de la biblioteca LAS/LAZ o del allocator. La salida
+publica mediante un enlace al archivo temporal validado y falla si el destino ya existe. Esta primera
+versión usa un solo nodo raíz, conserva intensidad `u16` y RGB `u16` cuando existe, y avisa de las
+dimensiones LAS/LAZ y metadatos CRS que no conserva. La memoria del directorio todavía crece con el
+número de bloques.
 La implementación separa inspección de cabecera, planificación de nodo/esquema, lectura y escritura
 secuencial, y validación/publicación; la planificación espacial actual solo crea una raíz sin LOD.
 

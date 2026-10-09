@@ -17,19 +17,36 @@ use viewer_format::{
 };
 
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
+const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
 const MAX_INPUT_BYTES_PER_BATCH: usize = 8 * 1024 * 1024;
 const MAX_BLOCKS: u64 = 1_000_000;
+const ESTIMATED_WORKING_BYTES_PER_POINT: u64 = 128;
+const ESTIMATED_DIRECTORY_BYTES_PER_BLOCK: u64 = 512;
+const ESTIMATED_FIXED_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConvertOptions {
     points_per_block: u64,
     max_quantization_error: f64,
+    max_memory_bytes: u64,
 }
 
 impl ConvertOptions {
     pub fn new(points_per_block: u64, max_quantization_error: f64) -> Result<Self, ConvertError> {
+        Self::with_memory_budget(
+            points_per_block,
+            max_quantization_error,
+            DEFAULT_MEMORY_BUDGET_BYTES,
+        )
+    }
+
+    pub fn with_memory_budget(
+        points_per_block: u64,
+        max_quantization_error: f64,
+        max_memory_bytes: u64,
+    ) -> Result<Self, ConvertError> {
         if points_per_block == 0 || points_per_block > MAX_POINTS_PER_BLOCK {
             return Err(ConvertError::InvalidBlockPointLimit(points_per_block));
         }
@@ -38,9 +55,13 @@ impl ConvertOptions {
                 max_quantization_error,
             ));
         }
+        if max_memory_bytes == 0 {
+            return Err(ConvertError::InvalidMemoryBudget);
+        }
         Ok(Self {
             points_per_block,
             max_quantization_error,
+            max_memory_bytes,
         })
     }
 
@@ -51,6 +72,10 @@ impl ConvertOptions {
     pub const fn max_quantization_error(self) -> f64 {
         self.max_quantization_error
     }
+
+    pub const fn max_memory_budget_bytes(self) -> u64 {
+        self.max_memory_bytes
+    }
 }
 
 impl Default for ConvertOptions {
@@ -58,6 +83,7 @@ impl Default for ConvertOptions {
         Self {
             points_per_block: DEFAULT_POINTS_PER_BLOCK,
             max_quantization_error: 0.01,
+            max_memory_bytes: DEFAULT_MEMORY_BUDGET_BYTES,
         }
     }
 }
@@ -67,6 +93,7 @@ pub struct ConversionReport {
     pub point_count: u64,
     pub block_count: u64,
     pub output_bytes: u64,
+    pub estimated_peak_memory_bytes: u64,
     pub omitted_dimensions: Vec<String>,
 }
 
@@ -89,6 +116,7 @@ struct ConversionPlan {
     block_count: u64,
     points_per_block: u64,
     omitted_dimensions: Vec<String>,
+    estimated_peak_memory_bytes: u64,
 }
 
 #[derive(Debug, Error)]
@@ -111,6 +139,10 @@ pub enum ConvertError {
     InvalidBlockPointLimit(u64),
     #[error("maximum quantization error must be finite and non-negative, got {0}")]
     InvalidQuantizationError(f64),
+    #[error("memory budget must be greater than zero")]
+    InvalidMemoryBudget,
+    #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
+    MemoryBudgetExceeded { requested: u64, limit: u64 },
     #[error("LAS/LAZ header bounds are invalid")]
     InvalidHeaderBounds,
     #[error("LAS/LAZ point count requires {0} blocks, exceeding the limit of {MAX_BLOCKS}")]
@@ -165,6 +197,7 @@ pub fn convert_file(
         point_count: plan.point_count,
         block_count: plan.block_count,
         output_bytes,
+        estimated_peak_memory_bytes: plan.estimated_peak_memory_bytes,
         omitted_dimensions: plan.omitted_dimensions,
     })
 }
@@ -203,6 +236,26 @@ impl ConversionPlan {
         if block_count > MAX_BLOCKS || block_count > u64::from(u32::MAX) {
             return Err(ConvertError::TooManyBlocks(block_count));
         }
+        let estimated_peak_memory_bytes = options
+            .points_per_block
+            .min(max_points_by_input_bytes)
+            .checked_mul(ESTIMATED_WORKING_BYTES_PER_POINT)
+            .and_then(|working| {
+                block_count
+                    .checked_mul(ESTIMATED_DIRECTORY_BYTES_PER_BLOCK)
+                    .and_then(|directory| working.checked_add(directory))
+            })
+            .and_then(|total| total.checked_add(ESTIMATED_FIXED_OVERHEAD_BYTES))
+            .ok_or(ConvertError::MemoryBudgetExceeded {
+                requested: u64::MAX,
+                limit: options.max_memory_bytes,
+            })?;
+        if estimated_peak_memory_bytes > options.max_memory_bytes {
+            return Err(ConvertError::MemoryBudgetExceeded {
+                requested: estimated_peak_memory_bytes,
+                limit: options.max_memory_bytes,
+            });
+        }
 
         let block_ids = (0..block_count).map(BlockId::new).collect::<Vec<_>>();
         let root = SpatialNode::new(
@@ -234,6 +287,7 @@ impl ConversionPlan {
             block_count,
             points_per_block,
             omitted_dimensions,
+            estimated_peak_memory_bytes,
         })
     }
 }
@@ -507,6 +561,7 @@ mod tests {
         let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
         assert_eq!(report.point_count, 5);
         assert_eq!(report.block_count, 3);
+        assert!(report.estimated_peak_memory_bytes <= 512 * 1024 * 1024);
         assert!(
             report
                 .omitted_dimensions
@@ -575,6 +630,23 @@ mod tests {
         truncated.pop();
         fs::write(&input, truncated).unwrap();
         assert!(convert_file(&input, &output, ConvertOptions::default()).is_err());
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn memory_budget_rejects_the_plan_before_creating_an_output() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        fixture(&input, false, false, 3);
+        let options = ConvertOptions::with_memory_budget(2, 0.01, 1).unwrap();
+
+        assert!(matches!(
+            convert_file(&input, &output, options),
+            Err(ConvertError::MemoryBudgetExceeded { limit: 1, .. })
+        ));
         assert!(!output.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
