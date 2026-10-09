@@ -75,7 +75,7 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificación binaria v1 en [`docs/FORMAT_V1.md`](docs/FORMAT_V1.md). | No hay lector, escritor, convertidor ni fixtures del formato. |
+| Formato propio | Especificación binaria v1 en [`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), con jerarquía, bloques y rangos por atributo. | No hay lector, escritor, convertidor ni fixtures del formato. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 
 ## Qué significará “feature complete”
@@ -208,7 +208,7 @@ compatibles entre versiones.
 - [x] Publicar una especificación mínima: magic/versionado, endianness, metadatos, CRS y transformación
   de coordenadas, esquema de atributos, jerarquía, directorio de bloques, offsets/tamaños, compresión y
   reglas de alineación.
-- [ ] Definir representación de cada nodo: límites espaciales, nivel, conteos, rango de atributos,
+- [x] Definir representación de cada nodo: límites espaciales, nivel, conteos, rango de atributos,
   política de muestreo y bloque(s) asociados.
 - [ ] Elegir compresión por bloque independiente para poder leer y descartar datos sin descomprimir el
   archivo entero; medir ratio, coste de CPU y coste de lectura.

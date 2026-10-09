@@ -82,7 +82,8 @@ The index starts with the eight bytes `OCTVIDX1`, followed by these fields in or
 6. Node count (`u64`) and node records in ascending `NodeId` order. Each node contains `NodeId` (`u64`),
    parent tag (`u8`, `0=none`, `1=present`) and parent ID (`u64` only when present), level (`u32`),
    bounds (`min[x,y,z]`, then `max[x,y,z]`, all `f64`), representative count (`u64`), conservative
-   geometric error (`f64`), block count (`u32`) and that many `BlockId` values (`u64`).
+   geometric error (`f64`), block count (`u32`) and that many `BlockId` values (`u64`, ascending),
+   attribute-range count (`u32`) and that many attribute-range records.
 7. Block count (`u64`) and directory records in ascending `BlockId` order. Each record contains ID
    (`u64`), offset (`u64`), payload length (`u64`), point count (`u64`), quantization error (`f64`),
    local-coordinate origin (three `f64` values), per-axis scale (three `f64` values), codec (`u8`,
@@ -93,6 +94,15 @@ be unique where required and must resolve. The stored point count of a node desc
 own payload, as in `SpatialNode`, not the sum of its descendants. A node's geometric error includes
 the producer's source-to-representative error and the maximum quantization/render-coordinate error
 of its own referenced blocks.
+
+An attribute-range record contains the schema index (`u32`), then a minimum and maximum for each
+component, in the attribute's declared primitive type. Both arrays are component-interleaved. Range
+records are ordered by schema index; duplicate or out-of-range indices are invalid. A node range
+describes only the node's own representative payload, never a sum or union of samples from its
+descendants. Empty nodes have no ranges. Writers may omit a range when any component has no finite
+numeric value; ranges for integer attributes are exact, and ranges for floating-point attributes
+are computed from finite values only. The underlying attribute values are still preserved bit for
+bit, including NaNs and infinities.
 
 The quantization transform is expressed in dataset-local coordinates, calculated by subtracting the
 dataset origin from source world coordinates in `f64`. For each axis, the writer chooses a finite
