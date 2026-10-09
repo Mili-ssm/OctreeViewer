@@ -44,6 +44,39 @@ pub struct Voxel {
     pub point_count: u64,
 }
 
+impl Voxel {
+    /// Conservative maximum distance from this voxel's center to a point in its cell.
+    ///
+    /// For voxels produced by [`SparseVoxelStore`], this is the cell half-diagonal plus
+    /// a bound for rounding its center to `f32`; it uses the same units as `size`.
+    pub fn geometric_error_bound(self) -> f64 {
+        let rounding_radius = self
+            .center
+            .iter()
+            .map(|coordinate| f32_rounding_error(*coordinate).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        f64::from(self.size) * 3.0_f64.sqrt() / 2.0 + rounding_radius
+    }
+}
+
+fn f32_rounding_error(value: f32) -> f64 {
+    let magnitude_bits = value.abs().to_bits();
+    let magnitude = f64::from(value.abs());
+    let lower_gap = if magnitude_bits == 0 {
+        0.0
+    } else {
+        magnitude - f64::from(f32::from_bits(magnitude_bits - 1))
+    };
+    let upper_gap = magnitude_bits
+        .checked_add(1)
+        .map(f32::from_bits)
+        .filter(|next| next.is_finite())
+        .map(|next| f64::from(next) - magnitude)
+        .unwrap_or(lower_gap);
+    lower_gap.max(upper_gap) / 2.0
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VoxelStoreStats {
     pub point_count: u64,
@@ -243,6 +276,26 @@ mod tests {
         assert_eq!(voxels.len(), 1);
         assert_eq!(voxels[0].color, ColorRgb::new(20, 30, 40));
         assert_eq!(voxels[0].point_count, 2);
+    }
+
+    #[test]
+    fn voxel_center_has_a_conservative_half_diagonal_error_bound() {
+        let config = VoxelizationConfig::new(2.0, [0.0; 3]).unwrap();
+        let mut store = SparseVoxelStore::new(config);
+        store.insert_batch(&sample_batch()).unwrap();
+
+        let voxel = store.voxels()[0];
+        assert!(voxel.geometric_error_bound() >= 3.0_f64.sqrt());
+        for point in sample_batch().points() {
+            let distance = point
+                .position
+                .iter()
+                .zip(voxel.center)
+                .map(|(point, center)| (f64::from(*point) - f64::from(center)).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            assert!(distance <= voxel.geometric_error_bound());
+        }
     }
 
     #[test]

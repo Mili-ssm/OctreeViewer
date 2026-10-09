@@ -134,8 +134,10 @@ completa en memoria.
   entre niveles. `SpatialHierarchy` valida la estructura y deriva el orden de hijos.
 - [x] Definir la unidad del error geométrico: distancia máxima conservadora en las mismas unidades
   que los límites del dataset, calculada a partir de los datos fuente.
-- [ ] Elegir la política de muestreo y la tolerancia visual en píxeles antes de usar el error para
-  seleccionar LOD.
+- [x] Definir el muestreo LOD: voxel cúbico alineado al origen, representante en el centro y color
+  agregado; el error conservador es la semidiagonal más el margen de redondeo del centro a `f32`.
+- [x] Hacer explícita la tolerancia en píxeles como parámetro obligatorio de cada selección LOD; no
+  hay un valor global por defecto porque depende de cámara y viewport.
 - [x] Añadir consulta conservadora por frustum sobre límites de nodos, con poda de subárboles.
 - [x] Seleccionar nodos por nivel de detalle y presupuesto; mantener AABB como consulta simple útil
   para recorte.
@@ -157,9 +159,13 @@ posiciones a `f32` local para renderizado; la importación LAS usa el mismo cont
 cubren coordenadas mundiales grandes con desplazamientos pequeños. La precisión final local sigue
 limitada por `f32` y por la extensión del dataset. `SpatialNode::geometric_error` se define como la
 distancia máxima conservadora entre puntos fuente representados y sus representantes renderizados,
-en las mismas unidades que los límites del dataset; el conversor debe calcularla a partir de los
-datos. La tolerancia visual en píxeles y la política concreta de muestreo se fijarán al implementar
-el conversor y la configuración de cámara de la aplicación.
+en las mismas unidades que los límites del dataset. La política base de muestreo usa una grilla de
+voxeles cúbicos alineada al origen; cada voxel representa sus puntos con el centro de la celda y el
+color agregado, y su error máximo queda acotado por la semidiagonal más el redondeo del centro a
+`f32`. Los niveles pueden duplicar el
+tamaño de celda para mantener grillas anidadas. El conversor deberá aplicar la política y almacenar
+el máximo de esas cotas por nodo. El consumidor debe proporcionar la tolerancia en píxeles para cada
+vista; `select_lod` no inventa un umbral global.
 
 `SpatialHierarchy::select_lod` proyecta el error mediante una función suministrada por el consumidor,
 elige un corte visible sin mezclar padre e hijos y refina por mayor error mientras el reemplazo entero
@@ -167,8 +173,8 @@ quepa en el presupuesto. El productor debe garantizar que el payload del padre r
 subárbol y que sus hijos visibles lo refinan; los metadatos por sí solos no permiten validar esa
 cobertura. Si el corte visible base excede el presupuesto se devuelve un error; si una mejora no cabe
 o no hay resolución disponible, el resultado lo informa. La selección opera sobre conteos de puntos
-representantes, no sobre bytes o memoria. La política de muestreo y su generación en el conversor
-siguen pendientes, por lo que aún no hay una ruta de datos real que garantice estos contratos.
+representantes, no sobre bytes o memoria. El conversor aún debe materializar esta política en bloques
+y producir las cotas geométricas para que el selector funcione con datos reales.
 
 `ViewerController` y `WasmVoxelViewer` ahora renderizan puntos sin agregarlos por defecto. La ruta
 opcional `replaceVoxelizedPoints`/`appendVoxelizedPoints` conserva la reducción de densidad. Ambos
