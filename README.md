@@ -27,8 +27,13 @@ como interoperabilidad, sin sustituir el requisito del formato propio.
 
 El objetivo de escala se refiere a explorar progresivamente una nube cuyo dataset fuente supere los
 500 GB. No significa mantener todos sus puntos en RAM o dibujarlos simultáneamente. Antes de declarar
-el soporte completo se debe fijar si ese tamaño se mide antes o después de la conversión, qué atributos
-se incluyen y qué hardware y navegador forman parte del objetivo.
+el soporte completo se deben fijar los atributos incluidos y el hardware y navegador que forman parte
+del objetivo.
+
+Para las mediciones del proyecto, **500 GB significa el tamaño del archivo fuente LAS/LAZ antes de
+convertir, en bytes decimales (`500.000.000.000 B`)**. El tamaño del `.oct` convertido se registra por
+separado y no cuenta para alcanzar ese umbral. Cada dataset de benchmark debe documentar ambos tamaños,
+conteo de puntos, atributos, CRS y distribución espacial.
 
 ## Principios de arquitectura
 
@@ -120,8 +125,9 @@ organización; pueden cambiar durante la implementación si la separación real 
 **Característica:** fijar qué significa soporte de más de 500 GB y cómo se comprobará la ambición
 frente a Potree.
 
-- [ ] Definir si los 500 GB corresponden a LAS/LAZ de origen, al resultado propio o a ambos; registrar
-  puntos, atributos, CRS, distribución espacial y tamaño convertido de cada dataset.
+- [x] Definir los 500 GB como tamaño del archivo fuente LAS/LAZ antes de convertir, en bytes decimales;
+  registrar el tamaño `.oct` por separado. El registro existente de Belvedere incluye ambos tamaños,
+  puntos, atributos, CRS y distribución; ampliar la ficha al añadir datasets de benchmark.
 - [ ] Definir entornos objetivo: navegador, sistema operativo, memoria RAM/GPU, almacenamiento local o
   remoto y disponibilidad de lectura por rangos.
 - [ ] Elegir métricas: tiempo de conversión, tiempo hasta primera imagen, memoria pico, bytes leídos,
@@ -670,7 +676,6 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 Estas decisiones no bloquean el trabajo inicial sobre modelo, formato y pruebas pequeñas, pero sí
 cambian alcance, rendimiento y compatibilidad:
 
-- ¿El objetivo de 500 GB se mide en archivos fuente LAS/LAZ, en formato propio o en ambos?
 - ¿La primera versión abre únicamente archivos locales o también datos remotos mediante peticiones
   por rango?
 - ¿Qué plataformas, navegadores, RAM y clases de GPU son hardware oficialmente objetivo?
