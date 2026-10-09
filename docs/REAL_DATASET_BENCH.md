@@ -167,11 +167,14 @@ como perfil de benchmark, no como mínimo de soporte ni como declaración de com
 | RAM visible al sistema | 30,4 GiB |
 | GPU | AMD Radeon 880M integrada; memoria compartida con RAM |
 | Almacenamiento del checkout | NVMe local, Btrfs |
-| Firefox instalado | 157.0; no se ha validado aquí WebGPU con la demo |
+| Firefox instalado | 157.0; en la sesión de validación no expuso `navigator.gpu` |
+| Chromium de prueba | Chrome for Testing 153.0.8010.36; WebGPU activado con flags Vulkan |
 
-Las tablas de conversión y lectura no miden GPU. Para la validación de navegador faltan ejecutar el
-host en Chrome y Firefox con WebGPU; el objetivo tampoco fija aún sistemas operativos ni mínimos de
-RAM/GPU.
+Las tablas de conversión y lectura no miden GPU. En Chromium se comprobó la carga del `.oct` de
+muestra, la propagación del error de un archivo inválido y la cancelación de la descarga de la muestra;
+el renderer informó que presentó frames. La captura headless no permitió confirmar visualmente los
+puntos y Firefox no expuso WebGPU en esta sesión. La compatibilidad visual y los mínimos oficiales de
+RAM/GPU siguen abiertos.
 Una ruta que lea solo bloques LOD visibles y mantenga caché limitada debe presupuestarse por bytes de
 bloques seleccionados; el máximo payload bruto individual observado fue 9.396.257 B (8,96 MiB), pero
 falta integrar y medir esa ruta de extremo a extremo.

@@ -691,7 +691,8 @@ Estas decisiones no bloquean el trabajo inicial sobre modelo, formato y pruebas 
 cambian alcance, rendimiento y compatibilidad:
 
 - ¿Qué sistemas operativos, mínimos de RAM y clases de GPU forman el perfil oficial? Chrome y Firefox
-  con WebGPU son los navegadores elegidos, pero sus flujos aún no se han verificado en navegador real.
+  con WebGPU son los navegadores elegidos; solo Chrome ha permitido verificar flujos parciales, sin
+  confirmar todavía la salida visual ni la cancelación de lectura local.
 - ¿Qué dimensiones LAS/LAZ se deben preservar en v1 y cuáles pueden convertirse o descartarse con
   aviso explícito?
 - ¿La salida es un contenedor único, un conjunto de archivos o ambos? Esta decisión afecta escrituras
