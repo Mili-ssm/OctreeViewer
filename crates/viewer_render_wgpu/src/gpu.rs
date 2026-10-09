@@ -602,6 +602,25 @@ impl<'window> SurfaceRenderer<'window> {
         })
     }
 
+    pub fn fit_spatial_bounds(
+        &mut self,
+        bounds: viewer_core::SpatialBounds,
+        coordinate_origin: [f64; 3],
+    ) -> bool {
+        let min = std::array::from_fn(|axis| bounds.min()[axis] - coordinate_origin[axis]);
+        let max = std::array::from_fn(|axis| bounds.max()[axis] - coordinate_origin[axis]);
+        let bounds = SceneBounds { min, max };
+        if self.camera.fit(
+            bounds,
+            [self.surface_config.width, self.surface_config.height],
+        ) {
+            self.scene_bounds = Some(bounds);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn orbit_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
         self.camera.orbit(delta_x, delta_y)
     }

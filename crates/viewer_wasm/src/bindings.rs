@@ -162,6 +162,7 @@ pub struct WasmVoxelViewer {
     format_reader: Option<FormatReader<BrowserBlobReader>>,
     lod_config: Option<(f64, u64)>,
     lod_dirty: bool,
+    last_lod_stats: Option<LodViewStats>,
 }
 
 #[wasm_bindgen]
@@ -182,6 +183,7 @@ impl WasmVoxelViewer {
             format_reader: None,
             lod_config: None,
             lod_dirty: false,
+            last_lod_stats: None,
         })
     }
 
@@ -312,6 +314,7 @@ impl WasmVoxelViewer {
         self.format_reader = None;
         self.lod_config = None;
         self.lod_dirty = false;
+        self.last_lod_stats = None;
         self.gpu_scene_dirty = false;
         let result = js_sys::Object::new();
         js_sys::Reflect::set(
@@ -342,6 +345,7 @@ impl WasmVoxelViewer {
         self.format_reader = Some(reader);
         self.lod_config = None;
         self.lod_dirty = false;
+        self.last_lod_stats = None;
         self.gpu_scene_dirty = false;
 
         let result = js_sys::Object::new();
@@ -445,49 +449,22 @@ impl WasmVoxelViewer {
         self.lod_config = Some((max_error_pixels, point_budget));
         self.lod_dirty = false;
         let stats = self.update_lod_view(max_error_pixels, point_budget)?;
-        let value = js_sys::Object::new();
+        let value = lod_view_stats_to_js(&stats)?;
         js_sys::Reflect::set(&value, &"profile".into(), &JsValue::from_str(&profile))?;
         js_sys::Reflect::set(
             &value,
             &"maxErrorPixels".into(),
             &JsValue::from_f64(max_error_pixels),
         )?;
-        js_sys::Reflect::set(
-            &value,
-            &"visibleBlocks".into(),
-            &JsValue::from_f64(stats.visible_blocks as f64),
-        )?;
-        js_sys::Reflect::set(
-            &value,
-            &"visiblePoints".into(),
-            &JsValue::from_str(&stats.visible_points.to_string()),
-        )?;
-        js_sys::Reflect::set(
-            &value,
-            &"pointBudget".into(),
-            &JsValue::from_str(&stats.point_budget.to_string()),
-        )?;
-        let pending_block_ids = js_sys::Array::new();
-        for block_id in stats.pending_block_ids {
-            pending_block_ids.push(&JsValue::from_str(&block_id.get().to_string()));
-        }
-        js_sys::Reflect::set(&value, &"pendingBlockIds".into(), &pending_block_ids)?;
-        js_sys::Reflect::set(
-            &value,
-            &"uncoveredNodes".into(),
-            &JsValue::from_f64(stats.uncovered_nodes as f64),
-        )?;
-        js_sys::Reflect::set(
-            &value,
-            &"coverageComplete".into(),
-            &JsValue::from_bool(stats.uncovered_nodes == 0),
-        )?;
-        js_sys::Reflect::set(
-            &value,
-            &"budgetOmittedNodes".into(),
-            &JsValue::from_f64(stats.budget_omitted_nodes as f64),
-        )?;
         Ok(value.into())
+    }
+
+    #[wasm_bindgen(js_name = lodStats)]
+    pub fn lod_stats(&self) -> Result<JsValue, JsValue> {
+        match &self.last_lod_stats {
+            Some(stats) => lod_view_stats_to_js(stats),
+            None => Ok(JsValue::NULL),
+        }
     }
 
     #[wasm_bindgen(js_name = setColorMode)]
@@ -559,8 +536,8 @@ impl WasmVoxelViewer {
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        let fitted = if self.lod_dataset.is_some() {
-            renderer.fit_visible_blocks()
+        let fitted = if let Some(dataset) = &self.lod_dataset {
+            dataset.fit_camera(renderer)
         } else {
             renderer.fit_scene(self.inner.render_scene())
         };
@@ -662,7 +639,7 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
         let mut format_reader = self.format_reader.as_mut();
-        dataset
+        let stats = dataset
             .update_view_with_loader(renderer, max_error_pixels, point_budget, |block_id| {
                 format_reader
                     .as_mut()
@@ -674,7 +651,9 @@ impl WasmVoxelViewer {
                     })
                     .unwrap_or(Ok(None))
             })
-            .map_err(|error| JsValue::from_str(&error.to_string()))
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        self.last_lod_stats = Some(stats.clone());
+        Ok(stats)
     }
 
     fn clear_lod_dataset(&mut self) {
@@ -685,8 +664,49 @@ impl WasmVoxelViewer {
         }
         self.lod_config = None;
         self.lod_dirty = false;
+        self.last_lod_stats = None;
         self.format_reader = None;
     }
+}
+
+fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
+    let value = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &value,
+        &"visibleBlocks".into(),
+        &JsValue::from_f64(stats.visible_blocks as f64),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"visiblePoints".into(),
+        &JsValue::from_str(&stats.visible_points.to_string()),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"pointBudget".into(),
+        &JsValue::from_str(&stats.point_budget.to_string()),
+    )?;
+    let pending_block_ids = js_sys::Array::new();
+    for block_id in &stats.pending_block_ids {
+        pending_block_ids.push(&JsValue::from_str(&block_id.get().to_string()));
+    }
+    js_sys::Reflect::set(&value, &"pendingBlockIds".into(), &pending_block_ids)?;
+    js_sys::Reflect::set(
+        &value,
+        &"uncoveredNodes".into(),
+        &JsValue::from_f64(stats.uncovered_nodes as f64),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"coverageComplete".into(),
+        &JsValue::from_bool(stats.uncovered_nodes == 0),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"budgetOmittedNodes".into(),
+        &JsValue::from_f64(stats.budget_omitted_nodes as f64),
+    )?;
+    Ok(value.into())
 }
 
 fn viewer_error_to_js(error: ViewerError) -> JsValue {

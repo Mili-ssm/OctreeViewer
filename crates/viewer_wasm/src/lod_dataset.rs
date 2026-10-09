@@ -81,6 +81,13 @@ impl LodDataset {
         Ok(result.accounted_bytes)
     }
 
+    pub fn fit_camera(&self, renderer: &mut SurfaceRenderer<'_>) -> bool {
+        renderer.fit_spatial_bounds(
+            self.metadata.hierarchy().stats().root_bounds,
+            self.metadata.coordinate_frame().origin(),
+        )
+    }
+
     pub fn update_view(
         &mut self,
         renderer: &mut SurfaceRenderer<'_>,

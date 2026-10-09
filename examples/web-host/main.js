@@ -1,54 +1,33 @@
-import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
-
 const canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
 const fitButton = document.getElementById("fit-scene");
+const fileInput = document.getElementById("dataset-file");
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
 const colorMode = document.getElementById("color-mode");
 const pointSize = document.getElementById("point-size");
 const pointSizeValue = document.getElementById("point-size-value");
+const lodProfile = document.getElementById("lod-profile");
 
-await init();
-
-let viewer = null;
+let worker = null;
 let animationFrame = 0;
+let framePending = false;
+let ready = false;
+let frameFailed = false;
 let lastFrameStatus = "";
-let frameCount = 0;
-let lastRenderCallMs = null;
+let renderCallMs = null;
 let activePointer = null;
 let lastPointer = [0, 0];
 let pointerMode = "orbit";
+let cameraDelta = emptyCameraDelta();
+let latestLodStats = null;
+let datasetName = "Synthetic sample";
 
-function createSamplePointCloud() {
-    const positions = [];
-    const colors = [];
-
-    for (let x = -8; x <= 8; x += 1) {
-        for (let z = -8; z <= 8; z += 1) {
-            const height = Math.sin(x * 0.45) * Math.cos(z * 0.35) * 3.0;
-
-            for (let layer = 0; layer < 4; layer += 1) {
-                positions.push(x, z, height + layer * 0.35);
-
-                colors.push(
-                    Math.round(120 + (x + 8) * 7),
-                    Math.round(90 + (z + 8) * 7),
-                    Math.round(180 + layer * 18),
-                );
-            }
-        }
-    }
-
-    return {
-        positions: new Float32Array(positions),
-        colors: new Uint8Array(colors),
-    };
+function emptyCameraDelta() {
+    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0 };
 }
 
 function resize() {
-    if (!viewer) return;
-
     const pixelRatio = window.devicePixelRatio || 1;
     const width = Math.max(0, Math.floor(canvas.clientWidth * pixelRatio));
     const height = Math.max(0, Math.floor(canvas.clientHeight * pixelRatio));
@@ -56,24 +35,42 @@ function resize() {
     if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
+        if (worker && ready) worker.postMessage({ type: "resize", width, height });
     }
-
-    viewer.resize(width, height);
 }
 
-function updateStats() {
-    if (!viewer) return;
-
-    const stats = viewer.stats();
-    const gpuStats = viewer.gpuStats();
+function updateStats(message) {
+    const lod = message.lod ?? latestLodStats;
+    const points = lod?.visiblePoints ?? message.viewer.point_count;
+    const coverage = lod
+        ? `${lod.coverageComplete ? "complete" : "incomplete"} (${lod.uncoveredNodes} uncovered)`
+        : "not using LOD";
     statsRoot.textContent = [
-        `points: ${stats.point_count}`,
-        `visible instances: ${gpuStats.visibleInstances}`,
-        `visible blocks: ${gpuStats.visibleBlocks}`,
-        `total uploaded bytes: ${gpuStats.uploadedBytes}`,
-        `render call: ${lastRenderCallMs === null ? "—" : `${lastRenderCallMs.toFixed(2)} ms`}`,
-        `viewport: ${stats.viewport_size[0]} x ${stats.viewport_size[1]}`,
+        `dataset: ${datasetName}`,
+        `visible points: ${points}`,
+        `visible instances: ${message.gpu.visibleInstances}`,
+        `visible blocks: ${message.gpu.visibleBlocks}`,
+        `LOD coverage: ${coverage}`,
+        `pending blocks: ${lod?.pendingBlockIds.length ?? 0}`,
+        `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
+        `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
+        `viewport: ${canvas.width} x ${canvas.height}`,
     ].join("\n");
+}
+
+function requestFrame() {
+    if (!ready || frameFailed) return;
+    if (!framePending) {
+        framePending = true;
+        const camera = cameraDelta;
+        cameraDelta = emptyCameraDelta();
+        worker.postMessage({ type: "frame", camera });
+    }
+    animationFrame = requestAnimationFrame(requestFrame);
+}
+
+function startRendering() {
+    if (animationFrame === 0) animationFrame = requestAnimationFrame(requestFrame);
 }
 
 function stopRendering() {
@@ -83,69 +80,120 @@ function stopRendering() {
     }
 }
 
-function renderFrame() {
-    try {
-        const startedAt = performance.now();
-        const status = viewer.renderFrame();
-        lastRenderCallMs = performance.now() - startedAt;
-        if (status !== lastFrameStatus) {
-            statusRoot.textContent = `Renderer: ${status}`;
-            lastFrameStatus = status;
+function handleWorkerMessage({ data }) {
+    if (data.type === "ready") {
+        ready = true;
+        fileInput.disabled = false;
+        reloadButton.textContent = "Reload page";
+        statusRoot.textContent = "Renderer ready · synthetic sample";
+        startRendering();
+    } else if (data.type === "status") {
+        statusRoot.textContent = data.message;
+    } else if (data.type === "dataset") {
+        datasetName = data.name;
+        latestLodStats = data.lod;
+        fileInput.disabled = false;
+        lodProfile.disabled = false;
+        statusRoot.textContent = `${data.name}: loaded ${data.opened.nodeCount} nodes`;
+    } else if (data.type === "datasetOpened") {
+        datasetName = data.name;
+        fileInput.disabled = false;
+        lodProfile.disabled = false;
+        statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
+    } else if (data.type === "lod") {
+        latestLodStats = data.lod;
+        statusRoot.textContent = `LOD profile: ${data.lod.profile}`;
+    } else if (data.type === "stats") {
+        framePending = false;
+        renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
+        if (data.frameStatus?.status !== lastFrameStatus) {
+            lastFrameStatus = data.frameStatus?.status ?? "";
+            if (lastFrameStatus) statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
-        frameCount += 1;
-        if (frameCount === 1 || frameCount % 60 === 0) updateStats();
-        animationFrame = requestAnimationFrame(renderFrame);
-    } catch (error) {
-        stopRendering();
-        statusRoot.textContent = `Renderer error: ${error}`;
-        reloadButton.disabled = false;
-        reloadButton.textContent = "Recreate viewer";
+        latestLodStats = data.lod ?? latestLodStats;
+        updateStats(data);
+    } else if (data.type === "frame") {
+        framePending = false;
+        renderCallMs = data.renderCallMs;
+        if (data.frameStatus !== lastFrameStatus) {
+            lastFrameStatus = data.frameStatus;
+            statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
+        }
+    } else if (data.type === "error") {
+        fileInput.disabled = false;
+        statusRoot.textContent = `${data.operation} failed: ${data.message}`;
+        if (data.operation === "frame" || data.operation === "init") {
+            frameFailed = true;
+            stopRendering();
+            reloadButton.textContent = "Reload page";
+        }
     }
 }
 
-async function createViewer() {
-    stopRendering();
-    viewer = null;
-    reloadButton.disabled = true;
-    statusRoot.textContent = "Initializing WebGPU…";
+function createWorkerViewer() {
+    statusRoot.textContent = "Starting renderer worker…";
+    if (!HTMLCanvasElement.prototype.transferControlToOffscreen || !window.Worker) {
+        statusRoot.textContent = "This browser does not support OffscreenCanvas workers.";
+        reloadButton.disabled = false;
+        return;
+    }
 
     try {
-        viewer = await WasmVoxelViewer.create(canvas, 0.6);
-        viewer.setColorMode(colorMode.value);
-        viewer.setPointSize(Number(pointSize.value));
-        resize();
-        const { positions, colors } = createSamplePointCloud();
-        viewer.replacePoints(positions, colors);
-        viewer.fitScene();
-        frameCount = 0;
-        lastRenderCallMs = null;
-        lastFrameStatus = "";
-        updateStats();
-        reloadButton.textContent = "Recreate viewer";
-        renderFrame();
+        worker = new Worker(new URL("./viewer-worker.js", import.meta.url), { type: "module" });
+        worker.addEventListener("message", handleWorkerMessage);
+        worker.addEventListener("error", (event) => {
+            frameFailed = true;
+            stopRendering();
+            statusRoot.textContent = `Renderer worker failed: ${event.message}. Reload the page to retry.`;
+        });
+        const offscreen = canvas.transferControlToOffscreen();
+        worker.postMessage({
+            type: "init",
+            canvas: offscreen,
+            width: canvas.width,
+            height: canvas.height,
+            colorMode: colorMode.value,
+            pointSize: Number(pointSize.value),
+        }, [offscreen]);
+        reloadButton.disabled = false;
+        reloadButton.textContent = "Reload page";
     } catch (error) {
-        viewer = null;
-        statusRoot.textContent = `WebGPU initialization failed: ${error}`;
-        reloadButton.textContent = "Retry viewer";
-    } finally {
+        statusRoot.textContent = `Renderer initialization failed: ${error}. Reload the page to retry.`;
         reloadButton.disabled = false;
     }
 }
 
-reloadButton.addEventListener("click", () => void createViewer());
+reloadButton.addEventListener("click", () => window.location.reload());
 colorMode.addEventListener("change", () => {
-    if (viewer) viewer.setColorMode(colorMode.value);
+    if (ready) worker.postMessage({ type: "color", value: colorMode.value });
 });
 pointSize.addEventListener("input", () => {
     const size = Number(pointSize.value);
     pointSizeValue.value = `${size.toFixed(1)}×`;
-    if (viewer) viewer.setPointSize(size);
+    if (ready) worker.postMessage({ type: "pointSize", value: size });
+});
+lodProfile.addEventListener("change", () => {
+    if (ready && datasetName !== "Synthetic sample") {
+        worker.postMessage({ type: "profile", value: lodProfile.value });
+    }
+});
+fileInput.addEventListener("change", () => {
+    const [file] = fileInput.files ?? [];
+    if (!ready || !file) return;
+    fileInput.disabled = true;
+    fileInput.value = "";
+    worker.postMessage({
+        type: "openFile",
+        file,
+        profile: lodProfile.value,
+        cacheBytes: 256 * 1024 * 1024,
+    });
 });
 fitButton.addEventListener("click", () => {
-    if (viewer) viewer.fitScene();
+    if (ready) worker.postMessage({ type: "fit" });
 });
 canvas.addEventListener("pointerdown", (event) => {
-    if (!viewer || event.button !== 0) return;
+    if (!ready || event.button !== 0) return;
     event.preventDefault();
     activePointer = event.pointerId;
     pointerMode = event.shiftKey ? "pan" : "orbit";
@@ -153,13 +201,18 @@ canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
 });
 canvas.addEventListener("pointermove", (event) => {
-    if (!viewer || event.pointerId !== activePointer) return;
+    if (!ready || event.pointerId !== activePointer) return;
     const width = Math.max(canvas.clientWidth, 1);
     const height = Math.max(canvas.clientHeight, 1);
     const deltaX = (event.clientX - lastPointer[0]) / width;
     const deltaY = (event.clientY - lastPointer[1]) / height;
-    if (pointerMode === "pan") viewer.pan(deltaX, deltaY);
-    else viewer.orbit(deltaX, deltaY);
+    if (pointerMode === "pan") {
+        cameraDelta.panX += deltaX;
+        cameraDelta.panY += deltaY;
+    } else {
+        cameraDelta.orbitX += deltaX;
+        cameraDelta.orbitY += deltaY;
+    }
     lastPointer = [event.clientX, event.clientY];
 });
 function endPointer(event) {
@@ -169,31 +222,31 @@ canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("lostpointercapture", endPointer);
 canvas.addEventListener("wheel", (event) => {
-    if (!viewer) return;
+    if (!ready) return;
     event.preventDefault();
-    viewer.zoom(event.deltaY * 0.001);
+    cameraDelta.zoom += event.deltaY * 0.001;
 }, { passive: false });
 canvas.addEventListener("keydown", (event) => {
-    if (!viewer) return;
+    if (!ready) return;
     const step = event.shiftKey ? 0.025 : 0.04;
     if (event.key === "Home") {
-        viewer.fitScene();
+        worker.postMessage({ type: "fit" });
     } else if (event.key === "+" || event.key === "=") {
-        viewer.zoom(-0.15);
+        cameraDelta.zoom -= 0.15;
     } else if (event.key === "-") {
-        viewer.zoom(0.15);
+        cameraDelta.zoom += 0.15;
     } else if (event.key === "ArrowLeft") {
-        if (event.shiftKey) viewer.pan(-step, 0);
-        else viewer.orbit(-step, 0);
+        if (event.shiftKey) cameraDelta.panX -= step;
+        else cameraDelta.orbitX -= step;
     } else if (event.key === "ArrowRight") {
-        if (event.shiftKey) viewer.pan(step, 0);
-        else viewer.orbit(step, 0);
+        if (event.shiftKey) cameraDelta.panX += step;
+        else cameraDelta.orbitX += step;
     } else if (event.key === "ArrowUp") {
-        if (event.shiftKey) viewer.pan(0, -step);
-        else viewer.orbit(0, -step);
+        if (event.shiftKey) cameraDelta.panY -= step;
+        else cameraDelta.orbitY -= step;
     } else if (event.key === "ArrowDown") {
-        if (event.shiftKey) viewer.pan(0, step);
-        else viewer.orbit(0, step);
+        if (event.shiftKey) cameraDelta.panY += step;
+        else cameraDelta.orbitY += step;
     } else {
         return;
     }
@@ -201,4 +254,5 @@ canvas.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", resize);
 
-await createViewer();
+resize();
+createWorkerViewer();

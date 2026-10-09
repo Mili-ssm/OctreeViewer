@@ -104,6 +104,26 @@
         .stats {
             display: grid;
             gap: 8px;
+            white-space: pre-line;
+        }
+
+        @media (max-width: 760px) {
+            body {
+                grid-template-columns: 1fr;
+            }
+
+            aside {
+                border-right: 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            main {
+                padding: 12px;
+            }
+
+            canvas {
+                height: min(65vh, 720px);
+            }
         }
 
         code,
@@ -117,12 +137,23 @@
     <aside>
         <h1>Embeddable voxel viewer</h1>
         <p>
-            This host owns the canvas and feeds position/color buffers into the WASM module. Rust
-            presents the synthetic point cloud through WebGPU.
+            This host owns the canvas and controls a Rust/WASM renderer in a dedicated worker. Open a
+            project-format file or explore the synthetic sample.
         </p>
-        <button id="reload-scene" type="button">Recreate viewer</button>
+        <button id="reload-scene" type="button">Reload page</button>
         <button id="fit-scene" type="button">Fit scene</button>
+        <section class="panel" aria-label="Dataset options">
+            <label for="dataset-file">Open project dataset</label>
+            <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
+            <small id="dataset-help">The v1/v2 file is read in the worker. The current visible cut is kept if a block read fails.</small>
+        </section>
         <section class="panel" aria-label="Rendering options">
+            <label for="lod-profile">LOD profile</label>
+            <select id="lod-profile" aria-describedby="lod-help" disabled>
+                <option value="quality">Quality · 1/16 px error</option>
+                <option value="performance">Performance · 2 px error</option>
+            </select>
+            <small id="lod-help">Quality uses up to 4 million visible points; Performance defaults to 1 million. GPU buffer limits still apply.</small>
             <label for="color-mode">Color</label>
             <select id="color-mode">
                 <option value="rgb">RGB</option>
@@ -147,14 +178,10 @@
         </section>
         <section class="panel">
             <strong>Integration contract</strong>
-            <pre>await WasmVoxelViewer.create(canvas, voxelSize)
-viewer.resize(width, height)
-viewer.replacePoints(positions, colors)
-viewer.setColorMode("rgb")
-viewer.setPointSize(1.0)
-viewer.fitScene()
-viewer.orbit(dx, dy) / viewer.pan(dx, dy) / viewer.zoom(delta)
-viewer.renderFrame()</pre>
+            <pre>worker: createOffscreen(canvas, voxelSize)
+worker: openFormatDataset(file, cacheBytes)
+worker: updateLod(profile)
+worker: renderFrame() · LOD loads before draw</pre>
         </section>
     </aside>
     <main>

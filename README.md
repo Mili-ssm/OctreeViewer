@@ -2,9 +2,9 @@
 
 Visor extensible de nubes LiDAR y nubes de puntos 3D, construido en Rust y ejecutable en el
 navegador mediante WebAssembly. El proyecto está en una fase temprana: hoy contiene un núcleo de
-voxelización en memoria, una importación LAS/LAZ incremental, preparación de datos de escena y una
-demo WebGPU 3D con navegación y modos de color. Aún no conecta el formato espacial al host ni puede
-explorar datasets de cientos de GB de extremo a extremo.
+voxelización en memoria, una importación LAS/LAZ incremental, un lector espacial por bloques y una
+demo WebGPU 3D con worker, navegación y perfiles LOD. Aún no puede explorar datasets de cientos de GB
+de extremo a extremo ni ofrece progreso/cancelación de lecturas.
 
 ## Intención del proyecto
 
@@ -80,7 +80,7 @@ una versión publicada.
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
 | `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, presupuesto configurable y frustum/error proyectado de cámara. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
 | `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU y carga bajo demanda de bloques v1/v2 al corte LOD. | El host aún debe crear el worker, gestionar sus mensajes/estados y presentar la demo con datos propios. |
-| `examples/web-host` | Demo WebGPU de datos sintéticos con navegación, color y tamaño configurable. | No abre archivos ni conecta la selección LOD del core. |
+| `examples/web-host` | Demo WebGPU en worker, con muestra sintética, apertura de formato local, navegación y perfiles LOD. | No muestra progreso de bytes ni permite cancelar una lectura síncrona; no se ha validado visualmente con GPU en navegador. |
 | Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 | `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
@@ -466,10 +466,11 @@ todavía.
   reconfiguración y recrea el visor si debe reemplazar la superficie o el dispositivo.
 - [x] Conectar el host WASM y el canvas a `SurfaceRenderer`: el host mantiene el canvas, gestiona resize
   y reintento/recreación; Rust crea y presenta en la `Surface` WebGPU.
-- [x] Implementar cámara orbital con encuadre explícito de la escena, orbit, pan, zoom y resize. Usa
-  Z como eje vertical, calcula bounds y cámara en `f64` y resta un origen local en el shader antes de
-  proyectar. Preserva la precisión local disponible; no recupera precisión perdida al convertir
-  coordenadas globales a `f32`. El encuadre se limita a las instancias cargadas, no a bounds de dataset.
+- [x] Implementar cámara orbital con encuadre explícito de escena/dataset, orbit, pan, zoom y resize.
+  Usa Z como eje vertical, calcula bounds y cámara en `f64` y resta un origen local en el shader antes de
+  proyectar. En cortes LOD encuadra los bounds del dataset; en la escena completa encuadra instancias.
+  Preserva la precisión local disponible; no recupera precisión perdida al convertir coordenadas
+  globales a `f32`.
 - [x] Añadir `SurfaceRenderer::sync_visible_blocks`: recibe IDs de un corte renderizable y la caché
   CPU, deduplica, conserva buffers compartidos, sube solo bloques nuevos y libera los retirados.
   Repetir el mismo corte no escribe instancias; datos inválidos o ausentes preservan el corte anterior.
@@ -480,7 +481,8 @@ todavía.
   frustum y error proyectado de cámara. Se prepara el corte CPU, se valida/sube atómicamente a GPU y
   solo después se confirma la protección de caché. Si el corte base excede el presupuesto estricto,
   se vacía el corte anterior y se devuelve el diagnóstico; un rechazo GPU conserva el corte y plan
-  previos. La lectura del formato sigue pendiente.
+  previos. La lectura bajo demanda del formato está conectada en WASM; el host de referencia la ejecuta
+  en un worker.
 - [x] Añadir modos de color RGB, intensidad, elevación y clasificación cuando existe el atributo.
   Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
   El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
@@ -516,13 +518,16 @@ y presentar estado.
   bloques faltantes del corte antes de publicarlo. `openFormatDataset` usa `FileReaderSync`, por lo que
   el host debe ejecutar el visor en un worker; `createOffscreen` permite presentar en un canvas
   transferido al worker. Si falla una lectura, conserva el corte actual y devuelve el error.
-- [ ] Mover lectura y decodificación a workers; definir mensajes para progreso, errores, cancelación,
-  disponibilidad de bloques y contrapresión.
+- [x] Ejecutar lectura, decodificación, selección y render en un worker con `OffscreenCanvas`; se
+  cargan solo los bloques del corte visible y la UI principal conserva controles responsivos.
+- [ ] Completar el protocolo con progreso de bytes, cancelación durante lectura y contrapresión de
+  solicitudes; hoy la lectura de bloques es síncrona dentro del worker y se comunica al terminar o
+  fallar una operación.
 - [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
   y ciclo de vida claros entre JS y WASM.
-- [ ] Soportar fuente local seleccionada por el usuario; definir por separado si el producto debe
-  aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren contrato
-  específico.
+- [x] Soportar archivos locales del formato propio en la demo. Definir por separado si el producto
+  debe aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren
+  contrato específico.
 - [x] Exponer apertura de metadatos, inserción de bloques RGB decodificados, actualización LOD,
   encuadre y movimiento de cámara. Los IDs y conteos `u64` se intercambian como strings para evitar
   pérdida de precisión en JavaScript.
@@ -531,8 +536,12 @@ y presentar estado.
   siguen limitados por el presupuesto GPU estricto del renderer. Son una aproximación al rango
   acordado de 2:1 a 1:16 voxeles/píxel, no una garantía de densidad exacta. Falta validar el efecto
   visual con datasets reales.
-- [ ] Integrar la API en la demo y mostrar progreso/cobertura pendiente; hoy la demo sigue siendo
-  sintética y no invoca el puente LOD.
+- [x] Integrar selección de archivo local, mensajes de carga/error y resumen de nodos del índice; la
+  demo ejecuta visor, lector y renderer en worker.
+- [x] Mostrar estadísticas de puntos/bloques visibles, cobertura LOD, bloques pendientes, bytes de
+  instancias y tiempo CPU del worker. La memoria de caché aún no se expone a la demo.
+- [ ] Añadir progreso de lectura, cancelación/reintento dedicado y ejemplos reproducibles de archivo
+  local accesibles por teclado.
 - [ ] Añadir pruebas de bindings, ciclo de vida y concurrencia; comprobar que callbacks/eventos no
   bloqueen la UI y que los errores llegan al usuario.
 
@@ -552,9 +561,9 @@ Después de abrir un dataset, `updateLod("quality" | "performance", pointBudget?
 el perfil. La selección se recalcula antes de `renderFrame` tras cambios de cámara o llegada de
 bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`. En el camino de formato,
 los bloques que faltan se leen antes del cambio atómico del corte. `clear()` cierra el dataset LOD.
-Las estadísticas incluyen bloques/puntos visibles, presupuesto, bloques pendientes, cobertura y nodos
-omitidos por presupuesto. Integrar worker y render en la demo, exponer progreso/cancelación y mostrar
-estados al usuario siguen pendientes.
+Las estadísticas incluyen bloques/puntos visibles, presupuesto, IDs de bloques pendientes, cobertura
+y nodos omitidos por presupuesto. La demo ya ejecuta lector y renderer en un worker; quedan pendientes
+el progreso por bytes, la cancelación y el protocolo de contrapresión.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
 no realiza copias proporcionales al tamaño total de la nube.
@@ -564,24 +573,24 @@ no realiza copias proporcionales al tamaño total de la nube.
 **Característica:** demostrar el flujo completo y servir como integración mínima mantenible.
 
 - [x] Reemplazar la proyección Canvas 2D por el canvas 3D y el renderer real para la muestra sintética.
-- [ ] Añadir selección de archivo, estados de conversión/carga, progreso, cancelar/reintentar y resumen
-  de metadatos con acciones accesibles por teclado.
-- [ ] Mostrar estadísticas de forma útil: puntos totales, bloques solicitados/visibles, nivel LOD,
-  memoria/caché conocida, tiempo de frame y errores recuperables.
-- [ ] Documentar el contrato para integrar el WASM en otra aplicación y ofrecer un ejemplo pequeño que
-  cargue datos locales reproducibles.
-- [ ] Mantener la demo como consumidor de API pública; no introducir lógica de almacenamiento o
-  geometría que duplique el núcleo en JavaScript.
+- [x] Añadir selección de archivo, estados de carga/error y resumen de nodos con controles etiquetados.
+  El progreso por bytes y la cancelación/reintento dedicado siguen pendientes.
+- [x] Mostrar puntos, bloques visibles, cobertura, bloques pendientes, bytes GPU y tiempo CPU del
+  worker. Faltan el nivel LOD y la memoria/caché conocida.
+- [x] Documentar el contrato del worker y WASM en el README de la demo; falta añadir un archivo
+  pequeño de muestra reproducible.
+- [x] Mantener la demo como consumidor de la API pública; el único código de geometría JavaScript
+  genera el dataset sintético ya existente.
 
 **Cierre:** una persona puede seleccionar un archivo convertido, ver progreso, navegar la nube y
 entender límites/errores sin editar el código de la demo.
 
-**Estado actual:** la demo instancia WebGPU desde el canvas, sube una escena solo cuando cambia,
-muestra estado, instancias/bloques visibles, bytes transferidos y tiempo de llamada CPU, permite
-navegar con puntero, rueda o teclado, y expone modos de color y tamaño. Si falla la inicialización o
-un frame, permite crear de nuevo el visor. El renderer ya reconcilia cortes por bloque desde la caché
-del core, pero la demo todavía no usa esa ruta. Archivos locales, bounds de dataset y validación en
-navegador siguen pendientes.
+**Estado actual:** la demo transfiere el canvas a un worker, crea allí el renderer WebGPU y abre
+archivos del formato v1/v2 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
+y cambia el corte de forma atómica. Muestra estado, resumen del índice, puntos/bloques visibles,
+cobertura, bytes subidos y tiempo síncrono del worker; permite navegar, cambiar perfil, color y tamaño.
+La cancelación durante lectura, el progreso por bytes, el reporte de memoria de caché y la validación
+visual en navegador siguen pendientes.
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 
