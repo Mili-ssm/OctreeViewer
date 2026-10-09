@@ -71,7 +71,7 @@ una versión publicada.
 
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
-| `viewer_core` | Tipos de puntos, RGB, lotes, voxelización, AABB y jerarquía validada de metadatos con consulta espacial. | `SparseVoxelStore` mantiene voxeles en un `HashMap`; la jerarquía de nodos y sus metadatos también residen en memoria. Aún no se leen bloques ni se selecciona LOD; el filtro de voxeles incluye por centro. |
+| `viewer_core` | Tipos de puntos, RGB, lotes, voxelización, AABB y jerarquía validada con consultas AABB/frustum. | `SparseVoxelStore` mantiene voxeles en un `HashMap`; la jerarquía de nodos y sus metadatos también residen en memoria. Aún no se leen bloques ni se selecciona LOD; el filtro de voxeles incluye por centro. |
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
@@ -134,8 +134,9 @@ completa en memoria.
   entre niveles. `SpatialHierarchy` valida la estructura y deriva el orden de hijos.
 - [ ] Acordar unidad y calibración del error geométrico y la política de muestreo antes de usarlo para
   seleccionar LOD.
-- [ ] Añadir consultas por frustum y selección de nodos por nivel de detalle y presupuesto; mantener
-  AABB como consulta simple útil para recorte.
+- [x] Añadir consulta conservadora por frustum sobre límites de nodos, con poda de subárboles.
+- [ ] Seleccionar nodos por nivel de detalle y presupuesto; mantener AABB como consulta simple útil
+  para recorte.
 - [ ] Separar voxelización/agregación de la representación persistente de puntos. La voxelización
   debe seguir disponible como reducción de densidad opcional, no como único camino de renderizado.
 - [ ] Definir límites de datos y errores: coordenadas inválidas, límites desbordados, archivos
@@ -143,9 +144,10 @@ completa en memoria.
 - [ ] Diseñar contratos pequeños para leer fuentes, solicitar bloques y proporcionar atributos. Evitar
   hacer que `viewer_core` dependa de WASM, DOM o tipos de `wgpu`.
 
-**Progreso:** el índice residente valida raíces, padres, niveles y contención de límites; consulta AABB
-con recorrido determinista en profundidad y poda subárboles disjuntos, sin materializar puntos. La
-jerarquía aún no carga bloques desde almacenamiento ni implementa frustum, LOD o presupuestos.
+**Progreso:** el índice residente valida raíces, padres, niveles y contención de límites; las consultas
+AABB y frustum recorren en profundidad de forma determinista y podan subárboles disjuntos, sin
+materializar puntos. La consulta frustum es conservadora y devuelve candidatos, no una selección LOD.
+La jerarquía aún no carga bloques desde almacenamiento ni implementa LOD o presupuestos.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.

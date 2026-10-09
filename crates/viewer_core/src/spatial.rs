@@ -65,6 +65,84 @@ impl SpatialBounds {
     }
 }
 
+/// A plane whose inside half-space satisfies `normal · point + offset >= 0`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrustumPlane {
+    normal: [f64; 3],
+    offset: f64,
+}
+
+impl FrustumPlane {
+    pub fn new(normal: [f64; 3], offset: f64) -> Result<Self, SpatialError> {
+        if normal.iter().any(|value| !value.is_finite())
+            || normal.iter().all(|value| *value == 0.0)
+            || !offset.is_finite()
+        {
+            return Err(SpatialError::InvalidFrustumPlane { normal, offset });
+        }
+
+        Ok(Self { normal, offset })
+    }
+
+    pub const fn normal(&self) -> [f64; 3] {
+        self.normal
+    }
+
+    pub const fn offset(&self) -> f64 {
+        self.offset
+    }
+
+    fn intersects(&self, bounds: &SpatialBounds) -> bool {
+        let support_point: [f64; 3] = std::array::from_fn(|axis| {
+            if self.normal[axis] >= 0.0 {
+                bounds.max[axis]
+            } else {
+                bounds.min[axis]
+            }
+        });
+        let coefficient_scale = self
+            .normal
+            .iter()
+            .map(|value| value.abs())
+            .fold(self.offset.abs(), f64::max);
+        let coordinate_scale = support_point
+            .iter()
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        let maximum_distance = (0..3)
+            .map(|axis| {
+                (self.normal[axis] / coefficient_scale) * (support_point[axis] / coordinate_scale)
+            })
+            .sum::<f64>()
+            + (self.offset / coefficient_scale) / coordinate_scale;
+
+        maximum_distance >= 0.0
+    }
+}
+
+/// Convex query volume represented by inward-facing planes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpatialFrustum {
+    planes: Vec<FrustumPlane>,
+}
+
+impl SpatialFrustum {
+    pub fn new(planes: Vec<FrustumPlane>) -> Result<Self, SpatialError> {
+        if planes.is_empty() {
+            return Err(SpatialError::EmptyFrustum);
+        }
+        Ok(Self { planes })
+    }
+
+    pub fn planes(&self) -> &[FrustumPlane] {
+        &self.planes
+    }
+
+    pub fn intersects(&self, bounds: &SpatialBounds) -> bool {
+        self.planes.iter().all(|plane| plane.intersects(bounds))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttributeDataType {
     U8,
@@ -202,6 +280,10 @@ pub struct SpatialStats {
 pub enum SpatialError {
     #[error("spatial bounds must be finite and ordered, got min {min:?} and max {max:?}")]
     InvalidBounds { min: [f64; 3], max: [f64; 3] },
+    #[error("frustum plane must have a finite, non-zero normal and finite offset")]
+    InvalidFrustumPlane { normal: [f64; 3], offset: f64 },
+    #[error("frustum must contain at least one plane")]
+    EmptyFrustum,
     #[error("attribute name must not be empty")]
     EmptyAttributeName,
     #[error("attribute {name:?} must have at least one component")]
@@ -364,8 +446,31 @@ impl SpatialHierarchy {
     pub fn query(&self, bounds: SpatialBounds) -> SpatialQuery<'_> {
         SpatialQuery {
             hierarchy: self,
-            bounds,
+            region: SpatialQueryRegion::Bounds(bounds),
             pending: vec![self.root],
+        }
+    }
+
+    /// Returns conservative frustum candidates in deterministic depth-first order.
+    pub fn query_frustum(&self, frustum: SpatialFrustum) -> SpatialQuery<'_> {
+        SpatialQuery {
+            hierarchy: self,
+            region: SpatialQueryRegion::Frustum(frustum),
+            pending: vec![self.root],
+        }
+    }
+}
+
+enum SpatialQueryRegion {
+    Bounds(SpatialBounds),
+    Frustum(SpatialFrustum),
+}
+
+impl SpatialQueryRegion {
+    fn intersects(&self, bounds: &SpatialBounds) -> bool {
+        match self {
+            Self::Bounds(query_bounds) => query_bounds.intersects(bounds),
+            Self::Frustum(frustum) => frustum.intersects(bounds),
         }
     }
 }
@@ -373,7 +478,7 @@ impl SpatialHierarchy {
 /// Lazy depth-first query over hierarchy metadata; disjoint subtrees are pruned.
 pub struct SpatialQuery<'a> {
     hierarchy: &'a SpatialHierarchy,
-    bounds: SpatialBounds,
+    region: SpatialQueryRegion,
     pending: Vec<NodeId>,
 }
 
@@ -383,7 +488,7 @@ impl<'a> Iterator for SpatialQuery<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(id) = self.pending.pop() {
             let indexed = &self.hierarchy.nodes[&id];
-            if !indexed.metadata.bounds.intersects(&self.bounds) {
+            if !self.region.intersects(&indexed.metadata.bounds) {
                 continue;
             }
             self.pending.extend(indexed.children.iter().rev().copied());

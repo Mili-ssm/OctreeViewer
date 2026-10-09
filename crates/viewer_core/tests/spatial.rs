@@ -1,6 +1,6 @@
 use viewer_core::{
-    AttributeDataType, AttributeDescriptor, BlockId, NodeId, SpatialBounds, SpatialError,
-    SpatialHierarchy, SpatialNode,
+    AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, NodeId, SpatialBounds,
+    SpatialError, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 
 fn bounds(min: [f64; 3], max: [f64; 3]) -> SpatialBounds {
@@ -25,6 +25,18 @@ fn node(
         0.0,
         blocks.iter().copied().map(BlockId::new).collect(),
     )
+    .unwrap()
+}
+
+fn unit_cube_frustum() -> SpatialFrustum {
+    SpatialFrustum::new(vec![
+        FrustumPlane::new([1.0, 0.0, 0.0], 0.0).unwrap(),
+        FrustumPlane::new([-1.0, 0.0, 0.0], 1.0).unwrap(),
+        FrustumPlane::new([0.0, 1.0, 0.0], 0.0).unwrap(),
+        FrustumPlane::new([0.0, -1.0, 0.0], 1.0).unwrap(),
+        FrustumPlane::new([0.0, 0.0, 1.0], 0.0).unwrap(),
+        FrustumPlane::new([0.0, 0.0, -1.0], 1.0).unwrap(),
+    ])
     .unwrap()
 }
 
@@ -271,4 +283,66 @@ fn includes_touching_bounds_in_spatial_queries() {
         .map(|item| item.id().get())
         .collect::<Vec<_>>();
     assert_eq!(ids, [1, 2]);
+}
+
+#[test]
+fn frustum_query_returns_intersections_in_stable_order_and_prunes_outside_nodes() {
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            node(1, None, 0, [-10.0; 3], [10.0; 3], 0, &[]),
+            node(2, Some(1), 1, [-1.0; 3], [0.25; 3], 1, &[2]),
+            node(3, Some(1), 1, [2.0, 0.0, 0.0], [3.0, 1.0, 1.0], 1, &[3]),
+            node(4, Some(1), 1, [1.0, 0.2, 0.2], [2.0, 0.8, 0.8], 1, &[4]),
+        ],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+
+    let ids = hierarchy
+        .query_frustum(unit_cube_frustum())
+        .map(|item| item.id().get())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, [1, 2, 4]);
+}
+
+#[test]
+fn rejects_empty_frusta_and_invalid_planes() {
+    assert_eq!(
+        SpatialFrustum::new(Vec::new()).unwrap_err(),
+        SpatialError::EmptyFrustum
+    );
+    assert!(matches!(
+        FrustumPlane::new([0.0; 3], 1.0),
+        Err(SpatialError::InvalidFrustumPlane { .. })
+    ));
+    assert!(matches!(
+        FrustumPlane::new([1.0, f64::NAN, 0.0], 1.0),
+        Err(SpatialError::InvalidFrustumPlane { .. })
+    ));
+    assert!(matches!(
+        FrustumPlane::new([1.0, 0.0, 0.0], f64::INFINITY),
+        Err(SpatialError::InvalidFrustumPlane { .. })
+    ));
+}
+
+#[test]
+fn frustum_classification_handles_large_finite_coordinates_without_overflow() {
+    let far = 1.0e308;
+    let hierarchy = SpatialHierarchy::new(
+        vec![node(1, None, 0, [far; 3], [far; 3], 0, &[])],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let frustum =
+        SpatialFrustum::new(vec![FrustumPlane::new([-1.0, -1.0, 1.0], 1.7e308).unwrap()]).unwrap();
+
+    assert_eq!(
+        hierarchy
+            .query_frustum(frustum)
+            .map(|item| item.id().get())
+            .collect::<Vec<_>>(),
+        [1]
+    );
 }
