@@ -11,9 +11,9 @@ pub use geometry::{
     Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,
 };
 pub use spatial::{
-    AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, LodSelection,
-    LodSelectionConfig, LodSelectionError, NodeId, SpatialBounds, SpatialError, SpatialFrustum,
-    SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats,
+    AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, HierarchySemantics,
+    LodSelection, LodSelectionConfig, LodSelectionError, NodeId, SpatialBounds, SpatialError,
+    SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats,
 };
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{

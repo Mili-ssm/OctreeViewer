@@ -5,8 +5,8 @@ use std::{
 
 use thiserror::Error;
 use viewer_core::{
-    AttributeDataType, AttributeValues, BlockId, DatasetMetadata, NodeId, SpatialBounds,
-    SpatialHierarchy, SpatialNode,
+    AttributeDataType, AttributeValues, BlockId, DatasetMetadata, HierarchySemantics, NodeId,
+    SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
 use crate::{
@@ -17,8 +17,10 @@ use crate::{
 pub(crate) const HEADER_SIZE: u64 = 24;
 pub(crate) const FOOTER_SIZE: u64 = 40;
 pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
-pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX1";
-pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND1";
+pub(crate) const INDEX_MAGIC_V1: &[u8; 8] = b"OCTVIDX1";
+pub(crate) const INDEX_MAGIC_V2: &[u8; 8] = b"OCTVIDX2";
+pub(crate) const FOOTER_MAGIC_V1: &[u8; 8] = b"OCTVEND1";
+pub(crate) const FOOTER_MAGIC_V2: &[u8; 8] = b"OCTVEND2";
 
 /// Bounds per-block allocations made by the writer.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,7 +72,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         writer.seek(SeekFrom::Start(0))?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
-        writer.write_all(&header_bytes())?;
+        writer.write_all(&header_bytes(format_version(&metadata)))?;
         Ok(Self {
             writer,
             metadata,
@@ -158,14 +160,21 @@ impl<W: Write + Seek> FormatWriter<W> {
 
         let metadata = self.adjusted_metadata()?;
         validate_metadata(&metadata)?;
+        let version = format_version(&metadata);
         let index_offset = self.writer.stream_position()?;
         let (index_length, index_checksum) =
-            write_index(&mut self.writer, &metadata, &self.blocks)?;
+            write_index(&mut self.writer, &metadata, &self.blocks, version)?;
         let file_length = index_offset
             .checked_add(index_length)
             .and_then(|value| value.checked_add(FOOTER_SIZE))
             .ok_or(FormatError::FileSizeOverflow)?;
-        let footer = footer_bytes(index_offset, index_length, file_length, index_checksum);
+        let footer = footer_bytes(
+            index_offset,
+            index_length,
+            file_length,
+            index_checksum,
+            version,
+        );
         self.writer.write_all(&footer)?;
         self.writer.flush()?;
         Ok(self.writer)
@@ -250,10 +259,11 @@ impl<W: Write + Seek> FormatWriter<W> {
             )?);
         }
 
-        let hierarchy = SpatialHierarchy::new(
+        let hierarchy = SpatialHierarchy::new_with_semantics(
             adjusted_nodes,
             source_hierarchy.attributes().to_vec(),
             source_hierarchy.stats().source_point_count,
+            source_hierarchy.semantics(),
         )?;
         let dataset = DatasetMetadata::new(source_metadata.dataset().coordinate_frame(), hierarchy);
         Ok(source_metadata.with_dataset(dataset))
@@ -614,9 +624,9 @@ impl BoundsAccumulator {
     }
 
     fn include_point(&mut self, point: [f64; 3]) {
-        for axis in 0..3 {
-            self.min[axis] = self.min[axis].min(point[axis]);
-            self.max[axis] = self.max[axis].max(point[axis]);
+        for (axis, coordinate) in point.into_iter().enumerate() {
+            self.min[axis] = self.min[axis].min(coordinate);
+            self.max[axis] = self.max[axis].max(coordinate);
         }
         self.empty = false;
     }
@@ -638,10 +648,17 @@ impl BoundsAccumulator {
     }
 }
 
-fn header_bytes() -> [u8; HEADER_SIZE as usize] {
+fn format_version(metadata: &FormatMetadata) -> u16 {
+    match metadata.dataset().hierarchy().semantics() {
+        HierarchySemantics::Replacement => 1,
+        HierarchySemantics::Additive => 2,
+    }
+}
+
+fn header_bytes(version: u16) -> [u8; HEADER_SIZE as usize] {
     let mut bytes = [0; HEADER_SIZE as usize];
     bytes[..8].copy_from_slice(HEADER_MAGIC);
-    bytes[8..10].copy_from_slice(&1_u16.to_le_bytes());
+    bytes[8..10].copy_from_slice(&version.to_le_bytes());
     bytes[10..12].copy_from_slice(&(HEADER_SIZE as u16).to_le_bytes());
     let checksum = crc32(&bytes[..20]);
     bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
@@ -653,9 +670,15 @@ fn footer_bytes(
     index_length: u64,
     file_length: u64,
     index_crc: u32,
+    version: u16,
 ) -> [u8; 40] {
     let mut bytes = [0; 40];
-    bytes[..8].copy_from_slice(FOOTER_MAGIC);
+    let magic = if version == 2 {
+        FOOTER_MAGIC_V2
+    } else {
+        FOOTER_MAGIC_V1
+    };
+    bytes[..8].copy_from_slice(magic);
     bytes[8..16].copy_from_slice(&index_offset.to_le_bytes());
     bytes[16..24].copy_from_slice(&index_length.to_le_bytes());
     bytes[24..32].copy_from_slice(&file_length.to_le_bytes());
@@ -703,13 +726,19 @@ fn write_index<W: Write>(
     writer: &mut W,
     metadata: &FormatMetadata,
     blocks: &BTreeMap<BlockId, BlockRecord>,
+    version: u16,
 ) -> Result<(u64, u32), FormatError> {
     let mut index = IndexWriter {
         writer,
         checksum: Crc32::new(),
         length: 0,
     };
-    index.write(INDEX_MAGIC)?;
+    let index_magic = if version == 2 {
+        INDEX_MAGIC_V2
+    } else {
+        INDEX_MAGIC_V1
+    };
+    index.write(index_magic)?;
     for coordinate in metadata.dataset().coordinate_frame().origin() {
         index.f64(coordinate)?;
     }
@@ -723,6 +752,12 @@ fn write_index<W: Write>(
     write_string(&mut index, metadata.sampling_policy())?;
 
     let hierarchy = metadata.dataset().hierarchy();
+    if version == 2 {
+        index.u8(match hierarchy.semantics() {
+            HierarchySemantics::Replacement => 0,
+            HierarchySemantics::Additive => 1,
+        })?;
+    }
     index.u32(
         u32::try_from(hierarchy.attributes().len()).map_err(|_| FormatError::SchemaTooLarge)?,
     )?;

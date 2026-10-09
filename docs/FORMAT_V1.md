@@ -2,8 +2,8 @@
 
 This document defines the first version of the project's native point-cloud container. It is a
 little-endian, seekable single-file format with an in-memory index and independently verified
-point blocks. Version 1 stores blocks without compression (`codec = 0`); compression remains an
-independent future format extension and is not implied by this specification.
+point blocks. Version 1 supports raw blocks (`codec = 0`) and independent LZ4 blocks (`codec = 1`).
+Version 2 adds an explicit additive hierarchy mode; see [FORMAT_V2.md](FORMAT_V2.md).
 
 The file stores coordinates as per-block `u32` values relative to a local `f64` origin and scale.
 Writers must receive source positions in `f64`, before narrowing to render coordinates. Readers
@@ -176,7 +176,8 @@ accidental corruption; it is not an authenticity mechanism. Opening validates th
 index checksum, directory ranges and hierarchy. A block checksum is verified when that block is read;
 unrequested payload bytes need not be read during open.
 
-Version 1 writers emit version `1`; readers accept only version `1`, the exact header and footer
+Version 1 writers emit version `1`; the current reader accepts versions 1 and 2, interpreting v1 as
+replacement semantics. A v1-only reader accepts only version `1`, the exact header and footer
 lengths above, zero header flags, and codecs `0` or `1`. Version 1 has no extension sections: adding
 fields, changing field meanings or changing required encodings requires a new format version. Unknown
 tags, versions, flags and codecs produce explicit errors. Readers preserve attribute names and values

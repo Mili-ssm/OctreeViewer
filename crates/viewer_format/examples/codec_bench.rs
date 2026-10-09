@@ -20,7 +20,7 @@ fn structured_payload() -> Vec<u8> {
     for index in 0..POINTS {
         let x = (index % 1024) as u32;
         let y = (index / 1024) as u32;
-        let z = ((x * 13 + y * 7) % 4096) as u32;
+        let z = (x * 13 + y * 7) % 4096;
         for coordinate in [x, y, z] {
             payload.extend_from_slice(&coordinate.to_le_bytes());
         }

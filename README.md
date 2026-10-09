@@ -81,9 +81,9 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con particiones LOD adaptativas configurables 2×2×2, 4×4×4 u 8×8×8, hojas a resolución completa, muestras de color agregadas y procesamiento paralelo acotado opcional de subárboles raíz. Conserva atributos estándar, usa puntos fuente cercanos para atributos no agregados y ofrece reanudación por fases. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. Se midió calidad con jerarquías equivalentes y particiones directas; faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
+| `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
 
 ## Qué significará “feature complete”
 
@@ -184,14 +184,12 @@ es síncrona en este contrato base, por lo que el consumidor decide si la ejecut
 El formato propio aún debe implementar este contrato y validar que los bloques coinciden con el
 esquema y la jerarquía.
 
-`SpatialHierarchy::select_lod` proyecta el error mediante una función suministrada por el consumidor,
-elige un corte visible sin mezclar padre e hijos y refina por mayor error mientras el reemplazo entero
-quepa en el presupuesto. El productor debe garantizar que el payload del padre representa el
-subárbol y que sus hijos visibles lo refinan; los metadatos por sí solos no permiten validar esa
-cobertura. Si el corte visible base excede el presupuesto se devuelve un error; si una mejora no cabe
-o no hay resolución disponible, el resultado lo informa. La selección opera sobre conteos de puntos
-representantes, no sobre bytes o memoria. El conversor aún debe materializar esta política en bloques
-y producir las cotas geométricas para que el selector funcione con datos reales.
+`SpatialHierarchy::select_lod` proyecta el error mediante una función suministrada por el consumidor
+y refina por mayor error mientras el cambio que dicta la semántica de la jerarquía quepa en el
+presupuesto. En v1, los hijos reemplazan al padre; en v2 aditivo, se retienen ancestros y se añaden
+hijos. El productor define la cobertura/error, y el selector cuenta puntos, no bytes o memoria. Si la
+selección base supera el presupuesto devuelve un error; si una mejora no cabe o no hay más
+resolución, lo informa.
 
 `ViewerController` y `WasmVoxelViewer` ahora renderizan puntos sin agregarlos por defecto. La ruta
 opcional `replaceVoxelizedPoints`/`appendVoxelizedPoints` conserva la reducción de densidad. Ambos
@@ -211,6 +209,9 @@ los tests validan límites, precisión, orden LOD y presupuestos.
 
 **Característica:** persistir una nube organizada en bloques indexados, legibles aleatoriamente y
 compatibles entre versiones.
+
+- [x] Añadir v2 aditivo para jerarquías cuyos nodos contienen payloads distintos; el lector conserva
+  compatibilidad con v1 y lo interpreta como reemplazo ([`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)).
 
 - [x] Publicar una especificación mínima: magic/versionado, endianness, metadatos, CRS y transformación
   de coordenadas, esquema de atributos, jerarquía, directorio de bloques, offsets/tamaños, compresión y
@@ -298,10 +299,11 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   futura.
 - [x] Evaluar EPT: es un dataset de varios archivos (`ept.json`, jerarquía y datos por nodo), no una
   ruta LAS/LAZ única ([especificación EPT](https://entwine.io/en/latest/entwine-point-tile.html)).
-- [ ] Implementar entrada EPT tras definir una abstracción de dataset y cómo preservar su jerarquía
-  aditiva en el formato propio.
+- [x] Implementar entrada para datasets EPT locales `laszip`: leer `ept.json`, páginas JSON y LAZ
+  por nodo, validar conteos y mantener la jerarquía aditiva en v2. Remoto y otros codecs quedan fuera
+  de esta iteración.
 
-Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint | --resume]`.
+Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint | --resume]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
 de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación incluye
 192 bytes por punto del bloque, 512 bytes por bloque del índice, 256 bytes por nodo, espacio para una
@@ -336,6 +338,13 @@ tanto hojas como muestras LOD. La salida se publica mediante un enlace al archiv
 falla si el destino ya existe. Se conservan intensidad, RGB, clasificación, retornos, ángulo de escaneo
 en grados `f32`, user data, source ID y GPS/NIR cuando están disponibles; se avisa de flags, waveform,
 Extra Bytes y CRS VLR que no se conservan.
+
+Para EPT, la entrada es el directorio del dataset o su `ept.json`. La primera versión acepta solo
+`dataType: laszip` y `hierarchyType: json` locales; valida páginas, padres, conteos declarados y
+cabeceras LAZ antes de publicar. Mantiene payloads propios por nodo y escribe v2 aditivo; no vuelve
+a particionar la jerarquía. `--checkpoint`/`--resume`, `--spatial-divisions` distintas de 2 y
+`--spatial-workers` distintos de 1 no se aplican a EPT. El error geométrico EPT almacenado es la
+diagonal de la celda del nodo y sirve como estimación de resolución espacial.
 
 La CLI muestra las fases y progreso de lectura, planificación espacial, escritura y validación;
 `convert_file_with_progress` ofrece los mismos eventos y permite cancelar devolviendo `false`. Ctrl+C
@@ -499,7 +508,7 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 | --- | --- | --- |
 | `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
 | `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
-| `viewer_convert` | Conversión nativa LAS/LAZ por bloques, publicación validada, reanudación por fases, particiones adaptativas directas 2/4/8, paralelismo espacial opcional acotado y benchmark real de calidad LOD. | `las`, `viewer_core`, `viewer_format`; comparar cortes con presupuestos visibles equivalentes y validar calidad visual antes de fijar el branching factor. |
+| `viewer_convert` | Conversión LAS/LAZ por bloques y EPT local `laszip` aditivo, publicación validada, checkpoints LAS/LAZ, particiones 2/4/8 y paralelismo acotado. | `las`, `serde_json`, `viewer_core`, `viewer_format`; EPT remoto/otros codecs y evaluación de calidad visual siguen pendientes. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
 | `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |

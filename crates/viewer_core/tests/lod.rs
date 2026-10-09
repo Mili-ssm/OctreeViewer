@@ -1,6 +1,6 @@
 use viewer_core::{
-    BlockId, FrustumPlane, LodSelectionConfig, LodSelectionError, NodeId, SpatialBounds,
-    SpatialFrustum, SpatialHierarchy, SpatialNode,
+    BlockId, FrustumPlane, HierarchySemantics, LodSelectionConfig, LodSelectionError, NodeId,
+    SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 
 fn cube_frustum() -> SpatialFrustum {
@@ -210,4 +210,60 @@ fn reports_point_count_overflow_while_building_the_visible_cut() {
             .unwrap_err(),
         LodSelectionError::PointCountOverflow(NodeId::new(3))
     );
+}
+
+#[test]
+fn additive_refinement_keeps_ancestor_payloads_and_counts_each_once() {
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            node(1, None, 0, [0.0; 3], [10.0; 3], 2),
+            node(2, Some(1), 1, [0.0; 3], [5.0; 3], 3),
+            node(3, Some(2), 2, [0.0; 3], [2.5; 3], 5),
+        ],
+        Vec::new(),
+        Some(10),
+        HierarchySemantics::Additive,
+    )
+    .unwrap();
+
+    let selection = hierarchy
+        .select_lod(
+            &cube_frustum(),
+            LodSelectionConfig::new(1.0, 10).unwrap(),
+            |_| 10.0,
+        )
+        .unwrap();
+
+    assert_eq!(
+        selection.node_ids(),
+        [NodeId::new(1), NodeId::new(2), NodeId::new(3)]
+    );
+    assert_eq!(selection.point_count(), 10);
+}
+
+#[test]
+fn additive_refinement_respects_budget_without_dropping_ancestors() {
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            node(1, None, 0, [0.0; 3], [10.0; 3], 2),
+            node(2, Some(1), 1, [0.0; 3], [5.0; 3], 3),
+            node(3, Some(2), 2, [0.0; 3], [2.5; 3], 5),
+        ],
+        Vec::new(),
+        Some(10),
+        HierarchySemantics::Additive,
+    )
+    .unwrap();
+
+    let selection = hierarchy
+        .select_lod(
+            &cube_frustum(),
+            LodSelectionConfig::new(1.0, 5).unwrap(),
+            |_| 10.0,
+        )
+        .unwrap();
+
+    assert_eq!(selection.node_ids(), [NodeId::new(1), NodeId::new(2)]);
+    assert_eq!(selection.point_count(), 5);
+    assert_eq!(selection.budget_limited(), [NodeId::new(2)]);
 }

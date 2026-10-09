@@ -198,18 +198,12 @@ impl AttributeDescriptor {
     }
 }
 
-/// Metadata for one hierarchy node. `point_count` counts only representatives stored
-/// in this node's payload.
+/// Metadata for one hierarchy node. `point_count` counts only points stored in this
+/// node's payload. The interpretation of parent and child payloads is selected by
+/// [`HierarchySemantics`].
 ///
-/// A non-empty node payload is a representation of the source population in this
-/// node's subtree; refining it replaces it with the visible child representations.
-/// The producer is responsible for making those children cover that population.
-///
-/// `geometric_error` is the conservative maximum distance, in the same coordinate
-/// units as [`SpatialBounds`], between source points represented by this subtree and
-/// their nearest rendered representative in this node's payload. A converter that
-/// samples points must compute this bound from source data; a viewer must not infer
-/// it from the node level or point count.
+/// `geometric_error` is a conservative spatial error bound in dataset units. Its
+/// interpretation follows the hierarchy semantics and must be provided by the producer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpatialNode {
     id: NodeId,
@@ -219,6 +213,15 @@ pub struct SpatialNode {
     point_count: u64,
     geometric_error: f64,
     blocks: Vec<BlockId>,
+}
+
+/// Describes how payloads in parent and child nodes combine during refinement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HierarchySemantics {
+    /// A parent payload represents its subtree; visible children replace it.
+    Replacement,
+    /// Each payload adds distinct points; visible children are added to ancestors.
+    Additive,
 }
 
 impl SpatialNode {
@@ -308,7 +311,7 @@ impl LodSelectionConfig {
     }
 }
 
-/// A visible hierarchy cut selected within the configured representative-point budget.
+/// Visible hierarchy payloads selected within the configured point budget.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LodSelection {
     node_ids: Vec<NodeId>,
@@ -331,7 +334,7 @@ impl LodSelection {
         self.max_error_pixels
     }
 
-    /// Selected nodes that could not be refined because the replacement exceeded budget.
+    /// Frontier nodes that could not be refined because adding or replacing children exceeded budget.
     pub fn budget_limited(&self) -> &[NodeId] {
         &self.budget_limited
     }
@@ -384,6 +387,10 @@ pub enum SpatialError {
     InvalidChildLevel { node: NodeId, parent: NodeId },
     #[error("node {node:?} bounds must be contained by parent {parent:?}")]
     ChildOutsideParent { node: NodeId, parent: NodeId },
+    #[error("additive hierarchy point count overflow")]
+    AdditivePointCountOverflow,
+    #[error("additive hierarchy contains {actual} points, source metadata declares {expected}")]
+    AdditiveSourcePointCountMismatch { expected: u64, actual: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -399,6 +406,7 @@ pub struct SpatialHierarchy {
     nodes: HashMap<NodeId, IndexedNode>,
     attributes: Vec<AttributeDescriptor>,
     stats: SpatialStats,
+    semantics: HierarchySemantics,
 }
 
 impl SpatialHierarchy {
@@ -406,6 +414,20 @@ impl SpatialHierarchy {
         nodes: Vec<SpatialNode>,
         attributes: Vec<AttributeDescriptor>,
         source_point_count: Option<u64>,
+    ) -> Result<Self, SpatialError> {
+        Self::new_with_semantics(
+            nodes,
+            attributes,
+            source_point_count,
+            HierarchySemantics::Replacement,
+        )
+    }
+
+    pub fn new_with_semantics(
+        nodes: Vec<SpatialNode>,
+        attributes: Vec<AttributeDescriptor>,
+        source_point_count: Option<u64>,
+        semantics: HierarchySemantics,
     ) -> Result<Self, SpatialError> {
         if nodes.is_empty() {
             return Err(SpatialError::EmptyHierarchy);
@@ -496,11 +518,24 @@ impl SpatialHierarchy {
             source_point_count,
         };
 
+        if semantics == HierarchySemantics::Additive
+            && let Some(expected) = source_point_count
+        {
+            let actual = node_map.values().try_fold(0_u64, |sum, node| {
+                sum.checked_add(node.metadata.point_count)
+                    .ok_or(SpatialError::AdditivePointCountOverflow)
+            })?;
+            if actual != expected {
+                return Err(SpatialError::AdditiveSourcePointCountMismatch { expected, actual });
+            }
+        }
+
         Ok(Self {
             root,
             nodes: node_map,
             attributes,
             stats,
+            semantics,
         })
     }
 
@@ -518,6 +553,10 @@ impl SpatialHierarchy {
 
     pub const fn stats(&self) -> SpatialStats {
         self.stats
+    }
+
+    pub const fn semantics(&self) -> HierarchySemantics {
+        self.semantics
     }
 
     /// Returns intersecting nodes in deterministic depth-first order, including ancestors.
@@ -538,13 +577,13 @@ impl SpatialHierarchy {
         }
     }
 
-    /// Selects a visible, non-overlapping hierarchy cut within a hard point budget.
+    /// Selects visible payloads within a hard point budget.
     ///
-    /// The producer contract on [`SpatialNode`] must hold: refining a node's payload
-    /// with its visible children preserves the source population represented in view.
-    /// Nodes with zero representatives are treated as structural and always traversed.
+    /// Replacement hierarchies substitute child payloads for parents; additive
+    /// hierarchies retain parent payloads and add child payloads. Nodes with zero
+    /// representatives are structural and are always traversed.
     /// The callback projects each node's world-space geometric error into pixels for
-    /// the current camera. A coarse visible cut that already exceeds budget is rejected
+    /// the current camera. A visible base selection that already exceeds budget is rejected
     /// instead of returning partial coverage.
     pub fn select_lod(
         &self,
@@ -553,6 +592,7 @@ impl SpatialHierarchy {
         projected_error_pixels: impl Fn(&SpatialNode) -> f64,
     ) -> Result<LodSelection, LodSelectionError> {
         let mut selected = self.visible_frontier([self.root], frustum);
+        let mut frontier = selected.clone();
         let mut point_count = self.count_points(&selected)?;
         if point_count > config.point_budget {
             return Err(LodSelectionError::BaseCutExceedsBudget {
@@ -566,7 +606,7 @@ impl SpatialHierarchy {
             let mut budget_limited = Vec::new();
             let mut resolution_limited = Vec::new();
 
-            for (index, id) in selected.iter().copied().enumerate() {
+            for (index, id) in frontier.iter().copied().enumerate() {
                 let node = &self.nodes[&id].metadata;
                 let error = projected_error_pixels(node);
                 if error.is_nan() || error < 0.0 {
@@ -576,17 +616,22 @@ impl SpatialHierarchy {
                     continue;
                 }
 
-                let replacement =
+                let children =
                     self.visible_frontier(self.nodes[&id].children.iter().copied(), frustum);
-                if replacement.is_empty() {
+                if children.is_empty() {
                     resolution_limited.push(id);
                     continue;
                 }
-                let replacement_count = self.count_points(&replacement)?;
-                let candidate_count = point_count
-                    .checked_sub(node.point_count)
-                    .and_then(|count| count.checked_add(replacement_count))
-                    .ok_or(LodSelectionError::PointCountOverflow(id))?;
+                let children_count = self.count_points(&children)?;
+                let candidate_count = match self.semantics {
+                    HierarchySemantics::Replacement => point_count
+                        .checked_sub(node.point_count)
+                        .and_then(|count| count.checked_add(children_count))
+                        .ok_or(LodSelectionError::PointCountOverflow(id))?,
+                    HierarchySemantics::Additive => point_count
+                        .checked_add(children_count)
+                        .ok_or(LodSelectionError::PointCountOverflow(id))?,
+                };
                 if candidate_count > config.point_budget {
                     budget_limited.push(id);
                     continue;
@@ -596,13 +641,13 @@ impl SpatialHierarchy {
                     error > *best_error || (error == *best_error && id < *best_id)
                 });
                 if should_replace {
-                    best = Some((index, id, error, replacement, candidate_count));
+                    best = Some((index, id, error, children, candidate_count));
                 }
             }
 
             let Some((index, _, _, replacement, new_point_count)) = best else {
                 let mut max_error_pixels: f64 = 0.0;
-                for id in &selected {
+                for id in &frontier {
                     let error = projected_error_pixels(&self.nodes[id].metadata);
                     if error.is_nan() || error < 0.0 {
                         return Err(LodSelectionError::InvalidProjectedError { node: *id, error });
@@ -618,7 +663,19 @@ impl SpatialHierarchy {
                 });
             };
 
-            selected.splice(index..=index, replacement);
+            match self.semantics {
+                HierarchySemantics::Replacement => {
+                    selected.splice(index..=index, replacement.clone());
+                }
+                HierarchySemantics::Additive => {
+                    let selected_index = selected
+                        .iter()
+                        .position(|selected_id| *selected_id == frontier[index])
+                        .expect("frontier payload is selected");
+                    selected.splice(selected_index + 1..selected_index + 1, replacement.clone());
+                }
+            }
+            frontier.splice(index..=index, replacement);
             point_count = new_point_count;
         }
     }

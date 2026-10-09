@@ -19,6 +19,7 @@ glam = "0.29"
 las = { version = "0.11.1", default-features = false, features = ["laz"] }
 js-sys = "0.3"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2.0"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = [

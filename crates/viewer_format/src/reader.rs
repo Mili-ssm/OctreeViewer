@@ -5,13 +5,13 @@ use std::{
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, Point, PointBatch, PointBlock,
-    SpatialBounds, SpatialHierarchy, SpatialNode,
+    CoordinateFrame, DatasetMetadata, DatasetSource, HierarchySemantics, NodeId, Point, PointBatch,
+    PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
 use crate::writer::{
-    FOOTER_MAGIC, FOOTER_SIZE, HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC, block_payload_size,
-    validate_metadata,
+    FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_SIZE, HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC_V1,
+    INDEX_MAGIC_V2, block_payload_size, validate_metadata,
 };
 use crate::{BlockCodec, FormatError, FormatMetadata, NodeAttributeRange, crc32, decompress_block};
 
@@ -96,6 +96,12 @@ struct BlockDirectoryEntry {
     checksum: u32,
 }
 
+type ParsedIndex = (
+    FormatMetadata,
+    BTreeMap<BlockId, BlockDirectoryEntry>,
+    BTreeMap<BlockId, Vec<SpatialBounds>>,
+);
+
 /// Physical and decoded size information from a validated block-directory entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockStorageStats {
@@ -129,14 +135,14 @@ impl<R: Read + Seek> FormatReader<R> {
         reader.seek(SeekFrom::Start(0))?;
         let mut header = [0; HEADER_SIZE as usize];
         reader.read_exact(&mut header)?;
-        validate_header(&header)?;
+        let version = validate_header(&header)?;
 
         let footer_offset = file_length - FOOTER_SIZE;
         reader.seek(SeekFrom::Start(footer_offset))?;
         let mut footer = [0; FOOTER_SIZE as usize];
         reader.read_exact(&mut footer)?;
         let (index_offset, index_length, declared_file_length, index_checksum) =
-            parse_footer(&footer)?;
+            parse_footer(&footer, version)?;
         if index_length > limits.max_index_bytes {
             return Err(FormatError::IndexExceedsLimit {
                 requested: index_length,
@@ -162,7 +168,7 @@ impl<R: Read + Seek> FormatReader<R> {
             return Err(FormatError::InvalidChecksum("index"));
         }
 
-        let (metadata, blocks, block_bounds) = parse_index(&index, &limits, index_offset)?;
+        let (metadata, blocks, block_bounds) = parse_index(&index, &limits, index_offset, version)?;
         Ok(Self {
             reader,
             metadata,
@@ -336,12 +342,12 @@ impl<R: Read + Seek> DatasetSource for FormatReader<R> {
     }
 }
 
-fn validate_header(header: &[u8; HEADER_SIZE as usize]) -> Result<(), FormatError> {
+fn validate_header(header: &[u8; HEADER_SIZE as usize]) -> Result<u16, FormatError> {
     if &header[..8] != HEADER_MAGIC {
         return Err(FormatError::InvalidHeader);
     }
     let version = u16::from_le_bytes(header[8..10].try_into().expect("fixed width"));
-    if version != 1 {
+    if ![1, 2].contains(&version) {
         return Err(FormatError::UnsupportedVersion(version));
     }
     let header_length = u16::from_le_bytes(header[10..12].try_into().expect("fixed width"));
@@ -353,11 +359,19 @@ fn validate_header(header: &[u8; HEADER_SIZE as usize]) -> Result<(), FormatErro
     {
         return Err(FormatError::InvalidHeader);
     }
-    Ok(())
+    Ok(version)
 }
 
-fn parse_footer(footer: &[u8; FOOTER_SIZE as usize]) -> Result<(u64, u64, u64, u32), FormatError> {
-    if &footer[..8] != FOOTER_MAGIC
+fn parse_footer(
+    footer: &[u8; FOOTER_SIZE as usize],
+    version: u16,
+) -> Result<(u64, u64, u64, u32), FormatError> {
+    let expected_magic = if version == 2 {
+        FOOTER_MAGIC_V2
+    } else {
+        FOOTER_MAGIC_V1
+    };
+    if &footer[..8] != expected_magic
         || u32::from_le_bytes(footer[36..40].try_into().expect("fixed width"))
             != crc32(&footer[..36])
     {
@@ -375,16 +389,15 @@ fn parse_index(
     bytes: &[u8],
     limits: &FormatReaderLimits,
     index_offset: u64,
-) -> Result<
-    (
-        FormatMetadata,
-        BTreeMap<BlockId, BlockDirectoryEntry>,
-        BTreeMap<BlockId, Vec<SpatialBounds>>,
-    ),
-    FormatError,
-> {
+    version: u16,
+) -> Result<ParsedIndex, FormatError> {
     let mut cursor = SliceCursor::new(bytes);
-    if cursor.take(8)? != INDEX_MAGIC {
+    let expected_magic = if version == 2 {
+        INDEX_MAGIC_V2
+    } else {
+        INDEX_MAGIC_V1
+    };
+    if cursor.take(8)? != expected_magic {
         return Err(FormatError::MalformedIndex("invalid index magic"));
     }
     let dataset_origin = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
@@ -400,6 +413,20 @@ fn parse_index(
     };
     let crs = cursor.string(limits.max_string_bytes)?;
     let sampling_policy = cursor.string(limits.max_string_bytes)?;
+    let semantics = if version == 2 {
+        match cursor.u8()? {
+            0 => HierarchySemantics::Replacement,
+            1 => HierarchySemantics::Additive,
+            tag => {
+                return Err(FormatError::InvalidTag {
+                    field: "hierarchy semantics",
+                    tag,
+                });
+            }
+        }
+    } else {
+        HierarchySemantics::Replacement
+    };
 
     let attribute_count = cursor.u32()?;
     if attribute_count > limits.max_attributes {
@@ -641,7 +668,8 @@ fn parse_index(
                 .push(node.bounds());
         }
     }
-    let hierarchy = SpatialHierarchy::new(nodes, schema, source_point_count)?;
+    let hierarchy =
+        SpatialHierarchy::new_with_semantics(nodes, schema, source_point_count, semantics)?;
     let metadata = FormatMetadata::new(
         DatasetMetadata::new(CoordinateFrame::new(dataset_origin)?, hierarchy),
         crs,
@@ -902,8 +930,8 @@ mod tests {
 
     use viewer_core::{
         AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId,
-        ColorRgb, CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, SpatialBounds,
-        SpatialHierarchy, SpatialNode,
+        ColorRgb, CoordinateFrame, DatasetMetadata, DatasetSource, HierarchySemantics, NodeId,
+        SpatialBounds, SpatialHierarchy, SpatialNode,
     };
 
     use crate::{BlockCodec, FormatMetadata, FormatReaderLimits, SourcePointBlock};
@@ -942,9 +970,49 @@ mod tests {
         )
     }
 
+    fn additive_metadata() -> FormatMetadata {
+        let base = metadata();
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(0),
+                    None,
+                    0,
+                    base.dataset().hierarchy().stats().root_bounds,
+                    2,
+                    0.25,
+                    vec![BlockId::new(42)],
+                )
+                .unwrap(),
+            ],
+            base.dataset().hierarchy().attributes().to_vec(),
+            Some(2),
+            HierarchySemantics::Additive,
+        )
+        .unwrap();
+        FormatMetadata::new(
+            DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+            base.crs().map(str::to_owned),
+            base.sampling_policy().map(str::to_owned),
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
     fn format_bytes() -> Vec<u8> {
         let options = FormatWriterOptions::new(0.001, 1024).unwrap();
         let mut writer = FormatWriter::new(Cursor::new(Vec::new()), metadata(), options).unwrap();
+        writer.write_block(source_block()).unwrap();
+        writer.finish().unwrap().into_inner()
+    }
+
+    fn additive_format_bytes() -> Vec<u8> {
+        let mut writer = FormatWriter::new(
+            Cursor::new(Vec::new()),
+            additive_metadata(),
+            FormatWriterOptions::new(0.01, 1024 * 1024).unwrap(),
+        )
+        .unwrap();
         writer.write_block(source_block()).unwrap();
         writer.finish().unwrap().into_inner()
     }
@@ -978,6 +1046,10 @@ mod tests {
         );
         assert_eq!(format.format_metadata().crs(), Some("EPSG:4978"));
         assert_eq!(format.metadata().coordinate_frame().origin()[0], 1e12);
+        assert_eq!(
+            format.metadata().hierarchy().semantics(),
+            HierarchySemantics::Replacement
+        );
 
         let entry = format.blocks[&BlockId::new(42)].clone();
         reads.borrow_mut().clear();
@@ -1049,13 +1121,41 @@ mod tests {
         ));
 
         let mut unsupported = format_bytes();
-        unsupported[8..10].copy_from_slice(&2_u16.to_le_bytes());
+        unsupported[8..10].copy_from_slice(&3_u16.to_le_bytes());
         let crc = crate::crc32(&unsupported[..20]);
         unsupported[20..24].copy_from_slice(&crc.to_le_bytes());
         assert!(matches!(
             FormatReader::new(Cursor::new(unsupported)),
-            Err(FormatError::UnsupportedVersion(2))
+            Err(FormatError::UnsupportedVersion(3))
         ));
+    }
+
+    #[test]
+    fn reads_additive_version_two_and_preserves_ancestor_payload_counts() {
+        let bytes = additive_format_bytes();
+        assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 2);
+        let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
+        assert_eq!(
+            reader.metadata().hierarchy().semantics(),
+            HierarchySemantics::Additive
+        );
+        assert_eq!(
+            reader
+                .metadata()
+                .hierarchy()
+                .node(NodeId::new(0))
+                .unwrap()
+                .point_count(),
+            2
+        );
+        assert_eq!(
+            reader
+                .read_point_block(BlockId::new(42))
+                .unwrap()
+                .points()
+                .len(),
+            2
+        );
     }
 
     #[test]

@@ -14,6 +14,7 @@ use viewer_core::{
 use viewer_format::{FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions};
 
 mod checkpoint;
+mod ept;
 mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
@@ -210,6 +211,10 @@ pub enum ConvertError {
     TooManyBlocks(u64),
     #[error("LAS/LAZ point data ended after {actual} points; header declared {expected}")]
     PointCountMismatch { expected: u64, actual: u64 },
+    #[error("unsupported EPT dataset: {0}")]
+    UnsupportedEpt(String),
+    #[error("invalid EPT dataset: {0}")]
+    InvalidEpt(String),
     #[error("conversion size or identifier count overflowed")]
     SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]
@@ -225,7 +230,8 @@ pub enum ConvertError {
     Checkpoint(#[from] CheckpointError),
 }
 
-/// Converts LAS/LAZ to the native v1 format with an adaptive octree and additive LOD samples.
+/// Converts LAS/LAZ or a local laszip EPT dataset to the native format.
+/// LAS/LAZ output uses replacement hierarchy samples; EPT output preserves its additive hierarchy.
 /// Point payload memory is bounded by the configured block size and spatial-index workspace.
 pub fn convert_file(
     input_path: &Path,
@@ -276,6 +282,14 @@ fn convert_file_inner(
     checkpoint_mode: Option<CheckpointMode>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<ConversionReport, ConvertError> {
+    if ept::is_ept_input(input_path) {
+        if checkpoint_mode.is_some() {
+            return Err(ConvertError::UnsupportedEpt(
+                "--checkpoint and --resume are not supported for EPT inputs".to_owned(),
+            ));
+        }
+        return ept::convert(input_path, output_path, options, on_progress);
+    }
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
