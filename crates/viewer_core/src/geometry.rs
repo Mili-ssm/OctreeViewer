@@ -116,6 +116,10 @@ impl PointBatch {
     pub fn points(&self) -> &[Point] {
         &self.points
     }
+
+    pub(crate) fn allocated_bytes(&self) -> usize {
+        self.points.capacity() * std::mem::size_of::<Point>()
+    }
 }
 
 impl From<Vec<Point>> for PointBatch {

@@ -73,6 +73,21 @@ impl AttributeValues {
             Self::F64(values) => values.len(),
         }
     }
+
+    fn allocated_bytes(&self) -> usize {
+        match self {
+            Self::U8(values) => values.capacity() * std::mem::size_of::<u8>(),
+            Self::I8(values) => values.capacity() * std::mem::size_of::<i8>(),
+            Self::U16(values) => values.capacity() * std::mem::size_of::<u16>(),
+            Self::I16(values) => values.capacity() * std::mem::size_of::<i16>(),
+            Self::U32(values) => values.capacity() * std::mem::size_of::<u32>(),
+            Self::I32(values) => values.capacity() * std::mem::size_of::<i32>(),
+            Self::U64(values) => values.capacity() * std::mem::size_of::<u64>(),
+            Self::I64(values) => values.capacity() * std::mem::size_of::<i64>(),
+            Self::F32(values) => values.capacity() * std::mem::size_of::<f32>(),
+            Self::F64(values) => values.capacity() * std::mem::size_of::<f64>(),
+        }
+    }
 }
 
 /// One named, typed attribute column. Multi-component values are interleaved.
@@ -147,6 +162,30 @@ impl PointBlock {
 
     pub fn attributes(&self) -> &[AttributeColumn] {
         &self.attributes
+    }
+
+    /// Estimates bytes retained by this block's payload allocations and inline data.
+    ///
+    /// The estimate uses vector capacities, so reserved but currently unused payload
+    /// space counts against a cache budget. Allocator and cache-index overhead is not
+    /// included.
+    pub fn estimated_memory_bytes(&self) -> usize {
+        let point_bytes = self.points.allocated_bytes();
+        let columns_bytes = self.attributes.capacity() * std::mem::size_of::<AttributeColumn>();
+        let column_payload_bytes = self
+            .attributes
+            .iter()
+            .map(|column| {
+                column
+                    .descriptor
+                    .allocated_name_bytes()
+                    .saturating_add(column.values.allocated_bytes())
+            })
+            .fold(0_usize, usize::saturating_add);
+        std::mem::size_of::<Self>()
+            .saturating_add(point_bytes)
+            .saturating_add(columns_bytes)
+            .saturating_add(column_payload_bytes)
     }
 }
 

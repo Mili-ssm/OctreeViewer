@@ -196,6 +196,10 @@ impl AttributeDescriptor {
     pub const fn component_count(&self) -> u32 {
         self.component_count
     }
+
+    pub(crate) fn allocated_name_bytes(&self) -> usize {
+        self.name.capacity()
+    }
 }
 
 /// Metadata for one hierarchy node. `point_count` counts only points stored in this

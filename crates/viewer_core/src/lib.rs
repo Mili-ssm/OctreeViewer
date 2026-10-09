@@ -1,3 +1,4 @@
+mod block_cache;
 mod dataset;
 mod geometry;
 mod scheduler;
@@ -5,6 +6,7 @@ mod spatial;
 mod visibility;
 mod voxel_store;
 
+pub use block_cache::{BlockCacheStats, CacheInsertResult, DecodedBlockCache};
 pub use dataset::{
     AttributeColumn, AttributeValues, DatasetError, DatasetMetadata, DatasetSource, PointBlock,
 };
