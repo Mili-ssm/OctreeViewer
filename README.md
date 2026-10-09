@@ -132,8 +132,10 @@ frente a Potree.
   `OffscreenCanvas` para ejecutar el visor en el worker.
 - [x] Registrar la máquina local disponible como referencia de benchmark, sin tratarla como mínimo de
   soporte ([perfil observado](docs/REAL_DATASET_BENCH.md#máquina-de-referencia-local)).
-- [ ] Definir sistemas operativos y mínimos de RAM/GPU; decidir si la primera versión admite solo
-  archivos locales o también lectura remota por rangos.
+- [x] Decidir que la primera versión abre archivos locales; la lectura remota por rangos queda fuera
+  del alcance inicial.
+- [ ] Definir sistemas operativos y mínimos oficiales de RAM/GPU; el perfil local registrado es solo
+  una referencia de benchmark.
 - [x] Elegir métricas: tiempo de conversión, apertura y primera vista útil; memoria RAM/GPU; bytes
   solicitados, leídos y subidos; latencia de navegación y frame p50/p95/p99; calidad visual y
   estabilidad. Las mediciones de cada fase indicarán qué métricas puede observar realmente su entorno.
@@ -686,8 +688,6 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 Estas decisiones no bloquean el trabajo inicial sobre modelo, formato y pruebas pequeñas, pero sí
 cambian alcance, rendimiento y compatibilidad:
 
-- ¿La primera versión abre únicamente archivos locales o también datos remotos mediante peticiones
-  por rango?
 - ¿Qué sistemas operativos, mínimos de RAM y clases de GPU forman el perfil oficial? Chrome y Firefox
   con WebGPU son los navegadores elegidos, pero sus flujos aún no se han verificado en navegador real.
 - ¿Qué dimensiones LAS/LAZ se deben preservar en v1 y cuáles pueden convertirse o descartarse con
