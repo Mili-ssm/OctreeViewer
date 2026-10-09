@@ -3,6 +3,7 @@ import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 let viewer = null;
 let profile = "quality";
 let renderedFrames = 0;
+const coalescedCommands = new Set(["resize", "color", "pointSize", "profile", "fit"]);
 
 function samplePointCloud() {
     const positions = [];
@@ -107,6 +108,10 @@ async function handleMessage({ data }) {
         }
     } catch (error) {
         self.postMessage({ type: "error", operation: data.type, message: String(error) });
+    } finally {
+        if (coalescedCommands.has(data.type)) {
+            self.postMessage({ type: "commandAck", command: data.type });
+        }
     }
 }
 

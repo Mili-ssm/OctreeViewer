@@ -11,6 +11,8 @@ const pointSizeValue = document.getElementById("point-size-value");
 const lodProfile = document.getElementById("lod-profile");
 
 let worker = null;
+const pendingCommands = new Map();
+const commandsInFlight = new Set();
 let animationFrame = 0;
 let framePending = false;
 let ready = false;
@@ -41,6 +43,22 @@ function emptyCameraDelta() {
     return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0 };
 }
 
+function queueWorkerCommand(type, values = {}) {
+    if (!ready || frameFailed) return;
+    pendingCommands.set(type, values);
+    pumpWorkerCommands();
+}
+
+function pumpWorkerCommands() {
+    if (!worker || !ready || frameFailed) return;
+    for (const [type, values] of pendingCommands) {
+        if (commandsInFlight.has(type)) continue;
+        pendingCommands.delete(type);
+        commandsInFlight.add(type);
+        worker.postMessage({ type, ...values });
+    }
+}
+
 function resize() {
     const pixelRatio = window.devicePixelRatio || 1;
     const width = Math.max(0, Math.floor(canvas.clientWidth * pixelRatio));
@@ -49,7 +67,7 @@ function resize() {
     if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
-        if (worker && ready) worker.postMessage({ type: "resize", width, height });
+        queueWorkerCommand("resize", { width, height });
     }
 }
 
@@ -103,6 +121,9 @@ function handleWorkerMessage(event) {
         reloadButton.textContent = "Recreate viewer";
         statusRoot.textContent = "Renderer ready · synthetic sample";
         startRendering();
+    } else if (data.type === "commandAck") {
+        commandsInFlight.delete(data.command);
+        pumpWorkerCommands();
     } else if (data.type === "status") {
         statusRoot.textContent = data.message;
     } else if (data.type === "fileReadProgress") {
@@ -203,6 +224,8 @@ function recreateViewer() {
     ready = false;
     frameFailed = false;
     framePending = false;
+    pendingCommands.clear();
+    commandsInFlight.clear();
     loadingFile = false;
     cancelButton.hidden = true;
     fileInput.disabled = true;
@@ -229,16 +252,16 @@ function cancelFileLoad() {
 reloadButton.addEventListener("click", recreateViewer);
 cancelButton.addEventListener("click", cancelFileLoad);
 colorMode.addEventListener("change", () => {
-    if (ready) worker.postMessage({ type: "color", value: colorMode.value });
+    queueWorkerCommand("color", { value: colorMode.value });
 });
 pointSize.addEventListener("input", () => {
     const size = Number(pointSize.value);
     pointSizeValue.value = `${size.toFixed(1)}×`;
-    if (ready) worker.postMessage({ type: "pointSize", value: size });
+    queueWorkerCommand("pointSize", { value: size });
 });
 lodProfile.addEventListener("change", () => {
     if (ready && datasetName !== "Synthetic sample") {
-        worker.postMessage({ type: "profile", value: lodProfile.value });
+        queueWorkerCommand("profile", { value: lodProfile.value });
     }
 });
 fileInput.addEventListener("change", () => {
@@ -257,7 +280,7 @@ fileInput.addEventListener("change", () => {
     });
 });
 fitButton.addEventListener("click", () => {
-    if (ready) worker.postMessage({ type: "fit" });
+    queueWorkerCommand("fit");
 });
 function bindCanvasInteractions() {
 canvas.addEventListener("pointerdown", (event) => {
@@ -298,7 +321,7 @@ canvas.addEventListener("keydown", (event) => {
     if (!ready) return;
     const step = event.shiftKey ? 0.025 : 0.04;
     if (event.key === "Home") {
-        worker.postMessage({ type: "fit" });
+        queueWorkerCommand("fit");
     } else if (event.key === "+" || event.key === "=") {
         cameraDelta.zoom -= 0.15;
     } else if (event.key === "-") {

@@ -38,3 +38,6 @@ bytes written to instance buffers, and the synchronous CPU time spent inside the
 bytes fetched in 256 KiB ranges. This is not a completion percentage: the reader seeks through
 metadata and selected blocks, so it may never read the full file. Cancel terminates the synchronous
 worker, replaces its transferred canvas, and starts a fresh viewer; select the file again to retry.
+The host keeps at most one worker command of each repeatable kind in flight and replaces its pending
+value with the latest input. It also allows only one frame request in flight; file reads remain
+synchronous inside the worker.

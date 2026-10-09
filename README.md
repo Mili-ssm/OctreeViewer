@@ -520,9 +520,10 @@ y presentar estado.
   transferido al worker. Si falla una lectura, conserva el corte actual y devuelve el error.
 - [x] Ejecutar lectura, decodificación, selección y render en un worker con `OffscreenCanvas`; se
   cargan solo los bloques del corte visible y la UI principal conserva controles responsivos.
-- [ ] Completar el protocolo con contrapresión de solicitudes; la lectura de bloques sigue siendo
-  síncrona dentro del worker. La demo informa rangos únicos leídos y cancela terminando/recreando el
-  worker, lo que reinicia el visor y descarta el dataset abierto.
+- [x] Aplicar contrapresión al protocolo de la demo: resize, color, tamaño, perfil y encuadre conservan
+  como máximo un comando en vuelo y el último valor pendiente por tipo. Los frames siguen limitados a
+  uno en vuelo. La lectura de bloques permanece síncrona dentro del worker; cancelar termina/recrea el
+  worker y descarta el dataset abierto.
 - [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
   y ciclo de vida claros entre JS y WASM.
 - [x] Soportar archivos locales del formato propio en la demo. Definir por separado si el producto
@@ -566,8 +567,9 @@ Las estadísticas incluyen bloques/puntos visibles, presupuesto, IDs de bloques 
 y nodos omitidos por presupuesto. La demo ya ejecuta lector y renderer en un worker; informa bytes
 únicos cubiertos por rangos de 256 KiB. No es un porcentaje de finalización: la lectura busca
 cabeceras e índice y luego solo bloques seleccionados. Cancelar termina el worker síncrono,
-reemplaza el canvas transferido y vuelve a crear el visor; la apertura debe iniciarse otra vez. La
-contrapresión de solicitudes sigue pendiente.
+reemplaza el canvas transferido y vuelve a crear el visor; la apertura debe iniciarse otra vez. La demo
+limita comandos repetibles a uno en vuelo y un valor pendiente por tipo, y no envía más de un frame a la
+vez; las lecturas siguen siendo síncronas dentro del worker.
 
 **Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
 no realiza copias proporcionales al tamaño total de la nube.
