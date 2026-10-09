@@ -146,6 +146,18 @@ frente a Potree.
 **Cierre:** existe un documento de benchmark versionado con datasets reproducibles, hardware y
 umbrales acordados. Hasta entonces, “más eficiente que Potree” sigue siendo una meta sin verificar.
 
+### Dataset adicional para pruebas de rendimiento (2026-10-10)
+
+Se preparó una copia local del dataset SensOFOREST de Zenodo con dos LAZ de distinta escala y tipo de
+escaneo: Albuera UAV (508.809.556 puntos; 4.305.484.789 B) y Majadas TLS (415.465.882 puntos;
+1.343.266.470 B), 924.275.438 puntos y 5.648.751.259 B combinados. Los dos MD5 coinciden con el
+registro. Los archivos están bajo `data/datasets/sensoforest/`, ignorados por Git. La ficha, fuentes,
+checksums, CRS y comandos para conversión/benchmark están en
+[`data/datasets/README.md`](data/datasets/README.md).
+El registro no especifica una licencia; la copia se conserva para pruebas locales y no se redistribuye.
+Este conjunto permite pruebas más intensas que Belvedere, pero no mide ni demuestra todavía el soporte
+objetivo de más de 500 GB.
+
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
 
 **Característica:** representar datasets y consultas sin depender de una estructura residente

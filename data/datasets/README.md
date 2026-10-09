@@ -21,6 +21,39 @@ padres e hijos a la vez. La medida usó muestreo de 100 ms, por lo que puede omi
 al menos 16 GiB libres y revisa el espacio disponible antes de repetirla. Resultados y método en
 [`REAL_DATASET_BENCH.md`](../../docs/REAL_DATASET_BENCH.md).
 
+## SensOFOREST: Albuera UAV y Majadas TLS
+
+Dos vuelos del mismo [registro Zenodo 20000277](https://zenodo.org/records/20000277) para pruebas de
+mayor volumen y perfiles de escaneo diferentes. Los LAZ originales ocupan **5.648.751.259 B (5,65 GB
+decimales)** combinados, por debajo del límite de 50 GB solicitado. La copia local está en
+`data/datasets/sensoforest/`; el patrón `*.laz` mantiene estos archivos fuera de Git.
+
+| Escaneo | Archivo | Tamaño | Puntos en cabecera | CRS del README del dataset |
+| --- | --- | ---: | ---: | --- |
+| Albuera UAV LiDAR | `SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz` | 4.305.484.789 B | 508.809.556 | ETRS89 / UTM 29N |
+| Majadas TLS | `SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz` | 1.343.266.470 B | 415.465.882 | ETRS89 / UTM 30N |
+
+El registro no declara una licencia en sus metadatos; se usa la copia solo para pruebas locales, sin
+redistribuirla. El README y los archivos del [registro](https://zenodo.org/records/20000277) describen
+los sensores, fechas y zonas UTM. Los conteos se leen de la cabecera LAS de cada archivo. Los checksums MD5
+publicados por el registro y verificados en ambas copias son: Albuera
+`71ff22c046d6eb83c371791f680bea13`; Majadas `fd0b4433e805246f2442df037dfadb6b`.
+
+Para medir la conversión se puede ejecutar, con un destino `.oct` nuevo por archivo:
+
+```sh
+cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
+  data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz \
+  data/datasets/sensoforest/albuera-uav.oct
+cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
+  data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz \
+  data/datasets/sensoforest/majadas-tls.oct
+```
+
+La conversión completa y las mediciones de tiempo/RSS no se ejecutan al preparar los datos: son los
+tests de estrés posteriores. Antes de convertir, revisa espacio libre y configura el destino local;
+los archivos `.oct` resultantes también están ignorados por Git.
+
 ## Ejecutar
 
 Desde la raíz del repositorio:
