@@ -11,7 +11,8 @@ El benchmark reproducible está en
 [`real_dataset_bench.rs`](../crates/viewer_convert/examples/real_dataset_bench.rs). Se compila en
 release y `/usr/bin/time -v` mide el máximo RSS por separado para conversión y lectura completa de
 bloques. El benchmark informa intervalos por fase, caudal, payload bruto/guardado por codec, tamaño
-total y estadísticas de memoria por tipo. Al repetirlo, elimina primero el `.oct` anterior.
+total y estadísticas de memoria por tipo. Para comparar subárboles espaciales, acepta un cuarto
+argumento opcional `SPATIAL_WORKERS` (1 por defecto). Al repetirlo, elimina primero el `.oct` anterior.
 
 ## Cómo interpretar las cifras
 
@@ -109,11 +110,40 @@ El 9 de octubre de 2026 se repitió una conversión serial con `real_dataset_ben
 | Salida | 1.596.356.674 B; idéntica en tamaño, bloques y payload a la referencia |
 
 La planificación y la jerarquía ocuparon 59,79 s (70,5 % del tiempo medido), y el proceso serial
-usó aproximadamente un CPU pese a que el equipo expone 20 hilos lógicos. Esto identifica una zona
-con potencial de aceleración, pero una sola repetición no prueba que una versión paralela sea más
-rápida. Tampoco se midió el pico temporal de esta repetición; la referencia disponible sigue siendo
-8,37 GiB y una estrategia que prolongue la vida de spools puede aumentarlo. El siguiente paso es un
-prototipo comparativo acotado, no activar paralelismo en producción sin datos de tiempo y disco.
+usó aproximadamente un CPU pese a que el equipo expone 20 hilos lógicos. Esto justificó comparar
+subárboles espaciales raíz en paralelo con colas acotadas.
+
+### Comparación de trabajadores espaciales
+
+El 9 de octubre de 2026 se compararon ejecuciones release del mismo binario sobre la misma fuente,
+filesystem local y opciones por defecto. El benchmark recibió 1, 2 o 4 trabajadores mediante su
+argumento opcional. Cada ejecución se aisló y el pico temporal se muestreó cada 100 ms sumando los
+archivos regulares del workspace `.work` correspondiente y el temporal `.tmp`; se excluyó la salida
+final. La ejecución serial tuvo dos tiempos válidos, pero solo una muestra de espacio con este
+muestreador. Las salidas de todas las ejecuciones produjeron el mismo SHA-256:
+`02143f6f66982981a271897e9fe305ddd033ccf4a281120960230e8f35ed9486`.
+
+| Trabajadores | Repetición | Tiempo total | Fase jerarquía | CPU / pared | RSS pico | Pico temporal |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | A | 101,39 s | 52,95 s | 96,6 % | 36,8 MiB | — |
+| 1 | B | 102,16 s | 53,36 s | 96,6 % | 36,5 MiB | 8,352 GiB |
+| 2 | A | 85,77 s | 36,67 s | 121,9 % | 35,9 MiB | 8,349 GiB |
+| 2 | B | 86,30 s | 37,53 s | 120,6 % | 34,0 MiB | 8,348 GiB |
+| 4 | A | 81,10 s | 32,07 s | 133,7 % | 37,9 MiB | 8,355 GiB |
+| 4 | B | 82,09 s | 33,00 s | 135,0 % | 37,7 MiB | 8,340 GiB |
+
+La media de tiempo total fue 101,77 s, 86,03 s y 81,59 s con 1, 2 y 4 trabajadores: aproximadamente
+15 % menos con 2 y 20 % menos con 4. La fase de jerarquía bajó en torno a 30 % y 39 %. El pico
+temporal observado se mantuvo entre 8,340 y 8,355 GiB, y el RSS entre 34,0 y 37,9 MiB. El resultado
+apoya conservar la opción acotada; no cambia el valor por defecto, que sigue en 1 hasta verificar más
+distribuciones y tamaños de nube. Las cifras proceden de dos repeticiones por configuración salvo
+el pico serial, que se midió en una sola.
+
+La opción `--spatial-workers` procesa en paralelo solo los hijos directos de la raíz; cada subárbol
+mantiene su recorrido serial. Un canal sincronizado de capacidad fija aplica contrapresión a eventos
+de progreso, se reúnen resultados en orden de hijo y se reasignan IDs determinísticamente. Cada lote
+de trabajadores recibe una parte explícita del presupuesto estimado de memoria, reservando margen
+para la integración de los planes. Reanudar desde checkpoints puede cambiar el número de trabajadores.
 
 ### Memoria esperable para render
 

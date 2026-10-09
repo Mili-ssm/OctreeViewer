@@ -1,8 +1,14 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     fs::{self, File, OpenOptions},
     io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
 };
 
 use las::{PointData, PointDataBuilder, Reader};
@@ -22,6 +28,7 @@ const CHILD_COUNT: usize = 8;
 const SAMPLE_GRID_SIZE: usize = 8;
 const MAX_SPATIAL_DEPTH: u32 = 32;
 const PLANNED_NODE_BYTES: u64 = 256;
+const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct SpoolPoint {
@@ -166,6 +173,7 @@ pub(crate) struct SpatialPlan {
 
 pub(crate) struct Workspace {
     path: PathBuf,
+    cleanup_on_drop: bool,
 }
 
 impl Workspace {
@@ -183,7 +191,12 @@ impl Workspace {
             name.push(format!(".{}.{}.work", std::process::id(), counter));
             let path = parent.join(name);
             match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self { path }),
+                Ok(()) => {
+                    return Ok(Self {
+                        path,
+                        cleanup_on_drop: true,
+                    });
+                }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(ConvertError::Io(error)),
             }
@@ -204,13 +217,27 @@ impl Workspace {
         fs::create_dir(path)?;
         Ok(Self {
             path: path.to_owned(),
+            cleanup_on_drop: true,
+        })
+    }
+
+    fn create_child(path: &Path) -> Result<Self, ConvertError> {
+        if path.exists() {
+            fs::remove_dir_all(path)?;
+        }
+        fs::create_dir(path)?;
+        Ok(Self {
+            path: path.to_owned(),
+            cleanup_on_drop: false,
         })
     }
 }
 
 impl Drop for Workspace {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
+        if self.cleanup_on_drop {
+            let _ = fs::remove_dir_all(&self.path);
+        }
     }
 }
 
@@ -242,6 +269,8 @@ pub(crate) fn build_spatial_plan(
         next_block_id: 0,
         on_progress,
         source_point_count: source.point_count,
+        parallel_workers: options.spatial_workers(),
+        workers_used: 1,
     };
     builder.build_node(
         source_path.to_owned(),
@@ -255,7 +284,13 @@ pub(crate) fn build_spatial_plan(
         point_limit,
         builder.node_records.len(),
         builder.output_blocks.len(),
-    )?;
+    )?
+    .checked_add(
+        (builder.workers_used.saturating_sub(1) as u64)
+            .checked_mul(SPATIAL_WORKER_OVERHEAD_BYTES)
+            .ok_or(ConvertError::SizeOverflow)?,
+    )
+    .ok_or(ConvertError::SizeOverflow)?;
     check_memory_budget(
         estimated_peak_memory_bytes,
         options.max_memory_budget_bytes(),
@@ -303,7 +338,25 @@ struct NodeRecord {
     blocks: Vec<BlockId>,
 }
 
-struct SpatialBuilder<'a, F> {
+struct RootChildTask {
+    key: usize,
+    path: PathBuf,
+    point_count: u64,
+    bounds: SpatialBounds,
+}
+
+struct BranchOutput {
+    node_records: Vec<NodeRecord>,
+    output_blocks: Vec<PlannedBlock>,
+    next_block_id: u64,
+}
+
+enum BranchMessage {
+    Progress(ConversionProgress),
+    Finished(usize, Result<BranchOutput, ConvertError>),
+}
+
+struct SpatialBuilder<'a> {
     workspace: &'a Workspace,
     point_limit: u64,
     memory_budget: u64,
@@ -314,14 +367,13 @@ struct SpatialBuilder<'a, F> {
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
     next_block_id: u64,
-    on_progress: &'a mut F,
+    on_progress: &'a mut dyn FnMut(ConversionProgress) -> bool,
     source_point_count: u64,
+    parallel_workers: usize,
+    workers_used: usize,
 }
 
-impl<F> SpatialBuilder<'_, F>
-where
-    F: FnMut(ConversionProgress) -> bool,
-{
+impl SpatialBuilder<'_> {
     fn build_node(
         &mut self,
         spool_path: PathBuf,
@@ -447,6 +499,7 @@ where
         });
         self.emit_plan_progress()?;
 
+        let mut child_tasks = Vec::new();
         for (child_key, child) in children.into_iter().enumerate() {
             let Some((child_path, child_count)) = child else {
                 continue;
@@ -455,10 +508,226 @@ where
                 fs::remove_file(child_path)?;
                 continue;
             }
-            let child_bounds = child_bounds(bounds, child_key);
-            self.build_node(child_path, child_count, child_bounds, Some(id), level + 1)?;
+            child_tasks.push(RootChildTask {
+                key: child_key,
+                path: child_path,
+                point_count: child_count,
+                bounds: child_bounds(bounds, child_key),
+            });
+        }
+        if level == 0 && self.parallel_workers > 1 && child_tasks.len() > 1 {
+            self.build_root_children_parallel(id, child_tasks)?;
+        } else {
+            for child in child_tasks {
+                self.build_node(
+                    child.path,
+                    child.point_count,
+                    child.bounds,
+                    Some(id),
+                    level + 1,
+                )?;
+            }
         }
         Ok(id)
+    }
+
+    fn build_root_children_parallel(
+        &mut self,
+        parent_id: NodeId,
+        tasks: Vec<RootChildTask>,
+    ) -> Result<(), ConvertError> {
+        let mut tasks = VecDeque::from(tasks);
+        while !tasks.is_empty() {
+            let batch_count = self.parallel_workers.min(tasks.len());
+            let batch = (0..batch_count)
+                .map(|_| {
+                    tasks
+                        .pop_front()
+                        .expect("batch size is bounded by queued tasks")
+                })
+                .collect::<Vec<_>>();
+            let worker_memory_budget = branch_memory_budget(
+                self.memory_budget,
+                self.point_limit,
+                self.node_records.len(),
+                self.output_blocks.len(),
+                batch_count,
+            )?;
+            self.workers_used = self.workers_used.max(batch_count);
+
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let (sender, receiver) = mpsc::sync_channel::<BranchMessage>(batch_count * 4);
+            let workspace = self.workspace;
+            let point_limit = self.point_limit;
+            let frame = self.frame;
+            let has_gps_time = self.has_gps_time;
+            let has_color = self.has_color;
+            let has_nir = self.has_nir;
+            let source_point_count = self.source_point_count;
+            let mut outputs = Vec::with_capacity(batch_count);
+            let mut first_error = None;
+
+            thread::scope(|scope| {
+                for task in batch {
+                    let cancelled = Arc::clone(&cancelled);
+                    let sender = sender.clone();
+                    scope.spawn(move || {
+                        let key = task.key;
+                        let result = (|| {
+                            let branch_workspace = Workspace::create_child(
+                                &workspace.file(&format!("root-branch-{key}")),
+                            )?;
+                            let mut report_progress = |progress| {
+                                !cancelled.load(Ordering::Relaxed)
+                                    && sender.send(BranchMessage::Progress(progress)).is_ok()
+                                    && !cancelled.load(Ordering::Relaxed)
+                            };
+                            let mut builder = SpatialBuilder {
+                                workspace: &branch_workspace,
+                                point_limit,
+                                memory_budget: worker_memory_budget,
+                                frame,
+                                has_gps_time,
+                                has_color,
+                                has_nir,
+                                node_records: Vec::new(),
+                                output_blocks: Vec::new(),
+                                next_block_id: 0,
+                                on_progress: &mut report_progress,
+                                source_point_count,
+                                parallel_workers: 1,
+                                workers_used: 1,
+                            };
+                            builder.build_node(
+                                task.path,
+                                task.point_count,
+                                task.bounds,
+                                None,
+                                1,
+                            )?;
+                            Ok(BranchOutput {
+                                node_records: builder.node_records,
+                                output_blocks: builder.output_blocks,
+                                next_block_id: builder.next_block_id,
+                            })
+                        })();
+                        if result.is_err() {
+                            cancelled.store(true, Ordering::Relaxed);
+                        }
+                        let _ = sender.send(BranchMessage::Finished(key, result));
+                    });
+                }
+                drop(sender);
+
+                let mut finished_workers = 0;
+                while finished_workers < batch_count {
+                    match receiver.recv() {
+                        Ok(BranchMessage::Progress(progress)) => {
+                            if first_error.is_none()
+                                && let Err(error) = emit_progress(self.on_progress, progress, 0)
+                            {
+                                cancelled.store(true, Ordering::Relaxed);
+                                first_error = Some(error);
+                            }
+                        }
+                        Ok(BranchMessage::Finished(key, result)) => {
+                            match result {
+                                Ok(output) => outputs.push((key, output)),
+                                Err(error) if first_error.is_none() => {
+                                    cancelled.store(true, Ordering::Relaxed);
+                                    first_error = Some(error);
+                                }
+                                Err(error @ ConvertError::Cancelled { .. }) => {
+                                    first_error.get_or_insert(error);
+                                }
+                                Err(error) => {
+                                    cancelled.store(true, Ordering::Relaxed);
+                                    if matches!(
+                                        first_error.as_ref(),
+                                        Some(ConvertError::Cancelled { .. })
+                                    ) {
+                                        first_error = Some(error);
+                                    }
+                                }
+                            }
+                            finished_workers += 1;
+                        }
+                        Err(_) => {
+                            cancelled.store(true, Ordering::Relaxed);
+                            first_error.get_or_insert_with(|| {
+                                ConvertError::Io(io::Error::other(
+                                    "spatial worker channel closed unexpectedly",
+                                ))
+                            });
+                            break;
+                        }
+                    }
+                }
+            });
+
+            if let Some(error) = first_error {
+                return Err(error);
+            }
+            outputs.sort_by_key(|(key, _)| *key);
+            for (_, mut branch) in outputs {
+                self.append_branch(parent_id, &mut branch)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn append_branch(
+        &mut self,
+        parent_id: NodeId,
+        branch: &mut BranchOutput,
+    ) -> Result<(), ConvertError> {
+        let node_offset =
+            u64::try_from(self.node_records.len()).map_err(|_| ConvertError::SizeOverflow)?;
+        let block_offset = self.next_block_id;
+        let next_block_id = block_offset
+            .checked_add(branch.next_block_id)
+            .ok_or(ConvertError::SizeOverflow)?;
+        if next_block_id > super::MAX_BLOCKS || next_block_id >= u64::from(u32::MAX) {
+            return Err(ConvertError::TooManyBlocks(next_block_id));
+        }
+        for node in &mut branch.node_records {
+            node.id = NodeId::new(
+                node.id
+                    .get()
+                    .checked_add(node_offset)
+                    .ok_or(ConvertError::SizeOverflow)?,
+            );
+            node.parent = Some(match node.parent {
+                Some(parent) => NodeId::new(
+                    parent
+                        .get()
+                        .checked_add(node_offset)
+                        .ok_or(ConvertError::SizeOverflow)?,
+                ),
+                None => parent_id,
+            });
+            for block in &mut node.blocks {
+                *block = BlockId::new(
+                    block
+                        .get()
+                        .checked_add(block_offset)
+                        .ok_or(ConvertError::SizeOverflow)?,
+                );
+            }
+        }
+        for block in &mut branch.output_blocks {
+            block.id = BlockId::new(
+                block
+                    .id
+                    .get()
+                    .checked_add(block_offset)
+                    .ok_or(ConvertError::SizeOverflow)?,
+            );
+        }
+        self.node_records.append(&mut branch.node_records);
+        self.output_blocks.append(&mut branch.output_blocks);
+        self.next_block_id = next_block_id;
+        Ok(())
     }
 
     fn allocate_block_id(&mut self) -> Result<BlockId, ConvertError> {
@@ -976,6 +1245,40 @@ fn estimate_memory(
         .and_then(|bytes| bytes.checked_add(block_bytes))
         .and_then(|bytes| bytes.checked_add(sample_accumulators))
         .and_then(|bytes| bytes.checked_add(super::ESTIMATED_FIXED_OVERHEAD_BYTES))
+        .ok_or(ConvertError::SizeOverflow)
+}
+
+fn branch_memory_budget(
+    total_budget: u64,
+    point_limit: u64,
+    completed_nodes: usize,
+    completed_blocks: usize,
+    worker_count: usize,
+) -> Result<u64, ConvertError> {
+    let base = estimate_memory(point_limit, 0, 0)?;
+    let current = estimate_memory(point_limit, completed_nodes, completed_blocks)?;
+    let current_index = current.saturating_sub(base);
+    let workers = u64::try_from(worker_count).map_err(|_| ConvertError::SizeOverflow)?;
+    let worker_overhead = workers
+        .checked_mul(SPATIAL_WORKER_OVERHEAD_BYTES)
+        .ok_or(ConvertError::SizeOverflow)?;
+    let reserved = base
+        .checked_add(
+            current_index
+                .checked_mul(2)
+                .ok_or(ConvertError::SizeOverflow)?,
+        )
+        .and_then(|bytes| bytes.checked_add(worker_overhead))
+        .ok_or(ConvertError::SizeOverflow)?;
+    let available =
+        total_budget
+            .checked_sub(reserved)
+            .ok_or(ConvertError::MemoryBudgetExceeded {
+                requested: reserved,
+                limit: total_budget,
+            })?;
+    let concurrent_index_share = available / workers / 2;
+    base.checked_add(concurrent_index_share)
         .ok_or(ConvertError::SizeOverflow)
 }
 

@@ -37,6 +37,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut points_per_block = ConvertOptions::default().points_per_block();
     let mut max_error = ConvertOptions::default().max_quantization_error();
     let mut max_memory_bytes = ConvertOptions::default().max_memory_budget_bytes();
+    let mut spatial_workers = ConvertOptions::default().spatial_workers();
     let mut checkpoint_mode = None;
     let mut index = 2;
     while index < arguments.len() {
@@ -64,13 +65,15 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                     .checked_mul(1024 * 1024)
                     .ok_or("memory budget overflows bytes")?;
             }
+            "--spatial-workers" => spatial_workers = value.to_string_lossy().parse()?,
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;
     }
 
     let options =
-        ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?;
+        ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
+            .with_spatial_workers(spatial_workers)?;
     if let Some(mode) = checkpoint_mode {
         eprintln!(
             "{} checkpoint for {}",
@@ -145,8 +148,9 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 
 fn print_help() {
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--checkpoint|--resume]\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-workers N] [--checkpoint|--resume]\n\
          Defaults: 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB.\n\
+         --spatial-workers uses 1 to 4 bounded workers for root subtrees; the default is 1.\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. EPT datasets are not supported.\n\
          The converter preserves intensity and RGB16, and reports omitted LAS dimensions."

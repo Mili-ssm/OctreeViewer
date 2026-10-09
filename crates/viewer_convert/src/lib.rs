@@ -22,6 +22,7 @@ use spatial::{PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, spool_so
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
+const MAX_SPATIAL_WORKERS: usize = 4;
 const MAX_INPUT_BYTES_PER_BATCH: usize = 8 * 1024 * 1024;
 const MAX_BLOCKS: u64 = 1_000_000;
 const ESTIMATED_WORKING_BYTES_PER_POINT: u64 = 192;
@@ -34,6 +35,7 @@ pub struct ConvertOptions {
     points_per_block: u64,
     max_quantization_error: f64,
     max_memory_bytes: u64,
+    spatial_workers: usize,
 }
 
 impl ConvertOptions {
@@ -65,6 +67,7 @@ impl ConvertOptions {
             points_per_block,
             max_quantization_error,
             max_memory_bytes,
+            spatial_workers: 1,
         })
     }
 
@@ -79,6 +82,18 @@ impl ConvertOptions {
     pub const fn max_memory_budget_bytes(self) -> u64 {
         self.max_memory_bytes
     }
+
+    pub fn with_spatial_workers(mut self, workers: usize) -> Result<Self, ConvertError> {
+        if !(1..=MAX_SPATIAL_WORKERS).contains(&workers) {
+            return Err(ConvertError::InvalidSpatialWorkerCount(workers));
+        }
+        self.spatial_workers = workers;
+        Ok(self)
+    }
+
+    pub const fn spatial_workers(self) -> usize {
+        self.spatial_workers
+    }
 }
 
 impl Default for ConvertOptions {
@@ -87,6 +102,7 @@ impl Default for ConvertOptions {
             points_per_block: DEFAULT_POINTS_PER_BLOCK,
             max_quantization_error: 0.01,
             max_memory_bytes: DEFAULT_MEMORY_BUDGET_BYTES,
+            spatial_workers: 1,
         }
     }
 }
@@ -162,6 +178,8 @@ pub enum ConvertError {
     InvalidQuantizationError(f64),
     #[error("memory budget must be greater than zero")]
     InvalidMemoryBudget,
+    #[error("spatial worker count must be between 1 and {MAX_SPATIAL_WORKERS}, got {0}")]
+    InvalidSpatialWorkerCount(usize),
     #[error("LAS dimensions do not match the planned output attribute schema")]
     InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
@@ -703,7 +721,7 @@ fn publish_output(
 }
 
 fn emit_progress(
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     progress: ConversionProgress,
     points_processed: u64,
 ) -> Result<(), ConvertError> {
@@ -1010,6 +1028,89 @@ mod tests {
     }
 
     #[test]
+    fn bounded_spatial_workers_preserve_the_serial_output() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let serial_output = dir.join("serial.oct");
+        let parallel_output = dir.join("parallel.oct");
+        fixture(&input, false, true, 200);
+        let serial_options = ConvertOptions::new(16, 0.01).unwrap();
+        let parallel_options = serial_options.with_spatial_workers(4).unwrap();
+
+        let serial = convert_file(&input, &serial_output, serial_options).unwrap();
+        let parallel = convert_file(&input, &parallel_output, parallel_options).unwrap();
+
+        assert_eq!(parallel.point_count, serial.point_count);
+        assert_eq!(parallel.block_count, serial.block_count);
+        assert_eq!(parallel.output_bytes, serial.output_bytes);
+        assert_eq!(
+            parallel.estimated_peak_memory_bytes,
+            serial.estimated_peak_memory_bytes + 1024 * 1024
+        );
+        assert_eq!(
+            fs::read(serial_output).unwrap(),
+            fs::read(parallel_output).unwrap()
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn parallel_worker_limits_are_validated_and_budget_is_respected() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("parallel.oct");
+        fixture(&input, false, false, 100);
+        let options = ConvertOptions::with_memory_budget(10, 0.01, 17 * 1024 * 1024)
+            .unwrap()
+            .with_spatial_workers(2)
+            .unwrap();
+
+        assert!(matches!(
+            ConvertOptions::default().with_spatial_workers(0),
+            Err(ConvertError::InvalidSpatialWorkerCount(0))
+        ));
+        assert!(matches!(
+            ConvertOptions::default().with_spatial_workers(5),
+            Err(ConvertError::InvalidSpatialWorkerCount(5))
+        ));
+        assert!(matches!(
+            convert_file(&input, &output, options),
+            Err(ConvertError::MemoryBudgetExceeded { .. })
+        ));
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cancellation_during_parallel_spatial_planning_does_not_publish_output() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("parallel.oct");
+        fixture(&input, false, false, 100);
+        let options = ConvertOptions::new(10, 0.01)
+            .unwrap()
+            .with_spatial_workers(2)
+            .unwrap();
+        let mut hierarchy_updates = 0;
+
+        let result = convert_file_with_progress(&input, &output, options, |event| {
+            if event.stage == ConversionStage::BuildingSpatialHierarchy {
+                hierarchy_updates += 1;
+                hierarchy_updates < 12
+            } else {
+                true
+            }
+        });
+
+        assert!(matches!(result, Err(ConvertError::Cancelled { .. })));
+        assert_eq!(hierarchy_updates, 12);
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn preserves_optional_gps_time_rgb_and_nir_dimensions() {
         let dir = test_dir();
         let input = dir.join("extended.las");
@@ -1248,7 +1349,10 @@ mod tests {
         checkpoint_dir.push(".checkpoint");
         let checkpoint_dir = PathBuf::from(checkpoint_dir);
         fixture(&input, false, false, 5);
-        let options = ConvertOptions::new(2, 0.01).unwrap();
+        let options = ConvertOptions::new(2, 0.01)
+            .unwrap()
+            .with_spatial_workers(2)
+            .unwrap();
 
         let cancelled = convert_file_with_checkpoint(
             &input,
@@ -1275,10 +1379,11 @@ mod tests {
         assert!(checkpoint_dir.join("source.spool").is_file());
 
         let mut reread_source = false;
+        let resume_options = options.with_spatial_workers(1).unwrap();
         let report = convert_file_with_checkpoint(
             &input,
             &output,
-            options,
+            resume_options,
             CheckpointMode::Resume,
             |event| {
                 reread_source |= event.stage == ConversionStage::PlanningSpatialIndex;

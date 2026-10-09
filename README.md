@@ -83,7 +83,7 @@ una versión publicada.
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
 | Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con octree LOD adaptativo 2×2×2, hojas a resolución completa y muestras de color agregadas en nodos internos. Conserva atributos estándar, usa puntos fuente cercanos para atributos no agregados y ofrece reanudación opcional por fases. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. La política 2×2×2 sigue pendiente de validación con LAS/LAZ representativos. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 con octree LOD adaptativo 2×2×2, hojas a resolución completa, muestras de color agregadas y procesamiento paralelo acotado opcional de subárboles raíz. Conserva atributos estándar, usa puntos fuente cercanos para atributos no agregados y ofrece reanudación por fases. | Construye el índice fuera de memoria con spools temporales; los nodos y el directorio de bloques aún residen en RAM y se acotan con una estimación. La política 2×2×2 sigue pendiente de validación con LAS/LAZ representativos. |
 
 ## Qué significará “feature complete”
 
@@ -257,8 +257,10 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   del muestreo y límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 - [x] Repetir la línea de base serial para decidir dónde evaluar paralelismo; registrar tiempo,
   RSS y fases en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
-- [ ] Comparar una alternativa paralela con colas acotadas y contrapresión; medir rendimiento y
-  pico temporal antes de decidir si se integra.
+- [x] Probar paralelismo acotado en subárboles de la raíz con 2 y 4 trabajadores. Las salidas fueron
+  idénticas byte a byte y la fase de jerarquía bajó aproximadamente 30 % y 39 %; el pico temporal
+  observado se mantuvo en 8,34 GiB. Mantener 1 trabajador por defecto y registrar límites y muestras
+  en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 - [x] Medir el coste de memoria de las representaciones e intermedios en un dataset real y eliminar
   las copias de atributos y puntos del spool que no aportaban al formato; registrar mediciones y
   límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md). Mantener la estimación conservadora
@@ -293,12 +295,17 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [ ] Implementar entrada EPT tras definir una abstracción de dataset y cómo preservar su jerarquía
   aditiva en el formato propio.
 
-Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--checkpoint | --resume]`.
+Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-workers N] [--checkpoint | --resume]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
 de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación incluye
 192 bytes por punto del bloque, 512 bytes por bloque del índice, 256 bytes por nodo, espacio para una
-grilla LOD de 512 celdas y 16 MiB fijos; no equivale al RSS total ni incluye el allocator o la
-biblioteca LAS/LAZ. La construcción usa spools temporales en disco que pueden ocupar más que la fuente;
+grilla LOD de 512 celdas, 16 MiB fijos y 1 MiB por trabajador espacial adicional; no equivale al RSS
+total ni incluye el allocator o la biblioteca LAS/LAZ. `--spatial-workers` permite 1–4 trabajadores,
+con valor por defecto 1; el modo
+paralelo solo distribuye los subárboles directos de la raíz y reúne resultados en orden para mantener
+IDs y bytes estables. Usa un canal de progreso acotado y reserva memoria por trabajador. El número de
+trabajadores puede cambiar al reanudar un checkpoint. La construcción usa spools temporales en disco
+que pueden ocupar más que la fuente;
 en modo normal se limpian al completar o cancelar cooperativamente, aunque un cierre abrupto puede
 dejarlos. Con `--checkpoint`, el conversor crea `OUTPUT.oct.checkpoint`; vuelve a ejecutar con
 `--resume`, la misma entrada y las mismas opciones para continuar. Un checkpoint incompatible o una
@@ -483,7 +490,7 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 | --- | --- | --- |
 | `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
 | `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
-| `viewer_convert` | Conversión nativa secuencial LAS/LAZ por bloques, publicación validada y reanudación opcional por fases. | `las`, `viewer_core`, `viewer_format`; validación del branching factor con fuentes representativas pendiente. |
+| `viewer_convert` | Conversión nativa LAS/LAZ por bloques, publicación validada, reanudación por fases y paralelismo espacial opcional acotado. | `las`, `viewer_core`, `viewer_format`; validación del branching factor con fuentes representativas pendiente. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
 | `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |
