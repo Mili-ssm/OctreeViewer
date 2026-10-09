@@ -107,3 +107,18 @@ falta integrar y medir esa ruta de extremo a extremo.
 
 El conversor omitió flags synthetic/key-point/withheld/overlap, flags de dirección/edge de vuelo,
 scanner channel y metadatos CRS/WKT; el log de conversión enumera estas dimensiones.
+
+## Buffers intermedios del conversor
+
+La planificación conserva un spool binario de 55 B por punto. Antes de la escritura directa, la
+lectura de cada lote también copiaba atributos LAS a varios `Vec` y materializaba una `Vec<SpoolPoint>`
+antes de serializarla. Ahora consume los iteradores de `PointData` y escribe cada `SpoolPoint` al
+spool en el mismo recorrido, sin esas copias de lote. El archivo `.oct` resultante coincidió byte por
+byte con la referencia y los tests de conversión de LAS/LAZ siguen cubriendo atributos estándar y
+opcionales.
+
+En una ejecución por versión, el RSS máximo pasó de 37.612 KiB a 36.068 KiB, mientras el tiempo pasó
+de 100,12 s a 101,16 s. Esta diferencia no demuestra una reducción estable ni una regresión de tiempo:
+no son repeticiones emparejadas y el RSS puede variar por el runtime y el sistema. El presupuesto
+controlado de 192 B por punto se mantiene sin cambios; hace falta repetir la comparación antes de
+ajustar ese margen o afirmar una mejora de rendimiento.

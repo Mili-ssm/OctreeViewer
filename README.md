@@ -257,9 +257,10 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   del muestreo y límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 - [ ] Evaluar si el paralelismo mejora conversión y espacio temporal; si se añade, usar colas
   acotadas y contrapresión.
-- [ ] Medir el coste de memoria de las representaciones y estructuras intermedias; evitar tipos más
-  anchos, copias y buffers sobredimensionados cuando una alternativa compacta mantenga los contratos
-  de precisión y rendimiento.
+- [x] Medir el coste de memoria de las representaciones e intermedios en un dataset real y eliminar
+  las copias de atributos y puntos del spool que no aportaban al formato; registrar mediciones y
+  límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md). Mantener la estimación conservadora
+  hasta repetir el benchmark para confirmar su margen.
 - [x] Informar fases, puntos procesados, bytes escritos y errores en la API/CLI.
 - [x] Permitir cancelación cooperativa desde el callback entre bloques y durante validación; limpiar
   el temporal y no publicar una salida parcial.
@@ -319,6 +320,7 @@ Los resultados detallados, métricas por fase y estimaciones de memoria están e
 | Fecha / revisión | Dataset y configuración | Conversión | Salida / ratio LAZ | Ratio payload LZ4 | RSS conversión | Pico disco temporal | Lectura de todos los bloques | RSS lectura |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 2026-10-09 / `3761ed3` | Belvedere Glacier 2009; 81.682.329 puntos; release; opciones por defecto | 100,12 s; 815.872 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 37.612 KiB | 8.980.927.112 B (8,37 GiB; muestreo 100 ms) | 9,81 s; índice 2,87 ms | 27.024 KiB |
+| 2026-10-09 / escritura directa tras `3761ed3` | Mismo dataset y opciones; una ejecución | 101,16 s; 807.468 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 36.068 KiB | — | — | — |
 
 La referencia de rendimiento se midió en Linux x86_64, AMD Ryzen AI 9 365 (20 hilos lógicos), Rust
 1.99.0. El pico de disco temporal se midió en una conversión adicional de la misma revisión,

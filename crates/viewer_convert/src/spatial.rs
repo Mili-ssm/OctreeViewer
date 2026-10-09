@@ -600,10 +600,7 @@ fn spool_source(
                 actual: processed + read,
             });
         }
-        let points = source_points(&point_data, source, processed)?;
-        for point in &points {
-            write_point(&mut writer, point)?;
-        }
+        write_source_points(&point_data, source, processed, &mut writer)?;
         processed += read;
         emit_progress(
             on_progress,
@@ -620,25 +617,29 @@ fn spool_source(
     Ok(())
 }
 
-fn source_points(
+fn write_source_points(
     data: &PointData,
     source: &SourceInfo,
     processed: u64,
-) -> Result<Vec<SpoolPoint>, ConvertError> {
-    let count = data.len();
-    let positions = data.x().zip(data.y()).zip(data.z()).enumerate();
-    let intensities = data.intensity().collect::<Vec<_>>();
-    let classifications = data.classification().collect::<Vec<_>>();
-    let return_numbers = data.return_number().collect::<Vec<_>>();
-    let returns_per_pulse = data.number_of_returns().collect::<Vec<_>>();
-    let scan_angles = data.scan_angle_degrees().collect::<Vec<_>>();
-    let user_data = data.user_data().collect::<Vec<_>>();
-    let point_source_ids = data.point_source_id().collect::<Vec<_>>();
-    let gps_times = data.gps_time().map(Iterator::collect::<Vec<_>>);
-    let nir_values = data.nir().map(Iterator::collect::<Vec<_>>);
-    let rgb_values = data.rgb().map(Iterator::collect::<Vec<_>>);
-    let mut points = Vec::with_capacity(count);
-    for (index, ((x, y), z)) in positions {
+    writer: &mut impl Write,
+) -> Result<(), ConvertError> {
+    let mut intensities = data.intensity();
+    let mut classifications = data.classification();
+    let mut return_numbers = data.return_number();
+    let mut returns_per_pulse = data.number_of_returns();
+    let mut scan_angles = data.scan_angle_degrees();
+    let mut user_data = data.user_data();
+    let mut point_source_ids = data.point_source_id();
+    let mut gps_times = data.gps_time();
+    let mut nir_values = data.nir();
+    let mut rgb_values = data.rgb();
+    if source.point_format.has_gps_time != gps_times.is_some()
+        || source.point_format.has_nir != nir_values.is_some()
+        || source.point_format.has_color != rgb_values.is_some()
+    {
+        return Err(ConvertError::InvalidAttributeSchema);
+    }
+    for (index, ((x, y), z)) in data.x().zip(data.y()).zip(data.z()).enumerate() {
         let position = [x, y, z];
         let local = std::array::from_fn(|axis| position[axis] - source.frame.origin()[axis]);
         if position.iter().any(|coordinate| !coordinate.is_finite())
@@ -656,15 +657,44 @@ fn source_points(
                 position,
             });
         }
-        let intensity = intensities[index];
+        let intensity = intensities
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let classification = classifications
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let return_number = return_numbers
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let returns_per_pulse = returns_per_pulse
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let scan_angle = scan_angles
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let user_data = user_data
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let point_source_id = point_source_ids
+            .next()
+            .ok_or(ConvertError::InvalidAttributeSchema)?;
+        let gps_time = gps_times
+            .as_mut()
+            .map(|values| values.next().ok_or(ConvertError::InvalidAttributeSchema))
+            .transpose()?
+            .unwrap_or(0.0);
+        let nir = nir_values
+            .as_mut()
+            .map(|values| values.next().ok_or(ConvertError::InvalidAttributeSchema))
+            .transpose()?
+            .unwrap_or(0);
         let rgb = rgb_values
-            .as_ref()
-            .map(|values| {
-                let (red, green, blue) = values[index];
-                [red, green, blue]
-            })
+            .as_mut()
+            .map(|values| values.next().ok_or(ConvertError::InvalidAttributeSchema))
+            .transpose()?
+            .map(|(red, green, blue)| [red, green, blue])
             .unwrap_or_default();
-        let display_color = if rgb_values.is_some() {
+        let display_color = if source.point_format.has_color {
             ColorRgb::new(
                 (rgb[0] >> 8) as u8,
                 (rgb[1] >> 8) as u8,
@@ -674,22 +704,44 @@ fn source_points(
             let gray = (intensity >> 8) as u8;
             ColorRgb::new(gray, gray, gray)
         };
-        points.push(SpoolPoint {
-            position,
-            intensity,
-            classification: classifications[index],
-            return_number: return_numbers[index],
-            returns_per_pulse: returns_per_pulse[index],
-            scan_angle: scan_angles[index],
-            user_data: user_data[index],
-            point_source_id: point_source_ids[index],
-            gps_time: gps_times.as_ref().map_or(0.0, |values| values[index]),
-            rgb,
-            nir: nir_values.as_ref().map_or(0, |values| values[index]),
-            display_color,
-        });
+        write_point(
+            writer,
+            &SpoolPoint {
+                position,
+                intensity,
+                classification,
+                return_number,
+                returns_per_pulse,
+                scan_angle,
+                user_data,
+                point_source_id,
+                gps_time,
+                rgb,
+                nir,
+                display_color,
+            },
+        )?;
     }
-    Ok(points)
+    if intensities.next().is_some()
+        || classifications.next().is_some()
+        || return_numbers.next().is_some()
+        || returns_per_pulse.next().is_some()
+        || scan_angles.next().is_some()
+        || user_data.next().is_some()
+        || point_source_ids.next().is_some()
+        || gps_times
+            .as_mut()
+            .is_some_and(|values| values.next().is_some())
+        || nir_values
+            .as_mut()
+            .is_some_and(|values| values.next().is_some())
+        || rgb_values
+            .as_mut()
+            .is_some_and(|values| values.next().is_some())
+    {
+        return Err(ConvertError::InvalidAttributeSchema);
+    }
+    Ok(())
 }
 
 fn write_point(writer: &mut impl Write, point: &SpoolPoint) -> io::Result<()> {
