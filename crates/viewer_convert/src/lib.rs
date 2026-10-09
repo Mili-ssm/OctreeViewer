@@ -1050,6 +1050,11 @@ mod tests {
         ));
         assert!(!output.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+
+        let rebuilt = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap())
+            .expect("a cancelled conversion can be rebuilt from its source");
+        assert_eq!(rebuilt.point_count, 5);
+        assert!(output.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

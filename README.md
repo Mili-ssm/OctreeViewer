@@ -245,7 +245,9 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Permitir cancelación cooperativa desde el callback entre bloques y durante validación; limpiar
   el temporal y no publicar una salida parcial.
 - [ ] Conectar la cancelación de la CLI a Ctrl+C con manejo portable de señales.
-- [ ] Guardar checkpoints o permitir reanudar/reconstruir el trabajo sin corromper un archivo final.
+- [x] Permitir reconstrucción segura desde la fuente tras cancelación; validar el resultado antes de
+  publicar.
+- [ ] Añadir checkpoints durables y reanudación que conserve el trabajo ya procesado.
 - [ ] Definir estrategia de partición y LOD que preserve representación útil tanto en zonas densas
   como dispersas; medir sesgo y artefactos introducidos por muestreo.
 - [x] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
@@ -266,7 +268,10 @@ de bloques.
 La implementación separa inspección de cabecera, planificación de nodo/esquema, lectura y escritura
 secuencial, y validación/publicación; la planificación espacial actual solo crea una raíz sin LOD.
 La CLI muestra las fases y actualiza puntos/bytes en pasos del 10%; `convert_file_with_progress`
-ofrece los mismos eventos y permite cancelar devolviendo `false`. Falta conectar Ctrl+C en la CLI.
+ofrece los mismos eventos y permite cancelar devolviendo `false`. La cancelación cooperativa elimina
+el temporal; un cierre abrupto puede dejarlo, pero la siguiente ejecución lo ignora y reconstruye
+desde la fuente. Los checkpoints durables y la reanudación siguen pendientes. Falta conectar Ctrl+C
+en la CLI.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.
