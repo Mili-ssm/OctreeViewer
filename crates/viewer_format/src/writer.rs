@@ -14,11 +14,11 @@ use crate::{
     QuantizationError, SourcePointBlock, compress_block, crc32, quantize_local_positions,
 };
 
-const HEADER_SIZE: u64 = 24;
-const FOOTER_SIZE: u64 = 40;
-const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
-const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX1";
-const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND1";
+pub(crate) const HEADER_SIZE: u64 = 24;
+pub(crate) const FOOTER_SIZE: u64 = 40;
+pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
+pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX1";
+pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND1";
 
 /// Bounds per-block allocations made by the writer.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -295,7 +295,7 @@ fn build_block_nodes(
     Ok(block_nodes)
 }
 
-fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
+pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
     for value in [metadata.crs(), metadata.sampling_policy()]
         .into_iter()
         .flatten()
@@ -463,7 +463,7 @@ fn order_attributes<'a>(
     Ok(ordered)
 }
 
-fn block_payload_size(
+pub(crate) fn block_payload_size(
     point_count: usize,
     schema: &[viewer_core::AttributeDescriptor],
 ) -> Result<u64, FormatError> {
@@ -881,8 +881,46 @@ fn attribute_type_tag(data_type: AttributeDataType) -> u8 {
 
 #[derive(Debug, Error)]
 pub enum FormatError {
-    #[error("I/O error while writing the format: {0}")]
+    #[error("I/O error while accessing the format: {0}")]
     Io(#[from] std::io::Error),
+    #[error("format file is shorter than its header and footer")]
+    FileTooShort,
+    #[error("format header is malformed or has an invalid checksum")]
+    InvalidHeader,
+    #[error("format version {0} is not supported")]
+    UnsupportedVersion(u16),
+    #[error("format footer is malformed, truncated or inconsistent")]
+    InvalidFooter,
+    #[error("{0} checksum does not match")]
+    InvalidChecksum(&'static str),
+    #[error("block {0:?} checksum does not match")]
+    InvalidBlockChecksum(BlockId),
+    #[error("format reader limits must be greater than zero")]
+    InvalidReaderLimits,
+    #[error("format index needs {requested} bytes, exceeding limit {limit}")]
+    IndexExceedsLimit { requested: u64, limit: u64 },
+    #[error("format count for {kind} is {requested}, exceeding limit {limit}")]
+    CountLimit {
+        kind: &'static str,
+        requested: u64,
+        limit: u64,
+    },
+    #[error("format string has {requested} bytes, exceeding limit {limit}")]
+    StringExceedsLimit { requested: u32, limit: u32 },
+    #[error("format contains invalid UTF-8")]
+    InvalidUtf8,
+    #[error("format index is malformed: {0}")]
+    MalformedIndex(&'static str),
+    #[error("format block is malformed: {0}")]
+    MalformedBlock(&'static str),
+    #[error("format index ended before a field was complete")]
+    TruncatedIndex,
+    #[error("format schema is invalid")]
+    InvalidSchema,
+    #[error("format uses unsupported tag {tag} for {field}")]
+    InvalidTag { field: &'static str, tag: u8 },
+    #[error("requested block {0:?} does not exist")]
+    UnknownBlock(BlockId),
     #[error("invalid quantization error limit {0}")]
     InvalidQuantizationLimit(f64),
     #[error("maximum uncompressed block size must be greater than zero")]
@@ -968,7 +1006,11 @@ pub enum FormatError {
     #[error(transparent)]
     Spatial(#[from] viewer_core::SpatialError),
     #[error(transparent)]
+    CoordinateFrame(#[from] viewer_core::CoordinateFrameError),
+    #[error(transparent)]
     Metadata(#[from] MetadataError),
+    #[error(transparent)]
+    Dataset(#[from] viewer_core::DatasetError),
 }
 
 #[cfg(test)]
