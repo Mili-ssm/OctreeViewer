@@ -77,7 +77,7 @@ una versión publicada.
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
 | Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector con acceso aleatorio y límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | Fixtures generadas prueban round-trip, lectura selectiva, corrupción, límites y versión; la política v1 exige nueva versión para ampliar el formato. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 en bloques secuenciales. Conserva intensidad y RGB16, limita puntos por bloque y valida el archivo antes de publicarlo. | Emite un único nodo raíz sin partición espacial/LOD; descarta otras dimensiones y CRS con aviso. El índice y directorio de bloques permanecen en RAM. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato v1 en bloques secuenciales. Conserva intensidad, RGB16, clasificación, retornos, ángulo de escaneo en grados `f32`, user data, source ID y GPS/NIR cuando están disponibles. | Emite un único nodo raíz sin partición espacial/LOD; descarta flags, waveform, Extra Bytes y CRS VLR con aviso. El índice y directorio de bloques permanecen en RAM. |
 
 ## Qué significará “feature complete”
 
@@ -248,7 +248,7 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [ ] Guardar checkpoints o permitir reanudar/reconstruir el trabajo sin corromper un archivo final.
 - [ ] Definir estrategia de partición y LOD que preserve representación útil tanto en zonas densas
   como dispersas; medir sesgo y artefactos introducidos por muestreo.
-- [ ] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
+- [x] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
   forma explícita los que se descartan o transforman.
 - [ ] Aceptar primero LAS/LAZ como fuentes requeridas; evaluar COPC/EPT como entrada interoperable y
   fuente para pruebas, según soporte y calidad de las bibliotecas elegidas.
@@ -256,12 +256,13 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 Uso inicial: `cargo run -p viewer_convert -- INPUT.las OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB]`.
 Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
 de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación reserva
-128 bytes por punto del bloque, 512 bytes por entrada del directorio y 16 MiB fijos; no equivale al
+192 bytes por punto del bloque, 512 bytes por entrada del directorio y 16 MiB fijos; no equivale al
 RSS total del proceso ni incluye memoria interna de la biblioteca LAS/LAZ o del allocator. La salida
 publica mediante un enlace al archivo temporal validado y falla si el destino ya existe. Esta primera
-versión usa un solo nodo raíz, conserva intensidad `u16` y RGB `u16` cuando existe, y avisa de las
-dimensiones LAS/LAZ y metadatos CRS que no conserva. La memoria del directorio todavía crece con el
-número de bloques.
+versión usa un solo nodo raíz y conserva atributos estándar disponibles: intensidad, RGB, clasificación,
+retornos, ángulo de escaneo normalizado a grados `f32`, user data, source ID, GPS y NIR. Avisa de flags,
+waveform, Extra Bytes y CRS VLR que no conserva. La memoria del directorio todavía crece con el número
+de bloques.
 La implementación separa inspección de cabecera, planificación de nodo/esquema, lectura y escritura
 secuencial, y validación/publicación; la planificación espacial actual solo crea una raíz sin LOD.
 La CLI muestra las fases y actualiza puntos/bytes en pasos del 10%; `convert_file_with_progress`

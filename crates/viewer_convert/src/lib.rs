@@ -21,7 +21,7 @@ const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
 const MAX_INPUT_BYTES_PER_BATCH: usize = 8 * 1024 * 1024;
 const MAX_BLOCKS: u64 = 1_000_000;
-const ESTIMATED_WORKING_BYTES_PER_POINT: u64 = 128;
+const ESTIMATED_WORKING_BYTES_PER_POINT: u64 = 192;
 const ESTIMATED_DIRECTORY_BYTES_PER_BLOCK: u64 = 512;
 const ESTIMATED_FIXED_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -121,7 +121,6 @@ struct SourceInfo {
     point_count: u64,
     record_length: usize,
     point_format: las::point::Format,
-    has_rgb: bool,
     has_crs: bool,
 }
 
@@ -159,6 +158,8 @@ pub enum ConvertError {
     InvalidQuantizationError(f64),
     #[error("memory budget must be greater than zero")]
     InvalidMemoryBudget,
+    #[error("LAS dimensions do not match the planned output attribute schema")]
+    InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]
     MemoryBudgetExceeded { requested: u64, limit: u64 },
     #[error("conversion cancelled after processing {points_processed} points")]
@@ -296,7 +297,6 @@ fn inspect_source(reader: &Reader) -> Result<SourceInfo, ConvertError> {
         point_count: header.number_of_points(),
         record_length: usize::from(header.point_format().len()).max(1),
         point_format: *header.point_format(),
-        has_rgb: header.point_format().has_color,
         has_crs: header.has_crs_vlrs(),
     })
 }
@@ -341,7 +341,7 @@ impl ConversionPlan {
             0.0,
             block_ids,
         )?;
-        let schema = source_schema(source.has_rgb);
+        let schema = source_schema(&source.point_format);
         let hierarchy =
             SpatialHierarchy::new(vec![root], schema.clone(), Some(source.point_count))?;
         let metadata = FormatMetadata::new(
@@ -400,6 +400,14 @@ fn stream_blocks(
         })?;
         let positions = point_positions(&point_data, plan.frame, plan.bounds, processed)?;
         let intensities = point_data.intensity().collect::<Vec<_>>();
+        let classifications = point_data.classification().collect::<Vec<_>>();
+        let return_numbers = point_data.return_number().collect::<Vec<_>>();
+        let returns_per_pulse = point_data.number_of_returns().collect::<Vec<_>>();
+        let scan_angles = point_data.scan_angle_degrees().collect::<Vec<_>>();
+        let user_data = point_data.user_data().collect::<Vec<_>>();
+        let point_source_ids = point_data.point_source_id().collect::<Vec<_>>();
+        let gps_times = point_data.gps_time().map(Iterator::collect::<Vec<_>>);
+        let nir_values = point_data.nir().map(Iterator::collect::<Vec<_>>);
         let (colors, rgb_values) = match point_data.rgb() {
             Some(values) => {
                 let mut colors = Vec::with_capacity(count);
@@ -426,17 +434,82 @@ fn stream_blocks(
             }
         };
         let mut attributes = Vec::with_capacity(plan.schema.len());
-        attributes.push(AttributeColumn::new(
-            plan.schema[0].clone(),
+        let mut schema_index = 0;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
             AttributeValues::U16(intensities),
             count,
-        )?);
+        )?;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
+            AttributeValues::U8(classifications),
+            count,
+        )?;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
+            AttributeValues::U8(return_numbers),
+            count,
+        )?;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
+            AttributeValues::U8(returns_per_pulse),
+            count,
+        )?;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
+            AttributeValues::F32(scan_angles),
+            count,
+        )?;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
+            AttributeValues::U8(user_data),
+            count,
+        )?;
+        push_attribute(
+            &mut attributes,
+            &plan.schema,
+            &mut schema_index,
+            AttributeValues::U16(point_source_ids),
+            count,
+        )?;
+        if let Some(gps_times) = gps_times {
+            push_attribute(
+                &mut attributes,
+                &plan.schema,
+                &mut schema_index,
+                AttributeValues::F64(gps_times),
+                count,
+            )?;
+        }
         if let Some(rgb_values) = rgb_values {
-            attributes.push(AttributeColumn::new(
-                plan.schema[1].clone(),
+            push_attribute(
+                &mut attributes,
+                &plan.schema,
+                &mut schema_index,
                 AttributeValues::U16(rgb_values),
                 count,
-            )?);
+            )?;
+        }
+        if let Some(nir_values) = nir_values {
+            push_attribute(
+                &mut attributes,
+                &plan.schema,
+                &mut schema_index,
+                AttributeValues::U16(nir_values),
+                count,
+            )?;
         }
         writer.write_block(SourcePointBlock::new(
             BlockId::new(processed / plan.points_per_block),
@@ -459,18 +532,46 @@ fn stream_blocks(
     Ok(())
 }
 
-fn source_schema(has_rgb: bool) -> Vec<AttributeDescriptor> {
+fn push_attribute(
+    attributes: &mut Vec<AttributeColumn>,
+    schema: &[AttributeDescriptor],
+    schema_index: &mut usize,
+    values: AttributeValues,
+    point_count: usize,
+) -> Result<(), ConvertError> {
+    let descriptor = schema
+        .get(*schema_index)
+        .ok_or(ConvertError::InvalidAttributeSchema)?
+        .clone();
+    attributes.push(AttributeColumn::new(descriptor, values, point_count)?);
+    *schema_index += 1;
+    Ok(())
+}
+
+fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {
     let mut schema = vec![
-        AttributeDescriptor::new("intensity", AttributeDataType::U16, 1)
-            .expect("static attribute schema is valid"),
+        descriptor("intensity", AttributeDataType::U16, 1),
+        descriptor("classification", AttributeDataType::U8, 1),
+        descriptor("return_number", AttributeDataType::U8, 1),
+        descriptor("number_of_returns", AttributeDataType::U8, 1),
+        descriptor("scan_angle_degrees", AttributeDataType::F32, 1),
+        descriptor("user_data", AttributeDataType::U8, 1),
+        descriptor("point_source_id", AttributeDataType::U16, 1),
     ];
-    if has_rgb {
-        schema.push(
-            AttributeDescriptor::new("rgb", AttributeDataType::U16, 3)
-                .expect("static attribute schema is valid"),
-        );
+    if format.has_gps_time {
+        schema.push(descriptor("gps_time", AttributeDataType::F64, 1));
+    }
+    if format.has_color {
+        schema.push(descriptor("rgb", AttributeDataType::U16, 3));
+    }
+    if format.has_nir {
+        schema.push(descriptor("nir", AttributeDataType::U16, 1));
     }
     schema
+}
+
+fn descriptor(name: &str, data_type: AttributeDataType, components: u32) -> AttributeDescriptor {
+    AttributeDescriptor::new(name, data_type, components).expect("static attribute schema is valid")
 }
 
 fn point_positions(
@@ -504,17 +605,11 @@ fn point_positions(
 
 fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String> {
     let mut dimensions = vec![
-        "classification".to_owned(),
-        "return number and number of returns".to_owned(),
-        "scan angle".to_owned(),
-        "user data".to_owned(),
-        "point source ID".to_owned(),
+        "synthetic/key-point/withheld/overlap flags".to_owned(),
+        "scan direction and flight-line edge flags".to_owned(),
     ];
-    if format.has_gps_time {
-        dimensions.push("GPS time".to_owned());
-    }
-    if format.has_nir {
-        dimensions.push("near-infrared channel".to_owned());
+    if format.is_extended {
+        dimensions.push("scanner channel".to_owned());
     }
     if format.has_waveform {
         dimensions.push("waveform data".to_owned());
@@ -679,6 +774,7 @@ mod tests {
             std::process::id(),
             TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
+        let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         path
     }
@@ -695,6 +791,12 @@ mod tests {
                 y: 2_000_000.0 + (index % 3) as f64,
                 z: 50.0 + (index % 5) as f64,
                 intensity: (index as u16).wrapping_mul(10_000),
+                return_number: 2,
+                number_of_returns: 3,
+                classification: las::point::Classification::Ground,
+                scan_angle: index as f32 - 1.0,
+                user_data: index as u8 + 7,
+                point_source_id: 100 + index as u16,
                 ..Point::default()
             };
             if colored {
@@ -702,6 +804,31 @@ mod tests {
             }
             writer.write_point(point).unwrap();
         }
+    }
+
+    fn extended_fixture(path: &std::path::Path) {
+        let mut builder = Builder::from((1, 4));
+        builder.point_format = Format::new(8).unwrap();
+        let header = builder.into_header().unwrap();
+        let mut writer = Writer::from_path(path, header).unwrap();
+        writer
+            .write_point(Point {
+                x: 10.0,
+                y: 20.0,
+                z: 30.0,
+                intensity: 1234,
+                return_number: 2,
+                number_of_returns: 3,
+                classification: las::point::Classification::Ground,
+                scan_angle: -1.25,
+                user_data: 9,
+                point_source_id: 77,
+                gps_time: Some(123.5),
+                color: Some(Color::new(0x1200, 0xAB00, 0xFF00)),
+                nir: Some(0xCAFE),
+                ..Point::default()
+            })
+            .unwrap();
     }
 
     #[test]
@@ -725,9 +852,15 @@ mod tests {
         assert_eq!(report.block_count, 3);
         assert!(report.estimated_peak_memory_bytes <= 512 * 1024 * 1024);
         assert!(
-            report
+            !report
                 .omitted_dimensions
                 .contains(&"classification".to_owned())
+        );
+        assert!(
+            report
+                .omitted_dimensions
+                .iter()
+                .any(|name| name.contains("flags"))
         );
         assert_eq!(
             progress.first().unwrap().stage,
@@ -755,7 +888,27 @@ mod tests {
                 panic!("intensity must remain u16");
             };
             assert_eq!(values[0], (index as u16 * 2).wrapping_mul(10_000));
-            let AttributeValues::U16(rgb) = block.attributes()[1].values() else {
+            let AttributeValues::U8(classification) = block.attributes()[1].values() else {
+                panic!("classification must remain u8");
+            };
+            assert_eq!(classification, &[2, 2][..block.points().len()]);
+            let AttributeValues::U8(return_numbers) = block.attributes()[2].values() else {
+                panic!("return number must remain u8");
+            };
+            assert!(return_numbers.iter().all(|value| *value == 2));
+            let AttributeValues::U8(number_of_returns) = block.attributes()[3].values() else {
+                panic!("number of returns must remain u8");
+            };
+            assert!(number_of_returns.iter().all(|value| *value == 3));
+            let AttributeValues::U8(user_data) = block.attributes()[5].values() else {
+                panic!("user data must remain u8");
+            };
+            assert_eq!(user_data[0], index as u8 * 2 + 7);
+            let AttributeValues::U16(source_ids) = block.attributes()[6].values() else {
+                panic!("point source ID must remain u16");
+            };
+            assert_eq!(source_ids[0], 100 + (index as u16 * 2));
+            let AttributeValues::U16(rgb) = block.attributes()[7].values() else {
                 panic!("RGB must remain u16");
             };
             assert_eq!(&rgb[..3], &[0x1200, 0xAB00, 0xFF00]);
@@ -783,6 +936,45 @@ mod tests {
             last.points().points()[0].color,
             viewer_core::ColorRgb::new(78, 78, 78)
         );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn preserves_optional_gps_time_rgb_and_nir_dimensions() {
+        let dir = test_dir();
+        let input = dir.join("extended.las");
+        let output = dir.join("result.oct");
+        extended_fixture(&input);
+        let report = convert_file(&input, &output, ConvertOptions::default()).unwrap();
+        assert!(
+            report
+                .omitted_dimensions
+                .iter()
+                .any(|name| name == "scanner channel")
+        );
+
+        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let block = reader.read_block(BlockId::new(0)).unwrap();
+        let value = |name: &str| {
+            block
+                .attributes()
+                .iter()
+                .find(|column| column.descriptor().name() == name)
+                .unwrap()
+                .values()
+        };
+        let AttributeValues::F64(gps) = value("gps_time") else {
+            panic!("GPS time must remain f64");
+        };
+        assert_eq!(gps, &[123.5]);
+        let AttributeValues::U16(nir) = value("nir") else {
+            panic!("NIR must remain u16");
+        };
+        assert_eq!(nir, &[0xCAFE]);
+        let AttributeValues::U16(rgb) = value("rgb") else {
+            panic!("RGB must remain u16");
+        };
+        assert_eq!(rgb, &[0x1200, 0xAB00, 0xFF00]);
         fs::remove_dir_all(dir).unwrap();
     }
 
