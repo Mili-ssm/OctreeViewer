@@ -644,7 +644,9 @@ en navegador sigue pendiente.
 
 **Característica:** demostrar que las prestaciones y el objetivo de escala se sostienen con evidencia.
 
-- [ ] Ejecutar pruebas de integridad sobre formato, índices, bloques y recuperación ante truncamiento.
+- [x] Ejecutar pruebas unitarias de integridad de formato/índice/bloques y recuperación de
+  checkpoints (`cargo test -p viewer_format` y `cargo test -p viewer_convert`). Cubren corrupción,
+  truncamiento y reanudación; no sustituyen pruebas de escala sobre datasets mayores de 500 GB.
 - [ ] Medir datasets de varios tamaños y distribuciones hasta superar 500 GB en la definición acordada;
   incluir nubes densas, dispersas, RGB y sin RGB, y declarar tamaño en GB o GiB.
 - [ ] Registrar RAM pico, memoria GPU, tiempo de conversión, tiempo a primera imagen, latencia de
