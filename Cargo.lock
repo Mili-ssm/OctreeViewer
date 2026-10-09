@@ -971,6 +971,7 @@ version = "0.1.0"
 dependencies = [
  "lz4_flex",
  "thiserror 2.0.21",
+ "viewer_core",
 ]
 
 [[package]]

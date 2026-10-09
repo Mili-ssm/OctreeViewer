@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 lz4_flex = "0.14"
 thiserror.workspace = true
+viewer_core = { path = "../viewer_core" }

@@ -75,7 +75,7 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32 incremental y mediciones sintéticas ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | El lector, escritor y fixtures del formato están pendientes. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Especificación v1, cuantizador `u32`, codec LZ4 por bloque, CRC32 y escritor incremental con índice/footer ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md)). | El lector y las fixtures del formato están pendientes. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 
 ## Qué significará “feature complete”
@@ -219,7 +219,7 @@ compatibles entre versiones.
 - [ ] Incluir detección de truncamiento/corrupción y mecanismo de integridad por bloque o índice.
 - [ ] Implementar lector con acceso aleatorio, lectura parcial y validación explícita de versiones y
   tamaños antes de reservar memoria.
-- [ ] Implementar escritor que genere archivos deterministas cuando sea posible, cierre correctamente
+- [x] Implementar escritor que genere archivos deterministas cuando sea posible, cierre correctamente
   el índice y no publique como válido un resultado parcial.
 - [ ] Añadir fixtures pequeños, grandes sintéticos, archivos malformados y pruebas de round-trip,
   lectura selectiva, corrupción, límites de tamaño y compatibilidad de versiones.
