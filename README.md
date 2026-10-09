@@ -1,37 +1,337 @@
 # Octree Viewer
 
-Visor experimental de nubes de puntos en Rust, con un núcleo común, una capa de preparación de
-escena `wgpu` y bindings WASM.
+Visor extensible de nubes LiDAR y nubes de puntos 3D, construido en Rust y ejecutable en el
+navegador mediante WebAssembly. El proyecto está en una fase temprana: hoy contiene un núcleo de
+voxelización en memoria, una importación LAS/LAZ incremental, preparación de datos de escena y una
+demo web 2D. Aún no es un visor 3D ni puede abrir y explorar datasets de cientos de GB de extremo a
+extremo.
 
-## Estado actual
+## Intención del proyecto
 
-El núcleo recibe puntos RGB en lotes y los agrega en voxeles dentro de un `HashMap` en memoria. Se
-añadió un lector LAS/LAZ incremental que convierte puntos a coordenadas locales y devuelve lotes
-acotados (hasta 65.536 puntos, con un límite adicional basado en el tamaño de registro). Esto limita
-las copias de salida, pero no sustituye una medición de memoria del decodificador LAZ con archivos
-reales. En navegador, `WasmLasImportSession` lee un `Blob` usando `FileReaderSync`; debe crearse
-dentro de un Web Worker dedicado y el host debe pedir el siguiente lote solo cuando pueda procesarlo.
-El host web todavía envía arrays a WASM y recibe una copia de todas las instancias para dibujarlas
-como una proyección 2D de depuración. La capa `viewer_render_wgpu` prepara datos y define un shader,
-pero todavía no crea un dispositivo, un pipeline ni presenta una escena en GPU.
+La meta es ofrecer una base de visualización que pueda explorar datasets LiDAR mayores que la
+memoria disponible sin cargarlos completos. El visor debe leer progresivamente una estructura
+espacial persistente, elegir solo los bloques que necesita la vista y mantener un presupuesto
+acotado de memoria, transferencia y renderizado.
 
-La lectura LAS/LAZ por bloques está disponible, pero no hay almacenamiento fuera de memoria, octree
-ni selección por nivel de detalle, y la importación aún no alimenta un visor GPU. Por tanto, el
-proyecto todavía no puede visualizar nubes de cientos de GB de extremo a extremo. El tamaño del
-archivo no determina por sí solo el coste: también cuentan la cantidad de puntos y voxeles únicos,
-el formato, la memoria disponible y el presupuesto de renderizado.
+La ambición es superar a Potree en dimensiones concretas que podamos medir —por ejemplo tiempo hasta
+la primera vista, latencia al navegar, memoria máxima, coste de conversión y facilidad para añadir
+nuevos atributos, fuentes o renderizadores— conservando visualización web y una ruta WASM en Rust.
+“Más potente y eficiente” es una dirección, no una afirmación demostrada: se tendrá que comparar
+contra Potree con los mismos datasets, equipo, configuración y criterios de calidad visual.
 
-## Dirección de evolución
+Una capacidad requerida es **un formato de almacenamiento propio, versionado y optimizado para el
+visor**, pensado para conversión, acceso espacial aleatorio y lectura progresiva de datasets LiDAR
+de más de 500 GB. LAS/LAZ seguirán siendo formatos de entrada; el formato del proyecto será una
+representación de trabajo optimizada para visualizar. La compatibilidad con COPC/EPT se evaluará
+como interoperabilidad, sin sustituir el requisito del formato propio.
 
-1. Conectar la sesión incremental LAS/LAZ al host web mediante un worker con cancelación y control
-   de contrapresión.
-2. Construir un índice espacial jerárquico fuera de memoria, con niveles de detalle y consultas por
-   frustum; conservar una ruta de voxelización para agregación y reducción de densidad.
-3. Enviar a GPU solo los bloques visibles dentro de un presupuesto de instancias y memoria.
-4. Medir tiempo de carga, memoria máxima, latencia de consulta y estabilidad visual con datasets
-   representativos, antes de fijar objetivos cuantitativos.
+El objetivo de escala se refiere a explorar progresivamente una nube cuyo dataset fuente supere los
+500 GB. No significa mantener todos sus puntos en RAM o dibujarlos simultáneamente. Antes de declarar
+el soporte completo se debe fijar si ese tamaño se mide antes o después de la conversión, qué atributos
+se incluyen y qué hardware y navegador forman parte del objetivo.
 
-## Desarrollo
+## Principios de arquitectura
+
+- **Lectura fuera de memoria:** no retener el dataset completo en RAM ni copiar la escena completa a
+  JavaScript.
+- **Acceso espacial:** indexar datos en bloques jerárquicos independientes que puedan leerse,
+  descomprimirse y descartarse por separado.
+- **Nivel de detalle:** seleccionar detalle según cámara, tamaño proyectado y presupuesto, no solo
+  cantidad total de puntos.
+- **Contratos pequeños:** separar geometría, almacenamiento, lectura, consulta espacial y
+  presentación para poder extenderlos sin acoplar el núcleo a WASM o `wgpu`.
+- **Métricas antes de promesas:** toda afirmación de escala o rendimiento debe venir acompañada de
+  dataset, hardware, configuración, límites y mediciones reproducibles.
+- **Conversión recuperable:** preparar el dataset puede tardar; la conversión debe informar progreso,
+  permitir cancelación y evitar perder el trabajo ya completado tras un fallo.
+
+### Flujo objetivo de datos
+
+La preparación de un dataset de cientos de GB y su exploración son trabajos distintos. La conversión
+se plantea inicialmente como herramienta Rust nativa con uso de memoria acotado; el navegador abre
+el resultado propio y lee solo metadatos y bloques requeridos por la vista. No se considera requisito
+convertir 500 GB dentro de WASM.
+
+```text
+LAS/LAZ ──► conversor Rust nativo ──► formato propio versionado
+                                         │
+                               Blob local o lectura remota
+                                         │
+                 viewer_wasm ──► viewer_core: selección/LOD
+                                         │
+                               viewer_render_wgpu
+                                         │
+                                  host web 3D
+```
+
+## Estado actual del repositorio
+
+Este inventario describe el árbol de trabajo actual; comprobar el estado de Git antes de asociarlo a
+una versión publicada.
+
+| Área | Estado observado | Límite actual |
+| --- | --- | --- |
+| `viewer_core` | Tipos de puntos, RGB, lotes, voxeles, voxelización y filtro por AABB. | `SparseVoxelStore` guarda todos los voxeles en un `HashMap` en memoria; no existe índice jerárquico. |
+| `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
+| `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
+| `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
+| Formato propio | No implementado ni especificado. | No hay lector, escritor, convertidor ni fixtures del formato. |
+| Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
+
+## Qué significará “feature complete”
+
+El proyecto se podrá considerar completo para su objetivo inicial cuando se pueda:
+
+1. Convertir una fuente LAS/LAZ LiDAR de más de 500 GB al formato propio, con progreso, cancelación,
+   recuperación y errores comprensibles.
+2. Abrir el resultado sin cargar todos sus puntos y navegarlo desde un navegador compatible mediante
+   WASM y renderizado 3D GPU.
+3. Cargar solo los bloques requeridos por la vista, cambiar de nivel de detalle y mantener los límites
+   acordados de RAM, GPU y tiempo de respuesta.
+4. Recuperar metadatos y atributos definidos por el formato, y permitir añadir al menos una nueva
+   fuente de datos o modo de color sin reescribir el núcleo ni la interfaz de render.
+5. Repetir y publicar los benchmarks, pruebas de integridad del formato y comprobaciones visuales que
+   respaldan las afirmaciones de compatibilidad y rendimiento.
+
+La selección de clases, medición, recorte, edición, anotación, exportación, autenticación y trabajo
+colaborativo no se consideran alcance inicial por defecto. Se pueden añadir si se convierten en
+requisitos explícitos.
+
+## Plan de trabajo
+
+Las tareas están ordenadas por dependencias. Los nombres de crates futuros son propuestas de
+organización; pueden cambiar durante la implementación si la separación real del código lo justifica.
+
+### Fase 0 — Contrato de escala y comparación
+
+**Característica:** fijar qué significa soporte de más de 500 GB y cómo se comprobará la ambición
+frente a Potree.
+
+- [ ] Definir si los 500 GB corresponden a LAS/LAZ de origen, al resultado propio o a ambos; registrar
+  puntos, atributos, CRS, distribución espacial y tamaño convertido de cada dataset.
+- [ ] Definir entornos objetivo: navegador, sistema operativo, memoria RAM/GPU, almacenamiento local o
+  remoto y disponibilidad de lectura por rangos.
+- [ ] Elegir métricas: tiempo de conversión, tiempo hasta primera imagen, memoria pico, bytes leídos,
+  latencia de consulta/navegación, FPS o tiempo de frame, calidad visual y estabilidad.
+- [ ] Crear una comparación repetible con Potree y datos equivalentes. Registrar versiones, comandos,
+  opciones, hardware y resultados; no comparar cifras de entornos distintos.
+- [ ] Establecer umbrales de aceptación para cada métrica después de una primera medición de referencia.
+
+**Cierre:** existe un documento de benchmark versionado con datasets reproducibles, hardware y
+umbrales acordados. Hasta entonces, “más eficiente que Potree” sigue siendo una meta sin verificar.
+
+### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
+
+**Característica:** representar datasets y consultas sin depender de una estructura residente
+completa en memoria.
+
+- [ ] Revisar el modelo de coordenadas: conservar coordenadas enteras/escala/desplazamiento o una
+  precisión equivalente antes de convertir a coordenadas locales de renderizado.
+- [ ] Definir límites, identificadores de nodos/bloques, niveles, atributos y estadísticas espaciales
+  que comparten el convertidor, el lector y el renderer.
+- [ ] Añadir consultas por frustum y selección de nodos por nivel de detalle y presupuesto; mantener
+  AABB como consulta simple útil para recorte.
+- [ ] Separar voxelización/agregación de la representación persistente de puntos. La voxelización
+  debe seguir disponible como reducción de densidad opcional, no como único camino de renderizado.
+- [ ] Definir límites de datos y errores: coordenadas inválidas, límites desbordados, archivos
+  truncados, atributos ausentes y conteos grandes.
+- [ ] Diseñar contratos pequeños para leer fuentes, solicitar bloques y proporcionar atributos. Evitar
+  hacer que `viewer_core` dependa de WASM, DOM o tipos de `wgpu`.
+
+**Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
+los tests validan límites, precisión, orden LOD y presupuestos.
+
+### Fase 2 — Formato de archivo propio (`viewer_format`, crate propuesto)
+
+**Característica:** persistir una nube organizada en bloques indexados, legibles aleatoriamente y
+compatibles entre versiones.
+
+- [ ] Publicar una especificación mínima: magic/versionado, endianness, metadatos, CRS y transformación
+  de coordenadas, esquema de atributos, jerarquía, directorio de bloques, offsets/tamaños, compresión y
+  reglas de alineación.
+- [ ] Definir representación de cada nodo: límites espaciales, nivel, conteos, rango de atributos,
+  política de muestreo y bloque(s) asociados.
+- [ ] Elegir compresión por bloque independiente para poder leer y descartar datos sin descomprimir el
+  archivo entero; medir ratio, coste de CPU y coste de lectura.
+- [ ] Incluir detección de truncamiento/corrupción y mecanismo de integridad por bloque o índice.
+- [ ] Implementar lector con acceso aleatorio, lectura parcial y validación explícita de versiones y
+  tamaños antes de reservar memoria.
+- [ ] Implementar escritor que genere archivos deterministas cuando sea posible, cierre correctamente
+  el índice y no publique como válido un resultado parcial.
+- [ ] Añadir fixtures pequeños, grandes sintéticos, archivos malformados y pruebas de round-trip,
+  lectura selectiva, corrupción, límites de tamaño y compatibilidad de versiones.
+- [ ] Documentar política de compatibilidad: qué versiones se leen, cómo se migra, qué campos pueden
+  ampliarse y cómo se preservan atributos desconocidos.
+
+**Cierre:** el lector recupera un bloque seleccionado sin leer el archivo completo; los datos
+conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan con errores claros.
+
+### Fase 3 — Conversor de datasets grandes (`viewer_convert`, crate o binario propuesto)
+
+**Característica:** crear el formato propio desde LAS/LAZ sin almacenar toda la nube en RAM.
+
+- [ ] Implementar primero un ejecutable nativo de conversión; no exigir a la aplicación WASM leer y
+  convertir la fuente completa antes de mostrar la nube.
+- [ ] Crear un pipeline por etapas: inspección de metadatos, lectura, construcción del índice/LOD,
+  codificación y escritura de bloques.
+- [ ] Medir e imponer límites de memoria por buffers, colas, compresión y ordenamiento; permitir
+  paralelismo acotado con contrapresión.
+- [ ] Mantener progreso por fase, puntos procesados, bytes escritos, cancelación y reporte de errores.
+- [ ] Guardar checkpoints o permitir reanudar/reconstruir el trabajo sin corromper un archivo final.
+- [ ] Definir estrategia de partición y LOD que preserve representación útil tanto en zonas densas
+  como dispersas; medir sesgo y artefactos introducidos por muestreo.
+- [ ] Evitar pérdida silenciosa de dimensiones LAS/LAZ: preservar atributos soportados y reportar de
+  forma explícita los que se descartan o transforman.
+- [ ] Aceptar primero LAS/LAZ como fuentes requeridas; evaluar COPC/EPT como entrada interoperable y
+  fuente para pruebas, según soporte y calidad de las bibliotecas elegidas.
+
+**Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
+y reanudarse, y produce un archivo validado y abierto por el lector del formato.
+
+### Fase 4 — Lectura fuera de memoria y selección (`viewer_core` + `viewer_format`)
+
+**Característica:** pasar de cámara/consulta a bloques concretos, priorizados y acotados.
+
+- [ ] Implementar recorrido jerárquico con poda por frustum y selección de LOD según error/tamaño
+  proyectado o política equivalente documentada.
+- [ ] Crear planificador de solicitudes con prioridad por visibilidad y distancia, límites de trabajos
+  en curso y cancelación de bloques que dejan de ser relevantes.
+- [ ] Añadir caché acotada de bloques descomprimidos con política de expulsión, presupuesto de bytes y
+  estadísticas observables.
+- [ ] Gestionar transiciones LOD sin huecos notorios ni duplicación excesiva de puntos; especificar el
+  comportamiento en los bordes de bloques.
+- [ ] Hacer que la consulta solo devuelva bloques dentro del presupuesto, y exponer los motivos de
+  omisión/atraso para diagnóstico.
+
+**Cierre:** al cambiar la cámara, se solicitan/cancelan los bloques esperados; la memoria de caché no
+supera el límite configurado y la selección mantiene cobertura visual aceptable.
+
+### Fase 5 — Presentación 3D (`viewer_render_wgpu`)
+
+**Característica:** transformar bloques seleccionados en una escena 3D visible y eficiente.
+
+- [ ] Inicializar adaptador, dispositivo, superficie, formato de presentación, pipeline y recursos GPU;
+  manejar resize, pérdida/restauración de superficie y errores de inicialización.
+- [ ] Implementar cámara y controles de navegación adecuados a escalas y coordenadas LiDAR, con
+  encuadre inicial al dataset y precisión numérica estable cerca/lejos del origen.
+- [ ] Subir solo bloques seleccionados; actualizar y reutilizar buffers en lugar de reconstruir y
+  serializar la escena completa en cada cambio.
+- [ ] Añadir modos iniciales de color (RGB, intensidad, elevación y clasificación cuando exista) y
+  tamaño de punto configurable.
+- [ ] Definir presupuesto de puntos/instancias, gestión de recursos y comportamiento si la GPU no
+  soporta los límites esperados.
+- [ ] Añadir diagnóstico de tiempo de frame, bytes subidos y cantidad visible; el shader actual es un
+  punto de partida, no un renderer completo.
+
+**Cierre:** el host presenta una nube real en 3D, permite navegarla y el número de bloques y bytes
+subidos corresponde a la selección visible, no al tamaño total del dataset.
+
+### Fase 6 — Orquestación WASM (`viewer_wasm`)
+
+**Característica:** exponer una API estable y asíncrona al host para abrir datasets, gestionar lecturas
+y presentar estado.
+
+- [ ] Conectar lector del formato y solicitudes espaciales con el controlador del visor.
+- [ ] Mover lectura y decodificación a workers; definir mensajes para progreso, errores, cancelación,
+  disponibilidad de bloques y contrapresión.
+- [ ] Sustituir las copias completas de arrays/instancias por buffers o lotes acotados, con propiedad
+  y ciclo de vida claros entre JS y WASM.
+- [ ] Soportar fuente local seleccionada por el usuario; definir por separado si el producto debe
+  aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren contrato
+  específico.
+- [ ] Exponer operaciones útiles sin acoplar el host a estructuras internas: abrir/cerrar, encuadrar,
+  mover cámara, definir modo de color, consultar estadísticas y cancelar.
+- [ ] Añadir pruebas de bindings, ciclo de vida y concurrencia; comprobar que callbacks/eventos no
+  bloqueen la UI y que los errores llegan al usuario.
+
+**Cierre:** la interfaz permanece utilizable durante lectura/navegación, reporta estados y errores y
+no realiza copias proporcionales al tamaño total de la nube.
+
+### Fase 7 — Aplicación de referencia y extensibilidad (`examples/web-host`)
+
+**Característica:** demostrar el flujo completo y servir como integración mínima mantenible.
+
+- [ ] Reemplazar la proyección Canvas 2D por el canvas 3D y el renderer real.
+- [ ] Añadir selección de archivo, estados de conversión/carga, progreso, cancelar/reintentar y resumen
+  de metadatos con acciones accesibles por teclado.
+- [ ] Mostrar estadísticas de forma útil: puntos totales, bloques solicitados/visibles, nivel LOD,
+  memoria/caché conocida, tiempo de frame y errores recuperables.
+- [ ] Documentar el contrato para integrar el WASM en otra aplicación y ofrecer un ejemplo pequeño que
+  cargue datos locales reproducibles.
+- [ ] Mantener la demo como consumidor de API pública; no introducir lógica de almacenamiento o
+  geometría que duplique el núcleo en JavaScript.
+
+**Cierre:** una persona puede seleccionar un archivo convertido, ver progreso, navegar la nube y
+entender límites/errores sin editar el código de la demo.
+
+### Fase 8 — Validación de escala, calidad y compatibilidad
+
+**Característica:** demostrar que las prestaciones y el objetivo de escala se sostienen con evidencia.
+
+- [ ] Ejecutar pruebas de integridad sobre formato, índices, bloques y recuperación ante truncamiento.
+- [ ] Medir datasets de varios tamaños y distribuciones hasta superar 500 GB en la definición acordada;
+  incluir nubes densas, dispersas, RGB y sin RGB, y declarar tamaño en GB o GiB.
+- [ ] Registrar RAM pico, memoria GPU, tiempo de conversión, tiempo a primera imagen, latencia de
+  navegación, bytes leídos/subidos, frames perdidos y calidad visual.
+- [ ] Comparar contra Potree en la misma máquina, fuente y tarea de visualización; documentar
+  diferencias de conversión/formato, mantener calidad visual equivalente y evitar comparar solo FPS
+  o solo tamaño convertido.
+- [ ] Separar tiempos de conversión, apertura, primera vista útil y navegación; reportar número de
+  puntos y atributos, RAM del proceso/conversor, memoria WASM/JS/GPU cuando se pueda medir, bytes
+  solicitados y leídos, y latencia de frame p50/p95/p99.
+- [ ] Repetir con caché fría y caliente y publicar versiones de software, configuración, equipo,
+  almacenamiento/red y recorrido de cámara para que la comparación sea reproducible.
+- [ ] Probar navegadores/dispositivos objetivo, archivos inválidos, falta de memoria, pérdida de
+  dispositivo/superficie y cancelación durante lectura/conversión.
+- [ ] Publicar procedimiento de benchmark, resultados y límites conocidos; ajustar los objetivos si
+  la evidencia no los alcanza.
+
+**Cierre:** se puede reproducir la prueba de más de 500 GB dentro de límites acordados y explicar con
+datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
+
+## Mapa por librería
+
+| Componente | Responsabilidad final | Dependencias principales |
+| --- | --- | --- |
+| `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
+| `viewer_format` (propuesto) | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
+| `viewer_convert` (propuesto) | Conversión fuera de memoria desde LAS/LAZ y construcción de jerarquía/LOD. | Lector LAS/LAZ, `viewer_core`, `viewer_format`. |
+| `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
+| `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
+| `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |
+
+## Decisiones pendientes que afectan el plan
+
+Estas decisiones no bloquean el trabajo inicial sobre modelo, formato y pruebas pequeñas, pero sí
+cambian alcance, rendimiento y compatibilidad:
+
+- ¿El objetivo de 500 GB se mide en archivos fuente LAS/LAZ, en formato propio o en ambos?
+- ¿La primera versión abre únicamente archivos locales o también datos remotos mediante peticiones
+  por rango?
+- ¿Qué plataformas, navegadores, RAM y clases de GPU son hardware oficialmente objetivo?
+- ¿Qué dimensiones LAS/LAZ se deben preservar en v1 y cuáles pueden convertirse o descartarse con
+  aviso explícito?
+- ¿La salida es un contenedor único, un conjunto de archivos o ambos? Esta decisión afecta escrituras
+  interrumpidas, almacenamiento remoto y lectura aleatoria.
+- ¿Qué licencia y política de compatibilidad tendrá la especificación propia, y se publicará para
+  permitir lectores externos?
+- ¿Qué tareas de análisis (selección, medición, clasificación, recorte, exportación) pertenecen al
+  primer producto y cuáles son extensiones posteriores?
+
+## Referencias para el objetivo técnico
+
+- [Potree](https://github.com/potree/potree): referencia WebGL de visualización de grandes nubes; su
+  repositorio documenta conversión a formato Potree y trabajos sobre octrees y LOD. La comparación de
+  rendimiento debe basarse en pruebas propias reproducibles.
+- [COPC 1.0](https://copc.io/copc-specification-1.0.pdf): formato LAZ organizado como octree para
+  acceso espacial y lectura por bloques; referencia útil para evaluar interoperabilidad y decisiones
+  de acceso aleatorio.
+- [Estándar LAS de OGC](https://www.ogc.org/standards/LAS/): referencia de intercambio para datos
+  LiDAR que deben poder convertirse a la representación de visualización del proyecto.
+
+## Desarrollo y validación
+
+Checks existentes para el workspace:
 
 ```bash
 cargo test --workspace
@@ -39,5 +339,6 @@ cargo fmt --all -- --check
 cargo check -p viewer_wasm --target wasm32-unknown-unknown
 ```
 
-En el entorno actual se pueden ejecutar los tests de escritorio en modo offline si las dependencias
-están en caché. La compilación WASM también requiere tener instaladas las dependencias del target.
+La ejecución de los tests y la compilación WASM depende de las dependencias y targets disponibles en
+el entorno. Los checks actuales no sustituyen las pruebas de escala del plan: estas necesitarán
+datasets grandes, hardware objetivo y un procedimiento de benchmark reproducible.
