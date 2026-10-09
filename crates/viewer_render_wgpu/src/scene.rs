@@ -70,11 +70,12 @@ pub struct RenderScene {
 
 impl RenderScene {
     pub fn from_points(points: &[Point]) -> Self {
+        let point_size = point_glyph_size(points.iter().map(|point| point.position));
         let instances: Vec<_> = points
             .iter()
             .map(|point| InstanceRaw {
                 center: point.position,
-                size: 1.0,
+                size: point_size,
                 color: point.color.to_linear_rgba(),
                 intensity: -1.0,
                 classification: -1.0,
@@ -112,6 +113,7 @@ impl RenderScene {
 
     pub fn from_point_block(block: &PointBlock) -> Self {
         let points = block.points().points();
+        let point_size = point_glyph_size(points.iter().map(|point| point.position));
         let intensity = scalar_attribute(block.attributes(), "intensity", points.len());
         let classification = scalar_attribute(block.attributes(), "classification", points.len());
         let instances: Vec<_> = points
@@ -119,7 +121,7 @@ impl RenderScene {
             .enumerate()
             .map(|(index, point)| InstanceRaw {
                 center: point.position,
-                size: 1.0,
+                size: point_size,
                 color: point.color.to_linear_rgba(),
                 intensity: intensity.as_ref().map_or(-1.0, |values| values[index]),
                 classification: classification.as_ref().map_or(-1.0, |values| values[index]),
@@ -196,6 +198,32 @@ impl RenderScene {
             }
         }
         Some(bounds)
+    }
+}
+
+fn point_glyph_size(positions: impl Iterator<Item = [f32; 3]>) -> f32 {
+    const DEGENERATE_GLYPH_SIZE: f32 = 1.0e-5;
+    let mut count = 0_u32;
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for position in positions {
+        count = count.saturating_add(1);
+        for axis in 0..3 {
+            min[axis] = min[axis].min(position[axis]);
+            max[axis] = max[axis].max(position[axis]);
+        }
+    }
+    if count == 0 {
+        return DEGENERATE_GLYPH_SIZE;
+    }
+
+    let extent = (0..3)
+        .map(|axis| max[axis] - min[axis])
+        .fold(0.0_f32, f32::max);
+    if extent.is_finite() && extent > 0.0 {
+        extent / (count as f32).sqrt()
+    } else {
+        DEGENERATE_GLYPH_SIZE
     }
 }
 
@@ -289,8 +317,8 @@ var<uniform> camera: CameraUniform;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
-    let local_position = input.instance_center - camera.render_origin.xyz
-        + input.position * input.instance_size * camera.style.y;
+    let local_position = input.instance_center * camera.render_origin.w - camera.render_origin.xyz
+        + input.position * input.instance_size * camera.style.y * camera.render_origin.w;
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * vec4<f32>(local_position, 1.0);
@@ -424,5 +452,32 @@ mod tests {
         assert_eq!(scene.instances()[1].classification, 7.0);
         assert_eq!(scene.instances()[1].center[2], 5.0);
         assert_eq!(scene.elevation_range(), Some([2.0, 5.0]));
+        assert!((scene.instances()[0].size - 3.0 / 2.0_f32.sqrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn point_glyph_size_scales_with_cloud_extent_and_density() {
+        let points = vec![
+            Point::new([0.0; 3], ColorRgb::new(1, 2, 3)),
+            Point::new([0.1, 0.0, 0.0], ColorRgb::new(1, 2, 3)),
+            Point::new([0.0, 0.1, 0.0], ColorRgb::new(1, 2, 3)),
+            Point::new([0.0, 0.0, 0.1], ColorRgb::new(1, 2, 3)),
+        ];
+
+        let scene = RenderScene::from_points(&points);
+
+        assert!((scene.instances()[0].size - 0.05).abs() < 1e-6);
+    }
+
+    #[test]
+    fn coincident_points_use_a_small_visible_glyph() {
+        let points = vec![
+            Point::new([0.0; 3], ColorRgb::new(1, 2, 3)),
+            Point::new([0.0; 3], ColorRgb::new(4, 5, 6)),
+        ];
+
+        let scene = RenderScene::from_points(&points);
+
+        assert_eq!(scene.instances()[0].size, 1.0e-5);
     }
 }

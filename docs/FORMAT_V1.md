@@ -3,7 +3,9 @@
 This document defines the first version of the project's native point-cloud container. It is a
 little-endian, seekable single-file format with an in-memory index and independently verified
 point blocks. Version 1 supports raw blocks (`codec = 0`) and independent LZ4 blocks (`codec = 1`).
-Version 2 adds an explicit additive hierarchy mode; see [FORMAT_V2.md](FORMAT_V2.md).
+Version 2 adds an explicit additive hierarchy mode; see [FORMAT_V2.md](FORMAT_V2.md). Version 3 adds
+renderer-only visual scaling while retaining v1/v2 hierarchy behavior; see
+[FORMAT_V3.md](FORMAT_V3.md).
 
 The file stores coordinates as per-block `u32` values relative to a local `f64` origin and scale.
 Writers must receive source positions in `f64`, before narrowing to render coordinates. Readers

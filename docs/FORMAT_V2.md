@@ -36,6 +36,7 @@ resolution estimate.
 
 ## Compatibility
 
-The current reader accepts versions 1 and 2. A v1 file is reported as replacement semantics. A v1
-reader must reject v2 because it cannot interpret additive hierarchy behavior. Future changes to the
-v2 index layout or tag meanings require a new version.
+Version 2 readers interpret v1 files as replacement semantics and must reject v3 because they do not
+understand its scale field. The current reader accepts versions 1, 2 and 3. Future changes to the v2
+index layout or tag meanings require a new version. Version 3 adds renderer-only visual scaling; see
+[FORMAT_V3.md](FORMAT_V3.md).

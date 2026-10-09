@@ -22,6 +22,7 @@ pub enum GpuRendererError {
     InvalidSceneSize,
     InvalidSceneData,
     InvalidPointSize,
+    InvalidVisualScale,
     InvalidGpuBudget,
     GpuBufferLimitExceeded {
         requested_bytes: u64,
@@ -54,6 +55,9 @@ impl std::fmt::Display for GpuRendererError {
             Self::InvalidSceneData => f.write_str("scene contains invalid render data"),
             Self::InvalidPointSize => {
                 f.write_str("point size multiplier must be finite and between 0.1 and 10")
+            }
+            Self::InvalidVisualScale => {
+                f.write_str("visual scale must be positive, finite, and representable as f32")
             }
             Self::InvalidGpuBudget => f.write_str(
                 "GPU budget must allow at least one instance and a nonzero instance count",
@@ -205,6 +209,7 @@ pub struct SurfaceRenderer<'window> {
     elevation_range: Option<[f32; 2]>,
     color_mode: ColorMode,
     point_size: f32,
+    visual_scale: f64,
 }
 
 impl<'window> SurfaceRenderer<'window> {
@@ -385,6 +390,7 @@ impl<'window> SurfaceRenderer<'window> {
             elevation_range: None,
             color_mode: ColorMode::Rgb,
             point_size: 1.0,
+            visual_scale: 1.0,
         })
     }
 
@@ -553,6 +559,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.intensity_range = None;
         self.elevation_range = None;
         self.uploaded_bytes = 0;
+        self.visual_scale = 1.0;
     }
 
     pub fn visible_block_count(&self) -> usize {
@@ -579,13 +586,22 @@ impl<'window> SurfaceRenderer<'window> {
         Ok(())
     }
 
+    pub fn set_visual_scale(&mut self, scale: f64) -> Result<(), GpuRendererError> {
+        if !scale.is_finite() || scale <= 0.0 || !(scale as f32).is_finite() || scale as f32 == 0.0
+        {
+            return Err(GpuRendererError::InvalidVisualScale);
+        }
+        self.visual_scale = scale;
+        Ok(())
+    }
+
     pub fn point_size(&self) -> f32 {
         self.point_size
     }
 
     pub fn fit_scene(&mut self, scene: &RenderScene) -> bool {
         self.scene_bounds = scene.bounds();
-        self.scene_bounds.is_some_and(|bounds| {
+        self.display_bounds().is_some_and(|bounds| {
             self.camera.fit(
                 bounds,
                 [self.surface_config.width, self.surface_config.height],
@@ -593,8 +609,19 @@ impl<'window> SurfaceRenderer<'window> {
         })
     }
 
+    fn display_bounds(&self) -> Option<SceneBounds> {
+        let bounds = self.scene_bounds?;
+        let min = bounds.min.map(|value| value * self.visual_scale);
+        let max = bounds.max.map(|value| value * self.visual_scale);
+        if min.iter().chain(&max).all(|value| value.is_finite()) {
+            Some(SceneBounds { min, max })
+        } else {
+            None
+        }
+    }
+
     pub fn fit_visible_blocks(&mut self) -> bool {
-        self.scene_bounds.is_some_and(|bounds| {
+        self.display_bounds().is_some_and(|bounds| {
             self.camera.fit(
                 bounds,
                 [self.surface_config.width, self.surface_config.height],
@@ -607,14 +634,27 @@ impl<'window> SurfaceRenderer<'window> {
         bounds: viewer_core::SpatialBounds,
         coordinate_origin: [f64; 3],
     ) -> bool {
-        let min = std::array::from_fn(|axis| bounds.min()[axis] - coordinate_origin[axis]);
-        let max = std::array::from_fn(|axis| bounds.max()[axis] - coordinate_origin[axis]);
-        let bounds = SceneBounds { min, max };
+        let local = SceneBounds {
+            min: std::array::from_fn(|axis| bounds.min()[axis] - coordinate_origin[axis]),
+            max: std::array::from_fn(|axis| bounds.max()[axis] - coordinate_origin[axis]),
+        };
+        let display = SceneBounds {
+            min: local.min.map(|value| value * self.visual_scale),
+            max: local.max.map(|value| value * self.visual_scale),
+        };
+        if display
+            .min
+            .iter()
+            .chain(&display.max)
+            .any(|value| !value.is_finite())
+        {
+            return false;
+        }
         if self.camera.fit(
-            bounds,
+            display,
             [self.surface_config.width, self.surface_config.height],
         ) {
-            self.scene_bounds = Some(bounds);
+            self.scene_bounds = Some(local);
             true
         } else {
             false
@@ -648,7 +688,9 @@ impl<'window> SurfaceRenderer<'window> {
             .planes()
             .iter()
             .map(|plane| {
-                let normal = plane.normal();
+                let normal = plane
+                    .normal()
+                    .map(|component| component * self.visual_scale);
                 viewer_core::FrustumPlane::new(
                     normal,
                     plane.offset()
@@ -669,10 +711,19 @@ impl<'window> SurfaceRenderer<'window> {
         geometric_error: f64,
         coordinate_origin: [f64; 3],
     ) -> f64 {
+        let min = std::array::from_fn(|axis| {
+            (bounds.min()[axis] - coordinate_origin[axis]) * self.visual_scale
+        });
+        let max = std::array::from_fn(|axis| {
+            (bounds.max()[axis] - coordinate_origin[axis]) * self.visual_scale
+        });
+        let Ok(bounds) = viewer_core::SpatialBounds::new(min, max) else {
+            return f64::INFINITY;
+        };
         self.camera.projected_error_pixels(
             bounds,
-            geometric_error,
-            coordinate_origin,
+            geometric_error * self.visual_scale,
+            [0.0; 3],
             [self.surface_config.width, self.surface_config.height],
         )
     }
@@ -695,7 +746,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.surface.configure(&self.device, &self.surface_config);
         self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
         if !self.camera.is_fitted()
-            && let Some(bounds) = self.scene_bounds
+            && let Some(bounds) = self.display_bounds()
         {
             self.camera.fit(bounds, [width, height]);
         }
@@ -710,13 +761,14 @@ impl<'window> SurfaceRenderer<'window> {
         }
         let Some(CameraFrame {
             view_projection,
-            render_origin,
+            mut render_origin,
         }) = self
             .camera
             .frame([self.surface_config.width, self.surface_config.height])
         else {
             return Ok(FrameStatus::Suspended);
         };
+        render_origin[3] = self.visual_scale as f32;
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Timeout) => return Ok(FrameStatus::SkippedTimeout),

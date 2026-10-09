@@ -19,8 +19,10 @@ pub(crate) const FOOTER_SIZE: u64 = 40;
 pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
 pub(crate) const INDEX_MAGIC_V1: &[u8; 8] = b"OCTVIDX1";
 pub(crate) const INDEX_MAGIC_V2: &[u8; 8] = b"OCTVIDX2";
+pub(crate) const INDEX_MAGIC_V3: &[u8; 8] = b"OCTVIDX3";
 pub(crate) const FOOTER_MAGIC_V1: &[u8; 8] = b"OCTVEND1";
 pub(crate) const FOOTER_MAGIC_V2: &[u8; 8] = b"OCTVEND2";
+pub(crate) const FOOTER_MAGIC_V3: &[u8; 8] = b"OCTVEND3";
 
 /// Bounds per-block allocations made by the writer.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -306,6 +308,9 @@ fn build_block_nodes(
 }
 
 pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if !metadata.visual_scale().is_finite() || metadata.visual_scale() <= 0.0 {
+        return Err(FormatError::InvalidVisualScale);
+    }
     for value in [metadata.crs(), metadata.sampling_policy()]
         .into_iter()
         .flatten()
@@ -649,9 +654,13 @@ impl BoundsAccumulator {
 }
 
 fn format_version(metadata: &FormatMetadata) -> u16 {
-    match metadata.dataset().hierarchy().semantics() {
-        HierarchySemantics::Replacement => 1,
-        HierarchySemantics::Additive => 2,
+    if metadata.visual_scale() != 1.0 {
+        3
+    } else {
+        match metadata.dataset().hierarchy().semantics() {
+            HierarchySemantics::Replacement => 1,
+            HierarchySemantics::Additive => 2,
+        }
     }
 }
 
@@ -673,7 +682,9 @@ fn footer_bytes(
     version: u16,
 ) -> [u8; 40] {
     let mut bytes = [0; 40];
-    let magic = if version == 2 {
+    let magic = if version >= 3 {
+        FOOTER_MAGIC_V3
+    } else if version == 2 {
         FOOTER_MAGIC_V2
     } else {
         FOOTER_MAGIC_V1
@@ -733,7 +744,9 @@ fn write_index<W: Write>(
         checksum: Crc32::new(),
         length: 0,
     };
-    let index_magic = if version == 2 {
+    let index_magic = if version >= 3 {
+        INDEX_MAGIC_V3
+    } else if version == 2 {
         INDEX_MAGIC_V2
     } else {
         INDEX_MAGIC_V1
@@ -752,11 +765,14 @@ fn write_index<W: Write>(
     write_string(&mut index, metadata.sampling_policy())?;
 
     let hierarchy = metadata.dataset().hierarchy();
-    if version == 2 {
+    if version >= 2 {
         index.u8(match hierarchy.semantics() {
             HierarchySemantics::Replacement => 0,
             HierarchySemantics::Additive => 1,
         })?;
+    }
+    if version >= 3 {
+        index.f64(metadata.visual_scale())?;
     }
     index.u32(
         u32::try_from(hierarchy.attributes().len()).map_err(|_| FormatError::SchemaTooLarge)?,
@@ -966,6 +982,8 @@ pub enum FormatError {
     WriterPoisoned,
     #[error("format metadata is invalid: {0}")]
     InvalidMetadata(&'static str),
+    #[error("visual scale must be finite and greater than zero")]
+    InvalidVisualScale,
     #[error("metadata string has {0} bytes, above the format limit")]
     StringTooLong(usize),
     #[error("attribute schema has too many entries")]

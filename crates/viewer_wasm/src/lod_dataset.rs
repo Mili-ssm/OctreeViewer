@@ -10,6 +10,7 @@ use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer};
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
     metadata: Arc<DatasetMetadata>,
+    visual_scale: f64,
     cache: DecodedBlockCache,
     planner: LodTransitionPlanner,
 }
@@ -62,8 +63,17 @@ impl LodDataset {
     }
 
     pub fn from_shared_metadata(metadata: Arc<DatasetMetadata>, cache_bytes: usize) -> Self {
+        Self::from_shared_metadata_and_visual_scale(metadata, 1.0, cache_bytes)
+    }
+
+    pub fn from_shared_metadata_and_visual_scale(
+        metadata: Arc<DatasetMetadata>,
+        visual_scale: f64,
+        cache_bytes: usize,
+    ) -> Self {
         Self {
             metadata,
+            visual_scale,
             cache: DecodedBlockCache::new(cache_bytes),
             planner: LodTransitionPlanner::new(),
         }
@@ -94,10 +104,17 @@ impl LodDataset {
     }
 
     pub fn fit_camera(&self, renderer: &mut SurfaceRenderer<'_>) -> bool {
-        renderer.fit_spatial_bounds(
-            self.metadata.hierarchy().stats().root_bounds,
-            self.metadata.coordinate_frame().origin(),
-        )
+        if renderer.set_visual_scale(self.visual_scale).is_err() {
+            return false;
+        }
+        if renderer.visible_block_count() > 0 {
+            renderer.fit_visible_blocks()
+        } else {
+            renderer.fit_spatial_bounds(
+                self.metadata.hierarchy().stats().root_bounds,
+                self.metadata.coordinate_frame().origin(),
+            )
+        }
     }
 
     pub fn update_view(
@@ -116,6 +133,7 @@ impl LodDataset {
         point_budget: u64,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
+        renderer.set_visual_scale(self.visual_scale)?;
         let config = LodSelectionConfig::new(max_error_pixels, point_budget)?;
         let frustum = renderer
             .spatial_frustum(self.metadata.coordinate_frame().origin())

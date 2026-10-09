@@ -408,8 +408,13 @@ impl WasmVoxelViewer {
         let reader =
             FormatReader::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
         let hierarchy_stats = reader.metadata().hierarchy().stats();
+        let visual_scale = reader.format_metadata().visual_scale();
         let metadata = reader.format_metadata().shared_dataset();
-        let dataset = LodDataset::from_shared_metadata(metadata, cache_bytes as usize);
+        let dataset = LodDataset::from_shared_metadata_and_visual_scale(
+            metadata,
+            visual_scale,
+            cache_bytes as usize,
+        );
         if let Some(renderer) = &mut self.gpu_renderer {
             renderer.clear_dataset();
         }

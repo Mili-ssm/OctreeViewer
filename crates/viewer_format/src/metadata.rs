@@ -9,6 +9,7 @@ pub struct FormatMetadata {
     dataset: Arc<DatasetMetadata>,
     crs: Option<String>,
     sampling_policy: Option<String>,
+    visual_scale: f64,
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
 }
 
@@ -29,6 +30,7 @@ impl FormatMetadata {
             dataset: Arc::new(dataset),
             crs,
             sampling_policy,
+            visual_scale: 1.0,
             node_attribute_ranges: ranges,
         })
     }
@@ -47,6 +49,19 @@ impl FormatMetadata {
 
     pub fn sampling_policy(&self) -> Option<&str> {
         self.sampling_policy.as_deref()
+    }
+
+    /// Uniform scale applied only by the renderer to local coordinates and point glyphs.
+    pub const fn visual_scale(&self) -> f64 {
+        self.visual_scale
+    }
+
+    pub fn with_visual_scale(mut self, visual_scale: f64) -> Result<Self, MetadataError> {
+        if !visual_scale.is_finite() || visual_scale <= 0.0 {
+            return Err(MetadataError::InvalidVisualScale);
+        }
+        self.visual_scale = visual_scale;
+        Ok(self)
     }
 
     pub fn node_attribute_ranges(&self, node_id: NodeId) -> &[NodeAttributeRange] {
@@ -68,6 +83,7 @@ impl FormatMetadata {
             dataset: Arc::new(dataset),
             crs: self.crs.clone(),
             sampling_policy: self.sampling_policy.clone(),
+            visual_scale: self.visual_scale,
             node_attribute_ranges: self.node_attribute_ranges.clone(),
         }
     }
@@ -148,4 +164,6 @@ impl SourcePointBlock {
 pub enum MetadataError {
     #[error("attribute ranges are repeated for node {0:?}")]
     DuplicateNodeRanges(NodeId),
+    #[error("visual scale must be finite and greater than zero")]
+    InvalidVisualScale,
 }

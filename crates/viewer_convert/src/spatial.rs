@@ -329,7 +329,8 @@ pub(crate) fn build_spatial_plan(
             options.spatial_divisions()
         )),
         Vec::new(),
-    )?;
+    )?
+    .with_visual_scale(super::visual_scale_for_bounds(source.bounds)?)?;
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,

@@ -313,7 +313,8 @@ pub(super) fn convert(
         crs,
         Some("EPT additive hierarchy; node payloads preserve source points; geometric error is the node-cell diagonal".to_owned()),
         Vec::new(),
-    )?;
+    )?
+    .with_visual_scale(super::visual_scale_for_bounds(bounds)?)?;
     let memory_estimate = options
         .points_per_block()
         .min(
@@ -773,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn converts_local_laszip_ept_pages_as_additive_v2_hierarchy() {
+    fn converts_local_laszip_ept_pages_as_additive_v3_hierarchy() {
         let root = dir();
         fs::create_dir_all(root.join("ept-data")).unwrap();
         fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
@@ -810,6 +811,7 @@ mod tests {
 
         let mut reader = FormatReader::new(File::open(output).unwrap()).unwrap();
         let hierarchy = reader.metadata().hierarchy();
+        assert_eq!(reader.format_metadata().visual_scale(), 12.5);
         assert_eq!(hierarchy.semantics(), HierarchySemantics::Additive);
         assert_eq!(hierarchy.stats().node_count, 3);
         assert_eq!(hierarchy.stats().source_point_count, Some(3));

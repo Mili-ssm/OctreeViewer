@@ -89,12 +89,12 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, presupuesto configurable y frustum/error proyectado de cámara. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
-| `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU y carga bajo demanda de bloques v1/v2 al corte LOD. | El host aún debe crear el worker, gestionar sus mensajes/estados y presentar la demo con datos propios. |
-| `examples/web-host` | Demo WebGPU en worker, con muestra sintética, apertura de formato local, progreso por rangos, cancelación y perfiles LOD. | La cancelación termina y recrea el worker; no se ha validado visualmente con GPU en navegador. |
-| Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, escala visual uniforme y presupuesto configurable. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
+| `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU y carga bajo demanda de bloques v1/v2/v3 al corte LOD. | El host aún debe crear el worker y gestionar sus mensajes/estados. |
+| `examples/web-host` | Demo WebGPU en worker, muestra sintética, apertura de formato local, progreso por rangos, cancelación y perfiles LOD; se comprobó visualmente con Chrome en Bunny y Outer Banks. | No hay un escáner urbano de ejemplo en los archivos del repositorio; Firefox y la cancelación de una lectura local siguen pendientes. |
+| Formato propio | Especificaciones v1/v2/v3, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md), [`docs/FORMAT_V3.md`](docs/FORMAT_V3.md)). v1/v2 conservan su layout; v3 añade escala solo visual y conserva las semánticas existentes. | Fixtures prueban round-trip, bloques selectivos y lectura desde tickets del scheduler, corrupción, límites, semánticas, escala y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. La comparación numérica de cortes iguales está registrada; falta evaluación visual. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato propio con escala visual v3, particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. |
 
 ## Qué significará “feature complete”
 
@@ -229,8 +229,8 @@ los tests validan límites, precisión, orden LOD y presupuestos.
 **Característica:** persistir una nube organizada en bloques indexados, legibles aleatoriamente y
 compatibles entre versiones.
 
-- [x] Añadir v2 aditivo para jerarquías cuyos nodos contienen payloads distintos; el lector conserva
-  compatibilidad con v1 y lo interpreta como reemplazo ([`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)).
+- [x] Añadir v2 aditivo para jerarquías cuyos nodos contienen payloads distintos, y v3 con escala
+  exclusiva de presentación; el lector conserva compatibilidad con v1/v2 ([`docs/FORMAT_V2.md`](docs/FORMAT_V2.md), [`docs/FORMAT_V3.md`](docs/FORMAT_V3.md)).
 
 - [x] Publicar una especificación mínima: magic/versionado, endianness, metadatos, CRS y transformación
   de coordenadas, esquema de atributos, jerarquía, directorio de bloques, offsets/tamaños, compresión y
@@ -326,7 +326,8 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Evaluar EPT: es un dataset de varios archivos (`ept.json`, jerarquía y datos por nodo), no una
   ruta LAS/LAZ única ([especificación EPT](https://entwine.io/en/latest/entwine-point-tile.html)).
 - [x] Implementar entrada para datasets EPT locales `laszip`: leer `ept.json`, páginas JSON y LAZ
-  por nodo, validar conteos y mantener la jerarquía aditiva en v2. Remoto y otros codecs quedan fuera
+  por nodo, validar conteos y mantener la jerarquía aditiva. El formato v3 conserva esta semántica y
+  añade escala visual. Remoto y otros codecs quedan fuera
   de esta iteración.
 
 Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint | --resume]`.
@@ -512,6 +513,10 @@ todavía.
 - [x] Añadir modos de color RGB, intensidad, elevación y clasificación cuando existe el atributo.
   Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
   El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
+- [x] Ajustar el tamaño base de cada punto a la extensión y densidad del bloque para evitar cubos de una
+  unidad que oculten nubes pequeñas. El formato v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
+  la extensión máxima a 100 unidades de render sin cambiar XYZ, origen ni CRS; versiones antiguas
+  usan factor 1. Cámara, shader, frustum y error proyectado LOD aplican el mismo factor.
 - [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 4 millones de
   instancias visibles y 256 MiB de capacidad agregada para buffers de instancias. Cada buffer también
   respeta `max_buffer_size` del dispositivo y el límite `u32` de cada draw. La capacidad se redondea
@@ -527,20 +532,33 @@ todavía.
 **Cierre:** el host presenta una nube real en 3D, permite navegarla y el número de bloques y bytes
 subidos corresponde a la selección visible, no al tamaño total del dataset.
 
-**Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color y tamaño
+**Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color, tamaño
 configurable y presupuesto estricto de instancias/buffers; conserva buffers por bloque para cortes
 LOD. El host WASM expone instancias/bloques visibles y bytes subidos; la demo muestra el tiempo de
-llamada CPU al renderer. El puente LOD acepta coordenadas locales `f32` y RGB por bloque; `updateLod`
-aplica el perfil y la selección se recalcula antes del siguiente `renderFrame` después de cambios de
-cámara o llegada de bloques. Los atributos de intensidad/clasificación aún no se transfieren por este
-puente. No se ha verificado presentación visual en un navegador con GPU.
+llamada CPU al renderer. `FormatReader` preserva la escala visual v3 al abrir archivos; las APIs de
+bloques sin archivo usan escala 1. Chrome/WebGPU presentó visualmente el Bunny y el escáner costero
+Outer Banks en dos ángulos por dataset. Los atributos de intensidad/clasificación aún no se transfieren
+por el puente de bloques RGB.
+
+**Diagnóstico Bunny (2026-10-10):** el `.oct` original tiene extensión local máxima `0,15575`,
+mientras el renderer asignaba un cubo de lado `1` a cada punto. La hipótesis era que los cubos
+solapados dejaban la cámara dentro de la geometría y el culling ocultaba la nube; al dimensionar el
+glyph según la extensión/densidad y aplicar la escala de presentación v3, Bunny se ve desde dos
+ángulos en Chrome/WebGPU. El escaneo urbano solicitado no está incluido; se usó Outer Banks como
+segundo ejemplo disponible.
+
+- [x] Reproducir la pantalla vacía e inspeccionar bounds, posiciones, atributos y estado de bloques/GPU.
+- [x] Guardar el factor visual en v3, conservar lecturas v1/v2 y aplicarlo de forma coherente a cámara,
+  shader y selección LOD sin cambiar coordenadas ni CRS.
+- [x] Confirmar que Bunny y Outer Banks cargan y son visibles tras convertir y abrir sus archivos.
+- [ ] Repetir en Firefox y con un escaneo urbano cuando haya un archivo de ejemplo disponible.
 
 ### Fase 6 — Orquestación WASM (`viewer_wasm`)
 
 **Característica:** exponer una API estable y asíncrona al host para abrir datasets, gestionar lecturas
 y presentar estado.
 
-- [x] Conectar `FormatReader` v1/v2 al puente LOD: abre el índice, selecciona desde cámara y lee los
+- [x] Conectar `FormatReader` v1/v2/v3 al puente LOD: abre el índice, selecciona desde cámara y lee los
   bloques faltantes del corte antes de publicarlo. `openFormatDataset` usa `FileReaderSync`, por lo que
   el host debe ejecutar el visor en un worker; `createOffscreen` permite presentar en un canvas
   transferido al worker. Si falla una lectura, conserva el corte actual y devuelve el error.
@@ -579,7 +597,7 @@ y presentar estado.
 - [x] Comprobar en Chromium real los bindings WASM con la muestra `.oct`, la propagación de un archivo
   inválido y la cancelación de la descarga de la muestra, que recrea el visor.
 - [ ] Comprobar la cancelación durante una lectura síncrona de archivo local y repetir los flujos en
-  Firefox; la captura headless tampoco confirma todavía la presentación visual de los puntos.
+  Firefox con WebGPU.
 
 #### Contrato del puente LOD WASM actual
 
@@ -595,7 +613,7 @@ limitan cada escena de entrada al máximo de instancias GPU configurado y mueven
 `readNext` devuelve lotes limitados a 65.536 puntos/8 MiB de registros fuente. Para leer una escena de
 diagnóstico desde JS, usa `renderSceneBatch(start, count)` con hasta 16.384 instancias; `renderScene()`
 solo funciona hasta ese tamaño. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
-Blob con el lector v1/v2. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
+Blob con el lector v1/v2/v3. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
 las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
 
@@ -635,7 +653,7 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
 entender límites/errores sin editar el código de la demo.
 
 **Estado actual:** la demo transfiere el canvas a un worker, crea allí el renderer WebGPU y abre
-archivos del formato v1/v2 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
+archivos del formato v1/v2/v3 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
 y cambia el corte de forma atómica. Informa bytes únicos leídos en rangos de 256 KiB (sin
 interpretarlos como porcentaje de finalización); cancelar termina/recrea el worker y permite reintentar
 seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles, nivel
@@ -643,9 +661,15 @@ LOD más profundo, cobertura, bytes subidos, caché decodificada usada/límite y
 worker; permite navegar, cambiar perfil, color y tamaño. Incluye un archivo sintético `.oct` de 4.096
 puntos, generable desde un ejemplo Rust, y un control de teclado para cargarlo. Chromium con WebGPU
 cargó la muestra y presentó frames; el redimensionado del canvas y el layout móvil se comprobaron en
-viewport de escritorio y de 500 px. La captura headless no permitió confirmar visualmente los puntos,
-y Firefox no expuso `navigator.gpu` en este entorno; la validación visual y de compatibilidad siguen
-pendientes.
+viewport de escritorio y de 500 px. Las conversiones temporales v3 del Stanford Bunny (40.256 puntos)
+y Outer Banks (149.730 puntos) se abrieron con todos sus puntos visibles; se guardaron capturas desde
+dos ángulos para cada nube. No hay datos de escáner urbano en el repositorio. Firefox no expuso
+`navigator.gpu` en este entorno; su validación y la cancelación de lectura local siguen pendientes.
+
+| Dataset | Ángulo 1 | Ángulo 2 |
+| --- | --- | --- |
+| Stanford Bunny | ![Stanford Bunny, ángulo 1](docs/point-cloud-previews/bunny-angle-1.png) | ![Stanford Bunny, ángulo 2](docs/point-cloud-previews/bunny-angle-2.png) |
+| Outer Banks (costa) | ![Outer Banks, ángulo 1](docs/point-cloud-previews/outer-banks-angle-1.png) | ![Outer Banks, ángulo 2](docs/point-cloud-previews/outer-banks-angle-2.png) |
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad
 

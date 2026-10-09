@@ -147,13 +147,14 @@ para la integración de los planes. Reanudar desde checkpoints puede cambiar el 
 
 ### Memoria esperable para render
 
-En la ruta actual, `Point` ocupa 16 B y `InstanceRaw` 32 B. Mantener los 81.682.329 puntos como
+En una ruta hipotética que materialice el dataset completo, `Point` ocupa 16 B e `InstanceRaw` 32 B.
+Mantener los 81.682.329 puntos como
 `Point` junto con instancias de escena supondría **3.920.751.792 B (3,65 GiB) de geometría residente
 en CPU**. Crear una copia completa de instancias para el snapshot añade al menos **2.613.834.528 B
 (2,43 GiB)**. Un buffer hipotético con todas las instancias ocuparía otros **2,43 GiB** en GPU. Estos
 valores implican al menos **6,09 GiB de geometría simultánea en CPU** si se crea ese snapshot completo,
 más la reserva hipotética de GPU de 2,43 GiB. Son multiplicaciones de tamaños de tipo y conteo de
-puntos, no mediciones de RAM/GPU del renderer: no existe aún un camino de presentación GPU conectado.
+puntos, no mediciones de RAM/GPU. La demo actual sí presenta bloques LOD visibles.
 
 ## Máquina de referencia local
 
@@ -175,6 +176,10 @@ muestra, la propagación del error de un archivo inválido y la cancelación de 
 el renderer informó que presentó frames. La captura headless no permitió confirmar visualmente los
 puntos y Firefox no expuso WebGPU en esta sesión. La compatibilidad visual y los mínimos oficiales de
 RAM/GPU siguen abiertos.
+Actualización del 10 de octubre de 2026: Chrome/WebGPU ya se comprobó visualmente con conversiones v3
+del Stanford Bunny y del escáner costero Outer Banks. Esa prueba confirma la presentación de estos
+datasets pequeños; no sustituye las mediciones de memoria o escala con Belvedere ni la validación de
+Firefox.
 Una ruta que lea solo bloques LOD visibles y mantenga caché limitada debe presupuestarse por bytes de
 bloques seleccionados; el máximo payload bruto individual observado fue 9.396.257 B (8,96 MiB), pero
 falta integrar y medir esa ruta de extremo a extremo.

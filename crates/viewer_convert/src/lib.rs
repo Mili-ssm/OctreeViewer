@@ -21,6 +21,7 @@ pub use checkpoint::{CheckpointError, CheckpointMode};
 use spatial::{PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, spool_source};
 
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
+const TARGET_RENDER_EXTENT: f64 = 100.0;
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
 const MAX_SPATIAL_WORKERS: usize = 4;
@@ -31,6 +32,22 @@ const ESTIMATED_WORKING_BYTES_PER_POINT: u64 = 192;
 const ESTIMATED_DIRECTORY_BYTES_PER_BLOCK: u64 = 512;
 const ESTIMATED_FIXED_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn visual_scale_for_bounds(bounds: SpatialBounds) -> Result<f64, ConvertError> {
+    let min = bounds.min();
+    let max = bounds.max();
+    let extent = (0..3)
+        .map(|axis| max[axis] - min[axis])
+        .fold(0.0_f64, f64::max);
+    if extent == 0.0 {
+        return Ok(1.0);
+    }
+    let scale = TARGET_RENDER_EXTENT / extent;
+    if !scale.is_finite() || scale <= 0.0 || !(scale as f32).is_finite() || (scale as f32) == 0.0 {
+        return Err(ConvertError::InvalidVisualScale(scale));
+    }
+    Ok(scale)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConvertOptions {
@@ -193,6 +210,12 @@ pub enum ConvertError {
     InvalidBlockPointLimit(u64),
     #[error("maximum quantization error must be finite and non-negative, got {0}")]
     InvalidQuantizationError(f64),
+    #[error("visual scale is outside the supported range: {0}")]
+    InvalidVisualScale(f64),
+    #[error(
+        "checkpoint candidate has visual scale {actual}, expected {expected}; restart conversion with --checkpoint"
+    )]
+    StaleVisualScaleCheckpoint { expected: f64, actual: f64 },
     #[error("memory budget must be greater than zero")]
     InvalidMemoryBudget,
     #[error("spatial worker count must be between 1 and {MAX_SPATIAL_WORKERS}, got {0}")]
@@ -306,6 +329,7 @@ fn convert_file_inner(
     )?;
     let mut reader = Reader::from_path(input_path)?;
     let source = inspect_source(&reader)?;
+    let expected_visual_scale = visual_scale_for_bounds(source.bounds)?;
     let mut checkpoint = if let Some(mode) = checkpoint_mode {
         let source_fingerprint = fingerprint_file(input_path)?;
         Some(Checkpoint::open(
@@ -348,6 +372,7 @@ fn convert_file_inner(
             .output_ready_details()
             .expect("output-ready checkpoint has report details");
         let candidate_path = checkpoint.candidate_path();
+        verify_candidate_visual_scale(&candidate_path, expected_visual_scale)?;
         let (block_ids, source_block_ids) = output_block_ids(&candidate_path)?;
         let candidate_length = candidate_fingerprint.bytes;
         let output_bytes = if output_path.exists() {
@@ -630,6 +655,15 @@ fn output_block_ids(path: &Path) -> Result<(Vec<BlockId>, Vec<BlockId>), Convert
     Ok((block_ids, source_block_ids))
 }
 
+fn verify_candidate_visual_scale(path: &Path, expected: f64) -> Result<(), ConvertError> {
+    let reader = FormatReader::new(File::open(path)?)?;
+    let actual = reader.format_metadata().visual_scale();
+    if actual.to_bits() != expected.to_bits() {
+        return Err(ConvertError::StaleVisualScaleCheckpoint { expected, actual });
+    }
+    Ok(())
+}
+
 fn link_or_copy(source: &Path, destination: &Path) -> Result<(), ConvertError> {
     match fs::hard_link(source, destination) {
         Ok(()) => Ok(()),
@@ -821,15 +855,47 @@ mod tests {
     };
 
     use las::{Builder, Color, Point, Writer, point::Format};
-    use viewer_core::{AttributeValues, BlockId, DatasetSource, NodeId};
+    use viewer_core::{AttributeValues, BlockId, DatasetSource, NodeId, SpatialBounds};
     use viewer_format::FormatReader;
 
     use super::{
         CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions,
         convert_file, convert_file_with_checkpoint, convert_file_with_progress,
+        verify_candidate_visual_scale, visual_scale_for_bounds,
     };
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn visual_scale_normalizes_bounds_without_changing_coordinates() {
+        let bounds = SpatialBounds::new([10.0, -4.0, 0.0], [20.0, 16.0, 2.0]).unwrap();
+        assert_eq!(visual_scale_for_bounds(bounds).unwrap(), 5.0);
+        assert_eq!(
+            visual_scale_for_bounds(SpatialBounds::new([0.0; 3], [0.0; 3]).unwrap()).unwrap(),
+            1.0
+        );
+        assert!(matches!(
+            visual_scale_for_bounds(
+                SpatialBounds::new([0.0; 3], [f64::MIN_POSITIVE, 0.0, 0.0]).unwrap()
+            ),
+            Err(ConvertError::InvalidVisualScale(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_checkpoint_candidates_with_a_stale_visual_scale() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        fixture(&input, false, false, 3);
+        convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
+
+        assert!(matches!(
+            verify_candidate_visual_scale(&output, 25.0),
+            Err(ConvertError::StaleVisualScaleCheckpoint { .. })
+        ));
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     fn test_dir() -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -939,6 +1005,7 @@ mod tests {
         assert_eq!(completed.bytes_written, report.output_bytes);
 
         let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        assert_eq!(reader.format_metadata().visual_scale(), 25.0);
         let (root_block_ids, root_error, node_count) = {
             let hierarchy = reader.metadata().hierarchy();
             let root = hierarchy.node(NodeId::new(0)).unwrap();

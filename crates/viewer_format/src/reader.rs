@@ -10,8 +10,8 @@ use viewer_core::{
 };
 
 use crate::writer::{
-    FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_SIZE, HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC_V1,
-    INDEX_MAGIC_V2, block_payload_size, validate_metadata,
+    FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_MAGIC_V3, FOOTER_SIZE, HEADER_MAGIC, HEADER_SIZE,
+    INDEX_MAGIC_V1, INDEX_MAGIC_V2, INDEX_MAGIC_V3, block_payload_size, validate_metadata,
 };
 use crate::{BlockCodec, FormatError, FormatMetadata, NodeAttributeRange, crc32, decompress_block};
 
@@ -347,7 +347,7 @@ fn validate_header(header: &[u8; HEADER_SIZE as usize]) -> Result<u16, FormatErr
         return Err(FormatError::InvalidHeader);
     }
     let version = u16::from_le_bytes(header[8..10].try_into().expect("fixed width"));
-    if ![1, 2].contains(&version) {
+    if ![1, 2, 3].contains(&version) {
         return Err(FormatError::UnsupportedVersion(version));
     }
     let header_length = u16::from_le_bytes(header[10..12].try_into().expect("fixed width"));
@@ -366,7 +366,9 @@ fn parse_footer(
     footer: &[u8; FOOTER_SIZE as usize],
     version: u16,
 ) -> Result<(u64, u64, u64, u32), FormatError> {
-    let expected_magic = if version == 2 {
+    let expected_magic = if version >= 3 {
+        FOOTER_MAGIC_V3
+    } else if version == 2 {
         FOOTER_MAGIC_V2
     } else {
         FOOTER_MAGIC_V1
@@ -392,7 +394,9 @@ fn parse_index(
     version: u16,
 ) -> Result<ParsedIndex, FormatError> {
     let mut cursor = SliceCursor::new(bytes);
-    let expected_magic = if version == 2 {
+    let expected_magic = if version >= 3 {
+        INDEX_MAGIC_V3
+    } else if version == 2 {
         INDEX_MAGIC_V2
     } else {
         INDEX_MAGIC_V1
@@ -413,7 +417,7 @@ fn parse_index(
     };
     let crs = cursor.string(limits.max_string_bytes)?;
     let sampling_policy = cursor.string(limits.max_string_bytes)?;
-    let semantics = if version == 2 {
+    let semantics = if version >= 2 {
         match cursor.u8()? {
             0 => HierarchySemantics::Replacement,
             1 => HierarchySemantics::Additive,
@@ -427,6 +431,7 @@ fn parse_index(
     } else {
         HierarchySemantics::Replacement
     };
+    let visual_scale = if version >= 3 { cursor.f64()? } else { 1.0 };
 
     let attribute_count = cursor.u32()?;
     if attribute_count > limits.max_attributes {
@@ -675,7 +680,8 @@ fn parse_index(
         crs,
         sampling_policy,
         node_ranges,
-    )?;
+    )?
+    .with_visual_scale(visual_scale)?;
     validate_metadata(&metadata)?;
     Ok((metadata, blocks, block_bounds))
 }
@@ -1054,6 +1060,7 @@ mod tests {
                 .all(|(start, length)| *start + *length as u64 <= 24 || *start >= index_offset)
         );
         assert_eq!(format.format_metadata().crs(), Some("EPSG:4978"));
+        assert_eq!(format.format_metadata().visual_scale(), 1.0);
         assert_eq!(format.metadata().coordinate_frame().origin()[0], 1e12);
         assert_eq!(
             format.metadata().hierarchy().semantics(),
@@ -1169,13 +1176,45 @@ mod tests {
         ));
 
         let mut unsupported = format_bytes();
-        unsupported[8..10].copy_from_slice(&3_u16.to_le_bytes());
+        unsupported[8..10].copy_from_slice(&4_u16.to_le_bytes());
         let crc = crate::crc32(&unsupported[..20]);
         unsupported[20..24].copy_from_slice(&crc.to_le_bytes());
         assert!(matches!(
             FormatReader::new(Cursor::new(unsupported)),
-            Err(FormatError::UnsupportedVersion(3))
+            Err(FormatError::UnsupportedVersion(4))
         ));
+    }
+
+    #[test]
+    fn reads_v3_visual_scale_and_additive_hierarchy() {
+        let metadata = additive_metadata().with_visual_scale(50.0).unwrap();
+        let mut writer = FormatWriter::new(
+            Cursor::new(Vec::new()),
+            metadata,
+            FormatWriterOptions::new(0.001, 1024).unwrap(),
+        )
+        .unwrap();
+        writer.write_block(source_block()).unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 3);
+        assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND3");
+        let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
+        assert_eq!(reader.format_metadata().visual_scale(), 50.0);
+        assert_eq!(
+            reader.metadata().hierarchy().semantics(),
+            HierarchySemantics::Additive
+        );
+        assert_eq!(reader.format_metadata().crs(), Some("EPSG:4978"));
+        assert_eq!(
+            reader
+                .read_block(BlockId::new(42))
+                .unwrap()
+                .points()
+                .points()[0]
+                .position,
+            [0.25, 0.5, 0.0]
+        );
     }
 
     #[test]
@@ -1187,6 +1226,7 @@ mod tests {
             reader.metadata().hierarchy().semantics(),
             HierarchySemantics::Additive
         );
+        assert_eq!(reader.format_metadata().visual_scale(), 1.0);
         assert_eq!(
             reader
                 .metadata()
