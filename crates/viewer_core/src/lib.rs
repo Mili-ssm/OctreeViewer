@@ -1,5 +1,6 @@
 mod dataset;
 mod geometry;
+mod scheduler;
 mod spatial;
 mod visibility;
 mod voxel_store;
@@ -9,6 +10,10 @@ pub use dataset::{
 };
 pub use geometry::{
     Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,
+};
+pub use scheduler::{
+    BlockRequestScheduler, RequestCompletion, RequestTicket, ScheduledBlockRequest, SchedulerError,
+    ViewUpdate,
 };
 pub use spatial::{
     AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, HierarchySemantics,

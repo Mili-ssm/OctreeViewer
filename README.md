@@ -77,11 +77,11 @@ una versión publicada.
 
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
-| `viewer_core` | Tipos de puntos, RGB, lotes, voxelización, AABB y jerarquía validada con consultas AABB/frustum. | `SparseVoxelStore` mantiene voxeles en un `HashMap`; la jerarquía de nodos y sus metadatos también residen en memoria. Aún no se leen bloques ni se selecciona LOD; el filtro de voxeles incluye por centro. |
+| `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva y coordinador priorizado de solicitudes de bloques. | La jerarquía y el estado del scheduler residen en memoria; el scheduler no ejecuta I/O ni conserva una caché. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
 | `viewer_render_wgpu` | Conversión de voxeles a instancias, layout de vértices y shader WGSL. | No crea dispositivo, superficie, pipeline ni presenta una escena. |
 | `viewer_wasm` | Bindings para el visor y sesión incremental LAS/LAZ desde un `Blob`. | No hay lectura espacial del formato propio ni flujo completo de worker, contrapresión y cancelación. |
 | `examples/web-host` | Demo de datos sintéticos y proyección de depuración con Canvas 2D. | No es visualización 3D, no abre archivos y copia la escena de instancias al host. |
-| Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Especificaciones v1/v2, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md)). v1 significa jerarquía de reemplazo; v2 añade la semántica aditiva y conserva lectura v1. | Fixtures prueban round-trip, bloques selectivos y una lectura ejecutada desde un ticket del scheduler, corrupción, límites, ambas semánticas y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 | `viewer_convert` | CLI nativa LAS/LAZ → v1 con particiones LOD 2/4/8 y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva en v2. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. Faltan cortes con presupuestos visibles equivalentes y evaluación visual. |
 
@@ -405,10 +405,10 @@ y reanudarse, y produce un archivo validado y abierto por el lector del formato.
 
 **Característica:** pasar de cámara/consulta a bloques concretos, priorizados y acotados.
 
-- [ ] Implementar recorrido jerárquico con poda por frustum y selección de LOD según error/tamaño
+- [x] Implementar recorrido jerárquico con poda por frustum y selección de LOD según error/tamaño
   proyectado o política equivalente documentada.
-- [ ] Crear planificador de solicitudes con prioridad por visibilidad y distancia, límites de trabajos
-  en curso y cancelación de bloques que dejan de ser relevantes.
+- [x] Crear planificador de solicitudes con prioridad por visibilidad y distancia, límites de trabajos
+  en curso y cancelación lógica de bloques que dejan de ser relevantes.
 - [ ] Añadir caché acotada de bloques descomprimidos con política de expulsión, presupuesto de bytes y
   estadísticas observables.
 - [ ] Gestionar transiciones LOD sin huecos notorios ni duplicación excesiva de puntos; especificar el
@@ -418,6 +418,14 @@ y reanudarse, y produce un archivo validado y abierto por el lector del formato.
 
 **Cierre:** al cambiar la cámara, se solicitan/cancelan los bloques esperados; la memoria de caché no
 supera el límite configurado y la selección mantiene cobertura visual aceptable.
+
+**Progreso:** `SpatialHierarchy` ya recorre candidatos con poda de frustum y selecciona LOD para
+jerarquías de reemplazo y aditivas. `BlockRequestScheduler` convierte ese corte en solicitudes de
+bloques deduplicadas, ordenadas por distancia a la AABB más cercana, con un máximo de lecturas activas.
+El consumidor ejecuta los tickets; al cambiar la vista se quitan pendientes obsoletos y se marcan
+activas para descarte al completar. Una lectura síncrona no se interrumpe y conserva su plaza hasta
+finalizar. Los fallos admiten reintento explícito. No hay caché, executor multihilo ni integración con
+cámara/WASM todavía.
 
 ### Fase 5 — Presentación 3D (`viewer_render_wgpu`)
 
@@ -506,7 +514,7 @@ datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
 
 | Componente | Responsabilidad final | Dependencias principales |
 | --- | --- | --- |
-| `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y presupuesto independiente de plataforma. | Modelo compartido; no depende de WASM, DOM ni `wgpu`. |
+| `viewer_core` | Geometría, atributos, jerarquía, LOD, consulta y planificación priorizada de bloques independiente de plataforma. | Modelo compartido; no depende de WASM, DOM, I/O ni `wgpu`; el executor y la caché quedan fuera. |
 | `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
 | `viewer_convert` | Conversión LAS/LAZ por bloques y EPT local `laszip` aditivo, publicación validada, checkpoints LAS/LAZ, particiones 2/4/8 y paralelismo acotado. | `las`, `serde_json`, `viewer_core`, `viewer_format`; EPT remoto/otros codecs y evaluación de calidad visual siguen pendientes. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |

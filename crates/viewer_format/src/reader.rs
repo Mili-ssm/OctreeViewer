@@ -930,8 +930,9 @@ mod tests {
 
     use viewer_core::{
         AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId,
-        ColorRgb, CoordinateFrame, DatasetMetadata, DatasetSource, HierarchySemantics, NodeId,
-        SpatialBounds, SpatialHierarchy, SpatialNode,
+        BlockRequestScheduler, ColorRgb, CoordinateFrame, DatasetMetadata, DatasetSource,
+        FrustumPlane, HierarchySemantics, LodSelectionConfig, NodeId, RequestCompletion,
+        SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
     };
 
     use crate::{BlockCodec, FormatMetadata, FormatReaderLimits, SourcePointBlock};
@@ -1063,6 +1064,45 @@ mod tests {
         assert!(reads.borrow().iter().all(|(start, length)| {
             *start >= entry.offset && *start + *length as u64 <= entry.offset + entry.payload_length
         }));
+    }
+
+    #[test]
+    fn scheduler_tickets_read_selected_format_blocks_through_dataset_source() {
+        let mut reader = FormatReader::new(Cursor::new(format_bytes())).unwrap();
+        let bounds = reader.metadata().hierarchy().stats().root_bounds;
+        let min = bounds.min();
+        let max = bounds.max();
+        let frustum = SpatialFrustum::new(vec![
+            FrustumPlane::new([1.0, 0.0, 0.0], -min[0]).unwrap(),
+            FrustumPlane::new([-1.0, 0.0, 0.0], max[0]).unwrap(),
+            FrustumPlane::new([0.0, 1.0, 0.0], -min[1]).unwrap(),
+            FrustumPlane::new([0.0, -1.0, 0.0], max[1]).unwrap(),
+            FrustumPlane::new([0.0, 0.0, 1.0], -min[2]).unwrap(),
+            FrustumPlane::new([0.0, 0.0, -1.0], max[2]).unwrap(),
+        ])
+        .unwrap();
+        let mut scheduler = BlockRequestScheduler::new(1).unwrap();
+        scheduler
+            .update_view(
+                reader.metadata().hierarchy(),
+                &frustum,
+                LodSelectionConfig::new(1.0, 2).unwrap(),
+                min,
+                |_| 0.0,
+            )
+            .unwrap();
+
+        let request = scheduler.take_next().unwrap().unwrap();
+        let block = reader.read_block(request.ticket().block_id()).unwrap();
+        assert_eq!(block.points().len(), 2);
+        assert_eq!(
+            scheduler
+                .complete(request.ticket(), Ok(block.id()))
+                .unwrap(),
+            RequestCompletion::Delivered
+        );
+        assert_eq!(scheduler.pending_count(), 0);
+        assert_eq!(scheduler.in_flight_count(), 0);
     }
 
     #[test]
