@@ -137,7 +137,7 @@ completa en memoria.
 - [ ] Elegir la política de muestreo y la tolerancia visual en píxeles antes de usar el error para
   seleccionar LOD.
 - [x] Añadir consulta conservadora por frustum sobre límites de nodos, con poda de subárboles.
-- [ ] Seleccionar nodos por nivel de detalle y presupuesto; mantener AABB como consulta simple útil
+- [x] Seleccionar nodos por nivel de detalle y presupuesto; mantener AABB como consulta simple útil
   para recorte.
 - [ ] Separar voxelización/agregación de la representación persistente de puntos. La voxelización
   debe seguir disponible como reducción de densidad opcional, no como único camino de renderizado.
@@ -148,8 +148,9 @@ completa en memoria.
 
 **Progreso:** el índice residente valida raíces, padres, niveles y contención de límites; las consultas
 AABB y frustum recorren en profundidad de forma determinista y podan subárboles disjuntos, sin
-materializar puntos. La consulta frustum es conservadora y devuelve candidatos, no una selección LOD.
-La jerarquía aún no carga bloques desde almacenamiento ni implementa LOD o presupuestos.
+materializar puntos. La consulta frustum es conservadora y devuelve candidatos. La selección LOD por
+error proyectado y presupuesto está implementada sobre metadatos; la jerarquía aún no carga ni cancela
+bloques desde almacenamiento y el presupuesto todavía cuenta puntos representantes, no memoria.
 
 El origen del dataset se conserva en `f64` y `CoordinateFrame` resta ese origen antes de convertir
 posiciones a `f32` local para renderizado; la importación LAS usa el mismo contrato y las pruebas
@@ -158,7 +159,16 @@ limitada por `f32` y por la extensión del dataset. `SpatialNode::geometric_erro
 distancia máxima conservadora entre puntos fuente representados y sus representantes renderizados,
 en las mismas unidades que los límites del dataset; el conversor debe calcularla a partir de los
 datos. La tolerancia visual en píxeles y la política concreta de muestreo se fijarán al implementar
-el selector LOD.
+el conversor y la configuración de cámara de la aplicación.
+
+`SpatialHierarchy::select_lod` proyecta el error mediante una función suministrada por el consumidor,
+elige un corte visible sin mezclar padre e hijos y refina por mayor error mientras el reemplazo entero
+quepa en el presupuesto. El productor debe garantizar que el payload del padre representa el
+subárbol y que sus hijos visibles lo refinan; los metadatos por sí solos no permiten validar esa
+cobertura. Si el corte visible base excede el presupuesto se devuelve un error; si una mejora no cabe
+o no hay resolución disponible, el resultado lo informa. La selección opera sobre conteos de puntos
+representantes, no sobre bytes o memoria. La política de muestreo y su generación en el conversor
+siguen pendientes, por lo que aún no hay una ruta de datos real que garantice estos contratos.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.

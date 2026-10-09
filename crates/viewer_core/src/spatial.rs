@@ -198,13 +198,18 @@ impl AttributeDescriptor {
     }
 }
 
-/// Metadata for one hierarchy node. `point_count` counts this node's payload only.
+/// Metadata for one hierarchy node. `point_count` counts only representatives stored
+/// in this node's payload.
+///
+/// A non-empty node payload is a representation of the source population in this
+/// node's subtree; refining it replaces it with the visible child representations.
+/// The producer is responsible for making those children cover that population.
 ///
 /// `geometric_error` is the conservative maximum distance, in the same coordinate
-/// units as [`SpatialBounds`], between source points represented by this node's
-/// payload and their rendered representatives. A converter that samples points
-/// must compute this bound from the source data; a viewer must not infer it from the
-/// node level or point count.
+/// units as [`SpatialBounds`], between source points represented by this subtree and
+/// their nearest rendered representative in this node's payload. A converter that
+/// samples points must compute this bound from source data; a viewer must not infer
+/// it from the node level or point count.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpatialNode {
     id: NodeId,
@@ -280,6 +285,73 @@ pub struct SpatialStats {
     pub node_count: usize,
     pub max_level: u32,
     pub source_point_count: Option<u64>,
+}
+
+/// Inputs to metadata-only LOD selection. The projected error callback receives the
+/// conservative world-space error of each candidate node and returns its screen-space
+/// error in pixels for the current view.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LodSelectionConfig {
+    pub max_error_pixels: f64,
+    pub point_budget: u64,
+}
+
+impl LodSelectionConfig {
+    pub fn new(max_error_pixels: f64, point_budget: u64) -> Result<Self, LodSelectionError> {
+        if !max_error_pixels.is_finite() || max_error_pixels < 0.0 {
+            return Err(LodSelectionError::InvalidPixelTolerance(max_error_pixels));
+        }
+        Ok(Self {
+            max_error_pixels,
+            point_budget,
+        })
+    }
+}
+
+/// A visible hierarchy cut selected within the configured representative-point budget.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LodSelection {
+    node_ids: Vec<NodeId>,
+    point_count: u64,
+    max_error_pixels: f64,
+    budget_limited: Vec<NodeId>,
+    resolution_limited: Vec<NodeId>,
+}
+
+impl LodSelection {
+    pub fn node_ids(&self) -> &[NodeId] {
+        &self.node_ids
+    }
+
+    pub const fn point_count(&self) -> u64 {
+        self.point_count
+    }
+
+    pub const fn max_error_pixels(&self) -> f64 {
+        self.max_error_pixels
+    }
+
+    /// Selected nodes that could not be refined because the replacement exceeded budget.
+    pub fn budget_limited(&self) -> &[NodeId] {
+        &self.budget_limited
+    }
+
+    /// Selected leaves or branches without visible child payloads that exceed tolerance.
+    pub fn resolution_limited(&self) -> &[NodeId] {
+        &self.resolution_limited
+    }
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum LodSelectionError {
+    #[error("maximum projected error must be finite and non-negative, got {0}")]
+    InvalidPixelTolerance(f64),
+    #[error("projected error for node {node:?} must be non-negative and not NaN, got {error}")]
+    InvalidProjectedError { node: NodeId, error: f64 },
+    #[error("visible base representation requires {required} points, exceeding budget {budget}")]
+    BaseCutExceedsBudget { required: u64, budget: u64 },
+    #[error("point count overflow while evaluating node {0:?}")]
+    PointCountOverflow(NodeId),
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -464,6 +536,121 @@ impl SpatialHierarchy {
             region: SpatialQueryRegion::Frustum(frustum),
             pending: vec![self.root],
         }
+    }
+
+    /// Selects a visible, non-overlapping hierarchy cut within a hard point budget.
+    ///
+    /// The producer contract on [`SpatialNode`] must hold: refining a node's payload
+    /// with its visible children preserves the source population represented in view.
+    /// Nodes with zero representatives are treated as structural and always traversed.
+    /// The callback projects each node's world-space geometric error into pixels for
+    /// the current camera. A coarse visible cut that already exceeds budget is rejected
+    /// instead of returning partial coverage.
+    pub fn select_lod(
+        &self,
+        frustum: &SpatialFrustum,
+        config: LodSelectionConfig,
+        projected_error_pixels: impl Fn(&SpatialNode) -> f64,
+    ) -> Result<LodSelection, LodSelectionError> {
+        let mut selected = self.visible_frontier([self.root], frustum);
+        let mut point_count = self.count_points(&selected)?;
+        if point_count > config.point_budget {
+            return Err(LodSelectionError::BaseCutExceedsBudget {
+                required: point_count,
+                budget: config.point_budget,
+            });
+        }
+
+        loop {
+            let mut best: Option<(usize, NodeId, f64, Vec<NodeId>, u64)> = None;
+            let mut budget_limited = Vec::new();
+            let mut resolution_limited = Vec::new();
+
+            for (index, id) in selected.iter().copied().enumerate() {
+                let node = &self.nodes[&id].metadata;
+                let error = projected_error_pixels(node);
+                if error.is_nan() || error < 0.0 {
+                    return Err(LodSelectionError::InvalidProjectedError { node: id, error });
+                }
+                if error <= config.max_error_pixels {
+                    continue;
+                }
+
+                let replacement =
+                    self.visible_frontier(self.nodes[&id].children.iter().copied(), frustum);
+                if replacement.is_empty() {
+                    resolution_limited.push(id);
+                    continue;
+                }
+                let replacement_count = self.count_points(&replacement)?;
+                let candidate_count = point_count
+                    .checked_sub(node.point_count)
+                    .and_then(|count| count.checked_add(replacement_count))
+                    .ok_or(LodSelectionError::PointCountOverflow(id))?;
+                if candidate_count > config.point_budget {
+                    budget_limited.push(id);
+                    continue;
+                }
+
+                let should_replace = best.as_ref().is_none_or(|(_, best_id, best_error, _, _)| {
+                    error > *best_error || (error == *best_error && id < *best_id)
+                });
+                if should_replace {
+                    best = Some((index, id, error, replacement, candidate_count));
+                }
+            }
+
+            let Some((index, _, _, replacement, new_point_count)) = best else {
+                let mut max_error_pixels: f64 = 0.0;
+                for id in &selected {
+                    let error = projected_error_pixels(&self.nodes[id].metadata);
+                    if error.is_nan() || error < 0.0 {
+                        return Err(LodSelectionError::InvalidProjectedError { node: *id, error });
+                    }
+                    max_error_pixels = max_error_pixels.max(error);
+                }
+                return Ok(LodSelection {
+                    node_ids: selected,
+                    point_count,
+                    max_error_pixels,
+                    budget_limited,
+                    resolution_limited,
+                });
+            };
+
+            selected.splice(index..=index, replacement);
+            point_count = new_point_count;
+        }
+    }
+
+    fn visible_frontier(
+        &self,
+        starts: impl IntoIterator<Item = NodeId>,
+        frustum: &SpatialFrustum,
+    ) -> Vec<NodeId> {
+        let mut pending = starts.into_iter().collect::<Vec<_>>();
+        pending.reverse();
+        let mut frontier = Vec::new();
+        while let Some(id) = pending.pop() {
+            let indexed = &self.nodes[&id];
+            if !frustum.intersects(&indexed.metadata.bounds) {
+                continue;
+            }
+            if indexed.metadata.point_count > 0 {
+                frontier.push(id);
+            } else {
+                pending.extend(indexed.children.iter().rev().copied());
+            }
+        }
+        frontier
+    }
+
+    fn count_points(&self, ids: &[NodeId]) -> Result<u64, LodSelectionError> {
+        ids.iter().try_fold(0_u64, |count, id| {
+            count
+                .checked_add(self.nodes[id].metadata.point_count)
+                .ok_or(LodSelectionError::PointCountOverflow(*id))
+        })
     }
 }
 
