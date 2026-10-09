@@ -14,6 +14,7 @@ edition = "2024"
 
 [workspace.dependencies]
 bytemuck = { version = "1.16", features = ["derive"] }
+ctrlc = "3.5"
 glam = "0.29"
 las = { version = "0.11.1", default-features = false, features = ["laz"] }
 js-sys = "0.3"

@@ -244,7 +244,7 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Informar fases, puntos procesados, bytes escritos y errores en la API/CLI.
 - [x] Permitir cancelación cooperativa desde el callback entre bloques y durante validación; limpiar
   el temporal y no publicar una salida parcial.
-- [ ] Conectar la cancelación de la CLI a Ctrl+C con manejo portable de señales.
+- [x] Conectar la cancelación de la CLI a Ctrl+C con manejo portable de señales.
 - [x] Permitir reconstrucción segura desde la fuente tras cancelación; validar el resultado antes de
   publicar.
 - [ ] Añadir checkpoints durables y reanudación que conserve el trabajo ya procesado.
@@ -270,8 +270,8 @@ secuencial, y validación/publicación; la planificación espacial actual solo c
 La CLI muestra las fases y actualiza puntos/bytes en pasos del 10%; `convert_file_with_progress`
 ofrece los mismos eventos y permite cancelar devolviendo `false`. La cancelación cooperativa elimina
 el temporal; un cierre abrupto puede dejarlo, pero la siguiente ejecución lo ignora y reconstruye
-desde la fuente. Los checkpoints durables y la reanudación siguen pendientes. Falta conectar Ctrl+C
-en la CLI.
+desde la fuente. Ctrl+C solicita esa cancelación y espera al siguiente límite seguro entre bloques.
+Los checkpoints durables y la reanudación siguen pendientes.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.

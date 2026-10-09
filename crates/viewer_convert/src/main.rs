@@ -1,4 +1,12 @@
-use std::{env, path::PathBuf, process::ExitCode};
+use std::{
+    env,
+    path::PathBuf,
+    process::ExitCode,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use viewer_convert::{ConversionStage, ConvertOptions, convert_file_with_progress};
 
@@ -47,9 +55,17 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 
     let options =
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?;
+    let cancellation_requested = Arc::new(AtomicBool::new(false));
+    let signal_flag = Arc::clone(&cancellation_requested);
+    ctrlc::set_handler(move || signal_flag.store(true, Ordering::Relaxed))?;
+
     let mut previous_stage = None;
     let mut next_percent = 0;
     let report = convert_file_with_progress(&input, &output, options, |progress| {
+        if cancellation_requested.load(Ordering::Relaxed) {
+            eprintln!("Cancellation requested; cleaning up before publishing output.");
+            return false;
+        }
         if previous_stage != Some(progress.stage) {
             eprintln!("{:?}", progress.stage);
             previous_stage = Some(progress.stage);

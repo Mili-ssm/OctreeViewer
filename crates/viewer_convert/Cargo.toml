@@ -8,6 +8,7 @@ name = "viewer_convert"
 path = "src/main.rs"
 
 [dependencies]
+ctrlc.workspace = true
 las.workspace = true
 thiserror.workspace = true
 viewer_core = { path = "../viewer_core" }
