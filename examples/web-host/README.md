@@ -59,3 +59,6 @@ Rust-owned storage. Full-scene inputs are limited by the renderer's visible-inst
 `renderSceneBatch(start, count)` for diagnostic snapshots, with at most 16,384 instances per call.
 These APIs copy across JS/WASM memory; the local-format viewing path reads selected blocks directly in
 Rust and avoids materializing the full file in JS.
+
+Run the host-side queue tests with `node --test examples/web-host/tests/*.test.mjs`. Browser interaction,
+WebGPU presentation, and worker cancellation still need a real browser check.

@@ -1,3 +1,5 @@
+import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
+
 let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
 const cancelButton = document.getElementById("cancel-load");
@@ -12,8 +14,9 @@ const pointSizeValue = document.getElementById("point-size-value");
 const lodProfile = document.getElementById("lod-profile");
 
 let worker = null;
-const pendingCommands = new Map();
-const commandsInFlight = new Set();
+const commandQueue = new CoalescedCommandQueue((type, values) => {
+    worker.postMessage({ type, ...values });
+});
 let animationFrame = 0;
 let framePending = false;
 let ready = false;
@@ -47,18 +50,7 @@ function emptyCameraDelta() {
 
 function queueWorkerCommand(type, values = {}) {
     if (!ready || frameFailed) return;
-    pendingCommands.set(type, values);
-    pumpWorkerCommands();
-}
-
-function pumpWorkerCommands() {
-    if (!worker || !ready || frameFailed) return;
-    for (const [type, values] of pendingCommands) {
-        if (commandsInFlight.has(type)) continue;
-        pendingCommands.delete(type);
-        commandsInFlight.add(type);
-        worker.postMessage({ type, ...values });
-    }
+    commandQueue.enqueue(type, values);
 }
 
 function resize() {
@@ -125,8 +117,7 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = "Renderer ready · synthetic sample";
         startRendering();
     } else if (data.type === "commandAck") {
-        commandsInFlight.delete(data.command);
-        pumpWorkerCommands();
+        commandQueue.acknowledge(data.command);
     } else if (data.type === "status") {
         statusRoot.textContent = data.message;
     } else if (data.type === "fileReadProgress") {
@@ -231,8 +222,7 @@ function recreateViewer() {
     ready = false;
     frameFailed = false;
     framePending = false;
-    pendingCommands.clear();
-    commandsInFlight.clear();
+    commandQueue.reset();
     loadingFile = false;
     cancelButton.hidden = true;
     fileInput.disabled = true;

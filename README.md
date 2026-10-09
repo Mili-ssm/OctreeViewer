@@ -547,9 +547,11 @@ y presentar estado.
   instancias y tiempo CPU del worker. La memoria de caché aún no se expone a la demo.
 - [x] Mostrar los bytes únicos leídos del archivo y cancelar una lectura terminando/recreando el
   worker y su canvas. La operación puede reiniciarse seleccionando otra vez el archivo.
-- [ ] Añadir ejemplos reproducibles de archivo local accesibles por teclado.
-- [ ] Añadir pruebas de bindings, ciclo de vida y concurrencia; comprobar que callbacks/eventos no
-  bloqueen la UI y que los errores llegan al usuario.
+- [x] Añadir un `.oct` reproducible y controles accesibles por teclado para cargarlo o elegir otro archivo.
+- [x] Probar la cola coalescente de comandos (último valor, tipos separados y reset) con `node:test`;
+  los contratos Rust de caché, transiciones LOD e importación LAS tienen tests de ciclo de vida.
+- [ ] Probar bindings, cancelación y propagación de errores en navegador real; la validación de sintaxis
+  JS y las pruebas unitarias no demuestran que una UI WebGPU permanezca interactiva.
 
 #### Contrato del puente LOD WASM actual
 
