@@ -34,6 +34,12 @@ se incluyen y qué hardware y navegador forman parte del objetivo.
 
 - **Lectura fuera de memoria:** no retener el dataset completo en RAM ni copiar la escena completa a
   JavaScript.
+- **Memoria y representación compactas:** optimizar el uso de memoria en todas las etapas, usando
+  los tipos más pequeños que permitan los rangos y la precisión requeridos. Para almacenamiento y
+  transferencia, cuantizar coordenadas a enteros cuando sea viable —con `u32` como punto de partida—
+  y reconstruirlas a coordenadas locales `f32` solo para los bloques que se van a visualizar. La
+  cuantización debe declarar y respetar un error máximo; no debe perderse precisión de forma
+  silenciosa.
 - **Acceso espacial:** indexar datos en bloques jerárquicos independientes que puedan leerse,
   descomprimirse y descartarse por separado.
 - **Nivel de detalle:** seleccionar detalle según cámara, tamaño proyectado y presupuesto, no solo
@@ -215,6 +221,10 @@ compatibles entre versiones.
   escala y precisión de cuantización por dataset o bloque, comenzar evaluando coordenadas `u32` y
   reconstruirlas a `f32` local al preparar los datos para renderizado. El error de cuantización debe
   quedar acotado y reflejarse en las cotas de error geométrico.
+- [ ] Evaluar para una iteración futura coordenadas enteras menores que `u32` relativas al nodo o
+  voxel; reconstruir la posición global acumulando las posiciones relativas a través de la jerarquía.
+  Adoptar esta opción solo si el rango y la precisión se pueden garantizar y la reducción medida de
+  memoria compensa la complejidad.
 - [x] Elegir compresión por bloque independiente para poder leer y descartar datos sin descomprimir el
   archivo entero; medir ratio, coste de CPU y coste de lectura.
 - [x] Incluir detección de truncamiento/corrupción y mecanismo de integridad por bloque o índice.
@@ -240,7 +250,14 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   codificación y escritura de bloques.
 - [x] Imponer límites de puntos/buffers por bloque y un presupuesto para la memoria controlada por
   bloque e índice; reportar la estimación antes de publicar.
-- [ ] Medir RSS pico con datasets reales y añadir paralelismo solo con colas acotadas y contrapresión.
+- [x] Medir tiempo de conversión por fase, puntos/s, RSS pico, ratio de compresión y lectura de
+  bloques con un dataset real de 81,7 millones de puntos; resultados y comandos reproducibles en
+  [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+- [ ] Medir espacio temporal de disco con datasets reales; añadir paralelismo solo con colas
+  acotadas y contrapresión.
+- [ ] Medir el coste de memoria de las representaciones y estructuras intermedias; evitar tipos más
+  anchos, copias y buffers sobredimensionados cuando una alternativa compacta mantenga los contratos
+  de precisión y rendimiento.
 - [x] Informar fases, puntos procesados, bytes escritos y errores en la API/CLI.
 - [x] Permitir cancelación cooperativa desde el callback entre bloques y durante validación; limpiar
   el temporal y no publicar una salida parcial.
@@ -289,6 +306,49 @@ La CLI muestra las fases y progreso de lectura, planificación espacial, escritu
 `convert_file_with_progress` ofrece los mismos eventos y permite cancelar devolviendo `false`. Ctrl+C
 solicita cancelación y espera al siguiente límite seguro. Los checkpoints durables y la reanudación
 siguen pendientes.
+
+#### Registro de rendimiento
+
+Esta tabla conserva la referencia para comparar cambios en el conversor y el lector. No reemplazar
+filas anteriores: añadir una fila por versión o cambio relevante, indicando revisión y condiciones.
+Los resultados detallados, métricas por fase y estimaciones de memoria están en
+[REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+
+| Fecha / revisión | Dataset y configuración | Conversión | Salida / ratio LAZ | Ratio payload LZ4 | RSS conversión | Lectura de todos los bloques | RSS lectura |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2026-10-09 / working tree inicial | Belvedere Glacier 2009; 81.682.329 puntos; release; opciones por defecto | 100,12 s; 815.872 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 37.612 KiB | 9,81 s; índice 2,87 ms | 27.024 KiB |
+
+La referencia se midió en Linux x86_64, AMD Ryzen AI 9 365 (20 hilos lógicos), Rust 1.99.0. Es una
+ejecución inicial, con la lectura realizada después de convertir en el mismo equipo; no representa una
+lectura con caché fría ni una garantía de rendimiento. Para comparar un cambio, usa el mismo LAZ,
+equipo, opciones y comandos; ejecuta tres veces la versión de referencia y el cambio, y compara las
+medianas de conversión, lectura y RSS. Registra también la revisión (`git rev-parse --short HEAD`),
+fecha, configuración y cualquier diferencia del entorno. No cambies la referencia aceptada hasta
+confirmar una mejora o regresión repetible.
+
+Para repetir la medición, descarga primero el LAZ según [`data/datasets/README.md`](data/datasets/README.md)
+y compila el benchmark en release. El conversor no sobrescribe su destino: usa un `.oct` nuevo por
+ejecución o elimina el resultado previo.
+
+```sh
+cargo build --release -p viewer_convert --example real_dataset_bench
+/usr/bin/time -v -o /tmp/belv-convert.time \
+  target/release/examples/real_dataset_bench convert \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.oct \
+  > /tmp/belv-convert.log 2>&1
+/usr/bin/time -v -o /tmp/belv-read.time \
+  target/release/examples/real_dataset_bench read \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.oct \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz \
+  > /tmp/belv-read.log 2>&1
+```
+
+El benchmark informa conversión por fase, puntos/s, tamaños, compresión LZ4 y memoria estimada; el
+RSS pico se obtiene de los archivos `time`. El tiempo de lectura incluye I/O, CRC, descompresión y
+reconstrucción de todos los bloques. Los GB/s del archivo, compresión interna y ratio `.oct`/LAZ son
+métricas distintas y deben registrarse por separado. Las estimaciones de RAM/GPU para render no son
+mediciones del renderer: aún no presenta una escena.
 
 **Cierre:** una conversión de dataset de escala acordada termina con memoria acotada, puede cancelarse
 y reanudarse, y produce un archivo validado y abierto por el lector del formato.

@@ -96,6 +96,16 @@ struct BlockDirectoryEntry {
     checksum: u32,
 }
 
+/// Physical and decoded size information from a validated block-directory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockStorageStats {
+    pub id: viewer_core::BlockId,
+    pub codec: BlockCodec,
+    pub point_count: u64,
+    pub stored_bytes: u64,
+    pub raw_bytes: u64,
+}
+
 /// Seekable reader that loads metadata at open and verifies only requested block payloads.
 pub struct FormatReader<R> {
     reader: R,
@@ -164,6 +174,26 @@ impl<R: Read + Seek> FormatReader<R> {
 
     pub fn format_metadata(&self) -> &FormatMetadata {
         &self.metadata
+    }
+
+    /// Returns payload sizes from the validated block directory, excluding the file index.
+    pub fn block_storage_stats(&self) -> Result<Vec<BlockStorageStats>, FormatError> {
+        self.blocks
+            .iter()
+            .map(|(id, entry)| {
+                Ok(BlockStorageStats {
+                    id: *id,
+                    codec: entry.codec,
+                    point_count: entry.point_count,
+                    stored_bytes: entry.payload_length,
+                    raw_bytes: block_payload_size(
+                        usize::try_from(entry.point_count)
+                            .map_err(|_| FormatError::PointCountOutOfRange)?,
+                        self.metadata.dataset().hierarchy().attributes(),
+                    )?,
+                })
+            })
+            .collect()
     }
 
     pub fn into_inner(self) -> R {
@@ -928,6 +958,13 @@ mod tests {
             reads: Rc::clone(&reads),
         };
         let mut format = FormatReader::new(reader).unwrap();
+        let storage = format.block_storage_stats().unwrap();
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage[0].id, BlockId::new(42));
+        assert_eq!(storage[0].point_count, 2);
+        assert_eq!(storage[0].raw_bytes, 34);
+        assert!(storage[0].stored_bytes < storage[0].raw_bytes);
+        assert_eq!(storage[0].codec, BlockCodec::Lz4);
         let index_offset = u64::from_le_bytes(
             bytes[bytes.len() - 32..bytes.len() - 24]
                 .try_into()
@@ -1057,6 +1094,11 @@ mod tests {
         let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
 
         assert_eq!(reader.blocks[&block_id].codec, BlockCodec::Lz4);
+        let storage = reader.block_storage_stats().unwrap();
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage[0].point_count, 4096);
+        assert_eq!(storage[0].raw_bytes, 4096 * 17);
+        assert!(storage[0].stored_bytes < storage[0].raw_bytes);
         let block = reader.read_block(block_id).unwrap();
         assert_eq!(block.points().len(), 4096);
         assert_eq!(block.points().points()[2048].position, [0.25, 0.5, 0.75]);
