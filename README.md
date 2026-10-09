@@ -143,8 +143,11 @@ completa en memoria.
   para recorte.
 - [x] Separar voxelización/agregación del camino de puntos: `PointBatch` se puede renderizar sin
   reducción; la voxelización sigue disponible como modo explícito de reducción de densidad.
-- [ ] Definir límites de datos y errores: coordenadas inválidas, límites desbordados, archivos
-  truncados, atributos ausentes y conteos grandes.
+- [x] Definir límites y errores numéricos: coordenadas y límites finitos/ordenados, conversión local
+  fuera de rango y sumas de conteos con overflow explícito.
+- [x] Tratar truncamiento LAS/LAZ como error terminal de la sesión de importación; cuando falta RGB,
+  usar intensidad en escala de grises como fallback documentado.
+- [x] Mantener conteos de fuente y payload en `u64`, con cobertura de valores mayores que `u32`.
 - [ ] Diseñar contratos pequeños para leer fuentes, solicitar bloques y proporcionar atributos. Evitar
   hacer que `viewer_core` dependa de WASM, DOM o tipos de `wgpu`.
 
@@ -180,6 +183,12 @@ y producir las cotas geométricas para que el selector funcione con datos reales
 opcional `replaceVoxelizedPoints`/`appendVoxelizedPoints` conserva la reducción de densidad. Ambos
 caminos siguen almacenando la escena actual en memoria; la lectura de bloques persistentes y acotados
 pertenece a `viewer_format` y a las fases posteriores.
+
+La importación LAS/LAZ valida límites completos del encabezado antes de aceptar el origen. Un error
+de lectura, incluido un archivo truncado, invalida la sesión para evitar continuar desde un cursor
+parcial; los conteos espaciales usan `u64` y la selección detecta desbordamiento al sumarlos. La
+importación actual conserva RGB cuando existe y, si no, representa intensidad como gris; otras
+dimensiones LAS todavía no se exponen como atributos del visor.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.

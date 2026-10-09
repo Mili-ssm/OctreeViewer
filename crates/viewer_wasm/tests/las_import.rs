@@ -68,3 +68,16 @@ fn rejects_zero_sized_batches_without_consuming_points() {
     assert_eq!(stream.processed_points(), 0);
     assert_eq!(stream.read_next(1).unwrap().processed_points, 1);
 }
+
+#[test]
+fn reports_truncated_las_point_data_as_an_import_error() {
+    let mut bytes = fixture(false, true).into_inner();
+    bytes.pop();
+    let mut stream = LasPointStream::new(Cursor::new(bytes)).unwrap();
+
+    assert!(matches!(stream.read_next(10), Err(LasImportError::Las(_))));
+    assert!(matches!(
+        stream.read_next(10),
+        Err(LasImportError::StreamFailed)
+    ));
+}

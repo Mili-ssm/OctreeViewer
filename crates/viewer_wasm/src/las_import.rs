@@ -2,7 +2,7 @@ use std::io::{Read, Seek};
 
 use las::{PointData, PointDataBuilder, Reader};
 use thiserror::Error;
-use viewer_core::{CoordinateFrame, CoordinateFrameError};
+use viewer_core::{CoordinateFrame, CoordinateFrameError, SpatialBounds};
 
 const MAX_POINTS_PER_CHUNK: u64 = 65_536;
 const MAX_INPUT_BYTES_PER_CHUNK: usize = 8 * 1024 * 1024;
@@ -13,7 +13,7 @@ pub enum LasImportError {
     Las(#[from] las::Error),
     #[error("the requested point batch size must be greater than zero")]
     EmptyBatch,
-    #[error("LAS header has non-finite coordinate bounds")]
+    #[error("LAS header bounds must be finite and ordered")]
     InvalidBounds,
     #[error("point at local coordinates {0:?} exceeds the viewer's f32 coordinate range")]
     PositionOutOfRange([f64; 3]),
@@ -52,9 +52,8 @@ impl LasPointStream {
         let reader = Reader::new(source)?;
         let bounds = reader.header().bounds();
         let origin = [bounds.min.x, bounds.min.y, bounds.min.z];
-        if origin.iter().any(|coordinate| !coordinate.is_finite()) {
-            return Err(LasImportError::InvalidBounds);
-        }
+        let maximum = [bounds.max.x, bounds.max.y, bounds.max.z];
+        SpatialBounds::new(origin, maximum).map_err(|_| LasImportError::InvalidBounds)?;
         let coordinate_frame = CoordinateFrame::new(origin).map_err(|error| match error {
             CoordinateFrameError::InvalidOrigin(_) => LasImportError::InvalidBounds,
             CoordinateFrameError::PositionOutOfRange(_) => unreachable!("origin was validated"),
@@ -110,7 +109,10 @@ impl LasPointStream {
 
         let max_by_bytes = (MAX_INPUT_BYTES_PER_CHUNK / self.record_len.max(1)).max(1) as u64;
         let point_limit = requested_points.min(MAX_POINTS_PER_CHUNK).min(max_by_bytes);
-        self.reader.fill_points(point_limit, &mut self.buffer)?;
+        if let Err(error) = self.reader.fill_points(point_limit, &mut self.buffer) {
+            self.failed = true;
+            return Err(error.into());
+        }
 
         if self.buffer.is_empty() {
             self.done = true;
