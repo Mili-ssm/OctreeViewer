@@ -67,6 +67,7 @@ fn refines_a_parent_atomically_when_the_full_child_cut_fits() {
 
     assert_eq!(selection.node_ids(), [NodeId::new(2), NodeId::new(3)]);
     assert_eq!(selection.point_count(), 12);
+    assert_eq!(selection.point_budget(), 22);
     assert_eq!(selection.max_error_pixels(), 0.5);
     assert!(selection.budget_limited().is_empty());
     assert!(selection.resolution_limited().is_empty());

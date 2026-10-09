@@ -320,6 +320,7 @@ impl LodSelectionConfig {
 pub struct LodSelection {
     node_ids: Vec<NodeId>,
     point_count: u64,
+    point_budget: u64,
     max_error_pixels: f64,
     budget_limited: Vec<NodeId>,
     resolution_limited: Vec<NodeId>,
@@ -332,6 +333,10 @@ impl LodSelection {
 
     pub const fn point_count(&self) -> u64 {
         self.point_count
+    }
+
+    pub const fn point_budget(&self) -> u64 {
+        self.point_budget
     }
 
     pub const fn max_error_pixels(&self) -> f64 {
@@ -667,6 +672,7 @@ impl SpatialHierarchy {
                 return Ok(LodSelection {
                     node_ids: selected,
                     point_count,
+                    point_budget: config.point_budget,
                     max_error_pixels,
                     budget_limited,
                     resolution_limited,

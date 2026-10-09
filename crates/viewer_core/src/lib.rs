@@ -18,8 +18,8 @@ pub use geometry::{
 };
 pub use lod_transition::{LodTransitionPlan, LodTransitionPlanner};
 pub use scheduler::{
-    BlockRequestScheduler, RequestCompletion, RequestTicket, ScheduledBlockRequest, SchedulerError,
-    ViewUpdate,
+    BlockRequestScheduler, RequestCompletion, RequestState, RequestTicket, RequestUpdate,
+    ScheduledBlockRequest, SchedulerError, ViewUpdate,
 };
 pub use spatial::{
     AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, HierarchySemantics,

@@ -413,7 +413,7 @@ y reanudarse, y produce un archivo validado y abierto por el lector del formato.
   estadísticas observables.
 - [x] Gestionar transiciones LOD por subárbol con cambio atómico, fallbacks disponibles y diagnóstico
   de regiones sin cobertura; especificar el comportamiento en los bordes de bloques.
-- [ ] Hacer que la consulta solo devuelva bloques dentro del presupuesto, y exponer los motivos de
+- [x] Hacer que la consulta solo devuelva bloques dentro del presupuesto y exponer los motivos de
   omisión/atraso para diagnóstico.
 
 **Cierre:** al cambiar la cámara, se solicitan/cancelan los bloques esperados; la memoria de caché no
@@ -440,8 +440,19 @@ de bloque. El conversor asigna planos internos a la celda superior y preserva el
 pero el núcleo no elimina duplicados de datasets arbitrarios. Al procesar `CacheInsertResult`, el
 consumidor debe pasar sus bloques expulsados a `BlockRequestScheduler::invalidate_completed` para
 permitir recargarlos; para bloques seleccionados que ya estén en caché, debe llamar `mark_cached` y
-evitar lecturas duplicadas. Los fallos admiten reintento explícito. No hay executor multihilo ni
-integración con cámara/WASM todavía.
+evitar lecturas duplicadas. `LodSelection` conserva y expone el presupuesto configurado, además de
+los nodos limitados por puntos y por resolución. `LodTransitionPlan` vuelve a comprobar el límite con
+los puntos reales de los bloques residentes, deduplicados por `BlockId`; admite cada nodo completo
+en orden ascendente de `NodeId` o lo omite completo, y expone puntos devueltos, presupuesto, nodos
+omitidos, bloques pendientes, fallbacks y cobertura no disponible. Una omisión por presupuesto no se
+cuenta como lectura pendiente. Para no encolar bloques de nodos omitidos, el consumidor debe pasar
+`pending_blocks()` a `BlockRequestScheduler::update_blocks` con sus prioridades. El scheduler expone
+el estado de cada bloque (no seleccionado, cola, activo, cancelado aún activo, entregado o fallido) y
+contadores de atraso. Si la selección base de la
+jerarquía excede el presupuesto, `select_lod` devuelve `BaseCutExceedsBudget`; el consumidor debe
+reportar la consulta fallida y no presentar el corte anterior como si respetara el límite nuevo.
+Los fallos admiten reintento explícito. No hay executor multihilo ni integración con cámara/WASM
+todavía.
 
 ### Fase 5 — Presentación 3D (`viewer_render_wgpu`)
 

@@ -50,6 +50,17 @@ pub enum RequestCompletion {
     UnexpectedBlock { expected: BlockId, actual: BlockId },
 }
 
+/// Observable lifecycle state for one block under the current view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestState {
+    NotSelected,
+    Queued,
+    InFlight,
+    CancelledInFlight,
+    Delivered,
+    Failed,
+}
+
 /// Plans visible block reads while leaving execution to the caller's runtime.
 ///
 /// Create one scheduler per dataset. Call [`Self::cancel_all`] before replacing the
@@ -122,6 +133,36 @@ impl BlockRequestScheduler {
             }
         }
 
+        let cancelled = self.reconcile(desired);
+        Ok(ViewUpdate {
+            selection,
+            cancelled,
+        })
+    }
+
+    /// Schedules an explicit block set, for example the pending payloads from a
+    /// budget-filtered transition plan. Duplicate IDs keep their nearest supplied
+    /// priority. All priorities are validated before the current queue is changed.
+    pub fn update_blocks(
+        &mut self,
+        requests: impl IntoIterator<Item = (BlockId, f64)>,
+    ) -> Result<RequestUpdate, SchedulerError> {
+        let mut desired = HashMap::<BlockId, f64>::new();
+        for (block_id, distance) in requests {
+            if distance.is_nan() || distance < 0.0 {
+                return Err(SchedulerError::InvalidPriorityDistance { block_id, distance });
+            }
+            desired
+                .entry(block_id)
+                .and_modify(|current| *current = current.min(distance))
+                .or_insert(distance);
+        }
+        Ok(RequestUpdate {
+            cancelled: self.reconcile(desired),
+        })
+    }
+
+    fn reconcile(&mut self, desired: HashMap<BlockId, f64>) -> Vec<RequestTicket> {
         let desired_ids = desired.keys().copied().collect::<HashSet<_>>();
         let obsolete_pending = self
             .pending_by_block
@@ -158,10 +199,7 @@ impl BlockRequestScheduler {
             self.insert_pending(block_id, distance);
         }
 
-        Ok(ViewUpdate {
-            selection,
-            cancelled,
-        })
+        cancelled
     }
 
     /// Releases the highest-priority pending request if a concurrency slot is free.
@@ -324,6 +362,38 @@ impl BlockRequestScheduler {
             .count()
     }
 
+    pub fn failed_count(&self) -> usize {
+        self.failed.len()
+    }
+
+    pub fn completed_count(&self) -> usize {
+        self.completed.len()
+    }
+
+    pub fn request_state(&self, block_id: BlockId) -> RequestState {
+        if let Some(request_id) = self.active_by_block.get(&block_id) {
+            return if self
+                .active
+                .get(request_id)
+                .is_some_and(|request| !request.current)
+            {
+                RequestState::CancelledInFlight
+            } else {
+                RequestState::InFlight
+            };
+        }
+        if self.pending_by_block.contains_key(&block_id) {
+            return RequestState::Queued;
+        }
+        if self.completed.contains(&block_id) {
+            return RequestState::Delivered;
+        }
+        if self.failed.contains(&block_id) {
+            return RequestState::Failed;
+        }
+        RequestState::NotSelected
+    }
+
     fn insert_pending(&mut self, block_id: BlockId, distance: f64) {
         let key = PriorityKey { distance, block_id };
         if let Some(previous) = self.pending_by_block.insert(block_id, key) {
@@ -350,6 +420,17 @@ pub struct ViewUpdate {
     cancelled: Vec<RequestTicket>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestUpdate {
+    cancelled: Vec<RequestTicket>,
+}
+
+impl RequestUpdate {
+    pub fn cancelled(&self) -> &[RequestTicket] {
+        &self.cancelled
+    }
+}
+
 impl ViewUpdate {
     pub const fn selection(&self) -> &LodSelection {
         &self.selection
@@ -366,6 +447,10 @@ pub enum SchedulerError {
     ZeroConcurrencyLimit,
     #[error("camera position must be finite, got {0:?}")]
     InvalidCameraPosition([f64; 3]),
+    #[error(
+        "request priority for block {block_id:?} must be non-negative and not NaN, got {distance}"
+    )]
+    InvalidPriorityDistance { block_id: BlockId, distance: f64 },
     #[error("request ticket ID overflow")]
     TicketIdOverflow,
     #[error("request ticket {0} is not active")]

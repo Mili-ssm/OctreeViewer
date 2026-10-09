@@ -59,7 +59,11 @@ fn block_with_points(id: u64, point_count: usize) -> PointBlock {
     )
 }
 
-fn target(hierarchy: &SpatialHierarchy, refined: bool) -> viewer_core::LodSelection {
+fn target(
+    hierarchy: &SpatialHierarchy,
+    refined: bool,
+    point_budget: u64,
+) -> viewer_core::LodSelection {
     let frustum = SpatialFrustum::new(vec![
         FrustumPlane::new([1.0, 0.0, 0.0], 0.0).unwrap(),
         FrustumPlane::new([-1.0, 0.0, 0.0], 10.0).unwrap(),
@@ -72,7 +76,7 @@ fn target(hierarchy: &SpatialHierarchy, refined: bool) -> viewer_core::LodSelect
     hierarchy
         .select_lod(
             &frustum,
-            LodSelectionConfig::new(1.0, 10).unwrap(),
+            LodSelectionConfig::new(1.0, point_budget).unwrap(),
             |node| {
                 if refined && node.id() == NodeId::new(1) {
                     10.0
@@ -97,10 +101,10 @@ fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
     cache.insert(root);
     let mut planner = LodTransitionPlanner::new();
 
-    let initial = planner.update(&hierarchy, &target(&hierarchy, false), &mut cache);
+    let initial = planner.update(&hierarchy, &target(&hierarchy, false, 10), &mut cache);
     assert_eq!(initial.node_ids(), [NodeId::new(1)]);
 
-    let desired = target(&hierarchy, true);
+    let desired = target(&hierarchy, true, 10);
     let waiting = planner.update(&hierarchy, &desired, &mut cache);
     assert_eq!(waiting.node_ids(), [NodeId::new(1)]);
     assert_eq!(waiting.fallback_nodes(), [NodeId::new(1)]);
@@ -130,15 +134,21 @@ fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
     }));
 
     cache.remove(BlockId::new(10));
-    let coarsening = planner.update(&hierarchy, &target(&hierarchy, false), &mut cache);
-    assert_eq!(coarsening.node_ids(), [NodeId::new(2), NodeId::new(3)]);
+    let coarsening = planner.update(&hierarchy, &target(&hierarchy, false, 1), &mut cache);
+    assert_eq!(coarsening.node_ids(), [NodeId::new(2)]);
+    assert_eq!(coarsening.point_count(), 1);
+    assert_eq!(coarsening.point_budget(), 1);
     assert_eq!(coarsening.pending_blocks(), [BlockId::new(10)]);
-    assert_eq!(
-        coarsening.fallback_nodes(),
-        [NodeId::new(2), NodeId::new(3)]
-    );
+    assert_eq!(coarsening.fallback_nodes(), [NodeId::new(2)]);
+    assert_eq!(coarsening.budget_omitted_nodes(), [NodeId::new(3)]);
     assert_eq!(coarsening.uncovered_nodes(), [NodeId::new(1)]);
     assert!(!coarsening.coverage_complete());
+
+    assert!(cache.insert(block(10)).cached);
+    let within_budget = planner.update(&hierarchy, &target(&hierarchy, false, 1), &mut cache);
+    assert_eq!(within_budget.node_ids(), [NodeId::new(1)]);
+    assert_eq!(within_budget.point_count(), 1);
+    assert!(within_budget.coverage_complete());
 }
 
 #[test]
@@ -153,7 +163,7 @@ fn protected_active_cut_blocks_an_over_budget_transition_without_eviction() {
     cache.insert(root);
     cache.insert(unrelated);
     let mut planner = LodTransitionPlanner::new();
-    planner.update(&hierarchy, &target(&hierarchy, false), &mut cache);
+    planner.update(&hierarchy, &target(&hierarchy, false, 10), &mut cache);
 
     let rejected = cache.insert(replacement);
     assert!(!rejected.cached);
@@ -181,7 +191,7 @@ fn additive_transition_keeps_available_ancestors_and_reports_missing_children() 
     cache.insert(block(10));
     let mut planner = LodTransitionPlanner::new();
 
-    let plan = planner.update(&hierarchy, &target(&hierarchy, true), &mut cache);
+    let plan = planner.update(&hierarchy, &target(&hierarchy, true, 10), &mut cache);
     assert_eq!(plan.node_ids(), [NodeId::new(1)]);
     assert_eq!(plan.pending_blocks(), [BlockId::new(20), BlockId::new(30)]);
     assert_eq!(plan.uncovered_nodes(), [NodeId::new(2), NodeId::new(3)]);
@@ -234,5 +244,75 @@ fn replacement_subtrees_advance_independently_and_structural_nodes_are_not_fallb
     assert_eq!(plan.fallback_nodes(), [NodeId::new(3)]);
     assert_eq!(plan.block_ids(), [BlockId::new(30), BlockId::new(40)]);
     assert_eq!(plan.pending_blocks(), [BlockId::new(60), BlockId::new(70)]);
+    assert_eq!(plan.point_count(), 2);
+    assert_eq!(plan.point_budget(), 10);
     assert!(plan.coverage_complete());
+}
+
+#[test]
+fn resident_payload_count_not_node_metadata_controls_the_strict_budget() {
+    let hierarchy = SpatialHierarchy::new(
+        vec![node(1, None, [0.0; 3], [10.0; 3], Some(10))],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(10_000);
+    cache.insert(block_with_points(10, 3));
+    let desired = target(&hierarchy, false, 2);
+    assert_eq!(desired.point_count(), 1);
+
+    let plan = LodTransitionPlanner::new().update(&hierarchy, &desired, &mut cache);
+    assert!(plan.node_ids().is_empty());
+    assert!(plan.block_ids().is_empty());
+    assert_eq!(plan.point_count(), 0);
+    assert_eq!(plan.point_budget(), 2);
+    assert_eq!(plan.budget_omitted_nodes(), [NodeId::new(1)]);
+    assert_eq!(plan.uncovered_nodes(), [NodeId::new(1)]);
+}
+
+#[test]
+fn multi_block_nodes_are_admitted_as_a_whole_and_empty_cuts_fit_zero_budget() {
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [10.0; 3]).unwrap(),
+                2,
+                0.0,
+                vec![BlockId::new(10), BlockId::new(10), BlockId::new(11)],
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(10_000);
+    cache.insert(block(10));
+    let desired = target(&hierarchy, false, 2);
+    let mut planner = LodTransitionPlanner::new();
+    let partial = planner.update(&hierarchy, &desired, &mut cache);
+    assert!(partial.node_ids().is_empty());
+    assert_eq!(partial.pending_blocks(), [BlockId::new(11)]);
+    assert_eq!(partial.uncovered_nodes(), [NodeId::new(1)]);
+
+    cache.insert(block(11));
+    let complete = planner.update(&hierarchy, &desired, &mut cache);
+    assert_eq!(complete.node_ids(), [NodeId::new(1)]);
+    assert_eq!(complete.block_ids(), [BlockId::new(10), BlockId::new(11)]);
+    assert_eq!(complete.point_count(), 2);
+
+    let outside =
+        SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], -20.0).unwrap()]).unwrap();
+    let empty_target = hierarchy
+        .select_lod(&outside, LodSelectionConfig::new(1.0, 0).unwrap(), |_| 0.0)
+        .unwrap();
+    let empty = planner.update(&hierarchy, &empty_target, &mut cache);
+    assert!(empty.node_ids().is_empty());
+    assert_eq!(empty.point_count(), 0);
+    assert_eq!(empty.point_budget(), 0);
+    assert!(empty.coverage_complete());
 }

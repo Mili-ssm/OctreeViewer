@@ -1,7 +1,7 @@
 use viewer_core::{
     BlockId, BlockRequestScheduler, FrustumPlane, HierarchySemantics, LodSelectionConfig, NodeId,
-    RequestCompletion, SchedulerError, SpatialBounds, SpatialFrustum, SpatialHierarchy,
-    SpatialNode,
+    RequestCompletion, RequestState, SchedulerError, SpatialBounds, SpatialFrustum,
+    SpatialHierarchy, SpatialNode,
 };
 
 fn box_frustum(min: f64, max: f64) -> SpatialFrustum {
@@ -74,12 +74,24 @@ fn prioritizes_nearest_visible_blocks_and_enforces_in_flight_limit() {
         [2, 3]
     );
     assert_eq!(scheduler.pending_count(), 2);
+    assert_eq!(
+        scheduler.request_state(BlockId::new(11)),
+        RequestState::Queued
+    );
+    assert_eq!(
+        scheduler.request_state(BlockId::new(99)),
+        RequestState::NotSelected
+    );
 
     let nearest = scheduler.take_next().unwrap().unwrap();
     assert_eq!(nearest.ticket().block_id(), BlockId::new(22));
     assert_eq!(nearest.priority_distance(), 0.0);
     assert!(scheduler.take_next().unwrap().is_none());
     assert_eq!(scheduler.in_flight_count(), 1);
+    assert_eq!(
+        scheduler.request_state(BlockId::new(22)),
+        RequestState::InFlight
+    );
 
     assert_eq!(
         scheduler
@@ -90,6 +102,10 @@ fn prioritizes_nearest_visible_blocks_and_enforces_in_flight_limit() {
     assert_eq!(
         scheduler.take_next().unwrap().unwrap().ticket().block_id(),
         BlockId::new(11)
+    );
+    assert_eq!(
+        scheduler.request_state(BlockId::new(22)),
+        RequestState::Delivered
     );
 }
 
@@ -134,6 +150,37 @@ fn cached_visible_blocks_are_not_queued_until_the_cache_invalidates_them() {
 }
 
 #[test]
+fn explicit_block_requests_deduplicate_priorities_and_validate_atomically() {
+    let mut scheduler = BlockRequestScheduler::new(1).unwrap();
+    scheduler
+        .update_blocks([
+            (BlockId::new(11), 5.0),
+            (BlockId::new(22), 2.0),
+            (BlockId::new(11), 1.0),
+        ])
+        .unwrap();
+    assert_eq!(scheduler.pending_count(), 2);
+    let nearest = scheduler.take_next().unwrap().unwrap();
+    assert_eq!(nearest.ticket().block_id(), BlockId::new(11));
+    assert_eq!(nearest.priority_distance(), 1.0);
+
+    let result = scheduler.update_blocks([(BlockId::new(33), f64::NAN)]);
+    assert!(matches!(
+        result,
+        Err(SchedulerError::InvalidPriorityDistance { .. })
+    ));
+    assert_eq!(scheduler.pending_count(), 1);
+    assert_eq!(
+        scheduler.request_state(BlockId::new(22)),
+        RequestState::Queued
+    );
+    assert_eq!(
+        scheduler.request_state(BlockId::new(33)),
+        RequestState::NotSelected
+    );
+}
+
+#[test]
 fn cancels_obsolete_reads_and_discards_stale_results_without_freeing_slots_early() {
     let hierarchy = two_leaf_hierarchy();
     let mut scheduler = BlockRequestScheduler::new(1).unwrap();
@@ -151,6 +198,10 @@ fn cancels_obsolete_reads_and_discards_stale_results_without_freeing_slots_early
         .unwrap();
     assert_eq!(changed.cancelled(), [old]);
     assert_eq!(scheduler.cancelled_in_flight_count(), 1);
+    assert_eq!(
+        scheduler.request_state(BlockId::new(22)),
+        RequestState::CancelledInFlight
+    );
     assert!(scheduler.take_next().unwrap().is_none());
 
     assert_eq!(
@@ -216,8 +267,16 @@ fn deduplicates_blocks_shared_by_selected_nodes_and_allows_explicit_retry() {
         scheduler.complete(retry.ticket(), Err(())).unwrap(),
         RequestCompletion::Failed
     );
+    assert_eq!(
+        scheduler.request_state(BlockId::new(44)),
+        RequestState::Failed
+    );
     assert!(!scheduler.retry(BlockId::new(45)));
     assert!(scheduler.retry(BlockId::new(44)));
+    assert_eq!(
+        scheduler.request_state(BlockId::new(44)),
+        RequestState::Queued
+    );
 }
 
 #[test]

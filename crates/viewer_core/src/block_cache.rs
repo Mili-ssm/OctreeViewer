@@ -80,6 +80,11 @@ impl DecodedBlockCache {
         self.entries.contains_key(&id)
     }
 
+    /// Inspects a resident block without changing LRU order or hit/miss counters.
+    pub fn peek(&self, id: BlockId) -> Option<&PointBlock> {
+        self.entries.get(&id).map(|entry| &entry.block)
+    }
+
     /// Protects resident entries from eviction until the next protection set is applied.
     pub fn set_protected_blocks(&mut self, block_ids: impl IntoIterator<Item = BlockId>) {
         self.protected = block_ids
