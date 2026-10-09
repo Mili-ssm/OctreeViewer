@@ -25,7 +25,7 @@ impl Default for ViewerConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ViewerStats {
-    pub point_count: usize,
+    pub point_count: u64,
     pub voxel_count: usize,
     pub instance_count: usize,
     pub viewport_size: [u32; 2],
@@ -94,13 +94,17 @@ impl ViewerController {
     }
 
     pub fn replace_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
-        self.store.clear();
-        self.append_points(positions, colors)
+        let batch = build_point_batch(positions, colors)?;
+        let mut replacement = SparseVoxelStore::new(self.store.config());
+        replacement.insert_batch(&batch)?;
+        self.store = replacement;
+        self.refresh_scene();
+        Ok(())
     }
 
     pub fn append_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
         let batch = build_point_batch(positions, colors)?;
-        self.store.insert_batch(&batch);
+        self.store.insert_batch(&batch)?;
         self.refresh_scene();
         Ok(())
     }
@@ -139,6 +143,8 @@ impl ViewerController {
     }
 }
 
+// Keep this layout validation and iteration compatible with the workspace's Rust 1.85 floor.
+#[allow(clippy::manual_is_multiple_of, clippy::chunks_exact_to_as_chunks)]
 fn build_point_batch(positions: &[f32], colors: &[u8]) -> Result<PointBatch, ViewerError> {
     if positions.len() % 3 != 0 {
         return Err(ViewerError::InvalidPositionComponentCount(positions.len()));
@@ -169,6 +175,7 @@ fn build_point_batch(positions: &[f32], colors: &[u8]) -> Result<PointBatch, Vie
 #[cfg(test)]
 mod tests {
     use super::{ViewerConfig, ViewerController, ViewerError};
+    use viewer_core::VoxelizationError;
 
     #[test]
     fn replaces_points_and_builds_instances() {
@@ -216,5 +223,22 @@ mod tests {
                 point_count: 1,
             }
         );
+    }
+
+    #[test]
+    fn failed_replacement_keeps_the_previous_scene() {
+        let mut viewer = ViewerController::new(ViewerConfig::default()).unwrap();
+        viewer
+            .replace_points(&[0.0, 0.0, 0.0], &[12, 34, 56])
+            .unwrap();
+
+        assert!(matches!(
+            viewer.replace_points(&[f32::NAN, 0.0, 0.0], &[1, 2, 3]),
+            Err(ViewerError::InvalidVoxelization(
+                VoxelizationError::InvalidPointPosition(_)
+            ))
+        ));
+        assert_eq!(viewer.stats().point_count, 1);
+        assert_eq!(viewer.stats().voxel_count, 1);
     }
 }

@@ -5,7 +5,7 @@ pub struct VisibleVoxel {
     pub center: [f32; 3],
     pub size: f32,
     pub color: ColorRgb,
-    pub point_count: u32,
+    pub point_count: u64,
 }
 
 impl VisibleVoxel {
@@ -45,13 +45,17 @@ pub struct VisibilityQuery {
 
 impl SparseVoxelStore {
     pub fn build_visible_batch(&self, query: VisibilityQuery) -> VisibleVoxelBatch {
+        if query.limit == Some(0) {
+            return VisibleVoxelBatch::new(Vec::new());
+        }
+
         let mut visible = Vec::new();
 
         for voxel in self.iter_voxels() {
-            if let Some(bounds) = query.bounds {
-                if !bounds.contains_point(voxel.center) {
-                    continue;
-                }
+            if let Some(bounds) = query.bounds
+                && !bounds.contains_point(voxel.center)
+            {
+                continue;
             }
 
             visible.push(VisibleVoxel {
@@ -60,12 +64,16 @@ impl SparseVoxelStore {
                 color: voxel.color,
                 point_count: voxel.point_count,
             });
+        }
 
-            if let Some(limit) = query.limit {
-                if visible.len() >= limit {
-                    break;
-                }
-            }
+        visible.sort_by(|left, right| {
+            left.center[0]
+                .total_cmp(&right.center[0])
+                .then_with(|| left.center[1].total_cmp(&right.center[1]))
+                .then_with(|| left.center[2].total_cmp(&right.center[2]))
+        });
+        if let Some(limit) = query.limit {
+            visible.truncate(limit);
         }
 
         VisibleVoxelBatch::new(visible)

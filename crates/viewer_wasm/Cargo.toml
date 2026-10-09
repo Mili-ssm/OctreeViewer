@@ -7,6 +7,7 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+las.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 viewer_core = { path = "../viewer_core" }

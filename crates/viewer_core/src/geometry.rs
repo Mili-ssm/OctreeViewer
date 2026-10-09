@@ -15,11 +15,20 @@ impl ColorRgb {
 
     pub fn to_linear_rgba(self) -> [f32; 4] {
         [
-            f32::from(self.r) / 255.0,
-            f32::from(self.g) / 255.0,
-            f32::from(self.b) / 255.0,
+            srgb_channel_to_linear(self.r),
+            srgb_channel_to_linear(self.g),
+            srgb_channel_to_linear(self.b),
             1.0,
         ]
+    }
+}
+
+fn srgb_channel_to_linear(channel: u8) -> f32 {
+    let srgb = f32::from(channel) / 255.0;
+    if srgb <= 0.04045 {
+        srgb / 12.92
+    } else {
+        ((srgb + 0.055) / 1.055).powf(2.4)
     }
 }
 
@@ -99,5 +108,20 @@ impl Aabb {
             && point[1] <= self.max[1]
             && point[2] >= self.min[2]
             && point[2] <= self.max[2]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ColorRgb;
+
+    #[test]
+    fn converts_srgb_channels_to_linear_light() {
+        let color = ColorRgb::new(0, 128, 255).to_linear_rgba();
+
+        assert_eq!(color[0], 0.0);
+        assert!((color[1] - 0.21586).abs() < 0.0001);
+        assert_eq!(color[2], 1.0);
+        assert_eq!(color[3], 1.0);
     }
 }
