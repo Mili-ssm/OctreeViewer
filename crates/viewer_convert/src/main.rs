@@ -138,12 +138,13 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         convert_file_with_progress(&input, &output, options, &mut on_progress)?
     };
     eprintln!(
-        "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {}",
+        "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {} + {}",
         report.point_count,
         report.block_count,
         report.output_bytes,
         report.estimated_peak_memory_bytes.div_ceil(1024 * 1024),
-        output.display()
+        output.display(),
+        output.with_extension("octattrs").display()
     );
     if !report.omitted_dimensions.is_empty() {
         eprintln!("Not preserved: {}", report.omitted_dimensions.join(", "));
@@ -154,6 +155,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 fn print_help() {
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint|--resume]\n\
+         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
          Defaults: 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\

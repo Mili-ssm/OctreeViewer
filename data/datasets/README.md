@@ -33,10 +33,20 @@ decimales)** combinados, por debajo del límite de 50 GB solicitado. La copia lo
 | Albuera UAV LiDAR | `SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz` | 4.305.484.789 B | 508.809.556 | ETRS89 / UTM 29N |
 | Majadas TLS | `SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz` | 1.343.266.470 B | 415.465.882 | ETRS89 / UTM 30N |
 
-Las dos teselas también cuentan con capturas `.oct` a 4, 8 y 16 px (640×480) generadas por el renderer nativo sin
-interfaz. Están en [`artifacts/sensoforest`](../../artifacts/sensoforest/), con PNG y JSON de
-proyección/lectura GPU; la tabla comparativa y el límite de detalle están documentados en el
-[README del proyecto](../../README.md#capturas-sensoforest-por-calidad-2026-10-10).
+Las salidas locales se regeneraron en formato v5 el 10 de octubre de 2026. Cada conjunto consta de
+`.oct` de coordenadas y `.octattrs` opcional. Las duraciones corresponden a una ejecución release
+serial local; no son garantías de conversión:
+
+| Dataset | Conversión | Coordenadas `.oct` | Atributos `.octattrs` | Total de salida |
+| --- | ---: | ---: | ---: | ---: |
+| Albuera | 651,5 s | 6.105.617.040 B | 7.561.226.723 B | 13.666.843.763 B |
+| Majadas | 612,1 s | 4.214.687.109 B | 3.319.094.608 B | 7.533.781.717 B |
+
+Albuera además cuenta con renders nativos a **1920×1080** en [`artifacts/sensoforest/albuera-v5-1080p`](../../artifacts/sensoforest/albuera-v5-1080p/):
+1, 2 y 4 px, con PNG y JSON de lectura/proyección GPU. Se generaron sobre llvmpipe/Vulkan; los
+tiempos incluyen selección LOD, lectura y voxelización y no representan rendimiento de GPU dedicada.
+Los `.oct` pequeños de Belvedere y Stanford Bunny se regeneraron en la misma versión; como los datos
+están excluidos de Git, sus parejas quedan en el checkout local.
 
 El registro no declara una licencia en sus metadatos; se usa la copia solo para pruebas locales, sin
 redistribuirla. El README y los archivos del [registro](https://zenodo.org/records/20000277) describen
@@ -52,18 +62,19 @@ Para medir la conversión se puede ejecutar, con un destino `.oct` nuevo por arc
 ```sh
 cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
   data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz \
-  data/datasets/sensoforest/albuera-uav.oct
+  /tmp/albuera-uav-v5.oct
 cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
   data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz \
-  data/datasets/sensoforest/majadas-tls.oct
+  /tmp/majadas-tls-v5.oct
 ```
 
 Se hizo una conversión release exploratoria por archivo el 10 de octubre de 2026: Albuera tardó
 378,8 s y Majadas 395,5 s. Se midieron RSS pico de 606.840 KiB y 301.844 KiB, respectivamente; los
 `.oct` tuvieron ratios de 2,89× y 5,51× respecto al LAZ. Resultados y límites están en
-[`REAL_DATASET_BENCH.md`](../../docs/REAL_DATASET_BENCH.md). Las salidas se eliminaron tras guardar
-sus hashes. Antes de repetir, revisa espacio libre y configura un destino local; los `.oct` resultantes
-también están ignorados por Git.
+[`REAL_DATASET_BENCH.md`](../../docs/REAL_DATASET_BENCH.md). Las salidas exploratorias de esa medida
+se eliminaron tras guardar sus hashes; las parejas v5 se regeneraron después y se resumen arriba.
+Antes de repetir, revisa espacio libre y configura un destino local; los `.oct` resultantes también
+están ignorados por Git.
 
 ## Ejecutar
 

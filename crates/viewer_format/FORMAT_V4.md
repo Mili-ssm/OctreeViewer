@@ -1,6 +1,8 @@
+> Historical specification. The current reader/writer supports **v5 only**; see [FORMAT_V5.md](FORMAT_V5.md). V4 files must be regenerated.
+
 # Native `.oct` format, version 4
 
-This document specifies the complete version 4 file format. V4 is the only format version accepted or written by this project. Older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
+This document specifies the complete version 4 file format. V4 was the only format version accepted or written before the v5 migration. Older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
 
 V4 stores one shared dataset frame, hierarchy, schema and metadata index, and independent payloads for each block: one geometry payload and one payload per schema attribute. Geometry and attribute payloads can therefore be read, checked and decompressed independently.
 

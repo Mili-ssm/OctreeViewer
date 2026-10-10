@@ -80,13 +80,17 @@ impl FormatMetadata {
             .map(|(id, ranges)| (*id, ranges.as_slice()))
     }
 
-    pub(crate) fn with_dataset(&self, dataset: DatasetMetadata) -> Self {
+    pub(crate) fn with_dataset(
+        &self,
+        dataset: DatasetMetadata,
+        ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
+    ) -> Self {
         Self {
             dataset: Arc::new(dataset),
             crs: self.crs.clone(),
             sampling_policy: self.sampling_policy.clone(),
             visual_scale: self.visual_scale,
-            node_attribute_ranges: self.node_attribute_ranges.clone(),
+            node_attribute_ranges: ranges,
         }
     }
 }
@@ -95,8 +99,8 @@ impl FormatMetadata {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeAttributeRange {
     schema_index: u32,
-    min: AttributeValues,
-    max: AttributeValues,
+    pub(crate) min: AttributeValues,
+    pub(crate) max: AttributeValues,
 }
 
 impl NodeAttributeRange {

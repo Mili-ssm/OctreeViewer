@@ -54,11 +54,18 @@ test("converts a Blob in the worker and relays progress events", { concurrency: 
 
     worker.dispatch("message", { type: "progress", processedPoints: "12", totalPoints: "20" });
     const output = new Blob(["oct"]);
+    const attributesFile = new Blob(["octattrs"]);
     const timings = { planningMs: 100, writingMs: 200, totalMs: 350 };
-    worker.dispatch("message", { type: "complete", file: output, outputName: "points.oct", points: "20", timings });
+    worker.dispatch("message", {
+        type: "complete", file: output, outputName: "points.oct",
+        attributesFile, outputAttributesName: "points.octattrs", points: "20", timings,
+    });
 
     assert.deepEqual(progress.map(({ processedPoints }) => processedPoints), ["12"]);
-    assert.deepEqual(await resultPromise, { file: output, name: "points.oct", points: "20", timings });
+    assert.deepEqual(await resultPromise, {
+        file: output, name: "points.oct", attributesFile,
+        outputAttributesName: "points.octattrs", points: "20", timings,
+    });
     converter.dispose();
     assert.equal(worker.terminated, true);
 });

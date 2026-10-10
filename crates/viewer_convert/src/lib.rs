@@ -226,6 +226,10 @@ struct ConversionPlan {
 
 #[derive(Debug, Error)]
 pub enum ConvertError {
+    #[error(
+        "coordinate output and attribute companion must have different paths; use .oct for coordinates"
+    )]
+    ConflictingOutputPaths,
     #[error(transparent)]
     Io(#[from] io::Error),
     #[error("LAS/LAZ error: {0}")]
@@ -339,6 +343,9 @@ fn convert_file_inner(
     checkpoint_mode: Option<CheckpointMode>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<ConversionReport, ConvertError> {
+    if output_path == output_attributes_path(output_path) {
+        return Err(ConvertError::ConflictingOutputPaths);
+    }
     if ept::is_ept_input(input_path) {
         if checkpoint_mode.is_some() {
             return Err(ConvertError::UnsupportedEpt(
@@ -347,8 +354,14 @@ fn convert_file_inner(
         }
         return ept::convert(input_path, output_path, options, on_progress);
     }
+    let requested_attributes_path = output_attributes_path(output_path);
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
+    }
+    if requested_attributes_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
+        return Err(ConvertError::OutputExists(
+            requested_attributes_path.clone(),
+        ));
     }
 
     emit_progress(
@@ -378,7 +391,7 @@ fn convert_file_inner(
     } else {
         None
     };
-    if output_path.exists()
+    if (output_path.exists() || requested_attributes_path.exists())
         && checkpoint.as_ref().is_none_or(|checkpoint| {
             !matches!(checkpoint.stage(), CheckpointStage::OutputReady { .. })
         })
@@ -402,7 +415,13 @@ fn convert_file_inner(
         let checkpoint = checkpoint.expect("output-ready conversion has a checkpoint");
         checkpoint.verify_output()?;
         checkpoint.verify_input(input_path)?;
-        let (candidate_fingerprint, point_count, block_count, estimated_memory_bytes) = checkpoint
+        let (
+            candidate_fingerprint,
+            attributes_fingerprint,
+            point_count,
+            block_count,
+            estimated_memory_bytes,
+        ) = checkpoint
             .output_ready_details()
             .expect("output-ready checkpoint has report details");
         let candidate_path = checkpoint.candidate_path();
@@ -414,18 +433,32 @@ fn convert_file_inner(
             block_ids: &block_ids,
             source_block_ids: &source_block_ids,
             file_length: candidate_length,
+            attributes_length: attributes_fingerprint.bytes,
             requested_workers: options.spatial_workers(),
             memory_budget_bytes: options.max_memory_budget_bytes(),
             reserved_memory_bytes: estimated_memory_bytes,
         };
-        let output_bytes = if output_path.exists() {
-            if fingerprint_file(output_path)? != candidate_fingerprint {
-                return Err(ConvertError::OutputExists(output_path.to_owned()));
-            }
-            validate_output(output_path, &validation, on_progress)?;
+        let attributes_path = output_attributes_path(output_path);
+        if output_path.exists() && fingerprint_file(output_path)? != candidate_fingerprint {
+            return Err(ConvertError::OutputExists(output_path.to_owned()));
+        }
+        if attributes_path.exists() && fingerprint_file(&attributes_path)? != attributes_fingerprint
+        {
+            return Err(ConvertError::OutputExists(attributes_path));
+        }
+        let output_bytes = if output_path.exists() && attributes_path.exists() {
+            validate_output_pair(output_path, &attributes_path, &validation, on_progress)?;
             candidate_length
+                .checked_add(attributes_fingerprint.bytes)
+                .ok_or(ConvertError::SizeOverflow)?
         } else {
-            publish_output(&candidate_path, output_path, validation, on_progress)?
+            publish_output_pair(
+                &candidate_path,
+                &checkpoint.candidate_attributes_path(),
+                output_path,
+                validation,
+                on_progress,
+            )?
         };
         checkpoint.complete()?;
         let _ = on_progress(ConversionProgress {
@@ -477,23 +510,26 @@ fn convert_file_inner(
     };
     let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
     let mut temporary = if checkpoint.is_none() {
-        Some(create_temporary_output(output_path)?)
+        Some(create_temporary_pair(output_path)?)
     } else {
         None
     };
     let temporary_path = if let Some(checkpoint) = checkpoint.as_ref() {
         let candidate = checkpoint.candidate_path();
         let _ = fs::remove_file(&candidate);
+        let _ = fs::remove_file(checkpoint.candidate_attributes_path());
         candidate
     } else {
         temporary
             .as_ref()
             .expect("non-checkpoint conversion has a temporary output")
+            .geometry
             .path
             .to_owned()
     };
     let file = if let Some(temporary) = temporary.as_mut() {
         temporary
+            .geometry
             .file
             .take()
             .expect("temporary output file is present")
@@ -506,7 +542,26 @@ fn convert_file_inner(
     };
     let writer_options = FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
         .map_err(ConvertError::Format)?;
-    let mut writer = FormatWriter::new(file, plan.metadata.clone(), writer_options)?;
+    let attributes_file = if let Some(temporary) = temporary.as_mut() {
+        temporary
+            .attributes
+            .file
+            .take()
+            .expect("temporary attributes file is present")
+    } else {
+        OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(
+                checkpoint
+                    .as_ref()
+                    .expect("checkpoint candidate is present")
+                    .candidate_attributes_path(),
+            )?
+    };
+    let mut writer =
+        FormatWriter::new_split(file, attributes_file, plan.metadata.clone(), writer_options)?;
     stream_blocks(
         &mut writer,
         &plan,
@@ -516,10 +571,24 @@ fn convert_file_inner(
         options.max_memory_budget_bytes(),
         on_progress,
     )?;
-    let output = writer.finish()?;
+    let (output, attributes) = writer.finish_pair()?;
     output.sync_all()?;
+    let attributes = attributes.expect("split writer returns its companion");
+    attributes.sync_all()?;
     drop(output);
+    drop(attributes);
     let file_length = fs::metadata(&temporary_path)?.len();
+    let attributes_path = if let Some(checkpoint) = checkpoint.as_ref() {
+        checkpoint.candidate_attributes_path()
+    } else {
+        temporary
+            .as_ref()
+            .expect("temporary pair exists")
+            .attributes
+            .path
+            .clone()
+    };
+    let attributes_length = fs::metadata(&attributes_path)?.len();
     if let Some(checkpoint) = checkpoint.as_mut() {
         checkpoint.verify_input(input_path)?;
         checkpoint.commit_output(
@@ -534,11 +603,18 @@ fn convert_file_inner(
         block_ids: &output_block_ids,
         source_block_ids: &plan.source_block_ids,
         file_length,
+        attributes_length,
         requested_workers: options.spatial_workers(),
         memory_budget_bytes: options.max_memory_budget_bytes(),
         reserved_memory_bytes: plan.estimated_peak_memory_bytes,
     };
-    let output_bytes = publish_output(&temporary_path, output_path, validation, on_progress)?;
+    let output_bytes = publish_output_pair(
+        &temporary_path,
+        &attributes_path,
+        output_path,
+        validation,
+        on_progress,
+    )?;
     drop(temporary);
     if let Some(checkpoint) = checkpoint {
         checkpoint.complete()?;
@@ -771,13 +847,15 @@ struct OutputValidation<'a> {
     block_ids: &'a [BlockId],
     source_block_ids: &'a [BlockId],
     file_length: u64,
+    attributes_length: u64,
     requested_workers: usize,
     memory_budget_bytes: u64,
     reserved_memory_bytes: u64,
 }
 
-fn validate_output(
+fn validate_output_pair(
     path: &Path,
+    attributes_path: &Path,
     validation: &OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
@@ -786,11 +864,16 @@ fn validate_output(
         block_ids,
         source_block_ids,
         file_length,
+        attributes_length,
         requested_workers,
         memory_budget_bytes,
         reserved_memory_bytes,
     } = *validation;
-    let reader = FormatReader::new(File::open(path)?)?;
+    let mut reader = FormatReader::new(File::open(path)?)?;
+    reader.attach_attributes(File::open(attributes_path)?)?;
+    let file_length = file_length
+        .checked_add(attributes_length)
+        .ok_or(ConvertError::SizeOverflow)?;
     let source_blocks = source_block_ids.iter().copied().collect::<HashSet<_>>();
     emit_progress(
         on_progress,
@@ -824,8 +907,12 @@ fn validate_output(
     let cancelled = AtomicBool::new(false);
     let (sender, receiver) = mpsc::sync_channel::<ValidationMessage>(worker_count * 2);
     let worker_readers = (0..worker_count)
-        .map(|_| Ok(reader.fork_reader(File::open(path)?)))
-        .collect::<Result<Vec<_>, io::Error>>()?;
+        .map(|_| {
+            let mut fork = reader.fork_reader(File::open(path)?);
+            fork.attach_attributes(File::open(attributes_path)?)?;
+            Ok(fork)
+        })
+        .collect::<Result<Vec<_>, ConvertError>>()?;
     let mut validated_points = 0_u64;
     let mut first_error = None;
     thread::scope(|scope| {
@@ -921,14 +1008,25 @@ enum ValidationMessage {
     Finished,
 }
 
-fn publish_output(
+fn publish_output_pair(
     temporary_path: &Path,
+    attributes_temporary_path: &Path,
     output_path: &Path,
     validation: OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<u64, ConvertError> {
-    validate_output(temporary_path, &validation, on_progress)?;
-    let output_bytes = fs::metadata(temporary_path)?.len();
+    validate_output_pair(
+        temporary_path,
+        attributes_temporary_path,
+        &validation,
+        on_progress,
+    )?;
+    let attributes_path = output_attributes_path(output_path);
+    let primary_bytes = fs::metadata(temporary_path)?.len();
+    let attributes_bytes = fs::metadata(attributes_temporary_path)?.len();
+    let output_bytes = primary_bytes
+        .checked_add(attributes_bytes)
+        .ok_or(ConvertError::SizeOverflow)?;
     let point_count = validation.total_points;
     emit_progress(
         on_progress,
@@ -940,13 +1038,42 @@ fn publish_output(
         },
         point_count,
     )?;
-    fs::hard_link(temporary_path, output_path).map_err(|error| {
-        if error.kind() == io::ErrorKind::AlreadyExists || output_path.exists() {
-            ConvertError::OutputExists(output_path.to_owned())
-        } else {
-            ConvertError::Io(error)
+    let primary_exists = output_path.exists();
+    let attributes_exists = attributes_path.exists();
+    if primary_exists && fingerprint_file(output_path)? != fingerprint_file(temporary_path)? {
+        return Err(ConvertError::OutputExists(output_path.to_owned()));
+    }
+    if attributes_exists
+        && fingerprint_file(&attributes_path)? != fingerprint_file(attributes_temporary_path)?
+    {
+        return Err(ConvertError::OutputExists(attributes_path));
+    }
+    let parent = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    if !attributes_exists {
+        fs::hard_link(attributes_temporary_path, &attributes_path).map_err(|error| {
+            if error.kind() == io::ErrorKind::AlreadyExists || attributes_path.exists() {
+                ConvertError::OutputExists(attributes_path.clone())
+            } else {
+                ConvertError::Io(error)
+            }
+        })?;
+    }
+    File::open(parent)?.sync_all()?;
+    if !primary_exists && let Err(error) = fs::hard_link(temporary_path, output_path) {
+        if !attributes_exists {
+            let _ = fs::remove_file(&attributes_path);
         }
-    })?;
+        return Err(
+            if error.kind() == io::ErrorKind::AlreadyExists || output_path.exists() {
+                ConvertError::OutputExists(output_path.to_owned())
+            } else {
+                ConvertError::Io(error)
+            },
+        );
+    }
     let parent = output_path
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -1013,8 +1140,25 @@ fn create_temporary_output(output_path: &Path) -> Result<TemporaryOutput, Conver
     ))
 }
 
+fn output_attributes_path(output_path: &Path) -> PathBuf {
+    output_path.with_extension("octattrs")
+}
+
+struct TemporaryPair {
+    geometry: TemporaryOutput,
+    attributes: TemporaryOutput,
+}
+
+fn create_temporary_pair(output_path: &Path) -> Result<TemporaryPair, ConvertError> {
+    Ok(TemporaryPair {
+        geometry: create_temporary_output(output_path)?,
+        attributes: create_temporary_output(&output_attributes_path(output_path))?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use super::output_attributes_path;
     use std::{
         fs,
         io::{Read, Seek, SeekFrom, Write},
@@ -1172,7 +1316,10 @@ mod tests {
         assert_eq!(completed.stage, ConversionStage::Complete);
         assert_eq!(completed.bytes_written, report.output_bytes);
 
-        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
         assert_eq!(reader.format_metadata().visual_scale(), 25.0);
         let (root_block_ids, root_error, node_count) = {
             let hierarchy = reader.metadata().hierarchy();
@@ -1274,7 +1421,10 @@ mod tests {
         fixture(&input, false, false, 3);
         let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
 
-        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
         let mut found_last_point = false;
         for block_number in 0..report.block_count {
             let block = reader.read_block(BlockId::new(block_number)).unwrap();
@@ -1422,7 +1572,10 @@ mod tests {
                 .any(|name| name == "scanner channel")
         );
 
-        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
         let block = reader.read_block(BlockId::new(0)).unwrap();
         let value = |name: &str| {
             block
@@ -1510,7 +1663,10 @@ mod tests {
         let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
         assert_eq!(report.point_count, 5);
         assert_eq!(report.block_count, 3);
-        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
         let root_blocks = {
             let hierarchy = reader.metadata().hierarchy();
             assert_eq!(hierarchy.stats().node_count, 1);
@@ -1565,7 +1721,10 @@ mod tests {
         drop(writer);
 
         convert_file(&input, &output, ConvertOptions::new(1, 0.01).unwrap()).unwrap();
-        let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
         let (root_block_id, max_level) = {
             let hierarchy = reader.metadata().hierarchy();
             (
@@ -1788,6 +1947,78 @@ mod tests {
         ));
         assert!(checkpoint_dir.join("source.spool").is_file());
         assert!(!output.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        let attrs = output_attributes_path(&output);
+        fixture(&input, false, false, 5);
+        fs::write(&attrs, b"foreign").unwrap();
+        assert!(matches!(
+            convert_file(&input, &output, ConvertOptions::default()),
+            Err(ConvertError::OutputExists(_))
+        ));
+        assert!(!output.exists());
+        assert_eq!(fs::read(&attrs).unwrap(), b"foreign");
+        fs::remove_file(&attrs).unwrap();
+        let report = convert_file(&input, &output, ConvertOptions::default()).unwrap();
+        assert_eq!(
+            report.output_bytes,
+            fs::metadata(&output).unwrap().len() + fs::metadata(&attrs).unwrap().len()
+        );
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        for block in reader.block_storage_stats().unwrap() {
+            let data = reader.read_block(block.id).unwrap();
+            assert!(data.attributes().is_empty());
+            assert!(
+                data.points()
+                    .points()
+                    .iter()
+                    .all(|p| p.color == viewer_core::ColorRgb::new(160, 160, 160))
+            );
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_resumes_companion_only_publication_and_rejects_foreign_companion() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("result.oct");
+        fixture(&input, false, false, 5);
+        let options = ConvertOptions::default();
+        assert!(matches!(
+            convert_file_with_checkpoint(
+                &input,
+                &output,
+                options,
+                CheckpointMode::Create,
+                |event| event.stage != ConversionStage::PublishingOutput
+            ),
+            Err(ConvertError::Cancelled { .. })
+        ));
+        let candidate_dir = dir.join("result.oct.checkpoint");
+        let attrs = output_attributes_path(&output);
+        fs::write(&attrs, b"foreign").unwrap();
+        assert!(matches!(
+            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
+                true
+            }),
+            Err(ConvertError::OutputExists(_))
+        ));
+        assert_eq!(fs::read(&attrs).unwrap(), b"foreign");
+        fs::remove_file(&attrs).unwrap();
+        fs::hard_link(candidate_dir.join("candidate.octattrs"), &attrs).unwrap();
+        convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| true)
+            .unwrap();
+        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(fs::File::open(&attrs).unwrap())
+            .unwrap();
+        assert!(!candidate_dir.exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -50,6 +50,7 @@ def main() -> None:
 
     wasm_bytes = base64.b64encode(wasm_path.read_bytes()).decode("ascii")
     sample_bytes = base64.b64encode(sample_path.read_bytes()).decode("ascii")
+    attributes_bytes = base64.b64encode((HOST / "sample.octattrs").read_bytes()).decode("ascii")
     worker_js = require_replace(
         worker_js,
         'import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";\n',
@@ -147,10 +148,16 @@ def main() -> None:
     if sample_replacements != 1:
         raise ValueError("expected exactly one sample file fetch")
 
+    main_js = require_replace(main_js,
+        'await fetch(new URL("./sample.octattrs", import.meta.url), { signal: controller.signal })',
+        'new Response(window.__VIEWER_ATTRIBUTE_BYTES__.slice(), { status: 200 })',
+        "attribute sample fetch")
     inline_runtime = (
         "<script>\n"
         + f"const WORKER_SOURCE = {json.dumps(worker_source)};\n"
         + f'window.__VIEWER_SAMPLE_BYTES__ = Uint8Array.from(atob("{sample_bytes}"), '
+        "(value) => value.charCodeAt(0));\n"
+        + f'window.__VIEWER_ATTRIBUTE_BYTES__ = Uint8Array.from(atob("{attributes_bytes}"), '
         "(value) => value.charCodeAt(0));\n"
         + "window.__VIEWER_WORKER_URL__ = URL.createObjectURL("
         "new Blob([WORKER_SOURCE], { type: \"text/javascript\" }));\n"
@@ -178,11 +185,11 @@ def main() -> None:
     html = html.replace("<title>viewer_wasm host demo</title>", "<title>Visor local de nubes de puntos</title>")
     html = html.replace("<h1>Embeddable voxel viewer</h1>", "<h1>Visor de nubes de puntos</h1>")
 
-    readme = """VISOR WEB LOCAL\n\n1. Extrae este ZIP en cualquier carpeta.\n2. Abre index.html con doble clic en un navegador compatible con WebGPU.\n3. Espera a que el estado indique que el renderizador está listo.\n4. Pulsa Open project dataset, selecciona tu archivo .oct y espera a que aparezca\n   primero la vista gruesa y después el refinamiento progresivo.\n5. Para medir FPS, espera el LOD objetivo y pulsa Run 15 s FPS benchmark. Mantén\n   la cámara quieta; al terminar pulsa Export run JSON.\n\nEl visor limita el framebuffer a 4.194.304 píxeles y 4.096 por lado. Reduce el\ntrabajo de render mientras está quieto; solo ejecuta el benchmark si lo solicitas.\n\nEl selector acepta el formato del proyecto .oct (versiones 1, 2 y 3). La muestra\nincluida también funciona sin conexión. Para cambiar detalle, usa Finest voxel detail.\n\nNo requiere instalar Rust ni iniciar un servidor. El HTML incluye WASM, worker,\nJavaScript y la muestra. Se necesita un navegador con WebGPU y OffscreenCanvas.\nEl render no sube el archivo a ningún servicio: lo lee localmente en el navegador.\n"""
+    readme = """VISOR WEB LOCAL\n\n1. Extrae este ZIP en cualquier carpeta.\n2. Abre index.html con doble clic en un navegador compatible con WebGPU.\n3. Espera a que el estado indique que el renderizador está listo.\n4. Pulsa Open project dataset, selecciona tu archivo .oct y espera a que aparezca\n   primero la vista gruesa y después el refinamiento progresivo.\n5. Para medir FPS, espera el LOD objetivo y pulsa Run 15 s FPS benchmark. Mantén\n   la cámara quieta; al terminar pulsa Export run JSON.\n\nEl visor limita el framebuffer a 4.194.304 píxeles y 4.096 por lado. Reduce el\ntrabajo de render mientras está quieto; solo ejecuta el benchmark si lo solicitas.\n\nEl selector acepta el formato del proyecto .oct (versión 5; .octattrs opcional para color y atributos). La muestra\nincluida también funciona sin conexión. Para cambiar detalle, usa Finest voxel detail.\n\nNo requiere instalar Rust ni iniciar un servidor. El HTML incluye WASM, worker,\nJavaScript y la muestra. Se necesita un navegador con WebGPU y OffscreenCanvas.\nEl render no sube el archivo a ningún servicio: lo lee localmente en el navegador.\n"""
     readme = readme.replace(
         "5. Para medir FPS,",
         "5. Para convertir, selecciona un LAS/LAZ en Convert a local LAS/LAZ file;\n"
-        "   descarga el .oct generado o ábrelo directamente en el visor.\n"
+        "   descarga los .oct y .octattrs generados o ábrelo directamente en el visor.\n"
         "6. Para medir FPS,",
     )
     readme = readme.replace(

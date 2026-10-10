@@ -9,12 +9,14 @@ const cancelButton = document.getElementById("cancel-load");
 const sampleButton = document.getElementById("open-sample");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
+const attributesFileInput = document.getElementById("attributes-file");
 const convertFileInput = document.getElementById("convert-file");
 const convertButton = document.getElementById("convert-start");
 const convertCancelButton = document.getElementById("convert-cancel");
 const convertProgress = document.getElementById("convert-progress");
 const convertStatus = document.getElementById("convert-status");
 const convertDownloadButton = document.getElementById("convert-download");
+const convertDownloadAttributesButton = document.getElementById("convert-download-attributes");
 const convertOpenButton = document.getElementById("convert-open");
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
@@ -30,8 +32,13 @@ const cameraModeHelp = document.getElementById("camera-mode-help");
 let worker = null;
 let converterApi = null;
 let convertedFile = null;
+let currentProjectFile = null;
+let currentProjectName = null;
+let convertedAttributesFile = null;
 let convertedOutputName = "converted.oct";
+let convertedAttributesOutputName = "converted.octattrs";
 let convertedDownloadUrl = null;
+let convertedAttributesDownloadUrl = null;
 let canvasTransferred = false;
 let viewportSize = null;
 const commandQueue = new CoalescedCommandQueue((type, values) => {
@@ -353,6 +360,7 @@ function handleWorkerMessage(event) {
     if (data.type === "ready") {
         ready = true;
         fileInput.disabled = false;
+        attributesFileInput.disabled = false;
         sampleButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
         if (viewportSize) {
@@ -376,9 +384,11 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = `Read ranges: ${formatBytes(read)} of ${formatBytes(total)} (unique bytes)`;
     } else if (data.type === "dataset") {
         datasetName = data.name;
+        updateAttributeChoices(data.opened);
         latestLodStats = data.lod;
         updateProgressiveLoadState(data.lod);
         fileInput.disabled = false;
+        attributesFileInput.disabled = false;
         sampleButton.disabled = false;
         voxelPixels.disabled = false;
         statusRoot.textContent = `${data.name}: showing coarse view · refining LOD`;
@@ -458,6 +468,7 @@ function handleWorkerMessage(event) {
         startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
         cancelButton.hidden = true;
         fileInput.disabled = false;
+        attributesFileInput.disabled = false;
         sampleButton.disabled = false;
         statusRoot.textContent = `${data.operation} failed: ${data.message}`;
         if (data.operation === "frame" || data.operation === "init") {
@@ -537,6 +548,7 @@ function recreateViewer() {
     loadingFile = false;
     cancelButton.hidden = true;
     fileInput.disabled = true;
+    attributesFileInput.disabled = true;
     sampleButton.disabled = true;
     voxelPixels.disabled = true;
     latestLodStats = null;
@@ -602,9 +614,13 @@ convertButton.addEventListener("click", () => {
         return;
     }
     convertedFile = null;
+    convertedAttributesFile = null;
     if (convertedDownloadUrl) URL.revokeObjectURL(convertedDownloadUrl);
+    if (convertedAttributesDownloadUrl) URL.revokeObjectURL(convertedAttributesDownloadUrl);
     convertedDownloadUrl = null;
+    convertedAttributesDownloadUrl = null;
     convertDownloadButton.hidden = true;
+    convertDownloadAttributesButton.hidden = true;
     convertOpenButton.hidden = true;
     convertProgress.hidden = false;
     convertProgress.value = 0;
@@ -624,15 +640,18 @@ convertButton.addEventListener("click", () => {
             const phase = stage === "writing" ? "Writing spatial LOD" : "Planning spatial LOD";
             convertStatus.textContent = `${phase} · ${sourceName}: ${processed.toLocaleString()} / ${total.toLocaleString()} points`;
         });
-        converterApi.convert(file).then(({ file: resultFile, name, points, timings }) => {
+        converterApi.convert(file).then(({ file: resultFile, name, attributesFile, outputAttributesName, points, timings }) => {
             convertedFile = resultFile;
+            convertedAttributesFile = attributesFile;
             convertedOutputName = name;
+            convertedAttributesOutputName = outputAttributesName;
             convertProgress.value = convertProgress.max;
             const planning = ((timings?.planningMs ?? 0) / 1_000).toFixed(1);
             const writing = ((timings?.writingMs ?? 0) / 1_000).toFixed(1);
             const total = ((timings?.totalMs ?? 0) / 1_000).toFixed(1);
             convertStatus.textContent = `Converted ${points} points to ${name} · planning ${planning}s · writing ${writing}s · total ${total}s.`;
             convertDownloadButton.hidden = false;
+            convertDownloadAttributesButton.hidden = !attributesFile;
             convertOpenButton.hidden = false;
         }).catch((error) => {
             convertStatus.textContent = error.name === "AbortError"
@@ -657,8 +676,17 @@ convertDownloadButton.addEventListener("click", () => {
     link.download = convertedOutputName;
     link.click();
 });
+convertDownloadAttributesButton.addEventListener("click", () => {
+    if (!convertedAttributesFile) return;
+    if (convertedAttributesDownloadUrl) URL.revokeObjectURL(convertedAttributesDownloadUrl);
+    convertedAttributesDownloadUrl = URL.createObjectURL(convertedAttributesFile);
+    const link = document.createElement("a");
+    link.href = convertedAttributesDownloadUrl;
+    link.download = convertedAttributesOutputName;
+    link.click();
+});
 convertOpenButton.addEventListener("click", () => {
-    if (convertedFile) openProjectFile(convertedFile, convertedOutputName);
+    if (convertedFile) openProjectFile(convertedFile, convertedOutputName, convertedAttributesFile);
 });
 
 function finishConverter() {
@@ -670,8 +698,11 @@ function finishConverter() {
     convertCancelButton.disabled = false;
 }
 
-function openProjectFile(file, displayName = file?.name) {
+function openProjectFile(file, displayName = file?.name, attributesFile = undefined) {
     if (!ready || !file) return;
+    currentProjectFile = file;
+    currentProjectName = displayName;
+    colorMode.value = "rgb";
     benchmarkRun = {
         datasetName: displayName,
         fileBytes: file.size,
@@ -701,8 +732,10 @@ function openProjectFile(file, displayName = file?.name) {
     startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
     downloadBenchmarkButton.disabled = true;
     fileInput.disabled = true;
+    attributesFileInput.disabled = true;
     sampleButton.disabled = true;
     fileInput.value = "";
+    attributesFileInput.value = "";
     loadingFile = true;
     cancelButton.hidden = false;
     statusRoot.textContent = `Opening ${displayName}…`;
@@ -710,6 +743,7 @@ function openProjectFile(file, displayName = file?.name) {
     worker.postMessage({
         type: "openFile",
         file,
+        attributes: attributesFile,
         name: displayName,
         targetVoxelPixels: Number(voxelPixels.value),
         cacheBytes: 256 * 1024 * 1024,
@@ -718,13 +752,36 @@ function openProjectFile(file, displayName = file?.name) {
 
 fileInput.addEventListener("change", () => {
     const [file] = fileInput.files ?? [];
-    openProjectFile(file);
+    const [attributesFile] = attributesFileInput.files ?? [];
+    openProjectFile(file, file?.name, attributesFile);
 });
+attributesFileInput.addEventListener("change", () => {
+    const [attributesFile] = attributesFileInput.files ?? [];
+    if (currentProjectFile) openProjectFile(currentProjectFile, currentProjectName, attributesFile);
+});
+function updateAttributeChoices(opened) {
+    colorMode.querySelectorAll("option[data-attribute]").forEach((option) => option.remove());
+    for (const option of colorMode.options) {
+        option.disabled = ["intensity", "classification"].includes(option.value)
+            && (!opened.hasAttributes || !(opened.attributeSchema ?? []).some((column) => column.name === option.value && column.componentCount === 1));
+    }
+    if (!opened.hasAttributes) return;
+    for (const [index, descriptor] of (opened.attributeSchema ?? []).entries()) {
+        for (let component = 0; component < descriptor.componentCount; component++) {
+            const option = document.createElement("option");
+            option.dataset.attribute = "true";
+            option.value = `attribute:${index}:${component}`;
+            option.textContent = descriptor.componentCount > 1 ? `Attribute: ${descriptor.name} [${component}]` : `Attribute: ${descriptor.name}`;
+            colorMode.append(option);
+        }
+    }
+}
 downloadBenchmarkButton.addEventListener("click", exportBenchmarkRun);
 sampleButton.addEventListener("click", async () => {
     if (!ready) return;
     sampleButton.disabled = true;
     fileInput.disabled = true;
+    attributesFileInput.disabled = true;
     loadingFile = true;
     cancelButton.hidden = false;
     statusRoot.textContent = "Fetching the built-in sample file…";
@@ -739,14 +796,19 @@ sampleButton.addEventListener("click", async () => {
             type: "application/octet-stream",
         });
         if (sampleFetchController !== controller) return;
+        const attrsResponse = await fetch(new URL("./sample.octattrs", import.meta.url), { signal: controller.signal });
+        if (!attrsResponse.ok) throw new Error(`Attributes HTTP ${attrsResponse.status}`);
+        const attrs = new File([await attrsResponse.arrayBuffer()], "sample.octattrs");
+        if (sampleFetchController !== controller) return;
         sampleFetchController = null;
-        openProjectFile(file);
+        openProjectFile(file, file.name, attrs);
     } catch (error) {
         if (sampleFetchController !== controller) return;
         sampleFetchController = null;
         loadingFile = false;
         cancelButton.hidden = true;
         fileInput.disabled = false;
+        attributesFileInput.disabled = false;
         sampleButton.disabled = false;
         if (error.name !== "AbortError") {
             statusRoot.textContent = `Sample download failed: ${error}`;

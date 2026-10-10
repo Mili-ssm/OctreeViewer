@@ -92,6 +92,11 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         const canvas = new FakeCanvas();
         const viewer = createViewer(canvas);
         await viewer.ready;
+        const attributes = new Blob(["sidecar"]);
+        await viewer.load(new Blob(), { attributes });
+        const loadMessage = FakeWorker.instance.messages.find((message) => message.operation === "load");
+        assert.equal(loadMessage.attributes, attributes);
+        await assert.rejects(viewer.load(new Blob(), { attributes: "bad" }), /attributes must be a Blob/);
         await assert.rejects(viewer.load(new Blob(), { voxelPixels: 17 }), /between 0.5 and 16/);
         await assert.rejects(viewer.load(new Blob(), { cacheBytes: 1024 ** 3 + 1 }), /cacheBytes/);
         await assert.rejects(viewer.setCamera([Number.NaN, 0, 0], [0, 0, 0]), /finite 3D coordinates/);

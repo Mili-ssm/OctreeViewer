@@ -410,7 +410,7 @@ pub enum SpatialError {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpatialSubdivision {
     bounds: SpatialBounds,
-    divisions: usize,
+    axis_bits: u32,
 }
 
 impl SpatialSubdivision {
@@ -420,17 +420,18 @@ impl SpatialSubdivision {
         }
         Ok(Self {
             bounds,
-            divisions: usize::from(divisions),
+            axis_bits: divisions.trailing_zeros(),
         })
     }
 
     pub fn cell_count(self) -> usize {
-        self.divisions.pow(3)
+        1 << (3 * self.axis_bits)
     }
 
     /// Maps a point to a cell; points on internal planes map to the upper cell.
     pub fn cell_index(self, position: [f64; 3]) -> usize {
-        let cell = if self.divisions == 2 {
+        let divisions = 1_usize << self.axis_bits;
+        let cell = if divisions == 2 {
             let min = self.bounds.min();
             let max = self.bounds.max();
             let middle: [f64; 3] =
@@ -444,34 +445,36 @@ impl SpatialSubdivision {
             std::array::from_fn(|axis| {
                 let min = self.bounds.min()[axis];
                 let max = self.bounds.max()[axis];
-                let cell_side = (max - min) / self.divisions as f64;
+                let cell_side = (max - min) / divisions as f64;
                 let scaled = ((position[axis] - min) / cell_side).floor();
-                (scaled as usize).min(self.divisions - 1)
+                (scaled as usize).min(divisions - 1)
             })
         };
-        (cell[0] * self.divisions + cell[1]) * self.divisions + cell[2]
+        // The validated power-of-two grid packs X, Y, Z into disjoint bit fields.
+        (cell[0] << (2 * self.axis_bits)) | (cell[1] << self.axis_bits) | cell[2]
     }
 
     pub fn cell_bounds(self, index: usize) -> Result<SpatialBounds, SpatialError> {
+        let divisions = 1_usize << self.axis_bits;
         let child_count = self.cell_count();
         if index >= child_count {
             return Err(SpatialError::InvalidSubdivisionCell { index, child_count });
         }
         let cell = [
-            index / (self.divisions * self.divisions),
-            (index / self.divisions) % self.divisions,
-            index % self.divisions,
+            index >> (2 * self.axis_bits),
+            (index >> self.axis_bits) & (divisions - 1),
+            index & (divisions - 1),
         ];
         let min = std::array::from_fn(|axis| {
             let span = self.bounds.max()[axis] - self.bounds.min()[axis];
-            self.bounds.min()[axis] + cell[axis] as f64 * span / self.divisions as f64
+            self.bounds.min()[axis] + cell[axis] as f64 * span / divisions as f64
         });
         let max = std::array::from_fn(|axis| {
-            if cell[axis] + 1 == self.divisions {
+            if cell[axis] + 1 == divisions {
                 self.bounds.max()[axis]
             } else {
                 let span = self.bounds.max()[axis] - self.bounds.min()[axis];
-                self.bounds.min()[axis] + (cell[axis] + 1) as f64 * span / self.divisions as f64
+                self.bounds.min()[axis] + (cell[axis] + 1) as f64 * span / divisions as f64
             }
         });
         SpatialBounds::new(min, max)

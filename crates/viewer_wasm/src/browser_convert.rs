@@ -24,6 +24,7 @@ pub struct WasmLasOctConverter {
     reader: las::Reader,
     input: Blob,
     output_handle: JsValue,
+    attributes_handle: JsValue,
     buffer: las::PointData,
     writer: Option<FormatWriter<OpfsWriter>>,
     processed_points: u64,
@@ -44,7 +45,11 @@ pub struct WasmLasOctConverter {
 #[wasm_bindgen]
 impl WasmLasOctConverter {
     #[wasm_bindgen(constructor)]
-    pub fn new(input: Blob, output_handle: JsValue) -> Result<Self, JsValue> {
+    pub fn new(
+        input: Blob,
+        output_handle: JsValue,
+        attributes_handle: JsValue,
+    ) -> Result<Self, JsValue> {
         let source = BrowserBlobReader::new(input.clone(), false)?;
         let reader = las::Reader::new(source)
             .map_err(|error| JsValue::from_str(&format!("LAS/LAZ header: {error}")))?;
@@ -88,6 +93,7 @@ impl WasmLasOctConverter {
             reader,
             input,
             output_handle,
+            attributes_handle,
             buffer,
             writer: None,
             processed_points: 0,
@@ -184,11 +190,17 @@ impl WasmLasOctConverter {
             .writer
             .take()
             .ok_or_else(|| JsValue::from_str("conversion is already finished"))?;
-        let mut sink = writer
-            .finish()
-            .map_err(|error| JsValue::from_str(&format!("finalizing .oct: {error}")))?;
+        let (mut sink, attributes_sink) = writer
+            .finish_pair()
+            .map_err(|error| JsValue::from_str(&format!("finalizing .oct pair: {error}")))?;
         sink.flush()
-            .map_err(|error| JsValue::from_str(&format!("flushing .oct: {error}")))
+            .map_err(|error| JsValue::from_str(&format!("flushing .oct: {error}")))?;
+        if let Some(mut attributes_sink) = attributes_sink {
+            attributes_sink
+                .flush()
+                .map_err(|error| JsValue::from_str(&format!("flushing .octattrs: {error}")))?;
+        }
+        Ok(())
     }
 }
 
@@ -215,9 +227,12 @@ impl WasmLasOctConverter {
         let mut scan_angle = Vec::with_capacity(count);
         let mut user_data = Vec::with_capacity(count);
         let mut point_source_id = Vec::with_capacity(count);
-        let mut gps_time = Vec::with_capacity(count);
-        let mut nir = Vec::with_capacity(count);
-        let mut rgb = Vec::with_capacity(count.saturating_mul(3));
+        let point_format = *self.reader.header().point_format();
+        let mut gps_time = point_format.has_gps_time.then(|| Vec::with_capacity(count));
+        let mut nir = point_format.has_nir.then(|| Vec::with_capacity(count));
+        let mut rgb = point_format
+            .has_color
+            .then(|| Vec::with_capacity(count.saturating_mul(3)));
         let mut intensities = self.buffer.intensity();
         let mut classifications = self.buffer.classification();
         let mut return_numbers = self.buffer.return_number();
@@ -259,13 +274,20 @@ impl WasmLasOctConverter {
             user_data.push(user_data_values.next().ok_or("missing user data")?);
             point_source_id.push(source_ids.next().ok_or("missing point source id")?);
             if let Some(values) = gps_times.as_mut() {
-                gps_time.push(values.next().ok_or("missing GPS time")?);
+                gps_time
+                    .as_mut()
+                    .ok_or("unexpected GPS time")?
+                    .push(values.next().ok_or("missing GPS time")?);
             }
             if let Some(values) = nir_values.as_mut() {
-                nir.push(values.next().ok_or("missing NIR value")?);
+                nir.as_mut()
+                    .ok_or("unexpected NIR value")?
+                    .push(values.next().ok_or("missing NIR value")?);
             }
             if let Some((red, green, blue)) = rgb_point {
-                rgb.extend_from_slice(&[red, green, blue]);
+                rgb.as_mut()
+                    .ok_or("unexpected RGB value")?
+                    .extend_from_slice(&[red, green, blue]);
             }
         }
         let mut columns = vec![
@@ -319,13 +341,12 @@ impl WasmLasOctConverter {
                 count,
             )?,
         ];
-        let point_format = *self.reader.header().point_format();
         if point_format.has_gps_time {
             columns.push(attribute_column(
                 "gps_time",
                 AttributeDataType::F64,
                 1,
-                AttributeValues::F64(gps_time),
+                AttributeValues::F64(gps_time.ok_or("missing GPS values")?),
                 count,
             )?);
         }
@@ -334,7 +355,7 @@ impl WasmLasOctConverter {
                 "rgb",
                 AttributeDataType::U16,
                 3,
-                AttributeValues::U16(rgb),
+                AttributeValues::U16(rgb.ok_or("missing RGB values")?),
                 count,
             )?);
         }
@@ -343,7 +364,7 @@ impl WasmLasOctConverter {
                 "nir",
                 AttributeDataType::U16,
                 1,
-                AttributeValues::U16(nir),
+                AttributeValues::U16(nir.ok_or("missing NIR values")?),
                 count,
             )?);
         }
@@ -463,9 +484,11 @@ impl WasmLasOctConverter {
         let options =
             FormatWriterOptions::new(0.01, 8 * 1024 * 1024).map_err(|error| error.to_string())?;
         self.writer = Some(
-            FormatWriter::new(
+            FormatWriter::new_split(
                 OpfsWriter::new(self.output_handle.clone())
                     .map_err(|error| format!("output file: {error:?}"))?,
+                OpfsWriter::new(self.attributes_handle.clone())
+                    .map_err(|error| format!("attribute output file: {error:?}"))?,
                 metadata,
                 options,
             )

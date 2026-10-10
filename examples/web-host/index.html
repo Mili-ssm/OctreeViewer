@@ -163,7 +163,9 @@
             <button id="open-sample" type="button" disabled>Open built-in sample · 4,096 points</button>
             <label for="dataset-file">Open project dataset</label>
             <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
-            <small id="dataset-help">The built-in sample is a local v4 file. Choose another project file with the keyboard-accessible file picker. Reads run in the worker.</small>
+            <label for="attributes-file">Optional .octattrs sidecar</label>
+            <input id="attributes-file" type="file" accept=".octattrs,application/octet-stream" aria-describedby="dataset-help" disabled />
+            <small id="dataset-help">The built-in sample is a local project file. Choose its optional matching .octattrs sidecar with the second file picker. Without the optional attribute file, geometry is gray. Reads run in the worker.</small>
         </section>
         <section class="panel" aria-label="Convert LAS or LAZ">
             <strong>Convert a local LAS/LAZ file</strong>
@@ -174,6 +176,7 @@
             <progress id="convert-progress" value="0" max="1" hidden></progress>
             <small id="convert-status" role="status" aria-live="polite">Choose a LAS/LAZ file. Conversion runs locally in a separate worker and writes to browser storage.</small>
             <button id="convert-download" type="button" hidden>Download converted .oct</button>
+            <button id="convert-download-attributes" type="button" hidden>Download converted .octattrs</button>
             <button id="convert-open" type="button" hidden>Open converted .oct in viewer</button>
             <small>This browser path scans the LAS/LAZ twice in bounded blocks: first to plan eight spatial nodes and voxel representatives, then to write them. Color is averaged per voxel; other attributes use the nearest source point. Extra Bytes and CRS are not retained. OPFS quota and large-file performance depend on the device. Successful outputs stay in site storage; remove site data to reclaim space. Closing the tab abruptly can leave an incomplete temporary file.</small>
         </section>
@@ -220,7 +223,7 @@
         <section class="panel">
             <strong>Integration contract</strong>
             <pre>worker: createOffscreen(canvas, voxelSize)
-worker: openFormatDataset(file, cacheBytes)
+worker: openFormatDataset(file, cacheBytes, attributes?)
 worker: updateLod(targetVoxelPixels)
 worker: renderFrame() · LOD loads before draw</pre>
         </section>

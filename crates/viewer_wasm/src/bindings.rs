@@ -19,6 +19,8 @@ pub struct WasmVoxelViewer {
     gpu_scene_dirty: bool,
     lod_dataset: Option<LodDataset>,
     format_reader: Option<FormatReader<BrowserBlobReader>>,
+    selected_attribute: Option<(u32, u32)>,
+    selected_attribute_range: Option<[f64; 2]>,
     lod_config: Option<f64>,
     lod_stage_pixels: Option<f64>,
     lod_dirty: bool,
@@ -42,6 +44,8 @@ impl WasmVoxelViewer {
             gpu_scene_dirty: true,
             lod_dataset: None,
             format_reader: None,
+            selected_attribute: None,
+            selected_attribute_range: None,
             lod_config: None,
             lod_stage_pixels: None,
             lod_dirty: false,
@@ -189,6 +193,8 @@ impl WasmVoxelViewer {
         }
         self.lod_dataset = Some(dataset);
         self.format_reader = None;
+        self.selected_attribute = None;
+        self.selected_attribute_range = None;
         self.lod_config = None;
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
@@ -210,10 +216,17 @@ impl WasmVoxelViewer {
         &mut self,
         file: Blob,
         cache_bytes: u32,
+        attributes: Option<Blob>,
     ) -> Result<JsValue, JsValue> {
         let source = BrowserBlobReader::new(file, true)?;
-        let reader =
+        let mut reader =
             FormatReader::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        if let Some(attributes) = attributes {
+            let source = BrowserBlobReader::new(attributes, false)?;
+            reader
+                .attach_attributes(source)
+                .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        }
         let hierarchy_stats = reader.metadata().hierarchy().stats();
         let visual_scale = reader.format_metadata().visual_scale();
         let metadata = reader.format_metadata().shared_dataset();
@@ -227,9 +240,11 @@ impl WasmVoxelViewer {
         );
         if let Some(renderer) = &mut self.gpu_renderer {
             renderer.clear_dataset();
+            renderer.set_color_mode(ColorMode::Rgb);
         }
         self.lod_dataset = Some(dataset);
-        self.format_reader = Some(reader);
+        self.selected_attribute = None;
+        self.selected_attribute_range = None;
         self.lod_config = None;
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
@@ -269,6 +284,32 @@ impl WasmVoxelViewer {
             &js_sys::Float64Array::from(root_bounds.max().as_slice()),
         )?;
         js_sys::Reflect::set(&result, &"semantics".into(), &JsValue::from_str(&semantics))?;
+        let schema = js_sys::Array::new();
+        for descriptor in reader.format_metadata().dataset().hierarchy().attributes() {
+            let entry = js_sys::Object::new();
+            js_sys::Reflect::set(
+                &entry,
+                &"name".into(),
+                &JsValue::from_str(descriptor.name()),
+            )?;
+            js_sys::Reflect::set(
+                &entry,
+                &"dataType".into(),
+                &JsValue::from_str(&format!("{:?}", descriptor.data_type()).to_lowercase()),
+            )?;
+            js_sys::Reflect::set(
+                &entry,
+                &"componentCount".into(),
+                &JsValue::from_f64(f64::from(descriptor.component_count())),
+            )?;
+            schema.push(&entry);
+        }
+        js_sys::Reflect::set(&result, &"attributeSchema".into(), &schema)?;
+        js_sys::Reflect::set(
+            &result,
+            &"hasAttributes".into(),
+            &JsValue::from_bool(reader.has_attributes()),
+        )?;
         if let Some(source_points) = hierarchy_stats.source_point_count {
             js_sys::Reflect::set(
                 &result,
@@ -276,6 +317,7 @@ impl WasmVoxelViewer {
                 &JsValue::from_str(&source_points.to_string()),
             )?;
         }
+        self.format_reader = Some(reader);
         Ok(result.into())
     }
 
@@ -399,14 +441,46 @@ impl WasmVoxelViewer {
 
     #[wasm_bindgen(js_name = setColorMode)]
     pub fn set_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
-        let mode = ColorMode::parse(&mode).ok_or_else(|| {
+        let mut selected_range = None;
+        let selected_attribute = if let Some(selection) = mode.strip_prefix("attribute:") {
+            let (index, component) = selection
+                .split_once(':')
+                .ok_or_else(|| JsValue::from_str("expected attribute:index:component"))?;
+            let index = index
+                .parse::<u32>()
+                .map_err(|_| JsValue::from_str("invalid attribute index"))?;
+            let component = component
+                .parse::<u32>()
+                .map_err(|_| JsValue::from_str("invalid attribute component"))?;
+            let reader = self
+                .format_reader
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("no format dataset open"))?;
+            if !reader.has_attributes() {
+                return Err(JsValue::from_str("attach the attribute file first"));
+            }
+            selected_range = reader
+                .attribute_range(index, component)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            Some((index, component))
+        } else {
+            None
+        };
+        let mode = if selected_attribute.is_some() {
+            Some(ColorMode::Rgb)
+        } else {
+            ColorMode::parse(&mode)
+        }
+        .ok_or_else(|| {
             JsValue::from_str("color mode must be rgb, intensity, elevation, or classification")
         })?;
         let renderer = self
             .gpu_renderer
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
-        if renderer.color_mode() != mode {
+        if renderer.color_mode() != mode || self.selected_attribute != selected_attribute {
+            self.selected_attribute = selected_attribute;
+            self.selected_attribute_range = selected_range;
             renderer.set_color_mode(mode);
             if let Some(dataset) = self.lod_dataset.as_mut() {
                 dataset
@@ -815,11 +889,10 @@ impl WasmVoxelViewer {
     fn update_lod_view(&mut self, target_voxel_pixels: f64) -> Result<LodViewStats, JsValue> {
         let stage_pixels = self.lod_stage_pixels.unwrap_or(16.0);
         let selection_error_pixels = stage_pixels;
-        let requested_attribute = self
-            .gpu_renderer
-            .as_ref()
-            .map(SurfaceRenderer::color_mode)
-            .and_then(color_attribute_name);
+        let requested_mode = self.gpu_renderer.as_ref().map(SurfaceRenderer::color_mode);
+        let requested_attribute = requested_mode.and_then(color_attribute_name);
+        let selected_attribute = self.selected_attribute;
+        let selected_range = self.selected_attribute_range;
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -840,11 +913,29 @@ impl WasmVoxelViewer {
                     format_reader
                         .as_mut()
                         .map(|reader| {
-                            let geometry = reader
-                                .read_geometry(block_id)
-                                .map_err(|error| error.to_string())?;
+                            let mut geometry = if selected_attribute.is_none()
+                                && requested_mode == Some(ColorMode::Rgb)
+                            {
+                                reader.read_geometry(block_id)
+                            } else {
+                                reader.read_positions(block_id)
+                            }
+                            .map_err(|error| error.to_string())?;
+                            if let Some((index, component)) = selected_attribute {
+                                let column = reader
+                                    .read_attribute(block_id, index)
+                                    .map_err(|e| e.to_string())?;
+                                geometry = viewer_render_wgpu::colorize_attribute(
+                                    geometry,
+                                    &column,
+                                    component,
+                                    selected_range,
+                                )
+                                .map_err(str::to_owned)?;
+                            }
                             let mut attributes = Vec::new();
-                            if let Some(name) = requested_attribute
+                            if reader.has_attributes()
+                                && let Some(name) = requested_attribute
                                 && let Some(schema_index) = reader
                                     .format_metadata()
                                     .dataset()

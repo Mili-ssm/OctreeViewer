@@ -34,6 +34,8 @@ export function createConverter(options = {}) {
             settle(null, {
                 file: data.file,
                 name: data.outputName,
+                attributesFile: data.attributesFile,
+                outputAttributesName: data.outputAttributesName,
                 points: data.points,
                 timings: data.timings,
             });

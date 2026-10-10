@@ -255,8 +255,11 @@ export function createViewer(canvas, options = {}) {
 
     const api = {
         ready: readyPromise,
-        load(file, { voxelPixels = 4, cacheBytes = DEFAULT_CACHE_BYTES } = {}) {
+        load(file, { voxelPixels = 4, cacheBytes = DEFAULT_CACHE_BYTES, attributes = undefined } = {}) {
             if (!(file instanceof Blob)) return Promise.reject(new TypeError("load expects a File or Blob"));
+            if (attributes !== undefined && !(attributes instanceof Blob)) {
+                return Promise.reject(new TypeError("attributes must be a Blob"));
+            }
             if (loadInFlight) return Promise.reject(new Error("a dataset is already being opened"));
             if (!Number.isFinite(voxelPixels) || voxelPixels < 0.5 || voxelPixels > 16) {
                 return Promise.reject(new RangeError("voxelPixels must be between 0.5 and 16"));
@@ -266,7 +269,7 @@ export function createViewer(canvas, options = {}) {
             }
             loadInFlight = true;
             loading = true;
-            return request("load", { file, targetVoxelPixels: voxelPixels, cacheBytes })
+            return request("load", { file, attributes, targetVoxelPixels: voxelPixels, cacheBytes })
                 .catch((error) => {
                     loading = false;
                     throw error;

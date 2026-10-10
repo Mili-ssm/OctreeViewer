@@ -12,7 +12,7 @@ cd crates/viewer_wasm
 wasm-pack build --target web --out-dir ../../pkg
 ```
 
-The repository includes `sample.oct`, a deterministic 4,096-point dataset. Regenerate it from the
+The repository includes `sample.oct` and `sample.octattrs`, a deterministic 4,096-point dataset. Regenerate it from the
 workspace root with:
 
 ```bash
@@ -50,9 +50,8 @@ so it does not fetch assets from the repository or the network.
    puede quedar un temporal en el almacenamiento del sitio.
 3. Esta ruta web conserva XYZ, intensidad, clasificación, retornos, ángulo, user data, point source ID,
    GPS time, RGB y NIR cuando están presentes. No conserva Extra Bytes ni CRS. Escribe hasta 4.096
-   muestras deterministas de reservorio en el nivel grueso y los puntos fuente en bloques bajo un nodo hijo;
-   el presupuesto LOD evita refinar si el total excede el límite. Aún no genera la jerarquía espacial
-   voxelizada del conversor nativo, así que la ruta no está validada para nubes grandes.
+   representantes voxelizados y organiza la fuente en ocho celdas espaciales tras dos pasadas.
+   No sustituye la jerarquía adaptativa nativa para datasets grandes.
 4. Para abrir un `.oct` ya convertido, espera a que el estado indique que el renderizador está listo y
    usa **Open project dataset**. El visor muestra primero una vista gruesa y luego refina progresivamente.
    Ajusta **Finest voxel
@@ -66,7 +65,7 @@ The target browsers are Chrome and Firefox builds that support WebGPU and `Offsc
 rendering has been checked in Chrome with converted Bunny and Outer Banks datasets. Firefox still
 requires browser validation. The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
-`WasmVoxelViewer.createOffscreen`. Select a project-format v4 file to call `openFormatDataset` and
+`WasmVoxelViewer.createOffscreen`. Select a project-format v5 file to call `openFormatDataset` and
 `updateLod`; the worker publishes a coarse visible cut first, then loads at most one missing block
 per `renderFrame()` and refines through projected voxel stages until the requested detail is reached.
 Pending blocks are prioritized against the current camera, and a camera change restarts selection from
@@ -74,7 +73,7 @@ the coarse frontier. The worker can process camera commands between block reads;
 `FileReaderSync` read is still synchronous, so a slow block can delay input until that read completes.
 The host reports time to the first coarse frame and target LOD frame, plus p50/p95/p99 worker
 `renderFrame()` times over a bounded window of up to 4,096 frames. Real-browser latency and frame-time
-validation remain pending in the [project roadmap](../../README.md#plan-de-trabajo).
+validation remain pending in the [project roadmap](../../README.md#próximos-criterios-de-cierre).
 The camera fits dataset bounds and supports observer and bird navigation. Observer mode uses a voxel
 click to set the orbit center, left drag to pan it, right drag to orbit, and the wheel to change radius. Bird mode uses
 left drag to pan, right drag to orbit, WASD/QE to move, and the wheel to change movement speed. The
@@ -90,7 +89,7 @@ import { createViewer } from "./viewer-api.mjs";
 
 const viewer = createViewer(document.querySelector("canvas"), { mode: "observer" });
 await viewer.ready;
-await viewer.load(file, { voxelPixels: 1 });
+await viewer.load(file, { voxelPixels: 1, attributes: optionalAttributesFile });
 console.log(await viewer.getMetadata());
 console.log(await viewer.getCamera());
 viewer.on("stats", (stats) => console.log(stats.lod?.renderedVoxels));
@@ -117,7 +116,7 @@ The real browser/WebGPU pick latency and device-loss path still need a Chrome or
 current environment has no Chromium and Firefox headless is unstable.
 
 The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
-`File`, runs in another worker, and returns `{ file, name, points }`; progress/status events and
+`File`, runs in another worker, and returns `{ file, name, attributesFile, outputAttributesName, points, timings }`; progress/status events and
 `cancel()` are available while it runs:
 
 ```js
@@ -139,7 +138,7 @@ with Albuera. The result includes `timings.planningMs`, `timings.writingMs`, and
 are browser wall-clock measurements and still need to be collected on Albuera before choosing whether
 per-node OPFS spools would improve the tradeoff.
 
-Use the keyboard-accessible **Open built-in sample** button to load the included v4 file, or focus
+Use the keyboard-accessible **Open built-in sample** button to load the included v5 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
 wave grid and does not depend on external or licensed point-cloud data.
 
@@ -210,3 +209,19 @@ Run the host-side tests with `node --test examples/web-host/tests/*.test.mjs` an
 caps, worker failure cleanup, benchmark-window metrics and filtering/aggregation of exported runs.
 Browser interaction, real GPU timing, device loss and cancellation during a local file read still need
 a real browser check; no native or mocked timing should be reported as browser FPS.
+
+## Coordinate and attribute files (v5)
+
+Open `.oct` alone for gray geometry. Select its optional `.octattrs` before opening coordinates or
+add it afterward using the companion picker (the host reopens the dataset and clears caches).
+Display RGB is separate from XYZ. The color selector includes every available numeric column and
+component, normalized to finite dataset ranges; constant/nonfinite values are gray. Incompatible
+companions fail validation. Conversion returns two downloadable files and opens both together.
+The worker closes/cleans both OPFS files on ordinary cancellation or failure. Abrupt termination
+can leave partial entries. Successful output remains in site storage until removed by the user.
+
+The native stream format also permits monolithic v5 files for integrations, but both converters
+produce pairs. Previous format versions require reconversion. The current range-progress events
+count reads from the coordinate file; they do not include companion I/O. No real-browser validation
+of the new pair/component flow has been performed in this revision; Rust/WASM checks and mocked
+worker/API tests cover the contracts only.

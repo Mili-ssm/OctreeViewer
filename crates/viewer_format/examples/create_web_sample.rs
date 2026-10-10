@@ -54,8 +54,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut writer = FormatWriter::new(
-        File::create(output)?,
+    let mut writer = FormatWriter::new_split(
+        File::create(&output)?,
+        File::create(output.with_extension("octattrs"))?,
         metadata,
         FormatWriterOptions::new(0.01, 1024 * 1024)?,
     )?;

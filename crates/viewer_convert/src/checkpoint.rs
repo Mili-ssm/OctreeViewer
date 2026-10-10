@@ -7,8 +7,8 @@ use std::{
 
 use thiserror::Error;
 
-// V3 uses compact source spools; older spool layouts cannot be resumed.
-const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V3";
+// V4 fingerprints both V5 output files as well as the compact source spool.
+const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V4";
 const HASH_OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
 const HASH_PRIME: u128 = 0x0000000001000000000000000000013b;
 
@@ -30,6 +30,7 @@ pub(crate) enum CheckpointStage {
     SourceReady(FileFingerprint),
     OutputReady {
         fingerprint: FileFingerprint,
+        attributes_fingerprint: FileFingerprint,
         point_count: u64,
         block_count: u64,
         estimated_memory_bytes: u64,
@@ -122,6 +123,7 @@ impl Checkpoint {
                 let _ = fs::remove_file(root.join("manifest.txt.tmp"));
                 let _ = fs::remove_file(root.join("source.spool"));
                 let _ = fs::remove_file(root.join("candidate.oct"));
+                let _ = fs::remove_file(root.join("candidate.octattrs"));
                 expected
             }
             CheckpointMode::Resume => {
@@ -161,19 +163,27 @@ impl Checkpoint {
         self.root.join("candidate.oct")
     }
 
+    pub fn candidate_attributes_path(&self) -> PathBuf {
+        self.root.join("candidate.octattrs")
+    }
+
     pub fn stage(&self) -> &CheckpointStage {
         &self.manifest.stage
     }
 
-    pub fn output_ready_details(&self) -> Option<(FileFingerprint, u64, u64, u64)> {
+    pub fn output_ready_details(
+        &self,
+    ) -> Option<(FileFingerprint, FileFingerprint, u64, u64, u64)> {
         match self.manifest.stage {
             CheckpointStage::OutputReady {
                 fingerprint,
+                attributes_fingerprint,
                 point_count,
                 block_count,
                 estimated_memory_bytes,
             } => Some((
                 fingerprint,
+                attributes_fingerprint,
                 point_count,
                 block_count,
                 estimated_memory_bytes,
@@ -216,8 +226,10 @@ impl Checkpoint {
         estimated_memory_bytes: u64,
     ) -> Result<(), CheckpointError> {
         let fingerprint = fingerprint_file(&self.candidate_path())?;
+        let attributes_fingerprint = fingerprint_file(&self.candidate_attributes_path())?;
         self.manifest.stage = CheckpointStage::OutputReady {
             fingerprint,
+            attributes_fingerprint,
             point_count,
             block_count,
             estimated_memory_bytes,
@@ -226,7 +238,12 @@ impl Checkpoint {
     }
 
     pub fn verify_output(&self) -> Result<(), CheckpointError> {
-        let CheckpointStage::OutputReady { fingerprint, .. } = self.manifest.stage else {
+        let CheckpointStage::OutputReady {
+            fingerprint,
+            attributes_fingerprint,
+            ..
+        } = self.manifest.stage
+        else {
             return Err(CheckpointError::Invalid(
                 "output candidate is not marked complete".to_owned(),
             ));
@@ -234,6 +251,11 @@ impl Checkpoint {
         if fingerprint_file(&self.candidate_path())? != fingerprint {
             return Err(CheckpointError::Invalid(
                 "completed output candidate is missing or corrupt".to_owned(),
+            ));
+        }
+        if fingerprint_file(&self.candidate_attributes_path())? != attributes_fingerprint {
+            return Err(CheckpointError::Invalid(
+                "completed attribute candidate is missing or corrupt".to_owned(),
             ));
         }
         Ok(())
@@ -319,7 +341,7 @@ fn encode_manifest(manifest: &Manifest) -> String {
         _ => (0, 0, 0),
     };
     format!(
-        "{MANIFEST_VERSION}\nstage={stage}\nsource_bytes={}\nsource_hash={:032x}\npoints_per_block={}\nmax_error_bits={:016x}\nmax_memory_bytes={}\nspatial_divisions={}\nartifact_bytes={}\nartifact_hash={:032x}\npoint_count={point_count}\nblock_count={block_count}\nestimated_memory_bytes={estimated_memory_bytes}\n",
+        "{MANIFEST_VERSION}\nstage={stage}\nsource_bytes={}\nsource_hash={:032x}\npoints_per_block={}\nmax_error_bits={:016x}\nmax_memory_bytes={}\nspatial_divisions={}\nartifact_bytes={}\nartifact_hash={:032x}\nattributes_bytes={}\nattributes_hash={:032x}\npoint_count={point_count}\nblock_count={block_count}\nestimated_memory_bytes={estimated_memory_bytes}\n",
         manifest.source.bytes,
         manifest.source.hash,
         manifest.points_per_block,
@@ -328,6 +350,20 @@ fn encode_manifest(manifest: &Manifest) -> String {
         manifest.spatial_divisions,
         artifact.map_or(0, |fingerprint| fingerprint.bytes),
         artifact.map_or(0, |fingerprint| fingerprint.hash),
+        match manifest.stage {
+            CheckpointStage::OutputReady {
+                attributes_fingerprint,
+                ..
+            } => attributes_fingerprint.bytes,
+            _ => 0,
+        },
+        match manifest.stage {
+            CheckpointStage::OutputReady {
+                attributes_fingerprint,
+                ..
+            } => attributes_fingerprint.hash,
+            _ => 0,
+        },
     )
 }
 
@@ -382,6 +418,13 @@ fn read_manifest(path: &Path) -> Result<Manifest, CheckpointError> {
         "source-ready" => CheckpointStage::SourceReady(artifact),
         "output-ready" => CheckpointStage::OutputReady {
             fingerprint: artifact,
+            attributes_fingerprint: FileFingerprint {
+                bytes: parse("attributes_bytes")?
+                    .parse()
+                    .map_err(|_| CheckpointError::Invalid("invalid attribute size".to_owned()))?,
+                hash: u128::from_str_radix(parse("attributes_hash")?, 16)
+                    .map_err(|_| CheckpointError::Invalid("invalid attribute hash".to_owned()))?,
+            },
             point_count: parse("point_count")?
                 .parse()
                 .map_err(|_| CheckpointError::Invalid("invalid point count".to_owned()))?,

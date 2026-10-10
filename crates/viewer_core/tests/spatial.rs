@@ -376,3 +376,22 @@ fn frustum_classification_handles_large_finite_coordinates_without_overflow() {
         [1]
     );
 }
+
+#[test]
+fn subdivision_bit_fields_preserve_every_cell_and_internal_boundary() {
+    let bounds = bounds([0.0; 3], [8.0; 3]);
+    for divisions in [2_u8, 4, 8] {
+        let grid = SpatialSubdivision::new(bounds, divisions).unwrap();
+        let d = divisions as usize;
+        for x in 0..d {
+            for y in 0..d {
+                for z in 0..d {
+                    let old_index = (x * d + y) * d + z;
+                    let position = [x, y, z].map(|v| v as f64 * 8.0 / d as f64);
+                    assert_eq!(grid.cell_index(position), old_index);
+                    assert_eq!(grid.cell_bounds(old_index).unwrap().min(), position);
+                }
+            }
+        }
+    }
+}

@@ -1,14 +1,14 @@
 # Muestras de nubes de puntos
 
 Datasets pequeños para probar importación, conversión LAS/LAZ y el formato `.oct`. Los `.oct`
-incluidos se regeneraron en formato v4 y se validaron al finalizar la conversión. El lector actual
-solo admite v4; vuelve a convertir los archivos locales de versiones anteriores desde sus LAS.
+versionados de Outer Banks y sus `.octattrs` se regeneraron en formato v5 y se validaron al finalizar la conversión. El lector actual
+solo admite v5; vuelve a convertir los archivos locales de versiones anteriores desde sus LAS.
 
 | Archivo | Contenido | Puntos | Fuente |
 | --- | --- | ---: | --- |
-| `fs_e432_n4002_18.las` / `.oct` | Costa de Outer Banks, Carolina del Norte (USGS, post Nor'Ida 2009) | 149.730 | [USGS DS 616](https://pubs.usgs.gov/ds/616/) |
-| `fs_e430_n4008_18.las` / `.oct` | Otra tesela costera de Outer Banks del mismo levantamiento | 111.190 | [USGS DS 616](https://pubs.usgs.gov/ds/616/) |
-| `stanford_bunny_bun000_unstructured.las` / `.oct` | Vista parcial de un conejo escaneado, 0° (Stanford Range Repository) | 40.256 | [PCD de PCL en SourceForge](https://sourceforge.net/projects/pointclouds/files/PCD%20datasets/registration/stanford_bunny.zip/download) |
+| `fs_e432_n4002_18.las` / `.oct` / `.octattrs` | Costa de Outer Banks, Carolina del Norte (USGS, post Nor'Ida 2009) | 149.730 | [USGS DS 616](https://pubs.usgs.gov/ds/616/) |
+| `fs_e430_n4008_18.las` / `.oct` / `.octattrs` | Otra tesela costera de Outer Banks del mismo levantamiento | 111.190 | [USGS DS 616](https://pubs.usgs.gov/ds/616/) |
+| `stanford_bunny_bun000_unstructured.las` / `.oct` / `.octattrs` | Vista parcial de un conejo escaneado, 0° (Stanford Range Repository) | 40.256 | [PCD de PCL en SourceForge](https://sourceforge.net/projects/pointclouds/files/PCD%20datasets/registration/stanford_bunny.zip/download) |
 | `stanford_bunny_bun000_unstructured.pcd` | Fuente PCD original de esa vista | 40.256 | [PCD de PCL en SourceForge](https://sourceforge.net/projects/pointclouds/files/PCD%20datasets/registration/stanford_bunny.zip/download) |
 
 Los datos del USGS son del levantamiento EAARL de topografía costera de Outer Banks después del
@@ -26,12 +26,12 @@ limitan el uso de sus materiales a fines personales y no comerciales; el [regist
 no declara una licencia específica para estos datos. Los archivos locales de esta vista no se
 versionan ni se redistribuyen; el `.gitignore` del directorio los mantiene fuera de Git.
 
-Para regenerar los `.oct` desde LAS:
+Para regenerar la pareja desde LAS (usar una ruta de salida nueva; el CLI no sobrescribe):
 
 ```bash
-cargo run --release -p viewer_convert -- data/samples/fs_e432_n4002_18.las data/samples/fs_e432_n4002_18.oct
-cargo run --release -p viewer_convert -- data/samples/fs_e430_n4008_18.las data/samples/fs_e430_n4008_18.oct
-cargo run --release -p viewer_convert -- data/samples/stanford_bunny_bun000_unstructured.las data/samples/stanford_bunny_bun000_unstructured.oct
+cargo run --release -p viewer_convert -- data/samples/fs_e432_n4002_18.las /tmp/fs_e432_n4002_18.oct
+cargo run --release -p viewer_convert -- data/samples/fs_e430_n4008_18.las /tmp/fs_e430_n4008_18.oct
+cargo run --release -p viewer_convert -- data/samples/stanford_bunny_bun000_unstructured.las /tmp/stanford_bunny_bun000_unstructured.oct
 ```
 
 El [Stanford Bunny](https://graphics.stanford.edu/software/scanview/models/bunny.html) es una

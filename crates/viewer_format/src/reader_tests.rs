@@ -257,7 +257,7 @@ fn rejects_corrupt_index_and_blocks_over_the_configured_limit() {
 }
 
 #[test]
-fn rejects_truncated_and_non_v4_version_files() {
+fn rejects_truncated_and_non_v5_version_files() {
     let mut truncated = format_bytes();
     truncated.pop();
     assert!(matches!(
@@ -265,7 +265,7 @@ fn rejects_truncated_and_non_v4_version_files() {
         Err(FormatError::InvalidFooter)
     ));
 
-    for version in [1_u16, 2, 3, 5] {
+    for version in [1_u16, 2, 3, 4, 6] {
         let mut unsupported = format_bytes();
         unsupported[8..10].copy_from_slice(&version.to_le_bytes());
         let crc = crate::crc32(&unsupported[..20]);
@@ -287,7 +287,7 @@ fn rejects_truncated_and_non_v4_version_files() {
 }
 
 #[test]
-fn reads_v4_visual_scale_and_additive_hierarchy() {
+fn reads_v5_visual_scale_and_additive_hierarchy() {
     let metadata = additive_metadata().with_visual_scale(50.0).unwrap();
     let mut writer = FormatWriter::new(
         Cursor::new(Vec::new()),
@@ -298,8 +298,8 @@ fn reads_v4_visual_scale_and_additive_hierarchy() {
     writer.write_block(source_block()).unwrap();
     let bytes = writer.finish().unwrap().into_inner();
 
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
-    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND4");
+    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 5);
+    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND5");
     let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
     assert_eq!(reader.format_metadata().visual_scale(), 50.0);
     assert_eq!(
@@ -319,9 +319,9 @@ fn reads_v4_visual_scale_and_additive_hierarchy() {
 }
 
 #[test]
-fn reads_additive_v4_and_preserves_ancestor_payload_counts() {
+fn reads_additive_v5_and_preserves_ancestor_payload_counts() {
     let bytes = additive_format_bytes();
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
+    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 5);
     let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
     assert_eq!(
         reader.metadata().hierarchy().semantics(),
@@ -595,10 +595,10 @@ fn columnar_format_bytes() -> Vec<u8> {
 }
 
 #[test]
-fn v4_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
+fn v5_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
     let bytes = columnar_format_bytes();
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
-    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND4");
+    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 5);
+    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND5");
     let reads = Rc::new(RefCell::new(Vec::new()));
     let mut reader = FormatReader::new(ReadSpy {
         inner: Cursor::new(bytes),
@@ -626,9 +626,9 @@ fn v4_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
     );
 
     reads.borrow_mut().clear();
-    let geometry = reader.read_geometry(BlockId::new(42)).unwrap();
+    let geometry = reader.read_positions(BlockId::new(42)).unwrap();
     assert_eq!(geometry.points()[0].position, [0.25, 0.5, 0.0]);
-    assert_eq!(geometry.points()[1].color, ColorRgb::new(40, 50, 60));
+    assert_eq!(geometry.points()[1].color, ColorRgb::new(160, 160, 160));
     let assert_only_column = |column: &crate::layout::PayloadDirectoryEntry| {
         let reads = reads.borrow();
         assert_eq!(
@@ -650,17 +650,21 @@ fn v4_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
         reader.read_attribute_row(BlockId::new(42), 1, 1).unwrap(),
         AttributeValues::F32(vec![1.5, -2.0])
     );
-    assert_only_column(&payloads[2]);
+    assert_only_column(&payloads[3]);
     reads.borrow_mut().clear();
     assert_eq!(
         reader.read_attribute(BlockId::new(42), 0).unwrap().values(),
         &AttributeValues::U16(vec![100, 200])
     );
-    assert_only_column(&payloads[1]);
+    assert_only_column(&payloads[2]);
 
     for id in [BlockId::new(42), BlockId::new(43)] {
         let block = reader.read_block(id).unwrap();
-        assert_eq!(block.points(), &geometry);
+        assert_eq!(
+            block.points().points()[0].position,
+            geometry.points()[0].position
+        );
+        assert_eq!(block.points().points()[1].color, ColorRgb::new(40, 50, 60));
         assert_eq!(block.attributes().len(), 2);
         assert_eq!(
             block.attributes()[0].values(),
@@ -684,9 +688,9 @@ fn v4_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
 }
 
 #[test]
-fn payload_stats_report_v4_columns_without_io() {
+fn payload_stats_report_v5_columns_without_io() {
     let bytes = columnar_format_bytes();
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
+    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 5);
     let reads = Rc::new(RefCell::new(Vec::new()));
     let reader = FormatReader::new(ReadSpy {
         inner: Cursor::new(bytes),
@@ -700,17 +704,17 @@ fn payload_stats_report_v4_columns_without_io() {
 
     assert!(reads.borrow().is_empty());
     assert_eq!(aggregates.len(), 2);
-    assert_eq!(payloads.len(), 6);
+    assert_eq!(payloads.len(), 8);
     assert_eq!(payloads[0].kind, super::BlockPayloadKind::Geometry);
     assert_eq!(
-        payloads[1].kind,
+        payloads[2].kind,
         super::BlockPayloadKind::Attribute {
             schema_index: 0,
             name: "intensity".to_owned()
         }
     );
     assert_eq!(
-        payloads[2].kind,
+        payloads[3].kind,
         super::BlockPayloadKind::Attribute {
             schema_index: 1,
             name: "vector".to_owned()
@@ -741,32 +745,29 @@ fn payload_stats_report_v4_columns_without_io() {
 }
 
 #[test]
-fn v4_checksums_are_lazy_and_independent_for_geometry_and_each_attribute() {
+fn v5_checksums_are_lazy_and_independent_for_geometry_and_each_attribute() {
     let bytes = columnar_format_bytes();
     let reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
     let entry = &reader.blocks[&BlockId::new(42)];
-    for column_index in 0..3 {
+    for column_index in 0..4 {
         let mut corrupted = bytes.clone();
         corrupted[(entry.offset + entry.payloads[column_index].offset) as usize] ^= 1;
         let mut reader = FormatReader::new(Cursor::new(corrupted)).unwrap();
-        if column_index == 0 {
-            reader.read_attribute(BlockId::new(42), 0).unwrap();
-            assert!(matches!(
-                reader.read_geometry(BlockId::new(42)),
-                Err(FormatError::InvalidBlockChecksum(_))
-            ));
-        } else {
-            reader.read_geometry(BlockId::new(42)).unwrap();
-            reader
-                .read_attribute(BlockId::new(42), (2 - column_index) as u32)
-                .unwrap();
-            assert!(matches!(
-                reader.read_attribute(BlockId::new(42), (column_index - 1) as u32),
-                Err(FormatError::InvalidBlockChecksum(_))
-            ));
+        let id = BlockId::new(42);
+        for index in 0..4 {
+            let result = match index {
+                0 => reader.read_positions(id).map(|_| ()),
+                1 => reader.read_display_colors(id).map(|_| ()),
+                _ => reader.read_attribute(id, index - 2).map(|_| ()),
+            };
+            if index as usize == column_index {
+                assert!(matches!(result, Err(FormatError::InvalidBlockChecksum(_))));
+            } else {
+                result.unwrap();
+            }
         }
         assert!(matches!(
-            reader.read_block(BlockId::new(42)),
+            reader.read_block(id),
             Err(FormatError::InvalidBlockChecksum(_))
         ));
     }
@@ -782,11 +783,11 @@ fn repair_index_and_footer_checksums(bytes: &mut [u8]) {
 }
 
 #[test]
-fn v4_rejects_invalid_payload_directory_before_payload_reads() {
+fn v5_rejects_invalid_payload_directory_before_payload_reads() {
     let bytes = columnar_format_bytes();
     let footer = bytes.len() - 40;
     // Two block entries, each containing a 93-byte common entry and three 29-byte payload entries.
-    let first_column = footer - 2 * (93 + 3 * 29) + 93;
+    let first_column = footer - 2 * (93 + 4 * 29) + 93;
     for (offset, replacement) in [
         (first_column - 5, vec![1]), // reserved aggregate codec
         (first_column - 4, 1_u32.to_le_bytes().to_vec()), // reserved aggregate checksum
@@ -823,7 +824,7 @@ fn v4_rejects_invalid_payload_directory_before_payload_reads() {
 }
 
 #[test]
-fn v4_round_trips_empty_geometry_and_attribute_columns() {
+fn v5_round_trips_empty_geometry_and_attribute_columns() {
     let id = BlockId::new(0);
     let descriptor = AttributeDescriptor::new("empty", AttributeDataType::U64, 2).unwrap();
     let node = SpatialNode::new(
@@ -892,4 +893,196 @@ impl Seek for ReadSpy {
     fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
         self.inner.seek(position)
     }
+}
+
+fn split_bytes(block: SourcePointBlock) -> (Vec<u8>, Vec<u8>) {
+    let mut writer = FormatWriter::new_split(
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata(),
+        FormatWriterOptions::new(0.001, 1024).unwrap(),
+    )
+    .unwrap();
+    writer.write_block(block).unwrap();
+    let (primary, attributes) = writer.finish_pair().unwrap();
+    (primary.into_inner(), attributes.unwrap().into_inner())
+}
+
+#[test]
+fn split_geometry_is_gray_and_selective_reads_do_not_touch_other_file() {
+    let (primary, attributes) = split_bytes(source_block());
+    let primary_reads = Rc::new(RefCell::new(Vec::new()));
+    let attribute_reads = Rc::new(RefCell::new(Vec::new()));
+    let mut reader = FormatReader::new(ReadSpy {
+        inner: Cursor::new(primary),
+        reads: primary_reads.clone(),
+    })
+    .unwrap();
+    let id = BlockId::new(42);
+    assert!(!reader.has_attributes());
+    let gray = reader.read_block(id).unwrap();
+    assert!(gray.attributes().is_empty());
+    assert!(
+        gray.points()
+            .points()
+            .iter()
+            .all(|p| p.color == ColorRgb::new(160, 160, 160))
+    );
+    assert!(matches!(
+        reader.read_attribute(id, 0),
+        Err(FormatError::AttributesUnavailable)
+    ));
+    reader
+        .attach_attributes(ReadSpy {
+            inner: Cursor::new(attributes),
+            reads: attribute_reads.clone(),
+        })
+        .unwrap();
+    primary_reads.borrow_mut().clear();
+    attribute_reads.borrow_mut().clear();
+    reader.read_positions(id).unwrap();
+    assert!(attribute_reads.borrow().is_empty());
+    assert_eq!(
+        primary_reads
+            .borrow()
+            .iter()
+            .map(|(_, n)| *n as u64)
+            .sum::<u64>(),
+        reader.blocks[&id].payloads[0].stored_length
+    );
+    primary_reads.borrow_mut().clear();
+    assert_eq!(
+        reader.read_attribute(id, 0).unwrap().values(),
+        &AttributeValues::U16(vec![100, 200])
+    );
+    assert!(primary_reads.borrow().is_empty());
+    assert_eq!(
+        attribute_reads
+            .borrow()
+            .iter()
+            .map(|(_, n)| *n as u64)
+            .sum::<u64>(),
+        reader.blocks[&id].payloads[2].stored_length
+    );
+    assert_eq!(
+        reader.read_geometry(id).unwrap().points()[1].color,
+        ColorRgb::new(40, 50, 60)
+    );
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([100.0, 200.0]));
+    assert!(reader.attribute_range(0, 1).is_err());
+}
+
+#[test]
+fn split_rejects_wrong_truncated_or_corrupt_companion_without_losing_geometry() {
+    let (primary, attributes) = split_bytes(source_block());
+    let block = source_block();
+    let other = SourcePointBlock::new(
+        block.id(),
+        block.positions_local().to_vec(),
+        vec![ColorRgb::new(1, 2, 3); 2],
+        block.attributes().to_vec(),
+    );
+    let (_, wrong) = split_bytes(other);
+    let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+    assert!(reader.attach_attributes(Cursor::new(wrong)).is_err());
+    assert!(
+        reader
+            .attach_attributes(Cursor::new(attributes[..attributes.len() - 1].to_vec()))
+            .is_err()
+    );
+    reader.read_positions(BlockId::new(42)).unwrap();
+    let mut corrupt = attributes;
+    corrupt[24] ^= 1;
+    reader.attach_attributes(Cursor::new(corrupt)).unwrap();
+    reader.read_positions(BlockId::new(42)).unwrap();
+    reader.read_attribute(BlockId::new(42), 0).unwrap();
+    assert!(matches!(
+        reader.read_display_colors(BlockId::new(42)),
+        Err(FormatError::InvalidBlockChecksum(_))
+    ));
+}
+
+#[test]
+fn split_rejects_companion_directory_gaps_before_any_payload_read() {
+    let (mut primary, _) = split_bytes(source_block());
+    let footer = primary.len() - 40;
+    let first_attribute = footer - (93 + 3 * 29) + 93 + 29;
+    primary[first_attribute..first_attribute + 8].copy_from_slice(&25_u64.to_le_bytes());
+    repair_index_and_footer_checksums(&mut primary);
+    assert!(FormatReader::new(Cursor::new(primary)).is_err());
+}
+
+#[test]
+fn finite_ranges_are_derived_per_node_and_combined_across_lod() {
+    let base = metadata();
+    let bounds = base.dataset().hierarchy().stats().root_bounds;
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                bounds,
+                2,
+                0.25,
+                vec![BlockId::new(42)],
+            )
+            .unwrap(),
+            SpatialNode::new(
+                NodeId::new(1),
+                Some(NodeId::new(0)),
+                1,
+                bounds,
+                2,
+                0.1,
+                vec![BlockId::new(43)],
+            )
+            .unwrap(),
+        ],
+        base.dataset().hierarchy().attributes().to_vec(),
+        Some(4),
+        HierarchySemantics::Additive,
+    )
+    .unwrap();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+        None,
+        None,
+        Vec::new(),
+    )
+    .unwrap();
+    let mut writer = FormatWriter::new(
+        Cursor::new(Vec::new()),
+        metadata,
+        FormatWriterOptions::new(0.001, 1024).unwrap(),
+    )
+    .unwrap();
+    writer.write_block(source_block()).unwrap();
+    let base = source_block();
+    let descriptor = base.attributes()[0].descriptor().clone();
+    let column = AttributeColumn::new(descriptor, AttributeValues::U16(vec![500, 600]), 2).unwrap();
+    writer
+        .write_block(SourcePointBlock::new(
+            BlockId::new(43),
+            base.positions_local().to_vec(),
+            base.colors().to_vec(),
+            vec![column],
+        ))
+        .unwrap();
+    let reader = FormatReader::new(writer.finish().unwrap()).unwrap();
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([100.0, 600.0]));
+    assert_eq!(
+        reader
+            .format_metadata()
+            .node_attribute_ranges(NodeId::new(0))[0]
+            .max(),
+        &AttributeValues::U16(vec![200])
+    );
+    assert_eq!(
+        reader
+            .format_metadata()
+            .node_attribute_ranges(NodeId::new(1))[0]
+            .min(),
+        &AttributeValues::U16(vec![500])
+    );
 }

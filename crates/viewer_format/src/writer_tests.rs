@@ -54,7 +54,7 @@ fn writes_a_closed_file_with_checksums_and_quantized_block() {
         u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
         crc32(&bytes[..20])
     );
-    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND4");
+    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND5");
     assert_eq!(
         u64::from_le_bytes(bytes[bytes.len() - 16..bytes.len() - 8].try_into().unwrap()),
         bytes.len() as u64
@@ -70,13 +70,13 @@ fn writes_a_closed_file_with_checksums_and_quantized_block() {
             .unwrap(),
     ) as usize;
     let index = &bytes[index_offset..index_offset + index_length];
-    assert_eq!(&index[..8], b"OCTVIDX4");
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
+    assert_eq!(&index[..8], b"OCTVIDX5");
+    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 5);
     assert_eq!(
         u32::from_le_bytes(bytes[bytes.len() - 8..bytes.len() - 4].try_into().unwrap()),
         crc32(index)
     );
-    let directory_start = index.len() - (93 + 2 * 29);
+    let directory_start = index.len() - (93 + 3 * 29);
     assert_eq!(&index[directory_start + 88..directory_start + 93], &[0; 5]);
     assert_eq!(
         u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().unwrap()),
@@ -85,7 +85,7 @@ fn writes_a_closed_file_with_checksums_and_quantized_block() {
 }
 
 #[test]
-fn prepares_blocks_independently_and_appends_them_to_v4_writer() {
+fn prepares_blocks_independently_and_appends_them_to_v5_writer() {
     let metadata = sample_metadata();
     let defaults = FormatWriterOptions::new(0.001, 1024).unwrap();
     let mut writer =
@@ -93,7 +93,7 @@ fn prepares_blocks_independently_and_appends_them_to_v4_writer() {
     let prepared = super::prepare_point_block(sample_block(), &metadata, defaults).unwrap();
     writer.write_prepared_block(prepared).unwrap();
     let bytes = writer.finish().unwrap().into_inner();
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
+    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 5);
     let mut direct = FormatWriter::new(Cursor::new(Vec::new()), metadata, defaults).unwrap();
     direct.write_block(sample_block()).unwrap();
     assert_eq!(bytes, direct.finish().unwrap().into_inner());
@@ -157,4 +157,48 @@ fn refuses_a_quantization_error_above_the_declared_limit() {
         writer.write_block(block),
         Err(FormatError::Quantization(_))
     ));
+}
+
+#[test]
+fn split_writer_is_poisoned_after_partial_failure_of_either_sink() {
+    use std::io::{self, Seek, SeekFrom, Write};
+    struct Sink {
+        cursor: Cursor<Vec<u8>>,
+        limit: u64,
+    }
+    impl Write for Sink {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let available = self.limit.saturating_sub(self.cursor.position()) as usize;
+            if available == 0 {
+                return Err(io::Error::other("injected sink failure"));
+            }
+            self.cursor.write(&bytes[..bytes.len().min(available)])
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    impl Seek for Sink {
+        fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+            self.cursor.seek(position)
+        }
+    }
+    for failing_primary in [false, true] {
+        let sink = |fails| Sink {
+            cursor: Cursor::new(Vec::new()),
+            limit: if fails { 25 } else { u64::MAX },
+        };
+        let mut writer = FormatWriter::new_split(
+            sink(failing_primary),
+            sink(!failing_primary),
+            sample_metadata(),
+            options(),
+        )
+        .unwrap();
+        assert!(writer.write_block(sample_block()).is_err());
+        assert!(matches!(
+            writer.finish_pair(),
+            Err(FormatError::WriterPoisoned)
+        ));
+    }
 }

@@ -44,6 +44,23 @@ pub enum AttributeValues {
 }
 
 impl AttributeValues {
+    /// Numeric projection for display; 64-bit integers may lose precision in f64.
+    /// Stored typed values remain unchanged.
+    pub fn scalar_as_f64(&self, index: usize) -> Option<f64> {
+        Some(match self {
+            Self::U8(v) => *v.get(index)? as f64,
+            Self::I8(v) => *v.get(index)? as f64,
+            Self::U16(v) => *v.get(index)? as f64,
+            Self::I16(v) => *v.get(index)? as f64,
+            Self::U32(v) => *v.get(index)? as f64,
+            Self::I32(v) => *v.get(index)? as f64,
+            Self::U64(v) => *v.get(index)? as f64,
+            Self::I64(v) => *v.get(index)? as f64,
+            Self::F32(v) => *v.get(index)? as f64,
+            Self::F64(v) => *v.get(index)?,
+        })
+    }
+
     pub fn empty(data_type: AttributeDataType) -> Self {
         match data_type {
             AttributeDataType::U8 => Self::U8(Vec::new()),

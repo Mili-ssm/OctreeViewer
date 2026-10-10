@@ -3,15 +3,15 @@ use viewer_core::AttributeDataType;
 
 use crate::{BlockCodec, FormatError};
 
-pub const FORMAT_VERSION: u16 = 4;
+pub const FORMAT_VERSION: u16 = 5;
 
 pub(crate) const HEADER_SIZE: u64 = 24;
 pub(crate) const FOOTER_SIZE: u64 = 40;
 pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
-pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX4";
-pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND4";
+pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX5";
+pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND5";
 
-/// One independently compressed payload. Offsets are relative to its owning block.
+/// One independently compressed payload. Offsets are relative to the primary block, or absolute in a split companion.
 #[derive(Debug, Clone)]
 pub(crate) struct PayloadDirectoryEntry {
     pub offset: u64,
@@ -54,3 +54,6 @@ fn primitive_width(data_type: AttributeDataType) -> u64 {
         AttributeDataType::U64 | AttributeDataType::I64 | AttributeDataType::F64 => 8,
     }
 }
+
+pub(crate) const SPLIT_ATTRIBUTES: u32 = 1;
+pub(crate) const ATTRIBUTE_FILE: u32 = 2;

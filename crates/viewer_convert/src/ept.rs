@@ -15,8 +15,8 @@ use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePoi
 
 use super::{
     ConversionProgress, ConversionReport, ConversionStage, ConvertError, ConvertOptions,
-    MAX_BLOCKS, create_temporary_output, descriptor, emit_progress, input_batch_point_limit,
-    omitted_dimensions, publish_output, source_schema,
+    MAX_BLOCKS, create_temporary_pair, descriptor, emit_progress, input_batch_point_limit,
+    omitted_dimensions, output_attributes_path, publish_output_pair, source_schema,
 };
 
 const MAX_EPT_NODES: usize = 1_000_000;
@@ -113,6 +113,10 @@ pub(super) fn convert(
 ) -> Result<ConversionReport, ConvertError> {
     if output_path.exists() {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
+    }
+    let attributes_output_path = output_attributes_path(output_path);
+    if attributes_output_path.exists() {
+        return Err(ConvertError::OutputExists(attributes_output_path));
     }
     if options.spatial_divisions() != 2
         || (options.spatial_workers_explicit() && options.spatial_workers() != 1)
@@ -330,10 +334,20 @@ pub(super) fn convert(
         });
     }
 
-    let mut temporary = create_temporary_output(output_path)?;
-    let file = temporary.file.take().expect("temporary file is present");
-    let mut writer = FormatWriter::new(
+    let mut temporary = create_temporary_pair(output_path)?;
+    let file = temporary
+        .geometry
+        .file
+        .take()
+        .expect("temporary file is present");
+    let attributes_file = temporary
+        .attributes
+        .file
+        .take()
+        .expect("temporary companion file exists");
+    let mut writer = FormatWriter::new_split(
         file,
+        attributes_file,
         metadata,
         FormatWriterOptions::new(options.max_quantization_error(), 64 * 1024 * 1024)
             .map_err(ConvertError::Format)?,
@@ -375,7 +389,7 @@ pub(super) fn convert(
                     stage: ConversionStage::ReadingAndWritingBlocks,
                     points_processed: processed,
                     total_points: manifest.points,
-                    bytes_written: fs::metadata(&temporary.path)?.len(),
+                    bytes_written: fs::metadata(&temporary.geometry.path)?.len(),
                 },
                 processed,
             )?;
@@ -393,20 +407,32 @@ pub(super) fn convert(
             actual: processed,
         });
     }
-    let file = writer.finish()?;
+    let (file, attributes) = writer.finish_pair()?;
     file.sync_all()?;
+    let attributes = attributes.expect("split writer returns companion");
+    attributes.sync_all()?;
     drop(file);
-    let file_length = fs::metadata(&temporary.path)?.len();
+    drop(attributes);
+    let file_length = fs::metadata(&temporary.geometry.path)?.len();
+    let attributes_temporary_path = temporary.attributes.path.clone();
+    let attributes_length = fs::metadata(&attributes_temporary_path)?.len();
     let validation = super::OutputValidation {
         total_points: manifest.points,
         block_ids: &all_blocks,
         source_block_ids: &all_blocks,
         file_length,
+        attributes_length,
         requested_workers: options.spatial_workers(),
         memory_budget_bytes: options.max_memory_budget_bytes(),
         reserved_memory_bytes: 0,
     };
-    let output_bytes = publish_output(&temporary.path, output_path, validation, on_progress)?;
+    let output_bytes = publish_output_pair(
+        &temporary.geometry.path,
+        &attributes_temporary_path,
+        output_path,
+        validation,
+        on_progress,
+    )?;
     let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,
         points_processed: manifest.points,

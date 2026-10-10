@@ -40,6 +40,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let voxel_budget = RendererConfig::default().gpu_budget.max_visible_instances;
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
+    let attributes = std::path::Path::new(&args[0]).with_extension("octattrs");
+    if attributes.exists() {
+        reader.attach_attributes(File::open(attributes)?)?;
+    }
     let metadata = reader.format_metadata().dataset().clone();
     let hierarchy = metadata.hierarchy();
     let origin = metadata.coordinate_frame().origin();

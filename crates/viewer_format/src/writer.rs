@@ -55,12 +55,14 @@ pub struct PreparedPointBlock {
     world_bounds: Option<SpatialBounds>,
     bytes: Vec<u8>,
     payloads: Vec<PayloadDirectoryEntry>,
+    ranges: Vec<crate::NodeAttributeRange>,
 }
 
 /// Writes independently encoded blocks and a canonical index to a fresh seekable stream.
 /// A footer is emitted only after every payload and the complete index have been written.
 pub struct FormatWriter<W> {
     writer: W,
+    attributes: Option<W>,
     metadata: FormatMetadata,
     options: FormatWriterOptions,
     block_nodes: BTreeMap<BlockId, Vec<NodeId>>,
@@ -83,12 +85,33 @@ impl<W: Write + Seek> FormatWriter<W> {
         writer.write_all(&header_bytes())?;
         Ok(Self {
             writer,
+            attributes: None,
             metadata,
             options,
             block_nodes,
             blocks: BTreeMap::new(),
             failed: false,
         })
+    }
+
+    /// Streams XYZ to the primary file and display color/columns to an optional companion.
+    pub fn new_split(
+        writer: W,
+        mut attributes: W,
+        metadata: FormatMetadata,
+        options: FormatWriterOptions,
+    ) -> Result<Self, FormatError> {
+        if attributes.stream_position()? != 0 || attributes.seek(SeekFrom::End(0))? != 0 {
+            return Err(FormatError::OutputMustBeEmpty);
+        }
+        let mut result = Self::new(writer, metadata, options)?;
+        attributes.write_all(&flagged_header(crate::layout::ATTRIBUTE_FILE))?;
+        result.writer.seek(SeekFrom::Start(0))?;
+        result
+            .writer
+            .write_all(&flagged_header(crate::layout::SPLIT_ATTRIBUTES))?;
+        result.attributes = Some(attributes);
+        Ok(result)
     }
 
     /// Encodes and appends one block while retaining only its directory metadata afterward.
@@ -100,15 +123,33 @@ impl<W: Write + Seek> FormatWriter<W> {
     /// Appends a block encoded independently from this writer.
     pub fn write_prepared_block(
         &mut self,
-        prepared: PreparedPointBlock,
+        mut prepared: PreparedPointBlock,
     ) -> Result<(), FormatError> {
         self.ensure_block_available(prepared.id)?;
         let offset = self.writer.stream_position()?;
-        let payload_length = u64::try_from(prepared.bytes.len())
-            .map_err(|_| FormatError::SizeOutOfRange(prepared.bytes.len() as u64))?;
-        if let Err(error) = self.writer.write_all(&prepared.bytes) {
+        let split_at = if self.attributes.is_some() {
+            usize::try_from(prepared.payloads[0].stored_length)
+                .map_err(|_| FormatError::BlockSizeOverflow)?
+        } else {
+            prepared.bytes.len()
+        };
+        let payload_length = split_at as u64;
+        let write_result = (|| -> Result<(), FormatError> {
+            if let Some(attributes) = self.attributes.as_mut() {
+                let attribute_offset = attributes.stream_position()?;
+                for payload in prepared.payloads.iter_mut().skip(1) {
+                    payload.offset = attribute_offset
+                        .checked_add(payload.offset - split_at as u64)
+                        .ok_or(FormatError::FileSizeOverflow)?;
+                }
+                attributes.write_all(&prepared.bytes[split_at..])?;
+            }
+            self.writer.write_all(&prepared.bytes[..split_at])?;
+            Ok(())
+        })();
+        if let Err(error) = write_result {
             self.failed = true;
-            return Err(FormatError::Io(error));
+            return Err(error);
         }
         self.blocks.insert(
             prepared.id,
@@ -121,6 +162,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 scale: prepared.scale,
                 world_bounds: prepared.world_bounds,
                 payloads: prepared.payloads,
+                ranges: prepared.ranges,
             },
         );
         Ok(())
@@ -140,7 +182,12 @@ impl<W: Write + Seek> FormatWriter<W> {
     }
 
     /// Completes the index and footer. On any earlier error the stream has no valid footer.
-    pub fn finish(mut self) -> Result<W, FormatError> {
+    pub fn finish(self) -> Result<W, FormatError> {
+        self.finish_pair().map(|(primary, _)| primary)
+    }
+
+    /// Completes the companion before committing the primary footer.
+    pub fn finish_pair(mut self) -> Result<(W, Option<W>), FormatError> {
         if self.failed {
             return Err(FormatError::WriterPoisoned);
         }
@@ -160,10 +207,23 @@ impl<W: Write + Seek> FormatWriter<W> {
             .checked_add(index_length)
             .and_then(|value| value.checked_add(FOOTER_SIZE))
             .ok_or(FormatError::FileSizeOverflow)?;
+        if let Some(attributes) = self.attributes.as_mut() {
+            let length = attributes
+                .stream_position()?
+                .checked_add(FOOTER_SIZE)
+                .ok_or(FormatError::FileSizeOverflow)?;
+            attributes.write_all(&footer_bytes(
+                index_offset,
+                index_length,
+                length,
+                index_checksum,
+            ))?;
+            attributes.flush()?;
+        }
         let footer = footer_bytes(index_offset, index_length, file_length, index_checksum);
         self.writer.write_all(&footer)?;
         self.writer.flush()?;
-        Ok(self.writer)
+        Ok((self.writer, self.attributes))
     }
 
     fn adjusted_metadata(&self) -> Result<FormatMetadata, FormatError> {
@@ -252,7 +312,23 @@ impl<W: Write + Seek> FormatWriter<W> {
             source_hierarchy.semantics(),
         )?;
         let dataset = DatasetMetadata::new(source_metadata.dataset().coordinate_frame(), hierarchy);
-        Ok(source_metadata.with_dataset(dataset))
+        let mut ranges = BTreeMap::<NodeId, Vec<crate::NodeAttributeRange>>::new();
+        for (block_id, record) in &self.blocks {
+            for node in &self.block_nodes[block_id] {
+                let entry = ranges.entry(*node).or_default();
+                for range in &record.ranges {
+                    if let Some(existing) = entry
+                        .iter_mut()
+                        .find(|r| r.schema_index() == range.schema_index())
+                    {
+                        crate::ranges::merge_range(existing, range);
+                    } else {
+                        entry.push(range.clone());
+                    }
+                }
+            }
+        }
+        Ok(source_metadata.with_dataset(dataset, ranges))
     }
 }
 
@@ -271,6 +347,11 @@ pub fn prepare_point_block(
     }
     let schema = metadata.dataset().hierarchy().attributes();
     let attributes = order_attributes(block.attributes(), schema, point_count)?;
+    let ranges = attributes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, column)| crate::ranges::column_range(index as u32, column))
+        .collect();
     let uncompressed_size = block_payload_size(point_count, schema)?;
     if uncompressed_size > options.max_uncompressed_block_bytes {
         return Err(FormatError::BlockExceedsLimit {
@@ -281,14 +362,23 @@ pub fn prepare_point_block(
     let quantized =
         quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
     let decoded = quantized.decode_local()?;
-    let geometry_length = usize::try_from(block_payload_size(point_count, &[])?)
-        .map_err(|_| FormatError::BlockSizeOverflow)?;
-    let mut raw = encode_geometry(&block, &quantized, geometry_length)?;
+    let geometry_length = usize::try_from(
+        (point_count as u64)
+            .checked_mul(12)
+            .ok_or(FormatError::BlockSizeOverflow)?,
+    )
+    .map_err(|_| FormatError::BlockSizeOverflow)?;
+    let mut raw = encode_geometry(&quantized, geometry_length)?;
     let mut bytes = Vec::new();
     let mut payloads = Vec::new();
     payloads
-        .try_reserve_exact(schema.len() + 1)
-        .map_err(|_| FormatError::AllocationFailed(schema.len() + 1))?;
+        .try_reserve_exact(schema.len() + 2)
+        .map_err(|_| FormatError::AllocationFailed(schema.len() + 2))?;
+    append_payload(&raw, &mut bytes, &mut payloads)?;
+    raw.clear();
+    for color in block.colors() {
+        raw.extend_from_slice(&[color.r, color.g, color.b]);
+    }
     append_payload(&raw, &mut bytes, &mut payloads)?;
     for column in attributes {
         let length = attribute_payload_size(point_count as u64, column.descriptor())?;
@@ -309,6 +399,7 @@ pub fn prepare_point_block(
         world_bounds,
         bytes,
         payloads,
+        ranges,
     })
 }
 
@@ -322,6 +413,7 @@ struct BlockRecord {
     scale: [f64; 3],
     world_bounds: Option<SpatialBounds>,
     payloads: Vec<PayloadDirectoryEntry>,
+    ranges: Vec<crate::NodeAttributeRange>,
 }
 
 fn build_block_nodes(
@@ -395,7 +487,6 @@ fn order_attributes<'a>(
 }
 
 fn encode_geometry(
-    block: &SourcePointBlock,
     quantized: &crate::QuantizedCoordinates,
     expected_size: usize,
 ) -> Result<Vec<u8>, FormatError> {
@@ -407,9 +498,6 @@ fn encode_geometry(
         for value in coordinate {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-    }
-    for color in block.colors() {
-        bytes.extend_from_slice(&[color.r, color.g, color.b]);
     }
     if bytes.len() != expected_size {
         return Err(FormatError::InternalPayloadSize {
@@ -544,10 +632,15 @@ impl BoundsAccumulator {
 }
 
 fn header_bytes() -> [u8; HEADER_SIZE as usize] {
+    flagged_header(0)
+}
+
+fn flagged_header(flags: u32) -> [u8; HEADER_SIZE as usize] {
     let mut bytes = [0; HEADER_SIZE as usize];
     bytes[..8].copy_from_slice(HEADER_MAGIC);
     bytes[8..10].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
     bytes[10..12].copy_from_slice(&(HEADER_SIZE as u16).to_le_bytes());
+    bytes[12..16].copy_from_slice(&flags.to_le_bytes());
     let checksum = crc32(&bytes[..20]);
     bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
     bytes
@@ -704,7 +797,7 @@ fn write_index<W: Write>(
         for value in block.scale {
             index.f64(value)?;
         }
-        // Reserved aggregate fields in the v4 layout; codecs and CRCs belong to payloads.
+        // Reserved aggregate fields in the v5 layout; codecs and CRCs belong to payloads.
         index.u8(0)?;
         index.u32(0)?;
         for payload in &block.payloads {

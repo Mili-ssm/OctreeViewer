@@ -5,6 +5,8 @@ use crate::{CodecError, MetadataError, QuantizationError};
 
 #[derive(Debug, Error)]
 pub enum FormatError {
+    #[error("attribute companion is not attached")]
+    AttributesUnavailable,
     #[error("I/O error while accessing the format: {0}")]
     Io(#[from] std::io::Error),
     #[error("format file is shorter than its header and footer")]

@@ -155,13 +155,28 @@ fn read(
     input: Option<&Path>,
     mode: ReadMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let output_bytes = fs::metadata(output)?.len();
+    let geometry_bytes = fs::metadata(output)?.len();
+    let attributes_bytes = fs::metadata(output.with_extension("octattrs"))
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let output_bytes = geometry_bytes
+        .checked_add(attributes_bytes)
+        .ok_or("size overflow")?;
     let started = Instant::now();
     let bytes_read = Arc::new(AtomicU64::new(0));
     let mut reader = FormatReader::new(CountingReader::new(
         File::open(output)?,
         Arc::clone(&bytes_read),
     ))?;
+    if !matches!(mode, ReadMode::Geometry) && attributes_bytes > 0 {
+        reader.attach_attributes(CountingReader::new(
+            File::open(output.with_extension("octattrs"))?,
+            Arc::clone(&bytes_read),
+        ))?;
+    }
+    if matches!(mode, ReadMode::All) && !reader.has_attributes() {
+        return Err("full-payload benchmark requires the .octattrs companion; use read-geometry for XYZ only".into());
+    }
     let open_elapsed = started.elapsed();
     let payload_read_start = bytes_read.load(Ordering::Relaxed);
     let stats = reader.block_storage_stats()?;
@@ -170,7 +185,7 @@ fn read(
     for block in &stats {
         decoded_points += match mode {
             ReadMode::All => reader.read_block(block.id)?.points().len() as u64,
-            ReadMode::Geometry => reader.read_geometry(block.id)?.len() as u64,
+            ReadMode::Geometry => reader.read_positions(block.id)?.len() as u64,
             ReadMode::Attribute(schema_index) => {
                 reader.read_attribute(block.id, schema_index)?;
                 block.point_count
@@ -189,6 +204,8 @@ fn read(
             ReadMode::Attribute(_) => "read_one_attribute",
         }
     );
+    println!("geometry_file_bytes={geometry_bytes}");
+    println!("attribute_file_bytes={attributes_bytes}");
     println!("output_bytes={output_bytes}");
     if let Some(input) = input {
         println!("input_bytes={}", fs::metadata(input)?.len());
@@ -222,7 +239,13 @@ fn summarize_output(
     output: &Path,
     input_bytes: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let output_bytes = fs::metadata(output)?.len();
+    let geometry_bytes = fs::metadata(output)?.len();
+    let attributes_bytes = fs::metadata(output.with_extension("octattrs"))
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let output_bytes = geometry_bytes
+        .checked_add(attributes_bytes)
+        .ok_or("size overflow")?;
     let reader = FormatReader::new(File::open(output)?)?;
     let stats = reader.block_storage_stats()?;
     println!("output_size_bytes={output_bytes}");

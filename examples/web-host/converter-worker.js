@@ -17,9 +17,11 @@ async function convert(file) {
     let stageStartedAt = conversionStartedAt;
     const stageDurations = {};
     let accessHandle = null;
+    let attributesAccessHandle = null;
     let converter = null;
     let directory = null;
     let temporaryName = null;
+    let temporaryAttributesName = null;
     try {
         if (!file || !/\.la[sz]$/i.test(file.name)) {
             throw new Error("Choose a .las or .laz file.");
@@ -30,11 +32,16 @@ async function convert(file) {
         await init();
         const root = await navigator.storage.getDirectory();
         directory = await root.getDirectoryHandle("octree-viewer-conversions", { create: true });
-        temporaryName = `conversion-${crypto.randomUUID()}.partial`;
+        const conversionId = crypto.randomUUID();
+        temporaryName = `conversion-${conversionId}.oct.partial`;
+        temporaryAttributesName = `conversion-${conversionId}.octattrs.partial`;
         const output = await directory.getFileHandle(temporaryName, { create: true });
+        const attributesOutput = await directory.getFileHandle(temporaryAttributesName, { create: true });
         accessHandle = await output.createSyncAccessHandle();
+        attributesAccessHandle = await attributesOutput.createSyncAccessHandle();
         accessHandle.truncate(0);
-        converter = new WasmLasOctConverter(file, accessHandle);
+        attributesAccessHandle.truncate(0);
+        converter = new WasmLasOctConverter(file, accessHandle, attributesAccessHandle);
         self.postMessage({ type: "status", message: `Converting ${file.name} locally…` });
 
         let progress;
@@ -68,11 +75,19 @@ async function convert(file) {
         accessHandle.flush();
         accessHandle.close();
         accessHandle = null;
+        attributesAccessHandle.flush();
+        attributesAccessHandle.close();
+        attributesAccessHandle = null;
         const convertedFile = await output.getFile();
+        const convertedAttributesFile = await attributesOutput.getFile();
+        const outputName = file.name.replace(/\.(las|laz)$/i, ".oct");
+        const outputAttributesName = outputName.replace(/\.oct$/i, ".octattrs");
         self.postMessage({
             type: "complete",
             file: convertedFile,
-            outputName: file.name.replace(/\.(las|laz)$/i, ".oct"),
+            attributesFile: convertedAttributesFile,
+            outputName,
+            outputAttributesName,
             points: progress.totalPoints,
             timings: {
                 planningMs: Math.round(stageDurations.planning ?? 0),
@@ -89,6 +104,12 @@ async function convert(file) {
             // The handle may already have been closed by a failed finalization.
         }
         accessHandle = null;
+        try {
+            attributesAccessHandle?.close();
+        } catch {
+            // The handle may already have been closed by a failed finalization.
+        }
+        attributesAccessHandle = null;
         self.postMessage({
             type: error?.name === "AbortError" ? "cancelled" : "error",
             message: error instanceof Error ? error.message : String(error),
@@ -100,10 +121,22 @@ async function convert(file) {
                 // A browser may keep a failed OPFS entry locked briefly after close.
             }
         }
+        if (temporaryAttributesName && directory) {
+            try {
+                await directory.removeEntry(temporaryAttributesName);
+            } catch {
+                // A browser may keep a failed OPFS entry locked briefly after close.
+            }
+        }
     } finally {
         converter?.free();
         try {
             accessHandle?.close();
+        } catch {
+            // The handle may already have been closed after a successful conversion.
+        }
+        try {
+            attributesAccessHandle?.close();
         } catch {
             // The handle may already have been closed after a successful conversion.
         }

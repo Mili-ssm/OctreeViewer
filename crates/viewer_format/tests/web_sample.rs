@@ -12,6 +12,11 @@ fn web_host_sample_is_a_readable_project_dataset() {
         reader.metadata().hierarchy().stats().source_point_count,
         Some(4096)
     );
+    reader
+        .attach_attributes(Cursor::new(
+            include_bytes!("../../../examples/web-host/sample.octattrs").as_slice(),
+        ))
+        .unwrap();
     let block = reader.read_block(BlockId::new(1)).unwrap();
     assert_eq!(block.points().len(), 4096);
     assert_eq!(block.id(), BlockId::new(1));

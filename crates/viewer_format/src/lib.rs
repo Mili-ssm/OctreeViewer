@@ -8,6 +8,7 @@ mod error;
 mod layout;
 mod metadata;
 mod quantization;
+mod ranges;
 mod reader;
 mod writer;
 

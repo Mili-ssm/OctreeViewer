@@ -149,7 +149,7 @@ async function handleMessage({ data }) {
                         targetLodStartedAt = datasetOpenedAt;
                         firstCoarseMs = null;
                         targetLodMs = null;
-                        const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
+                        const opened = viewer.openFormatDataset(data.file, data.cacheBytes, data.attributes);
                         viewer.fitScene();
                         const lod = viewer.updateLod(targetVoxelPixels);
                         currentMetadata = { ...opened, name: data.name ?? data.file.name, bytes: data.file.size };
@@ -247,7 +247,7 @@ async function handleMessage({ data }) {
                 resetFrameRenderSamples();
                 const name = data.name ?? data.file.name;
                 self.postMessage({ type: "status", message: `Opening ${name}…` });
-                const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
+                const opened = viewer.openFormatDataset(data.file, data.cacheBytes, data.attributes);
                 self.postMessage({ type: "datasetOpened", opened, name });
                 viewer.fitScene();
                 const lod = viewer.updateLod(targetVoxelPixels);

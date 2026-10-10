@@ -45,3 +45,6 @@ impl Default for RendererConfig {
         }
     }
 }
+
+mod attribute_color;
+pub use attribute_color::colorize_attribute;

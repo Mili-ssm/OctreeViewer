@@ -131,9 +131,21 @@ impl PlannedBlock {
         let mut scan_angles = Vec::with_capacity(self.point_count);
         let mut user_data = Vec::with_capacity(self.point_count);
         let mut point_source_ids = Vec::with_capacity(self.point_count);
-        let mut gps_times = Vec::with_capacity(self.point_count);
-        let mut rgb_values = Vec::with_capacity(self.point_count.saturating_mul(3));
-        let mut nir_values = Vec::with_capacity(self.point_count);
+        let mut gps_times = Vec::with_capacity(if self.layout.has_gps_time {
+            self.point_count
+        } else {
+            0
+        });
+        let mut rgb_values = Vec::with_capacity(if self.layout.has_color {
+            self.point_count.saturating_mul(3)
+        } else {
+            0
+        });
+        let mut nir_values = Vec::with_capacity(if self.layout.has_nir {
+            self.point_count
+        } else {
+            0
+        });
         let mut remaining = self.point_count;
         while remaining > 0 {
             let requested = remaining.min(batch_capacity);
@@ -159,9 +171,15 @@ impl PlannedBlock {
                 scan_angles.push(point.scan_angle);
                 user_data.push(point.user_data);
                 point_source_ids.push(point.point_source_id);
-                gps_times.push(point.gps_time);
-                rgb_values.extend_from_slice(&point.rgb);
-                nir_values.push(point.nir);
+                if self.layout.has_gps_time {
+                    gps_times.push(point.gps_time);
+                }
+                if self.layout.has_color {
+                    rgb_values.extend_from_slice(&point.rgb);
+                }
+                if self.layout.has_nir {
+                    nir_values.push(point.nir);
+                }
             }
             remaining -= records;
         }
