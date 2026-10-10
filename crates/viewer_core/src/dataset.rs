@@ -44,6 +44,101 @@ pub enum AttributeValues {
 }
 
 impl AttributeValues {
+    pub fn empty(data_type: AttributeDataType) -> Self {
+        match data_type {
+            AttributeDataType::U8 => Self::U8(Vec::new()),
+            AttributeDataType::I8 => Self::I8(Vec::new()),
+            AttributeDataType::U16 => Self::U16(Vec::new()),
+            AttributeDataType::I16 => Self::I16(Vec::new()),
+            AttributeDataType::U32 => Self::U32(Vec::new()),
+            AttributeDataType::I32 => Self::I32(Vec::new()),
+            AttributeDataType::U64 => Self::U64(Vec::new()),
+            AttributeDataType::I64 => Self::I64(Vec::new()),
+            AttributeDataType::F32 => Self::F32(Vec::new()),
+            AttributeDataType::F64 => Self::F64(Vec::new()),
+        }
+    }
+
+    /// Selects interleaved rows in the requested order, preserving repeated indices and bits.
+    pub fn select_rows(&self, indices: &[usize], components: usize) -> Result<Self, DatasetError> {
+        if components == 0 {
+            return Err(DatasetError::ZeroAttributeComponents);
+        }
+        let value_count = indices
+            .len()
+            .checked_mul(components)
+            .ok_or(DatasetError::AttributeSelectionOverflow)?;
+
+        macro_rules! select {
+            ($values:expr, $variant:ident) => {{
+                let values = $values;
+                let mut selected = Vec::new();
+                selected
+                    .try_reserve_exact(value_count)
+                    .map_err(|_| DatasetError::AttributeAllocationFailed)?;
+                for index in indices {
+                    let start = index
+                        .checked_mul(components)
+                        .ok_or(DatasetError::AttributeIndexOverflow { index: *index })?;
+                    let end = start
+                        .checked_add(components)
+                        .ok_or(DatasetError::AttributeIndexOverflow { index: *index })?;
+                    selected.extend_from_slice(
+                        values
+                            .get(start..end)
+                            .ok_or(DatasetError::AttributeRowOutOfRange { index: *index })?,
+                    );
+                }
+                Ok(Self::$variant(selected))
+            }};
+        }
+
+        match self {
+            Self::U8(values) => select!(values, U8),
+            Self::I8(values) => select!(values, I8),
+            Self::U16(values) => select!(values, U16),
+            Self::I16(values) => select!(values, I16),
+            Self::U32(values) => select!(values, U32),
+            Self::I32(values) => select!(values, I32),
+            Self::U64(values) => select!(values, U64),
+            Self::I64(values) => select!(values, I64),
+            Self::F32(values) => select!(values, F32),
+            Self::F64(values) => select!(values, F64),
+        }
+    }
+
+    /// Appends values of the same type, reserving before mutation.
+    pub fn extend_from(&mut self, other: &Self) -> Result<(), DatasetError> {
+        if self.data_type() != other.data_type() {
+            return Err(DatasetError::AttributeValuesTypeMismatch {
+                expected: self.data_type(),
+                actual: other.data_type(),
+            });
+        }
+        macro_rules! extend {
+            ($target:expr, $values:expr) => {{
+                $target
+                    .try_reserve($values.len())
+                    .map_err(|_| DatasetError::AttributeAllocationFailed)?;
+                $target.extend_from_slice($values);
+                Ok(())
+            }};
+        }
+        match (self, other) {
+            (Self::U8(target), Self::U8(values)) => extend!(target, values),
+            (Self::I8(target), Self::I8(values)) => extend!(target, values),
+            (Self::U16(target), Self::U16(values)) => extend!(target, values),
+            (Self::I16(target), Self::I16(values)) => extend!(target, values),
+            (Self::U32(target), Self::U32(values)) => extend!(target, values),
+            (Self::I32(target), Self::I32(values)) => extend!(target, values),
+            (Self::U64(target), Self::U64(values)) => extend!(target, values),
+            (Self::I64(target), Self::I64(values)) => extend!(target, values),
+            (Self::F32(target), Self::F32(values)) => extend!(target, values),
+            (Self::F64(target), Self::F64(values)) => extend!(target, values),
+            _ => unreachable!("matching attribute value types must have matching variants"),
+        }
+    }
+
     pub const fn data_type(&self) -> AttributeDataType {
         match self {
             Self::U8(_) => AttributeDataType::U8,
@@ -213,6 +308,21 @@ pub trait DatasetSource {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DatasetError {
+    #[error("attribute component count must be nonzero")]
+    ZeroAttributeComponents,
+    #[error("attribute row selection index is out of range: {index}")]
+    AttributeRowOutOfRange { index: usize },
+    #[error("attribute row selection index overflow: {index}")]
+    AttributeIndexOverflow { index: usize },
+    #[error("attribute selection length overflow")]
+    AttributeSelectionOverflow,
+    #[error("attribute value allocation failed")]
+    AttributeAllocationFailed,
+    #[error("attribute values have type {actual:?}, expected {expected:?}")]
+    AttributeValuesTypeMismatch {
+        expected: AttributeDataType,
+        actual: AttributeDataType,
+    },
     #[error("attribute {name:?} has type {actual:?}, expected {expected:?}")]
     AttributeTypeMismatch {
         name: String,
@@ -267,5 +377,62 @@ mod tests {
                 actual: 3,
             }
         );
+    }
+
+    #[test]
+    fn attribute_values_select_interleaved_rows_in_order_with_repeats() {
+        let source = AttributeValues::U16(vec![10, 11, 20, 21, 30, 31]);
+        assert_eq!(
+            source.select_rows(&[2, 0, 2], 2).unwrap(),
+            AttributeValues::U16(vec![30, 31, 10, 11, 30, 31])
+        );
+    }
+
+    #[test]
+    fn attribute_values_selection_preserves_nan_payload_bits() {
+        let nan_bits = 0x7fc0_1234;
+        let values = AttributeValues::F32(vec![f32::from_bits(nan_bits), -0.0]);
+        let selected = values.select_rows(&[0, 1], 1).unwrap();
+        let AttributeValues::F32(selected) = selected else {
+            panic!("selection changed value type");
+        };
+        assert_eq!(selected[0].to_bits(), nan_bits);
+        assert_eq!(selected[1].to_bits(), (-0.0_f32).to_bits());
+    }
+
+    #[test]
+    fn attribute_values_selection_rejects_invalid_components_and_indices() {
+        assert_eq!(
+            AttributeValues::U8(vec![1]).select_rows(&[0], 0),
+            Err(DatasetError::ZeroAttributeComponents)
+        );
+        assert_eq!(
+            AttributeValues::U8(vec![1]).select_rows(&[1], 1),
+            Err(DatasetError::AttributeRowOutOfRange { index: 1 })
+        );
+        assert_eq!(
+            AttributeValues::U8(vec![1]).select_rows(&[usize::MAX], 2),
+            Err(DatasetError::AttributeIndexOverflow { index: usize::MAX })
+        );
+        assert_eq!(
+            AttributeValues::U8(vec![1]).select_rows(&[0, 1], usize::MAX),
+            Err(DatasetError::AttributeSelectionOverflow)
+        );
+    }
+
+    #[test]
+    fn attribute_values_extend_checks_type_before_mutating() {
+        let mut target = AttributeValues::U8(vec![1, 2]);
+        let before = target.clone();
+        assert_eq!(
+            target.extend_from(&AttributeValues::U16(vec![3])),
+            Err(DatasetError::AttributeValuesTypeMismatch {
+                expected: AttributeDataType::U8,
+                actual: AttributeDataType::U16,
+            })
+        );
+        assert_eq!(target, before);
+        target.extend_from(&AttributeValues::U8(vec![3])).unwrap();
+        assert_eq!(target, AttributeValues::U8(vec![1, 2, 3]));
     }
 }

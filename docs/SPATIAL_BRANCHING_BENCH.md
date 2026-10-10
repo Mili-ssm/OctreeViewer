@@ -197,8 +197,8 @@ con esta conversión directa.
 
 La salida directa 2×2×2 generada en esta medición tiene payload idéntico a la referencia guardada.
 La prueba de equivalencia de workers también cubre partición 4×4×4; la opción de división se guarda
-en los checkpoints y no se puede cambiar al reanudar. Los manifiestos V1 antiguos se leen como factor
-2.
+en los checkpoints y no se puede cambiar al reanudar. Los manifiestos anteriores a V3 se rechazan: sus registros de spool no permiten reanudar
+con el layout compacto actual.
 
 ## Cortes directos con presupuestos iguales
 

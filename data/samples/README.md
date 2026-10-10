@@ -1,7 +1,8 @@
 # Muestras de nubes de puntos
 
 Datasets pequeños para probar importación, conversión LAS/LAZ y el formato `.oct`. Los `.oct`
-incluidos se generaron con la CLI del proyecto y se validaron al finalizar la conversión.
+incluidos se regeneraron en formato v4 y se validaron al finalizar la conversión. El lector actual
+solo admite v4; vuelve a convertir los archivos locales de versiones anteriores desde sus LAS.
 
 | Archivo | Contenido | Puntos | Fuente |
 | --- | --- | ---: | --- |

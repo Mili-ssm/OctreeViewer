@@ -66,7 +66,7 @@ The target browsers are Chrome and Firefox builds that support WebGPU and `Offsc
 rendering has been checked in Chrome with converted Bunny and Outer Banks datasets. Firefox still
 requires browser validation. The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
-`WasmVoxelViewer.createOffscreen`. Select a project-format v1/v2/v3 file to call `openFormatDataset` and
+`WasmVoxelViewer.createOffscreen`. Select a project-format v4 file to call `openFormatDataset` and
 `updateLod`; the worker publishes a coarse visible cut first, then loads at most one missing block
 per `renderFrame()` and refines through projected voxel stages until the requested detail is reached.
 Pending blocks are prioritized against the current camera, and a camera change restarts selection from
@@ -139,7 +139,7 @@ with Albuera. The result includes `timings.planningMs`, `timings.writingMs`, and
 are browser wall-clock measurements and still need to be collected on Albuera before choosing whether
 per-node OPFS spools would improve the tradeoff.
 
-Use the keyboard-accessible **Open built-in sample** button to load the included v1/v2 file, or focus
+Use the keyboard-accessible **Open built-in sample** button to load the included v4 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
 wave grid and does not depend on external or licensed point-cloud data.
 
@@ -200,7 +200,7 @@ LOD-detail and viewport matrix, and `collect-benchmarks.py` aggregates repeated 
 
 The generic WASM point APIs accept typed arrays and stage them in batches of 16,384 points into
 Rust-owned storage. Full-scene inputs are limited by the renderer's visible-instance budget;
-`readNext` is limited to 65,536 points and 8 MiB of source records per response. Use
+Use
 `renderSceneBatch(start, count)` for diagnostic snapshots, with at most 16,384 instances per call.
 These APIs copy across JS/WASM memory; the local-format viewing path reads selected blocks directly in
 Rust and avoids materializing the full file in JS.

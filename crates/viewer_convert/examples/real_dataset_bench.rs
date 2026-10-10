@@ -12,8 +12,7 @@ use std::{
 
 use viewer_convert::{ConvertOptions, convert_file_with_progress};
 use viewer_core::{DatasetSource, Point};
-use viewer_format::{BlockCodec, BlockStorageStats, FormatReader};
-use viewer_render_wgpu::InstanceRaw;
+use viewer_format::{BlockCodec, BlockPayloadStorageStats, BlockStorageStats, FormatReader};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
@@ -209,7 +208,12 @@ fn read(
             ratio(output_bytes, input_bytes)
         );
     }
-    summarize_stats(&stats, output_bytes, source_point_count);
+    summarize_stats(
+        &stats,
+        &reader.block_payload_storage_stats()?,
+        output_bytes,
+        source_point_count,
+    );
     summarize_memory(source_point_count, &stats);
     Ok(())
 }
@@ -229,20 +233,30 @@ fn summarize_output(
         );
     }
     let source_point_count = source_points(&reader);
-    summarize_stats(&stats, output_bytes, source_point_count);
+    summarize_stats(
+        &stats,
+        &reader.block_payload_storage_stats()?,
+        output_bytes,
+        source_point_count,
+    );
     summarize_memory(source_point_count, &stats);
     Ok(())
 }
 
-fn summarize_stats(stats: &[BlockStorageStats], file_bytes: u64, source_points: u64) {
+fn summarize_stats(
+    stats: &[BlockStorageStats],
+    payloads: &[BlockPayloadStorageStats],
+    file_bytes: u64,
+    source_points: u64,
+) {
     let stored_bytes = stats.iter().map(|block| block.stored_bytes).sum::<u64>();
     let raw_bytes = stats.iter().map(|block| block.raw_bytes).sum::<u64>();
     let payload_points = stats.iter().map(|block| block.point_count).sum::<u64>();
-    let compressed_blocks = stats
+    let compressed_payloads = payloads
         .iter()
         .filter(|block| block.codec == BlockCodec::Lz4)
         .count();
-    let raw_blocks = stats
+    let raw_payloads = payloads
         .iter()
         .filter(|block| block.codec == BlockCodec::None)
         .count();
@@ -259,8 +273,8 @@ fn summarize_stats(stats: &[BlockStorageStats], file_bytes: u64, source_points: 
         "lod_sample_points={}",
         payload_points.saturating_sub(source_points)
     );
-    println!("lz4_block_count={compressed_blocks}");
-    println!("raw_block_count={raw_blocks}");
+    println!("lz4_payload_count={compressed_payloads}");
+    println!("raw_payload_count={raw_payloads}");
     println!("raw_payload_bytes={raw_bytes}");
     println!("stored_payload_bytes={stored_bytes}");
     println!(
@@ -285,30 +299,20 @@ fn summarize_stats(stats: &[BlockStorageStats], file_bytes: u64, source_points: 
 
 fn summarize_memory(source_points: u64, stats: &[BlockStorageStats]) {
     let point_bytes = std::mem::size_of::<Point>() as u64;
-    let instance_bytes = std::mem::size_of::<InstanceRaw>() as u64;
     let block_point_limit = stats
         .iter()
         .map(|block| block.point_count)
         .max()
         .unwrap_or(0);
     println!("rust_point_size_bytes={point_bytes}");
-    println!("render_instance_size_bytes={instance_bytes}");
     println!(
-        "controller_full_cloud_cpu_bytes={}",
-        source_points.saturating_mul(point_bytes + instance_bytes)
-    );
-    println!(
-        "snapshot_copy_minimum_bytes={}",
-        source_points.saturating_mul(instance_bytes)
-    );
-    println!(
-        "hypothetical_full_gpu_instance_buffer_bytes={}",
-        source_points.saturating_mul(instance_bytes)
+        "hypothetical_full_point_storage_bytes={}",
+        source_points.saturating_mul(point_bytes)
     );
     println!("largest_payload_block_points={block_point_limit}");
     println!(
-        "largest_block_point_plus_instance_bytes={}",
-        block_point_limit.saturating_mul(point_bytes + instance_bytes)
+        "largest_block_point_storage_bytes={}",
+        block_point_limit.saturating_mul(point_bytes)
     );
 }
 

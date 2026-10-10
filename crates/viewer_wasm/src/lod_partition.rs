@@ -1,4 +1,4 @@
-use viewer_core::{AttributeColumn, AttributeValues, SpatialSubdivision};
+use viewer_core::{AttributeColumn, SpatialSubdivision};
 use viewer_format::SourcePointBlock;
 
 pub(crate) struct SpatialPartition {
@@ -44,8 +44,10 @@ pub(crate) fn partition_block(
                 .iter()
                 .map(|column| {
                     let component_count = column.descriptor().component_count() as usize;
-                    let values =
-                        select_attribute_values(column.values(), &point_indices, component_count)?;
+                    let values = column
+                        .values()
+                        .select_rows(&point_indices, component_count)
+                        .map_err(|error| error.to_string())?;
                     AttributeColumn::new(column.descriptor().clone(), values, point_indices.len())
                         .map_err(|error| error.to_string())
                 })
@@ -62,45 +64,6 @@ pub(crate) fn partition_block(
             })
         })
         .collect()
-}
-
-fn select_attribute_values(
-    source: &AttributeValues,
-    indices: &[usize],
-    components: usize,
-) -> Result<AttributeValues, String> {
-    macro_rules! select_values {
-        ($values:expr, $variant:ident) => {{
-            let values = $values;
-            let mut selected = Vec::with_capacity(indices.len().saturating_mul(components));
-            for index in indices {
-                let start = index
-                    .checked_mul(components)
-                    .ok_or("spatial attribute index overflow")?;
-                let end = start
-                    .checked_add(components)
-                    .ok_or("spatial attribute index overflow")?;
-                selected.extend_from_slice(
-                    values
-                        .get(start..end)
-                        .ok_or("spatial attribute is shorter than its point block")?,
-                );
-            }
-            Ok(AttributeValues::$variant(selected))
-        }};
-    }
-    match source {
-        AttributeValues::U8(values) => select_values!(values, U8),
-        AttributeValues::I8(values) => select_values!(values, I8),
-        AttributeValues::U16(values) => select_values!(values, U16),
-        AttributeValues::I16(values) => select_values!(values, I16),
-        AttributeValues::U32(values) => select_values!(values, U32),
-        AttributeValues::I32(values) => select_values!(values, I32),
-        AttributeValues::U64(values) => select_values!(values, U64),
-        AttributeValues::I64(values) => select_values!(values, I64),
-        AttributeValues::F32(values) => select_values!(values, F32),
-        AttributeValues::F64(values) => select_values!(values, F64),
-    }
 }
 
 #[cfg(test)]

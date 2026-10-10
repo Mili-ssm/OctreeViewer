@@ -16,6 +16,3 @@ serde_json.workspace = true
 thiserror.workspace = true
 viewer_core = { path = "../viewer_core" }
 viewer_format = { path = "../viewer_format" }
-
-[dev-dependencies]
-viewer_render_wgpu = { path = "../viewer_render_wgpu" }

@@ -2,7 +2,7 @@
 
 Visor extensible de nubes LiDAR y nubes de puntos 3D, construido en Rust y ejecutable en el
 navegador mediante WebAssembly. El proyecto está en una fase temprana: hoy contiene un núcleo de
-voxelización en memoria, una importación LAS/LAZ incremental, un lector espacial por bloques y una
+voxelización en memoria, conversión LAS/LAZ incremental a `.oct` v4, un lector espacial por bloques y una
 demo WebGPU 3D con worker, navegación y perfiles LOD. Aún no puede explorar datasets de cientos de GB
 de extremo a extremo; la demo informa bytes únicos leídos y permite cancelar reiniciando el worker.
 
@@ -100,9 +100,9 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, escala visual uniforme, HZB conservador para escenas estáticas y presupuesto configurable. | El límite contabiliza buffers y recursos HZB administrados por el renderer, no la VRAM total del proceso. |
 | `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU, carga bajo demanda y conversión web en dos pasadas a ocho nodos espaciales con hasta 4.096 representantes voxelizados. | El decodificador LAS/LAZ recorre la entrada dos veces; falta medir ese costo y validar OPFS en Chrome/Firefox con Albuera. |
 | `examples/web-host` | Demo WebGPU en worker, API embebible, conversión LAS/LAZ en worker/OPFS con planificación espacial, progreso de ambas pasadas, cancelación y descarga/apertura. | La conversión a escala Albuera, el costo de la segunda pasada y la cuota OPFS siguen pendientes de validar en Chrome/Firefox. |
-| Formato propio | Especificaciones v1/v2/v3/v4, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([v1](docs/FORMAT_V1.md), [v2](docs/FORMAT_V2.md), [v3](docs/FORMAT_V3.md), [v4](crates/viewer_format/FORMAT_V4.md)). v1/v2 conservan su layout; v3 añade escala solo visual y v4 separa geometría y atributos en payloads independientes. | Fixtures prueban round-trip, bloques selectivos y lectura desde tickets del scheduler, corrupción, límites, semánticas, escala y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Solo [v4](crates/viewer_format/FORMAT_V4.md): cuantizador `u32`, LZ4 independiente por geometría/columna, CRC32, escritor incremental y lector aleatorio con límites. Semánticas replacement/aditiva y escala visual en un único layout. | Fixtures prueban round-trip, lecturas selectivas, corrupción, límites y rechazo de otras versiones. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
-| `viewer_convert` | CLI nativa LAS/LAZ → formato propio con escala visual v3, particiones LOD 2/4/8 mediante la subdivisión compartida de `viewer_core` y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. |
+| `viewer_convert` | CLI nativa LAS/LAZ → formato propio v4 con escala visual, particiones LOD 2/4/8 mediante la subdivisión compartida de `viewer_core` y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. |
 
 ## Qué significará “feature complete”
 
@@ -325,12 +325,11 @@ cubos renderizados no se solapen.
 el núcleo a archivos, red, WASM ni `wgpu`. Cada `PointBlock` lleva un lote de puntos y columnas de
 atributos tipadas; las columnas comprueban el tipo y el número de componentes por punto. La lectura
 es síncrona en este contrato base, por lo que el consumidor decide si la ejecuta en un worker o hilo.
-El formato propio aún debe implementar este contrato y validar que los bloques coinciden con el
-esquema y la jerarquía.
+`FormatReader` implementa este contrato y valida que los bloques coincidan con el esquema y la jerarquía.
 
 `SpatialHierarchy::select_lod` proyecta el error mediante una función suministrada por el consumidor
 y refina por mayor error mientras el cambio que dicta la semántica de la jerarquía quepa en el
-presupuesto. En v1, los hijos reemplazan al padre; en v2 aditivo, se retienen ancestros y se añaden
+presupuesto. En jerarquías replacement, los hijos reemplazan al padre; en jerarquías aditivas, se retienen ancestros y se añaden
 hijos. El productor define la cobertura/error, y el selector cuenta puntos, no bytes o memoria. Si la
 selección base supera el presupuesto devuelve un error; si una mejora no cabe o no hay más
 resolución, lo informa.
@@ -340,11 +339,9 @@ agrupan en celdas enteras para que los cubos no se solapen. `replaceVoxelizedPoi
 `appendVoxelizedPoints` sigue disponible para una agregación explícita a una resolución fija. La lectura
 de bloques persistentes y acotados pertenece a `viewer_format`.
 
-La importación LAS/LAZ valida límites completos del encabezado antes de aceptar el origen. Un error
-de lectura, incluido un archivo truncado, invalida la sesión para evitar continuar desde un cursor
-parcial; los conteos espaciales usan `u64` y la selección detecta desbordamiento al sumarlos. La
-importación actual conserva RGB cuando existe y, si no, representa intensidad como gris; otras
-dimensiones LAS todavía no se exponen como atributos del visor.
+La conversión LAS/LAZ conserva dimensiones tipadas en el formato v4. La presentación usa RGB
+cuando existe e intensidad como gris cuando falta; intensidad y clasificación también pueden
+seleccionarse como modos de color sin descartar el resto de columnas.
 
 **Cierre:** las consultas espaciales devuelven nodos y metadatos sin materializar todos los puntos;
 los tests validan límites, precisión, orden LOD y presupuestos.
@@ -352,10 +349,11 @@ los tests validan límites, precisión, orden LOD y presupuestos.
 ### Fase 2 — Formato de archivo propio (`viewer_format`, crate propuesto)
 
 **Característica:** persistir una nube organizada en bloques indexados, legibles aleatoriamente y
-compatibles entre versiones.
+con validación explícita de versión.
 
-- [x] Añadir v2 aditivo para jerarquías cuyos nodos contienen payloads distintos, y v3 con escala
-  exclusiva de presentación; el lector conserva compatibilidad con v1/v2 ([`docs/FORMAT_V2.md`](docs/FORMAT_V2.md), [`docs/FORMAT_V3.md`](docs/FORMAT_V3.md)).
+- [x] Usar un único [layout v4](crates/viewer_format/FORMAT_V4.md), con semántica replacement/aditiva,
+  escala exclusiva de presentación y payloads independientes por geometría/columna. El proyecto
+  está en pre-release: solo se lee/escribe v4; los archivos v1–v3 deben reconvertirse desde su fuente.
 
 - [x] Publicar una especificación mínima: magic/versionado, endianness, metadatos, CRS y transformación
   de coordenadas, esquema de atributos, jerarquía, directorio de bloques, offsets/tamaños, compresión y
@@ -382,8 +380,8 @@ compatibles entre versiones.
 - [x] Implementar escritor que genere archivos deterministas cuando sea posible, cierre correctamente
   el índice y no publique como válido un resultado parcial.
 - [x] Añadir fixtures pequeños, grandes sintéticos, archivos malformados y pruebas de round-trip,
-  lectura selectiva, corrupción, límites de tamaño y compatibilidad de versiones.
-- [x] Documentar política de compatibilidad: qué versiones se leen, cómo se migra, qué campos pueden
+  lectura selectiva, corrupción, límites de tamaño y rechazo de versiones no soportadas.
+- [x] Documentar política de formato: qué versión se lee, cómo se reconvierte, qué campos pueden
   ampliarse y cómo se preservan atributos desconocidos.
 
 **Cierre:** el lector recupera un bloque seleccionado sin leer el archivo completo; los datos
@@ -476,7 +474,7 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
 - [x] Evaluar EPT: es un dataset de varios archivos (`ept.json`, jerarquía y datos por nodo), no una
   ruta LAS/LAZ única ([especificación EPT](https://entwine.io/en/latest/entwine-point-tile.html)).
 - [x] Implementar entrada para datasets EPT locales `laszip`: leer `ept.json`, páginas JSON y LAZ
-  por nodo, validar conteos y mantener la jerarquía aditiva. El formato v3 conserva esta semántica y
+  por nodo, validar conteos y mantener la jerarquía aditiva. El formato v4 conserva esta semántica y
   añade escala visual. Remoto y otros codecs quedan fuera
   de esta iteración.
 
@@ -520,7 +518,7 @@ Extra Bytes y CRS VLR que no se conservan.
 
 Para EPT, la entrada es el directorio del dataset o su `ept.json`. La primera versión acepta solo
 `dataType: laszip` y `hierarchyType: json` locales; valida páginas, padres, conteos declarados y
-cabeceras LAZ antes de publicar. Mantiene payloads propios por nodo y escribe v2 aditivo; no vuelve
+cabeceras LAZ antes de publicar. Mantiene payloads propios por nodo y escribe v4 con semántica aditiva; no vuelve
 a particionar la jerarquía. `--checkpoint`/`--resume`, `--spatial-divisions` distintas de 2 y
 `--spatial-workers` distintos de 1 no se aplican a EPT. El error geométrico EPT almacenado es la
 diagonal de la celda del nodo y sirve como estimación de resolución espacial.
@@ -677,7 +675,7 @@ todavía.
   posiciones fuente que ocupan la misma celda se agregan antes de dibujarse. Las escenas de puntos
   en memoria también se cuantizan a una retícula inferida. El API genérico `sync_visible_blocks` aún
   conserva su ruta por bloque y queda pendiente integrarlo en la misma agregación global. El formato
-  v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
+  v4 guarda `visual_scale`: LAS/LAZ y EPT normalizan
   la extensión máxima a 100 unidades de render sin cambiar XYZ, origen ni CRS; versiones antiguas
   usan factor 1. Cámara, shader, frustum y error proyectado LOD aplican el mismo factor.
 - [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 8 millones de
@@ -700,7 +698,7 @@ subidos corresponde a la selección visible, no al tamaño total del dataset.
 estricto de instancias/buffers. La ruta WASM de LOD construye una escena voxelizada por corte y la
 sube como una unidad; el API genérico todavía conserva buffers por bloque. El host WASM expone
 instancias/bloques visibles y bytes subidos; la demo muestra el tiempo de
-llamada CPU al renderer. `FormatReader` preserva la escala visual v3 al abrir archivos; las APIs de
+llamada CPU al renderer. `FormatReader` preserva la escala visual v4 al abrir archivos; las APIs de
 bloques sin archivo usan escala 1. Chrome/WebGPU presentó visualmente el Bunny y el escáner costero
 Outer Banks en dos ángulos por dataset. Los atributos de intensidad/clasificación aún no se transfieren
 por el puente de bloques RGB.
@@ -732,7 +730,7 @@ glyph según la extensión/densidad y aplicar la escala de presentación v3, Bun
 segundo ejemplo disponible.
 
 - [x] Reproducir la pantalla vacía e inspeccionar bounds, posiciones, atributos y estado de bloques/GPU.
-- [x] Guardar el factor visual en v3, conservar lecturas v1/v2 y aplicarlo de forma coherente a cámara,
+- [x] Guardar el factor visual en v4 y aplicarlo de forma coherente a cámara,
   shader y selección LOD sin cambiar coordenadas ni CRS.
 - [x] Confirmar que Bunny y Outer Banks cargan y son visibles tras convertir y abrir sus archivos.
 - [ ] Repetir en Firefox y con un escaneo urbano cuando haya un archivo de ejemplo disponible.
@@ -742,7 +740,7 @@ segundo ejemplo disponible.
 **Característica:** exponer una API estable y asíncrona al host para abrir datasets, gestionar lecturas
 y presentar estado.
 
-- [x] Conectar `FormatReader` v1/v2/v3 al puente LOD: abre el índice, selecciona desde cámara y lee los
+- [x] Conectar `FormatReader` v4 al puente LOD: abre el índice, selecciona desde cámara y lee los
   bloques faltantes del corte antes de publicarlo. `openFormatDataset` usa `FileReaderSync`, por lo que
   el host debe ejecutar el visor en un worker; `createOffscreen` permite presentar en un canvas
   transferido al worker. Si falla una lectura, conserva el corte actual y devuelve el error.
@@ -753,11 +751,10 @@ y presentar estado.
   uno en vuelo. La lectura de bloques permanece síncrona dentro del worker; cancelar termina/recrea el
   worker y descarta el dataset abierto.
 - [x] Limitar transferencias WASM: `replacePoints`/`appendPoints` y `insertLodBlock` convierten
-  arrays tipados en lotes temporales de 16.384 puntos. `renderScene` limita el total al presupuesto
-  GPU de instancias y `cacheBytes` limita los bloques fuente. Rust conserva los puntos al terminar;
-  el host retiene los arrays durante la llamada. `readNext` limita cada respuesta a 65.536 puntos y
-  8 MiB de registros fuente. `renderSceneBatch` limita la salida a 16.384 instancias; `renderScene`
-  rechaza escenas mayores. No se comparte memoria zero-copy.
+  arrays tipados en lotes temporales de 16.384 puntos. El presupuesto GPU limita las instancias
+  renderizadas y `cacheBytes` los bloques fuente. Rust conserva los puntos al terminar; el host
+  retiene los arrays durante la llamada. `renderSceneBatch` limita la salida a 16.384 instancias.
+  No se comparte memoria zero-copy.
 - [x] Soportar archivos locales del formato propio en la demo. Definir por separado si el producto
   debe aceptar URL/range requests, porque CORS, autenticación y consistencia de rangos requieren
   contrato específico.
@@ -802,10 +799,9 @@ intercalado en arrays tipados; los convierte en lotes de hasta 16.384 puntos a u
 de Rust y rechaza bloques cuyo payload excede `cacheBytes`. El host conserva los arrays mientras dura
 la llamada. `replacePoints`/`appendPoints` y sus variantes voxelizadas reciben los mismos typed arrays;
 limitan cada escena de entrada al máximo de instancias GPU configurado y mueven los puntos a Rust.
-`readNext` devuelve lotes limitados a 65.536 puntos/8 MiB de registros fuente. Para leer una escena de
-diagnóstico desde JS, usa `renderSceneBatch(start, count)` con hasta 16.384 instancias; `renderScene()`
-solo funciona hasta ese tamaño. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
-Blob con el lector v1/v2/v3. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
+Para leer una escena de diagnóstico desde JS, usa `renderSceneBatch(start, count)` con hasta
+16.384 instancias. Para archivos del proyecto, `openFormatDataset(file, cacheBytes)` abre el
+Blob con el lector v4. Ejecuta `createOffscreen(canvas.transferControlToOffscreen(), voxelSize)` y
 las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
 
@@ -898,7 +894,7 @@ interacción WebGPU real, pérdida de dispositivo ni FPS del pick.
 entender límites/errores sin editar el código de la demo.
 
 **Estado actual:** la demo transfiere el canvas a un worker, crea allí el renderer WebGPU y abre
-archivos del formato v1/v2/v3 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
+archivos del formato v4 mediante `FileReaderSync`. `updateLod` lee los bloques visibles bajo demanda
 y cambia el corte de forma atómica. Informa bytes únicos leídos en rangos de 256 KiB (sin
 interpretarlos como porcentaje de finalización); cancelar termina/recrea el worker y permite reintentar
 seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles, nivel
@@ -985,11 +981,10 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
    detalle, conserva la escena previa y da un diagnóstico en lugar de subdividir muestras gruesas
    como si fuesen puntos fuente nuevos.
 2. **Persistir identidad/origen/escala en `viewer_format` y producirla en `viewer_convert`:** comprobar
-   si v1/v2/v3 expresan la identidad de celda con precisión suficiente antes de proponer cambios de
+   si v4 expresa la identidad de celda con precisión suficiente antes de proponer cambios de
    formato. El almacenamiento actual conserva códigos XYZ `u32` por bloque y el lector los reconstruye
    como `f32`; el nuevo índice entero se deriva al formar el corte, no se persiste como ID global.
-   Cierre: round-trip de celdas, escala, atributos y cota geométrica; compatibilidad anterior mantenida
-   o migración versionada documentada si el contrato no cabe.
+   Cierre: round-trip de celdas, escala, atributos y cota geométrica; versionar el formato si el contrato no cabe.
 3. **Validar límites y transiciones:** probar coordenadas negativas, caras compartidas, límites de
    cuantización, bloques fragmentados, nodos degenerados, carga/cancelación/error y cortes mixtos.
    Verificar que el redondeo a `f32` y la conversión de centros/aristas al shader no produzcan
@@ -1088,7 +1083,7 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
     orden/columnas de atributos, codecs (LZ4/raw y Zstandard con varios niveles) y cuantización por
     separado. Medir ratio final, CPU de codificación/decodificación, primera vista, memoria y error
     acumulado contra LAS. El experimento actual `u16` no certifica la precisión desde LAS. Mantener
-    `.oct` v3 mientras los bloques independientes y el índice residente cubran las cargas; versionar
+    `.oct` v4 mientras los bloques independientes y el índice residente cubran las cargas; versionar
     solo si una mejora medida necesita otro contrato binario. Si el índice residente resulta ser el
     límite, paginar jerarquía será una tarea distinta.
 
@@ -1097,7 +1092,7 @@ particionado externo en chunks, procesa subárboles en paralelo y los fusiona bo
 con la reducción de spools pendiente. COPC y EPT ya organizan sus datos espacialmente y sirven para
 evitar reconstrucciones, aunque tienen semánticas de payload/topología distintas. La generación GPU
 de LOD es un candidato para procesar chunks, pero los resultados publicados son in-core y no
-demuestran conversión externa de más de 500 GB. Por ello se conserva `.oct` v3 y se prioriza el
+demuestran conversión externa de más de 500 GB. Por ello se conserva `.oct` v4 y se prioriza el
 proceso, después acceso nativo a COPC y medición de carga; no se elige aún un codec, cuantización ni
 representación ganadora.
 
@@ -1108,12 +1103,12 @@ con mediana 57,87 s. Separar esta meta de conversión del tiempo
 hasta primera vista y de la latencia de refinamiento del visor. Un dataset terminado debe tratarse
 como una instantánea inmutable: construir una versión nueva en temporal, validar y publicar el nombre
 final de forma atómica; las lecturas en vuelo conservan su handle/versión hasta terminar. El formato
-v3 ya guarda offsets y longitudes por bloque. `FormatReader::fork_reader` permite crear lectores con
+v4 guarda offsets y longitudes por bloque. `FormatReader::fork_reader` permite crear lectores con
 cursores independientes que comparten mediante `Arc` el índice validado; cada cursor sigue siendo
 mutable y no se comparte entre tareas concurrentes. Primero medir accesos independientes por offset y
 lectura asíncrona/rangos; limitar cola y memoria, asociar resultados a la generación de cámara/dataset
 y descartar respuestas obsoletas. No atribuir concurrencia a la inmutabilidad por sí sola ni cambiar
-de formato salvo que un prototipo gane frente a v3 en conversión o carga progresiva con igualdad de
+de formato salvo que un prototipo gane frente a v4 en conversión o carga progresiva con igualdad de
 atributos/calidad, integridad, memoria y bytes medidos.
 
 La meta de conversión se cumplió en Belvedere con tres ejecuciones. Una ejecución release por corpus
@@ -1147,8 +1142,7 @@ generación del árbol o una correspondencia explícita de filas.
 Un diccionario global de coordenadas no se justifica todavía: las hojas conservan puntos fuente únicos
 y las muestras LOD son una fracción muy pequeña del total. **Implementado: formato v4 columnar** con una
 única topología/índice y payloads independientes para geometría (XYZ + RGB de visualización) y cada
-columna de atributos, enlazados por `(block_id, row_id)`. El writer v4 es el predeterminado; el lector
-mantiene v1–v3 para archivos existentes. `FormatReader` permite obtener geometría, una columna o una
+columna de atributos, enlazados por `(block_id, row_id)`. El escritor y el lector soportan exclusivamente v4. `FormatReader` permite obtener geometría, una columna o una
 fila de una columna; la lectura de una fila aún descomprime su columna completa. La vista WASM
 progresiva carga geometría para RGB/elevación y solo añade intensidad o clasificación cuando ese modo
 está activo. Cambiar el modo descarta el cache decodificado y recarga la columna requerida. La
@@ -1157,16 +1151,15 @@ mejora grande: geometría ocupa casi todo el payload. Ver resultados y límites 
 [`REAL_DATASET_BENCH.md`](docs/REAL_DATASET_BENCH.md). El siguiente trabajo estructural es compactar
 spools temporales y separar la pasada que fija filas/geometría de la generación de columnas, midiendo
 antes bytes y tiempo por fase. Los registros fuente ahora ocupan 41 B para Albuera (PDRF3) y 33 B
-para Majadas (PDRF2), frente a 55 B; checkpoints incompatibles se invalidan con la versión 3. Se
-conserva lectura v1–v3 para los archivos históricos: retirarla ahorraría alrededor de 110 líneas,
-pero no mejora el camino v4 y rompería esos archivos y la muestra histórica de comparación. Añadido
+para Majadas (PDRF2), frente a 55 B; checkpoints incompatibles se invalidan con la versión 3. Los archivos históricos v1–v3 deben reconvertirse desde LAS/LAZ/EPT; sus medidas anteriores
+siguen identificadas por versión. Añadido
 `block_payload_storage_stats()` para obtener codec y bytes comprimidos/brutos por geometría/columna
 sin leer payloads. Una ejecución release completa v4 por corpus dio 346,5 s en Albuera y 356,8 s en
 Majadas; se observó una mejora respecto a una referencia v3, pero no es emparejada ni alcanza los
 120 s. Repetir tres veces por corpus después de optimizar la jerarquía. Mantener un diccionario global
 pendiente hasta medir repeticiones.
 
-La cabecera v3 ya precede los payloads, pero el índice y el footer se escriben al final; el lector
+La cabecera v4 precede los payloads, pero el índice y el footer se escriben al final; el lector
 exige ambos para abrir un dataset válido. Mantener esta publicación validada y atómica. Para abrir
 una conversión antes de terminar haría falta un protocolo separado de manifiestos/checkpoints
 versionados o páginas de índice publicadas, además de una política para LOD provisional; no basta con
@@ -1267,7 +1260,7 @@ si hacen falta para reproducir nuevos fallos.
 | Componente | Responsabilidad final | Dependencias principales |
 | --- | --- | --- |
 | `viewer_core` | Geometría, atributos, jerarquía, LOD, transición de cortes, consulta, planificación priorizada y caché de bloques independiente de plataforma. | Modelo compartido; no depende de WASM, DOM, I/O ni `wgpu`; el executor queda fuera. |
-| `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; pruebas de compatibilidad. |
+| `viewer_format` | Especificación, lectura/escritura, índices y bloques comprimidos del formato propio. | Modelo espacial de `viewer_core`; validación y pruebas del layout v4. |
 | `viewer_convert` | Conversión LAS/LAZ por bloques y EPT local `laszip` aditivo, publicación validada, checkpoints LAS/LAZ, particiones 2/4/8 y paralelismo acotado. | `las`, `serde_json`, `viewer_core`, `viewer_format`; EPT remoto/otros codecs y evaluación de calidad visual siguen pendientes. |
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
@@ -1285,14 +1278,14 @@ La revisión de los cinco crates y del host web cerró estos cambios localizados
 - [x] Retirar `WgpuRenderer`, una capa de estado CPU que no presentaba en GPU. `ViewerController`
   conserva directamente escena y viewport; `RendererConfig` sigue configurando `SurfaceRenderer`.
   **Migración Rust:** usar `RenderScene::from_points`/`from_visible_batch` para construir escenas y
-  `SurfaceRenderer` para presentarlas. Las APIs WASM/JavaScript documentadas se conservan.
+  `SurfaceRenderer` para presentarlas. La segunda pasada conserva las APIs de uso actual y retira los wrappers descritos abajo.
 - [x] Unificar ingestión de puntos en el controller y añadir `SparseVoxelStore::insert_points(&[Point])`.
   La validación previa conserva la atomicidad ante puntos inválidos sin clonar el almacén existente.
 - [x] Compartir un acceso prestado a atributos escalares entre construcción de escenas y voxelización;
   eliminar los vectores temporales de conversión. `AttributeValues::len` cuenta escalares y
-  `PointBlock::into_parts` permite transferir el payload; el lector legacy ya no clona la geometría.
+  `PointBlock::into_parts` permite transferir el payload sin clonar la geometría.
 - [x] Separar `viewer_format` en contratos compartidos (`layout.rs`, `error.rs`, validación en
-  `metadata.rs`) y lector/escritor. Conservar layouts, checksums y lectura/escritura v1–v4.
+  `metadata.rs`) y lector/escritor. La segunda pasada reduce el soporte a v4 y conserva sus checksums.
 - [x] Extraer `browser_io.rs`: visor y conversor comparten el lector Blob sin depender de los bindings
   del otro. Delimitar código exclusivo de WASM sin ocultar avisos generales de código muerto.
 - [x] Centralizar el límite de staging de entrada del conversor. Corregir el CLI para que el valor
@@ -1300,19 +1293,73 @@ La revisión de los cinco crates y del host web cerró estos cambios localizados
 - [x] Liberar la conversión web cuando `postMessage` falla y rechazarla ante `messageerror`.
   Ambas regresiones y la apertura EPT desde CLI tienen pruebas reproducibles.
 
-Se mantienen las rutas de compatibilidad v1–v3, importación LAS incremental, snapshots paginados,
-preparación paralela de bloques y estadísticas por payload: tienen contratos o usos distintos.
-La ausencia de un caller interno por sí sola no demuestra que una API pública esté muerta. Las
-extensiones siguen entrando por los contratos existentes, con módulos separados por responsabilidad.
+Se conservan snapshots paginados, preparación paralela de bloques y estadísticas por payload;
+las extensiones entran por los contratos existentes, con módulos separados por responsabilidad.
 
 Validación de esta revisión: 204 tests Rust pasaron con `cargo test-fast --offline`; los dos tests
 GPU marcados `ignored` pasaron por separado con
 `cargo test -p viewer_render_wgpu --profile fast --offline -- --ignored`. Pasaron también Clippy
 con `-D warnings` en todos los targets nativos y en `viewer_wasm` para `wasm32-unknown-unknown`,
 formato, `git diff --check`, las cinco suites Node y los tres tests Python del host.
-Las pruebas incluyen compatibilidad v1–v4, atomicidad de inserción, atributos escalares, CLI EPT
+Las pruebas de esa revisión incluían versiones v1–v4, atomicidad de inserción, atributos escalares, CLI EPT
 y fallos de transporte del conversor. La navegación real en Chrome/Firefox, OPFS y los benchmarks
 de datasets grandes conservan sus criterios pendientes del plan; esta revisión no los mide.
+
+
+### Segunda pasada pre-release: soporte actual y dependencias
+
+- [x] Leer/escribir exclusivamente `.oct` v4. Retirar decodificador combinado, ramas v1–v3,
+  opción `with_columnar_payloads`, payloads opcionales y codec agregado de estadísticas.
+  La [especificación v4](crates/viewer_format/FORMAT_V4.md) es independiente; los cinco bytes
+  reservados del directorio siguen a cero para conservar el layout v4. Regeneradas las muestras
+  versionadas del host y de Outer Banks. Los `.oct` antiguos deben reconvertirse desde LAS/LAZ/EPT.
+- [x] Retirar `WasmLasImportSession`/`LasPointStream` y `readNext`, el importador RGB anterior;
+  LAS/LAZ entra por el conversor actual con columnas tipadas. Retirar `renderScene()` y su wrapper
+  Rust; `renderSceneBatch` es la única salida de snapshots. Se conservan APIs de puntos y bloques
+  decodificados para integraciones. `las` es dependencia de WASM solo en ese target.
+- [x] Compartir `AttributeValues::empty`, `select_rows` y `extend_from` en `viewer_core`, con
+  tipos/índices/tamaños comprobados, reserva fallible y preservación de bits. Reutilizarlas en
+  partición, representantes y lectura de filas. `PayloadDirectoryEntry` expresa su contenido;
+  las pruebas grandes de lector/escritor viven en módulos propios.
+- [x] Reutilizar un buffer crudo por geometría/columna al escribir y reservar la salida comprimida
+  según crece. El lector comparte el directorio mediante `Arc` sin clonar su vector por lectura.
+- [x] Retirar la dependencia de desarrollo `viewer_convert → viewer_render_wgpu`: el benchmark
+  informa conversión/lectura/almacenamiento y estimaciones CPU explícitas. Los conteos de codec
+  usan payloads reales (`lz4_payload_count`, `raw_payload_count`), porque un bloque v4 puede mezclar
+  codecs. Los perfiles `fast`, `perf` y `release` conservan sus objetivos de iteración, rendimiento
+  nativo y tamaño WASM; no se cambian backends de GPU.
+
+Medición local del 10-10-2026, Rust 1.99.0, Linux, cuatro jobs, base `f8053a3` frente a esta pasada:
+`cargo test -p viewer_convert --profile fast --offline --no-run --jobs 4 --target-dir /tmp/TARGET`
+en dos directorios de compilación inicialmente vacíos. La base se extrajo con `git archive f8053a3`.
+No había otra compilación ejecutándose. Es una ejecución por revisión, con caché de archivos del
+sistema sin controlar; no representa todo el workspace ni certifica una mejora estable.
+
+| Preparación de tests del conversor | Base | Actual |
+| --- | ---: | ---: |
+| Tiempo de pared (`/usr/bin/time`) | 18,51 s | 8,29 s |
+| Pico RSS del comando | 885.400 KiB | 416.376 KiB |
+| Paquetes distintos en `cargo tree -p viewer_convert --edges normal,build,dev --prefix none` | 89 | 40 |
+
+La comparación de ejecución usó binarios `real_dataset_bench` compilados con `--profile perf`,
+`fs_e432_n4002_18.las` (149.730 puntos), un worker y división 2. Tres pares alternados antes/después,
+con salidas distintas en `/tmp`, produjeron siempre **3.046.648 B** con SHA-256
+`733e7793200980e98eab93214676f939c29fdba5b674af0382c489651f50f473`.
+
+| Mediana de tres ejecuciones | Base | Actual |
+| --- | ---: | ---: |
+| Conversión | 69,250 ms | 70,062 ms |
+| Lectura completa, decode y CRC | 23,464 ms | 25,756 ms |
+| Pico RSS de conversión | 24.360 KiB | 24.240 KiB |
+
+Comandos de cada binario: `real_dataset_bench convert INPUT.las OUTPUT.oct 1 2` y
+`real_dataset_bench read OUTPUT.oct`. La muestra es pequeña y no demuestra aceleración de ejecución;
+la reducción estructural de dependencias y buffers no sustituye medir grandes datasets.
+
+Validación: 203 tests Rust y dos tests GPU ejecutados por separado, cinco suites Node y tres tests
+Python del host; formato y Clippy con `-D warnings` en todos los targets nativos y WASM. Las pruebas
+nativas no sustituyen repetir las validaciones visuales de navegador pendientes del plan. Las mediciones históricas v1–v3
+se conservan identificadas por versión, aunque el lector actual ya no abre esos archivos.
 
 ## Decisiones pendientes que afectan el plan
 
@@ -1322,7 +1369,7 @@ cambian alcance, rendimiento y compatibilidad:
 - ¿Qué sistemas operativos, mínimos de RAM y clases de GPU forman el perfil oficial? Chrome y Firefox
   con WebGPU son los navegadores elegidos; solo Chrome ha permitido verificar flujos parciales, sin
   confirmar todavía la salida visual ni la cancelación de lectura local.
-- ¿Qué dimensiones LAS/LAZ se deben preservar en v1 y cuáles pueden convertirse o descartarse con
+- ¿Qué dimensiones LAS/LAZ se deben preservar en el formato y cuáles pueden convertirse o descartarse con
   aviso explícito?
 - ¿La salida es un contenedor único, un conjunto de archivos o ambos? Esta decisión afecta escrituras
   interrumpidas, almacenamiento remoto y lectura aleatoria.

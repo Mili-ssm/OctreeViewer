@@ -1,23 +1,19 @@
-//! Binary layout shared by the reader and writer. Changes must preserve versioned files.
+//! Binary layout shared by the reader and writer. Only the current pre-release version is supported.
 use viewer_core::AttributeDataType;
 
 use crate::{BlockCodec, FormatError};
 
+pub const FORMAT_VERSION: u16 = 4;
+
 pub(crate) const HEADER_SIZE: u64 = 24;
 pub(crate) const FOOTER_SIZE: u64 = 40;
 pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
-pub(crate) const INDEX_MAGIC_V1: &[u8; 8] = b"OCTVIDX1";
-pub(crate) const INDEX_MAGIC_V2: &[u8; 8] = b"OCTVIDX2";
-pub(crate) const INDEX_MAGIC_V3: &[u8; 8] = b"OCTVIDX3";
-pub(crate) const INDEX_MAGIC_V4: &[u8; 8] = b"OCTVIDX4";
-pub(crate) const FOOTER_MAGIC_V4: &[u8; 8] = b"OCTVEND4";
-pub(crate) const FOOTER_MAGIC_V1: &[u8; 8] = b"OCTVEND1";
-pub(crate) const FOOTER_MAGIC_V2: &[u8; 8] = b"OCTVEND2";
-pub(crate) const FOOTER_MAGIC_V3: &[u8; 8] = b"OCTVEND3";
+pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX4";
+pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND4";
 
 /// One independently compressed payload. Offsets are relative to its owning block.
 #[derive(Debug, Clone)]
-pub(crate) struct ColumnPayload {
+pub(crate) struct PayloadDirectoryEntry {
     pub offset: u64,
     pub stored_length: u64,
     pub raw_length: u64,

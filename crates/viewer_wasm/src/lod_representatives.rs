@@ -63,7 +63,11 @@ impl VoxelRepresentativeBuffer {
         let count = self.point_count();
         let mut positions = Vec::with_capacity(count);
         let mut colors = Vec::with_capacity(count);
-        let mut attributes = self.schema.iter().map(empty_values).collect::<Vec<_>>();
+        let mut attributes = self
+            .schema
+            .iter()
+            .map(|descriptor| AttributeValues::empty(descriptor.data_type()))
+            .collect::<Vec<_>>();
         for (index, voxel) in self.voxels.into_iter().enumerate() {
             let Some(voxel) = voxel else {
                 continue;
@@ -87,7 +91,9 @@ impl VoxelRepresentativeBuffer {
                 if descriptor.name() == "rgb" {
                     append_average_rgb(target, &voxel.rgb_sum, voxel.count)?;
                 } else {
-                    append_values(target, nearest)?;
+                    target
+                        .extend_from(nearest)
+                        .map_err(|error| error.to_string())?;
                 }
             }
         }
@@ -171,76 +177,14 @@ impl VoxelAccumulator {
     }
 }
 
-fn empty_values(descriptor: &AttributeDescriptor) -> AttributeValues {
-    match descriptor.data_type() {
-        viewer_core::AttributeDataType::U8 => AttributeValues::U8(Vec::new()),
-        viewer_core::AttributeDataType::I8 => AttributeValues::I8(Vec::new()),
-        viewer_core::AttributeDataType::U16 => AttributeValues::U16(Vec::new()),
-        viewer_core::AttributeDataType::I16 => AttributeValues::I16(Vec::new()),
-        viewer_core::AttributeDataType::U32 => AttributeValues::U32(Vec::new()),
-        viewer_core::AttributeDataType::I32 => AttributeValues::I32(Vec::new()),
-        viewer_core::AttributeDataType::U64 => AttributeValues::U64(Vec::new()),
-        viewer_core::AttributeDataType::I64 => AttributeValues::I64(Vec::new()),
-        viewer_core::AttributeDataType::F32 => AttributeValues::F32(Vec::new()),
-        viewer_core::AttributeDataType::F64 => AttributeValues::F64(Vec::new()),
-    }
-}
-
 fn select_value(
     source: &AttributeValues,
     index: usize,
     components: usize,
 ) -> Result<AttributeValues, String> {
-    let start = index
-        .checked_mul(components)
-        .ok_or("attribute sample index overflow")?;
-    let end = start
-        .checked_add(components)
-        .ok_or("attribute sample index overflow")?;
-    macro_rules! select {
-        ($values:expr, $variant:ident) => {
-            Ok(AttributeValues::$variant(
-                $values
-                    .get(start..end)
-                    .ok_or("attribute sample is out of range")?
-                    .to_vec(),
-            ))
-        };
-    }
-    match source {
-        AttributeValues::U8(values) => select!(values, U8),
-        AttributeValues::I8(values) => select!(values, I8),
-        AttributeValues::U16(values) => select!(values, U16),
-        AttributeValues::I16(values) => select!(values, I16),
-        AttributeValues::U32(values) => select!(values, U32),
-        AttributeValues::I32(values) => select!(values, I32),
-        AttributeValues::U64(values) => select!(values, U64),
-        AttributeValues::I64(values) => select!(values, I64),
-        AttributeValues::F32(values) => select!(values, F32),
-        AttributeValues::F64(values) => select!(values, F64),
-    }
-}
-
-fn append_values(target: &mut AttributeValues, values: &AttributeValues) -> Result<(), String> {
-    macro_rules! append {
-        ($target:expr, $values:expr) => {{
-            $target.extend_from_slice($values);
-            Ok(())
-        }};
-    }
-    match (target, values) {
-        (AttributeValues::U8(target), AttributeValues::U8(values)) => append!(target, values),
-        (AttributeValues::I8(target), AttributeValues::I8(values)) => append!(target, values),
-        (AttributeValues::U16(target), AttributeValues::U16(values)) => append!(target, values),
-        (AttributeValues::I16(target), AttributeValues::I16(values)) => append!(target, values),
-        (AttributeValues::U32(target), AttributeValues::U32(values)) => append!(target, values),
-        (AttributeValues::I32(target), AttributeValues::I32(values)) => append!(target, values),
-        (AttributeValues::U64(target), AttributeValues::U64(values)) => append!(target, values),
-        (AttributeValues::I64(target), AttributeValues::I64(values)) => append!(target, values),
-        (AttributeValues::F32(target), AttributeValues::F32(values)) => append!(target, values),
-        (AttributeValues::F64(target), AttributeValues::F64(values)) => append!(target, values),
-        _ => Err("attribute types differ while building voxel representatives".into()),
-    }
+    source
+        .select_rows(&[index], components)
+        .map_err(|error| error.to_string())
 }
 
 fn append_average_rgb(

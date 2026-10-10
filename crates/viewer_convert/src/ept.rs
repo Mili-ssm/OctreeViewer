@@ -771,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn converts_local_laszip_ept_pages_as_additive_v3_hierarchy() {
+    fn converts_local_laszip_ept_pages_as_additive_hierarchy() {
         let root = dir();
         fs::create_dir_all(root.join("ept-data")).unwrap();
         fs::create_dir_all(root.join("ept-hierarchy")).unwrap();

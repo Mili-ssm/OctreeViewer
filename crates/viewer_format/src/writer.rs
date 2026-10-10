@@ -9,13 +9,12 @@ use viewer_core::{
 };
 
 use crate::layout::{
-    ColumnPayload, FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_MAGIC_V3, FOOTER_MAGIC_V4, FOOTER_SIZE,
-    HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC_V1, INDEX_MAGIC_V2, INDEX_MAGIC_V3, INDEX_MAGIC_V4,
-    attribute_payload_size, block_payload_size,
+    FOOTER_MAGIC, FOOTER_SIZE, FORMAT_VERSION, HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC,
+    PayloadDirectoryEntry, attribute_payload_size, block_payload_size,
 };
 use crate::metadata::validate_metadata;
 use crate::{
-    BlockCodec, Crc32, FormatError, FormatMetadata, SourcePointBlock, compress_block, crc32,
+    Crc32, FormatError, FormatMetadata, SourcePointBlock, compress_block, crc32,
     quantize_local_positions,
 };
 
@@ -24,7 +23,6 @@ use crate::{
 pub struct FormatWriterOptions {
     max_quantization_error: f64,
     max_uncompressed_block_bytes: u64,
-    columnar_payloads: bool,
 }
 
 impl FormatWriterOptions {
@@ -43,15 +41,7 @@ impl FormatWriterOptions {
         Ok(Self {
             max_quantization_error,
             max_uncompressed_block_bytes,
-            columnar_payloads: true,
         })
-    }
-
-    /// Controls independently compressed geometry and attribute columns (v4, enabled by default).
-    /// Disable only to write the smallest compatible legacy version.
-    pub fn with_columnar_payloads(mut self, enabled: bool) -> Self {
-        self.columnar_payloads = enabled;
-        self
     }
 }
 
@@ -62,11 +52,9 @@ pub struct PreparedPointBlock {
     quantization_error: f64,
     origin: [f64; 3],
     scale: [f64; 3],
-    codec: BlockCodec,
-    checksum: u32,
     world_bounds: Option<SpatialBounds>,
     bytes: Vec<u8>,
-    columns: Option<Vec<ColumnPayload>>,
+    payloads: Vec<PayloadDirectoryEntry>,
 }
 
 /// Writes independently encoded blocks and a canonical index to a fresh seekable stream.
@@ -92,7 +80,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         writer.seek(SeekFrom::Start(0))?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
-        writer.write_all(&header_bytes(format_version(&metadata, options)))?;
+        writer.write_all(&header_bytes())?;
         Ok(Self {
             writer,
             metadata,
@@ -115,11 +103,6 @@ impl<W: Write + Seek> FormatWriter<W> {
         prepared: PreparedPointBlock,
     ) -> Result<(), FormatError> {
         self.ensure_block_available(prepared.id)?;
-        if prepared.columns.is_some() != self.options.columnar_payloads {
-            return Err(FormatError::InvalidMetadata(
-                "prepared block encoding differs from writer options",
-            ));
-        }
         let offset = self.writer.stream_position()?;
         let payload_length = u64::try_from(prepared.bytes.len())
             .map_err(|_| FormatError::SizeOutOfRange(prepared.bytes.len() as u64))?;
@@ -136,10 +119,8 @@ impl<W: Write + Seek> FormatWriter<W> {
                 quantization_error: prepared.quantization_error,
                 origin: prepared.origin,
                 scale: prepared.scale,
-                codec: prepared.codec,
-                checksum: prepared.checksum,
                 world_bounds: prepared.world_bounds,
-                columns: prepared.columns,
+                payloads: prepared.payloads,
             },
         );
         Ok(())
@@ -172,21 +153,14 @@ impl<W: Write + Seek> FormatWriter<W> {
 
         let metadata = self.adjusted_metadata()?;
         validate_metadata(&metadata)?;
-        let version = format_version(&metadata, self.options);
         let index_offset = self.writer.stream_position()?;
         let (index_length, index_checksum) =
-            write_index(&mut self.writer, &metadata, &self.blocks, version)?;
+            write_index(&mut self.writer, &metadata, &self.blocks)?;
         let file_length = index_offset
             .checked_add(index_length)
             .and_then(|value| value.checked_add(FOOTER_SIZE))
             .ok_or(FormatError::FileSizeOverflow)?;
-        let footer = footer_bytes(
-            index_offset,
-            index_length,
-            file_length,
-            index_checksum,
-            version,
-        );
+        let footer = footer_bytes(index_offset, index_length, file_length, index_checksum);
         self.writer.write_all(&footer)?;
         self.writer.flush()?;
         Ok(self.writer)
@@ -304,46 +278,27 @@ pub fn prepare_point_block(
             limit: options.max_uncompressed_block_bytes,
         });
     }
-    let uncompressed_size_usize = usize::try_from(uncompressed_size)
-        .map_err(|_| FormatError::SizeOutOfRange(uncompressed_size))?;
     let quantized =
         quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
     let decoded = quantized.decode_local()?;
-    let payload = encode_payload(&block, &attributes, &quantized, uncompressed_size_usize)?;
-    let (bytes, codec, columns) = if options.columnar_payloads {
-        let mut bytes = Vec::new();
-        bytes
-            .try_reserve_exact(payload.len())
-            .map_err(|_| FormatError::AllocationFailed(payload.len()))?;
-        let mut columns = Vec::new();
-        columns
-            .try_reserve_exact(schema.len() + 1)
-            .map_err(|_| FormatError::AllocationFailed(schema.len() + 1))?;
-        let geometry_length = usize::try_from(block_payload_size(point_count, &[])?)
-            .map_err(|_| FormatError::BlockSizeOverflow)?;
-        let mut start = 0;
-        for length in std::iter::once(Ok(geometry_length)).chain(schema.iter().map(|descriptor| {
-            let length = attribute_payload_size(point_count as u64, descriptor)?;
-            usize::try_from(length).map_err(|_| FormatError::SizeOutOfRange(length))
-        })) {
-            let length = length?;
-            let encoded = compress_block(&payload[start..start + length]);
-            columns.push(ColumnPayload {
-                offset: bytes.len() as u64,
-                stored_length: encoded.bytes().len() as u64,
-                raw_length: length as u64,
-                codec: encoded.codec(),
-                checksum: crc32(encoded.bytes()),
-            });
-            bytes.extend_from_slice(encoded.bytes());
-            start += length;
-        }
-        (bytes, BlockCodec::None, Some(columns))
-    } else {
-        let encoded = compress_block(&payload);
-        (encoded.bytes().to_vec(), encoded.codec(), None)
-    };
-    let checksum = if columns.is_some() { 0 } else { crc32(&bytes) };
+    let geometry_length = usize::try_from(block_payload_size(point_count, &[])?)
+        .map_err(|_| FormatError::BlockSizeOverflow)?;
+    let mut raw = encode_geometry(&block, &quantized, geometry_length)?;
+    let mut bytes = Vec::new();
+    let mut payloads = Vec::new();
+    payloads
+        .try_reserve_exact(schema.len() + 1)
+        .map_err(|_| FormatError::AllocationFailed(schema.len() + 1))?;
+    append_payload(&raw, &mut bytes, &mut payloads)?;
+    for column in attributes {
+        let length = attribute_payload_size(point_count as u64, column.descriptor())?;
+        let length = usize::try_from(length).map_err(|_| FormatError::SizeOutOfRange(length))?;
+        raw.clear();
+        raw.try_reserve_exact(length)
+            .map_err(|_| FormatError::AllocationFailed(length))?;
+        encode_values(column.values(), &mut raw);
+        append_payload(&raw, &mut bytes, &mut payloads)?;
+    }
     let world_bounds = block_world_bounds(block.positions_local(), &decoded, metadata.dataset())?;
     Ok(PreparedPointBlock {
         id: block.id(),
@@ -351,11 +306,9 @@ pub fn prepare_point_block(
         quantization_error: quantized.max_error(),
         origin: quantized.transform().origin(),
         scale: quantized.transform().scale(),
-        codec,
-        checksum,
         world_bounds,
         bytes,
-        columns,
+        payloads,
     })
 }
 
@@ -367,10 +320,8 @@ struct BlockRecord {
     quantization_error: f64,
     origin: [f64; 3],
     scale: [f64; 3],
-    codec: BlockCodec,
-    checksum: u32,
     world_bounds: Option<SpatialBounds>,
-    columns: Option<Vec<ColumnPayload>>,
+    payloads: Vec<PayloadDirectoryEntry>,
 }
 
 fn build_block_nodes(
@@ -443,9 +394,8 @@ fn order_attributes<'a>(
     Ok(ordered)
 }
 
-fn encode_payload(
+fn encode_geometry(
     block: &SourcePointBlock,
-    attributes: &[&viewer_core::AttributeColumn],
     quantized: &crate::QuantizedCoordinates,
     expected_size: usize,
 ) -> Result<Vec<u8>, FormatError> {
@@ -461,9 +411,6 @@ fn encode_payload(
     for color in block.colors() {
         bytes.extend_from_slice(&[color.r, color.g, color.b]);
     }
-    for column in attributes {
-        encode_values(column.values(), &mut bytes);
-    }
     if bytes.len() != expected_size {
         return Err(FormatError::InternalPayloadSize {
             expected: expected_size,
@@ -471,6 +418,27 @@ fn encode_payload(
         });
     }
     Ok(bytes)
+}
+
+/// Compresses one independent payload without retaining a combined raw block.
+fn append_payload(
+    raw: &[u8],
+    bytes: &mut Vec<u8>,
+    payloads: &mut Vec<PayloadDirectoryEntry>,
+) -> Result<(), FormatError> {
+    let encoded = compress_block(raw);
+    bytes
+        .try_reserve(encoded.bytes().len())
+        .map_err(|_| FormatError::AllocationFailed(encoded.bytes().len()))?;
+    payloads.push(PayloadDirectoryEntry {
+        offset: bytes.len() as u64,
+        stored_length: encoded.bytes().len() as u64,
+        raw_length: raw.len() as u64,
+        codec: encoded.codec(),
+        checksum: crc32(encoded.bytes()),
+    });
+    bytes.extend_from_slice(encoded.bytes());
+    Ok(())
 }
 
 fn encode_values(values: &AttributeValues, output: &mut Vec<u8>) {
@@ -575,24 +543,10 @@ impl BoundsAccumulator {
     }
 }
 
-fn format_version(metadata: &FormatMetadata, options: FormatWriterOptions) -> u16 {
-    if options.columnar_payloads {
-        return 4;
-    }
-    if metadata.visual_scale() != 1.0 {
-        3
-    } else {
-        match metadata.dataset().hierarchy().semantics() {
-            HierarchySemantics::Replacement => 1,
-            HierarchySemantics::Additive => 2,
-        }
-    }
-}
-
-fn header_bytes(version: u16) -> [u8; HEADER_SIZE as usize] {
+fn header_bytes() -> [u8; HEADER_SIZE as usize] {
     let mut bytes = [0; HEADER_SIZE as usize];
     bytes[..8].copy_from_slice(HEADER_MAGIC);
-    bytes[8..10].copy_from_slice(&version.to_le_bytes());
+    bytes[8..10].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
     bytes[10..12].copy_from_slice(&(HEADER_SIZE as u16).to_le_bytes());
     let checksum = crc32(&bytes[..20]);
     bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
@@ -604,19 +558,9 @@ fn footer_bytes(
     index_length: u64,
     file_length: u64,
     index_crc: u32,
-    version: u16,
 ) -> [u8; 40] {
     let mut bytes = [0; 40];
-    let magic = if version >= 4 {
-        FOOTER_MAGIC_V4
-    } else if version >= 3 {
-        FOOTER_MAGIC_V3
-    } else if version == 2 {
-        FOOTER_MAGIC_V2
-    } else {
-        FOOTER_MAGIC_V1
-    };
-    bytes[..8].copy_from_slice(magic);
+    bytes[..8].copy_from_slice(FOOTER_MAGIC);
     bytes[8..16].copy_from_slice(&index_offset.to_le_bytes());
     bytes[16..24].copy_from_slice(&index_length.to_le_bytes());
     bytes[24..32].copy_from_slice(&file_length.to_le_bytes());
@@ -664,23 +608,13 @@ fn write_index<W: Write>(
     writer: &mut W,
     metadata: &FormatMetadata,
     blocks: &BTreeMap<BlockId, BlockRecord>,
-    version: u16,
 ) -> Result<(u64, u32), FormatError> {
     let mut index = IndexWriter {
         writer,
         checksum: Crc32::new(),
         length: 0,
     };
-    let index_magic = if version >= 4 {
-        INDEX_MAGIC_V4
-    } else if version >= 3 {
-        INDEX_MAGIC_V3
-    } else if version == 2 {
-        INDEX_MAGIC_V2
-    } else {
-        INDEX_MAGIC_V1
-    };
-    index.write(index_magic)?;
+    index.write(INDEX_MAGIC)?;
     for coordinate in metadata.dataset().coordinate_frame().origin() {
         index.f64(coordinate)?;
     }
@@ -694,15 +628,11 @@ fn write_index<W: Write>(
     write_string(&mut index, metadata.sampling_policy())?;
 
     let hierarchy = metadata.dataset().hierarchy();
-    if version >= 2 {
-        index.u8(match hierarchy.semantics() {
-            HierarchySemantics::Replacement => 0,
-            HierarchySemantics::Additive => 1,
-        })?;
-    }
-    if version >= 3 {
-        index.f64(metadata.visual_scale())?;
-    }
+    index.u8(match hierarchy.semantics() {
+        HierarchySemantics::Replacement => 0,
+        HierarchySemantics::Additive => 1,
+    })?;
+    index.f64(metadata.visual_scale())?;
     index.u32(
         u32::try_from(hierarchy.attributes().len()).map_err(|_| FormatError::SchemaTooLarge)?,
     )?;
@@ -774,20 +704,15 @@ fn write_index<W: Write>(
         for value in block.scale {
             index.f64(value)?;
         }
-        index.u8(block.codec as u8)?;
-        index.u32(block.checksum)?;
-        if version >= 4 {
-            let columns = block
-                .columns
-                .as_ref()
-                .ok_or(FormatError::InvalidMetadata("missing column directory"))?;
-            for column in columns {
-                index.u64(column.offset)?;
-                index.u64(column.stored_length)?;
-                index.u64(column.raw_length)?;
-                index.u8(column.codec as u8)?;
-                index.u32(column.checksum)?;
-            }
+        // Reserved aggregate fields in the v4 layout; codecs and CRCs belong to payloads.
+        index.u8(0)?;
+        index.u32(0)?;
+        for payload in &block.payloads {
+            index.u64(payload.offset)?;
+            index.u64(payload.stored_length)?;
+            index.u64(payload.raw_length)?;
+            index.u8(payload.codec as u8)?;
+            index.u32(payload.checksum)?;
         }
     }
     let length = index.length;
@@ -873,176 +798,5 @@ fn attribute_type_tag(data_type: AttributeDataType) -> u8 {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::io::Cursor;
-
-    use viewer_core::{
-        AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId,
-        ColorRgb, CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy,
-        SpatialNode,
-    };
-
-    use crate::{FormatMetadata, SourcePointBlock, crc32};
-
-    use super::{FormatError, FormatWriter, FormatWriterOptions};
-
-    fn sample_metadata() -> FormatMetadata {
-        let origin = [1_000_000_000_000.0, -2_000_000_000_000.0, 10.0];
-        let bounds =
-            SpatialBounds::new(origin, [origin[0] + 2.0, origin[1] + 1.0, origin[2] + 1.0])
-                .unwrap();
-        let block = BlockId::new(7);
-        let root = SpatialNode::new(NodeId::new(0), None, 0, bounds, 2, 0.25, vec![block]).unwrap();
-        let intensity = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
-        let hierarchy = SpatialHierarchy::new(vec![root], vec![intensity], Some(2)).unwrap();
-        FormatMetadata::new(
-            DatasetMetadata::new(CoordinateFrame::new(origin).unwrap(), hierarchy),
-            Some("EPSG:4978".to_owned()),
-            Some("uniform voxel sampling".to_owned()),
-            Vec::new(),
-        )
-        .unwrap()
-    }
-
-    fn sample_block() -> SourcePointBlock {
-        let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
-        let attribute =
-            AttributeColumn::new(descriptor, AttributeValues::U16(vec![100, 200]), 2).unwrap();
-        SourcePointBlock::new(
-            BlockId::new(7),
-            vec![[0.25, 0.5, 0.0], [1.5, 0.75, 1.0]],
-            vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
-            vec![attribute],
-        )
-    }
-
-    fn options() -> FormatWriterOptions {
-        FormatWriterOptions::new(0.001, 1024)
-            .unwrap()
-            .with_columnar_payloads(false)
-    }
-
-    #[test]
-    fn writes_a_closed_file_with_checksums_and_quantized_block() {
-        let writer =
-            FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
-        let mut writer = writer;
-        writer.write_block(sample_block()).unwrap();
-        let bytes = writer.finish().unwrap().into_inner();
-
-        assert_eq!(&bytes[..8], b"OCTVWFRM");
-        assert_eq!(
-            u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
-            crc32(&bytes[..20])
-        );
-        assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND1");
-        assert_eq!(
-            u64::from_le_bytes(bytes[bytes.len() - 16..bytes.len() - 8].try_into().unwrap()),
-            bytes.len() as u64
-        );
-        let index_offset = u64::from_le_bytes(
-            bytes[bytes.len() - 32..bytes.len() - 24]
-                .try_into()
-                .unwrap(),
-        ) as usize;
-        let index_length = u64::from_le_bytes(
-            bytes[bytes.len() - 24..bytes.len() - 16]
-                .try_into()
-                .unwrap(),
-        ) as usize;
-        let index = &bytes[index_offset..index_offset + index_length];
-        assert_eq!(&index[..8], b"OCTVIDX1");
-        assert_eq!(
-            u32::from_le_bytes(bytes[bytes.len() - 8..bytes.len() - 4].try_into().unwrap()),
-            crc32(index)
-        );
-        assert_eq!(
-            u32::from_le_bytes(bytes[bytes.len() - 4..].try_into().unwrap()),
-            crc32(&bytes[bytes.len() - 40..bytes.len() - 4])
-        );
-    }
-
-    #[test]
-    fn defaults_to_v4_and_rejects_prepared_blocks_from_another_encoding_mode() {
-        let metadata = sample_metadata();
-        let defaults = FormatWriterOptions::new(0.001, 1024).unwrap();
-        let mut writer =
-            FormatWriter::new(Cursor::new(Vec::new()), metadata.clone(), defaults).unwrap();
-        let legacy = super::prepare_point_block(
-            sample_block(),
-            &metadata,
-            defaults.with_columnar_payloads(false),
-        )
-        .unwrap();
-        assert!(matches!(
-            writer.write_prepared_block(legacy),
-            Err(FormatError::InvalidMetadata(_))
-        ));
-        // Rejection occurred before appending, so the same writer can still finish normally.
-        let prepared = super::prepare_point_block(sample_block(), &metadata, defaults).unwrap();
-        writer.write_prepared_block(prepared).unwrap();
-        let bytes = writer.finish().unwrap().into_inner();
-        assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
-    }
-
-    #[test]
-    fn refuses_to_finalize_when_a_referenced_block_is_missing() {
-        let writer =
-            FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
-
-        assert!(matches!(
-            writer.finish(),
-            Err(FormatError::MissingBlock(block)) if block.get() == 7
-        ));
-    }
-
-    #[test]
-    fn validates_attribute_schema_and_point_counts_before_writing_a_block() {
-        let mut writer =
-            FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
-        let sample = sample_block();
-        let wrong_descriptor =
-            AttributeDescriptor::new("classification", AttributeDataType::U8, 1).unwrap();
-        let wrong_column =
-            AttributeColumn::new(wrong_descriptor, AttributeValues::U8(vec![1, 2]), 2).unwrap();
-        let block = SourcePointBlock::new(
-            sample.id(),
-            sample.positions_local().to_vec(),
-            sample.colors().to_vec(),
-            vec![wrong_column],
-        );
-
-        assert!(matches!(
-            writer.write_block(block),
-            Err(FormatError::MissingAttribute(name)) if name == "intensity"
-        ));
-    }
-
-    #[test]
-    fn refuses_a_quantization_error_above_the_declared_limit() {
-        let mut writer = FormatWriter::new(
-            Cursor::new(Vec::new()),
-            sample_metadata(),
-            FormatWriterOptions::new(0.0, 1024).unwrap(),
-        )
-        .unwrap();
-        let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
-        let attribute =
-            AttributeColumn::new(descriptor, AttributeValues::U16(vec![100, 150, 200]), 3).unwrap();
-        let block = SourcePointBlock::new(
-            BlockId::new(7),
-            vec![[0.25, 0.5, 0.0], [0.8, 0.6, 0.3], [1.5, 0.75, 1.0]],
-            vec![
-                ColorRgb::new(10, 20, 30),
-                ColorRgb::new(20, 30, 40),
-                ColorRgb::new(40, 50, 60),
-            ],
-            vec![attribute],
-        );
-
-        assert!(matches!(
-            writer.write_block(block),
-            Err(FormatError::Quantization(_))
-        ));
-    }
-}
+#[path = "writer_tests.rs"]
+mod tests;

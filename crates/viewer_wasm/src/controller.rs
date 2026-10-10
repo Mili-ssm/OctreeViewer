@@ -38,23 +38,6 @@ pub struct RenderInstanceSnapshot {
     pub color: [f32; 4],
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct RenderSceneSnapshot {
-    pub instances: Vec<RenderInstanceSnapshot>,
-}
-
-impl From<&RenderScene> for RenderSceneSnapshot {
-    fn from(scene: &RenderScene) -> Self {
-        let instances = scene
-            .instances()
-            .iter()
-            .map(|instance| RenderInstanceSnapshot::from(*instance))
-            .collect();
-
-        Self { instances }
-    }
-}
-
 impl From<InstanceRaw> for RenderInstanceSnapshot {
     fn from(instance: InstanceRaw) -> Self {
         Self {
@@ -181,10 +164,6 @@ impl ViewerController {
 
     pub fn render_scene(&self) -> &RenderScene {
         &self.scene
-    }
-
-    pub fn render_scene_snapshot(&self) -> RenderSceneSnapshot {
-        RenderSceneSnapshot::from(&self.scene)
     }
 
     pub fn stats(&self) -> ViewerStats {

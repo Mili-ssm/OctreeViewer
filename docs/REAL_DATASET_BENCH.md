@@ -444,7 +444,7 @@ Tamaños de registro verificados por pruebas de codificación y lectura:
 | 8 | 43 B | 55 B | −21,82 % | 0 % |
 
 Estos porcentajes describen el tamaño por registro, no el pico temporal ni el tiempo de conversión.
-Aún falta repetir las conversiones completas de Albuera y Majadas con el perfil release v3 y medir
+Aún falta repetir las conversiones completas de Albuera y Majadas con el perfil release y writer v4 actuales y medir
 duración por fase, bytes temporales/pico, RSS y salida v4. Por tanto, el objetivo de 120 s sigue sin
 demostrar y no se atribuye una mejora de rendimiento a la reducción del spool hasta completar esas
 medidas.
@@ -478,3 +478,7 @@ medidas v4 de Belvedere, Albuera y Majadas y una comparación de lectura sobre b
 El primer intento de convertir Albuera falló por cuota de `/tmp`; un segundo intento reubicado en el
 volumen del checkout se interrumpió sin resultado con el spool temporal en 27 GB. Ninguno cuenta como
 benchmark. Repetir esas medidas con una cuota suficiente y registrar explícitamente el pico temporal.
+
+Desde la limpieza pre-release del 10 de octubre, el lector soporta solo v4. Las medidas v1–v3
+conservadas aquí son evidencia histórica; sus archivos deben reconvertirse desde LAS/LAZ/EPT para
+abrirlos con la versión actual.

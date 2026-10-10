@@ -4,61 +4,14 @@ use wasm_bindgen::prelude::*;
 use web_sys::{Blob, HtmlCanvasElement};
 
 use crate::{
-    LasPointStream, LodDataset, LodViewStats, RenderInstanceSnapshot, RenderSceneSnapshot,
-    ViewerConfig, ViewerController, ViewerError, browser_io::BrowserBlobReader,
-    lod_dataset::next_lod_stage, lod_metadata::LodDatasetDescriptor,
+    LodDataset, LodViewStats, RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError,
+    browser_io::BrowserBlobReader, lod_dataset::next_lod_stage, lod_metadata::LodDatasetDescriptor,
 };
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 
 const WASM_POINT_BATCH_POINTS: usize = 16_384;
 const MAX_WASM_TRANSFER_INSTANCES: usize = 16_384;
-#[wasm_bindgen]
-pub struct WasmLasImportSession {
-    inner: LasPointStream,
-}
-
-#[wasm_bindgen]
-impl WasmLasImportSession {
-    /// Opens a LAS or LAZ Blob. Construct this class in a dedicated Web Worker.
-    #[wasm_bindgen(constructor)]
-    pub fn new(file: Blob) -> Result<WasmLasImportSession, JsValue> {
-        let source = BrowserBlobReader::new(file, false)?;
-        let inner =
-            LasPointStream::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
-        Ok(Self { inner })
-    }
-
-    #[wasm_bindgen(js_name = readNext)]
-    pub fn read_next(&mut self, requested_points: u32) -> Result<JsValue, JsValue> {
-        let chunk = self
-            .inner
-            .read_next(u64::from(requested_points))
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
-
-        let result = js_sys::Object::new();
-        let positions = js_sys::Float32Array::from(chunk.positions.as_slice());
-        let colors = js_sys::Uint8Array::from(chunk.colors.as_slice());
-        let origin = js_sys::Float64Array::from(chunk.origin.as_slice());
-
-        js_sys::Reflect::set(&result, &"positions".into(), &positions)?;
-        js_sys::Reflect::set(&result, &"colors".into(), &colors)?;
-        js_sys::Reflect::set(&result, &"origin".into(), &origin)?;
-        js_sys::Reflect::set(
-            &result,
-            &"processedPoints".into(),
-            &JsValue::from_str(&chunk.processed_points.to_string()),
-        )?;
-        js_sys::Reflect::set(
-            &result,
-            &"totalPoints".into(),
-            &JsValue::from_str(&chunk.total_points.to_string()),
-        )?;
-        js_sys::Reflect::set(&result, &"done".into(), &JsValue::from_bool(chunk.done))?;
-        Ok(result.into())
-    }
-}
-
 #[wasm_bindgen]
 pub struct WasmVoxelViewer {
     inner: ViewerController,
@@ -480,18 +433,6 @@ impl WasmVoxelViewer {
         to_value(&self.inner.stats()).map_err(|error| JsValue::from_str(&error.to_string()))
     }
 
-    #[wasm_bindgen(js_name = renderScene)]
-    /// Returns a complete diagnostic snapshot only when it fits the transfer batch limit.
-    pub fn render_scene(&self) -> Result<JsValue, JsValue> {
-        if self.inner.render_scene().instance_count() > MAX_WASM_TRANSFER_INSTANCES {
-            return Err(JsValue::from_str(
-                "renderScene is limited to 16384 instances; use renderSceneBatch",
-            ));
-        }
-        let scene = self.inner.render_scene_snapshot();
-        to_value(&scene).map_err(|error| JsValue::from_str(&error.to_string()))
-    }
-
     #[wasm_bindgen(js_name = renderSceneBatch)]
     /// Returns a bounded diagnostic page of the current CPU render scene.
     pub fn render_scene_batch(&self, start: u32, count: u32) -> Result<JsValue, JsValue> {
@@ -503,13 +444,11 @@ impl WasmVoxelViewer {
         let instances = self.inner.render_scene().instances();
         let start = (start as usize).min(instances.len());
         let end = start.saturating_add(count as usize).min(instances.len());
-        let scene = RenderSceneSnapshot {
-            instances: instances[start..end]
-                .iter()
-                .copied()
-                .map(RenderInstanceSnapshot::from)
-                .collect(),
-        };
+        let scene = instances[start..end]
+            .iter()
+            .copied()
+            .map(RenderInstanceSnapshot::from)
+            .collect::<Vec<_>>();
         let result = js_sys::Object::new();
         js_sys::Reflect::set(&result, &"start".into(), &JsValue::from_f64(start as f64))?;
         js_sys::Reflect::set(
@@ -520,7 +459,7 @@ impl WasmVoxelViewer {
         js_sys::Reflect::set(
             &result,
             &"instances".into(),
-            &to_value(&scene.instances).map_err(|error| JsValue::from_str(&error.to_string()))?,
+            &to_value(&scene).map_err(|error| JsValue::from_str(&error.to_string()))?,
         )?;
         Ok(result.into())
     }
