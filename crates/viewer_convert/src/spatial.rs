@@ -14,7 +14,7 @@ use std::{
 use las::{PointData, PointDataBuilder, Reader};
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, NodeId, SpatialBounds,
-    SpatialHierarchy, SpatialNode,
+    SpatialHierarchy, SpatialNode, SpatialSubdivision,
 };
 use viewer_format::{FormatMetadata, SourcePointBlock};
 
@@ -569,6 +569,8 @@ impl SpatialBuilder<'_> {
             .take(SAMPLE_GRID_SIZE.pow(3))
             .collect::<Vec<Option<SampleAccumulator>>>();
         let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+        let subdivision = SpatialSubdivision::new(bounds, self.spatial_divisions)
+            .expect("converter subdivisions are validated");
         let point_limit = self
             .point_limit
             .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
@@ -588,7 +590,7 @@ impl SpatialBuilder<'_> {
                     axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
                     axis_bounds[1] = axis_bounds[1].max(point.position[axis]);
                 }
-                let child_key = child_index(point.position, bounds, self.spatial_divisions);
+                let child_key = subdivision.cell_index(point.position);
                 let child = children[child_key].get_or_insert_with(|| {
                     ChildSpool::new(
                         self.workspace
@@ -715,6 +717,8 @@ impl SpatialBuilder<'_> {
         let sample_cell_size = cube_side(bounds) / SAMPLE_GRID_SIZE as f64;
         let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
         let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+        let subdivision = SpatialSubdivision::new(bounds, self.spatial_divisions)
+            .expect("converter subdivisions are validated");
         let mut scanned = 0_u64;
         let mut source_reader =
             BufReader::with_capacity(SPOOL_IO_BUFFER_BYTES, File::open(&spool_path)?);
@@ -736,7 +740,7 @@ impl SpatialBuilder<'_> {
                 if scanned.is_multiple_of(self.point_limit) {
                     self.emit_plan_progress()?;
                 }
-                let child_key = child_index(point.position, bounds, self.spatial_divisions);
+                let child_key = subdivision.cell_index(point.position);
                 let child = children[child_key].get_or_insert_with(|| {
                     ChildSpool::new(
                         self.workspace
@@ -829,6 +833,8 @@ impl SpatialBuilder<'_> {
         children: Vec<Option<ChildSpool>>,
     ) -> Result<Vec<RootChildTask>, ConvertError> {
         let mut tasks = Vec::new();
+        let subdivision = SpatialSubdivision::new(bounds, self.spatial_divisions)
+            .expect("converter subdivisions are validated");
         for (child_key, child) in children.into_iter().enumerate() {
             let Some(child) = child else {
                 continue;
@@ -843,7 +849,9 @@ impl SpatialBuilder<'_> {
                 key: child_key,
                 path: child.path,
                 point_count: child.point_count,
-                bounds: child_bounds(bounds, child_key, self.spatial_divisions),
+                bounds: subdivision
+                    .cell_bounds(child_key)
+                    .expect("child index is in range"),
             });
         }
         Ok(tasks)
@@ -1581,50 +1589,19 @@ fn cube_side(bounds: SpatialBounds) -> f64 {
         .fold(0.0, f64::max)
 }
 
+#[cfg(test)]
 fn child_index(position: [f64; 3], bounds: SpatialBounds, divisions: u8) -> usize {
-    let divisions = usize::from(divisions);
-    let cell = if divisions == 2 {
-        let min = bounds.min();
-        let max = bounds.max();
-        let middle: [f64; 3] =
-            std::array::from_fn(|axis| min[axis] + (max[axis] - min[axis]) / 2.0);
-        [
-            usize::from(position[0] >= middle[0]),
-            usize::from(position[1] >= middle[1]),
-            usize::from(position[2] >= middle[2]),
-        ]
-    } else {
-        std::array::from_fn(|axis| {
-            let min = bounds.min()[axis];
-            let max = bounds.max()[axis];
-            let cell_side = (max - min) / divisions as f64;
-            let scaled = ((position[axis] - min) / cell_side).floor();
-            (scaled as usize).min(divisions - 1)
-        })
-    };
-    (cell[0] * divisions + cell[1]) * divisions + cell[2]
+    SpatialSubdivision::new(bounds, divisions)
+        .expect("converter subdivisions are validated")
+        .cell_index(position)
 }
 
+#[cfg(test)]
 fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBounds {
-    let divisions = usize::from(divisions);
-    let cell = [
-        child / (divisions * divisions),
-        (child / divisions) % divisions,
-        child % divisions,
-    ];
-    let min = std::array::from_fn(|axis| {
-        let span = bounds.max()[axis] - bounds.min()[axis];
-        bounds.min()[axis] + cell[axis] as f64 * span / divisions as f64
-    });
-    let max = std::array::from_fn(|axis| {
-        if cell[axis] + 1 == divisions {
-            bounds.max()[axis]
-        } else {
-            let span = bounds.max()[axis] - bounds.min()[axis];
-            bounds.min()[axis] + (cell[axis] + 1) as f64 * span / divisions as f64
-        }
-    });
-    SpatialBounds::new(min, max).expect("child bounds are within the parent")
+    SpatialSubdivision::new(bounds, divisions)
+        .expect("converter subdivisions are validated")
+        .cell_bounds(child)
+        .expect("child index is in range")
 }
 
 fn sample_index(position: [f64; 3], bounds: SpatialBounds) -> usize {

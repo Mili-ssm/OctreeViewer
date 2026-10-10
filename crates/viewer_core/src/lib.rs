@@ -24,7 +24,7 @@ pub use scheduler::{
 pub use spatial::{
     AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, HierarchySemantics,
     LodSelection, LodSelectionConfig, LodSelectionError, NodeId, SpatialBounds, SpatialError,
-    SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats,
+    SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats, SpatialSubdivision,
 };
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{

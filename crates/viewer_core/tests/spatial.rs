@@ -1,6 +1,6 @@
 use viewer_core::{
     AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, NodeId, SpatialBounds,
-    SpatialError, SpatialFrustum, SpatialHierarchy, SpatialNode,
+    SpatialError, SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialSubdivision,
 };
 
 fn bounds(min: [f64; 3], max: [f64; 3]) -> SpatialBounds {
@@ -38,6 +38,36 @@ fn unit_cube_frustum() -> SpatialFrustum {
         FrustumPlane::new([0.0, 0.0, -1.0], 1.0).unwrap(),
     ])
     .unwrap()
+}
+
+#[test]
+fn uniform_subdivision_maps_points_and_bounds_consistently() {
+    let bounds = bounds([-2.0, 4.0, 8.0], [6.0, 12.0, 16.0]);
+    for divisions in [2, 4, 8] {
+        let subdivision = SpatialSubdivision::new(bounds, divisions).unwrap();
+        assert_eq!(subdivision.cell_count(), usize::from(divisions).pow(3));
+
+        for index in 0..subdivision.cell_count() {
+            let cell = subdivision.cell_bounds(index).unwrap();
+            assert!(bounds.contains(&cell));
+            let center = std::array::from_fn(|axis| (cell.min()[axis] + cell.max()[axis]) / 2.0);
+            assert_eq!(subdivision.cell_index(center), index);
+        }
+        assert_eq!(
+            subdivision.cell_index(bounds.max()),
+            subdivision.cell_count() - 1
+        );
+        assert!(subdivision.cell_bounds(subdivision.cell_count()).is_err());
+    }
+}
+
+#[test]
+fn uniform_subdivision_rejects_unsupported_divisions() {
+    let bounds = bounds([0.0; 3], [1.0; 3]);
+    assert_eq!(
+        SpatialSubdivision::new(bounds, 3).unwrap_err(),
+        SpatialError::InvalidSubdivisionDivisions(3)
+    );
 }
 
 #[test]
