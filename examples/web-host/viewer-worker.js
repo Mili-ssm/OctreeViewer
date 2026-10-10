@@ -8,11 +8,13 @@ let targetLodStartedAt = 0;
 let firstCoarseMs = null;
 let targetLodMs = null;
 let lastLodProgressKey = "";
+let currentMetadata = null;
+let sceneGeneration = 0;
 const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
-const coalescedCommands = new Set(["resize", "color", "depthShading", "voxelPixels", "fit"]);
+const coalescedCommands = new Set(["resize", "color", "depthShading", "voxelPixels", "fit", "birdView"]);
 
 function samplePointCloud() {
     const positions = [];
@@ -80,6 +82,13 @@ function postStats(frameStatus = null) {
     });
 }
 
+function pickFramebufferCoordinates(cssX, cssY, cssWidth, cssHeight) {
+    if (![cssX, cssY, cssWidth, cssHeight].every(Number.isFinite)
+        || cssWidth <= 0 || cssHeight <= 0) return null;
+    const [width, height] = viewer.viewportSize();
+    return [cssX * width / cssWidth, cssY * height / cssHeight];
+}
+
 function postLodProgress(lod, afterRenderFrame = false) {
     if (!lod) return;
     const now = performance.now();
@@ -130,7 +139,83 @@ async function handleMessage({ data }) {
                 self.postMessage({ type: "ready" });
                 break;
             }
+            case "api": {
+                let value;
+                switch (data.operation) {
+                    case "load": {
+                        sceneGeneration += 1;
+                        targetVoxelPixels = data.targetVoxelPixels;
+                        datasetOpenedAt = performance.now();
+                        targetLodStartedAt = datasetOpenedAt;
+                        firstCoarseMs = null;
+                        targetLodMs = null;
+                        const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
+                        viewer.fitScene();
+                        const lod = viewer.updateLod(targetVoxelPixels);
+                        currentMetadata = { ...opened, name: data.file.name, bytes: data.file.size };
+                        value = currentMetadata;
+                        self.postMessage({ type: "dataset", opened, lod, name: data.file.name });
+                        postLodProgress(lod);
+                        break;
+                    }
+                    case "fit":
+                        sceneGeneration += 1;
+                        value = viewer.fitScene();
+                        break;
+                    case "renderOnce":
+                        value = viewer.renderFrame();
+                        postLodProgress(viewer.lodStats(), true);
+                        break;
+                    case "getCamera":
+                        value = viewer.cameraPose();
+                        break;
+                    case "setCamera":
+                        sceneGeneration += 1;
+                        value = viewer.setCameraPose(
+                            new Float64Array(data.position), new Float64Array(data.target),
+                        );
+                        break;
+                    case "setOrbitTarget":
+                        sceneGeneration += 1;
+                        value = viewer.setOrbitTarget(new Float64Array(data.target));
+                        break;
+                    case "getMetadata":
+                        value = currentMetadata;
+                        break;
+                    case "getStats":
+                        value = { lod: viewer.lodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats() };
+                        break;
+                    case "moveCamera":
+                        sceneGeneration += 1;
+                        value = viewer.moveCamera(data.x, data.y, data.z);
+                        break;
+                    case "birdView":
+                        sceneGeneration += 1;
+                        viewer.setBirdView();
+                        value = true;
+                        break;
+                    case "pick": {
+                        const pixel = pickFramebufferCoordinates(
+                            data.cssX, data.cssY, data.cssWidth, data.cssHeight,
+                        );
+                        const hit = pixel ? await viewer.pick(...pixel) : null;
+                        const pickedGeneration = sceneGeneration;
+                        if (hit && data.recenter) {
+                            viewer.setOrbitTarget(hit.voxelCenter);
+                            sceneGeneration += 1;
+                            viewer.renderFrame();
+                        }
+                        value = { hit, sceneGeneration: pickedGeneration };
+                        break;
+                    }
+                    default:
+                        throw new Error(`unknown viewer API operation: ${data.operation}`);
+                }
+                self.postMessage({ type: "apiResult", requestId: data.requestId, value });
+                break;
+            }
             case "resize":
+                sceneGeneration += 1;
                 viewer.resize(data.width, data.height);
                 break;
             case "color":
@@ -140,6 +225,7 @@ async function handleMessage({ data }) {
                 viewer.setDepthShading(data.value);
                 break;
             case "voxelPixels": {
+                sceneGeneration += 1;
                 targetVoxelPixels = data.value;
                 targetLodStartedAt = performance.now();
                 targetLodMs = null;
@@ -151,6 +237,7 @@ async function handleMessage({ data }) {
                 break;
             }
             case "openFile": {
+                sceneGeneration += 1;
                 targetVoxelPixels = data.targetVoxelPixels;
                 datasetOpenedAt = performance.now();
                 targetLodStartedAt = datasetOpenedAt;
@@ -168,10 +255,29 @@ async function handleMessage({ data }) {
                 break;
             }
             case "fit":
+                sceneGeneration += 1;
                 viewer.fitScene();
                 break;
+            case "birdView":
+                sceneGeneration += 1;
+                viewer.setBirdView();
+                break;
+            case "pick": {
+                const pixel = pickFramebufferCoordinates(
+                    data.cssX, data.cssY, data.cssWidth, data.cssHeight,
+                );
+                const hit = pixel ? await viewer.pick(...pixel) : null;
+                const pickedGeneration = sceneGeneration;
+                if (hit && data.recenter) {
+                    viewer.setOrbitTarget(hit.voxelCenter);
+                    sceneGeneration += 1;
+                }
+                self.postMessage({ type: "pick", hit, sceneGeneration: pickedGeneration });
+                break;
+            }
             case "frame": {
                 const camera = data.camera;
+                if (Object.values(camera).some((value) => value !== 0)) sceneGeneration += 1;
                 if (camera.orbitX !== 0 || camera.orbitY !== 0) {
                     viewer.orbit(camera.orbitX, camera.orbitY);
                 }
@@ -179,6 +285,9 @@ async function handleMessage({ data }) {
                     viewer.pan(camera.panX, camera.panY);
                 }
                 if (camera.zoom !== 0) viewer.zoom(camera.zoom);
+                if (camera.moveX !== 0 || camera.moveY !== 0 || camera.moveZ !== 0) {
+                    viewer.moveCamera(camera.moveX, camera.moveY, camera.moveZ);
+                }
                 const startedAt = performance.now();
                 const frameStatus = viewer.renderFrame();
                 const renderCallMs = performance.now() - startedAt;
@@ -196,7 +305,7 @@ async function handleMessage({ data }) {
                 throw new Error(`unknown worker message: ${data.type}`);
         }
     } catch (error) {
-        self.postMessage({ type: "error", operation: data.type, message: String(error) });
+        self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
     } finally {
         if (coalescedCommands.has(data.type)) {
             self.postMessage({ type: "commandAck", command: data.type });
@@ -204,4 +313,7 @@ async function handleMessage({ data }) {
     }
 }
 
-self.addEventListener("message", (event) => void handleMessage(event));
+let messageQueue = Promise.resolve();
+self.addEventListener("message", (event) => {
+    messageQueue = messageQueue.then(() => handleMessage(event), () => handleMessage(event));
+});

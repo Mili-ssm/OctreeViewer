@@ -16,6 +16,8 @@ const colorMode = document.getElementById("color-mode");
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
+const cameraMode = document.getElementById("camera-mode");
+const cameraModeHelp = document.getElementById("camera-mode-help");
 
 let worker = null;
 let canvasTransferred = false;
@@ -35,7 +37,12 @@ let lastFrameStatus = "";
 let renderCallMs = null;
 let activePointer = null;
 let lastPointer = [0, 0];
+let pointerStart = [0, 0];
+let pointerMoved = false;
+let pickPending = false;
 let pointerMode = "orbit";
+let activeCameraMode = cameraMode.value;
+let movementSpeed = 1;
 let cameraDelta = emptyCameraDelta();
 let latestLodStats = null;
 let datasetName = "Synthetic sample";
@@ -159,7 +166,7 @@ function exportBenchmarkRun() {
 }
 
 function emptyCameraDelta() {
-    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0 };
+    return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
 }
 
 function queueWorkerCommand(type, values = {}) {
@@ -422,6 +429,13 @@ function handleWorkerMessage(event) {
             lastFrameStatus = data.frameStatus;
             statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
+    } else if (data.type === "pick") {
+        pickPending = false;
+        if (data.hit) {
+            canvas.dispatchEvent(new CustomEvent("voxelviewer:pick", {
+                detail: { ...data.hit, sceneGeneration: data.sceneGeneration },
+            }));
+        }
     } else if (data.type === "error") {
         loadingFile = false;
         benchmarkArmed = false;
@@ -644,12 +658,23 @@ sampleButton.addEventListener("click", async () => {
 fitButton.addEventListener("click", () => {
     queueWorkerCommand("fit");
 });
+cameraMode.addEventListener("change", () => {
+    activeCameraMode = cameraMode.value;
+    if (activeCameraMode === "bird") queueWorkerCommand("birdView");
+    cameraModeHelp.textContent = activeCameraMode === "bird"
+        ? `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`
+        : "Observer: click a voxel to set the center, left drag pans, right drag rotates, wheel changes radius.";
+});
 function bindCanvasInteractions() {
 canvas.addEventListener("pointerdown", (event) => {
-    if (!ready || event.button !== 0) return;
+    if (!ready || (event.button !== 0 && event.button !== 2)) return;
     event.preventDefault();
     activePointer = event.pointerId;
-    pointerMode = event.shiftKey ? "pan" : "orbit";
+    pointerStart = [event.clientX, event.clientY];
+    pointerMoved = false;
+    pointerMode = event.button === 2 || (activeCameraMode === "observer" && event.shiftKey)
+        ? "orbit"
+        : "pan";
     lastPointer = [event.clientX, event.clientY];
     canvas.setPointerCapture(event.pointerId);
 });
@@ -659,6 +684,9 @@ canvas.addEventListener("pointermove", (event) => {
     const height = Math.max(canvas.clientHeight, 1);
     const deltaX = (event.clientX - lastPointer[0]) / width;
     const deltaY = (event.clientY - lastPointer[1]) / height;
+    if (Math.hypot(event.clientX - pointerStart[0], event.clientY - pointerStart[1]) >= 4) {
+        pointerMoved = true;
+    }
     if (pointerMode === "pan") {
         cameraDelta.panX += deltaX;
         cameraDelta.panY += deltaY;
@@ -670,15 +698,41 @@ canvas.addEventListener("pointermove", (event) => {
     wakeRendering();
 });
 function endPointer(event) {
-    if (event.pointerId === activePointer) activePointer = null;
+    if (event.pointerId !== activePointer) return;
+    if (event.type === "pointerup" && event.button === 0
+        && activeCameraMode === "observer" && !pointerMoved && !pickPending) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0 && canvas.width > 0 && canvas.height > 0) {
+            pickPending = true;
+            worker.postMessage({
+                type: "pick",
+                cssX: event.clientX - rect.left,
+                cssY: event.clientY - rect.top,
+                cssWidth: rect.width,
+                cssHeight: rect.height,
+                recenter: true,
+            });
+            wakeRendering();
+        }
+    }
+    activePointer = null;
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("lostpointercapture", endPointer);
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 canvas.addEventListener("wheel", (event) => {
     if (!ready) return;
     event.preventDefault();
-    cameraDelta.zoom += event.deltaY * 0.001;
+    const deltaUnit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? Math.max(canvas.clientHeight, 1) : 1;
+    const wheelDelta = event.deltaY * deltaUnit;
+    if (activeCameraMode === "bird") {
+        movementSpeed = Math.max(0.001, Math.min(1_000_000, movementSpeed * Math.exp(-wheelDelta * 0.001)));
+        cameraModeHelp.textContent = `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`;
+    } else {
+        cameraDelta.zoom += wheelDelta * 0.001;
+    }
     wakeRendering();
 }, { passive: false });
 canvas.addEventListener("keydown", (event) => {
@@ -686,6 +740,14 @@ canvas.addEventListener("keydown", (event) => {
     const step = event.shiftKey ? 0.025 : 0.04;
     if (event.key === "Home") {
         queueWorkerCommand("fit");
+    } else if (activeCameraMode === "bird" && ["w", "a", "s", "d", "q", "e"].includes(event.key.toLowerCase())) {
+        const distance = movementSpeed * 0.05;
+        if (event.key.toLowerCase() === "w") cameraDelta.moveY += distance;
+        if (event.key.toLowerCase() === "s") cameraDelta.moveY -= distance;
+        if (event.key.toLowerCase() === "a") cameraDelta.moveX -= distance;
+        if (event.key.toLowerCase() === "d") cameraDelta.moveX += distance;
+        if (event.key.toLowerCase() === "q") cameraDelta.moveZ -= distance;
+        if (event.key.toLowerCase() === "e") cameraDelta.moveZ += distance;
     } else if (event.key === "+" || event.key === "=") {
         cameraDelta.zoom -= 0.15;
     } else if (event.key === "-") {

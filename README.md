@@ -848,6 +848,28 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
 - [x] Mantener la demo como consumidor de la API pública; el único código de geometría JavaScript
   genera el dataset sintético ya existente.
 
+### Fase 8 — Cámara y API web embebible (en curso)
+
+**Objetivo:** permitir integrar el canvas en una página anfitriona y consultar/controlar cámara,
+metadatos y estadísticas sin copiar la nube al hilo principal.
+
+- [x] Añadir cámara orbital configurable en coordenadas de la nube y navegación aérea con límite de
+  velocidad, movimiento y wheel normalizado.
+- [x] Añadir un módulo `createViewer(canvas, options)` con carga, cámara, metadatos, estadísticas,
+  eventos y liberación del worker; documentar el ciclo del canvas transferido.
+- [x] Añadir picking del voxel frontal por ray/AABB sobre rangos de 256 instancias; el readback GPU
+  copia como máximo 65.536 candidatos y entrega coordenada de impacto, centro, tamaño e índice por
+  generación LOD. Un clic vacío no altera la órbita.
+- [x] Integrar selección de centro al clic; validar modos/pose/coordenadas con origen grande en tests.
+- [ ] Medir el picking en navegador y verificar errores de lectura GPU con una muestra real.
+- [ ] Auditar `dispose`, cambio/tamaño cero del canvas, respuestas tardías, fallos del worker/dispositivo
+  y límites de recursos; probar en navegador con una muestra pequeña.
+
+**Validación local de esta iteración:** unit tests cubren pose/rayo/selección frontal, origen y escala,
+límite de framebuffer y presupuesto de picking; los mocks del host cubren el ciclo `dispose`, coordenadas
+CSS y rechazo de entrada/carga duplicada. El entorno actual no tiene Chromium y Firefox headless se
+había cerrado por fallo nativo, por lo que no hay evidencia de interacción WebGPU real ni de FPS del pick.
+
 **Cierre:** una persona puede seleccionar un archivo convertido, ver progreso, navegar la nube y
 entender límites/errores sin editar el código de la demo.
 

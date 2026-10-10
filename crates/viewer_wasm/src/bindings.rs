@@ -417,6 +417,9 @@ impl WasmVoxelViewer {
         let hierarchy_stats = reader.metadata().hierarchy().stats();
         let visual_scale = reader.format_metadata().visual_scale();
         let metadata = reader.format_metadata().shared_dataset();
+        let coordinate_origin = metadata.coordinate_frame().origin();
+        let semantics = format!("{:?}", metadata.hierarchy().semantics()).to_lowercase();
+        let root_bounds = hierarchy_stats.root_bounds;
         let dataset = LodDataset::from_shared_metadata_and_visual_scale(
             metadata,
             visual_scale,
@@ -450,6 +453,22 @@ impl WasmVoxelViewer {
             &"maxLevel".into(),
             &JsValue::from_f64(f64::from(hierarchy_stats.max_level)),
         )?;
+        js_sys::Reflect::set(
+            &result,
+            &"coordinateOrigin".into(),
+            &js_sys::Float64Array::from(coordinate_origin.as_slice()),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"boundsMin".into(),
+            &js_sys::Float64Array::from(root_bounds.min().as_slice()),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"boundsMax".into(),
+            &js_sys::Float64Array::from(root_bounds.max().as_slice()),
+        )?;
+        js_sys::Reflect::set(&result, &"semantics".into(), &JsValue::from_str(&semantics))?;
         if let Some(source_points) = hierarchy_stats.source_point_count {
             js_sys::Reflect::set(
                 &result,
@@ -744,6 +763,167 @@ impl WasmVoxelViewer {
         Ok(changed)
     }
 
+    /// Returns the camera pose in source dataset coordinates.
+    #[wasm_bindgen(js_name = cameraPose)]
+    pub fn camera_pose(&self) -> Result<JsValue, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let (position, target) = renderer.camera_pose();
+        let pose = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &pose,
+            &"position".into(),
+            &js_sys::Float64Array::from(position.as_slice()),
+        )?;
+        js_sys::Reflect::set(
+            &pose,
+            &"target".into(),
+            &js_sys::Float64Array::from(target.as_slice()),
+        )?;
+        Ok(pose.into())
+    }
+
+    /// Sets camera position and orbit target in source dataset coordinates.
+    #[wasm_bindgen(js_name = setCameraPose)]
+    pub fn set_camera_pose(
+        &mut self,
+        position: js_sys::Float64Array,
+        target: js_sys::Float64Array,
+    ) -> Result<bool, JsValue> {
+        if position.length() != 3 || target.length() != 3 {
+            return Err(JsValue::from_str(
+                "camera position and target must have 3 coordinates",
+            ));
+        }
+        let mut position_values = [0.0; 3];
+        let mut target_values = [0.0; 3];
+        position.copy_to(&mut position_values);
+        target.copy_to(&mut target_values);
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let changed = renderer.set_camera_pose(position_values, target_values);
+        self.camera_changed(changed);
+        Ok(changed)
+    }
+
+    /// Moves the orbit center while preserving the camera position.
+    #[wasm_bindgen(js_name = setOrbitTarget)]
+    pub fn set_orbit_target(&mut self, target: js_sys::Float64Array) -> Result<bool, JsValue> {
+        if target.length() != 3 {
+            return Err(JsValue::from_str("camera target must have 3 coordinates"));
+        }
+        let mut target_values = [0.0; 3];
+        target.copy_to(&mut target_values);
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let changed = renderer.set_orbit_target(target_values);
+        self.camera_changed(changed);
+        Ok(changed)
+    }
+
+    /// Translates the camera in source dataset coordinates.
+    #[wasm_bindgen(js_name = moveCamera)]
+    pub fn move_camera(&mut self, x: f64, y: f64, z: f64) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let changed = renderer.translate_camera([x, y, z]);
+        self.camera_changed(changed);
+        Ok(changed)
+    }
+
+    /// Points the camera down along the dataset's positive Z up axis.
+    #[wasm_bindgen(js_name = setBirdView)]
+    pub fn set_bird_view(&mut self) -> Result<(), JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        renderer.set_bird_view();
+        self.camera_changed(true);
+        Ok(())
+    }
+
+    /// Picks the frontmost rendered voxel at a framebuffer pixel. Coordinates and voxel data are
+    /// returned in the source dataset's coordinate system; `None` means that the ray hit no voxel.
+    #[wasm_bindgen]
+    pub async fn pick(&self, x: f64, y: f64) -> Result<JsValue, JsValue> {
+        let readback = {
+            let renderer = self
+                .gpu_renderer
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+            renderer
+                .prepare_pick([x, y])
+                .map_err(|error| JsValue::from_str(&error))?
+        };
+        let Some(readback) = readback else {
+            return Ok(JsValue::NULL);
+        };
+        let buffer = readback.buffer().clone();
+        let map_buffer = buffer.clone();
+        let promise = js_sys::Promise::new(&mut |resolve, reject| {
+            map_buffer
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| match result {
+                    Ok(()) => {
+                        let _ = resolve.call0(&JsValue::UNDEFINED);
+                    }
+                    Err(error) => {
+                        let _ = reject
+                            .call1(&JsValue::UNDEFINED, &JsValue::from_str(&error.to_string()));
+                    }
+                });
+        });
+        wasm_bindgen_futures::JsFuture::from(promise).await?;
+        let mapped = buffer.slice(..).get_mapped_range();
+        let hit = self
+            .gpu_renderer
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .resolve_pick(&readback, &mapped);
+        drop(mapped);
+        buffer.unmap();
+        let hit = hit.map_err(|error| JsValue::from_str(&error))?;
+        let Some(hit) = hit else {
+            return Ok(JsValue::NULL);
+        };
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &result,
+            &"instanceIndex".into(),
+            &JsValue::from_f64(hit.instance_index as f64),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"position".into(),
+            &js_sys::Float64Array::from(hit.position.as_slice()),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"voxelCenter".into(),
+            &js_sys::Float64Array::from(hit.voxel_center.as_slice()),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"voxelSize".into(),
+            &JsValue::from_f64(hit.voxel_size),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"distance".into(),
+            &JsValue::from_f64(hit.distance),
+        )?;
+        Ok(result.into())
+    }
+
     #[wasm_bindgen(js_name = gpuStats)]
     pub fn gpu_stats(&self) -> Result<JsValue, JsValue> {
         let renderer = self
@@ -801,9 +981,26 @@ impl WasmVoxelViewer {
         )?;
         Ok(stats.into())
     }
+
+    #[wasm_bindgen(js_name = viewportSize)]
+    pub fn viewport_size(&self) -> Result<js_sys::Uint32Array, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let [width, height] = renderer.viewport_size();
+        Ok(js_sys::Uint32Array::from([width, height].as_slice()))
+    }
 }
 
 impl WasmVoxelViewer {
+    fn camera_changed(&mut self, changed: bool) {
+        if changed && self.lod_dataset.is_some() {
+            self.lod_stage_pixels = None;
+            self.lod_dirty = self.lod_config.is_some();
+        }
+    }
+
     fn refresh_lod_if_dirty(&mut self) -> Result<(), JsValue> {
         if !self.lod_dirty {
             return Ok(());

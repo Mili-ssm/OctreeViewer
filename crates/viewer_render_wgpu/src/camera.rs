@@ -39,6 +39,122 @@ impl Default for OrbitCamera {
 }
 
 impl OrbitCamera {
+    pub fn target(&self) -> [f64; 3] {
+        self.target.to_array()
+    }
+
+    pub fn position(&self) -> [f64; 3] {
+        let offset = camera_direction(self.yaw, self.pitch) * self.distance;
+        (self.target + offset).to_array()
+    }
+
+    /// Sets a camera pose in local render coordinates. Rejects invalid or unrenderable poses.
+    pub fn set_pose(&mut self, position: [f64; 3], target: [f64; 3]) -> bool {
+        if position
+            .iter()
+            .chain(&target)
+            .any(|value| !value.is_finite())
+        {
+            return false;
+        }
+        let target = DVec3::from_array(target);
+        let offset = DVec3::from_array(position) - target;
+        let distance = offset.length();
+        if target.abs().max_element() > f64::from(f32::MAX) * 0.1
+            || !distance.is_finite()
+            || distance < 0.001
+            || distance > f64::from(f32::MAX) * 0.1
+        {
+            return false;
+        }
+        let pitch = (offset.z / distance).clamp(-1.0, 1.0).asin();
+        let yaw = offset.x.atan2(offset.y).rem_euclid(std::f64::consts::TAU);
+        self.target = target;
+        self.distance = distance;
+        self.yaw = yaw;
+        self.pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
+        self.radius = self.radius.max(0.001);
+        self.fitted = true;
+        true
+    }
+
+    /// Re-centers the orbit target while keeping the camera position fixed.
+    pub fn set_target(&mut self, target: [f64; 3]) -> bool {
+        if target.iter().any(|value| !value.is_finite())
+            || target
+                .iter()
+                .any(|value| value.abs() > f64::from(f32::MAX) * 0.1)
+        {
+            return false;
+        }
+        let position = DVec3::from_array(self.position());
+        let target = DVec3::from_array(target);
+        let offset = position - target;
+        let distance = offset.length();
+        if !distance.is_finite() || distance < 0.001 || distance > f64::from(f32::MAX) * 0.1 {
+            return false;
+        }
+        self.target = target;
+        self.distance = distance;
+        self.yaw = offset.x.atan2(offset.y).rem_euclid(std::f64::consts::TAU);
+        self.pitch = (offset.z / distance)
+            .clamp(-1.0, 1.0)
+            .asin()
+            .clamp(MIN_PITCH, MAX_PITCH);
+        true
+    }
+
+    /// Translates camera and target together in local world coordinates.
+    pub fn translate(&mut self, delta: [f64; 3]) -> bool {
+        if delta.iter().any(|value| !value.is_finite()) {
+            return false;
+        }
+        let target = self.target + DVec3::from_array(delta);
+        let position = DVec3::from_array(self.position()) + DVec3::from_array(delta);
+        if !target.is_finite()
+            || !position.is_finite()
+            || target.abs().max_element() > f64::from(f32::MAX) * 0.1
+        {
+            return false;
+        }
+        self.target = target;
+        true
+    }
+
+    pub fn set_bird_view(&mut self) {
+        self.pitch = MAX_PITCH;
+    }
+
+    pub(crate) fn ray(
+        &self,
+        pixel: [f64; 2],
+        viewport: [u32; 2],
+    ) -> Option<(DVec3, DVec3, f64, f64)> {
+        if viewport.contains(&0)
+            || pixel.iter().any(|value| !value.is_finite())
+            || pixel[0] < 0.0
+            || pixel[1] < 0.0
+            || pixel[0] >= f64::from(viewport[0])
+            || pixel[1] >= f64::from(viewport[1])
+        {
+            return None;
+        }
+        let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
+        let ndc_x = 2.0 * (pixel[0] + 0.5) / f64::from(viewport[0]) - 1.0;
+        let ndc_y = 1.0 - 2.0 * (pixel[1] + 0.5) / f64::from(viewport[1]);
+        let forward = -camera_direction(self.yaw, self.pitch);
+        let right = DVec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0);
+        let up = forward.cross(right).normalize();
+        let direction = (forward
+            + right * (ndc_x * aspect * (VERTICAL_FOV * 0.5).tan())
+            + up * (ndc_y * (VERTICAL_FOV * 0.5).tan()))
+        .normalize();
+        let origin = self.target + camera_direction(self.yaw, self.pitch) * self.distance;
+        let (near, far) = self.clip_distances();
+        (origin.is_finite() && direction.is_finite() && near.is_finite() && far.is_finite())
+            .then_some((origin, direction, near, far))
+    }
+
     /// Fits a sphere around the scene bounds. Returns false without changing state if input is invalid.
     pub fn fit(&mut self, bounds: SceneBounds, viewport: [u32; 2]) -> bool {
         if viewport[0] == 0
@@ -57,7 +173,10 @@ impl OrbitCamera {
         let max = DVec3::from_array(bounds.max);
         let target = (min + max) * 0.5;
         let radius = (max - min).length() * 0.5;
-        if !target.is_finite() || !radius.is_finite() {
+        if !target.is_finite()
+            || target.abs().max_element() > f64::from(f32::MAX) * 0.1
+            || !radius.is_finite()
+        {
             return false;
         }
         let radius = radius.max(0.001);
@@ -161,7 +280,7 @@ impl OrbitCamera {
             return false;
         }
         let target = self.target + pan;
-        if !target.is_finite() {
+        if !target.is_finite() || target.abs().max_element() > f64::from(f32::MAX) * 0.1 {
             return false;
         }
         self.target = target;
@@ -174,10 +293,11 @@ impl OrbitCamera {
             return false;
         }
         let factor = delta.clamp(-20.0, 20.0).exp();
-        self.distance = (self.distance * factor).clamp(
-            (self.radius * 0.01).max(0.001),
-            (self.radius * 1.0e6).max(1.0),
-        );
+        let max_distance = (self.radius * 1.0e6)
+            .max(1.0)
+            .min(f64::from(f32::MAX) * 0.1);
+        let min_distance = (self.radius * 0.01).max(0.001).min(max_distance);
+        self.distance = (self.distance * factor).clamp(min_distance, max_distance);
         true
     }
 
@@ -392,10 +512,34 @@ fn plane(normal: DVec3, point: DVec3) -> Option<FrustumPlane> {
 
 #[cfg(test)]
 mod tests {
-    use glam::Mat4;
+    use glam::{DVec3, Mat4};
 
     use super::OrbitCamera;
     use crate::SceneBounds;
+
+    #[test]
+    fn camera_pose_round_trips_and_rejects_invalid_values_without_mutation() {
+        let mut camera = OrbitCamera::default();
+        assert!(camera.set_pose([12.0, -7.0, 4.0], [1.0, 2.0, 3.0]));
+        let pose = (camera.position(), camera.target());
+        assert!((DVec3::from_array(pose.0) - DVec3::new(12.0, -7.0, 4.0)).length() < 1e-10);
+        assert_eq!(pose.1, [1.0, 2.0, 3.0]);
+        assert!(!camera.set_pose([f64::NAN, 0.0, 0.0], [0.0; 3]));
+        assert_eq!((camera.position(), camera.target()), pose);
+        assert!(!camera.set_target([f64::INFINITY, 0.0, 0.0]));
+        assert_eq!((camera.position(), camera.target()), pose);
+    }
+
+    #[test]
+    fn pick_ray_points_through_center_and_rejects_invalid_viewport_pixels() {
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(bounds(), [800, 600]));
+        let (origin, direction, _, _) = camera.ray([399.5, 299.5], [800, 600]).unwrap();
+        let target_delta = camera.target - origin;
+        assert!(direction.dot(target_delta.normalize()) > 0.999_999);
+        assert!(camera.ray([-1.0, 10.0], [800, 600]).is_none());
+        assert!(camera.ray([10.0, 10.0], [0, 600]).is_none());
+    }
 
     fn bounds() -> SceneBounds {
         SceneBounds {

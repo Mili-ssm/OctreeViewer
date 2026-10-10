@@ -165,6 +165,14 @@
             <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
             <small id="dataset-help">The built-in sample is a local v1/v2 file. Choose another project file with the keyboard-accessible file picker. Reads run in the worker.</small>
         </section>
+        <section class="panel" aria-label="Camera mode">
+            <label for="camera-mode">Camera mode</label>
+            <select id="camera-mode">
+                <option value="observer">Observer · orbit around a center</option>
+                <option value="bird">Bird · free navigation</option>
+            </select>
+            <output id="camera-mode-help">Observer: click a voxel to set the orbit center, left drag pans, right drag rotates, wheel changes radius.</output>
+        </section>
         <section class="panel" aria-label="Rendering options">
             <label for="voxel-pixels">Finest voxel detail <output id="voxel-pixels-value">4 px</output></label>
             <input id="voxel-pixels" type="range" min="0.5" max="16" step="0.5" value="4"
@@ -182,8 +190,9 @@
         </section>
         <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>
         <p id="camera-help">
-            Drag to orbit, Shift+drag to pan, scroll to zoom. Focus the canvas and use arrow keys;
-            hold Shift to pan, use +/− to zoom, and Home to fit.
+            Observer: click a voxel to set the orbit center, left drag to pan, right drag to orbit,
+            wheel to change radius. Bird: left drag to pan, right drag to orbit, WASD/QE to move,
+            wheel to change movement speed. Focus the canvas; use arrows, +/−, and Home to fit.
         </p>
         <section class="panel">
             <strong>Stats</strong>
@@ -206,7 +215,7 @@ worker: renderFrame() · LOD loads before draw</pre>
     </aside>
     <main>
         <canvas id="viewer-canvas" width="1280" height="720" tabindex="0"
-            aria-label="3D point cloud. Drag to orbit, Shift+drag to pan, scroll to zoom."
+            aria-label="3D point cloud. Use the camera mode controls and keyboard instructions in the side panel."
             aria-describedby="camera-help"></canvas>
     </main>
     <script type="module" src="./main.js"></script>

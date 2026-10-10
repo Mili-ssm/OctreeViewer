@@ -39,7 +39,10 @@ def main() -> None:
     queue_js = (HOST / "coalesced-command-queue.mjs").read_text(encoding="utf-8")
     metrics_js = (HOST / "benchmark-metrics.mjs").read_text(encoding="utf-8")
     rendering_budget_js = (HOST / "rendering-budget.mjs").read_text(encoding="utf-8")
+    viewer_api_js = (HOST / "viewer-api.mjs").read_text(encoding="utf-8")
+    embed_worker_js = worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
+    embed_wasm_js = wasm_js
     wasm_path = ROOT / "pkg" / "viewer_wasm_bg.wasm"
     sample_path = HOST / "sample.oct"
 
@@ -137,14 +140,52 @@ def main() -> None:
     html = html.replace("<h1>Embeddable voxel viewer</h1>", "<h1>Visor de nubes de puntos</h1>")
 
     readme = """VISOR WEB LOCAL\n\n1. Extrae este ZIP en cualquier carpeta.\n2. Abre index.html con doble clic en un navegador compatible con WebGPU.\n3. Espera a que el estado indique que el renderizador está listo.\n4. Pulsa Open project dataset, selecciona tu archivo .oct y espera a que aparezca\n   primero la vista gruesa y después el refinamiento progresivo.\n5. Para medir FPS, espera el LOD objetivo y pulsa Run 15 s FPS benchmark. Mantén\n   la cámara quieta; al terminar pulsa Export run JSON.\n\nEl visor limita el framebuffer a 4.194.304 píxeles y 4.096 por lado. Reduce el\ntrabajo de render mientras está quieto; solo ejecuta el benchmark si lo solicitas.\n\nEl selector acepta el formato del proyecto .oct (versiones 1, 2 y 3). La muestra\nincluida también funciona sin conexión. Para cambiar detalle, usa Finest voxel detail.\n\nNo requiere instalar Rust ni iniciar un servidor. El HTML incluye WASM, worker,\nJavaScript y la muestra. Se necesita un navegador con WebGPU y OffscreenCanvas.\nEl render no sube el archivo a ningún servicio: lo lee localmente en el navegador.\n"""
+    readme = readme.replace(
+        "Para cambiar detalle, usa Finest voxel detail.",
+        "Para cambiar detalle, usa Finest voxel detail.\n\nCAMARA\n"
+        "Observer: clic en un voxel fija el centro; arrastre izquierdo desplaza, derecho rota y la rueda ajusta el radio.\n"
+        "Bird: arrastre desplaza, derecho rota, WASD/QE mueve y la rueda ajusta velocidad.\n\n"
+        "La carpeta embed/ contiene la API modular para integrarla en otra pagina servida en localhost o HTTPS.",
+    )
     index_path = output / "index.html"
     readme_path = output / "LEEME.txt"
     archive_path = output / "visor-web-local.zip"
     index_path.write_text(html, encoding="utf-8")
     readme_path.write_text(readme, encoding="utf-8")
+    embed_dir = output / "embed"
+    embed_dir.mkdir(parents=True, exist_ok=True)
+    embed_worker_js = require_replace(
+        embed_worker_js,
+        'import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";\n',
+        'import init, { WasmVoxelViewer } from "./viewer_wasm.js";\n',
+        "embeddable worker WASM import",
+    )
+    (embed_dir / "viewer-api.mjs").write_text(viewer_api_js, encoding="utf-8")
+    (embed_dir / "viewer-worker.js").write_text(embed_worker_js, encoding="utf-8")
+    (embed_dir / "rendering-budget.mjs").write_text(rendering_budget_js, encoding="utf-8")
+    (embed_dir / "viewer_wasm.js").write_text(embed_wasm_js, encoding="utf-8")
+    (embed_dir / "viewer_wasm_bg.wasm").write_bytes(wasm_path.read_bytes())
+    (embed_dir / "README.txt").write_text(
+        "Sirve la carpeta extraida en localhost o HTTPS y añade a tu pagina:\n\n"
+        '<canvas id="cloud" style="width:100%;height:70vh"></canvas>\n'
+        '<input id="file" type="file" accept=".oct">\n'
+        '<script type="module">\n'
+        'import { createViewer } from "./embed/viewer-api.mjs";\n'
+        'const viewer = createViewer(document.querySelector("#cloud"));\n'
+        'await viewer.ready;\n'
+        'document.querySelector("#file").addEventListener("change", (event) => {\n'
+        '  void viewer.load(event.target.files[0], { voxelPixels: 1 });\n'
+        '});\n'
+        'viewer.on("pick", (hit) => console.log(hit?.position, hit?.voxelCenter));\n'
+        '</script>\n\n'
+        "API: load, setMode, getCamera, setCamera, pick, getMetadata, getStats, fit, on, dispose.\n",
+        encoding="utf-8",
+    )
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(index_path, "index.html")
         archive.write(readme_path, "LEEME.txt")
+        for embed_file in sorted(embed_dir.iterdir()):
+            archive.write(embed_file, f"embed/{embed_file.name}")
 
     print(f"Created {index_path} ({index_path.stat().st_size:,} bytes)")
     print(f"Created {archive_path} ({archive_path.stat().st_size:,} bytes)")

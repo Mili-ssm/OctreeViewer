@@ -132,6 +132,54 @@ struct GpuInstanceBuffer {
     elevation_range: Option<[f32; 2]>,
 }
 
+const PICK_CHUNK_INSTANCES: usize = 256;
+const PICK_MAX_CANDIDATE_INSTANCES: usize = 65_536;
+const MAX_FRAMEBUFFER_PIXELS: u64 = 4_194_304;
+const MAX_FRAMEBUFFER_DIMENSION: u32 = 4_096;
+
+#[derive(Debug, Clone, Copy)]
+struct PickChunk {
+    first_instance: usize,
+    instance_count: usize,
+    bounds: SceneBounds,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PickCopy {
+    staging_offset: u64,
+    first_instance: usize,
+    instance_count: usize,
+}
+
+pub struct PickReadback {
+    buffer: wgpu::Buffer,
+    copies: Vec<PickCopy>,
+    ray: PickRay,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PickRay {
+    origin: glam::DVec3,
+    direction: glam::DVec3,
+    near_distance: f64,
+    far_distance: f64,
+}
+
+impl PickReadback {
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffer
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PickHit {
+    pub instance_index: usize,
+    pub position: [f64; 3],
+    pub voxel_center: [f64; 3],
+    pub voxel_size: f64,
+    pub distance: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BlockUploadStats {
     pub visible_block_count: usize,
@@ -202,6 +250,7 @@ pub struct SurfaceRenderer<'window> {
     block_buffers: HashMap<BlockId, GpuInstanceBuffer>,
     visible_block_ids: Vec<BlockId>,
     visible_instance_count: usize,
+    pick_chunks: Vec<PickChunk>,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     clear_color: wgpu::Color,
@@ -215,6 +264,7 @@ pub struct SurfaceRenderer<'window> {
     color_mode: ColorMode,
     depth_shading: bool,
     visual_scale: f64,
+    coordinate_origin: [f64; 3],
 }
 
 impl<'window> SurfaceRenderer<'window> {
@@ -259,6 +309,8 @@ impl<'window> SurfaceRenderer<'window> {
             .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
 
         let device_limits = device.limits();
+        let [width, height] =
+            bounded_framebuffer_size(width, height, device_limits.max_texture_dimension_2d);
         let instance_stride = size_of::<InstanceRaw>() as u64;
         if instance_stride > device_limits.max_buffer_size {
             return Err(GpuRendererError::GpuBufferLimitExceeded {
@@ -333,6 +385,7 @@ impl<'window> SurfaceRenderer<'window> {
             block_buffers: HashMap::new(),
             visible_block_ids: Vec::new(),
             visible_instance_count: 0,
+            pick_chunks: Vec::new(),
             uniform_buffer,
             uniform_bind_group,
             clear_color: config.clear_color,
@@ -346,6 +399,7 @@ impl<'window> SurfaceRenderer<'window> {
             color_mode: ColorMode::Rgb,
             depth_shading: true,
             visual_scale: 1.0,
+            coordinate_origin: [0.0; 3],
         })
     }
 
@@ -418,6 +472,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.visible_block_ids.clear();
         self.hzb_reference_camera = None;
         self.visible_instance_count = scene.instance_count();
+        self.pick_chunks = build_pick_chunks(scene.instances(), self.visual_scale);
         self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
         self.scene_bounds = bounds;
         self.intensity_range = scene.intensity_range();
@@ -501,6 +556,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.intensity_range = plan.visible_intensity_range;
         self.elevation_range = plan.visible_elevation_range;
         self.scene_buffer = None;
+        self.pick_chunks.clear();
         self.hzb_reference_camera = None;
         self.hzb_scene_opaque = false;
         if let Some(hzb) = &mut self.hzb {
@@ -581,6 +637,7 @@ impl<'window> SurfaceRenderer<'window> {
         self.block_buffers.clear();
         self.visible_block_ids.clear();
         self.visible_instance_count = 0;
+        self.pick_chunks.clear();
         self.scene_bounds = None;
         self.intensity_range = None;
         self.elevation_range = None;
@@ -660,6 +717,7 @@ impl<'window> SurfaceRenderer<'window> {
     }
 
     pub fn fit_scene(&mut self, scene: &RenderScene) -> bool {
+        self.coordinate_origin = [0.0; 3];
         self.scene_bounds = scene.bounds();
         self.display_bounds().is_some_and(|bounds| {
             self.camera.fit(
@@ -715,6 +773,7 @@ impl<'window> SurfaceRenderer<'window> {
             [self.surface_config.width, self.surface_config.height],
         ) {
             self.scene_bounds = Some(local);
+            self.coordinate_origin = coordinate_origin;
             true
         } else {
             false
@@ -723,6 +782,166 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn orbit_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
         self.camera.orbit(delta_x, delta_y)
+    }
+
+    /// Returns position and target in the source dataset's coordinate system.
+    pub fn camera_pose(&self) -> ([f64; 3], [f64; 3]) {
+        let to_dataset = |point: [f64; 3]| {
+            std::array::from_fn(|axis| {
+                point[axis] / self.visual_scale + self.coordinate_origin[axis]
+            })
+        };
+        (
+            to_dataset(self.camera.position()),
+            to_dataset(self.camera.target()),
+        )
+    }
+
+    /// Sets the pose in source dataset coordinates.
+    pub fn set_camera_pose(&mut self, position: [f64; 3], target: [f64; 3]) -> bool {
+        let to_local = |point: [f64; 3]| {
+            std::array::from_fn(|axis| {
+                (point[axis] - self.coordinate_origin[axis]) * self.visual_scale
+            })
+        };
+        let changed = self.camera.set_pose(to_local(position), to_local(target));
+        if changed {
+            self.hzb_reference_camera = None;
+        }
+        changed
+    }
+
+    pub fn set_orbit_target(&mut self, target: [f64; 3]) -> bool {
+        let target = std::array::from_fn(|axis| {
+            (target[axis] - self.coordinate_origin[axis]) * self.visual_scale
+        });
+        let changed = self.camera.set_target(target);
+        if changed {
+            self.hzb_reference_camera = None;
+        }
+        changed
+    }
+
+    pub fn translate_camera(&mut self, delta: [f64; 3]) -> bool {
+        let delta = delta.map(|value| value * self.visual_scale);
+        let changed = self.camera.translate(delta);
+        if changed {
+            self.hzb_reference_camera = None;
+        }
+        changed
+    }
+
+    pub fn set_bird_view(&mut self) {
+        self.camera.set_bird_view();
+        self.hzb_reference_camera = None;
+    }
+
+    /// Copies only ray-intersecting instance ranges into a bounded staging buffer.
+    pub fn prepare_pick(&self, pixel: [f64; 2]) -> Result<Option<PickReadback>, String> {
+        let Some(source) = self.scene_buffer.as_ref() else {
+            return Ok(None);
+        };
+        let Some((ray_origin, ray_direction, near_distance, far_distance)) =
+            self.camera.ray(pixel, self.viewport_size())
+        else {
+            return Ok(None);
+        };
+        let mut candidates = self
+            .pick_chunks
+            .iter()
+            .filter_map(|chunk| {
+                ray_bounds_entry(ray_origin, ray_direction, chunk.bounds)
+                    .map(|entry| (entry, *chunk))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
+        let candidate_count = candidates
+            .iter()
+            .try_fold(0_usize, |total, (_, chunk)| {
+                total.checked_add(chunk.instance_count)
+            })
+            .ok_or_else(|| "pick candidate count overflow".to_owned())?;
+        check_pick_candidate_budget(candidate_count)?;
+        if candidate_count == 0 {
+            return Ok(None);
+        }
+
+        let instance_bytes = std::mem::size_of::<InstanceRaw>() as u64;
+        let byte_len = u64::try_from(candidate_count)
+            .ok()
+            .and_then(|count| count.checked_mul(instance_bytes))
+            .ok_or_else(|| "pick staging buffer size overflow".to_owned())?;
+        let projected_gpu_bytes = self
+            .allocated_gpu_bytes()
+            .map_err(|error| error.to_string())?
+            .saturating_add(byte_len);
+        if projected_gpu_bytes > self.gpu_budget.max_bytes {
+            return Err(format!(
+                "pick staging buffer would exceed the configured GPU memory budget ({projected_gpu_bytes} > {})",
+                self.gpu_budget.max_bytes
+            ));
+        }
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("octree-viewer-pick-staging"),
+            size: byte_len,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("octree-viewer-pick-copy"),
+            });
+        let mut copies = Vec::with_capacity(candidates.len());
+        let mut staging_offset = 0_u64;
+        for (_, chunk) in candidates {
+            let size = u64::try_from(chunk.instance_count)
+                .ok()
+                .and_then(|count| count.checked_mul(instance_bytes))
+                .ok_or_else(|| "pick chunk size overflow".to_owned())?;
+            let source_offset = u64::try_from(chunk.first_instance)
+                .ok()
+                .and_then(|index| index.checked_mul(instance_bytes))
+                .ok_or_else(|| "pick source offset overflow".to_owned())?;
+            encoder.copy_buffer_to_buffer(
+                &source.buffer,
+                source_offset,
+                &staging,
+                staging_offset,
+                size,
+            );
+            copies.push(PickCopy {
+                staging_offset,
+                first_instance: chunk.first_instance,
+                instance_count: chunk.instance_count,
+            });
+            staging_offset += size;
+        }
+        self.queue.submit([encoder.finish()]);
+        Ok(Some(PickReadback {
+            buffer: staging,
+            copies,
+            ray: PickRay {
+                origin: ray_origin,
+                direction: ray_direction,
+                near_distance,
+                far_distance,
+            },
+        }))
+    }
+
+    pub fn resolve_pick(
+        &self,
+        readback: &PickReadback,
+        mapped: &[u8],
+    ) -> Result<Option<PickHit>, String> {
+        resolve_pick_instances(
+            readback.ray,
+            &readback.copies,
+            mapped,
+            self.visual_scale,
+            self.coordinate_origin,
+        )
     }
 
     pub fn pan_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
@@ -815,6 +1034,8 @@ impl<'window> SurfaceRenderer<'window> {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) -> FrameStatus {
+        let [width, height] =
+            bounded_framebuffer_size(width, height, self.device.limits().max_texture_dimension_2d);
         if width == 0 || height == 0 {
             self.suspended = true;
             return FrameStatus::Suspended;
@@ -1135,6 +1356,7 @@ fn create_instance_buffer(
         size: capacity,
         usage: wgpu::BufferUsages::VERTEX
             | wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -1149,6 +1371,164 @@ fn create_instance_buffer(
         intensity_range: scene.intensity_range(),
         elevation_range: scene.elevation_range(),
     })
+}
+
+fn build_pick_chunks(instances: &[InstanceRaw], visual_scale: f64) -> Vec<PickChunk> {
+    instances
+        .chunks(PICK_CHUNK_INSTANCES)
+        .enumerate()
+        .filter_map(|(chunk_index, chunk)| {
+            let mut min = [f32::INFINITY; 3];
+            let mut max = [f32::NEG_INFINITY; 3];
+            for instance in chunk {
+                let half = f64::from(instance.size) * visual_scale * 0.5;
+                for axis in 0..3 {
+                    let center = f64::from(instance.center[axis]) * visual_scale;
+                    min[axis] = min[axis].min(((center - half) as f32).next_down());
+                    max[axis] = max[axis].max(((center + half) as f32).next_up());
+                }
+            }
+            if min.iter().chain(&max).any(|value| !value.is_finite()) {
+                return None;
+            }
+            Some(PickChunk {
+                first_instance: chunk_index * PICK_CHUNK_INSTANCES,
+                instance_count: chunk.len(),
+                bounds: SceneBounds {
+                    min: min.map(f64::from),
+                    max: max.map(f64::from),
+                },
+            })
+        })
+        .collect()
+}
+
+fn ray_bounds_entry(
+    origin: glam::DVec3,
+    direction: glam::DVec3,
+    bounds: SceneBounds,
+) -> Option<f64> {
+    ray_box_entry(origin, direction, bounds.min, bounds.max)
+}
+
+fn check_pick_candidate_budget(candidate_count: usize) -> Result<(), String> {
+    if candidate_count > PICK_MAX_CANDIDATE_INSTANCES {
+        Err(format!(
+            "pick ray intersects {candidate_count} candidate voxels; limit is {PICK_MAX_CANDIDATE_INSTANCES}"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn resolve_pick_instances(
+    ray: PickRay,
+    copies: &[PickCopy],
+    mapped: &[u8],
+    visual_scale: f64,
+    coordinate_origin: [f64; 3],
+) -> Result<Option<PickHit>, String> {
+    let instance_bytes = std::mem::size_of::<InstanceRaw>();
+    let mut nearest: Option<(f64, usize, InstanceRaw)> = None;
+    for copy in copies {
+        let start = usize::try_from(copy.staging_offset)
+            .map_err(|_| "pick staging offset is not addressable".to_owned())?;
+        for relative_index in 0..copy.instance_count {
+            let byte_start = start + relative_index * instance_bytes;
+            let byte_end = byte_start + instance_bytes;
+            let raw = mapped
+                .get(byte_start..byte_end)
+                .ok_or_else(|| "pick staging result is truncated".to_owned())?;
+            let instance = bytemuck::pod_read_unaligned::<InstanceRaw>(raw);
+            let half = f64::from(instance.size) * visual_scale * 0.5;
+            let center_render = instance.center.map(|value| f64::from(value) * visual_scale);
+            let min = center_render.map(|value| value - half);
+            let max = center_render.map(|value| value + half);
+            let Some((entry, exit)) = ray_box_interval(ray.origin, ray.direction, min, max) else {
+                continue;
+            };
+            let distance = entry.max(ray.near_distance);
+            if distance > exit || distance > ray.far_distance {
+                continue;
+            }
+            if nearest.is_none_or(|(best, _, _)| distance < best) {
+                nearest = Some((distance, copy.first_instance + relative_index, instance));
+            }
+        }
+    }
+    let Some((distance, instance_index, instance)) = nearest else {
+        return Ok(None);
+    };
+    let center = instance.center.map(f64::from);
+    let position = std::array::from_fn(|axis| {
+        (ray.origin[axis] + ray.direction[axis] * distance) / visual_scale + coordinate_origin[axis]
+    });
+    let voxel_center = std::array::from_fn(|axis| center[axis] + coordinate_origin[axis]);
+    Ok(Some(PickHit {
+        instance_index,
+        position,
+        voxel_center,
+        voxel_size: f64::from(instance.size),
+        distance: distance / visual_scale,
+    }))
+}
+
+fn bounded_framebuffer_size(width: u32, height: u32, device_max_dimension: u32) -> [u32; 2] {
+    if width == 0 || height == 0 || device_max_dimension == 0 {
+        return [0, 0];
+    }
+    let dimension_limit = device_max_dimension.min(MAX_FRAMEBUFFER_DIMENSION);
+    let pixel_count = u64::from(width) * u64::from(height);
+    let pixel_scale = (MAX_FRAMEBUFFER_PIXELS as f64 / pixel_count as f64)
+        .sqrt()
+        .min(1.0);
+    let dimension_scale = (f64::from(dimension_limit) / f64::from(width))
+        .min(f64::from(dimension_limit) / f64::from(height))
+        .min(1.0);
+    let scale = pixel_scale.min(dimension_scale);
+    [
+        ((f64::from(width) * scale).floor() as u32).max(1),
+        ((f64::from(height) * scale).floor() as u32).max(1),
+    ]
+}
+
+fn ray_box_entry(
+    origin: glam::DVec3,
+    direction: glam::DVec3,
+    min: [f64; 3],
+    max: [f64; 3],
+) -> Option<f64> {
+    ray_box_interval(origin, direction, min, max).map(|(near, _)| near)
+}
+
+fn ray_box_interval(
+    origin: glam::DVec3,
+    direction: glam::DVec3,
+    min: [f64; 3],
+    max: [f64; 3],
+) -> Option<(f64, f64)> {
+    let mut near = 0.0_f64;
+    let mut far = f64::INFINITY;
+    for axis in 0..3 {
+        if direction[axis].abs() < 1.0e-15 {
+            if origin[axis] < min[axis] || origin[axis] > max[axis] {
+                return None;
+            }
+            continue;
+        }
+        let inverse = 1.0 / direction[axis];
+        let mut first = (min[axis] - origin[axis]) * inverse;
+        let mut second = (max[axis] - origin[axis]) * inverse;
+        if first > second {
+            std::mem::swap(&mut first, &mut second);
+        }
+        near = near.max(first);
+        far = far.min(second);
+        if near > far {
+            return None;
+        }
+    }
+    far.is_finite().then_some((near, far))
 }
 
 fn surface_config(
@@ -1316,4 +1696,151 @@ pub(crate) async fn create_pipeline_resources(
         vertex_buffer,
         index_buffer,
     })
+}
+
+#[cfg(test)]
+mod pick_tests {
+    use super::*;
+
+    #[test]
+    fn framebuffer_limits_apply_to_direct_renderer_callers() {
+        let [width, height] = bounded_framebuffer_size(12_000, 8_000, 16_384);
+        assert!(u64::from(width) * u64::from(height) <= MAX_FRAMEBUFFER_PIXELS);
+        assert!(width <= MAX_FRAMEBUFFER_DIMENSION);
+        assert!(height <= MAX_FRAMEBUFFER_DIMENSION);
+        assert_eq!(bounded_framebuffer_size(u32::MAX, 1, 8_192), [4_096, 1]);
+        assert_eq!(bounded_framebuffer_size(0, 800, 8_192), [0, 0]);
+        assert_eq!(bounded_framebuffer_size(800, 600, 1_024), [800, 600]);
+    }
+
+    #[test]
+    fn pick_candidate_budget_is_strict_and_bounded() {
+        assert!(check_pick_candidate_budget(PICK_MAX_CANDIDATE_INSTANCES).is_ok());
+        assert!(check_pick_candidate_budget(PICK_MAX_CANDIDATE_INSTANCES + 1).is_err());
+    }
+
+    #[test]
+    fn ray_box_entry_orders_front_hits_and_rejects_misses() {
+        let origin = glam::DVec3::ZERO;
+        let direction = glam::DVec3::NEG_Z;
+        assert_eq!(
+            ray_box_entry(origin, direction, [-1.0; 3], [1.0; 3]),
+            Some(0.0)
+        );
+        assert_eq!(
+            ray_box_entry(origin, direction, [-1.0, -1.0, -4.0], [1.0, 1.0, -3.0]),
+            Some(3.0)
+        );
+        assert_eq!(
+            ray_box_entry(origin, direction, [2.0, -1.0, -4.0], [3.0, 1.0, -3.0]),
+            None
+        );
+        assert_eq!(
+            ray_box_entry(origin, glam::DVec3::Z, [-1.0; 3], [1.0, 1.0, -3.0]),
+            None
+        );
+    }
+
+    #[test]
+    fn pick_chunk_bounds_cover_cube_faces_and_keep_instance_ranges() {
+        let instances = (0..PICK_CHUNK_INSTANCES + 1)
+            .map(|index| InstanceRaw {
+                center: [index as f32, 0.0, 2.0],
+                size: 2.0,
+                color: [1.0; 4],
+                intensity: -1.0,
+                classification: -1.0,
+            })
+            .collect::<Vec<_>>();
+        let chunks = build_pick_chunks(&instances, 1.0);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(
+            (chunks[0].first_instance, chunks[0].instance_count),
+            (0, 256)
+        );
+        assert_eq!(
+            (chunks[1].first_instance, chunks[1].instance_count),
+            (256, 1)
+        );
+        assert!(chunks[0].bounds.min[0] < -1.0 && chunks[0].bounds.min[0] > -1.000001);
+        assert!(chunks[0].bounds.min[1] < -1.0 && chunks[0].bounds.min[1] > -1.000001);
+        assert!(chunks[0].bounds.min[2] < 1.0 && chunks[0].bounds.min[2] > 0.999999);
+        assert!(chunks[0].bounds.max[0] > 256.0 && chunks[0].bounds.max[0] < 256.001);
+    }
+
+    #[test]
+    fn pick_readback_selects_frontmost_voxel_and_restores_dataset_coordinates() {
+        let instances = [
+            InstanceRaw {
+                center: [0.0, 0.0, -3.0],
+                size: 1.0,
+                color: [1.0; 4],
+                intensity: -1.0,
+                classification: -1.0,
+            },
+            InstanceRaw {
+                center: [0.0, 0.0, -5.0],
+                size: 1.0,
+                color: [1.0; 4],
+                intensity: -1.0,
+                classification: -1.0,
+            },
+        ];
+        let mapped = bytemuck::cast_slice(&instances);
+        let copies = [PickCopy {
+            staging_offset: 0,
+            first_instance: 10,
+            instance_count: 2,
+        }];
+        let hit = resolve_pick_instances(
+            PickRay {
+                origin: glam::DVec3::ZERO,
+                direction: glam::DVec3::NEG_Z,
+                near_distance: 6.0,
+                far_distance: 10.0,
+            },
+            &copies,
+            mapped,
+            2.0,
+            [1_000.0, 2_000.0, 3_000.0],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(hit.instance_index, 10);
+        assert_eq!(hit.voxel_center, [1_000.0, 2_000.0, 2_997.0]);
+        assert_eq!(hit.voxel_size, 1.0);
+        assert_eq!(hit.position, [1_000.0, 2_000.0, 2_997.0]);
+        assert_eq!(hit.distance, 3.0);
+        assert!(
+            resolve_pick_instances(
+                PickRay {
+                    origin: glam::DVec3::ZERO,
+                    direction: glam::DVec3::X,
+                    near_distance: 0.1,
+                    far_distance: 10.0,
+                },
+                &copies,
+                mapped,
+                1.0,
+                [0.0; 3],
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            resolve_pick_instances(
+                PickRay {
+                    origin: glam::DVec3::ZERO,
+                    direction: glam::DVec3::NEG_Z,
+                    near_distance: 0.1,
+                    far_distance: 10.0,
+                },
+                &copies,
+                &[],
+                1.0,
+                [0.0; 3],
+            )
+            .is_err()
+        );
+    }
 }

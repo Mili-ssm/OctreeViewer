@@ -63,11 +63,43 @@ the coarse frontier. The worker can process camera commands between block reads;
 The host reports time to the first coarse frame and target LOD frame, plus p50/p95/p99 worker
 `renderFrame()` times over a bounded window of up to 4,096 frames. Real-browser latency and frame-time
 validation remain pending in the [project roadmap](../../README.md#plan-de-trabajo).
-The camera fits dataset bounds and supports orbit, pan, zoom, and resize. Drag to orbit, use Shift+drag
-to pan, and scroll to zoom; keyboard users can focus the canvas and use arrow keys, Shift+arrows,
-`+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and
-OffscreenCanvas support. The host recreates a transferred canvas by replacing it and starting a new
-worker.
+The camera fits dataset bounds and supports observer and bird navigation. Observer mode uses a voxel
+click to set the orbit center, left drag to pan it, right drag to orbit, and the wheel to change radius. Bird mode uses
+left drag to pan, right drag to orbit, WASD/QE to move, and the wheel to change movement speed. The
+camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and OffscreenCanvas support.
+The host recreates a transferred canvas by replacing it and starting a new worker.
+
+### Embedding from another page
+
+Import `createViewer` from `viewer-api.mjs` and pass it a canvas owned by the host page:
+
+```js
+import { createViewer } from "./viewer-api.mjs";
+
+const viewer = createViewer(document.querySelector("canvas"), { mode: "observer" });
+await viewer.ready;
+await viewer.load(file, { voxelPixels: 1 });
+console.log(await viewer.getMetadata());
+console.log(await viewer.getCamera());
+viewer.on("stats", (stats) => console.log(stats.lod?.renderedVoxels));
+viewer.on("pick", (hit) => console.log(hit?.position, hit?.voxelCenter));
+```
+
+The API also provides `setMode("bird" | "observer")`, `setCamera(position, target)`, `fit()`,
+`pick(x, y)`, `getStats()`, `on(type, callback)`, and `dispose()`. `pick(x, y)` uses CSS pixels
+relative to the canvas and resolves to `null` or `{ position, voxelCenter, voxelSize, distance,
+instanceIndex, sceneGeneration }`; observer clicks perform the same pick and move the orbit center.
+An instance index is valid only for its returned LOD scene generation. The GPU readback copies at
+most 65,536 candidate instances per pick and returns an error if that safety cap is exceeded.
+Camera positions/targets returned as arrays by the API
+are in source dataset coordinates, with the file's coordinate origin and visual scale applied.
+`getCamera()` also returns the active mode, fixed Z-up vector, and bird movement speed.
+`renderedVoxels` reports submitted/current HZB-visible instances; it does not guarantee each voxel
+contributes a final pixel. Metadata reports bounds and coordinate origin; a CRS is not inferred when
+the file does not provide one. The canvas is transferred to a worker and cannot be reused after
+`dispose()`; create a replacement canvas before creating another viewer in its place.
+The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run; the
+current environment has no Chromium and Firefox headless is unstable.
 
 Use the keyboard-accessible **Open built-in sample** button to load the included v1/v2 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
