@@ -78,6 +78,26 @@ La lectura se ejecutó en una pasada, reteniendo un bloque decodificado cada vez
 agrupa I/O, CRC, LZ4 y reconstrucción; no mide por separado el coste de CPU del codec ni la primera
 vista interactiva.
 
+### Decodificación de posiciones sin vector intermedio
+
+El 10 de octubre de 2026 se midió la misma lectura completa antes y después de cambiar
+`FormatReader::read_point_block`: las posiciones se escriben ahora directamente en el vector de
+`Point` que se devuelve, y el segmento posterior de colores completa esos mismos puntos. La salida,
+conteos, bloques y bytes no cambian. Se ejecutó una sola vez por versión, sobre la misma máquina y
+dataset; no se controló una secuencia de caché fría/caliente, así que la diferencia no permite
+atribuir mejora de tiempo o RSS.
+
+| Revisión | Lectura de bloques | Tiempo pared | RSS máximo |
+| --- | --- | ---: | ---: |
+| `3a1812b`, antes | 1.343 bloques; 81.706.211 puntos | 9,945 s | 27.412 KiB |
+| Árbol de trabajo, después | Mismo `.oct`, conteos y bytes | 9,870 s | 26.748 KiB |
+
+La asignación eliminada reservaba un vector `[f32; 3]` por punto mientras también existía el vector
+final de `Point`. En el mayor bloque de esta nube (229.177 puntos), esa reserva equivale a unos
+2,6 MiB. Es una reducción estructural de memoria temporal por bloque; la diferencia de RSS observada
+(664 KiB) y de tiempo (75 ms) no es una mejora repetible demostrada. Para cerrarla, hacer tres
+lecturas emparejadas por versión con política de caché y orden declarados y comparar medianas.
+
 ### Espacio temporal de conversión
 
 En una conversión adicional de la misma revisión, se muestreó cada 100 ms el tamaño de los archivos
