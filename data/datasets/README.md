@@ -58,9 +58,12 @@ cargo run --release -p viewer_convert --example real_dataset_bench -- convert \
   data/datasets/sensoforest/majadas-tls.oct
 ```
 
-La conversión completa y las mediciones de tiempo/RSS no se ejecutan al preparar los datos: son los
-tests de estrés posteriores. Antes de convertir, revisa espacio libre y configura el destino local;
-los archivos `.oct` resultantes también están ignorados por Git.
+Se hizo una conversión release exploratoria por archivo el 10 de octubre de 2026: Albuera tardó
+378,8 s y Majadas 395,5 s. Se midieron RSS pico de 606.840 KiB y 301.844 KiB, respectivamente; los
+`.oct` tuvieron ratios de 2,89× y 5,51× respecto al LAZ. Resultados y límites están en
+[`REAL_DATASET_BENCH.md`](../../docs/REAL_DATASET_BENCH.md). Las salidas se eliminaron tras guardar
+sus hashes. Antes de repetir, revisa espacio libre y configura un destino local; los `.oct` resultantes
+también están ignorados por Git.
 
 ## Ejecutar
 

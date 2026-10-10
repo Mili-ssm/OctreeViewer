@@ -3,28 +3,39 @@ use std::{
     fs::{self, File, OpenOptions},
     io,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        mpsc,
+    },
+    thread,
 };
 
 use las::Reader;
+use rayon::prelude::*;
 use thiserror::Error;
 use viewer_core::{
     AttributeDataType, AttributeDescriptor, BlockId, CoordinateFrame, DatasetSource, SpatialBounds,
 };
-use viewer_format::{FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions};
+use viewer_format::{
+    FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions, prepare_point_block,
+};
 
 mod checkpoint;
 mod ept;
 mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
-use spatial::{PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, spool_source};
+use spatial::{
+    PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
+    spool_source,
+};
 
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
 const TARGET_RENDER_EXTENT: f64 = 100.0;
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
-const MAX_SPATIAL_WORKERS: usize = 4;
+const MAX_SPATIAL_WORKERS: usize = 8;
+const DEFAULT_SPATIAL_WORKERS: usize = 4;
 const ALLOWED_SPATIAL_DIVISIONS: [u8; 3] = [2, 4, 8];
 const MAX_INPUT_BYTES_PER_BATCH: usize = 8 * 1024 * 1024;
 const MAX_BLOCKS: u64 = 1_000_000;
@@ -34,7 +45,8 @@ const ESTIMATED_FIXED_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn default_spatial_workers() -> usize {
-    std::thread::available_parallelism().map_or(1, |workers| workers.get().min(MAX_SPATIAL_WORKERS))
+    std::thread::available_parallelism()
+        .map_or(1, |workers| workers.get().min(DEFAULT_SPATIAL_WORKERS))
 }
 
 fn visual_scale_for_bounds(bounds: SpatialBounds) -> Result<f64, ConvertError> {
@@ -188,6 +200,7 @@ struct SourceInfo {
     point_count: u64,
     record_length: usize,
     point_format: las::point::Format,
+    transforms: las::Vector<las::Transform>,
     has_crs: bool,
 }
 
@@ -387,29 +400,23 @@ fn convert_file_inner(
         verify_candidate_visual_scale(&candidate_path, expected_visual_scale)?;
         let (block_ids, source_block_ids) = output_block_ids(&candidate_path)?;
         let candidate_length = candidate_fingerprint.bytes;
+        let validation = OutputValidation {
+            total_points: point_count,
+            block_ids: &block_ids,
+            source_block_ids: &source_block_ids,
+            file_length: candidate_length,
+            requested_workers: options.spatial_workers(),
+            memory_budget_bytes: options.max_memory_budget_bytes(),
+            reserved_memory_bytes: estimated_memory_bytes,
+        };
         let output_bytes = if output_path.exists() {
             if fingerprint_file(output_path)? != candidate_fingerprint {
                 return Err(ConvertError::OutputExists(output_path.to_owned()));
             }
-            validate_output(
-                output_path,
-                point_count,
-                &block_ids,
-                &source_block_ids,
-                candidate_length,
-                on_progress,
-            )?;
+            validate_output(output_path, &validation, on_progress)?;
             candidate_length
         } else {
-            publish_output(
-                &candidate_path,
-                output_path,
-                point_count,
-                &block_ids,
-                &source_block_ids,
-                candidate_length,
-                on_progress,
-            )?
+            publish_output(&candidate_path, output_path, validation, on_progress)?
         };
         checkpoint.complete()?;
         let _ = on_progress(ConversionProgress {
@@ -432,7 +439,7 @@ fn convert_file_inner(
     } else {
         Workspace::create(output_path)?
     };
-    let source_spool = if let Some(checkpoint) = checkpoint.as_mut() {
+    let spatial_plan = if let Some(checkpoint) = checkpoint.as_mut() {
         match checkpoint.stage() {
             CheckpointStage::Started => {
                 let path = checkpoint.source_path();
@@ -448,14 +455,17 @@ fn convert_file_inner(
         if matches!(checkpoint.stage(), CheckpointStage::SourceReady(_)) {
             link_or_copy(&checkpoint.source_path(), &path)?;
         }
-        path
+        build_spatial_plan(&source, options, &workspace, &path, on_progress)?
     } else {
-        let path = workspace.file("source.spool");
-        spool_source(&mut reader, &source, options, &path, on_progress)?;
-        path
+        build_spatial_plan_from_reader(
+            &mut reader,
+            input_path,
+            &source,
+            options,
+            &workspace,
+            on_progress,
+        )?
     };
-    let spatial_plan =
-        build_spatial_plan(&source, options, &workspace, &source_spool, on_progress)?;
     let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
     let mut temporary = if checkpoint.is_none() {
         Some(create_temporary_output(output_path)?)
@@ -485,13 +495,18 @@ fn convert_file_inner(
             .write(true)
             .open(&temporary_path)?
     };
-    let mut writer = FormatWriter::new(
-        file,
-        plan.metadata.clone(),
-        FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
-            .map_err(ConvertError::Format)?,
+    let writer_options = FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
+        .map_err(ConvertError::Format)?;
+    let mut writer = FormatWriter::new(file, plan.metadata.clone(), writer_options)?;
+    stream_blocks(
+        &mut writer,
+        &plan,
+        &temporary_path,
+        writer_options,
+        options.spatial_workers(),
+        options.max_memory_budget_bytes(),
+        on_progress,
     )?;
-    stream_blocks(&mut writer, &plan, &temporary_path, on_progress)?;
     let output = writer.finish()?;
     output.sync_all()?;
     drop(output);
@@ -504,15 +519,17 @@ fn convert_file_inner(
             plan.estimated_peak_memory_bytes,
         )?;
     }
-    let output_bytes = publish_output(
-        &temporary_path,
-        output_path,
-        plan.point_count,
-        &plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>(),
-        &plan.source_block_ids,
+    let output_block_ids = plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>();
+    let validation = OutputValidation {
+        total_points: plan.point_count,
+        block_ids: &output_block_ids,
+        source_block_ids: &plan.source_block_ids,
         file_length,
-        on_progress,
-    )?;
+        requested_workers: options.spatial_workers(),
+        memory_budget_bytes: options.max_memory_budget_bytes(),
+        reserved_memory_bytes: plan.estimated_peak_memory_bytes,
+    };
+    let output_bytes = publish_output(&temporary_path, output_path, validation, on_progress)?;
     drop(temporary);
     if let Some(checkpoint) = checkpoint {
         checkpoint.complete()?;
@@ -554,6 +571,7 @@ fn inspect_source(reader: &Reader) -> Result<SourceInfo, ConvertError> {
         point_count: header.number_of_points(),
         record_length: usize::from(header.point_format().len()).max(1),
         point_format: *header.point_format(),
+        transforms: *header.transforms(),
         has_crs: header.has_crs_vlrs(),
     })
 }
@@ -584,6 +602,9 @@ fn stream_blocks(
     writer: &mut FormatWriter<File>,
     plan: &ConversionPlan,
     temporary_path: &Path,
+    writer_options: FormatWriterOptions,
+    requested_workers: usize,
+    memory_budget_bytes: u64,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
     emit_progress(
@@ -597,21 +618,46 @@ fn stream_blocks(
         0,
     )?;
     let mut processed = 0_u64;
-    for block in &plan.blocks {
-        writer.write_block(block.read(plan.frame)?)?;
-        if block.is_source_points {
-            processed += block.point_count() as u64;
+    let largest_block_points = plan
+        .blocks
+        .iter()
+        .map(|block| block.point_count() as u64)
+        .max()
+        .unwrap_or(1);
+    let bytes_per_worker = largest_block_points
+        .checked_mul(ESTIMATED_WORKING_BYTES_PER_POINT)
+        .and_then(|bytes| bytes.checked_add(1024 * 1024))
+        .ok_or(ConvertError::SizeOverflow)?;
+    let available_memory = memory_budget_bytes.saturating_sub(plan.estimated_peak_memory_bytes);
+    let memory_limited_workers = 1_usize
+        .saturating_add(usize::try_from(available_memory / bytes_per_worker).unwrap_or(usize::MAX));
+    let worker_count = requested_workers
+        .min(memory_limited_workers)
+        .min(plan.blocks.len().max(1));
+    for batch in plan.blocks.chunks(worker_count) {
+        let prepared = batch
+            .par_iter()
+            .map(|block| {
+                prepare_point_block(block.read(plan.frame)?, &plan.metadata, writer_options)
+                    .map_err(ConvertError::Format)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for (block, prepared) in batch.iter().zip(prepared) {
+            writer.write_prepared_block(prepared)?;
+            if block.is_source_points {
+                processed += block.point_count() as u64;
+            }
+            emit_progress(
+                on_progress,
+                ConversionProgress {
+                    stage: ConversionStage::ReadingAndWritingBlocks,
+                    points_processed: processed,
+                    total_points: plan.point_count,
+                    bytes_written: fs::metadata(temporary_path)?.len(),
+                },
+                processed,
+            )?;
         }
-        emit_progress(
-            on_progress,
-            ConversionProgress {
-                stage: ConversionStage::ReadingAndWritingBlocks,
-                points_processed: processed,
-                total_points: plan.point_count,
-                bytes_written: fs::metadata(temporary_path)?.len(),
-            },
-            processed,
-        )?;
     }
     if processed != plan.point_count {
         return Err(ConvertError::PointCountMismatch {
@@ -710,15 +756,32 @@ fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String>
     dimensions
 }
 
+#[derive(Clone, Copy)]
+struct OutputValidation<'a> {
+    total_points: u64,
+    block_ids: &'a [BlockId],
+    source_block_ids: &'a [BlockId],
+    file_length: u64,
+    requested_workers: usize,
+    memory_budget_bytes: u64,
+    reserved_memory_bytes: u64,
+}
+
 fn validate_output(
     path: &Path,
-    total_points: u64,
-    block_ids: &[BlockId],
-    source_block_ids: &[BlockId],
-    file_length: u64,
+    validation: &OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
-    let mut reader = FormatReader::new(File::open(path)?)?;
+    let OutputValidation {
+        total_points,
+        block_ids,
+        source_block_ids,
+        file_length,
+        requested_workers,
+        memory_budget_bytes,
+        reserved_memory_bytes,
+    } = *validation;
+    let reader = FormatReader::new(File::open(path)?)?;
     let source_blocks = source_block_ids.iter().copied().collect::<HashSet<_>>();
     emit_progress(
         on_progress,
@@ -730,22 +793,110 @@ fn validate_output(
         },
         0,
     )?;
-    let mut validated_points = 0;
-    for block_id in block_ids {
-        let block_points = reader.read_block(*block_id)?.points().len() as u64;
-        if source_blocks.contains(block_id) {
-            validated_points += block_points;
+    let largest_raw_block = reader
+        .block_storage_stats()?
+        .into_iter()
+        .map(|block| block.raw_bytes)
+        .max()
+        .unwrap_or(0);
+    let worker_bytes = largest_raw_block
+        .checked_mul(4)
+        .and_then(|bytes| bytes.checked_add(1024 * 1024))
+        .ok_or(ConvertError::SizeOverflow)?;
+    let available_memory = memory_budget_bytes.saturating_sub(reserved_memory_bytes);
+    let memory_limited_workers =
+        usize::try_from(available_memory.checked_div(worker_bytes).unwrap_or(0))
+            .unwrap_or(usize::MAX)
+            .max(1);
+    let worker_count = requested_workers
+        .min(memory_limited_workers)
+        .min(block_ids.len().max(1));
+    let next_block = AtomicUsize::new(0);
+    let cancelled = AtomicBool::new(false);
+    let (sender, receiver) = mpsc::sync_channel::<ValidationMessage>(worker_count * 2);
+    let worker_readers = (0..worker_count)
+        .map(|_| Ok(reader.fork_reader(File::open(path)?)))
+        .collect::<Result<Vec<_>, io::Error>>()?;
+    let mut validated_points = 0_u64;
+    let mut first_error = None;
+    thread::scope(|scope| {
+        for mut worker_reader in worker_readers {
+            let sender = sender.clone();
+            let next_block = &next_block;
+            let cancelled = &cancelled;
+            let source_blocks = &source_blocks;
+            scope.spawn(move || {
+                while !cancelled.load(Ordering::Relaxed) {
+                    let index = next_block.fetch_add(1, Ordering::Relaxed);
+                    let Some(block_id) = block_ids.get(index).copied() else {
+                        break;
+                    };
+                    let result = worker_reader.read_block(block_id).map(|block| {
+                        (
+                            source_blocks.contains(&block_id),
+                            block.points().len() as u64,
+                        )
+                    });
+                    let failed = result.is_err();
+                    if sender.send(ValidationMessage::Block(result)).is_err() {
+                        return;
+                    }
+                    if failed {
+                        cancelled.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+                let _ = sender.send(ValidationMessage::Finished);
+            });
         }
-        emit_progress(
-            on_progress,
-            ConversionProgress {
-                stage: ConversionStage::ValidatingOutput,
-                points_processed: validated_points,
-                total_points,
-                bytes_written: file_length,
-            },
-            validated_points,
-        )?;
+        drop(sender);
+        let mut finished_workers = 0;
+        while finished_workers < worker_count {
+            match receiver.recv() {
+                Ok(ValidationMessage::Block(Ok((is_source, block_points)))) => {
+                    if is_source {
+                        match validated_points.checked_add(block_points) {
+                            Some(total) => validated_points = total,
+                            None => {
+                                first_error.get_or_insert(ConvertError::SizeOverflow);
+                            }
+                        };
+                    }
+                    if first_error.is_none()
+                        && let Err(error) = emit_progress(
+                            on_progress,
+                            ConversionProgress {
+                                stage: ConversionStage::ValidatingOutput,
+                                points_processed: validated_points,
+                                total_points,
+                                bytes_written: file_length,
+                            },
+                            validated_points,
+                        )
+                    {
+                        cancelled.store(true, Ordering::Relaxed);
+                        first_error = Some(error);
+                    }
+                }
+                Ok(ValidationMessage::Block(Err(error))) => {
+                    cancelled.store(true, Ordering::Relaxed);
+                    first_error.get_or_insert(ConvertError::Format(error));
+                }
+                Ok(ValidationMessage::Finished) => finished_workers += 1,
+                Err(_) => {
+                    cancelled.store(true, Ordering::Relaxed);
+                    first_error.get_or_insert_with(|| {
+                        ConvertError::Io(io::Error::other(
+                            "validation worker channel closed unexpectedly",
+                        ))
+                    });
+                    break;
+                }
+            }
+        }
+    });
+    if let Some(error) = first_error {
+        return Err(error);
     }
     if validated_points != total_points {
         return Err(ConvertError::PointCountMismatch {
@@ -756,24 +907,20 @@ fn validate_output(
     Ok(())
 }
 
+enum ValidationMessage {
+    Block(Result<(bool, u64), viewer_format::FormatError>),
+    Finished,
+}
+
 fn publish_output(
     temporary_path: &Path,
     output_path: &Path,
-    point_count: u64,
-    block_ids: &[BlockId],
-    source_block_ids: &[BlockId],
-    file_length: u64,
+    validation: OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<u64, ConvertError> {
-    validate_output(
-        temporary_path,
-        point_count,
-        block_ids,
-        source_block_ids,
-        file_length,
-        on_progress,
-    )?;
+    validate_output(temporary_path, &validation, on_progress)?;
     let output_bytes = fs::metadata(temporary_path)?.len();
+    let point_count = validation.total_points;
     emit_progress(
         on_progress,
         ConversionProgress {
@@ -872,7 +1019,7 @@ mod tests {
 
     use super::{
         CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions,
-        MAX_SPATIAL_WORKERS, convert_file, convert_file_with_checkpoint,
+        DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS, convert_file, convert_file_with_checkpoint,
         convert_file_with_progress, verify_candidate_visual_scale, visual_scale_for_bounds,
     };
 
@@ -1187,9 +1334,16 @@ mod tests {
             Err(ConvertError::InvalidSpatialWorkerCount(0))
         ));
         assert!(matches!(
-            ConvertOptions::default().with_spatial_workers(5),
-            Err(ConvertError::InvalidSpatialWorkerCount(5))
+            ConvertOptions::default().with_spatial_workers(9),
+            Err(ConvertError::InvalidSpatialWorkerCount(9))
         ));
+        assert_eq!(
+            ConvertOptions::default()
+                .with_spatial_workers(MAX_SPATIAL_WORKERS)
+                .unwrap()
+                .spatial_workers(),
+            MAX_SPATIAL_WORKERS
+        );
         assert!(matches!(
             ConvertOptions::default().with_spatial_divisions(3),
             Err(ConvertError::InvalidSpatialDivisions(3))
@@ -1206,7 +1360,7 @@ mod tests {
     #[test]
     fn default_worker_count_uses_available_parallelism_with_a_safe_cap() {
         let expected = std::thread::available_parallelism()
-            .map_or(1, |workers| workers.get().min(MAX_SPATIAL_WORKERS));
+            .map_or(1, |workers| workers.get().min(DEFAULT_SPATIAL_WORKERS));
 
         assert_eq!(ConvertOptions::default().spatial_workers(), expected);
         assert_eq!(

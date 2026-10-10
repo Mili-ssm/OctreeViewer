@@ -403,15 +403,16 @@ pub(super) fn convert(
     file.sync_all()?;
     drop(file);
     let file_length = fs::metadata(&temporary.path)?.len();
-    let output_bytes = publish_output(
-        &temporary.path,
-        output_path,
-        manifest.points,
-        &all_blocks,
-        &all_blocks,
+    let validation = super::OutputValidation {
+        total_points: manifest.points,
+        block_ids: &all_blocks,
+        source_block_ids: &all_blocks,
         file_length,
-        on_progress,
-    )?;
+        requested_workers: options.spatial_workers(),
+        memory_budget_bytes: options.max_memory_budget_bytes(),
+        reserved_memory_bytes: 0,
+    };
+    let output_bytes = publish_output(&temporary.path, output_path, validation, on_progress)?;
     let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,
         points_processed: manifest.points,

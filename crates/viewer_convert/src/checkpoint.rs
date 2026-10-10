@@ -7,8 +7,8 @@ use std::{
 
 use thiserror::Error;
 
-const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V2";
-const PREVIOUS_MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V1";
+// V3 uses compact source spools; older spool layouts cannot be resumed.
+const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V3";
 const HASH_OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
 const HASH_PRIME: u128 = 0x0000000001000000000000000000013b;
 
@@ -341,8 +341,7 @@ fn read_manifest(path: &Path) -> Result<Manifest, CheckpointError> {
     })?;
     let mut lines = content.lines();
     let manifest_version = lines.next();
-    let legacy_manifest = manifest_version == Some(PREVIOUS_MANIFEST_VERSION);
-    if !legacy_manifest && manifest_version != Some(MANIFEST_VERSION) {
+    if manifest_version != Some(MANIFEST_VERSION) {
         return Err(CheckpointError::Invalid(
             "unsupported manifest version".to_owned(),
         ));
@@ -409,13 +408,9 @@ fn read_manifest(path: &Path) -> Result<Manifest, CheckpointError> {
         max_memory_bytes: parse("max_memory_bytes")?
             .parse()
             .map_err(|_| CheckpointError::Invalid("invalid memory budget".to_owned()))?,
-        spatial_divisions: if legacy_manifest {
-            2
-        } else {
-            parse("spatial_divisions")?
-                .parse()
-                .map_err(|_| CheckpointError::Invalid("invalid spatial divisions".to_owned()))?
-        },
+        spatial_divisions: parse("spatial_divisions")?
+            .parse()
+            .map_err(|_| CheckpointError::Invalid("invalid spatial divisions".to_owned()))?,
         stage,
     })
 }
@@ -446,7 +441,7 @@ mod tests {
 
     use super::{
         Checkpoint, CheckpointError, CheckpointMode, CheckpointStage, FileFingerprint,
-        read_manifest,
+        MANIFEST_VERSION,
     };
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -518,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn version_one_manifest_resumes_as_binary_partition() {
+    fn older_manifest_versions_cannot_resume_incompatible_spools() {
         let output = output();
         let source = FileFingerprint {
             bytes: 123,
@@ -531,23 +526,20 @@ mod tests {
 
         let manifest_path = root.join("manifest.txt");
         let content = fs::read_to_string(&manifest_path).unwrap();
-        let legacy = content
-            .lines()
-            .filter(|line| !line.starts_with("spatial_divisions="))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .replacen(
-                "OCTREE_CONVERSION_CHECKPOINT_V2",
-                "OCTREE_CONVERSION_CHECKPOINT_V1",
-                1,
-            );
-        fs::write(&manifest_path, format!("{legacy}\n")).unwrap();
-        assert_eq!(read_manifest(&manifest_path).unwrap().spatial_divisions, 2);
-
-        let resumed =
-            Checkpoint::open(&output, CheckpointMode::Resume, source, 32, 0.01, 1024, 2).unwrap();
-        assert_eq!(resumed.stage(), &CheckpointStage::Started);
-        drop(resumed);
+        for version in [
+            "OCTREE_CONVERSION_CHECKPOINT_V1",
+            "OCTREE_CONVERSION_CHECKPOINT_V2",
+        ] {
+            fs::write(
+                &manifest_path,
+                content.replacen(MANIFEST_VERSION, version, 1),
+            )
+            .unwrap();
+            assert!(matches!(
+                Checkpoint::open(&output, CheckpointMode::Resume, source, 32, 0.01, 1024, 2),
+                Err(CheckpointError::Invalid(reason)) if reason == "unsupported manifest version"
+            ));
+        }
         fs::remove_dir_all(root).unwrap();
     }
 }

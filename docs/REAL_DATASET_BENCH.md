@@ -203,6 +203,113 @@ por eso el valor automático queda acotado a `min(4, available_parallelism)` y e
 override `--spatial-workers`. Repetir en el mismo SSD y en Albuera/Majadas antes de tratar el ahorro
 como representativo.
 
+### Una pasada de fuente, LAZ y bloques en paralelo
+
+El 10 de octubre de 2026 se repitió Belvedere tres veces con la implementación optimizada, en el
+mismo SSD NVMe, compilación release, tabla 8³, bloques de 262.144 puntos, presupuesto de 512 MiB y
+cuatro trabajadores. Cada salida se borró después de registrar su hash para que las ejecuciones
+siguientes no heredaran archivos de salida. Las cifras de referencia de cuatro trabajadores arriba
+son el control histórico (91,153 s), no una medición intercalada con cada repetición nueva.
+
+| Repetición | Total | Planificación espacial | Jerarquía | Lectura y escritura | Validación |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A | 57,824 s | 19,342 s | 26,318 s | 8,911 s | 2,910 s |
+| B | 57,869 s | 19,660 s | 25,904 s | 9,117 s | 2,849 s |
+| C | 58,098 s | 19,805 s | 25,881 s | 9,210 s | 2,869 s |
+| Mediana | **57,869 s** | **19,660 s** | **25,904 s** | **9,117 s** | **2,869 s** |
+
+La mediana total es un 36,5 % menor que la base anterior de cuatro trabajadores (91,153 s), con
+33,284 s menos. Las tres salidas conservaron 81.682.329 puntos, 1.343 bloques, 23.882 muestras LOD,
+1.596.356.694 B y el SHA-256
+`af78ad1d8d10188773851635ee042d81d25f3176866a3218a6f8103c0af2f977`. Esto verifica equivalencia de
+salida en este corpus y ejecución, no garantiza el mismo resultado en otros equipos o datasets.
+
+Los cambios acumulados son: la ruta normal LAS/LAZ distribuye los hijos de raíz y acumula LOD en el
+mismo recorrido de entrada (el modo checkpoint conserva su spool de fuente); `laz-parallel` habilita
+la descompresión paralela de chunks LAZ; preparación/codificación de bloques independientes se hace
+en lotes acotados y el append al archivo se mantiene en orden; la validación lee y comprueba bloques
+con lectores independientes que comparten el índice inmutable. La mediana de validación bajó a
+2,869 s desde aproximadamente 10 s del control previo. No se cambió el formato `.oct` v3. El límite
+explícito de ocho trabajadores queda disponible, pero una muestra a ocho fue ligeramente más lenta
+que a cuatro con la descompresión LAZ paralela; por eso el valor por defecto sigue limitado a cuatro.
+
+Las mediciones intermedias atribuyeron mejoras sucesivas a las partes del pipeline, pero no forman un
+experimento factorial con orden aleatorio. Esta ronda no midió RSS, pico de disco temporal ni bytes de
+I/O; el presupuesto controlado reportado por el conversor no equivale a RSS. Repetir al menos en
+Albuera y Majadas y medir memoria/almacenamiento antes de generalizar o cambiar el formato.
+
+### SensOFOREST: Albuera UAV y Majadas TLS
+
+El 10 de octubre de 2026 se hizo una ejecución exploratoria de cada dataset con el mismo perfil release
+de Belvedere: NVMe local, cuatro trabajadores, divisiones 8³, 262.144 puntos por bloque, error máximo
+0,01 y presupuesto controlado predeterminado de 512 MiB. Se ejecutó en secuencia, sin conservar los
+`.oct` entre conversiones. Comando base:
+
+```sh
+cargo build --release --offline -p viewer_convert --example real_dataset_bench
+/usr/bin/time -v target/release/examples/real_dataset_bench convert INPUT.laz OUTPUT.oct 4 8
+```
+
+| Dataset | Puntos | LAZ | Tiempo total | Planificación | Jerarquía | Lectura/escritura | Validación | RSS pico |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Albuera UAV | 508.809.556 | 4.305.484.789 B | 378,785 s (wall: 6:18,98) | 143,007 s | 103,334 s | 101,906 s | 28,594 s | 606.840 KiB |
+| Majadas TLS | 415.465.882 | 1.343.266.470 B | 395,462 s (wall: 6:35,55) | 94,622 s | 207,917 s | 76,435 s | 15,031 s | 301.844 KiB |
+
+Ambos exceden el umbral esperado de 120 s por más de 3×. La fase dominante depende del corpus: la
+planificación espacial en Albuera y la construcción de jerarquía en Majadas. El mayor spool temporal
+observado durante muestreos de directorio fue aproximadamente 29 GB en Albuera y 26 GB en Majadas;
+no se registró un pico exacto. El RSS medido supera la estimación controlada informada por el
+conversor (163.095.616 B y 116.182.528 B, respectivamente), lo que confirma que esta estimación no
+es un límite de memoria.
+
+| Dataset | Salida `.oct` | Ratio `.oct`/LAZ | Bloques | Payload LZ4 / bruto | SHA-256 de salida |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Albuera UAV | 12.444.809.935 B | 2,890× | 102.726 | 0,5955 | `098b3600ebf9a2b0c4a93dfa2686ad03713f83844a50087c4678ddf23d24dc7f` |
+| Majadas TLS | 7.404.866.843 B | 5,513× | 37.786 | 0,5395 | `2e7ca9a09b731323ff43fc683cdbfba2af6645a08cb93a52f34a19623bd1c319` |
+
+Albuera queda bajo el objetivo de tamaño `.oct` ≤3× LAZ; Majadas lo supera ampliamente aunque su ratio
+de payload comprimido sea mejor. Esto apunta a diferencias en atributos, distribución y overhead por
+bloque/índice, y requiere perfilar antes de atribuirlo a un solo factor. Los dos resultados conservan
+el conteo de puntos y pasaron la validación completa de salida del conversor. Los MD5 de entrada
+coincidieron con los publicados en el registro y documentados en `data/datasets/README.md`. Los
+SHA-256 calculados para estas copias fueron: Albuera
+`071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f` y Majadas
+`7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33`.
+
+Es una muestra de una ejecución por corpus, no una mediana reproducible ni un control intercalado.
+No repetir cada conversión de seis minutos antes de aplicar una optimización. Tras reducir el cuello
+dominante, repetir tres veces por corpus y registrar el perfil de disco temporal y RSS con el mismo
+comando. Las salidas `.oct` de esta medición se eliminaron después de calcular sus hashes.
+
+### Repetición con writer v4 y spool compacto
+
+Ejecuciones release del 10 de octubre, perfil de 4 trabajadores y 8 divisiones, mismos LAZ y
+parámetros que la referencia anterior. Se midieron con `/usr/bin/time -v`; las nuevas salidas y
+temporales se guardaron bajo `target/format-v4-bench/` y no reemplazaron las conversiones existentes.
+
+| Dataset | Tiempo conversor | Wall | Planificación espacial | Jerarquía | Lectura/escritura | Validación | RSS pico | Spool observado |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Albuera UAV | 346,146 s | 346,49 s | 135,260 s | 84,283 s | 101,639 s | 22,862 s | 675.488 KiB | ≥20 GB |
+| Majadas TLS | 356,723 s | 356,83 s | 88,335 s | 179,246 s | 73,939 s | 14,270 s | 315.404 KiB | ≥15 GB |
+
+Las referencias anteriores eran 378,785 s y 395,462 s, respectivamente. En esta única repetición por
+dataset, el wall bajó 8,6 % en Albuera y 9,8 % en Majadas; no son ejecuciones emparejadas y el cambio
+incluye el writer v4, por lo que no atribuimos toda la diferencia al spool. La reducción de 55 B a
+41 B (Albuera) y 33 B (Majadas) sí es exacta por registro. La jerarquía de Majadas continúa siendo el
+mayor cuello: 179 s. Ninguna conversión se acerca aún al objetivo de 120 s.
+
+| Dataset | Salida v4 | Ratio salida/LAZ | Bloques | Payload comprimido / bruto | RSS controlado informado |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Albuera UAV | 12.435.028.825 B | 2,888× | 102.726 | 0,5936 | 163.095.616 B |
+| Majadas TLS | 7.362.893.464 B | 5,481× | 37.786 | 0,5357 | 116.182.528 B |
+
+Los `.oct` v4 quedaron −0,08 % y −0,57 % frente a sus tamaños v3 medidos anteriormente. La columna
+independiente no añadió un aumento material al tamaño en estos dos corpus. El RSS pico externo fue
+675.488 KiB y 315.404 KiB; el presupuesto controlado no es un límite de memoria. Los tamaños de spool
+son muestras observadas durante la ejecución, no picos exactos. Hace falta repetir tres veces antes
+de afirmar una mejora estable. El próximo cuello a estudiar es la construcción de jerarquía, en
+especial para Majadas, seguido de mediciones explícitas de I/O temporal y reparto de trabajo.
+
 ### Memoria esperable para render
 
 En una ruta hipotética que materialice el dataset completo, `Point` ocupa 16 B e `InstanceRaw` 32 B.
@@ -259,3 +366,58 @@ de 100,12 s a 101,16 s. Esta diferencia no demuestra una reducción estable ni u
 no son repeticiones emparejadas y el RSS puede variar por el runtime y el sistema. El presupuesto
 controlado de 192 B por punto se mantiene sin cambios; hace falta repetir la comparación antes de
 ajustar ese margen o afirmar una mejora de rendimiento.
+
+### Spool temporal compacto
+
+Implementado después de la referencia anterior. Los puntos fuente guardan los tres enteros LAS
+originales (`i32`) y aplican escala/offset al leerlos; esto conserva las coordenadas exactas incluso
+cuando invertir desde `f64` pierde precisión por un origen grande. Los centros sintéticos LOD siguen
+guardándose como `f64`. El esquema del registro omite atributos que el formato fuente no contiene y
+mantiene siempre RGB de visualización. El layout del spool también gobierna offsets y lecturas de
+bloques planificados. Los manifiestos de checkpoint v1/v2 se rechazan porque sus registros usan el
+layout antiguo.
+
+Tamaños de registro verificados por pruebas de codificación y lectura:
+
+| PDRF | Registro fuente | Muestra LOD | Cambio fuente vs 55 B | Cambio LOD vs 55 B |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 27 B | 39 B | −50,91 % | −29,09 % |
+| 2 (Majadas) | 33 B | 45 B | −40,00 % | −18,18 % |
+| 3 (Albuera) | 41 B | 53 B | −25,45 % | −3,64 % |
+| 8 | 43 B | 55 B | −21,82 % | 0 % |
+
+Estos porcentajes describen el tamaño por registro, no el pico temporal ni el tiempo de conversión.
+Aún falta repetir las conversiones completas de Albuera y Majadas con el perfil release v3 y medir
+duración por fase, bytes temporales/pico, RSS y salida v4. Por tanto, el objetivo de 120 s sigue sin
+demostrar y no se atribuye una mejora de rendimiento a la reducción del spool hasta completar esas
+medidas.
+
+## Formato v4: lectura geométrica y columnas independientes
+
+El writer v4 escribe por defecto geometría y cada atributo como payload independiente, referidos por
+el mismo `block_id` y orden de filas. `FormatReader::read_geometry` evita leer columnas de atributos;
+`read_attribute` carga solo la columna solicitada. La vista progresiva WASM usa geometría para RGB y
+elevación, y solicita intensidad/clasificación solo para esos modos. Cambiar de modo vacía los bloques
+decodificados para reconstruir el corte con la columna correcta. `read_attribute_row` sigue
+descomprimiendo la columna completa de ese bloque.
+
+Primera comprobación release con Stanford Bunny, 40.256 puntos (misma fuente LAS de 805.347 B). Una
+conversión v4 tardó 47,662 ms en una única ejecución y produjo 413.602 B; el `.oct` histórico de esta
+muestra tiene 413.287 B y versión 1. No se usa como comparación de conversión emparejada.
+
+Tres lecturas secuenciales de cada modo sobre cada archivo; tiempos de payload con caché caliente del
+sistema y bytes contados por el lector:
+
+| Archivo | Versión | Bytes de archivo | Solo geometría: bytes leídos | Todo: bytes leídos | Mediana solo geometría | Mediana todo |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bunny histórico | 1 | 413.287 | 412.663 | 412.663 | 8,446 ms | 8,101 ms |
+| Bunny nuevo | 4 | 413.602 | 410.752 | 412.726 | 5,326 ms | 6,922 ms |
+
+En v4, leer solo geometría omitió 1.974 B de atributos en este archivo; las columnas `intensity` y
+`classification` ocuparon 328 B y 169 B al leerlas individualmente. El nuevo archivo fue 315 B mayor
+que el histórico. Los tiempos de unos pocos milisegundos y un solo bloque no permiten atribuir una
+mejora general: la ventaja demostrada aquí es que el lector no toca las otras columnas. Faltan las
+medidas v4 de Belvedere, Albuera y Majadas y una comparación de lectura sobre bloques LOD grandes.
+El primer intento de convertir Albuera falló por cuota de `/tmp`; un segundo intento reubicado en el
+volumen del checkout se interrumpió sin resultado con el spool temporal en 27 GB. Ninguno cuenta como
+benchmark. Repetir esas medidas con una cuota suficiente y registrar explícitamente el pico temporal.

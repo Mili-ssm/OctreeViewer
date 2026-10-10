@@ -9,7 +9,8 @@ path = "src/main.rs"
 
 [dependencies]
 ctrlc.workspace = true
-las.workspace = true
+las = { workspace = true, features = ["laz-parallel"] }
+rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

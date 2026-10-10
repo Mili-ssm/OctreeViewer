@@ -414,15 +414,16 @@ estimado de memoria controlada de 512 MiB. La estimación incluye
 grilla LOD de 512 celdas, buffers de spool de 8 KiB por hijo posible (64 KiB, 512 KiB o 4 MiB para
 2, 4 u 8 divisiones), 16 MiB fijos y 1 MiB por trabajador espacial adicional; no equivale al RSS
 total ni incluye el allocator o la biblioteca LAS/LAZ. `--spatial-divisions` elige 2, 4 u 8 divisiones
-por eje y conserva 2 por defecto. `--spatial-workers` permite fijar entre 1 y 4 trabajadores; si se
+por eje y conserva 2 por defecto. `--spatial-workers` permite fijar entre 1 y 8 trabajadores; si se
 omite, se usa `min(4, available_parallelism)` (1 si el sistema no informa del valor). El modo
-paralelo solo distribuye los subárboles directos de la raíz y reúne resultados en orden para mantener
-IDs y bytes estables. Usa un canal de progreso acotado y reserva memoria por trabajador. El número de
-trabajadores puede cambiar al reanudar un checkpoint; `--spatial-divisions` debe conservarse.
-La construcción usa spools temporales en disco
-que pueden ocupar más que la fuente;
-en modo normal se limpian al completar o cancelar cooperativamente, aunque un cierre abrupto puede
-dejarlos. Con `--checkpoint`, el conversor crea `OUTPUT.oct.checkpoint`; vuelve a ejecutar con
+paralelo distribuye los subárboles directos de la raíz y reúne resultados en orden para mantener IDs
+y bytes estables. También prepara bloques en paralelo dentro de un lote acotado por el presupuesto y
+el número de trabajadores; la escritura final conserva el orden del índice. Usa un canal de progreso
+acotado y reserva memoria por trabajador. El número de trabajadores puede cambiar al reanudar un
+checkpoint; `--spatial-divisions` debe conservarse. En la ruta normal LAS/LAZ se evita el spool de la
+fuente, pero quedan spools de ramas en disco; se limpian al completar o cancelar cooperativamente,
+aunque un cierre abrupto puede dejarlos. Con `--checkpoint`, el conversor conserva también el spool
+completo de fuente para reanudar; crea `OUTPUT.oct.checkpoint` y se vuelve a ejecutar con
 `--resume`, la misma entrada y las mismas opciones para continuar. Un checkpoint incompatible o una
 salida existente distinta se rechazan sin sobrescribirla. Al completar se elimina el directorio del
 checkpoint. El spool y el candidato completo pueden coexistir, así que esta modalidad requiere más
@@ -894,19 +895,22 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
    Pendiente: ampliar medidas a EPT real, zoom extremo, dispositivos y datasets grandes. La ruta
    `sync_visible_blocks` genérica sigue pendiente de unificar con este contrato; su existencia no
    extiende las garantías verificadas de la ruta LOD voxelizada.
-5. **Ampliar la base de conversión:** repetir configuraciones emparejadas al menos tres veces en
-   Belvedere y después cubrir Albuera UAV y Majadas TLS con el mismo equipo y perfil. Registrar por
-   fase tiempo, RSS, I/O, pico de disco temporal, tamaño completo y hash. La grilla fija de muestras
-   ya usa acumuladores indexados; una comparación inicial mantuvo salida/hash y bajó la jerarquía de
-   53,63 s a una mediana de 51,23 s. La base directa antes del cambio solo tiene una repetición, así
-   que esa diferencia es prometedora pero todavía no concluyente. El valor predeterminado de
-   trabajadores ahora es `min(4, available_parallelism)`: una pareja en el SSD dio 112,66 s con 1 y
-   91,15 s con 4, con hash idéntico; falta repetir la pareja y probar Albuera/Majadas. Ver
-   [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
-6. **Optimizar `viewer_convert` por cuellos medidos:** repetir la comparación de acumuladores
-   indexados con una base emparejada suficiente; después evaluar reserva y vida útil de buffers y la
-   eliminación de temporales solo si el perfil confirma su coste. Mantener orden determinista,
-   estimación de memoria, atributos, error geométrico y bytes de salida; aceptar cambios por separado.
+5. **Ampliar la base de conversión:** Belvedere quedó bajo 60 s en tres conversiones release
+   (mediana 57,87 s frente a 91,15 s de la base anterior con cuatro trabajadores; −36,5 % y SHA-256
+   idéntico). Una conversión exploratoria release por corpus dio 6:18,98 para Albuera y 6:35,55 para
+   Majadas con formato/spool v3. Con formato v4 y spool compacto, una ejecución 4×8 dio 346,5 s en
+   Albuera y 356,8 s en Majadas (−8,6 % y −9,8 % frente a esas referencias, sin emparejar); no
+   alcanzan los 120 s. La planificación espacial de Albuera sigue en 135 s y la jerarquía de Majadas
+   en 179 s. Los `.oct` v4 mantienen ratios de 2,89× y 5,48×. Repetir tres veces después de mejorar
+   esos cuellos. Ver [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+6. **Seguir optimizando `viewer_convert` por cuellos medidos:** se evita el spool de fuente para
+   LAS/LAZ normal, `laz-parallel` paraleliza descompresión y la codificación/validación prepara
+   bloques independientes en paralelo con escritura ordenada. El spool ahora es por esquema: fuente
+   Albuera 41 B/punto y Majadas 33 B/punto frente a 55 B, con XYZ crudo exacto y LOD sintético en
+   `f64`; checkpoints antiguos se rechazan. En las ejecuciones nuevas se observaron al menos 20 GB y
+   15 GB de temporales, y RSS pico de 675 y 315 MiB. El siguiente cuello es mejorar el reparto/coste
+   de jerarquía, especialmente Majadas; medir I/O temporal con contadores explícitos antes de cambiar
+   shards o la emisión incremental. El checkpoint conserva su spool fuente para reanudar.
 7. **Reducir los spools retenidos sin duplicar la escritura incremental ya existente:** `FormatWriter`
    ya agrega cada payload y escribe índice/footer al finalizar. El problema es que `build_spatial_plan`
    termina antes de emitir bloques porque `FormatWriter::new` necesita la jerarquía completa. Evaluar
@@ -948,6 +952,81 @@ de LOD es un candidato para procesar chunks, pero los resultados publicados son 
 demuestran conversión externa de más de 500 GB. Por ello se conserva `.oct` v3 y se prioriza el
 proceso, después acceso nativo a COPC y medición de carga; no se elige aún un codec, cuantización ni
 representación ganadora.
+
+**Objetivo de conversión y datos inmutables (2026-10-10):** se fija como meta una mediana menor de
+60 s para convertir Belvedere (618.390.994 B, 81.682.329 puntos) en el equipo/SSD y con el perfil
+release declarados en `REAL_DATASET_BENCH.md`; se cumplió en tres ejecuciones con cuatro trabajadores,
+con mediana 57,87 s. Separar esta meta de conversión del tiempo
+hasta primera vista y de la latencia de refinamiento del visor. Un dataset terminado debe tratarse
+como una instantánea inmutable: construir una versión nueva en temporal, validar y publicar el nombre
+final de forma atómica; las lecturas en vuelo conservan su handle/versión hasta terminar. El formato
+v3 ya guarda offsets y longitudes por bloque. `FormatReader::fork_reader` permite crear lectores con
+cursores independientes que comparten mediante `Arc` el índice validado; cada cursor sigue siendo
+mutable y no se comparte entre tareas concurrentes. Primero medir accesos independientes por offset y
+lectura asíncrona/rangos; limitar cola y memoria, asociar resultados a la generación de cámara/dataset
+y descartar respuestas obsoletas. No atribuir concurrencia a la inmutabilidad por sí sola ni cambiar
+de formato salvo que un prototipo gane frente a v3 en conversión o carga progresiva con igualdad de
+atributos/calidad, integridad, memoria y bytes medidos.
+
+La meta de conversión se cumplió en Belvedere con tres ejecuciones. Una ejecución release por corpus
+mostró 6:19 en Albuera y 6:36 en Majadas. Las cabeceras identifican estos dos archivos como LAZ
+PDRF 3 y PDRF 2, respectivamente; no son COPC ni tienen una jerarquía espacial de chunks que permita
+saltar nodos. Sus bounds/conteos permiten dimensionar y validar, pero una conversión íntegra debe
+decodificar y conservar todos los puntos. La poda requiere un ROI/filtro explícito o una jerarquía de
+fuente válida; no descartar puntos por inferencia del bounds global. COPC sí publica por nodo claves,
+offsets, longitudes comprimidas y conteos, aunque sus puntos en nodos internos deben conservarse al
+adaptar la semántica aditiva al LOD por sustitución.
+
+**Exploración de datos y formato (2026-10-10):** las medidas completas están en
+[`REAL_DATASET_BENCH.md`](docs/REAL_DATASET_BENCH.md). Se implementó un spool temporal compacto sin
+cambiar la semántica del `.oct`: conserva XYZ enteros exactos en puntos LAS, mantiene centros LOD en
+`f64`, y omite atributos ausentes. El siguiente paso es medir la conversión release en Albuera y
+Majadas con el mismo perfil que la referencia v3, incluidos tiempo por fase, tamaño/pico de spools,
+RSS y salida. Después se compararán organización de temporales y generación de columnas por separado;
+no se asumirá una mejora hasta obtener mediciones emparejadas.
+
+El formato actual ya agrupa XYZ, color y columnas de atributos en cada bloque, pero comprime todo el
+payload junto y `read_block` reconstruye todos los atributos. La arquitectura a explorar separa primero
+el árbol espacial de coordenadas: una sola topología define los nodos, bloques y orden estable de filas.
+Después se generan los atributos como columnas/sidecars alineados por `(block_id, row_id)`, usando el
+mismo índice lógico y la misma distribución de puntos del árbol. Así las primeras iteraciones pueden
+recorrer solo coordenadas/topología para crear o podar registros; las siguientes copian la organización
+ya fijada y cambian únicamente el contenido de la columna que se genera. La topología no se duplica
+por atributo: cada sidecar debe validar versión, esquema, bloque, número/orden de filas y checksum contra
+el índice común. Las transformaciones que reordenen o filtren puntos deben producir una nueva
+generación del árbol o una correspondencia explícita de filas.
+
+Un diccionario global de coordenadas no se justifica todavía: las hojas conservan puntos fuente únicos
+y las muestras LOD son una fracción muy pequeña del total. **Implementado: formato v4 columnar** con una
+única topología/índice y payloads independientes para geometría (XYZ + RGB de visualización) y cada
+columna de atributos, enlazados por `(block_id, row_id)`. El writer v4 es el predeterminado; el lector
+mantiene v1–v3 para archivos existentes. `FormatReader` permite obtener geometría, una columna o una
+fila de una columna; la lectura de una fila aún descomprime su columna completa. La vista WASM
+progresiva carga geometría para RGB/elevación y solo añade intensidad o clasificación cuando ese modo
+está activo. Cambiar el modo descarta el cache decodificado y recarga la columna requerida. La
+topología no se copia por atributo. El primer perfil con Bunny es demasiado pequeño para probar una
+mejora grande: geometría ocupa casi todo el payload. Ver resultados y límites en
+[`REAL_DATASET_BENCH.md`](docs/REAL_DATASET_BENCH.md). El siguiente trabajo estructural es compactar
+spools temporales y separar la pasada que fija filas/geometría de la generación de columnas, midiendo
+antes bytes y tiempo por fase. Los registros fuente ahora ocupan 41 B para Albuera (PDRF3) y 33 B
+para Majadas (PDRF2), frente a 55 B; checkpoints incompatibles se invalidan con la versión 3. Se
+conserva lectura v1–v3 para los archivos históricos: retirarla ahorraría alrededor de 110 líneas,
+pero no mejora el camino v4 y rompería esos archivos y la muestra histórica de comparación. Añadido
+`block_payload_storage_stats()` para obtener codec y bytes comprimidos/brutos por geometría/columna
+sin leer payloads. Una ejecución release completa v4 por corpus dio 346,5 s en Albuera y 356,8 s en
+Majadas; se observó una mejora respecto a una referencia v3, pero no es emparejada ni alcanza los
+120 s. Repetir tres veces por corpus después de optimizar la jerarquía. Mantener un diccionario global
+pendiente hasta medir repeticiones.
+
+La cabecera v3 ya precede los payloads, pero el índice y el footer se escriben al final; el lector
+exige ambos para abrir un dataset válido. Mantener esta publicación validada y atómica. Para abrir
+una conversión antes de terminar haría falta un protocolo separado de manifiestos/checkpoints
+versionados o páginas de índice publicadas, además de una política para LOD provisional; no basta con
+adelantar metadatos a una cabecera mutable. Diseñar ese bootstrap después de demostrar que la apertura
+del `.oct` completo o la espera del primer LOD son cuellos medidos. Repetir tres veces cada corpus
+después de una mejora prometedora. No cambiar de formato antes de comparar igualdad de puntos y
+atributos soportados, error espacial, integridad, cancelación/reanudación, carga progresiva, RSS,
+temporales y tamaño total.
 
 **Carga progresiva implementada (2026-10-10):** `LodDataset::update_view_progressive` procesa como
 máximo un bloque pendiente por llamada y publica el corte resuelto sin esperar a que termine toda la
@@ -1069,6 +1148,18 @@ cambian alcance, rendimiento y compatibilidad:
 - [COPC 1.0](https://copc.io/copc-specification-1.0.pdf): formato LAZ organizado como octree para
   acceso espacial y lectura por bloques; referencia útil para evaluar interoperabilidad y decisiones
   de acceso aleatorio.
+- [Especificación LASzip](https://github.com/LASzip/LASzip/blob/master/design/specification.rst):
+  describe chunks LAZ independientes y capas de atributos para point formats 6–10; comprobar el
+  point format real antes de asumir que permite omitir dimensiones.
+- [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html): referencia
+  para buffers por columna, localidad secuencial y acceso aleatorio; no implica que un diccionario
+  o una estructura columnar reduzcan el tamaño de este dataset.
+- [Zarr v3 sharding index](https://zarr-specs.readthedocs.io/en/latest/v3/codecs/sharding-indexed/index.html):
+  referencia de chunks appendables con un índice compacto de offsets/longitudes; no sustituye el
+  diseño de integridad, publicación atómica o lectura progresiva del `.oct`.
+- [`copc-reader` para Rust](https://docs.rs/copc-reader/latest/copc_reader/): API candidata a
+  prototipo para jerarquía, consultas espaciales y lectura por rangos; medir compatibilidad con los
+  atributos requeridos y rendimiento antes de adoptarla.
 - [Fast Out-of-Core Octree Generation for Massive Point Clouds](https://doi.org/10.1111/cgf.14134):
   particionado jerárquico en chunks, construcción paralela de subárboles y fusión bottom-up; las
   cifras de rendimiento del paper pertenecen a sus datasets y equipo.
@@ -1079,6 +1170,8 @@ cambian alcance, rendimiento y compatibilidad:
   conversión externa a escala del objetivo del proyecto.
 - [Manual oficial de Zstandard](https://facebook.github.io/zstd/zstd_manual.html): niveles y APIs
   de streaming para diseñar comparaciones de codec con coste de memoria/CPU explícito.
+- [W3C File API](https://www.w3.org/TR/FileAPI/): `Blob` es inmutable y permite crear slices por rango
+  y leerlas asíncronamente; la ganancia de concurrencia requiere validación en el worker/navegador.
 - [Estándar LAS de OGC](https://www.ogc.org/standards/LAS/): referencia de intercambio para datos
   LiDAR que deben poder convertirse a la representación de visualización del proyecto.
 
