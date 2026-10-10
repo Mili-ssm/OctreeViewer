@@ -40,15 +40,27 @@ The output is `artifacts/visor-web-local/visor-web-local.zip`. Extract it and op
 browser with WebGPU and OffscreenCanvas support. The HTML embeds the runtime, WASM binary and sample,
 so it does not fetch assets from the repository or the network.
 
-### Cargar una nube
+### Convertir y cargar una nube
 
-1. Espera a que el estado indique que el renderizador está listo.
-2. Pulsa **Open project dataset** y selecciona un archivo de proyecto `.oct` (versiones 1, 2 o 3).
-3. El visor muestra primero una vista gruesa y luego refina progresivamente. Ajusta **Finest voxel
+1. En **Convert a local LAS/LAZ file**, selecciona el `.las` o `.laz` y pulsa **Convert to .oct**.
+2. La conversión se ejecuta en un worker aparte y escribe bloques en OPFS; cancelar detiene el trabajo
+   entre bloques. El archivo permanece en almacenamiento local del navegador y puede descargarse o
+   abrirse en el visor. La cuota disponible puede interrumpir una conversión; los temporales incompletos
+   se eliminan cuando el navegador permite cerrar el handle. Si cierras la pestaña abruptamente,
+   puede quedar un temporal en el almacenamiento del sitio.
+3. Esta ruta web conserva XYZ, intensidad, clasificación, retornos, ángulo, user data, point source ID,
+   GPS time, RGB y NIR cuando están presentes. No conserva Extra Bytes ni CRS. Escribe hasta 4.096
+   muestras deterministas de reservorio en el nivel grueso y los puntos fuente en bloques bajo un nodo hijo;
+   el presupuesto LOD evita refinar si el total excede el límite. Aún no genera la jerarquía espacial
+   voxelizada del conversor nativo, así que la ruta no está validada para nubes grandes.
+4. Para abrir un `.oct` ya convertido, espera a que el estado indique que el renderizador está listo y
+   usa **Open project dataset**. El visor muestra primero una vista gruesa y luego refina progresivamente.
+   Ajusta **Finest voxel
    detail** para elegir el detalle mínimo que quieres intentar.
 
-La nube se lee localmente en el navegador; el paquete no la sube a ningún servicio. No acepta LAS/LAZ
-directamente en este selector: conviértelos primero al formato `.oct` del proyecto.
+La nube y el archivo convertido se procesan localmente en el navegador; no se suben a ningún servicio.
+La conversión requiere WebAssembly, workers y OPFS en un contexto seguro. Los límites de tamaño,
+memoria máxima y tiempo para archivos grandes aún no están validados con Albuera ni en varios navegadores.
 
 The target browsers are Chrome and Firefox builds that support WebGPU and `OffscreenCanvas`; visual
 rendering has been checked in Chrome with converted Bunny and Outer Banks datasets. Firefox still
@@ -103,6 +115,26 @@ terminate the worker immediately so the browser can release its dataset and GPU 
 replace the transferred canvas and create a new viewer; automatic device recreation is not available.
 The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run; the
 current environment has no Chromium and Firefox headless is unstable.
+
+The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
+`File`, runs in another worker, and returns `{ file, name, points }`; progress/status events and
+`cancel()` are available while it runs:
+
+```js
+import { createConverter } from "./converter-api.mjs";
+
+const converter = createConverter();
+converter.on("progress", ({ processedPoints, totalPoints }) => console.log(processedPoints, totalPoints));
+const result = await converter.convert(lasFile);
+console.log(result.name, result.points, result.file);
+converter.dispose();
+```
+
+The host decides whether to download or open `result.file`. The worker requires OPFS and writes in
+bounded blocks. The file has a coarse level of up to 4,096 deterministic reservoir samples and one child
+node containing the full-resolution points; it does not yet have the native converter's spatially
+partitioned, voxelized representatives. Extra Bytes and CRS are omitted. Large-file scale and OPFS
+quota behavior have not been validated in Chrome/Firefox with Albuera.
 
 Use the keyboard-accessible **Open built-in sample** button to load the included v1/v2 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64

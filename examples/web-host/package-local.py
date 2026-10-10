@@ -40,6 +40,8 @@ def main() -> None:
     metrics_js = (HOST / "benchmark-metrics.mjs").read_text(encoding="utf-8")
     rendering_budget_js = (HOST / "rendering-budget.mjs").read_text(encoding="utf-8")
     viewer_api_js = (HOST / "viewer-api.mjs").read_text(encoding="utf-8")
+    converter_api_js = (HOST / "converter-api.mjs").read_text(encoding="utf-8")
+    converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
     embed_worker_js = worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
     embed_wasm_js = wasm_js
@@ -76,6 +78,25 @@ def main() -> None:
         + "\n"
         + worker_js
     )
+    converter_worker_js = require_replace(
+        converter_worker_js,
+        'import init, { WasmLasOctConverter } from "../../pkg/viewer_wasm.js";\n',
+        "",
+        "converter WASM import",
+    )
+    converter_worker_js = require_replace(
+        converter_worker_js,
+        "await init();",
+        "await __wbg_init(__CONVERTER_WASM_BYTES__);",
+        "converter WASM init",
+    )
+    converter_worker_source = (
+        f'const __CONVERTER_WASM_BYTES__ = Uint8Array.from(atob("{wasm_bytes}"), '
+        "(value) => value.charCodeAt(0));\n"
+        + wasm_js
+        + "\n"
+        + converter_worker_js
+    )
 
     queue_js = queue_js.replace("export class ", "class ")
     main_js = require_replace(
@@ -95,6 +116,19 @@ def main() -> None:
         'import { framebufferSize } from "./rendering-budget.mjs";\n',
         "",
         "rendering budget import",
+    )
+    main_js = require_replace(
+        main_js,
+        'import { createConverter } from "./converter-api.mjs";\n',
+        "",
+        "converter API import",
+    )
+    converter_api_js = converter_api_js.replace("export function createConverter", "function createConverter")
+    converter_api_js = require_replace(
+        converter_api_js,
+        '?? new URL("./converter-worker.js", import.meta.url);',
+        ";",
+        "inline converter worker URL",
     )
     main_js = require_replace(
         main_js,
@@ -120,11 +154,16 @@ def main() -> None:
         "(value) => value.charCodeAt(0));\n"
         + "window.__VIEWER_WORKER_URL__ = URL.createObjectURL("
         "new Blob([WORKER_SOURCE], { type: \"text/javascript\" }));\n"
+        + f"const CONVERTER_WORKER_SOURCE = {json.dumps(converter_worker_source)};\n"
+        + "window.__CONVERTER_WORKER_URL__ = URL.createObjectURL("
+        "new Blob([CONVERTER_WORKER_SOURCE], { type: \"text/javascript\" }));\n"
         + queue_js
         + "\n"
         + metrics_js.replace("export const ", "const ").replace("export function ", "function ")
         + "\n"
         + rendering_budget_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
+        + converter_api_js
         + "\n"
         + main_js
         + "\n</script>"
@@ -140,6 +179,12 @@ def main() -> None:
     html = html.replace("<h1>Embeddable voxel viewer</h1>", "<h1>Visor de nubes de puntos</h1>")
 
     readme = """VISOR WEB LOCAL\n\n1. Extrae este ZIP en cualquier carpeta.\n2. Abre index.html con doble clic en un navegador compatible con WebGPU.\n3. Espera a que el estado indique que el renderizador está listo.\n4. Pulsa Open project dataset, selecciona tu archivo .oct y espera a que aparezca\n   primero la vista gruesa y después el refinamiento progresivo.\n5. Para medir FPS, espera el LOD objetivo y pulsa Run 15 s FPS benchmark. Mantén\n   la cámara quieta; al terminar pulsa Export run JSON.\n\nEl visor limita el framebuffer a 4.194.304 píxeles y 4.096 por lado. Reduce el\ntrabajo de render mientras está quieto; solo ejecuta el benchmark si lo solicitas.\n\nEl selector acepta el formato del proyecto .oct (versiones 1, 2 y 3). La muestra\nincluida también funciona sin conexión. Para cambiar detalle, usa Finest voxel detail.\n\nNo requiere instalar Rust ni iniciar un servidor. El HTML incluye WASM, worker,\nJavaScript y la muestra. Se necesita un navegador con WebGPU y OffscreenCanvas.\nEl render no sube el archivo a ningún servicio: lo lee localmente en el navegador.\n"""
+    readme = readme.replace(
+        "5. Para medir FPS,",
+        "5. Para convertir, selecciona un LAS/LAZ en Convert a local LAS/LAZ file;\n"
+        "   descarga el .oct generado o ábrelo directamente en el visor.\n"
+        "6. Para medir FPS,",
+    )
     readme = readme.replace(
         "Para cambiar detalle, usa Finest voxel detail.",
         "Para cambiar detalle, usa Finest voxel detail.\n\nCAMARA\n"
@@ -160,7 +205,17 @@ def main() -> None:
         'import init, { WasmVoxelViewer } from "./viewer_wasm.js";\n',
         "embeddable worker WASM import",
     )
+    embed_converter_worker_js = require_replace(
+        (HOST / "converter-worker.js").read_text(encoding="utf-8"),
+        'import init, { WasmLasOctConverter } from "../../pkg/viewer_wasm.js";\n',
+        'import init, { WasmLasOctConverter } from "./viewer_wasm.js";\n',
+        "embeddable converter WASM import",
+    )
     (embed_dir / "viewer-api.mjs").write_text(viewer_api_js, encoding="utf-8")
+    (embed_dir / "converter-api.mjs").write_text(
+        (HOST / "converter-api.mjs").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (embed_dir / "converter-worker.js").write_text(embed_converter_worker_js, encoding="utf-8")
     (embed_dir / "viewer-worker.js").write_text(embed_worker_js, encoding="utf-8")
     (embed_dir / "rendering-budget.mjs").write_text(rendering_budget_js, encoding="utf-8")
     (embed_dir / "viewer_wasm.js").write_text(embed_wasm_js, encoding="utf-8")
@@ -169,16 +224,24 @@ def main() -> None:
         "Sirve la carpeta extraida en localhost o HTTPS y añade a tu pagina:\n\n"
         '<canvas id="cloud" style="width:100%;height:70vh"></canvas>\n'
         '<input id="file" type="file" accept=".oct">\n'
+        '<input id="source" type="file" accept=".las,.laz">\n'
         '<script type="module">\n'
         'import { createViewer } from "./embed/viewer-api.mjs";\n'
+        'import { createConverter } from "./embed/converter-api.mjs";\n'
         'const viewer = createViewer(document.querySelector("#cloud"));\n'
         'await viewer.ready;\n'
         'document.querySelector("#file").addEventListener("change", (event) => {\n'
         '  void viewer.load(event.target.files[0], { voxelPixels: 1 });\n'
         '});\n'
         'viewer.on("pick", (hit) => console.log(hit?.position, hit?.voxelCenter));\n'
+        'const converter = createConverter();\n'
+        'document.querySelector("#source").addEventListener("change", async (event) => {\n'
+        '  const output = await converter.convert(event.target.files[0]);\n'
+        '  console.log(output.file, output.name, output.points);\n'
+        '});\n'
+        'converter.dispose();\n'
         '</script>\n\n'
-        "API: load, setMode, getCamera, setCamera, pick, getMetadata, getStats, fit, on, dispose.\n",
+        "API: viewer load, setMode, getCamera, setCamera, pick, getMetadata, getStats, fit, on, dispose; converter convert, on, cancel, dispose.\n",
         encoding="utf-8",
     )
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:

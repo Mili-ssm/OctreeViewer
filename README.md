@@ -847,6 +847,14 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
   un botón accesible por teclado para abrirlo; el selector local acepta otros archivos.
 - [x] Mantener la demo como consumidor de la API pública; el único código de geometría JavaScript
   genera el dataset sintético ya existente.
+- [x] Añadir conversión local LAS/LAZ → `.oct` en worker con bloques acotados y salida OPFS, más
+  descarga/apertura desde la demo.
+- [x] Añadir un nivel grueso con hasta 4.096 muestras deterministas de reservorio y conservar todos
+  los puntos originales en el nodo de refinamiento; la selección LOD respeta el presupuesto.
+- [ ] Compartir el planificador espacial del conversor nativo con la ruta web para particionar los
+  puntos de resolución completa en nodos espaciales y generar representantes voxelizados.
+- [ ] Validar manejo de cuota, cancelación/temporales y escala de conversión LAS/LAZ en Chrome y
+  Firefox; Albuera no se considera validada por la conversión por bloques.
 
 ### Fase 8 — Cámara y API web embebible (en curso)
 

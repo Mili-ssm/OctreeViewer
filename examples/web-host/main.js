@@ -1,6 +1,7 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
 import { FRAME_RATE_WARMUP_MS, measureFrameRate } from "./benchmark-metrics.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
+import { createConverter } from "./converter-api.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
@@ -8,6 +9,13 @@ const cancelButton = document.getElementById("cancel-load");
 const sampleButton = document.getElementById("open-sample");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
+const convertFileInput = document.getElementById("convert-file");
+const convertButton = document.getElementById("convert-start");
+const convertCancelButton = document.getElementById("convert-cancel");
+const convertProgress = document.getElementById("convert-progress");
+const convertStatus = document.getElementById("convert-status");
+const convertDownloadButton = document.getElementById("convert-download");
+const convertOpenButton = document.getElementById("convert-open");
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
 const startBenchmarkButton = document.getElementById("start-benchmark");
@@ -20,6 +28,10 @@ const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
 
 let worker = null;
+let converterApi = null;
+let convertedFile = null;
+let convertedOutputName = "converted.oct";
+let convertedDownloadUrl = null;
 let canvasTransferred = false;
 let viewportSize = null;
 const commandQueue = new CoalescedCommandQueue((type, values) => {
@@ -579,10 +591,85 @@ depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
-function openProjectFile(file) {
+convertFileInput.addEventListener("change", () => {
+    convertButton.disabled = !convertFileInput.files?.[0] || Boolean(converterApi);
+});
+convertButton.addEventListener("click", () => {
+    const file = convertFileInput.files?.[0];
+    if (!file || converterApi) return;
+    if (!/\.(las|laz)$/i.test(file.name)) {
+        convertStatus.textContent = "Choose a .las or .laz file.";
+        return;
+    }
+    convertedFile = null;
+    if (convertedDownloadUrl) URL.revokeObjectURL(convertedDownloadUrl);
+    convertedDownloadUrl = null;
+    convertDownloadButton.hidden = true;
+    convertOpenButton.hidden = true;
+    convertProgress.hidden = false;
+    convertProgress.value = 0;
+    convertProgress.max = 1;
+    convertButton.disabled = true;
+    convertFileInput.disabled = true;
+    convertCancelButton.hidden = false;
+    convertStatus.textContent = `Preparing local conversion of ${file.name}…`;
+    try {
+        converterApi = createConverter();
+        converterApi.on("status", ({ message }) => { convertStatus.textContent = message; });
+        converterApi.on("progress", ({ processedPoints, totalPoints, sourceName }) => {
+            const processed = Number(processedPoints);
+            const total = Number(totalPoints);
+            convertProgress.max = total || 1;
+            convertProgress.value = processed;
+            convertStatus.textContent = `${sourceName}: ${processed.toLocaleString()} / ${total.toLocaleString()} points`;
+        });
+        converterApi.convert(file).then(({ file: resultFile, name, points }) => {
+            convertedFile = resultFile;
+            convertedOutputName = name;
+            convertProgress.value = convertProgress.max;
+            convertStatus.textContent = `Converted ${points} points to ${name}.`;
+            convertDownloadButton.hidden = false;
+            convertOpenButton.hidden = false;
+        }).catch((error) => {
+            convertStatus.textContent = error.name === "AbortError"
+                ? error.message : `Conversion failed: ${error.message}`;
+        }).finally(finishConverter);
+    } catch (error) {
+        convertStatus.textContent = `Conversion could not start: ${error.message}`;
+        finishConverter();
+    }
+});
+convertCancelButton.addEventListener("click", () => {
+    converterApi?.cancel();
+    convertCancelButton.disabled = true;
+    convertStatus.textContent = "Cancelling after the current bounded block…";
+});
+convertDownloadButton.addEventListener("click", () => {
+    if (!convertedFile) return;
+    if (convertedDownloadUrl) URL.revokeObjectURL(convertedDownloadUrl);
+    convertedDownloadUrl = URL.createObjectURL(convertedFile);
+    const link = document.createElement("a");
+    link.href = convertedDownloadUrl;
+    link.download = convertedOutputName;
+    link.click();
+});
+convertOpenButton.addEventListener("click", () => {
+    if (convertedFile) openProjectFile(convertedFile, convertedOutputName);
+});
+
+function finishConverter() {
+    converterApi?.dispose();
+    converterApi = null;
+    convertButton.disabled = !convertFileInput.files?.[0];
+    convertFileInput.disabled = false;
+    convertCancelButton.hidden = true;
+    convertCancelButton.disabled = false;
+}
+
+function openProjectFile(file, displayName = file?.name) {
     if (!ready || !file) return;
     benchmarkRun = {
-        datasetName: file.name,
+        datasetName: displayName,
         fileBytes: file.size,
         sourcePointCount: null,
         nodeCount: null,
@@ -614,11 +701,12 @@ function openProjectFile(file) {
     fileInput.value = "";
     loadingFile = true;
     cancelButton.hidden = false;
-    statusRoot.textContent = `Opening ${file.name}…`;
+    statusRoot.textContent = `Opening ${displayName}…`;
     startRendering();
     worker.postMessage({
         type: "openFile",
         file,
+        name: displayName,
         targetVoxelPixels: Number(voxelPixels.value),
         cacheBytes: 256 * 1024 * 1024,
     });

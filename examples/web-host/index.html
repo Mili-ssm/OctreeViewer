@@ -165,6 +165,18 @@
             <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
             <small id="dataset-help">The built-in sample is a local v1/v2 file. Choose another project file with the keyboard-accessible file picker. Reads run in the worker.</small>
         </section>
+        <section class="panel" aria-label="Convert LAS or LAZ">
+            <strong>Convert a local LAS/LAZ file</strong>
+            <label for="convert-file">Source file</label>
+            <input id="convert-file" type="file" accept=".las,.laz,application/octet-stream" />
+            <button id="convert-start" type="button" disabled>Convert to .oct</button>
+            <button id="convert-cancel" type="button" hidden>Cancel conversion</button>
+            <progress id="convert-progress" value="0" max="1" hidden></progress>
+            <small id="convert-status" role="status" aria-live="polite">Choose a LAS/LAZ file. Conversion runs locally in a separate worker and writes to browser storage.</small>
+            <button id="convert-download" type="button" hidden>Download converted .oct</button>
+            <button id="convert-open" type="button" hidden>Open converted .oct in viewer</button>
+            <small>This browser path stores all source points in bounded blocks under one spatial node. It does not create the native converter's hierarchical LOD representatives; Extra Bytes and CRS are not retained. OPFS quota and large-file performance depend on the device. Successful outputs stay in site storage; remove site data to reclaim space. Closing the tab abruptly can leave an incomplete temporary file.</small>
+        </section>
         <section class="panel" aria-label="Camera mode">
             <label for="camera-mode">Camera mode</label>
             <select id="camera-mode">

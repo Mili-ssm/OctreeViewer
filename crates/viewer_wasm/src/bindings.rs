@@ -15,7 +15,6 @@ use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
 const FILE_CACHE_BYTES: u64 = 256 * 1024;
 const WASM_POINT_BATCH_POINTS: usize = 16_384;
 const MAX_WASM_TRANSFER_INSTANCES: usize = 16_384;
-
 #[wasm_bindgen]
 pub struct WasmLasImportSession {
     inner: LasPointStream,
@@ -62,7 +61,7 @@ impl WasmLasImportSession {
     }
 }
 
-struct BrowserBlobReader {
+pub(crate) struct BrowserBlobReader {
     blob: Blob,
     file_reader: FileReaderSync,
     file_size: u64,
@@ -76,7 +75,7 @@ struct BrowserBlobReader {
 }
 
 impl BrowserBlobReader {
-    fn new(blob: Blob, report_progress: bool) -> Result<Self, JsValue> {
+    pub(crate) fn new(blob: Blob, report_progress: bool) -> Result<Self, JsValue> {
         let size = blob.size();
         if !size.is_finite() || size < 0.0 || size > u64::MAX as f64 {
             return Err(JsValue::from_str(
@@ -205,7 +204,7 @@ impl Seek for BrowserBlobReader {
     }
 }
 
-fn js_error_to_io(error: JsValue) -> io::Error {
+pub(crate) fn js_error_to_io(error: JsValue) -> io::Error {
     let message = error
         .as_string()
         .unwrap_or_else(|| "browser file read failed".to_owned());

@@ -152,9 +152,9 @@ async function handleMessage({ data }) {
                         const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
                         viewer.fitScene();
                         const lod = viewer.updateLod(targetVoxelPixels);
-                        currentMetadata = { ...opened, name: data.file.name, bytes: data.file.size };
+                        currentMetadata = { ...opened, name: data.name ?? data.file.name, bytes: data.file.size };
                         value = currentMetadata;
-                        self.postMessage({ type: "dataset", opened, lod, name: data.file.name });
+                        self.postMessage({ type: "dataset", opened, lod, name: data.name ?? data.file.name });
                         postLodProgress(lod);
                         break;
                     }
@@ -245,12 +245,13 @@ async function handleMessage({ data }) {
                 targetLodMs = null;
                 lastLodProgressKey = "";
                 resetFrameRenderSamples();
-                self.postMessage({ type: "status", message: `Opening ${data.file.name}…` });
+                const name = data.name ?? data.file.name;
+                self.postMessage({ type: "status", message: `Opening ${name}…` });
                 const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
-                self.postMessage({ type: "datasetOpened", opened, name: data.file.name });
+                self.postMessage({ type: "datasetOpened", opened, name });
                 viewer.fitScene();
                 const lod = viewer.updateLod(targetVoxelPixels);
-                self.postMessage({ type: "dataset", opened, lod, name: data.file.name });
+                self.postMessage({ type: "dataset", opened, lod, name });
                 postLodProgress(lod);
                 break;
             }
