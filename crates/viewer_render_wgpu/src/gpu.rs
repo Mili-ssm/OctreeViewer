@@ -1061,14 +1061,23 @@ impl<'window> SurfaceRenderer<'window> {
 
     fn refresh_hzb_targets(&mut self) {
         self.hzb_reference_camera = None;
-        if self.hzb.is_none() {
+        let Some(hzb) = &mut self.hzb else {
             return;
-        }
+        };
+        // Drop per-scene index buffers before resizing. The old pyramid remains alive until
+        // resize_targets replaces it, so account for both pyramids during that transition.
+        hzb.reset_scene();
         let required_bytes = crate::hzb::estimated_pyramid_bytes([
             self.surface_config.width,
             self.surface_config.height,
         ]);
-        if required_bytes > self.gpu_budget.max_bytes / 2 {
+        let resize_fits_budget = self
+            .allocated_gpu_bytes()
+            .and_then(|current_bytes| {
+                check_peak_bytes(current_bytes, required_bytes, self.gpu_budget.max_bytes)
+            })
+            .is_ok();
+        if required_bytes > self.gpu_budget.max_bytes / 2 || !resize_fits_budget {
             self.hzb = None;
             self.hzb_count_readback = None;
             self.hzb_count_receiver = None;

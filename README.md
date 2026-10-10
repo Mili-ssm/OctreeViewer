@@ -264,7 +264,9 @@ trabajo de vértices/rasterización, pero no libera el buffer de la escena ni ev
 La pirámide y las listas de índices cuentan dentro del presupuesto de recursos GPU del renderer. La
 ruta HZB se valida con el adaptador local disponible y mantiene un fallback, pero aún falta medir en
 Chrome/Firefox con Albuera la reducción de instancias y el tiempo GPU; no se afirma una mejora de
-tiempo de frame hasta tener esa medición.
+tiempo de frame hasta tener esa medición. Al redimensionar, se liberan primero los índices de la
+escena y se comprueba el pico temporal de mantener la pirámide anterior mientras se crean los nuevos
+mips. Si esa transición excedería el presupuesto, se desactiva HZB y se conserva el render directo.
 
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
 
