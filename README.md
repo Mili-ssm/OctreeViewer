@@ -335,6 +335,9 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   `las 0.11.1` se convierte correctamente. COPC se aplana en una raíz y no conserva su jerarquía;
   consultar la [especificación COPC](https://copc.io/) para conservar acceso espacial en una versión
   futura.
+- [x] Tolerar diferencias de redondeo menores entre puntos y bounds LAS: hasta `1e-7` de la magnitud
+  de la coordenada, con un máximo de 50 cm. Desfases mayores siguen siendo un error; no se descartan
+  puntos que exceden el mínimo/máximo solo dentro de esa tolerancia.
 - [x] Evaluar EPT: es un dataset de varios archivos (`ept.json`, jerarquía y datos por nodo), no una
   ruta LAS/LAZ única ([especificación EPT](https://entwine.io/en/latest/entwine-point-tile.html)).
 - [x] Implementar entrada para datasets EPT locales `laszip`: leer `ept.json`, páginas JSON y LAZ

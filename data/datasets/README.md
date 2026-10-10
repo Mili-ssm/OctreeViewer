@@ -38,6 +38,9 @@ redistribuirla. El README y los archivos del [registro](https://zenodo.org/recor
 los sensores, fechas y zonas UTM. Los conteos se leen de la cabecera LAS de cada archivo. Los checksums MD5
 publicados por el registro y verificados en ambas copias son: Albuera
 `71ff22c046d6eb83c371791f680bea13`; Majadas `fd0b4433e805246f2442df037dfadb6b`.
+En Albuera, los puntos examinados quedan hasta 62,3 mm fuera del mínimo Y redondeado de la cabecera;
+el conversor admite esta diferencia pequeña de metadatos y conserva los puntos. Desajustes mayores
+siguen dando error.
 
 Para medir la conversión se puede ejecutar, con un destino `.oct` nuevo por archivo:
 

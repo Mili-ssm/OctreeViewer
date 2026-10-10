@@ -29,6 +29,8 @@ const SAMPLE_GRID_SIZE: usize = 8;
 const MAX_SPATIAL_DEPTH: u32 = 32;
 const PLANNED_NODE_BYTES: u64 = 256;
 const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;
+const HEADER_BOUNDS_RELATIVE_TOLERANCE: f64 = 1.0e-7;
+const HEADER_BOUNDS_MAX_TOLERANCE: f64 = 0.5;
 
 #[derive(Clone, Copy)]
 struct SpoolPoint {
@@ -992,9 +994,7 @@ fn write_source_points(
                 viewer_core::CoordinateFrameError::PositionOutOfRange(local),
             ));
         }
-        if (0..3).any(|axis| {
-            position[axis] < source.bounds.min()[axis] || position[axis] > source.bounds.max()[axis]
-        }) {
+        if outside_header_bounds(position, source.bounds) {
             return Err(ConvertError::PointOutsideHeaderBounds {
                 point_index: processed + index as u64,
                 position,
@@ -1085,6 +1085,17 @@ fn write_source_points(
         return Err(ConvertError::InvalidAttributeSchema);
     }
     Ok(())
+}
+
+fn outside_header_bounds(position: [f64; 3], bounds: SpatialBounds) -> bool {
+    (0..3).any(|axis| {
+        let min = bounds.min()[axis];
+        let max = bounds.max()[axis];
+        let coordinate_magnitude = position[axis].abs().max(min.abs()).max(max.abs());
+        let tolerance = (coordinate_magnitude * HEADER_BOUNDS_RELATIVE_TOLERANCE)
+            .min(HEADER_BOUNDS_MAX_TOLERANCE);
+        position[axis] < min - tolerance || position[axis] > max + tolerance
+    })
 }
 
 fn write_point(writer: &mut impl Write, point: &SpoolPoint) -> io::Result<()> {
@@ -1378,6 +1389,24 @@ fn check_memory_budget(requested: u64, limit: u64) -> Result<(), ConvertError> {
 #[cfg(test)]
 mod partition_tests {
     use super::*;
+
+    #[test]
+    fn header_bounds_allow_small_metadata_rounding_but_reject_real_outliers() {
+        let bounds = SpatialBounds::new(
+            [692_199.5, 4_285_716.0, 329.910_095_214_843_75],
+            [692_838.687_5, 4_286_262.5, 359.015_899_658_203_1],
+        )
+        .unwrap();
+
+        assert!(!outside_header_bounds(
+            [692_399.511_1, 4_285_715.937_7, 335.174],
+            bounds
+        ));
+        assert!(outside_header_bounds(
+            [692_399.511_1, 4_285_715.0, 335.174],
+            bounds
+        ));
+    }
 
     #[test]
     fn adaptive_cells_cover_centers_and_assign_internal_planes_to_upper_cell() {
