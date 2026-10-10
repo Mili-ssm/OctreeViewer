@@ -114,7 +114,9 @@ pub(super) fn convert(
     if output_path.exists() {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
-    if options.spatial_divisions() != 2 || options.spatial_workers() != 1 {
+    if options.spatial_divisions() != 2
+        || (options.spatial_workers_explicit() && options.spatial_workers() != 1)
+    {
         return Err(ConvertError::UnsupportedEpt(
             "spatial partition options apply to LAS/LAZ input; EPT topology is preserved"
                 .to_owned(),

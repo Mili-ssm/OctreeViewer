@@ -33,6 +33,10 @@ const ESTIMATED_DIRECTORY_BYTES_PER_BLOCK: u64 = 512;
 const ESTIMATED_FIXED_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn default_spatial_workers() -> usize {
+    std::thread::available_parallelism().map_or(1, |workers| workers.get().min(MAX_SPATIAL_WORKERS))
+}
+
 fn visual_scale_for_bounds(bounds: SpatialBounds) -> Result<f64, ConvertError> {
     let min = bounds.min();
     let max = bounds.max();
@@ -55,6 +59,7 @@ pub struct ConvertOptions {
     max_quantization_error: f64,
     max_memory_bytes: u64,
     spatial_workers: usize,
+    spatial_workers_explicit: bool,
     spatial_divisions: u8,
 }
 
@@ -87,7 +92,8 @@ impl ConvertOptions {
             points_per_block,
             max_quantization_error,
             max_memory_bytes,
-            spatial_workers: 1,
+            spatial_workers: default_spatial_workers(),
+            spatial_workers_explicit: false,
             spatial_divisions: 2,
         })
     }
@@ -109,11 +115,16 @@ impl ConvertOptions {
             return Err(ConvertError::InvalidSpatialWorkerCount(workers));
         }
         self.spatial_workers = workers;
+        self.spatial_workers_explicit = true;
         Ok(self)
     }
 
     pub const fn spatial_workers(self) -> usize {
         self.spatial_workers
+    }
+
+    pub(crate) const fn spatial_workers_explicit(self) -> bool {
+        self.spatial_workers_explicit
     }
 
     pub fn with_spatial_divisions(mut self, divisions: u8) -> Result<Self, ConvertError> {
@@ -135,7 +146,8 @@ impl Default for ConvertOptions {
             points_per_block: DEFAULT_POINTS_PER_BLOCK,
             max_quantization_error: 0.01,
             max_memory_bytes: DEFAULT_MEMORY_BUDGET_BYTES,
-            spatial_workers: 1,
+            spatial_workers: default_spatial_workers(),
+            spatial_workers_explicit: false,
             spatial_divisions: 2,
         }
     }
@@ -860,8 +872,8 @@ mod tests {
 
     use super::{
         CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions,
-        convert_file, convert_file_with_checkpoint, convert_file_with_progress,
-        verify_candidate_visual_scale, visual_scale_for_bounds,
+        MAX_SPATIAL_WORKERS, convert_file, convert_file_with_checkpoint,
+        convert_file_with_progress, verify_candidate_visual_scale, visual_scale_for_bounds,
     };
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1136,6 +1148,8 @@ mod tests {
         fixture(&input, false, true, 200);
         let serial_options = ConvertOptions::new(16, 0.01)
             .unwrap()
+            .with_spatial_workers(1)
+            .unwrap()
             .with_spatial_divisions(4)
             .unwrap();
         let parallel_options = serial_options.with_spatial_workers(2).unwrap();
@@ -1187,6 +1201,20 @@ mod tests {
         assert!(!output.exists());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn default_worker_count_uses_available_parallelism_with_a_safe_cap() {
+        let expected = std::thread::available_parallelism()
+            .map_or(1, |workers| workers.get().min(MAX_SPATIAL_WORKERS));
+
+        assert_eq!(ConvertOptions::default().spatial_workers(), expected);
+        assert_eq!(
+            ConvertOptions::with_memory_budget(10, 0.01, 32 * 1024 * 1024)
+                .unwrap()
+                .spatial_workers(),
+            expected
+        );
     }
 
     #[test]

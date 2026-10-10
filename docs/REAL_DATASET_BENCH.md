@@ -155,15 +155,53 @@ muestreador. Las salidas de todas las ejecuciones produjeron el mismo SHA-256:
 La media de tiempo total fue 101,77 s, 86,03 s y 81,59 s con 1, 2 y 4 trabajadores: aproximadamente
 15 % menos con 2 y 20 % menos con 4. La fase de jerarquía bajó en torno a 30 % y 39 %. El pico
 temporal observado se mantuvo entre 8,340 y 8,355 GiB, y el RSS entre 34,0 y 37,9 MiB. El resultado
-apoya conservar la opción acotada; no cambia el valor por defecto, que sigue en 1 hasta verificar más
-distribuciones y tamaños de nube. Las cifras proceden de dos repeticiones por configuración salvo
-el pico serial, que se midió en una sola.
+apoya conservar el paralelismo acotado. Las cifras proceden de dos repeticiones por configuración
+salvo el pico serial, que se midió en una sola.
 
 La opción `--spatial-workers` procesa en paralelo solo los hijos directos de la raíz; cada subárbol
 mantiene su recorrido serial. Un canal sincronizado de capacidad fija aplica contrapresión a eventos
 de progreso, se reúnen resultados en orden de hijo y se reasignan IDs determinísticamente. Cada lote
 de trabajadores recibe una parte explícita del presupuesto estimado de memoria, reservando margen
 para la integración de los planes. Reanudar desde checkpoints puede cambiar el número de trabajadores.
+
+### Acumuladores indexados para muestras LOD
+
+El 10 de octubre de 2026 se sustituyó el `BTreeMap` consultado por cada punto por una tabla de 512
+acumuladores opcionales, indexada por la misma celda 8³. La emisión recorre los índices crecientes,
+por lo que se conserva el orden de muestras. Tres conversiones seriales release sobre Belvedere
+produjeron el mismo SHA-256 que una repetición de la implementación anterior:
+`af78ad1d8d10188773851635ee042d81d25f3176866a3218a6f8103c0af2f977`. Coincidieron también los
+conteos, bloques, tamaños y payloads.
+
+| Implementación | Repetición | Tiempo total | Construcción de jerarquía | Salida |
+| --- | --- | ---: | ---: | ---: |
+| `BTreeMap` | base local | 99,360 s | 53,631 s | 1.596.356.694 B |
+| Tabla 8³ | A | 95,613 s | 50,826 s | 1.596.356.694 B |
+| Tabla 8³ | B | 96,636 s | 51,494 s | 1.596.356.694 B |
+| Tabla 8³ | C | 96,301 s | 51,229 s | 1.596.356.694 B |
+
+La mediana nueva fue 96,301 s total y 51,229 s de jerarquía. Frente a la única base ejecutada con
+el mismo árbol de trabajo, las diferencias son −3,1 % y −4,5 %; la base no tiene repeticiones
+emparejadas, así que no se considera una mejora concluyente. El hash idéntico valida que no cambiaron
+la salida ni los atributos. Repetir la base anterior en el mismo perfil y añadir otros datasets antes
+de atribuir la diferencia al cambio.
+
+### Valor predeterminado de trabajadores
+
+Con la tabla 8³, se comparó una conversión serial y otra con cuatro trabajadores en la misma ruta del
+SSD local, sin conservar outputs anteriores durante la ejecución. Las dos salidas tuvieron el mismo
+SHA-256 indicado arriba y el mismo tamaño. La muestra tmpfs de 91,15 s no se compara con estas cifras.
+
+| Trabajadores | Repetición | Tiempo total | Planificación espacial | Construcción de jerarquía | Presupuesto controlado |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | SSD A | 112,663 s | 24,006 s | 63,903 s | 62.744.320 B |
+| 4 | SSD A | 91,153 s | 24,154 s | 41,991 s | 66.086.656 B |
+
+En este par, cuatro trabajadores redujeron el total un 19,1 % y la construcción de jerarquía un
+34,3 %, con unos 3,2 MiB más de presupuesto controlado. Es una sola repetición por valor y un dataset;
+por eso el valor automático queda acotado a `min(4, available_parallelism)` y el CLI conserva el
+override `--spatial-workers`. Repetir en el mismo SSD y en Albuera/Majadas antes de tratar el ahorro
+como representativo.
 
 ### Memoria esperable para render
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::VecDeque,
     fs::{self, File, OpenOptions},
     io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -454,7 +454,9 @@ impl SpatialBuilder<'_> {
         let mut children = (0..child_count)
             .map(|_| None)
             .collect::<Vec<Option<ChildSpool>>>();
-        let mut samples = BTreeMap::<usize, SampleAccumulator>::new();
+        let mut samples = std::iter::repeat_with(|| None)
+            .take(SAMPLE_GRID_SIZE.pow(3))
+            .collect::<Vec<Option<SampleAccumulator>>>();
         let sample_cell_size = cube_side(bounds) / SAMPLE_GRID_SIZE as f64;
         let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
         let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
@@ -480,7 +482,7 @@ impl SpatialBuilder<'_> {
 
             let voxel_key = sample_index(point.position, bounds);
             let center = voxel_center(voxel_key, bounds);
-            let sample = samples.entry(voxel_key).or_default();
+            let sample = samples[voxel_key].get_or_insert_with(SampleAccumulator::default);
             sample.add(point, center);
         }
         if scanned != source_count {
@@ -506,10 +508,14 @@ impl SpatialBuilder<'_> {
 
         let sample_path = self.workspace.file(&format!("node-{}.lod", id.get()));
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
-        for (key, accumulator) in &samples {
+        for (key, accumulator) in samples
+            .iter()
+            .enumerate()
+            .filter_map(|(key, sample)| sample.as_ref().map(|accumulator| (key, accumulator)))
+        {
             write_point(
                 &mut sample_writer,
-                &accumulator.finish(voxel_center(*key, bounds)),
+                &accumulator.finish(voxel_center(key, bounds)),
             )?;
         }
         sample_writer
@@ -517,7 +523,7 @@ impl SpatialBuilder<'_> {
             .map_err(|error| error.into_error())?;
         fs::remove_file(&spool_path)?;
 
-        let sample_count = samples.len();
+        let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         let sample_block = if sample_count > 0 {
             let block_id = self.allocate_block_id()?;
             self.output_blocks.push(PlannedBlock {
