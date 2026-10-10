@@ -12,6 +12,10 @@ self.addEventListener("message", ({ data }) => {
 });
 
 async function convert(file) {
+    const conversionStartedAt = performance.now();
+    let stage = "planning";
+    let stageStartedAt = conversionStartedAt;
+    const stageDurations = {};
     let accessHandle = null;
     let converter = null;
     let directory = null;
@@ -39,8 +43,19 @@ async function convert(file) {
             if (cancelRequested) throw new DOMException("Conversion cancelled.", "AbortError");
             progress = converter.convertNext();
             const now = performance.now();
+            if (progress.stage !== stage) {
+                stageDurations[stage] = now - stageStartedAt;
+                stage = progress.stage;
+                stageStartedAt = now;
+            }
+            if (progress.done) stageDurations[stage] = now - stageStartedAt;
             if (progress.done || now - lastProgressAt >= 100) {
-                self.postMessage({ type: "progress", ...progress, sourceName: file.name });
+                self.postMessage({
+                    type: "progress",
+                    ...progress,
+                    sourceName: file.name,
+                    stageElapsedMs: now - stageStartedAt,
+                });
                 lastProgressAt = now;
             }
             if (!progress.done) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -59,6 +74,11 @@ async function convert(file) {
             file: convertedFile,
             outputName: file.name.replace(/\.(las|laz)$/i, ".oct"),
             points: progress.totalPoints,
+            timings: {
+                planningMs: Math.round(stageDurations.planning ?? 0),
+                writingMs: Math.round(stageDurations.writing ?? 0),
+                totalMs: Math.round(performance.now() - conversionStartedAt),
+            },
         });
     } catch (error) {
         converter?.free();

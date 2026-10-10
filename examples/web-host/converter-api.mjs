@@ -31,7 +31,12 @@ export function createConverter(options = {}) {
         if (data.type === "progress" || data.type === "status") emit(data.type, data);
         else if (data.type === "complete") {
             emit("complete", data);
-            settle(null, { file: data.file, name: data.outputName, points: data.points });
+            settle(null, {
+                file: data.file,
+                name: data.outputName,
+                points: data.points,
+                timings: data.timings,
+            });
         } else if (data.type === "cancelled") {
             const error = new Error(data.message);
             error.name = "AbortError";

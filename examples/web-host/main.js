@@ -624,11 +624,14 @@ convertButton.addEventListener("click", () => {
             const phase = stage === "writing" ? "Writing spatial LOD" : "Planning spatial LOD";
             convertStatus.textContent = `${phase} · ${sourceName}: ${processed.toLocaleString()} / ${total.toLocaleString()} points`;
         });
-        converterApi.convert(file).then(({ file: resultFile, name, points }) => {
+        converterApi.convert(file).then(({ file: resultFile, name, points, timings }) => {
             convertedFile = resultFile;
             convertedOutputName = name;
             convertProgress.value = convertProgress.max;
-            convertStatus.textContent = `Converted ${points} points to ${name}.`;
+            const planning = ((timings?.planningMs ?? 0) / 1_000).toFixed(1);
+            const writing = ((timings?.writingMs ?? 0) / 1_000).toFixed(1);
+            const total = ((timings?.totalMs ?? 0) / 1_000).toFixed(1);
+            convertStatus.textContent = `Converted ${points} points to ${name} · planning ${planning}s · writing ${writing}s · total ${total}s.`;
             convertDownloadButton.hidden = false;
             convertOpenButton.hidden = false;
         }).catch((error) => {

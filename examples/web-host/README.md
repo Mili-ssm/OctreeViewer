@@ -126,7 +126,7 @@ import { createConverter } from "./converter-api.mjs";
 const converter = createConverter();
 converter.on("progress", ({ processedPoints, totalPoints }) => console.log(processedPoints, totalPoints));
 const result = await converter.convert(lasFile);
-console.log(result.name, result.points, result.file);
+console.log(result.name, result.points, result.file, result.timings);
 converter.dispose();
 ```
 
@@ -135,7 +135,9 @@ source in two bounded passes: one to plan eight spatial child nodes and represen
 write the output blocks. The root contains up to 4,096 representatives at voxel centers, with color
 and RGB averaged per voxel and other attributes copied from the nearest source point. Extra Bytes and
 CRS are omitted. Large-file scale and OPFS quota behavior have not been validated in Chrome/Firefox
-with Albuera.
+with Albuera. The result includes `timings.planningMs`, `timings.writingMs`, and `timings.totalMs`; these
+are browser wall-clock measurements and still need to be collected on Albuera before choosing whether
+per-node OPFS spools would improve the tradeoff.
 
 Use the keyboard-accessible **Open built-in sample** button to load the included v1/v2 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64

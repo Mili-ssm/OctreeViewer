@@ -858,7 +858,8 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
   La planificación y escritura son dos pasadas sobre LAS/LAZ y no mantienen la nube en RAM.
 - [x] Sustituir las muestras fuente por representantes en centros de una rejilla 8×8×8 por nodo:
   promediar color/RGB y conservar el resto de atributos del punto fuente más cercano.
-- [ ] Medir el costo de las dos pasadas antes de decidir si hace falta spool OPFS por nodo.
+- [x] Exponer por API/demostración tiempos separados de planificación, escritura y conversión total.
+- [ ] Medir con Albuera en Chrome/Firefox antes de decidir si hace falta spool OPFS por nodo.
 - [ ] Validar manejo de cuota, cancelación/temporales y escala de conversión LAS/LAZ en Chrome y
   Firefox; Albuera no se considera validada por la conversión por bloques.
 
