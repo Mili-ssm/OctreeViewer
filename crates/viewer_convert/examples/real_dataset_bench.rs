@@ -1,7 +1,12 @@
 use std::{
     env,
     fs::{self, File},
+    io::{self, Read, Seek, SeekFrom},
     path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Instant,
 };
 
@@ -31,12 +36,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 divisions,
             )
         }
-        Some("read") if arguments.len() == 2 || arguments.len() == 3 => {
-            read(Path::new(&arguments[1]), arguments.get(2).map(Path::new))
+        Some("read") if arguments.len() == 2 || arguments.len() == 3 => read(
+            Path::new(&arguments[1]),
+            arguments.get(2).map(Path::new),
+            ReadMode::All,
+        ),
+        Some("read-geometry") if arguments.len() == 2 || arguments.len() == 3 => read(
+            Path::new(&arguments[1]),
+            arguments.get(2).map(Path::new),
+            ReadMode::Geometry,
+        ),
+        Some("read-attribute") if (3..=4).contains(&arguments.len()) => {
+            let schema_index = arguments[2].to_string_lossy().parse()?;
+            read(
+                Path::new(&arguments[1]),
+                arguments.get(3).map(Path::new),
+                ReadMode::Attribute(schema_index),
+            )
         }
         _ => {
             eprintln!(
-                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]"
+                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
             );
             Err("invalid arguments".into())
         }
@@ -99,20 +119,77 @@ fn convert(
     summarize_output(output, Some(input_bytes))
 }
 
-fn read(output: &Path, input: Option<&Path>) -> Result<(), Box<dyn std::error::Error>> {
+#[derive(Clone, Copy)]
+enum ReadMode {
+    All,
+    Geometry,
+    Attribute(u32),
+}
+
+struct CountingReader<R> {
+    inner: R,
+    bytes_read: Arc<AtomicU64>,
+}
+
+impl<R> CountingReader<R> {
+    fn new(inner: R, bytes_read: Arc<AtomicU64>) -> Self {
+        Self { inner, bytes_read }
+    }
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buffer)?;
+        self.bytes_read.fetch_add(read as u64, Ordering::Relaxed);
+        Ok(read)
+    }
+}
+
+impl<R: Seek> Seek for CountingReader<R> {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
+    }
+}
+
+fn read(
+    output: &Path,
+    input: Option<&Path>,
+    mode: ReadMode,
+) -> Result<(), Box<dyn std::error::Error>> {
     let output_bytes = fs::metadata(output)?.len();
     let started = Instant::now();
-    let mut reader = FormatReader::new(File::open(output)?)?;
+    let bytes_read = Arc::new(AtomicU64::new(0));
+    let mut reader = FormatReader::new(CountingReader::new(
+        File::open(output)?,
+        Arc::clone(&bytes_read),
+    ))?;
     let open_elapsed = started.elapsed();
+    let payload_read_start = bytes_read.load(Ordering::Relaxed);
     let stats = reader.block_storage_stats()?;
     let decode_started = Instant::now();
     let mut decoded_points = 0_u64;
     for block in &stats {
-        let decoded = reader.read_block(block.id)?;
-        decoded_points += decoded.points().len() as u64;
+        decoded_points += match mode {
+            ReadMode::All => reader.read_block(block.id)?.points().len() as u64,
+            ReadMode::Geometry => reader.read_geometry(block.id)?.len() as u64,
+            ReadMode::Attribute(schema_index) => {
+                reader.read_attribute(block.id, schema_index)?;
+                block.point_count
+            }
+        };
     }
     let decode_elapsed = decode_started.elapsed();
-    println!("mode=read_all_blocks");
+    let payload_bytes_read = bytes_read
+        .load(Ordering::Relaxed)
+        .saturating_sub(payload_read_start);
+    println!(
+        "mode={}",
+        match mode {
+            ReadMode::All => "read_all_blocks",
+            ReadMode::Geometry => "read_geometry_only",
+            ReadMode::Attribute(_) => "read_one_attribute",
+        }
+    );
     println!("output_bytes={output_bytes}");
     if let Some(input) = input {
         println!("input_bytes={}", fs::metadata(input)?.len());
@@ -123,6 +200,7 @@ fn read(output: &Path, input: Option<&Path>) -> Result<(), Box<dyn std::error::E
         decode_elapsed.as_secs_f64() * 1000.0
     );
     println!("decoded_payload_points={decoded_points}");
+    println!("payload_bytes_read={payload_bytes_read}");
     let source_point_count = source_points(&reader);
     if let Some(input) = input {
         let input_bytes = fs::metadata(input)?.len();
@@ -234,7 +312,7 @@ fn summarize_memory(source_points: u64, stats: &[BlockStorageStats]) {
     );
 }
 
-fn source_points(reader: &FormatReader<File>) -> u64 {
+fn source_points<R: Read + Seek>(reader: &FormatReader<R>) -> u64 {
     reader
         .format_metadata()
         .dataset()

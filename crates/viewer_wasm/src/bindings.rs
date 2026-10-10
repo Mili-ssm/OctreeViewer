@@ -581,10 +581,20 @@ impl WasmVoxelViewer {
         let mode = ColorMode::parse(&mode).ok_or_else(|| {
             JsValue::from_str("color mode must be rgb, intensity, elevation, or classification")
         })?;
-        self.gpu_renderer
+        let renderer = self
+            .gpu_renderer
             .as_mut()
-            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
-            .set_color_mode(mode);
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        if renderer.color_mode() != mode {
+            renderer.set_color_mode(mode);
+            if let Some(dataset) = self.lod_dataset.as_mut() {
+                dataset
+                    .clear_loaded_blocks(renderer)
+                    .map_err(|error| JsValue::from_str(&error.to_string()))?;
+                self.lod_stage_pixels = Some(16.0);
+                self.lod_dirty = true;
+            }
+        }
         Ok(())
     }
 
@@ -787,6 +797,11 @@ impl WasmVoxelViewer {
     fn update_lod_view(&mut self, target_voxel_pixels: f64) -> Result<LodViewStats, JsValue> {
         let stage_pixels = self.lod_stage_pixels.unwrap_or(16.0);
         let selection_error_pixels = stage_pixels;
+        let requested_attribute = self
+            .gpu_renderer
+            .as_ref()
+            .map(SurfaceRenderer::color_mode)
+            .and_then(color_attribute_name);
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -807,10 +822,28 @@ impl WasmVoxelViewer {
                     format_reader
                         .as_mut()
                         .map(|reader| {
-                            reader
-                                .read_block(block_id)
-                                .map(Some)
-                                .map_err(|error| error.to_string())
+                            let geometry = reader
+                                .read_geometry(block_id)
+                                .map_err(|error| error.to_string())?;
+                            let mut attributes = Vec::new();
+                            if let Some(name) = requested_attribute
+                                && let Some(schema_index) = reader
+                                    .format_metadata()
+                                    .dataset()
+                                    .hierarchy()
+                                    .attributes()
+                                    .iter()
+                                    .position(|descriptor| descriptor.name() == name)
+                            {
+                                let schema_index = u32::try_from(schema_index)
+                                    .map_err(|_| "attribute schema is too large".to_owned())?;
+                                attributes.push(
+                                    reader
+                                        .read_attribute(block_id, schema_index)
+                                        .map_err(|error| error.to_string())?,
+                                );
+                            }
+                            Ok(Some(PointBlock::new(block_id, geometry, attributes)))
                         })
                         .unwrap_or(Ok(None))
                 },
@@ -838,6 +871,14 @@ impl WasmVoxelViewer {
         self.last_lod_stats = None;
         self.last_lod_error = None;
         self.format_reader = None;
+    }
+}
+
+const fn color_attribute_name(mode: ColorMode) -> Option<&'static str> {
+    match mode {
+        ColorMode::Intensity => Some("intensity"),
+        ColorMode::Classification => Some("classification"),
+        ColorMode::Rgb | ColorMode::Elevation => None,
     }
 }
 

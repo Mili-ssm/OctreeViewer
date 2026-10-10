@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Seek, SeekFrom},
+    sync::Arc,
 };
 
 use viewer_core::{
@@ -10,8 +11,9 @@ use viewer_core::{
 };
 
 use crate::writer::{
-    FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_MAGIC_V3, FOOTER_SIZE, HEADER_MAGIC, HEADER_SIZE,
-    INDEX_MAGIC_V1, INDEX_MAGIC_V2, INDEX_MAGIC_V3, block_payload_size, validate_metadata,
+    ColumnPayload, FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_MAGIC_V3, FOOTER_MAGIC_V4, FOOTER_SIZE,
+    HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC_V1, INDEX_MAGIC_V2, INDEX_MAGIC_V3, INDEX_MAGIC_V4,
+    attribute_payload_size, block_payload_size, validate_metadata,
 };
 use crate::{BlockCodec, FormatError, FormatMetadata, NodeAttributeRange, crc32, decompress_block};
 
@@ -94,6 +96,7 @@ struct BlockDirectoryEntry {
     scale: [f64; 3],
     codec: BlockCodec,
     checksum: u32,
+    columns: Option<Vec<ColumnPayload>>,
 }
 
 type ParsedIndex = (
@@ -102,12 +105,39 @@ type ParsedIndex = (
     BTreeMap<BlockId, Vec<SpatialBounds>>,
 );
 
-/// Physical and decoded size information from a validated block-directory entry.
+/// Aggregate sizes for an entire block, excluding the file index.
+/// V4 totals geometry and all attribute payloads; use `block_payload_storage_stats`
+/// to inspect their independent codecs and sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockStorageStats {
     pub id: viewer_core::BlockId,
+    /// Legacy block codec; `None` in v4, where each payload has its own codec.
     pub codec: BlockCodec,
     pub point_count: u64,
+    pub stored_bytes: u64,
+    pub raw_bytes: u64,
+}
+
+/// Identity of an independently encoded payload in a block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockPayloadKind {
+    Geometry,
+    Attribute {
+        schema_index: u32,
+        name: String,
+    },
+    /// V1-v3 encode geometry and all attributes together, so stored bytes cannot
+    /// be attributed independently to geometry or individual columns.
+    CombinedLegacy,
+}
+
+/// Stored and decoded bytes of one payload from the validated file index.
+/// These sizes exclude header, index and footer bytes and require no payload I/O.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockPayloadStorageStats {
+    pub id: BlockId,
+    pub kind: BlockPayloadKind,
+    pub codec: BlockCodec,
     pub stored_bytes: u64,
     pub raw_bytes: u64,
 }
@@ -115,9 +145,9 @@ pub struct BlockStorageStats {
 /// Seekable reader that loads metadata at open and verifies only requested block payloads.
 pub struct FormatReader<R> {
     reader: R,
-    metadata: FormatMetadata,
-    blocks: BTreeMap<BlockId, BlockDirectoryEntry>,
-    block_bounds: BTreeMap<BlockId, Vec<SpatialBounds>>,
+    metadata: Arc<FormatMetadata>,
+    blocks: Arc<BTreeMap<BlockId, BlockDirectoryEntry>>,
+    block_bounds: Arc<BTreeMap<BlockId, Vec<SpatialBounds>>>,
     limits: FormatReaderLimits,
 }
 
@@ -171,9 +201,9 @@ impl<R: Read + Seek> FormatReader<R> {
         let (metadata, blocks, block_bounds) = parse_index(&index, &limits, index_offset, version)?;
         Ok(Self {
             reader,
-            metadata,
-            blocks,
-            block_bounds,
+            metadata: Arc::new(metadata),
+            blocks: Arc::new(blocks),
+            block_bounds: Arc::new(block_bounds),
             limits,
         })
     }
@@ -182,7 +212,9 @@ impl<R: Read + Seek> FormatReader<R> {
         &self.metadata
     }
 
-    /// Returns payload sizes from the validated block directory, excluding the file index.
+    /// Returns aggregate block sizes from the validated directory without payload I/O.
+    /// V4's codec is `None` because the aggregate combines independent payloads;
+    /// inspect `block_payload_storage_stats` for their actual compression codecs.
     pub fn block_storage_stats(&self) -> Result<Vec<BlockStorageStats>, FormatError> {
         self.blocks
             .iter()
@@ -202,11 +234,270 @@ impl<R: Read + Seek> FormatReader<R> {
             .collect()
     }
 
+    /// Returns one geometry entry and one entry per schema attribute for each v4 block.
+    /// V1-v3 return one `CombinedLegacy` entry per block: their jointly compressed
+    /// payload has no independent stored geometry/attribute sizes. Entries are
+    /// ordered by block ID, then geometry and schema order. This reads no payloads.
+    pub fn block_payload_storage_stats(
+        &self,
+    ) -> Result<Vec<BlockPayloadStorageStats>, FormatError> {
+        let schema = self.metadata.dataset().hierarchy().attributes();
+        let mut stats = Vec::new();
+        for (id, entry) in self.blocks.iter() {
+            if let Some(columns) = &entry.columns {
+                stats.try_reserve(columns.len()).map_err(|_| {
+                    FormatError::AllocationFailed(
+                        columns.len() * std::mem::size_of::<BlockPayloadStorageStats>(),
+                    )
+                })?;
+                for (index, column) in columns.iter().enumerate() {
+                    let kind = if index == 0 {
+                        BlockPayloadKind::Geometry
+                    } else {
+                        BlockPayloadKind::Attribute {
+                            schema_index: (index - 1) as u32,
+                            name: schema[index - 1].name().to_owned(),
+                        }
+                    };
+                    stats.push(BlockPayloadStorageStats {
+                        id: *id,
+                        kind,
+                        codec: column.codec,
+                        stored_bytes: column.stored_length,
+                        raw_bytes: column.raw_length,
+                    });
+                }
+            } else {
+                stats.try_reserve(1).map_err(|_| {
+                    FormatError::AllocationFailed(std::mem::size_of::<BlockPayloadStorageStats>())
+                })?;
+                stats.push(BlockPayloadStorageStats {
+                    id: *id,
+                    kind: BlockPayloadKind::CombinedLegacy,
+                    codec: entry.codec,
+                    stored_bytes: entry.payload_length,
+                    raw_bytes: block_payload_size(
+                        usize::try_from(entry.point_count)
+                            .map_err(|_| FormatError::PointCountOutOfRange)?,
+                        schema,
+                    )?,
+                });
+            }
+        }
+        Ok(stats)
+    }
+
     pub fn into_inner(self) -> R {
         self.reader
     }
 
+    /// Creates a reader over an independent cursor while sharing the validated immutable index.
+    /// The supplied stream must refer to the same unchanged file snapshot as this reader.
+    pub fn fork_reader<S: Read + Seek>(&self, reader: S) -> FormatReader<S> {
+        FormatReader {
+            reader,
+            metadata: Arc::clone(&self.metadata),
+            blocks: Arc::clone(&self.blocks),
+            block_bounds: Arc::clone(&self.block_bounds),
+            limits: self.limits,
+        }
+    }
+
+    fn decode_geometry(
+        &self,
+        cursor: &mut SliceCursor<'_>,
+        id: BlockId,
+        entry: &BlockDirectoryEntry,
+        point_count: usize,
+    ) -> Result<PointBatch, FormatError> {
+        let point_capacity = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
+        let mut points = Vec::new();
+        points.try_reserve_exact(point_capacity).map_err(|_| {
+            FormatError::AllocationFailed(point_capacity * std::mem::size_of::<Point>())
+        })?;
+        for _ in 0..point_count {
+            let mut quantized = [0_u32; 3];
+            for value in &mut quantized {
+                *value = cursor.u32()?;
+            }
+            let position = std::array::from_fn(|axis| {
+                (entry.origin[axis] + f64::from(quantized[axis]) * entry.scale[axis]) as f32
+            });
+            if position.iter().any(|value| !value.is_finite()) {
+                return Err(FormatError::MalformedBlock(
+                    "decoded position is out of range",
+                ));
+            }
+            let origin = self.metadata.dataset().coordinate_frame().origin();
+            let world = std::array::from_fn(|axis| origin[axis] + f64::from(position[axis]));
+            let bounds = self
+                .block_bounds
+                .get(&id)
+                .ok_or(FormatError::MalformedIndex("block has no node bounds"))?;
+            if world.iter().any(|coordinate| !coordinate.is_finite())
+                || bounds.iter().any(|bounds| !contains_point(*bounds, world))
+            {
+                return Err(FormatError::MalformedBlock(
+                    "decoded position is outside its node bounds",
+                ));
+            }
+            points.push(Point::new(position, ColorRgb::new(0, 0, 0)));
+        }
+        for point in &mut points {
+            point.color = ColorRgb::new(cursor.u8()?, cursor.u8()?, cursor.u8()?);
+        }
+
+        Ok(PointBatch::new(points))
+    }
+
+    /// Loads XYZ and display RGB only. For v1-v3 the legacy combined payload must be read.
+    /// Row indices in the returned batch are stable within this immutable block.
+    pub fn read_geometry(&mut self, id: BlockId) -> Result<PointBatch, FormatError> {
+        let entry = self
+            .blocks
+            .get(&id)
+            .ok_or(FormatError::UnknownBlock(id))?
+            .clone();
+        let Some(columns) = &entry.columns else {
+            return Ok(self.read_point_block(id)?.points().clone());
+        };
+        let raw = self.read_column_payload(id, &entry, &columns[0])?;
+        let mut cursor = SliceCursor::new(&raw);
+        let count =
+            usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
+        let points = self.decode_geometry(&mut cursor, id, &entry, count)?;
+        if cursor.remaining() != 0 {
+            return Err(FormatError::MalformedBlock("trailing geometry bytes"));
+        }
+        Ok(points)
+    }
+
+    /// Loads one complete attribute column by its index in the shared dataset schema.
+    /// In v4 this reads no geometry or other attribute payloads.
+    pub fn read_attribute(
+        &mut self,
+        id: BlockId,
+        schema_index: u32,
+    ) -> Result<AttributeColumn, FormatError> {
+        let entry = self
+            .blocks
+            .get(&id)
+            .ok_or(FormatError::UnknownBlock(id))?
+            .clone();
+        let descriptor = self
+            .metadata
+            .dataset()
+            .hierarchy()
+            .attributes()
+            .get(schema_index as usize)
+            .ok_or(FormatError::UnknownAttribute(schema_index))?
+            .clone();
+        let Some(columns) = &entry.columns else {
+            let block = self.read_point_block(id)?;
+            return Ok(block.attributes()[schema_index as usize].clone());
+        };
+        let raw = self.read_column_payload(id, &entry, &columns[schema_index as usize + 1])?;
+        let count =
+            usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
+        let value_count = count
+            .checked_mul(descriptor.component_count() as usize)
+            .ok_or_else(|| FormatError::AttributeLengthOverflow(descriptor.name().to_owned()))?;
+        let mut cursor = SliceCursor::new(&raw);
+        let values = read_attribute_values(&mut cursor, descriptor.data_type(), value_count)?;
+        if cursor.remaining() != 0 {
+            return Err(FormatError::MalformedBlock("trailing attribute bytes"));
+        }
+        Ok(AttributeColumn::new(descriptor, values, count)?)
+    }
+
+    /// Resolves (block_id, row_id) to the requested attribute components.
+    /// Compression granularity is one column per block, so this decodes that whole column.
+    pub fn read_attribute_row(
+        &mut self,
+        id: BlockId,
+        row_id: u64,
+        schema_index: u32,
+    ) -> Result<AttributeValues, FormatError> {
+        let entry = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        if row_id >= entry.point_count {
+            return Err(FormatError::UnknownRow { block: id, row_id });
+        }
+        let column = self.read_attribute(id, schema_index)?;
+        let width = column.descriptor().component_count() as usize;
+        let start = usize::try_from(row_id)
+            .map_err(|_| FormatError::PointCountOutOfRange)?
+            .checked_mul(width)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        macro_rules! select_row {
+            ($($variant:ident),*) => { match column.values() {
+                $(AttributeValues::$variant(values) => AttributeValues::$variant(values[start..start + width].to_vec()),)*
+            } };
+        }
+        Ok(select_row!(U8, I8, U16, I16, U32, I32, U64, I64, F32, F64))
+    }
+
+    fn read_column_payload(
+        &mut self,
+        id: BlockId,
+        block: &BlockDirectoryEntry,
+        column: &ColumnPayload,
+    ) -> Result<Vec<u8>, FormatError> {
+        for requested in [column.stored_length, column.raw_length] {
+            if requested > self.limits.max_block_bytes {
+                return Err(FormatError::BlockExceedsLimit {
+                    requested,
+                    limit: self.limits.max_block_bytes,
+                });
+            }
+        }
+        let size = usize::try_from(column.stored_length)
+            .map_err(|_| FormatError::SizeOutOfRange(column.stored_length))?;
+        let mut stored = Vec::new();
+        stored
+            .try_reserve_exact(size)
+            .map_err(|_| FormatError::AllocationFailed(size))?;
+        stored.resize(size, 0);
+        self.reader.seek(SeekFrom::Start(
+            block
+                .offset
+                .checked_add(column.offset)
+                .ok_or(FormatError::FileSizeOverflow)?,
+        ))?;
+        self.reader.read_exact(&mut stored)?;
+        if crc32(&stored) != column.checksum {
+            return Err(FormatError::InvalidBlockChecksum(id));
+        }
+        let raw_size = usize::try_from(column.raw_length)
+            .map_err(|_| FormatError::SizeOutOfRange(column.raw_length))?;
+        if column.codec == BlockCodec::None {
+            Ok(stored)
+        } else {
+            Ok(decompress_block(
+                column.codec,
+                &stored,
+                raw_size,
+                usize::try_from(self.limits.max_block_bytes).unwrap_or(usize::MAX),
+            )?)
+        }
+    }
+
     fn read_point_block(&mut self, id: BlockId) -> Result<PointBlock, FormatError> {
+        if self
+            .blocks
+            .get(&id)
+            .is_some_and(|entry| entry.columns.is_some())
+        {
+            let points = self.read_geometry(id)?;
+            let schema_count = self.metadata.dataset().hierarchy().attributes().len();
+            let mut attributes = Vec::new();
+            attributes
+                .try_reserve_exact(schema_count)
+                .map_err(|_| FormatError::AllocationFailed(schema_count))?;
+            for schema_index in 0..schema_count {
+                attributes.push(self.read_attribute(id, schema_index as u32)?);
+            }
+            return Ok(PointBlock::new(id, points, attributes));
+        }
         let entry = self
             .blocks
             .get(&id)
@@ -260,42 +551,7 @@ impl<R: Read + Seek> FormatReader<R> {
         };
 
         let mut cursor = SliceCursor::new(&raw);
-        let point_capacity = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
-        let mut points = Vec::new();
-        points.try_reserve_exact(point_capacity).map_err(|_| {
-            FormatError::AllocationFailed(point_capacity * std::mem::size_of::<Point>())
-        })?;
-        for _ in 0..point_count {
-            let mut quantized = [0_u32; 3];
-            for value in &mut quantized {
-                *value = cursor.u32()?;
-            }
-            let position = std::array::from_fn(|axis| {
-                (entry.origin[axis] + f64::from(quantized[axis]) * entry.scale[axis]) as f32
-            });
-            if position.iter().any(|value| !value.is_finite()) {
-                return Err(FormatError::MalformedBlock(
-                    "decoded position is out of range",
-                ));
-            }
-            let origin = self.metadata.dataset().coordinate_frame().origin();
-            let world = std::array::from_fn(|axis| origin[axis] + f64::from(position[axis]));
-            let bounds = self
-                .block_bounds
-                .get(&id)
-                .ok_or(FormatError::MalformedIndex("block has no node bounds"))?;
-            if world.iter().any(|coordinate| !coordinate.is_finite())
-                || bounds.iter().any(|bounds| !contains_point(*bounds, world))
-            {
-                return Err(FormatError::MalformedBlock(
-                    "decoded position is outside its node bounds",
-                ));
-            }
-            points.push(Point::new(position, ColorRgb::new(0, 0, 0)));
-        }
-        for point in &mut points {
-            point.color = ColorRgb::new(cursor.u8()?, cursor.u8()?, cursor.u8()?);
-        }
+        let points = self.decode_geometry(&mut cursor, id, &entry, point_count)?;
 
         let mut attributes = Vec::new();
         attributes
@@ -318,7 +574,7 @@ impl<R: Read + Seek> FormatReader<R> {
             return Err(FormatError::MalformedBlock("trailing payload bytes"));
         }
 
-        Ok(PointBlock::new(id, PointBatch::new(points), attributes))
+        Ok(PointBlock::new(id, points, attributes))
     }
 }
 
@@ -339,7 +595,7 @@ fn validate_header(header: &[u8; HEADER_SIZE as usize]) -> Result<u16, FormatErr
         return Err(FormatError::InvalidHeader);
     }
     let version = u16::from_le_bytes(header[8..10].try_into().expect("fixed width"));
-    if ![1, 2, 3].contains(&version) {
+    if ![1, 2, 3, 4].contains(&version) {
         return Err(FormatError::UnsupportedVersion(version));
     }
     let header_length = u16::from_le_bytes(header[10..12].try_into().expect("fixed width"));
@@ -358,7 +614,9 @@ fn parse_footer(
     footer: &[u8; FOOTER_SIZE as usize],
     version: u16,
 ) -> Result<(u64, u64, u64, u32), FormatError> {
-    let expected_magic = if version >= 3 {
+    let expected_magic = if version >= 4 {
+        FOOTER_MAGIC_V4
+    } else if version >= 3 {
         FOOTER_MAGIC_V3
     } else if version == 2 {
         FOOTER_MAGIC_V2
@@ -386,7 +644,9 @@ fn parse_index(
     version: u16,
 ) -> Result<ParsedIndex, FormatError> {
     let mut cursor = SliceCursor::new(bytes);
-    let expected_magic = if version >= 3 {
+    let expected_magic = if version >= 4 {
+        INDEX_MAGIC_V4
+    } else if version >= 3 {
         INDEX_MAGIC_V3
     } else if version == 2 {
         INDEX_MAGIC_V2
@@ -613,12 +873,12 @@ fn parse_index(
                 limit: limits.max_block_bytes,
             });
         }
-        if codec == BlockCodec::None && payload_length != expected_length {
+        if version < 4 && codec == BlockCodec::None && payload_length != expected_length {
             return Err(FormatError::MalformedIndex(
                 "raw block size disagrees with its point count",
             ));
         }
-        if codec == BlockCodec::Lz4 && payload_length >= expected_length {
+        if version < 4 && codec == BlockCodec::Lz4 && payload_length >= expected_length {
             return Err(FormatError::MalformedIndex(
                 "compressed payload is not smaller than raw payload",
             ));
@@ -632,6 +892,63 @@ fn parse_index(
                 "block payload range is outside the data section",
             ));
         }
+        let columns = if version >= 4 {
+            if codec != BlockCodec::None || checksum != 0 {
+                return Err(FormatError::MalformedIndex(
+                    "invalid v4 aggregate codec or checksum",
+                ));
+            }
+            let mut columns = Vec::new();
+            columns
+                .try_reserve_exact(schema.len() + 1)
+                .map_err(|_| FormatError::AllocationFailed(schema.len() + 1))?;
+            let geometry_length = point_count
+                .checked_mul(15)
+                .ok_or(FormatError::BlockSizeOverflow)?;
+            let mut expected_offset = 0;
+            for raw_length in std::iter::once(Ok(geometry_length)).chain(
+                schema
+                    .iter()
+                    .map(|descriptor| attribute_payload_size(point_count, descriptor)),
+            ) {
+                let expected_raw_length = raw_length?;
+                let column = ColumnPayload {
+                    offset: cursor.u64()?,
+                    stored_length: cursor.u64()?,
+                    raw_length: cursor.u64()?,
+                    codec: BlockCodec::try_from(cursor.u8()?)?,
+                    checksum: cursor.u32()?,
+                };
+                if column.offset != expected_offset
+                    || column.raw_length != expected_raw_length
+                    || (column.codec == BlockCodec::None
+                        && column.stored_length != column.raw_length)
+                    || (column.codec == BlockCodec::Lz4
+                        && column.stored_length >= column.raw_length)
+                {
+                    return Err(FormatError::MalformedIndex(
+                        "invalid v4 column range or length",
+                    ));
+                }
+                expected_offset = expected_offset
+                    .checked_add(column.stored_length)
+                    .ok_or(FormatError::FileSizeOverflow)?;
+                if expected_offset > payload_length {
+                    return Err(FormatError::MalformedIndex(
+                        "column extends beyond its block",
+                    ));
+                }
+                columns.push(column);
+            }
+            if expected_offset != payload_length {
+                return Err(FormatError::MalformedIndex(
+                    "column payload section does not fill its block",
+                ));
+            }
+            Some(columns)
+        } else {
+            None
+        };
         blocks.insert(
             id,
             BlockDirectoryEntry {
@@ -643,6 +960,7 @@ fn parse_index(
                 scale,
                 codec,
                 checksum,
+                columns,
             },
         );
     }
@@ -1007,7 +1325,9 @@ mod tests {
     }
 
     fn format_bytes() -> Vec<u8> {
-        let options = FormatWriterOptions::new(0.001, 1024).unwrap();
+        let options = FormatWriterOptions::new(0.001, 1024)
+            .unwrap()
+            .with_columnar_payloads(false);
         let mut writer = FormatWriter::new(Cursor::new(Vec::new()), metadata(), options).unwrap();
         writer.write_block(source_block()).unwrap();
         writer.finish().unwrap().into_inner()
@@ -1017,7 +1337,9 @@ mod tests {
         let mut writer = FormatWriter::new(
             Cursor::new(Vec::new()),
             additive_metadata(),
-            FormatWriterOptions::new(0.01, 1024 * 1024).unwrap(),
+            FormatWriterOptions::new(0.01, 1024 * 1024)
+                .unwrap()
+                .with_columnar_payloads(false),
         )
         .unwrap();
         writer.write_block(source_block()).unwrap();
@@ -1071,6 +1393,30 @@ mod tests {
         assert!(reads.borrow().iter().all(|(start, length)| {
             *start >= entry.offset && *start + *length as u64 <= entry.offset + entry.payload_length
         }));
+    }
+
+    #[test]
+    fn forked_readers_share_the_index_and_read_with_independent_cursors() {
+        let bytes = format_bytes();
+        let reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+        let first = reader.fork_reader(Cursor::new(bytes.clone()));
+        let second = reader.fork_reader(Cursor::new(bytes));
+        assert!(std::sync::Arc::ptr_eq(&first.blocks, &second.blocks));
+        assert!(std::sync::Arc::ptr_eq(&first.metadata, &second.metadata));
+
+        let (first_points, second_points) = std::thread::scope(|scope| {
+            let first = scope.spawn(move || {
+                let mut reader = first;
+                reader.read_block(BlockId::new(42)).unwrap().points().len()
+            });
+            let second = scope.spawn(move || {
+                let mut reader = second;
+                reader.read_block(BlockId::new(42)).unwrap().points().len()
+            });
+            (first.join().unwrap(), second.join().unwrap())
+        });
+        assert_eq!(first_points, 2);
+        assert_eq!(second_points, 2);
     }
 
     #[test]
@@ -1168,12 +1514,12 @@ mod tests {
         ));
 
         let mut unsupported = format_bytes();
-        unsupported[8..10].copy_from_slice(&4_u16.to_le_bytes());
+        unsupported[8..10].copy_from_slice(&5_u16.to_le_bytes());
         let crc = crate::crc32(&unsupported[..20]);
         unsupported[20..24].copy_from_slice(&crc.to_le_bytes());
         assert!(matches!(
             FormatReader::new(Cursor::new(unsupported)),
-            Err(FormatError::UnsupportedVersion(4))
+            Err(FormatError::UnsupportedVersion(5))
         ));
     }
 
@@ -1183,7 +1529,9 @@ mod tests {
         let mut writer = FormatWriter::new(
             Cursor::new(Vec::new()),
             metadata,
-            FormatWriterOptions::new(0.001, 1024).unwrap(),
+            FormatWriterOptions::new(0.001, 1024)
+                .unwrap()
+                .with_columnar_payloads(false),
         )
         .unwrap();
         writer.write_block(source_block()).unwrap();
@@ -1266,7 +1614,9 @@ mod tests {
         let mut writer = FormatWriter::new(
             Cursor::new(Vec::new()),
             metadata,
-            FormatWriterOptions::new(0.0, 1024 * 1024).unwrap(),
+            FormatWriterOptions::new(0.0, 1024 * 1024)
+                .unwrap()
+                .with_columnar_payloads(false),
         )
         .unwrap();
         writer.write_block(source).unwrap();
@@ -1385,30 +1735,461 @@ mod tests {
             vec![ColorRgb::new(0, 1, 2), ColorRgb::new(255, 254, 253)],
             attributes,
         );
+        for columnar in [false, true] {
+            let mut writer = FormatWriter::new(
+                Cursor::new(Vec::new()),
+                metadata.clone(),
+                FormatWriterOptions::new(0.0, 1024)
+                    .unwrap()
+                    .with_columnar_payloads(columnar),
+            )
+            .unwrap();
+            writer
+                .write_block(SourcePointBlock::new(
+                    source.id(),
+                    source.positions_local().to_vec(),
+                    source.colors().to_vec(),
+                    source.attributes().to_vec(),
+                ))
+                .unwrap();
+            let bytes = writer.finish().unwrap().into_inner();
+            let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
+            let block = reader.read_block(block_id).unwrap();
+
+            for (column, expected) in block.attributes()[..8].iter().zip(&source_values[..8]) {
+                assert_eq!(column.values(), expected);
+            }
+            let AttributeValues::F32(f32_values) = block.attributes()[8].values() else {
+                panic!("expected f32 values");
+            };
+            assert_eq!(f32_values[0].to_bits(), 0x7FC0_1234);
+            assert_eq!(f32_values[1].to_bits(), 1.5_f32.to_bits());
+            let AttributeValues::F64(f64_values) = block.attributes()[9].values() else {
+                panic!("expected f64 values");
+            };
+            assert_eq!(f64_values[0].to_bits(), 0x7FF8_0000_0000_1234);
+            assert_eq!(f64_values[1].to_bits(), (-0.0_f64).to_bits());
+        }
+    }
+
+    fn columnar_format_bytes() -> Vec<u8> {
+        let base = metadata();
+        let ids = vec![BlockId::new(42), BlockId::new(43)];
+        let vector = AttributeDescriptor::new("vector", AttributeDataType::F32, 2).unwrap();
+        let mut schema = base.dataset().hierarchy().attributes().to_vec();
+        schema.push(vector.clone());
+        let root = SpatialNode::new(
+            NodeId::new(0),
+            None,
+            0,
+            base.dataset().hierarchy().stats().root_bounds,
+            4,
+            0.25,
+            ids.clone(),
+        )
+        .unwrap();
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![root],
+            schema,
+            Some(4),
+            HierarchySemantics::Additive,
+        )
+        .unwrap();
+        let metadata = FormatMetadata::new(
+            DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+            base.crs().map(str::to_owned),
+            None,
+            Vec::new(),
+        )
+        .unwrap()
+        .with_visual_scale(50.0)
+        .unwrap();
+        let mut writer = FormatWriter::new(
+            Cursor::new(Vec::new()),
+            metadata,
+            FormatWriterOptions::new(0.001, 1024)
+                .unwrap()
+                .with_columnar_payloads(true),
+        )
+        .unwrap();
+        for id in ids {
+            let block = source_block();
+            let mut attributes = block.attributes().to_vec();
+            attributes.push(
+                AttributeColumn::new(
+                    vector.clone(),
+                    AttributeValues::F32(vec![0.5, -1.0, 1.5, -2.0]),
+                    2,
+                )
+                .unwrap(),
+            );
+            writer
+                .write_block(SourcePointBlock::new(
+                    id,
+                    block.positions_local().to_vec(),
+                    block.colors().to_vec(),
+                    attributes,
+                ))
+                .unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn v4_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
+        let bytes = columnar_format_bytes();
+        assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 4);
+        assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVEND4");
+        let reads = Rc::new(RefCell::new(Vec::new()));
+        let mut reader = FormatReader::new(ReadSpy {
+            inner: Cursor::new(bytes),
+            reads: Rc::clone(&reads),
+        })
+        .unwrap();
+        assert_eq!(reader.format_metadata().visual_scale(), 50.0);
+        assert_eq!(
+            reader.metadata().hierarchy().semantics(),
+            HierarchySemantics::Additive
+        );
+        let entry = reader.blocks[&BlockId::new(42)].clone();
+        let columns = entry.columns.as_ref().unwrap();
+        let index_offset = reader
+            .blocks
+            .values()
+            .map(|entry| entry.offset + entry.payload_length)
+            .max()
+            .unwrap();
+        assert!(
+            reads
+                .borrow()
+                .iter()
+                .all(|(start, length)| *start + *length as u64 <= 24 || *start >= index_offset)
+        );
+
+        reads.borrow_mut().clear();
+        let geometry = reader.read_geometry(BlockId::new(42)).unwrap();
+        assert_eq!(geometry.points()[0].position, [0.25, 0.5, 0.0]);
+        assert_eq!(geometry.points()[1].color, ColorRgb::new(40, 50, 60));
+        let assert_only_column = |column: &crate::writer::ColumnPayload| {
+            let reads = reads.borrow();
+            assert_eq!(
+                reads.iter().map(|(_, length)| *length as u64).sum::<u64>(),
+                column.stored_length
+            );
+            assert!(
+                reads
+                    .iter()
+                    .all(|(start, length)| *start >= entry.offset + column.offset
+                        && *start + *length as u64
+                            <= entry.offset + column.offset + column.stored_length)
+            );
+        };
+        assert_only_column(&columns[0]);
+
+        reads.borrow_mut().clear();
+        assert_eq!(
+            reader.read_attribute_row(BlockId::new(42), 1, 1).unwrap(),
+            AttributeValues::F32(vec![1.5, -2.0])
+        );
+        assert_only_column(&columns[2]);
+        reads.borrow_mut().clear();
+        assert_eq!(
+            reader.read_attribute(BlockId::new(42), 0).unwrap().values(),
+            &AttributeValues::U16(vec![100, 200])
+        );
+        assert_only_column(&columns[1]);
+
+        for id in [BlockId::new(42), BlockId::new(43)] {
+            let block = reader.read_block(id).unwrap();
+            assert_eq!(block.points(), &geometry);
+            assert_eq!(block.attributes().len(), 2);
+            assert_eq!(
+                block.attributes()[0].values(),
+                &AttributeValues::U16(vec![100, 200])
+            );
+        }
+        reads.borrow_mut().clear();
+        assert!(matches!(
+            reader.read_attribute_row(BlockId::new(42), 2, 0),
+            Err(FormatError::UnknownRow { .. })
+        ));
+        assert!(matches!(
+            reader.read_attribute(BlockId::new(42), 2),
+            Err(FormatError::UnknownAttribute(2))
+        ));
+        assert!(matches!(
+            reader.read_geometry(BlockId::new(99)),
+            Err(FormatError::UnknownBlock(_))
+        ));
+        assert!(reads.borrow().is_empty());
+    }
+
+    #[test]
+    fn payload_stats_report_exact_v4_columns_and_explicit_legacy_aggregates_without_io() {
+        let mut writer = FormatWriter::new(
+            Cursor::new(Vec::new()),
+            metadata().with_visual_scale(2.0).unwrap(),
+            FormatWriterOptions::new(0.001, 1024)
+                .unwrap()
+                .with_columnar_payloads(false),
+        )
+        .unwrap();
+        writer.write_block(source_block()).unwrap();
+        let v3 = writer.finish().unwrap().into_inner();
+        for (version, bytes) in [
+            format_bytes(),
+            additive_format_bytes(),
+            v3,
+            columnar_format_bytes(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(
+                u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
+                version as u16 + 1
+            );
+            let reads = Rc::new(RefCell::new(Vec::new()));
+            let reader = FormatReader::new(ReadSpy {
+                inner: Cursor::new(bytes),
+                reads: Rc::clone(&reads),
+            })
+            .unwrap();
+            reads.borrow_mut().clear();
+            let aggregates = reader.block_storage_stats().unwrap();
+            let payloads = reader.block_payload_storage_stats().unwrap();
+            assert!(reads.borrow().is_empty());
+            for aggregate in &aggregates {
+                let matching = payloads
+                    .iter()
+                    .filter(|payload| payload.id == aggregate.id)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    matching
+                        .iter()
+                        .map(|payload| payload.stored_bytes)
+                        .sum::<u64>(),
+                    aggregate.stored_bytes
+                );
+                assert_eq!(
+                    matching
+                        .iter()
+                        .map(|payload| payload.raw_bytes)
+                        .sum::<u64>(),
+                    aggregate.raw_bytes
+                );
+                if version < 3 {
+                    assert_eq!(matching.len(), 1);
+                    assert_eq!(matching[0].kind, super::BlockPayloadKind::CombinedLegacy);
+                    assert_eq!(matching[0].codec, aggregate.codec);
+                } else {
+                    assert_eq!(matching.len(), 3);
+                    assert_eq!(aggregate.codec, BlockCodec::None);
+                    assert_eq!(matching[0].kind, super::BlockPayloadKind::Geometry);
+                    assert_eq!(
+                        matching[1].kind,
+                        super::BlockPayloadKind::Attribute {
+                            schema_index: 0,
+                            name: "intensity".to_owned()
+                        }
+                    );
+                    assert_eq!(
+                        matching[2].kind,
+                        super::BlockPayloadKind::Attribute {
+                            schema_index: 1,
+                            name: "vector".to_owned()
+                        }
+                    );
+                    for (payload, entry) in matching
+                        .iter()
+                        .zip(reader.blocks[&aggregate.id].columns.as_ref().unwrap())
+                    {
+                        assert_eq!(payload.codec, entry.codec);
+                        assert_eq!(payload.stored_bytes, entry.stored_length);
+                        assert_eq!(payload.raw_bytes, entry.raw_length);
+                    }
+                }
+            }
+            if version == 3 {
+                assert_eq!(payloads.len(), 6);
+                let geometry = payloads
+                    .iter()
+                    .filter(|payload| payload.kind == super::BlockPayloadKind::Geometry)
+                    .map(|payload| payload.raw_bytes)
+                    .sum::<u64>();
+                let attributes = payloads
+                    .iter()
+                    .filter(|payload| {
+                        matches!(payload.kind, super::BlockPayloadKind::Attribute { .. })
+                    })
+                    .map(|payload| payload.raw_bytes)
+                    .sum::<u64>();
+                assert_eq!((geometry, attributes), (60, 40));
+            }
+        }
+    }
+
+    #[test]
+    fn v4_checksums_are_lazy_and_independent_for_geometry_and_each_attribute() {
+        let bytes = columnar_format_bytes();
+        let reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+        let entry = &reader.blocks[&BlockId::new(42)];
+        for column_index in 0..3 {
+            let mut corrupted = bytes.clone();
+            corrupted
+                [(entry.offset + entry.columns.as_ref().unwrap()[column_index].offset) as usize] ^=
+                1;
+            let mut reader = FormatReader::new(Cursor::new(corrupted)).unwrap();
+            if column_index == 0 {
+                reader.read_attribute(BlockId::new(42), 0).unwrap();
+                assert!(matches!(
+                    reader.read_geometry(BlockId::new(42)),
+                    Err(FormatError::InvalidBlockChecksum(_))
+                ));
+            } else {
+                reader.read_geometry(BlockId::new(42)).unwrap();
+                reader
+                    .read_attribute(BlockId::new(42), (2 - column_index) as u32)
+                    .unwrap();
+                assert!(matches!(
+                    reader.read_attribute(BlockId::new(42), (column_index - 1) as u32),
+                    Err(FormatError::InvalidBlockChecksum(_))
+                ));
+            }
+            assert!(matches!(
+                reader.read_block(BlockId::new(42)),
+                Err(FormatError::InvalidBlockChecksum(_))
+            ));
+        }
+    }
+
+    fn repair_index_and_footer_checksums(bytes: &mut [u8]) {
+        let footer = bytes.len() - 40;
+        let index = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
+        let checksum = crate::crc32(&bytes[index..footer]);
+        bytes[footer + 32..footer + 36].copy_from_slice(&checksum.to_le_bytes());
+        let checksum = crate::crc32(&bytes[footer..footer + 36]);
+        bytes[footer + 36..].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn v4_rejects_column_range_overlap_wrong_lengths_and_codecs_before_payload_reads() {
+        let bytes = columnar_format_bytes();
+        let footer = bytes.len() - 40;
+        // Two block entries, each containing a 93-byte common entry and three 29-byte payload entries.
+        let first_column = footer - 2 * (93 + 3 * 29) + 93;
+        for (offset, replacement) in [
+            (first_column, 1_u64.to_le_bytes().to_vec()), // gap at geometry start
+            (first_column + 8, u64::MAX.to_le_bytes().to_vec()), // stored size overflow
+            (first_column + 16, u64::MAX.to_le_bytes().to_vec()), // decoded length mismatch
+            (first_column + 24, vec![255]),               // unsupported codec
+            (first_column + 29, 0_u64.to_le_bytes().to_vec()), // attribute overlaps geometry
+        ] {
+            let mut corrupted = bytes.clone();
+            corrupted[offset..offset + replacement.len()].copy_from_slice(&replacement);
+            repair_index_and_footer_checksums(&mut corrupted);
+            let reads = Rc::new(RefCell::new(Vec::new()));
+            let index = u64::from_le_bytes(corrupted[footer + 8..footer + 16].try_into().unwrap());
+            assert!(
+                FormatReader::new(ReadSpy {
+                    inner: Cursor::new(corrupted),
+                    reads: Rc::clone(&reads)
+                })
+                .is_err()
+            );
+            assert!(
+                reads
+                    .borrow()
+                    .iter()
+                    .all(|(start, length)| *start + *length as u64 <= 24 || *start >= index)
+            );
+        }
+        let limits = FormatReaderLimits::new(4096, 49, 10, 10, 10, 10, 100).unwrap();
+        assert!(matches!(
+            FormatReader::with_limits(Cursor::new(bytes), limits),
+            Err(FormatError::BlockExceedsLimit { .. })
+        ));
+    }
+
+    #[test]
+    fn v4_round_trips_empty_geometry_and_attribute_columns() {
+        let id = BlockId::new(0);
+        let descriptor = AttributeDescriptor::new("empty", AttributeDataType::U64, 2).unwrap();
+        let node = SpatialNode::new(
+            NodeId::new(0),
+            None,
+            0,
+            SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+            0,
+            0.0,
+            vec![id],
+        )
+        .unwrap();
+        let hierarchy =
+            SpatialHierarchy::new(vec![node], vec![descriptor.clone()], Some(0)).unwrap();
+        let metadata = FormatMetadata::new(
+            DatasetMetadata::new(CoordinateFrame::new([0.0; 3]).unwrap(), hierarchy),
+            None,
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         let mut writer = FormatWriter::new(
             Cursor::new(Vec::new()),
             metadata,
             FormatWriterOptions::new(0.0, 1024).unwrap(),
         )
         .unwrap();
-        writer.write_block(source).unwrap();
-        let bytes = writer.finish().unwrap().into_inner();
-        let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
-        let block = reader.read_block(block_id).unwrap();
+        writer
+            .write_block(SourcePointBlock::new(
+                id,
+                Vec::new(),
+                Vec::new(),
+                vec![
+                    AttributeColumn::new(descriptor, AttributeValues::U64(Vec::new()), 0).unwrap(),
+                ],
+            ))
+            .unwrap();
+        let mut reader =
+            FormatReader::new(Cursor::new(writer.finish().unwrap().into_inner())).unwrap();
+        assert_eq!(reader.read_geometry(id).unwrap().len(), 0);
+        assert_eq!(
+            reader.read_attribute(id, 0).unwrap().values(),
+            &AttributeValues::U64(Vec::new())
+        );
+        assert_eq!(reader.read_block(id).unwrap().points().len(), 0);
+        assert!(matches!(
+            reader.read_attribute_row(id, 0, 0),
+            Err(FormatError::UnknownRow { .. })
+        ));
+    }
 
-        for (column, expected) in block.attributes()[..8].iter().zip(&source_values[..8]) {
-            assert_eq!(column.values(), expected);
+    #[test]
+    fn selective_api_preserves_legacy_v1_v2_v3_behavior() {
+        let v1 = format_bytes();
+        let v2 = additive_format_bytes();
+        let mut writer = FormatWriter::new(
+            Cursor::new(Vec::new()),
+            metadata().with_visual_scale(2.0).unwrap(),
+            FormatWriterOptions::new(0.001, 1024)
+                .unwrap()
+                .with_columnar_payloads(false),
+        )
+        .unwrap();
+        writer.write_block(source_block()).unwrap();
+        let v3 = writer.finish().unwrap().into_inner();
+        for (expected_version, bytes) in [v1, v2, v3].into_iter().enumerate() {
+            assert_eq!(
+                u16::from_le_bytes(bytes[8..10].try_into().unwrap()),
+                expected_version as u16 + 1
+            );
+            let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
+            assert_eq!(reader.read_geometry(BlockId::new(42)).unwrap().len(), 2);
+            assert_eq!(
+                reader.read_attribute_row(BlockId::new(42), 1, 0).unwrap(),
+                AttributeValues::U16(vec![200])
+            );
         }
-        let AttributeValues::F32(f32_values) = block.attributes()[8].values() else {
-            panic!("expected f32 values");
-        };
-        assert_eq!(f32_values[0].to_bits(), 0x7FC0_1234);
-        assert_eq!(f32_values[1].to_bits(), 1.5_f32.to_bits());
-        let AttributeValues::F64(f64_values) = block.attributes()[9].values() else {
-            panic!("expected f64 values");
-        };
-        assert_eq!(f64_values[0].to_bits(), 0x7FF8_0000_0000_1234);
-        assert_eq!(f64_values[1].to_bits(), (-0.0_f64).to_bits());
     }
 
     #[derive(Clone)]

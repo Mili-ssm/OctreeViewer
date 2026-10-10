@@ -11,5 +11,9 @@ pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePoin
 pub use quantization::{
     QuantizationError, QuantizationTransform, QuantizedCoordinates, quantize_local_positions,
 };
-pub use reader::{BlockStorageStats, FormatReader, FormatReaderLimits};
-pub use writer::{FormatError, FormatWriter, FormatWriterOptions};
+pub use reader::{
+    BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReader, FormatReaderLimits,
+};
+pub use writer::{
+    FormatError, FormatWriter, FormatWriterOptions, PreparedPointBlock, prepare_point_block,
+};

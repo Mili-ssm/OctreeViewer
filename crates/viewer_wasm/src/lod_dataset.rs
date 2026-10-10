@@ -114,6 +114,19 @@ impl LodDataset {
         self.metadata.hierarchy().references_block(id)
     }
 
+    /// Drops decoded blocks and the current scene so a different attribute set can be loaded.
+    pub fn clear_loaded_blocks(
+        &mut self,
+        renderer: &mut SurfaceRenderer<'_>,
+    ) -> Result<(), LodDatasetError> {
+        renderer.sync_visible_blocks(&[], &self.cache)?;
+        self.planner.reset(&mut self.cache);
+        self.cache.clear();
+        self.visible_plan = None;
+        self.visible_scene_metrics = (0.0, 0.0, 0);
+        Ok(())
+    }
+
     pub fn fit_camera(&self, renderer: &mut SurfaceRenderer<'_>) -> bool {
         if renderer.set_visual_scale(self.visual_scale).is_err() {
             return false;
