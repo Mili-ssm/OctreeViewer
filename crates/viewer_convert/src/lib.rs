@@ -1,3 +1,7 @@
+//! Native LAS/LAZ and local EPT conversion with bounded staging and validated publication.
+//! The `convert_file*` entry points share `ConvertOptions`; progress callbacks can cancel,
+//! and checkpoint entry points retain completed LAS/LAZ phases for resumption.
+
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
@@ -43,6 +47,11 @@ const ESTIMATED_WORKING_BYTES_PER_POINT: u64 = 192;
 const ESTIMATED_DIRECTORY_BYTES_PER_BLOCK: u64 = 512;
 const ESTIMATED_FIXED_OVERHEAD_BYTES: u64 = 16 * 1024 * 1024;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Applies the same input staging limit to planning, spooling and EPT reads.
+fn input_batch_point_limit(points_per_block: u64, record_length: usize) -> u64 {
+    points_per_block.min((MAX_INPUT_BYTES_PER_BATCH / record_length.max(1)).max(1) as u64)
+}
 
 fn default_spatial_workers() -> usize {
     std::thread::available_parallelism()

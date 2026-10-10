@@ -1,10 +1,8 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use viewer_core::{
-    AttributeValues, DecodedBlockCache, NodeId, PointBlock, SpatialBounds, SpatialHierarchy,
-};
+use viewer_core::{DecodedBlockCache, NodeId, PointBlock, SpatialBounds, SpatialHierarchy};
 
-use crate::{InstanceRaw, RenderScene};
+use crate::{InstanceRaw, RenderScene, attributes::ScalarAttribute};
 
 /// A global dyadic cell identity; storage nodes never determine rendered cell size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -274,8 +272,8 @@ fn accumulate_block(
     project: &dyn Fn(SpatialBounds) -> f64,
 ) -> Result<(), VoxelSceneBuildError> {
     let points = block.points().points();
-    let intensity = scalar_attribute(block, "intensity", points.len());
-    let classification = scalar_attribute(block, "classification", points.len());
+    let intensity = ScalarAttribute::find(block, "intensity");
+    let classification = ScalarAttribute::find(block, "classification");
     for (index, point) in points.iter().enumerate() {
         if point.position.iter().any(|value| !value.is_finite()) {
             continue;
@@ -288,11 +286,9 @@ fn accumulate_block(
         }
         let voxel = voxels.entry(key).or_default();
         if voxel.count == 0 {
-            voxel.classification = classification
-                .as_ref()
-                .and_then(|values| values.value_at(index));
+            voxel.classification = classification.and_then(|values| values.value_at(index));
         }
-        if let Some(value) = intensity.as_ref().and_then(|values| values.value_at(index)) {
+        if let Some(value) = intensity.and_then(|values| values.value_at(index)) {
             voxel.intensity_sum += f64::from(value);
             voxel.intensity_count += 1;
         }
@@ -312,95 +308,6 @@ impl VoxelAccumulator {
             (self.intensity_sum / self.intensity_count as f64) as f32
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum ScalarAttribute<'a> {
-    U8(&'a [u8]),
-    I8(&'a [i8]),
-    U16(&'a [u16]),
-    I16(&'a [i16]),
-    U32(&'a [u32]),
-    I32(&'a [i32]),
-    U64(&'a [u64]),
-    I64(&'a [i64]),
-    F32(&'a [f32]),
-    F64(&'a [f64]),
-}
-
-impl ScalarAttribute<'_> {
-    fn value_at(&self, index: usize) -> Option<f32> {
-        let value = match self {
-            Self::U8(values) => f64::from(*values.get(index)?),
-            Self::I8(values) => f64::from(*values.get(index)?),
-            Self::U16(values) => f64::from(*values.get(index)?),
-            Self::I16(values) => f64::from(*values.get(index)?),
-            Self::U32(values) => f64::from(*values.get(index)?),
-            Self::I32(values) => f64::from(*values.get(index)?),
-            Self::U64(values) => *values.get(index)? as f64,
-            Self::I64(values) => *values.get(index)? as f64,
-            Self::F32(values) => f64::from(*values.get(index)?),
-            Self::F64(values) => *values.get(index)?,
-        };
-        scalar_value_to_f32(value)
-    }
-
-    fn is_valid(&self) -> bool {
-        match self {
-            Self::U8(_)
-            | Self::I8(_)
-            | Self::U16(_)
-            | Self::I16(_)
-            | Self::U32(_)
-            | Self::I32(_)
-            | Self::U64(_)
-            | Self::I64(_) => true,
-            Self::F32(values) => values.iter().all(|value| value.is_finite()),
-            Self::F64(values) => values
-                .iter()
-                .all(|value| scalar_value_to_f32(*value).is_some()),
-        }
-    }
-}
-
-fn scalar_value_to_f32(value: f64) -> Option<f32> {
-    (value.is_finite() && value.abs() <= f64::from(f32::MAX)).then_some(value as f32)
-}
-
-fn scalar_attribute<'a>(
-    block: &'a PointBlock,
-    name: &str,
-    point_count: usize,
-) -> Option<ScalarAttribute<'a>> {
-    let column = block.attributes().iter().find(|column| {
-        column.descriptor().name().eq_ignore_ascii_case(name)
-            && column.descriptor().component_count() == 1
-    })?;
-    let values = match column.values() {
-        AttributeValues::U8(values) => ScalarAttribute::U8(values),
-        AttributeValues::I8(values) => ScalarAttribute::I8(values),
-        AttributeValues::U16(values) => ScalarAttribute::U16(values),
-        AttributeValues::I16(values) => ScalarAttribute::I16(values),
-        AttributeValues::U32(values) => ScalarAttribute::U32(values),
-        AttributeValues::I32(values) => ScalarAttribute::I32(values),
-        AttributeValues::U64(values) => ScalarAttribute::U64(values),
-        AttributeValues::I64(values) => ScalarAttribute::I64(values),
-        AttributeValues::F32(values) => ScalarAttribute::F32(values),
-        AttributeValues::F64(values) => ScalarAttribute::F64(values),
-    };
-    let len = match values {
-        ScalarAttribute::U8(values) => values.len(),
-        ScalarAttribute::I8(values) => values.len(),
-        ScalarAttribute::U16(values) => values.len(),
-        ScalarAttribute::I16(values) => values.len(),
-        ScalarAttribute::U32(values) => values.len(),
-        ScalarAttribute::I32(values) => values.len(),
-        ScalarAttribute::U64(values) => values.len(),
-        ScalarAttribute::I64(values) => values.len(),
-        ScalarAttribute::F32(values) => values.len(),
-        ScalarAttribute::F64(values) => values.len(),
-    };
-    (len == point_count && values.is_valid()).then_some(values)
 }
 
 fn safe_render_cell_size(center: [f64; 3], cell_size: f64) -> Option<([f32; 3], f32)> {

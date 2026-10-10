@@ -3,28 +3,21 @@ use std::{
     io::{Seek, SeekFrom, Write},
 };
 
-use thiserror::Error;
 use viewer_core::{
     AttributeDataType, AttributeValues, BlockId, DatasetMetadata, HierarchySemantics, NodeId,
     SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
-use crate::{
-    BlockCodec, CodecError, Crc32, FormatMetadata, MetadataError, NodeAttributeRange,
-    QuantizationError, SourcePointBlock, compress_block, crc32, quantize_local_positions,
+use crate::layout::{
+    ColumnPayload, FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_MAGIC_V3, FOOTER_MAGIC_V4, FOOTER_SIZE,
+    HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC_V1, INDEX_MAGIC_V2, INDEX_MAGIC_V3, INDEX_MAGIC_V4,
+    attribute_payload_size, block_payload_size,
 };
-
-pub(crate) const HEADER_SIZE: u64 = 24;
-pub(crate) const FOOTER_SIZE: u64 = 40;
-pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
-pub(crate) const INDEX_MAGIC_V1: &[u8; 8] = b"OCTVIDX1";
-pub(crate) const INDEX_MAGIC_V2: &[u8; 8] = b"OCTVIDX2";
-pub(crate) const INDEX_MAGIC_V3: &[u8; 8] = b"OCTVIDX3";
-pub(crate) const INDEX_MAGIC_V4: &[u8; 8] = b"OCTVIDX4";
-pub(crate) const FOOTER_MAGIC_V4: &[u8; 8] = b"OCTVEND4";
-pub(crate) const FOOTER_MAGIC_V1: &[u8; 8] = b"OCTVEND1";
-pub(crate) const FOOTER_MAGIC_V2: &[u8; 8] = b"OCTVEND2";
-pub(crate) const FOOTER_MAGIC_V3: &[u8; 8] = b"OCTVEND3";
+use crate::metadata::validate_metadata;
+use crate::{
+    BlockCodec, Crc32, FormatError, FormatMetadata, SourcePointBlock, compress_block, crc32,
+    quantize_local_positions,
+};
 
 /// Bounds per-block allocations made by the writer.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,16 +53,6 @@ impl FormatWriterOptions {
         self.columnar_payloads = enabled;
         self
     }
-}
-
-/// One independently compressed payload. Offsets are relative to its owning block.
-#[derive(Debug, Clone)]
-pub(crate) struct ColumnPayload {
-    pub offset: u64,
-    pub stored_length: u64,
-    pub raw_length: u64,
-    pub codec: BlockCodec,
-    pub checksum: u32,
 }
 
 /// A fully encoded block ready for ordered append to a format writer.
@@ -412,129 +395,6 @@ fn build_block_nodes(
     Ok(block_nodes)
 }
 
-pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
-    if !metadata.visual_scale().is_finite() || metadata.visual_scale() <= 0.0 {
-        return Err(FormatError::InvalidVisualScale);
-    }
-    for value in [metadata.crs(), metadata.sampling_policy()]
-        .into_iter()
-        .flatten()
-    {
-        if value.len() > u32::MAX as usize {
-            return Err(FormatError::StringTooLong(value.len()));
-        }
-    }
-    let hierarchy = metadata.dataset().hierarchy();
-    if hierarchy.attributes().len() > u32::MAX as usize {
-        return Err(FormatError::SchemaTooLarge);
-    }
-    for descriptor in hierarchy.attributes() {
-        if descriptor.name().len() > u32::MAX as usize {
-            return Err(FormatError::StringTooLong(descriptor.name().len()));
-        }
-    }
-    let root = hierarchy
-        .node(hierarchy.root_id())
-        .ok_or(FormatError::InvalidMetadata("root node is missing"))?;
-    let node_ids: BTreeSet<_> = hierarchy
-        .query(root.bounds())
-        .map(|node| node.id())
-        .collect();
-    let schema = hierarchy.attributes();
-    for (node_id, ranges) in metadata.node_range_entries() {
-        if !node_ids.contains(&node_id) {
-            return Err(FormatError::UnknownNode(node_id));
-        }
-        if ranges.len() > u32::MAX as usize {
-            return Err(FormatError::TooManyAttributeRanges(node_id));
-        }
-        let mut indices = BTreeSet::new();
-        for range in ranges {
-            let index = usize::try_from(range.schema_index())
-                .map_err(|_| FormatError::InvalidAttributeRange(node_id))?;
-            let Some(descriptor) = schema.get(index) else {
-                return Err(FormatError::InvalidAttributeRange(node_id));
-            };
-            if !indices.insert(index)
-                || !valid_range_values(range, descriptor.data_type(), descriptor.component_count())
-            {
-                return Err(FormatError::InvalidAttributeRange(node_id));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn valid_range_values(
-    range: &NodeAttributeRange,
-    data_type: AttributeDataType,
-    count: u32,
-) -> bool {
-    if range.min().data_type() != data_type || range.max().data_type() != data_type {
-        return false;
-    }
-    let expected = count as usize;
-    match (range.min(), range.max()) {
-        (AttributeValues::U8(min), AttributeValues::U8(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::I8(min), AttributeValues::I8(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::U16(min), AttributeValues::U16(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::I16(min), AttributeValues::I16(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::U32(min), AttributeValues::U32(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::I32(min), AttributeValues::I32(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::U64(min), AttributeValues::U64(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::I64(min), AttributeValues::I64(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min.iter().zip(max).all(|(a, b)| a <= b)
-        }
-        (AttributeValues::F32(min), AttributeValues::F32(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min
-                    .iter()
-                    .zip(max)
-                    .all(|(a, b)| a.is_finite() && b.is_finite() && a <= b)
-        }
-        (AttributeValues::F64(min), AttributeValues::F64(max)) => {
-            min.len() == expected
-                && max.len() == expected
-                && min
-                    .iter()
-                    .zip(max)
-                    .all(|(a, b)| a.is_finite() && b.is_finite() && a <= b)
-        }
-        _ => false,
-    }
-}
-
 fn order_attributes<'a>(
     attributes: &'a [viewer_core::AttributeColumn],
     schema: &[viewer_core::AttributeDescriptor],
@@ -571,41 +431,16 @@ fn order_attributes<'a>(
         let expected = point_count
             .checked_mul(descriptor.component_count() as usize)
             .ok_or_else(|| FormatError::AttributeLengthOverflow(descriptor.name().to_owned()))?;
-        if attribute_values_len(column.values()) != expected {
+        if column.values().len() != expected {
             return Err(FormatError::AttributeLengthMismatch {
                 name: descriptor.name().to_owned(),
                 expected,
-                actual: attribute_values_len(column.values()),
+                actual: column.values().len(),
             });
         }
         ordered.push(column);
     }
     Ok(ordered)
-}
-
-pub(crate) fn block_payload_size(
-    point_count: usize,
-    schema: &[viewer_core::AttributeDescriptor],
-) -> Result<u64, FormatError> {
-    let point_count = u64::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-    let base = point_count
-        .checked_mul(15)
-        .ok_or(FormatError::BlockSizeOverflow)?;
-    schema.iter().try_fold(base, |size, descriptor| {
-        let attribute_size = attribute_payload_size(point_count, descriptor)?;
-        size.checked_add(attribute_size)
-            .ok_or(FormatError::BlockSizeOverflow)
-    })
-}
-
-pub(crate) fn attribute_payload_size(
-    point_count: u64,
-    descriptor: &viewer_core::AttributeDescriptor,
-) -> Result<u64, FormatError> {
-    point_count
-        .checked_mul(u64::from(descriptor.component_count()))
-        .and_then(|count| count.checked_mul(primitive_width(descriptor.data_type())))
-        .ok_or(FormatError::BlockSizeOverflow)
 }
 
 fn encode_payload(
@@ -666,30 +501,6 @@ fn encode_values(values: &AttributeValues, output: &mut Vec<u8>) {
         AttributeValues::F64(values) => values
             .iter()
             .for_each(|v| output.extend_from_slice(&v.to_bits().to_le_bytes())),
-    }
-}
-
-fn attribute_values_len(values: &AttributeValues) -> usize {
-    match values {
-        AttributeValues::U8(values) => values.len(),
-        AttributeValues::I8(values) => values.len(),
-        AttributeValues::U16(values) => values.len(),
-        AttributeValues::I16(values) => values.len(),
-        AttributeValues::U32(values) => values.len(),
-        AttributeValues::I32(values) => values.len(),
-        AttributeValues::U64(values) => values.len(),
-        AttributeValues::I64(values) => values.len(),
-        AttributeValues::F32(values) => values.len(),
-        AttributeValues::F64(values) => values.len(),
-    }
-}
-
-pub(crate) fn primitive_width(data_type: AttributeDataType) -> u64 {
-    match data_type {
-        AttributeDataType::U8 | AttributeDataType::I8 => 1,
-        AttributeDataType::U16 | AttributeDataType::I16 => 2,
-        AttributeDataType::U32 | AttributeDataType::I32 | AttributeDataType::F32 => 4,
-        AttributeDataType::U64 | AttributeDataType::I64 | AttributeDataType::F64 => 8,
     }
 }
 
@@ -1059,146 +870,6 @@ fn attribute_type_tag(data_type: AttributeDataType) -> u8 {
         AttributeDataType::F32 => 8,
         AttributeDataType::F64 => 9,
     }
-}
-
-#[derive(Debug, Error)]
-pub enum FormatError {
-    #[error("I/O error while accessing the format: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("format file is shorter than its header and footer")]
-    FileTooShort,
-    #[error("format header is malformed or has an invalid checksum")]
-    InvalidHeader,
-    #[error("format version {0} is not supported")]
-    UnsupportedVersion(u16),
-    #[error("format footer is malformed, truncated or inconsistent")]
-    InvalidFooter,
-    #[error("{0} checksum does not match")]
-    InvalidChecksum(&'static str),
-    #[error("block {0:?} checksum does not match")]
-    InvalidBlockChecksum(BlockId),
-    #[error("format reader limits must be greater than zero")]
-    InvalidReaderLimits,
-    #[error("format index needs {requested} bytes, exceeding limit {limit}")]
-    IndexExceedsLimit { requested: u64, limit: u64 },
-    #[error("format count for {kind} is {requested}, exceeding limit {limit}")]
-    CountLimit {
-        kind: &'static str,
-        requested: u64,
-        limit: u64,
-    },
-    #[error("format string has {requested} bytes, exceeding limit {limit}")]
-    StringExceedsLimit { requested: u32, limit: u32 },
-    #[error("format contains invalid UTF-8")]
-    InvalidUtf8,
-    #[error("format index is malformed: {0}")]
-    MalformedIndex(&'static str),
-    #[error("format block is malformed: {0}")]
-    MalformedBlock(&'static str),
-    #[error("format index ended before a field was complete")]
-    TruncatedIndex,
-    #[error("format schema is invalid")]
-    InvalidSchema,
-    #[error("format uses unsupported tag {tag} for {field}")]
-    InvalidTag { field: &'static str, tag: u8 },
-    #[error("requested block {0:?} does not exist")]
-    UnknownBlock(BlockId),
-    #[error("requested attribute schema index {0} does not exist")]
-    UnknownAttribute(u32),
-    #[error("row {row_id} is outside block {block:?}")]
-    UnknownRow { block: BlockId, row_id: u64 },
-    #[error("invalid quantization error limit {0}")]
-    InvalidQuantizationLimit(f64),
-    #[error("maximum uncompressed block size must be greater than zero")]
-    ZeroBlockLimit,
-    #[error("output stream must be empty and positioned at offset zero")]
-    OutputMustBeEmpty,
-    #[error("writer cannot continue after a partial I/O failure")]
-    WriterPoisoned,
-    #[error("format metadata is invalid: {0}")]
-    InvalidMetadata(&'static str),
-    #[error("visual scale must be finite and greater than zero")]
-    InvalidVisualScale,
-    #[error("metadata string has {0} bytes, above the format limit")]
-    StringTooLong(usize),
-    #[error("attribute schema has too many entries")]
-    SchemaTooLarge,
-    #[error("hierarchy has too many nodes")]
-    TooManyNodes,
-    #[error("format contains too many blocks")]
-    TooManyBlocks,
-    #[error("node {0:?} contains too many block references")]
-    TooManyNodeBlocks(NodeId),
-    #[error("node {0:?} contains too many attribute ranges")]
-    TooManyAttributeRanges(NodeId),
-    #[error("node {0:?} has attribute range metadata with an invalid schema index or values")]
-    InvalidAttributeRange(NodeId),
-    #[error("attribute ranges are repeated for node {0:?}")]
-    DuplicateNodeRanges(NodeId),
-    #[error("metadata contains unknown node {0:?}")]
-    UnknownNode(NodeId),
-    #[error("block {block:?} is referenced more than once in node {node:?}")]
-    DuplicateNodeBlock { node: NodeId, block: BlockId },
-    #[error("block {0:?} is referenced by the hierarchy zero times")]
-    UnreferencedBlock(BlockId),
-    #[error("block {0:?} was written more than once")]
-    DuplicateBlock(BlockId),
-    #[error("block {0:?} was referenced but not written")]
-    MissingBlock(BlockId),
-    #[error("block has {points} positions but {colors} colors")]
-    ColorCountMismatch { points: usize, colors: usize },
-    #[error("block contains {actual} attributes, expected {expected}")]
-    AttributeCountMismatch { expected: usize, actual: usize },
-    #[error("block is missing attribute {0:?}")]
-    MissingAttribute(String),
-    #[error("block repeats attribute {0:?}")]
-    DuplicateAttribute(String),
-    #[error("block attribute {0:?} does not match the dataset schema")]
-    AttributeSchemaMismatch(String),
-    #[error("attribute {name:?} has {actual} values, expected {expected}")]
-    AttributeLengthMismatch {
-        name: String,
-        expected: usize,
-        actual: usize,
-    },
-    #[error("attribute {0:?} component count overflows the platform length")]
-    AttributeLengthOverflow(String),
-    #[error("block point count cannot be represented as u64")]
-    PointCountOutOfRange,
-    #[error("block payload size overflows u64")]
-    BlockSizeOverflow,
-    #[error("block needs {requested} raw bytes, exceeding limit {limit}")]
-    BlockExceedsLimit { requested: u64, limit: u64 },
-    #[error("size {0} cannot be represented by this platform")]
-    SizeOutOfRange(u64),
-    #[error("could not reserve {0} bytes for an encoded block")]
-    AllocationFailed(usize),
-    #[error("encoded payload has {actual} bytes, expected {expected}")]
-    InternalPayloadSize { expected: usize, actual: usize },
-    #[error("point count overflows for node {0:?}")]
-    PointCountOverflow(NodeId),
-    #[error("node {node:?} declares {declared} points but its blocks contain {blocks}")]
-    NodePointCountMismatch {
-        node: NodeId,
-        declared: u64,
-        blocks: u64,
-    },
-    #[error("quantization error overflow for node {0:?}")]
-    GeometricErrorOverflow(NodeId),
-    #[error("file size overflows u64")]
-    FileSizeOverflow,
-    #[error(transparent)]
-    Quantization(#[from] QuantizationError),
-    #[error(transparent)]
-    Codec(#[from] CodecError),
-    #[error(transparent)]
-    Spatial(#[from] viewer_core::SpatialError),
-    #[error(transparent)]
-    CoordinateFrame(#[from] viewer_core::CoordinateFrameError),
-    #[error(transparent)]
-    Metadata(#[from] MetadataError),
-    #[error(transparent)]
-    Dataset(#[from] viewer_core::DatasetError),
 }
 
 #[cfg(test)]

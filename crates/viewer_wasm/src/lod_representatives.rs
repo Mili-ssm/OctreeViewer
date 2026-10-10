@@ -4,7 +4,7 @@ use viewer_core::{
 };
 use viewer_format::SourcePointBlock;
 
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#[cfg(target_arch = "wasm32")]
 pub(crate) const MAX_REPRESENTATIVE_POINTS: u64 = 4_096;
 const REPRESENTATIVE_VOXEL_DIVISIONS: u8 = 8;
 

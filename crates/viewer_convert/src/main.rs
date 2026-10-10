@@ -37,7 +37,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut points_per_block = ConvertOptions::default().points_per_block();
     let mut max_error = ConvertOptions::default().max_quantization_error();
     let mut max_memory_bytes = ConvertOptions::default().max_memory_budget_bytes();
-    let mut spatial_workers = ConvertOptions::default().spatial_workers();
+    let mut spatial_workers = None;
     let mut spatial_divisions = ConvertOptions::default().spatial_divisions();
     let mut checkpoint_mode = None;
     let mut index = 2;
@@ -66,17 +66,19 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
                     .checked_mul(1024 * 1024)
                     .ok_or("memory budget overflows bytes")?;
             }
-            "--spatial-workers" => spatial_workers = value.to_string_lossy().parse()?,
+            "--spatial-workers" => spatial_workers = Some(value.to_string_lossy().parse()?),
             "--spatial-divisions" => spatial_divisions = value.to_string_lossy().parse()?,
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;
     }
 
-    let options =
+    let mut options =
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
-            .with_spatial_workers(spatial_workers)?
             .with_spatial_divisions(spatial_divisions)?;
+    if let Some(workers) = spatial_workers {
+        options = options.with_spatial_workers(workers)?;
+    }
     if let Some(mode) = checkpoint_mode {
         eprintln!(
             "{} checkpoint for {}",

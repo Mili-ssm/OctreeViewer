@@ -59,7 +59,8 @@ impl AttributeValues {
         }
     }
 
-    fn len(&self) -> usize {
+    /// Returns the number of scalar values, not the number of points.
+    pub fn len(&self) -> usize {
         match self {
             Self::U8(values) => values.len(),
             Self::I8(values) => values.len(),
@@ -72,6 +73,11 @@ impl AttributeValues {
             Self::F32(values) => values.len(),
             Self::F64(values) => values.len(),
         }
+    }
+
+    /// Returns whether this column contains no scalar values.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn allocated_bytes(&self) -> usize {
@@ -162,6 +168,11 @@ impl PointBlock {
 
     pub fn attributes(&self) -> &[AttributeColumn] {
         &self.attributes
+    }
+
+    /// Moves the block's ID, points, and attributes out without cloning payloads.
+    pub fn into_parts(self) -> (BlockId, PointBatch, Vec<AttributeColumn>) {
+        (self.id, self.points, self.attributes)
     }
 
     /// Estimates bytes retained by this block's payload allocations and inline data.

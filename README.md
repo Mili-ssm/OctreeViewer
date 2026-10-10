@@ -100,7 +100,7 @@ una versión publicada.
 | `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, escala visual uniforme, HZB conservador para escenas estáticas y presupuesto configurable. | El límite contabiliza buffers y recursos HZB administrados por el renderer, no la VRAM total del proceso. |
 | `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU, carga bajo demanda y conversión web en dos pasadas a ocho nodos espaciales con hasta 4.096 representantes voxelizados. | El decodificador LAS/LAZ recorre la entrada dos veces; falta medir ese costo y validar OPFS en Chrome/Firefox con Albuera. |
 | `examples/web-host` | Demo WebGPU en worker, API embebible, conversión LAS/LAZ en worker/OPFS con planificación espacial, progreso de ambas pasadas, cancelación y descarga/apertura. | La conversión a escala Albuera, el costo de la segunda pasada y la cuota OPFS siguen pendientes de validar en Chrome/Firefox. |
-| Formato propio | Especificaciones v1/v2/v3, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md), [`docs/FORMAT_V3.md`](docs/FORMAT_V3.md)). v1/v2 conservan su layout; v3 añade escala solo visual y conserva las semánticas existentes. | Fixtures prueban round-trip, bloques selectivos y lectura desde tickets del scheduler, corrupción, límites, semánticas, escala y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
+| Formato propio | Especificaciones v1/v2/v3/v4, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([v1](docs/FORMAT_V1.md), [v2](docs/FORMAT_V2.md), [v3](docs/FORMAT_V3.md), [v4](crates/viewer_format/FORMAT_V4.md)). v1/v2 conservan su layout; v3 añade escala solo visual y v4 separa geometría y atributos en payloads independientes. | Fixtures prueban round-trip, bloques selectivos y lectura desde tickets del scheduler, corrupción, límites, semánticas, escala y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
 | `viewer_convert` | CLI nativa LAS/LAZ → formato propio con escala visual v3, particiones LOD 2/4/8 mediante la subdivisión compartida de `viewer_core` y reanudación por fases; también acepta directorios EPT locales `laszip` y conserva su topología aditiva. | El índice y los nodos viven en RAM con estimación de presupuesto. EPT remoto, gzip de jerarquía y codecs `binary`/`zstandard` no están soportados. |
 
@@ -1272,6 +1272,47 @@ si hacen falta para reproducir nuevos fallos.
 | `viewer_render_wgpu` | Cámara, recursos, pipeline, subida acotada y presentación GPU. | Bloques/selección de `viewer_core`; GPU disponible. |
 | `viewer_wasm` | API al host, workers, control de lectura y ciclo de vida del visor en navegador. | `viewer_core`, `viewer_format`, `viewer_render_wgpu`. |
 | `examples/web-host` | Integración de referencia, interacción y estado visible al usuario. | API pública WASM; no reimplementa lógica de crates. |
+
+### Guía para cambios y revisión de mantenibilidad (2026-10-10)
+
+Los `lib.rs` de cada crate describen su responsabilidad y reexportan su API pública. Para cambiar
+una fuente, empezar por `DatasetSource` y el adaptador de lectura; para cambiar selección o
+presupuestos, por `SpatialHierarchy`, el scheduler y la caché; para cambiar representación, por
+`RenderScene` o `VoxelSceneBuilder`; para cambiar presentación GPU, por `SurfaceRenderer`.
+
+La revisión de los cinco crates y del host web cerró estos cambios localizados:
+
+- [x] Retirar `WgpuRenderer`, una capa de estado CPU que no presentaba en GPU. `ViewerController`
+  conserva directamente escena y viewport; `RendererConfig` sigue configurando `SurfaceRenderer`.
+  **Migración Rust:** usar `RenderScene::from_points`/`from_visible_batch` para construir escenas y
+  `SurfaceRenderer` para presentarlas. Las APIs WASM/JavaScript documentadas se conservan.
+- [x] Unificar ingestión de puntos en el controller y añadir `SparseVoxelStore::insert_points(&[Point])`.
+  La validación previa conserva la atomicidad ante puntos inválidos sin clonar el almacén existente.
+- [x] Compartir un acceso prestado a atributos escalares entre construcción de escenas y voxelización;
+  eliminar los vectores temporales de conversión. `AttributeValues::len` cuenta escalares y
+  `PointBlock::into_parts` permite transferir el payload; el lector legacy ya no clona la geometría.
+- [x] Separar `viewer_format` en contratos compartidos (`layout.rs`, `error.rs`, validación en
+  `metadata.rs`) y lector/escritor. Conservar layouts, checksums y lectura/escritura v1–v4.
+- [x] Extraer `browser_io.rs`: visor y conversor comparten el lector Blob sin depender de los bindings
+  del otro. Delimitar código exclusivo de WASM sin ocultar avisos generales de código muerto.
+- [x] Centralizar el límite de staging de entrada del conversor. Corregir el CLI para que el valor
+  predeterminado de workers no se interprete como repartición explícita de EPT.
+- [x] Liberar la conversión web cuando `postMessage` falla y rechazarla ante `messageerror`.
+  Ambas regresiones y la apertura EPT desde CLI tienen pruebas reproducibles.
+
+Se mantienen las rutas de compatibilidad v1–v3, importación LAS incremental, snapshots paginados,
+preparación paralela de bloques y estadísticas por payload: tienen contratos o usos distintos.
+La ausencia de un caller interno por sí sola no demuestra que una API pública esté muerta. Las
+extensiones siguen entrando por los contratos existentes, con módulos separados por responsabilidad.
+
+Validación de esta revisión: 204 tests Rust pasaron con `cargo test-fast --offline`; los dos tests
+GPU marcados `ignored` pasaron por separado con
+`cargo test -p viewer_render_wgpu --profile fast --offline -- --ignored`. Pasaron también Clippy
+con `-D warnings` en todos los targets nativos y en `viewer_wasm` para `wasm32-unknown-unknown`,
+formato, `git diff --check`, las cinco suites Node y los tres tests Python del host.
+Las pruebas incluyen compatibilidad v1–v4, atomicidad de inserción, atributos escalares, CLI EPT
+y fallos de transporte del conversor. La navegación real en Chrome/Firefox, OPFS y los benchmarks
+de datasets grandes conservan sus criterios pendientes del plan; esta revisión no los mide.
 
 ## Decisiones pendientes que afectan el plan
 

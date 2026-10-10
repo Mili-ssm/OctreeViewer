@@ -1,7 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use viewer_core::{AttributeValues, DatasetMetadata, NodeId};
+use viewer_core::{AttributeDataType, AttributeValues, DatasetMetadata, NodeId};
+
+use crate::FormatError;
 
 /// Extra file-level metadata not interpreted by spatial queries.
 #[derive(Debug, Clone, PartialEq)]
@@ -171,4 +173,127 @@ pub enum MetadataError {
     DuplicateNodeRanges(NodeId),
     #[error("visual scale must be finite and greater than zero")]
     InvalidVisualScale,
+}
+
+pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    if !metadata.visual_scale().is_finite() || metadata.visual_scale() <= 0.0 {
+        return Err(FormatError::InvalidVisualScale);
+    }
+    for value in [metadata.crs(), metadata.sampling_policy()]
+        .into_iter()
+        .flatten()
+    {
+        if value.len() > u32::MAX as usize {
+            return Err(FormatError::StringTooLong(value.len()));
+        }
+    }
+    let hierarchy = metadata.dataset().hierarchy();
+    if hierarchy.attributes().len() > u32::MAX as usize {
+        return Err(FormatError::SchemaTooLarge);
+    }
+    for descriptor in hierarchy.attributes() {
+        if descriptor.name().len() > u32::MAX as usize {
+            return Err(FormatError::StringTooLong(descriptor.name().len()));
+        }
+    }
+    let root = hierarchy
+        .node(hierarchy.root_id())
+        .ok_or(FormatError::InvalidMetadata("root node is missing"))?;
+    let node_ids: BTreeSet<_> = hierarchy
+        .query(root.bounds())
+        .map(|node| node.id())
+        .collect();
+    let schema = hierarchy.attributes();
+    for (node_id, ranges) in metadata.node_range_entries() {
+        if !node_ids.contains(&node_id) {
+            return Err(FormatError::UnknownNode(node_id));
+        }
+        if ranges.len() > u32::MAX as usize {
+            return Err(FormatError::TooManyAttributeRanges(node_id));
+        }
+        let mut indices = BTreeSet::new();
+        for range in ranges {
+            let index = usize::try_from(range.schema_index())
+                .map_err(|_| FormatError::InvalidAttributeRange(node_id))?;
+            let Some(descriptor) = schema.get(index) else {
+                return Err(FormatError::InvalidAttributeRange(node_id));
+            };
+            if !indices.insert(index)
+                || !valid_range_values(range, descriptor.data_type(), descriptor.component_count())
+            {
+                return Err(FormatError::InvalidAttributeRange(node_id));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn valid_range_values(
+    range: &NodeAttributeRange,
+    data_type: AttributeDataType,
+    count: u32,
+) -> bool {
+    if range.min().data_type() != data_type || range.max().data_type() != data_type {
+        return false;
+    }
+    let expected = count as usize;
+    match (range.min(), range.max()) {
+        (AttributeValues::U8(min), AttributeValues::U8(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::I8(min), AttributeValues::I8(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::U16(min), AttributeValues::U16(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::I16(min), AttributeValues::I16(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::U32(min), AttributeValues::U32(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::I32(min), AttributeValues::I32(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::U64(min), AttributeValues::U64(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::I64(min), AttributeValues::I64(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min.iter().zip(max).all(|(a, b)| a <= b)
+        }
+        (AttributeValues::F32(min), AttributeValues::F32(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min
+                    .iter()
+                    .zip(max)
+                    .all(|(a, b)| a.is_finite() && b.is_finite() && a <= b)
+        }
+        (AttributeValues::F64(min), AttributeValues::F64(max)) => {
+            min.len() == expected
+                && max.len() == expected
+                && min
+                    .iter()
+                    .zip(max)
+                    .all(|(a, b)| a.is_finite() && b.is_finite() && a <= b)
+        }
+        _ => false,
+    }
 }

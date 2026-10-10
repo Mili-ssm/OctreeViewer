@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use crate::{ColorRgb, PointBatch, VoxelCoord};
+use crate::{ColorRgb, Point, PointBatch, VoxelCoord};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VoxelizationConfig {
@@ -109,12 +109,17 @@ impl SparseVoxelStore {
     }
 
     pub fn insert_batch(&mut self, batch: &PointBatch) -> Result<(), VoxelizationError> {
+        self.insert_points(batch.points())
+    }
+
+    /// Validates and inserts points atomically with respect to invalid positions.
+    pub fn insert_points(&mut self, points: &[Point]) -> Result<(), VoxelizationError> {
         // Validate before mutating so a malformed point cannot leave a partially inserted batch.
-        for point in batch.points() {
+        for point in points {
             self.quantize_position(point.position)?;
         }
 
-        for point in batch.points() {
+        for point in points {
             let coord = self
                 .quantize_position(point.position)
                 .expect("batch positions were validated above");
@@ -258,6 +263,23 @@ mod tests {
         );
         assert_eq!(store.point_count(), 3);
         assert_eq!(store.voxel_count(), 2);
+    }
+
+    #[test]
+    fn insert_points_rejects_invalid_batch_without_mutating_store() {
+        let config = VoxelizationConfig::new(1.0, [0.0; 3]).unwrap();
+        let mut store = SparseVoxelStore::new(config);
+        store.insert_batch(&sample_batch()).unwrap();
+        let before = store.voxels();
+        let point_count = store.point_count();
+        let points = [
+            Point::new([2.0, 0.0, 0.0], ColorRgb::new(10, 20, 30)),
+            Point::new([f32::INFINITY, 0.0, 0.0], ColorRgb::new(40, 50, 60)),
+        ];
+
+        assert!(store.insert_points(&points).is_err());
+        assert_eq!(store.point_count(), point_count);
+        assert_eq!(store.voxels(), before);
     }
 
     #[test]

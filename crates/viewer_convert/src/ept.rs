@@ -15,7 +15,7 @@ use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePoi
 
 use super::{
     ConversionProgress, ConversionReport, ConversionStage, ConvertError, ConvertOptions,
-    MAX_BLOCKS, MAX_INPUT_BYTES_PER_BATCH, create_temporary_output, descriptor, emit_progress,
+    MAX_BLOCKS, create_temporary_output, descriptor, emit_progress, input_batch_point_limit,
     omitted_dimensions, publish_output, source_schema,
 };
 
@@ -242,9 +242,7 @@ pub(super) fn convert(
             point_format = Some(format);
         }
         let record_length = point_format.map_or(34, |format| usize::from(format.len()).max(1));
-        let point_limit = options
-            .points_per_block()
-            .min((MAX_INPUT_BYTES_PER_BATCH / record_length).max(1) as u64);
+        let point_limit = input_batch_point_limit(options.points_per_block(), record_length);
         let block_count = count.div_ceil(point_limit);
         if next_block + block_count > MAX_BLOCKS {
             return Err(ConvertError::TooManyBlocks(next_block + block_count));
@@ -317,17 +315,14 @@ pub(super) fn convert(
         Vec::new(),
     )?
     .with_visual_scale(super::visual_scale_for_bounds(bounds)?)?;
-    let memory_estimate = options
-        .points_per_block()
-        .min(
-            (MAX_INPUT_BYTES_PER_BATCH
-                / expected_format.map_or(34, |format| usize::from(format.len()).max(1)))
-            .max(1) as u64,
-        )
-        .saturating_mul(192)
-        .saturating_add((nodes.len() as u64).saturating_mul(ESTIMATED_EPT_NODE_BYTES))
-        .saturating_add((all_blocks.len() as u64).saturating_mul(ESTIMATED_EPT_BLOCK_BYTES))
-        .saturating_add(16 * 1024 * 1024);
+    let memory_estimate = input_batch_point_limit(
+        options.points_per_block(),
+        expected_format.map_or(34, |format| usize::from(format.len())),
+    )
+    .saturating_mul(192)
+    .saturating_add((nodes.len() as u64).saturating_mul(ESTIMATED_EPT_NODE_BYTES))
+    .saturating_add((all_blocks.len() as u64).saturating_mul(ESTIMATED_EPT_BLOCK_BYTES))
+    .saturating_add(16 * 1024 * 1024);
     if memory_estimate > options.max_memory_budget_bytes() {
         return Err(ConvertError::MemoryBudgetExceeded {
             requested: memory_estimate,
@@ -350,9 +345,8 @@ pub(super) fn convert(
         };
         let mut reader = Reader::from_path(path)?;
         let point_format = *reader.header().point_format();
-        let point_limit = options.points_per_block().min(
-            (MAX_INPUT_BYTES_PER_BATCH / usize::from(point_format.len()).max(1)).max(1) as u64,
-        );
+        let point_limit =
+            input_batch_point_limit(options.points_per_block(), usize::from(point_format.len()));
         let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
         let mut node_processed = 0_u64;
         for block_id in &node.block_ids {

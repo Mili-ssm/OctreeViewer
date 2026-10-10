@@ -1,8 +1,9 @@
 use bytemuck::{Pod, Zeroable};
 use viewer_core::{
-    AttributeColumn, AttributeValues, Point, PointBatch, PointBlock, SparseVoxelStore,
-    VisibleVoxelBatch, VoxelizationConfig,
+    Point, PointBatch, PointBlock, SparseVoxelStore, VisibleVoxelBatch, VoxelizationConfig,
 };
+
+use crate::attributes::ScalarAttribute;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
@@ -74,16 +75,12 @@ pub struct RenderScene {
 impl RenderScene {
     pub fn from_instances(instances: Vec<InstanceRaw>) -> Self {
         let elevation_range = position_elevation_range(&instances);
-        let intensity_range = instances
-            .iter()
-            .map(|instance| instance.intensity)
-            .filter(|intensity| *intensity >= 0.0)
-            .fold(None::<[f32; 2]>, |range, intensity| {
-                Some(match range {
-                    Some([min, max]) => [min.min(intensity), max.max(intensity)],
-                    None => [intensity, intensity],
-                })
-            });
+        let intensity_range = value_range(
+            instances
+                .iter()
+                .map(|instance| instance.intensity)
+                .filter(|value| *value >= 0.0),
+        );
         Self {
             instances,
             intensity_range,
@@ -158,8 +155,8 @@ impl RenderScene {
     pub fn from_point_block(block: &PointBlock) -> Self {
         let points = block.points().points();
         let point_size = point_glyph_size(points);
-        let intensity = scalar_attribute(block.attributes(), "intensity", points.len());
-        let classification = scalar_attribute(block.attributes(), "classification", points.len());
+        let intensity = ScalarAttribute::find(block, "intensity");
+        let classification = ScalarAttribute::find(block, "classification");
         let instances: Vec<_> = points
             .iter()
             .enumerate()
@@ -167,11 +164,16 @@ impl RenderScene {
                 center: point.position,
                 size: point_size,
                 color: point.color.to_linear_rgba(),
-                intensity: intensity.as_ref().map_or(-1.0, |values| values[index]),
-                classification: classification.as_ref().map_or(-1.0, |values| values[index]),
+                intensity: intensity
+                    .and_then(|values| values.value_at(index))
+                    .unwrap_or(-1.0),
+                classification: classification
+                    .and_then(|values| values.value_at(index))
+                    .unwrap_or(-1.0),
             })
             .collect();
-        let intensity_range = attribute_range(intensity.as_deref());
+        let intensity_range = intensity
+            .and_then(|_| value_range(instances.iter().map(|instance| instance.intensity)));
         let elevation_range = position_elevation_range(&instances);
         Self {
             instances,
@@ -342,40 +344,7 @@ fn splitmix64(mut value: u64) -> u64 {
     value ^ (value >> 31)
 }
 
-fn scalar_attribute(
-    columns: &[AttributeColumn],
-    name: &str,
-    point_count: usize,
-) -> Option<Vec<f32>> {
-    let column = columns.iter().find(|column| {
-        column.descriptor().name().eq_ignore_ascii_case(name)
-            && column.descriptor().component_count() == 1
-    })?;
-    let values = match column.values() {
-        AttributeValues::U8(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::I8(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::U16(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::I16(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::U32(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::I32(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::U64(values) => values.iter().map(|value| *value as f64).collect(),
-        AttributeValues::I64(values) => values.iter().map(|value| *value as f64).collect(),
-        AttributeValues::F32(values) => values.iter().map(|value| f64::from(*value)).collect(),
-        AttributeValues::F64(values) => values.clone(),
-    };
-    if values.len() != point_count
-        || values
-            .iter()
-            .any(|value| !value.is_finite() || value.abs() > f64::from(f32::MAX))
-    {
-        return None;
-    }
-    Some(values.into_iter().map(|value| value as f32).collect())
-}
-
-fn attribute_range(values: Option<&[f32]>) -> Option<[f32; 2]> {
-    let values = values?;
-    let mut values = values.iter().copied();
+fn value_range(mut values: impl Iterator<Item = f32>) -> Option<[f32; 2]> {
     let first = values.next()?;
     Some(values.fold([first, first], |[min, max], value| {
         [min.min(value), max.max(value)]
@@ -383,9 +352,7 @@ fn attribute_range(values: Option<&[f32]>) -> Option<[f32; 2]> {
 }
 
 fn position_elevation_range(instances: &[InstanceRaw]) -> Option<[f32; 2]> {
-    let mut elevations = instances.iter().map(|instance| instance.center[2]);
-    let first = elevations.next()?;
-    Some(elevations.fold([first, first], |[min, max], z| [min.min(z), max.max(z)]))
+    value_range(instances.iter().map(|instance| instance.center[2]))
 }
 
 pub fn instance_buffer_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -578,6 +545,29 @@ mod tests {
         assert_eq!(scene.instances()[1].center[2], 5.0);
         assert_eq!(scene.elevation_range(), Some([2.0, 5.0]));
         assert!((scene.instances()[0].size - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn point_block_intensity_range_includes_finite_negative_values() {
+        let block = PointBlock::new(
+            BlockId::new(1),
+            PointBatch::new(vec![
+                Point::new([0.0; 3], ColorRgb::new(0, 0, 0)),
+                Point::new([1.0; 3], ColorRgb::new(0, 0, 0)),
+            ]),
+            vec![
+                AttributeColumn::new(
+                    AttributeDescriptor::new("intensity", AttributeDataType::F32, 1).unwrap(),
+                    AttributeValues::F32(vec![-2.0, 3.0]),
+                    2,
+                )
+                .unwrap(),
+            ],
+        );
+
+        let scene = RenderScene::from_point_block(&block);
+
+        assert_eq!(scene.intensity_range(), Some([-2.0, 3.0]));
     }
 
     #[test]

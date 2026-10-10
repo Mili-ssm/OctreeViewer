@@ -1,3 +1,7 @@
+//! Viewer orchestration and browser bindings for point import, conversion and presentation.
+//! `ViewerController` manages in-memory scenes and `LodDataset` manages streamed blocks;
+//! browser bindings adapt these contracts to workers, typed arrays and WebGPU surfaces.
+
 mod controller;
 mod las_import;
 mod lod_dataset;
@@ -19,6 +23,8 @@ pub use lod_dataset::{LodDataset, LodDatasetError, LodViewStats};
 mod bindings;
 #[cfg(target_arch = "wasm32")]
 mod browser_convert;
+#[cfg(target_arch = "wasm32")]
+mod browser_io;
 
 #[cfg(target_arch = "wasm32")]
 pub use bindings::{WasmLasImportSession, WasmVoxelViewer};

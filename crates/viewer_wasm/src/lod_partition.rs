@@ -1,5 +1,3 @@
-#![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-
 use viewer_core::{AttributeColumn, AttributeValues, SpatialSubdivision};
 use viewer_format::SourcePointBlock;
 
@@ -145,6 +143,7 @@ mod tests {
         assert_eq!(partitions.len(), 8);
         for partition in partitions {
             let cell = partition.cell;
+            assert_eq!(partition.world_positions, partition.block.positions_local());
             let partition = partition.block;
             assert_eq!(partition.positions_local().len(), 1);
             assert_eq!(subdivision.cell_index(partition.positions_local()[0]), cell);

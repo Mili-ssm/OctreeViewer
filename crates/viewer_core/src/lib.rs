@@ -1,3 +1,6 @@
+//! Platform-independent point data, spatial selection and bounded block state.
+//! `DatasetSource` supplies blocks; scheduling and LOD do not perform I/O or render.
+
 mod block_cache;
 mod dataset;
 mod geometry;

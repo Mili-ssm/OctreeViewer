@@ -2,3 +2,4 @@
 /pkg
 /examples/web-host/.cache
 /artifacts
+__pycache__/

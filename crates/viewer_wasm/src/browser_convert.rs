@@ -8,7 +8,7 @@ use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePoi
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
-use crate::bindings::{BrowserBlobReader, js_error_to_io};
+use crate::browser_io::{BrowserBlobReader, js_error_to_io};
 use crate::lod_partition::partition_block;
 use crate::lod_representatives::{MAX_REPRESENTATIVE_POINTS, VoxelRepresentativeBuffer};
 

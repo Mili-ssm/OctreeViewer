@@ -21,7 +21,10 @@ class FakeWorker {
         this.listeners.set(type, callbacks);
     }
 
-    postMessage(message) { this.messages.push(message); }
+    postMessage(message) {
+        if (this.postMessageError) throw this.postMessageError;
+        this.messages.push(message);
+    }
     terminate() { this.terminated = true; }
     dispatch(type, data) {
         for (const callback of this.listeners.get(type) ?? []) callback({ data, message: data?.message });
@@ -80,4 +83,36 @@ test("dispose rejects an active conversion and releases its worker", { concurren
     await assert.rejects(pending, /disposed/);
     assert.equal(worker.terminated, true);
     await assert.rejects(converter.convert(lasFile()), /disposed/);
+});
+
+test("a synchronous postMessage failure rejects and releases the conversion slot", { concurrency: false }, async () => {
+    const converter = createConverter();
+    const worker = workers[0];
+    worker.postMessageError = new Error("worker send failed");
+
+    const failed = converter.convert(lasFile());
+    await assert.rejects(failed, /worker send failed/);
+
+    worker.postMessageError = null;
+    const retry = converter.convert(lasFile());
+    assert.equal(worker.messages.at(-1).type, "convert");
+    worker.dispatch("message", {
+        type: "complete", file: new Blob(["oct"]), outputName: "points.oct", points: "1",
+    });
+    await retry;
+    converter.dispose();
+});
+
+test("messageerror emits an error and rejects the active conversion", { concurrency: false }, async () => {
+    const converter = createConverter();
+    const worker = workers[0];
+    const errors = [];
+    converter.on("error", (error) => errors.push(error.message));
+    const active = converter.convert(lasFile());
+
+    worker.dispatch("messageerror", { message: "message decode failed" });
+
+    await assert.rejects(active, /message decode failed/);
+    assert.deepEqual(errors, ["message decode failed"]);
+    converter.dispose();
 });

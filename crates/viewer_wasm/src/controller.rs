@@ -4,7 +4,7 @@ use viewer_core::{
     ColorRgb, Point, PointBatch, SparseVoxelStore, VisibilityQuery, VoxelizationConfig,
     VoxelizationError,
 };
-use viewer_render_wgpu::{InstanceRaw, RenderScene, RendererConfig, WgpuRenderer};
+use viewer_render_wgpu::{InstanceRaw, RenderScene};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewerConfig {
@@ -81,7 +81,8 @@ pub enum ViewerError {
 pub struct ViewerController {
     data: ViewerData,
     voxel_config: VoxelizationConfig,
-    renderer: WgpuRenderer,
+    scene: RenderScene,
+    viewport_size: [u32; 2],
 }
 
 #[derive(Debug, Clone)]
@@ -93,13 +94,12 @@ enum ViewerData {
 impl ViewerController {
     pub fn new(config: ViewerConfig) -> Result<Self, ViewerError> {
         let voxel_config = VoxelizationConfig::new(config.voxel_size, config.origin)?;
-        let mut renderer = WgpuRenderer::new(RendererConfig::default());
-        renderer.resize(config.viewport_size[0], config.viewport_size[1]);
 
         Ok(Self {
             data: ViewerData::RawPoints(Vec::new()),
             voxel_config,
-            renderer,
+            scene: RenderScene::default(),
+            viewport_size: config.viewport_size.map(|size| size.max(1)),
         })
     }
 
@@ -116,20 +116,14 @@ impl ViewerController {
     }
 
     pub fn append_points(&mut self, positions: &[f32], colors: &[u8]) -> Result<(), ViewerError> {
-        let batch = build_point_batch(positions, colors)?;
-        match &mut self.data {
-            ViewerData::RawPoints(points) => points.extend(batch.into_points()),
-            ViewerData::Voxelized(store) => store.insert_batch(&batch)?,
-        }
-        self.refresh_scene();
-        Ok(())
+        self.append_points_owned(build_point_batch(positions, colors)?.into_points())
     }
 
     /// Appends an owned point batch without retaining an intermediate copy.
     pub fn append_points_owned(&mut self, points: Vec<Point>) -> Result<(), ViewerError> {
         match &mut self.data {
             ViewerData::RawPoints(existing) => existing.extend(points),
-            ViewerData::Voxelized(store) => store.insert_batch(&PointBatch::new(points))?,
+            ViewerData::Voxelized(store) => store.insert_points(&points)?,
         }
         self.refresh_scene();
         Ok(())
@@ -140,12 +134,7 @@ impl ViewerController {
         positions: &[f32],
         colors: &[u8],
     ) -> Result<(), ViewerError> {
-        let batch = build_point_batch(positions, colors)?;
-        let mut replacement = SparseVoxelStore::new(self.voxel_config);
-        replacement.insert_batch(&batch)?;
-        self.data = ViewerData::Voxelized(replacement);
-        self.refresh_scene();
-        Ok(())
+        self.replace_voxelized_points_owned(build_point_batch(positions, colors)?.into_points())
     }
 
     pub fn replace_voxelized_points_owned(
@@ -153,7 +142,7 @@ impl ViewerController {
         points: Vec<Point>,
     ) -> Result<(), ViewerError> {
         let mut replacement = SparseVoxelStore::new(self.voxel_config);
-        replacement.insert_batch(&PointBatch::new(points))?;
+        replacement.insert_points(&points)?;
         self.data = ViewerData::Voxelized(replacement);
         self.refresh_scene();
         Ok(())
@@ -164,32 +153,19 @@ impl ViewerController {
         positions: &[f32],
         colors: &[u8],
     ) -> Result<(), ViewerError> {
-        let batch = build_point_batch(positions, colors)?;
-        let mut replacement = match &self.data {
-            ViewerData::RawPoints(points) => {
-                let mut store = SparseVoxelStore::new(self.voxel_config);
-                store.insert_batch(&PointBatch::new(points.clone()))?;
-                store
-            }
-            ViewerData::Voxelized(store) => store.clone(),
-        };
-        replacement.insert_batch(&batch)?;
-        self.data = ViewerData::Voxelized(replacement);
-        self.refresh_scene();
-        Ok(())
+        self.append_voxelized_points_owned(build_point_batch(positions, colors)?.into_points())
     }
 
     pub fn append_voxelized_points_owned(&mut self, points: Vec<Point>) -> Result<(), ViewerError> {
-        let mut replacement = match &self.data {
-            ViewerData::RawPoints(points) => {
+        match &mut self.data {
+            ViewerData::RawPoints(existing) => {
                 let mut store = SparseVoxelStore::new(self.voxel_config);
-                store.insert_batch(&PointBatch::new(points.clone()))?;
-                store
+                store.insert_points(existing)?;
+                store.insert_points(&points)?;
+                self.data = ViewerData::Voxelized(store);
             }
-            ViewerData::Voxelized(store) => store.clone(),
-        };
-        replacement.insert_batch(&PointBatch::new(points))?;
-        self.data = ViewerData::Voxelized(replacement);
+            ViewerData::Voxelized(store) => store.insert_points(&points)?,
+        }
         self.refresh_scene();
         Ok(())
     }
@@ -200,19 +176,19 @@ impl ViewerController {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.renderer.resize(width, height);
+        self.viewport_size = [width.max(1), height.max(1)];
     }
 
     pub fn render_scene(&self) -> &RenderScene {
-        self.renderer.scene()
+        &self.scene
     }
 
     pub fn render_scene_snapshot(&self) -> RenderSceneSnapshot {
-        RenderSceneSnapshot::from(self.renderer.scene())
+        RenderSceneSnapshot::from(&self.scene)
     }
 
     pub fn stats(&self) -> ViewerStats {
-        let scene = self.renderer.scene();
+        let scene = &self.scene;
         let (point_count, voxel_count) = match &self.data {
             ViewerData::RawPoints(points) => (points.len() as u64, scene.instance_count()),
             ViewerData::Voxelized(store) => (store.point_count(), store.voxel_count()),
@@ -222,20 +198,18 @@ impl ViewerController {
             point_count,
             voxel_count,
             instance_count: scene.instance_count(),
-            viewport_size: self.renderer.viewport_size(),
+            viewport_size: self.viewport_size,
         }
     }
 
     fn refresh_scene(&mut self) {
-        match &self.data {
-            ViewerData::RawPoints(points) => {
-                self.renderer.update_points(points);
-            }
+        self.scene = match &self.data {
+            ViewerData::RawPoints(points) => RenderScene::from_points(points),
             ViewerData::Voxelized(store) => {
                 let batch = store.build_visible_batch(VisibilityQuery::default());
-                self.renderer.update_scene(&batch);
+                RenderScene::from_visible_batch(&batch)
             }
-        }
+        };
     }
 }
 
@@ -376,6 +350,33 @@ mod tests {
         assert_eq!(viewer.stats().point_count, 3);
         assert_eq!(viewer.stats().voxel_count, 2);
         assert_eq!(viewer.stats().instance_count, 2);
+    }
+
+    #[test]
+    fn owned_voxel_appends_preserve_raw_and_voxelized_scenes_on_invalid_positions() {
+        for voxelized in [false, true] {
+            let mut viewer = ViewerController::new(ViewerConfig::default()).unwrap();
+            let points = vec![Point::new([0.1; 3], ColorRgb::new(255, 0, 0))];
+            if voxelized {
+                viewer.replace_voxelized_points_owned(points).unwrap();
+            } else {
+                viewer.replace_points_owned(points);
+            }
+            let previous_scene = viewer.render_scene().clone();
+            let previous_stats = viewer.stats();
+            let invalid = vec![
+                Point::new([1.1; 3], ColorRgb::new(0, 255, 0)),
+                Point::new([f32::MAX; 3], ColorRgb::new(0, 0, 255)),
+            ];
+            assert!(viewer.append_voxelized_points_owned(invalid).is_err());
+            assert_eq!(viewer.render_scene(), &previous_scene);
+            assert_eq!(viewer.stats(), previous_stats);
+            viewer
+                .append_voxelized_points_owned(vec![Point::new([0.2; 3], ColorRgb::new(0, 255, 0))])
+                .unwrap();
+            assert_eq!(viewer.stats().point_count, 2);
+            assert_eq!(viewer.stats().voxel_count, 1);
+        }
     }
 
     #[test]

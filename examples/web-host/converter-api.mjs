@@ -48,11 +48,13 @@ export function createConverter(options = {}) {
             settle(error);
         }
     });
-    worker.addEventListener("error", (event) => {
+    const onWorkerError = (event) => {
         const error = new Error(event.message || "converter worker failed");
         emit("error", error);
         settle(error);
-    });
+    };
+    worker.addEventListener("error", onWorkerError);
+    worker.addEventListener("messageerror", onWorkerError);
 
     return {
         convert(file) {
@@ -62,7 +64,11 @@ export function createConverter(options = {}) {
                 return Promise.reject(new TypeError("file must be a .las or .laz Blob"));
             }
             const result = new Promise((resolve, reject) => { active = { resolve, reject }; });
-            worker.postMessage({ type: "convert", file });
+            try {
+                worker.postMessage({ type: "convert", file });
+            } catch (error) {
+                settle(error);
+            }
             return result;
         },
         cancel() {

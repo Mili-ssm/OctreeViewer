@@ -10,11 +10,12 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
-use crate::writer::{
+use crate::layout::{
     ColumnPayload, FOOTER_MAGIC_V1, FOOTER_MAGIC_V2, FOOTER_MAGIC_V3, FOOTER_MAGIC_V4, FOOTER_SIZE,
     HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC_V1, INDEX_MAGIC_V2, INDEX_MAGIC_V3, INDEX_MAGIC_V4,
-    attribute_payload_size, block_payload_size, validate_metadata,
+    attribute_payload_size, block_payload_size,
 };
+use crate::metadata::validate_metadata;
 use crate::{BlockCodec, FormatError, FormatMetadata, NodeAttributeRange, crc32, decompress_block};
 
 const MAX_ATTRIBUTES_DEFAULT: u32 = 256;
@@ -359,7 +360,7 @@ impl<R: Read + Seek> FormatReader<R> {
             .ok_or(FormatError::UnknownBlock(id))?
             .clone();
         let Some(columns) = &entry.columns else {
-            return Ok(self.read_point_block(id)?.points().clone());
+            return Ok(self.read_point_block(id)?.into_parts().1);
         };
         let raw = self.read_column_payload(id, &entry, &columns[0])?;
         let mut cursor = SliceCursor::new(&raw);
@@ -1870,7 +1871,7 @@ mod tests {
         let geometry = reader.read_geometry(BlockId::new(42)).unwrap();
         assert_eq!(geometry.points()[0].position, [0.25, 0.5, 0.0]);
         assert_eq!(geometry.points()[1].color, ColorRgb::new(40, 50, 60));
-        let assert_only_column = |column: &crate::writer::ColumnPayload| {
+        let assert_only_column = |column: &crate::layout::ColumnPayload| {
             let reads = reads.borrow();
             assert_eq!(
                 reads.iter().map(|(_, length)| *length as u64).sum::<u64>(),

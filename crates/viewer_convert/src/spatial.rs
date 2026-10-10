@@ -355,9 +355,8 @@ fn build_spatial_plan_inner(
     input: SpatialInput<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
 ) -> Result<SpatialPlan, ConvertError> {
-    let point_limit = options
-        .points_per_block()
-        .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
+    let point_limit =
+        super::input_batch_point_limit(options.points_per_block(), source.record_length);
     check_memory_budget(
         estimate_memory(point_limit, 0, 0, options.spatial_divisions())?,
         options.max_memory_budget_bytes(),
@@ -571,9 +570,7 @@ impl SpatialBuilder<'_> {
         let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
         let subdivision = SpatialSubdivision::new(bounds, self.spatial_divisions)
             .expect("converter subdivisions are validated");
-        let point_limit = self
-            .point_limit
-            .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
+        let point_limit = super::input_batch_point_limit(self.point_limit, source.record_length);
         let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
         let mut processed = 0_u64;
         while processed < source.point_count {
@@ -1221,9 +1218,8 @@ pub(crate) fn spool_source(
     spool_path: &Path,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
 ) -> Result<(), ConvertError> {
-    let point_limit = options
-        .points_per_block()
-        .min((super::MAX_INPUT_BYTES_PER_BATCH / source.record_length).max(1) as u64);
+    let point_limit =
+        super::input_batch_point_limit(options.points_per_block(), source.record_length);
     let mut writer = BufWriter::new(File::create(spool_path)?);
     let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
     let mut processed = 0_u64;
