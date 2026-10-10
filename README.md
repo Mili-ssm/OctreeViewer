@@ -267,6 +267,8 @@ Chrome/Firefox con Albuera la reducción de instancias y el tiempo GPU; no se af
 tiempo de frame hasta tener esa medición. Al redimensionar, se liberan primero los índices de la
 escena y se comprueba el pico temporal de mantener la pirámide anterior mientras se crean los nuevos
 mips. Si esa transición excedería el presupuesto, se desactiva HZB y se conserva el render directo.
+La prueba GPU verifica en una misma escena que se descarta un voxel oculto y permanece el que queda
+delante de la profundidad oclusora.
 
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
 

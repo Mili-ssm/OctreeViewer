@@ -281,7 +281,7 @@ impl HzbResources {
         let visible_indices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("octree-viewer-hzb-visible-indices"),
             size: index_bytes,
-            usage: wgpu::BufferUsages::STORAGE,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let indirect_args = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1031,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn hzb_culls_a_voxel_behind_a_full_depth_occluder() {
+    fn hzb_culls_hidden_voxels_and_keeps_unoccluded_voxels() {
         pollster::block_on(async {
             use wgpu::util::DeviceExt;
 
@@ -1104,19 +1104,24 @@ mod tests {
             .expect("HZB resource validation") else {
                 return;
             };
-            let voxel = crate::InstanceRaw {
-                center: [0.0, 0.0, 0.7],
+            let voxels = [0.7, 0.1].map(|depth| crate::InstanceRaw {
+                center: [0.0, 0.0, depth],
                 size: 0.1,
                 color: [1.0, 1.0, 1.0, 1.0],
                 intensity: 0.0,
                 classification: -1.0,
-            };
+            });
             let source = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("octree-viewer-hzb-cull-test-voxel"),
-                contents: bytemuck::bytes_of(&voxel),
+                contents: bytemuck::cast_slice(&voxels),
                 usage: wgpu::BufferUsages::STORAGE,
             });
-            hzb.prepare_scene(&device, &source, size_of::<crate::InstanceRaw>() as u64, 1);
+            hzb.prepare_scene(
+                &device,
+                &source,
+                (size_of::<crate::InstanceRaw>() * voxels.len()) as u64,
+                voxels.len(),
+            );
 
             let depth_view = depth_texture.create_view(&Default::default());
             let mut clear_encoder =
@@ -1145,7 +1150,7 @@ mod tests {
             hzb.cull(&mut encoder, &queue);
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("octree-viewer-hzb-cull-test-count"),
-                size: size_of::<u32>() as u64,
+                size: (size_of::<u32>() * 2) as u64,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
@@ -1154,6 +1159,15 @@ mod tests {
                 size_of::<u32>() as u64,
                 &readback,
                 0,
+                size_of::<u32>() as u64,
+            );
+            encoder.copy_buffer_to_buffer(
+                hzb.visible_indices
+                    .as_ref()
+                    .expect("prepared visible indices"),
+                0,
+                &readback,
+                size_of::<u32>() as u64,
                 size_of::<u32>() as u64,
             );
             queue.submit([encoder.finish()]);
@@ -1169,10 +1183,10 @@ mod tests {
                 .expect("GPU mapping callback")
                 .expect("GPU readback mapping");
             let mapped = readback.slice(..).get_mapped_range();
-            let visible_count = *bytemuck::from_bytes::<u32>(&mapped);
+            let visible = *bytemuck::from_bytes::<[u32; 2]>(&mapped);
             drop(mapped);
             readback.unmap();
-            assert_eq!(visible_count, 0);
+            assert_eq!(visible, [1, 1]);
         });
     }
 }
