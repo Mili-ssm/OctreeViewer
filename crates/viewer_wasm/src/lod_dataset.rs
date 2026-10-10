@@ -1,12 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 use viewer_core::{
     BlockId, CacheInsertRejection, CoordinateFrame, DatasetMetadata, DecodedBlockCache,
     LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
-    PointBlock, SpatialBounds, SpatialHierarchy,
+    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer, build_voxel_scene};
 
@@ -193,13 +190,14 @@ impl LodDataset {
         let initial_plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        let pending = prioritized_pending_blocks(
+        let next_block = highest_priority_pending_block(
             self.metadata.hierarchy(),
             initial_plan.pending_blocks(),
+            &frustum,
             renderer,
             self.metadata.coordinate_frame().origin(),
         );
-        if let Some(requested) = pending.first().copied()
+        if let Some(requested) = next_block
             && let Some(block) = load_block(requested).map_err(LodDatasetError::BlockRead)?
         {
             if block.id() != requested {
@@ -302,15 +300,19 @@ pub(crate) fn next_lod_stage(
     (Some(stage_pixels), false)
 }
 
-fn prioritized_pending_blocks(
+fn highest_priority_pending_block(
     hierarchy: &SpatialHierarchy,
     pending: &[BlockId],
+    frustum: &SpatialFrustum,
     renderer: &SurfaceRenderer<'_>,
     coordinate_origin: [f64; 3],
-) -> Vec<BlockId> {
+) -> Option<BlockId> {
+    if pending.is_empty() {
+        return None;
+    }
     let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
-    let mut priorities = HashMap::<BlockId, f64>::new();
-    for node in hierarchy.query(hierarchy.stats().root_bounds) {
+    let mut best = None;
+    for node in hierarchy.query_frustum(frustum.clone()) {
         let priority = renderer.projected_error_pixels(
             node.bounds(),
             node.geometric_error(),
@@ -318,23 +320,20 @@ fn prioritized_pending_blocks(
         );
         for block_id in node.blocks() {
             if pending_ids.contains(block_id) {
-                priorities
-                    .entry(*block_id)
-                    .and_modify(|current| *current = current.max(priority))
-                    .or_insert(priority);
+                let candidate = (*block_id, priority);
+                let is_better = best.is_none_or(|current| priority_precedes(candidate, current));
+                if is_better {
+                    best = Some(candidate);
+                }
             }
         }
     }
-    let mut prioritized = pending.to_vec();
-    prioritized.sort_unstable_by(|left, right| {
-        priorities
-            .get(right)
-            .copied()
-            .unwrap_or_default()
-            .total_cmp(&priorities.get(left).copied().unwrap_or_default())
-            .then_with(|| left.cmp(right))
-    });
-    prioritized
+    best.map(|(block_id, _)| block_id)
+}
+
+fn priority_precedes(candidate: (BlockId, f64), current: (BlockId, f64)) -> bool {
+    candidate.1.total_cmp(&current.1).is_gt()
+        || (candidate.1.total_cmp(&current.1).is_eq() && candidate.0 < current.0)
 }
 
 #[cfg(test)]
@@ -344,7 +343,7 @@ mod tests {
         PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
     };
 
-    use super::{LodDataset, LodDatasetError, bounds_side, next_lod_stage};
+    use super::{LodDataset, LodDatasetError, bounds_side, next_lod_stage, priority_precedes};
     use viewer_render_wgpu::{RenderScene, build_voxel_scene};
 
     fn scene_for_test(
@@ -386,6 +385,22 @@ mod tests {
             (Some(8.0), false)
         );
         assert_eq!(next_lod_stage(None, 16.0, false, true), (Some(16.0), false));
+    }
+
+    #[test]
+    fn progressive_block_priority_prefers_larger_error_then_lower_block_id() {
+        assert!(priority_precedes(
+            (BlockId::new(2), 8.0),
+            (BlockId::new(1), 4.0)
+        ));
+        assert!(priority_precedes(
+            (BlockId::new(1), 4.0),
+            (BlockId::new(2), 4.0)
+        ));
+        assert!(!priority_precedes(
+            (BlockId::new(2), 4.0),
+            (BlockId::new(1), 4.0)
+        ));
     }
 
     fn dataset(cache_bytes: usize) -> LodDataset {

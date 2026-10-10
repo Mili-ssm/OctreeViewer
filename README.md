@@ -407,14 +407,15 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   de esta iteración.
 
 Uso inicial: `cargo run -p viewer_convert -- INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint | --resume]`.
-Los valores por defecto son 262.144 puntos por bloque y error máximo de cuantización 0,01 en unidades
-de la fuente, con un presupuesto estimado de memoria controlada de 512 MiB. La estimación incluye
+Los valores por defecto son 262.144 puntos por bloque, error máximo de cuantización 0,01 en unidades
+de la fuente y hasta cuatro trabajadores espaciales según los núcleos disponibles, con un presupuesto
+estimado de memoria controlada de 512 MiB. La estimación incluye
 192 bytes por punto del bloque, 512 bytes por bloque del índice, 256 bytes por nodo, espacio para una
 grilla LOD de 512 celdas, buffers de spool de 8 KiB por hijo posible (64 KiB, 512 KiB o 4 MiB para
 2, 4 u 8 divisiones), 16 MiB fijos y 1 MiB por trabajador espacial adicional; no equivale al RSS
 total ni incluye el allocator o la biblioteca LAS/LAZ. `--spatial-divisions` elige 2, 4 u 8 divisiones
-por eje y conserva 2 por defecto. `--spatial-workers` permite 1–4 trabajadores,
-con valor por defecto 1; el modo
+por eje y conserva 2 por defecto. `--spatial-workers` permite fijar entre 1 y 4 trabajadores; si se
+omite, se usa `min(4, available_parallelism)` (1 si el sistema no informa del valor). El modo
 paralelo solo distribuye los subárboles directos de la raíz y reúne resultados en orden para mantener
 IDs y bytes estables. Usa un canal de progreso acotado y reserva memoria por trabajador. El número de
 trabajadores puede cambiar al reanudar un checkpoint; `--spatial-divisions` debe conservarse.
@@ -893,16 +894,19 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
    Pendiente: ampliar medidas a EPT real, zoom extremo, dispositivos y datasets grandes. La ruta
    `sync_visible_blocks` genérica sigue pendiente de unificar con este contrato; su existencia no
    extiende las garantías verificadas de la ruta LOD voxelizada.
-5. **Cerrar una base de conversión repetible antes de cambiar estructuras:** repetir al menos tres
-   veces cada configuración emparejada en Belvedere; después cubrir Albuera UAV y Majadas TLS con el
-   mismo equipo, opciones y perfil. Registrar por fase tiempo, RSS, I/O, pico de disco temporal,
-   tamaño completo y hash del resultado. Los ensayos actuales de 1/2/4 trabajadores solo tienen dos
-   repeticiones y un dataset; justifican seguir midiendo, no cambiar el valor predeterminado.
-6. **Optimizar `viewer_convert` por cuellos medidos:** comparar reserva y vida útil de buffers,
-   sustituir la búsqueda de muestras en `BTreeMap` por acumuladores indexados para la grilla fija
-   8³, y evitar temporales usados solo para calcular cotas. Mantener orden determinista, estimación
-   de memoria, atributos, error geométrico y bytes de salida; aceptar cada cambio por separado y
-   revertir candidatos sin mejora repetible.
+5. **Ampliar la base de conversión:** repetir configuraciones emparejadas al menos tres veces en
+   Belvedere y después cubrir Albuera UAV y Majadas TLS con el mismo equipo y perfil. Registrar por
+   fase tiempo, RSS, I/O, pico de disco temporal, tamaño completo y hash. La grilla fija de muestras
+   ya usa acumuladores indexados; una comparación inicial mantuvo salida/hash y bajó la jerarquía de
+   53,63 s a una mediana de 51,23 s. La base directa antes del cambio solo tiene una repetición, así
+   que esa diferencia es prometedora pero todavía no concluyente. El valor predeterminado de
+   trabajadores ahora es `min(4, available_parallelism)`: una pareja en el SSD dio 112,66 s con 1 y
+   91,15 s con 4, con hash idéntico; falta repetir la pareja y probar Albuera/Majadas. Ver
+   [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+6. **Optimizar `viewer_convert` por cuellos medidos:** repetir la comparación de acumuladores
+   indexados con una base emparejada suficiente; después evaluar reserva y vida útil de buffers y la
+   eliminación de temporales solo si el perfil confirma su coste. Mantener orden determinista,
+   estimación de memoria, atributos, error geométrico y bytes de salida; aceptar cambios por separado.
 7. **Reducir los spools retenidos sin duplicar la escritura incremental ya existente:** `FormatWriter`
    ya agrega cada payload y escribe índice/footer al finalizar. El problema es que `build_spatial_plan`
    termina antes de emitir bloques porque `FormatWriter::new` necesita la jerarquía completa. Evaluar
@@ -948,19 +952,21 @@ representación ganadora.
 **Carga progresiva implementada (2026-10-10):** `LodDataset::update_view_progressive` procesa como
 máximo un bloque pendiente por llamada y publica el corte resuelto sin esperar a que termine toda la
 vista. `WasmVoxelViewer` comienza con la frontera visible más gruesa, la dibuja a 16 px y, al completar
-cada etapa, baja a 8/4/2/1 px, recortando la última etapa al objetivo configurado. Los bloques
-pendientes se ordenan por error proyectado con la cámara actual. Cada `renderFrame` puede cargar un
-bloque antes de dibujar; entre frames el worker procesa cámara y controles nuevos. Un movimiento de cámara vuelve a pedir la
+cada etapa, baja a 8/4/2/1 px, recortando la última etapa al objetivo configurado. La priorización
+recorre nodos visibles y elige directamente el bloque con mayor error proyectado, sin ordenar toda la
+lista pendiente. Cada `renderFrame` puede cargar un bloque antes de dibujar; entre frames el worker
+procesa cámara y controles nuevos. Un movimiento de cámara vuelve a pedir la
 frontera gruesa para la nueva vista. Si la transición todavía no produce un corte válido, se conserva
 el corte publicado anterior; errores de refinamiento detienen los reintentos automáticos y se exponen
 en `lodError`. La demo mide el primer frame grueso y el primer frame que alcanza el objetivo, además de
-etapa, bloques pendientes, rangos leídos, cobertura y latencia de `renderFrame`.
+etapa, bloques pendientes, rangos leídos, cobertura y percentiles p50/p95/p99 de `renderFrame` en una
+ventana acotada de hasta 4.096 frames.
 
 **Pendiente de validación:** no hay navegador instalado en este entorno para probar interacción real.
 `FileReaderSync` sigue haciendo síncrona cada lectura individual de bloque; el worker cede control entre
 bloques, no durante una lectura lenta. Probar cámara en movimiento con bloques retardados y datasets
-grandes en Chrome/Firefox; medir tiempo al primer corte, tiempo al objetivo, frames p50/p95/p99 y
-retardo de entrada por bloque. Solo si esos datos lo justifican, integrar lectura asíncrona de rangos y
+grandes en Chrome/Firefox; contrastar los tiempos al primer/último frame y los percentiles expuestos
+con retardo de entrada por bloque. Solo si esos datos lo justifican, integrar lectura asíncrona de rangos y
 el ciclo de tickets/cancelación de `BlockRequestScheduler`.
 
 **Optimización de lectura aplicada (2026-10-10):** `FormatReader::read_point_block` ahora decodifica

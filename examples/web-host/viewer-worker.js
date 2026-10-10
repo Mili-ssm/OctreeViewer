@@ -4,9 +4,14 @@ let viewer = null;
 let targetVoxelPixels = 4;
 let renderedFrames = 0;
 let datasetOpenedAt = 0;
+let targetLodStartedAt = 0;
 let firstCoarseMs = null;
 let targetLodMs = null;
 let lastLodProgressKey = "";
+const FRAME_SAMPLE_CAPACITY = 4096;
+let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
+let frameRenderSampleCount = 0;
+let nextFrameRenderSample = 0;
 const coalescedCommands = new Set(["resize", "color", "depthShading", "voxelPixels", "fit"]);
 
 function samplePointCloud() {
@@ -34,10 +39,41 @@ function samplePointCloud() {
     };
 }
 
+function resetFrameRenderSamples() {
+    frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
+    frameRenderSampleCount = 0;
+    nextFrameRenderSample = 0;
+}
+
+function recordFrameRenderSample(durationMs) {
+    frameRenderSamples[nextFrameRenderSample] = durationMs;
+    nextFrameRenderSample = (nextFrameRenderSample + 1) % FRAME_SAMPLE_CAPACITY;
+    frameRenderSampleCount = Math.min(frameRenderSampleCount + 1, FRAME_SAMPLE_CAPACITY);
+}
+
+function frameRenderPercentiles() {
+    if (frameRenderSampleCount === 0) {
+        return { sampleCount: 0, p50Ms: null, p95Ms: null, p99Ms: null };
+    }
+    const ordered = Array.from({ length: frameRenderSampleCount }, (_, index) => {
+        const oldest = (nextFrameRenderSample - frameRenderSampleCount + FRAME_SAMPLE_CAPACITY)
+            % FRAME_SAMPLE_CAPACITY;
+        return frameRenderSamples[(oldest + index) % FRAME_SAMPLE_CAPACITY];
+    }).sort((left, right) => left - right);
+    const percentile = (fraction) => ordered[Math.ceil(ordered.length * fraction) - 1];
+    return {
+        sampleCount: frameRenderSampleCount,
+        p50Ms: percentile(0.50),
+        p95Ms: percentile(0.95),
+        p99Ms: percentile(0.99),
+    };
+}
+
 function postStats(frameStatus = null) {
     self.postMessage({
         type: "stats",
         frameStatus,
+        frameRenderMs: frameRenderPercentiles(),
         gpu: viewer.gpuStats(),
         lod: viewer.lodStats(),
         viewer: viewer.stats(),
@@ -55,7 +91,7 @@ function postLodProgress(lod, afterRenderFrame = false) {
         && lod.pendingBlockIds.length === 0
         && lod.lodStagePixels <= lod.targetVoxelPixels;
     if (afterRenderFrame && targetLodMs === null && targetReached) {
-        targetLodMs = now - datasetOpenedAt;
+        targetLodMs = now - targetLodStartedAt;
     }
     const key = [
         lod.lodStagePixels,
@@ -72,6 +108,7 @@ function postLodProgress(lod, afterRenderFrame = false) {
     self.postMessage({
         type: "lodProgress",
         lod,
+        frameRenderMs: frameRenderPercentiles(),
         firstCoarseMs,
         targetLodMs,
         elapsedMs: now - datasetOpenedAt,
@@ -104,8 +141,10 @@ async function handleMessage({ data }) {
                 break;
             case "voxelPixels": {
                 targetVoxelPixels = data.value;
+                targetLodStartedAt = performance.now();
                 targetLodMs = null;
                 lastLodProgressKey = "";
+                resetFrameRenderSamples();
                 const lod = viewer.updateLod(targetVoxelPixels);
                 self.postMessage({ type: "lod", lod });
                 postLodProgress(lod);
@@ -114,9 +153,11 @@ async function handleMessage({ data }) {
             case "openFile": {
                 targetVoxelPixels = data.targetVoxelPixels;
                 datasetOpenedAt = performance.now();
+                targetLodStartedAt = datasetOpenedAt;
                 firstCoarseMs = null;
                 targetLodMs = null;
                 lastLodProgressKey = "";
+                resetFrameRenderSamples();
                 self.postMessage({ type: "status", message: `Opening ${data.file.name}…` });
                 const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
                 self.postMessage({ type: "datasetOpened", opened, name: data.file.name });
@@ -141,6 +182,7 @@ async function handleMessage({ data }) {
                 const startedAt = performance.now();
                 const frameStatus = viewer.renderFrame();
                 const renderCallMs = performance.now() - startedAt;
+                recordFrameRenderSample(renderCallMs);
                 postLodProgress(viewer.lodStats(), true);
                 renderedFrames += 1;
                 if (renderedFrames % 30 === 0) {

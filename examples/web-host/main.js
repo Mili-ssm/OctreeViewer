@@ -53,6 +53,11 @@ function updateProgressiveLoadState(lod) {
     cancelButton.hidden = !loadingFile;
 }
 
+function formatFrameRenderMs(metrics) {
+    if (!metrics || metrics.sampleCount === 0) return "—";
+    return `p50/p95/p99 ${metrics.p50Ms.toFixed(2)}/${metrics.p95Ms.toFixed(2)}/${metrics.p99Ms.toFixed(2)} ms (${metrics.sampleCount} frames)`;
+}
+
 function emptyCameraDelta() {
     return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0 };
 }
@@ -102,6 +107,7 @@ function updateStats(message) {
         `decoded cache: ${cache}`,
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
+        `renderFrame p50/p95/p99: ${formatFrameRenderMs(message.frameRenderMs)}`,
         `viewport: ${viewportSize?.join(" x ") ?? "—"}`,
     ].join("\n");
 }
@@ -182,7 +188,7 @@ function handleWorkerMessage(event) {
         const targetView = data.targetLodMs === null
             ? "target refining"
             : `target reached ${data.targetLodMs.toFixed(0)} ms`;
-        statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
+        statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px · frame ${formatFrameRenderMs(data.frameRenderMs)}`;
     } else if (data.type === "stats") {
         framePending = false;
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
