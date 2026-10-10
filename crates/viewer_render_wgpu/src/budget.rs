@@ -26,17 +26,13 @@ pub(crate) fn buffer_capacity(
     device_limit: u64,
 ) -> Result<u64, GpuRendererError> {
     let required = bytes.max(minimum_size);
-    let capacity = required
-        .checked_next_power_of_two()
-        .unwrap_or(device_limit)
-        .min(device_limit);
-    if capacity < required {
+    if required > device_limit {
         return Err(GpuRendererError::GpuBufferLimitExceeded {
             requested_bytes: required,
             max_bytes: device_limit,
         });
     }
-    Ok(capacity)
+    Ok(required)
 }
 
 pub(crate) fn check_visible_instances(
@@ -77,8 +73,8 @@ mod tests {
     use crate::GpuRendererError;
 
     #[test]
-    fn capacity_rounds_up_and_obeys_device_limit() {
-        assert_eq!(buffer_capacity(41, 40, 128), Ok(64));
+    fn capacity_uses_exact_requested_size_and_obeys_device_limit() {
+        assert_eq!(buffer_capacity(41, 40, 128), Ok(41));
         assert_eq!(buffer_capacity(64, 40, 64), Ok(64));
         assert_eq!(
             buffer_capacity(65, 40, 64),

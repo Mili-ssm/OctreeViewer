@@ -183,6 +183,7 @@ pub(crate) const CUBE_INDICES: [u16; 36] = [
 
 /// GPU renderer for a surface owned by the calling application.
 pub struct SurfaceRenderer<'window> {
+    adapter_info: wgpu::AdapterInfo,
     surface: wgpu::Surface<'window>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -313,6 +314,7 @@ impl<'window> SurfaceRenderer<'window> {
         surface.configure(&device, &surface_config);
 
         Ok(Self {
+            adapter_info: adapter.get_info(),
             surface,
             device,
             queue,
@@ -349,6 +351,10 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.surface_config.format
+    }
+
+    pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
+        &self.adapter_info
     }
 
     /// Uploads one scene and returns the bytes written. Existing GPU storage is reused when it fits.

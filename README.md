@@ -679,9 +679,9 @@ todavía.
 - [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 8 millones de
   instancias/voxeles renderizados y 512 MiB de capacidad agregada para buffers de instancias. Cada
   buffer también respeta `max_buffer_size` del dispositivo y el límite `u32` de cada draw. La
-  capacidad se redondea
-  a potencias de dos y el chequeo de cambios atómicos incluye el pico temporal de buffers antiguos y
-  nuevos. El límite solo estima buffers de instancias del renderer; no mide ni garantiza VRAM libre.
+  capacidad coincide con los bytes requeridos, sin redondear a potencias de dos; el chequeo de
+  cambios atómicos incluye el pico temporal de buffers antiguos y nuevos. El límite solo estima
+  buffers de instancias del renderer; no mide ni garantiza VRAM libre.
   Si se excede, devuelve un error tipado con requerido/límite y conserva la selección anterior; no
   reduce LOD por su cuenta.
 - [x] Exponer instancias/bloques visibles y bytes acumulados de instancia en `gpuStats()`. La demo
@@ -865,6 +865,12 @@ y Outer Banks (149.730 puntos) se abrieron con todos sus puntos visibles; se gua
 dos ángulos para cada nube. No hay datos de escáner urbano en el repositorio. Firefox no expuso
 `navigator.gpu` en este entorno; su validación y la cancelación de lectura local siguen pendientes.
 
+La ruta web limita el framebuffer a 4.194.304 píxeles y 4.096 por lado; el benchmark guarda el DPR
+solicitado y el efectivo. La animación continua se mantiene durante la carga/refinado; una medición
+de 15 s se ejecuta solo si el usuario la solicita y luego el render queda inactivo hasta interacción
+o un comando. Esto reduce el trabajo sostenido en escenas estáticas. El reinicio del equipo no se ha reproducido: Firefox
+headless termina con segfault en este entorno y aún falta validación en un navegador WebGPU real.
+
 | Dataset | Ángulo 1 | Ángulo 2 |
 | --- | --- | --- |
 | Stanford Bunny | ![Stanford Bunny, ángulo 1](docs/point-cloud-previews/bunny-angle-1.png) | ![Stanford Bunny, ángulo 2](docs/point-cloud-previews/bunny-angle-2.png) |
@@ -908,6 +914,8 @@ dos ángulos para cada nube. No hay datos de escáner urbano en el repositorio. 
   dispositivo/superficie y cancelación durante lectura/conversión.
 - [ ] Publicar procedimiento de benchmark, resultados y límites conocidos; ajustar los objetivos si
   la evidencia no los alcanza.
+- [x] Añadir exportación de benchmark web por dataset/LOD/viewport y agregador mediano; las cifras
+  reales de navegador siguen pendientes. El protocolo está en `docs/WEB_PERFORMANCE_BENCH.md`.
 
 **Cierre:** se puede reproducir la prueba de más de 500 GB dentro de límites acordados y explicar con
 datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
@@ -1025,7 +1033,11 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
     entre refinamientos, recorrido fijo, bloques/bytes leídos y subidos, memoria CPU/WASM/GPU
     observable, cancelación y frames p50/p95/p99 con caché fría/caliente y lecturas deliberadamente
     lentas. Probar Chrome/Firefox, movimiento durante lecturas y aperturas sucesivas. El éxito visual
-    de datasets pequeños no acredita escala de navegador.
+    de datasets pequeños no acredita escala de navegador. Se añadieron export JSON por ejecución y
+    un agregador mediano en `examples/web-host`; protocolo y matriz están en
+    [`docs/WEB_PERFORMANCE_BENCH.md`](docs/WEB_PERFORMANCE_BENCH.md). La captura distingue primer
+    frame grueso, LOD objetivo, Hz de respuestas del worker y CPU por frame estable; falta llenar la
+    tabla con corridas reales de Chrome/Firefox y datasets de varios tamaños.
 11. **Evaluar formato y representación solo con resultados de corpus:** probar tamaño de bloque,
     orden/columnas de atributos, codecs (LZ4/raw y Zstandard con varios niveles) y cuantización por
     separado. Medir ratio final, CPU de codificación/decodificación, primera vista, memoria y error

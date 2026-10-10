@@ -307,7 +307,7 @@ mod tests {
         }];
 
         let peak_budget = GpuBudget {
-            max_bytes: 127,
+            max_bytes: 103,
             max_visible_instances: 4,
         };
         assert_eq!(
@@ -321,8 +321,8 @@ mod tests {
             )
                 .unwrap_err(),
             crate::GpuRendererError::GpuBudgetExceeded {
-                required_bytes: 128,
-                max_bytes: 127,
+                required_bytes: 104,
+                max_bytes: 103,
             }
         );
 

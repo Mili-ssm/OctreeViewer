@@ -190,6 +190,12 @@
             <div class="stats" id="stats"></div>
             <small>Render call is synchronous JS/WASM CPU time; it does not measure GPU execution.</small>
         </section>
+        <section class="panel" aria-label="Web benchmark">
+            <strong>Performance benchmark</strong>
+            <button id="start-benchmark" type="button" disabled>Run 15 s FPS benchmark</button>
+            <button id="download-benchmark" type="button" disabled>Export run JSON</button>
+            <small>Loading does not start the benchmark automatically. Once the target LOD is reached, click Run and keep the camera still for 15 seconds. The viewer idles after loading unless you request this measurement.</small>
+        </section>
         <section class="panel">
             <strong>Integration contract</strong>
             <pre>worker: createOffscreen(canvas, voxelSize)

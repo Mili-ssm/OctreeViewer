@@ -37,6 +37,8 @@ def main() -> None:
     main_js = (HOST / "main.js").read_text(encoding="utf-8")
     worker_js = (HOST / "viewer-worker.js").read_text(encoding="utf-8")
     queue_js = (HOST / "coalesced-command-queue.mjs").read_text(encoding="utf-8")
+    metrics_js = (HOST / "benchmark-metrics.mjs").read_text(encoding="utf-8")
+    rendering_budget_js = (HOST / "rendering-budget.mjs").read_text(encoding="utf-8")
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
     wasm_path = ROOT / "pkg" / "viewer_wasm_bg.wasm"
     sample_path = HOST / "sample.oct"
@@ -81,6 +83,18 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
+        'import { FRAME_RATE_WARMUP_MS, measureFrameRate } from "./benchmark-metrics.mjs";\n',
+        "",
+        "benchmark metrics import",
+    )
+    main_js = require_replace(
+        main_js,
+        'import { framebufferSize } from "./rendering-budget.mjs";\n',
+        "",
+        "rendering budget import",
+    )
+    main_js = require_replace(
+        main_js,
         'new Worker(new URL("./viewer-worker.js", import.meta.url), { type: "module" })',
         "new Worker(window.__VIEWER_WORKER_URL__)",
         "worker module URL",
@@ -105,6 +119,10 @@ def main() -> None:
         "new Blob([WORKER_SOURCE], { type: \"text/javascript\" }));\n"
         + queue_js
         + "\n"
+        + metrics_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
+        + rendering_budget_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
         + main_js
         + "\n</script>"
     )
@@ -118,7 +136,7 @@ def main() -> None:
     html = html.replace("<title>viewer_wasm host demo</title>", "<title>Visor local de nubes de puntos</title>")
     html = html.replace("<h1>Embeddable voxel viewer</h1>", "<h1>Visor de nubes de puntos</h1>")
 
-    readme = """VISOR WEB LOCAL\n\n1. Extrae este ZIP en cualquier carpeta.\n2. Abre index.html con doble clic en un navegador compatible con WebGPU.\n3. Espera a que el estado indique que el renderizador está listo.\n4. Pulsa Open project dataset, selecciona tu archivo .oct y espera a que aparezca\n   primero la vista gruesa y después el refinamiento progresivo.\n\nEl selector acepta el formato del proyecto .oct (versiones 1, 2 y 3). La muestra\nincluida también funciona sin conexión. Para cambiar detalle, usa Finest voxel detail.\n\nNo requiere instalar Rust ni iniciar un servidor. El HTML incluye WASM, worker,\nJavaScript y la muestra. Se necesita un navegador con WebGPU y OffscreenCanvas.\nEl render no sube el archivo a ningún servicio: lo lee localmente en el navegador.\n"""
+    readme = """VISOR WEB LOCAL\n\n1. Extrae este ZIP en cualquier carpeta.\n2. Abre index.html con doble clic en un navegador compatible con WebGPU.\n3. Espera a que el estado indique que el renderizador está listo.\n4. Pulsa Open project dataset, selecciona tu archivo .oct y espera a que aparezca\n   primero la vista gruesa y después el refinamiento progresivo.\n5. Para medir FPS, espera el LOD objetivo y pulsa Run 15 s FPS benchmark. Mantén\n   la cámara quieta; al terminar pulsa Export run JSON.\n\nEl visor limita el framebuffer a 4.194.304 píxeles y 4.096 por lado. Reduce el\ntrabajo de render mientras está quieto; solo ejecuta el benchmark si lo solicitas.\n\nEl selector acepta el formato del proyecto .oct (versiones 1, 2 y 3). La muestra\nincluida también funciona sin conexión. Para cambiar detalle, usa Finest voxel detail.\n\nNo requiere instalar Rust ni iniciar un servidor. El HTML incluye WASM, worker,\nJavaScript y la muestra. Se necesita un navegador con WebGPU y OffscreenCanvas.\nEl render no sube el archivo a ningún servicio: lo lee localmente en el navegador.\n"""
     index_path = output / "index.html"
     readme_path = output / "LEEME.txt"
     archive_path = output / "visor-web-local.zip"

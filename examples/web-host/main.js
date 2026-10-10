@@ -1,4 +1,6 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
+import { FRAME_RATE_WARMUP_MS, measureFrameRate } from "./benchmark-metrics.mjs";
+import { framebufferSize } from "./rendering-budget.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
@@ -8,6 +10,8 @@ const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
+const startBenchmarkButton = document.getElementById("start-benchmark");
+const downloadBenchmarkButton = document.getElementById("download-benchmark");
 const colorMode = document.getElementById("color-mode");
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
@@ -20,6 +24,10 @@ const commandQueue = new CoalescedCommandQueue((type, values) => {
     worker.postMessage({ type, ...values });
 });
 let animationFrame = 0;
+let continuousRendering = false;
+let frameRequested = false;
+let activityStopTimer = 0;
+let benchmarkStopTimer = 0;
 let framePending = false;
 let ready = false;
 let frameFailed = false;
@@ -33,6 +41,10 @@ let latestLodStats = null;
 let datasetName = "Synthetic sample";
 let loadingFile = false;
 let sampleFetchController = null;
+let benchmarkRun = null;
+let frameSamples = [];
+let benchmarkArmed = false;
+
 
 function formatBytes(bytes) {
     if (!Number.isFinite(bytes)) return "unknown";
@@ -51,11 +63,99 @@ function updateProgressiveLoadState(lod) {
     loadingFile = !lod.lodError && (lod.pendingBlockIds.length > 0
         || lod.lodStagePixels > lod.targetVoxelPixels);
     cancelButton.hidden = !loadingFile;
+    if (loadingFile) startRendering();
+    else if (!benchmarkStopTimer) stopRendering();
 }
 
 function formatFrameRenderMs(metrics) {
     if (!metrics || metrics.sampleCount === 0) return "—";
     return `p50/p95/p99 ${metrics.p50Ms.toFixed(2)}/${metrics.p95Ms.toFixed(2)}/${metrics.p99Ms.toFixed(2)} ms (${metrics.sampleCount} frames)`;
+}
+
+function recordFrameReply(renderCallMs) {
+    frameSamples.push({ time: performance.now(), renderCallMs });
+    if (frameSamples.length > 2_048) frameSamples.splice(0, 1_024);
+}
+
+function exportBenchmarkRun() {
+    if (!benchmarkRun) return;
+    const fps = benchmarkRun.finalFps
+        ?? measureFrameRate(frameSamples, benchmarkRun.measurementStartedAt);
+    const lod = latestLodStats;
+    const gpu = benchmarkRun.latestGpuStats;
+    const payload = {
+        schemaVersion: 1,
+        measurement: "worker_frame_reply_rate",
+        startedAt: benchmarkRun.startedAtIso,
+        dataset: {
+            name: benchmarkRun.datasetName,
+            fileBytes: benchmarkRun.fileBytes,
+            sourcePointCount: benchmarkRun.sourcePointCount,
+            nodeCount: benchmarkRun.nodeCount,
+        },
+        configuration: {
+            viewportFramebuffer: benchmarkRun.viewportFramebuffer,
+            devicePixelRatio: benchmarkRun.devicePixelRatio,
+            effectivePixelRatio: benchmarkRun.effectivePixelRatio,
+            targetVoxelPixels: benchmarkRun.targetVoxelPixels,
+            colorMode: colorMode.value,
+            depthShading: depthShading.checked,
+            cacheBudgetBytes: 256 * 1024 * 1024,
+        },
+        load: {
+            metadataOpenMs: benchmarkRun.metadataOpenMs,
+            firstCoarseFrameMs: benchmarkRun.firstCoarseFrameMs,
+            targetLodMs: benchmarkRun.targetLodMs,
+            uniqueBytesRead: benchmarkRun.uniqueBytesRead,
+        },
+        steadyState: {
+            warmupAfterBenchmarkStartMs: FRAME_RATE_WARMUP_MS,
+            measurementWindowMs: fps.durationMs,
+            frameReplies: fps.sampleCount,
+            meanFps: fps.meanFps,
+            frameReplyIntervalP50Ms: fps.intervalP50Ms,
+            frameReplyIntervalP95Ms: fps.intervalP95Ms,
+            workerRenderCallDuringLoadMs: benchmarkRun.frameRenderMs,
+            workerRenderCallP50Ms: fps.renderCallP50Ms,
+            workerRenderCallP95Ms: fps.renderCallP95Ms,
+            workerRenderCallP99Ms: fps.renderCallP99Ms,
+            cameraChanged: benchmarkRun.cameraChanged,
+            viewportChanged: benchmarkRun.viewportChanged,
+            settingsChanged: benchmarkRun.settingsChanged,
+        },
+        scene: lod ? {
+            visibleSourcePoints: lod.visiblePoints,
+            renderedVoxels: lod.renderedVoxels,
+            visibleBlocks: lod.visibleBlocks,
+            pendingBlocks: lod.pendingBlockIds.length,
+            lodStagePixels: lod.lodStagePixels,
+            coverageComplete: lod.coverageComplete,
+            cacheBytes: lod.cacheBytes,
+            cacheBudgetBytes: lod.cacheBudgetBytes,
+            voxelBudget: lod.voxelBudget,
+            hzbActive: lod.hzbActive ?? gpu?.hzbActive ?? false,
+        } : null,
+        environment: {
+            userAgent: navigator.userAgent,
+            hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+            deviceMemoryGiB: navigator.deviceMemory ?? null,
+            webGpuAvailable: Boolean(navigator.gpu),
+            jsHeapUsedBytes: performance.memory?.usedJSHeapSize ?? null,
+            gpuStats: gpu,
+        },
+        notes: [
+            "FPS counts worker frame replies (submitted frames), not GPU completion or display scanout.",
+            "Use only runs with cameraChanged=false, viewportChanged=false, settingsChanged=false, complete coverage, and a >=10 s stable window for comparisons.",
+        ],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeName = benchmarkRun.datasetName.replace(/[^a-z0-9.-]+/gi, "-").replace(/^-|-$/g, "");
+    link.href = url;
+    link.download = `web-bench-${safeName || "dataset"}-${benchmarkRun.targetVoxelPixels}px-${benchmarkRun.viewportFramebuffer.join("x")}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function emptyCameraDelta() {
@@ -65,16 +165,23 @@ function emptyCameraDelta() {
 function queueWorkerCommand(type, values = {}) {
     if (!ready || frameFailed) return;
     commandQueue.enqueue(type, values);
+    wakeRendering();
 }
 
 function resize() {
-    const pixelRatio = window.devicePixelRatio || 1;
-    const width = Math.max(0, Math.floor(canvas.clientWidth * pixelRatio));
-    const height = Math.max(0, Math.floor(canvas.clientHeight * pixelRatio));
+    const [width, height] = framebufferSize(
+        canvas.clientWidth,
+        canvas.clientHeight,
+        window.devicePixelRatio || 1,
+    );
 
     if (!canvasTransferred && (canvas.width !== width || canvas.height !== height)) {
         canvas.width = width;
         canvas.height = height;
+    }
+    if (benchmarkRun && (benchmarkRun.viewportFramebuffer[0] !== width
+        || benchmarkRun.viewportFramebuffer[1] !== height)) {
+        benchmarkRun.viewportChanged = true;
     }
     if (viewportSize?.[0] !== width || viewportSize?.[1] !== height) {
         viewportSize = [width, height];
@@ -109,29 +216,115 @@ function updateStats(message) {
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
         `renderFrame p50/p95/p99: ${formatFrameRenderMs(message.frameRenderMs)}`,
+        `worker frame replies: ${measureFrameRate(frameSamples, benchmarkRun?.measurementStartedAt).meanFps?.toFixed(1) ?? "warming up"} FPS (last stable window)`,
         `viewport: ${viewportSize?.join(" x ") ?? "—"}`,
     ].join("\n");
 }
 
 function requestFrame() {
+    animationFrame = 0;
     if (!ready || frameFailed) return;
-    if (!framePending) {
-        framePending = true;
-        const camera = cameraDelta;
-        cameraDelta = emptyCameraDelta();
-        worker.postMessage({ type: "frame", camera });
+    if (framePending) return;
+    framePending = true;
+    const camera = cameraDelta;
+    cameraDelta = emptyCameraDelta();
+    if (benchmarkRun && Object.values(camera).some((value) => value !== 0)) {
+        benchmarkRun.cameraChanged = true;
     }
-    animationFrame = requestAnimationFrame(requestFrame);
+    worker.postMessage({ type: "frame", camera });
+    if (continuousRendering) animationFrame = requestAnimationFrame(requestFrame);
 }
 
-function startRendering() {
+function requestFrameOnce() {
+    if (framePending) {
+        frameRequested = true;
+        return;
+    }
     if (animationFrame === 0) animationFrame = requestAnimationFrame(requestFrame);
 }
 
+function startRendering() {
+    continuousRendering = true;
+    requestFrameOnce();
+}
+
 function stopRendering() {
+    continuousRendering = false;
     if (animationFrame !== 0) {
         cancelAnimationFrame(animationFrame);
         animationFrame = 0;
+    }
+}
+
+function wakeRendering() {
+    if (!ready || frameFailed) return;
+    startRendering();
+    clearTimeout(activityStopTimer);
+    activityStopTimer = setTimeout(() => {
+        activityStopTimer = 0;
+        if (!loadingFile && !benchmarkStopTimer) stopRendering();
+    }, 250);
+}
+
+function acknowledgeFrame() {
+    framePending = false;
+    if (continuousRendering || frameRequested) {
+        frameRequested = false;
+        requestFrameOnce();
+    }
+}
+
+function finishBenchmarkWindow() {
+    benchmarkStopTimer = 0;
+    if (!benchmarkRun || loadingFile) return;
+    benchmarkRun.finalFps = measureFrameRate(frameSamples, benchmarkRun.measurementStartedAt);
+    startBenchmarkButton.disabled = false;
+    startBenchmarkButton.textContent = "Repeat 15 s benchmark";
+    downloadBenchmarkButton.disabled = false;
+    stopRendering();
+}
+
+function beginBenchmarkWindow() {
+    if (!benchmarkRun || !benchmarkArmed || loadingFile) return;
+    benchmarkArmed = false;
+    benchmarkRun.measurementStartedAt = performance.now();
+    benchmarkRun.finalFps = null;
+    startBenchmarkButton.disabled = true;
+    startBenchmarkButton.textContent = "Benchmark running…";
+    clearTimeout(benchmarkStopTimer);
+    startRendering();
+    benchmarkStopTimer = setTimeout(finishBenchmarkWindow, FRAME_RATE_WARMUP_MS + 10_000);
+}
+
+function startBenchmark() {
+    if (!benchmarkRun || benchmarkStopTimer) return;
+    frameSamples = [];
+    benchmarkRun.cameraChanged = false;
+    benchmarkRun.viewportChanged = false;
+    benchmarkRun.settingsChanged = false;
+    benchmarkRun.finalFps = null;
+    benchmarkRun.measurementStartedAt = null;
+    benchmarkRun.viewportFramebuffer = [canvas.width, canvas.height];
+    benchmarkRun.devicePixelRatio = window.devicePixelRatio || 1;
+    benchmarkRun.effectivePixelRatio = canvas.clientWidth > 0
+        ? canvas.width / canvas.clientWidth
+        : 0;
+    startBenchmarkButton.disabled = true;
+    startBenchmarkButton.textContent = loadingFile
+        ? "Waiting for target LOD…"
+        : "Benchmark running…";
+    downloadBenchmarkButton.disabled = true;
+    benchmarkArmed = true;
+    if (loadingFile) {
+        startRendering();
+    } else if (latestLodStats?.coverageComplete
+        && latestLodStats.pendingBlockIds.length === 0
+        && latestLodStats.lodStagePixels <= latestLodStats.targetVoxelPixels) {
+        beginBenchmarkWindow();
+    } else {
+        benchmarkArmed = false;
+        startBenchmarkButton.disabled = false;
+        startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
     }
 }
 
@@ -150,7 +343,7 @@ function handleWorkerMessage(event) {
             });
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
-        startRendering();
+        requestFrameOnce();
     } else if (data.type === "commandAck") {
         commandQueue.acknowledge(data.command);
     } else if (data.type === "status") {
@@ -159,6 +352,7 @@ function handleWorkerMessage(event) {
         const read = Number(data.uniqueBytes);
         const total = Number(data.fileBytes);
         loadingFile = true;
+        if (benchmarkRun) benchmarkRun.uniqueBytesRead = String(data.uniqueBytes);
         cancelButton.hidden = false;
         statusRoot.textContent = `Read ranges: ${formatBytes(read)} of ${formatBytes(total)} (unique bytes)`;
     } else if (data.type === "dataset") {
@@ -171,6 +365,11 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = `${data.name}: showing coarse view · refining LOD`;
     } else if (data.type === "datasetOpened") {
         datasetName = data.name;
+        if (benchmarkRun) {
+            benchmarkRun.metadataOpenMs = performance.now() - benchmarkRun.startedAt;
+            benchmarkRun.nodeCount = data.opened.nodeCount;
+            benchmarkRun.sourcePointCount = data.opened.sourcePointCount ?? null;
+        }
         statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
@@ -178,11 +377,20 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · finest target ${data.lod.targetVoxelPixels} px`;
     } else if (data.type === "lodProgress") {
         latestLodStats = data.lod;
+        if (benchmarkRun) {
+            benchmarkRun.firstCoarseFrameMs = data.firstCoarseMs;
+            benchmarkRun.targetLodMs = data.targetLodMs;
+            benchmarkRun.frameRenderMs = data.frameRenderMs;
+        }
         updateProgressiveLoadState(data.lod);
         if (data.lod.lodError) {
+            benchmarkArmed = false;
+            startBenchmarkButton.disabled = false;
+            startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
             statusRoot.textContent = `LOD refinement failed: ${data.lod.lodError} · keeping the last visible cut`;
             return;
         }
+        if (benchmarkArmed && data.targetLodMs !== null) beginBenchmarkWindow();
         const firstView = data.firstCoarseMs === null
             ? "coarse frame pending"
             : `first coarse frame ${data.firstCoarseMs.toFixed(0)} ms`;
@@ -191,18 +399,24 @@ function handleWorkerMessage(event) {
             : `target reached ${data.targetLodMs.toFixed(0)} ms`;
         statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
     } else if (data.type === "stats") {
-        framePending = false;
+        acknowledgeFrame();
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
+        recordFrameReply(renderCallMs);
         if (data.frameStatus?.status !== lastFrameStatus) {
             lastFrameStatus = data.frameStatus?.status ?? "";
             if (lastFrameStatus) statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
         latestLodStats = data.lod ?? latestLodStats;
+        if (benchmarkRun) {
+            benchmarkRun.latestGpuStats = data.gpu;
+            benchmarkRun.frameRenderMs = data.frameRenderMs;
+        }
         updateProgressiveLoadState(latestLodStats);
         updateStats(data);
     } else if (data.type === "frame") {
-        framePending = false;
+        acknowledgeFrame();
         renderCallMs = data.renderCallMs;
+        recordFrameReply(renderCallMs);
         updateProgressiveLoadState(latestLodStats);
         if (data.frameStatus !== lastFrameStatus) {
             lastFrameStatus = data.frameStatus;
@@ -210,6 +424,12 @@ function handleWorkerMessage(event) {
         }
     } else if (data.type === "error") {
         loadingFile = false;
+        benchmarkArmed = false;
+        clearTimeout(benchmarkStopTimer);
+        benchmarkStopTimer = 0;
+        stopRendering();
+        startBenchmarkButton.disabled = !benchmarkRun;
+        startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
         cancelButton.hidden = true;
         fileInput.disabled = false;
         sampleButton.disabled = false;
@@ -263,6 +483,17 @@ function createWorkerViewer() {
 
 function recreateViewer() {
     stopRendering();
+    clearTimeout(activityStopTimer);
+    clearTimeout(benchmarkStopTimer);
+    activityStopTimer = 0;
+    benchmarkStopTimer = 0;
+    frameRequested = false;
+    benchmarkRun = null;
+    frameSamples = [];
+    benchmarkArmed = false;
+    startBenchmarkButton.disabled = true;
+    startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
+    downloadBenchmarkButton.disabled = true;
     sampleFetchController?.abort();
     sampleFetchController = null;
     if (worker) worker.terminate();
@@ -299,28 +530,72 @@ function cancelFileLoad() {
 
 reloadButton.addEventListener("click", recreateViewer);
 cancelButton.addEventListener("click", cancelFileLoad);
+startBenchmarkButton.addEventListener("click", startBenchmark);
 colorMode.addEventListener("change", () => {
+    if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("color", { value: colorMode.value });
 });
 function updateLodControls() {
     voxelPixelsValue.value = `${voxelPixels.value} px`;
     if (ready && latestLodStats) {
+        if (benchmarkRun && Number(voxelPixels.value) !== benchmarkRun.targetVoxelPixels) {
+            benchmarkRun.targetVoxelPixels = Number(voxelPixels.value);
+            benchmarkRun.settingsChanged = true;
+            benchmarkRun.measurementStartedAt = null;
+            benchmarkRun.finalFps = null;
+            benchmarkArmed = false;
+            clearTimeout(benchmarkStopTimer);
+            benchmarkStopTimer = 0;
+            startBenchmarkButton.disabled = false;
+            startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
+            downloadBenchmarkButton.disabled = true;
+        }
         queueWorkerCommand("voxelPixels", { value: Number(voxelPixels.value) });
     }
 }
 
 voxelPixels.addEventListener("input", updateLodControls);
 depthShading.addEventListener("change", () => {
+    if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
 function openProjectFile(file) {
     if (!ready || !file) return;
+    benchmarkRun = {
+        datasetName: file.name,
+        fileBytes: file.size,
+        sourcePointCount: null,
+        nodeCount: null,
+        startedAt: performance.now(),
+        startedAtIso: new Date().toISOString(),
+        metadataOpenMs: null,
+        firstCoarseFrameMs: null,
+        targetLodMs: null,
+        measurementStartedAt: null,
+        finalFps: null,
+        targetVoxelPixels: Number(voxelPixels.value),
+        viewportFramebuffer: [canvas.width, canvas.height],
+        devicePixelRatio: window.devicePixelRatio || 1,
+        effectivePixelRatio: canvas.clientWidth > 0 ? canvas.width / canvas.clientWidth : 0,
+        uniqueBytesRead: "0",
+        frameRenderMs: null,
+        latestGpuStats: null,
+        cameraChanged: false,
+        viewportChanged: false,
+        settingsChanged: false,
+    };
+    frameSamples = [];
+    benchmarkArmed = false;
+    startBenchmarkButton.disabled = false;
+    startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
+    downloadBenchmarkButton.disabled = true;
     fileInput.disabled = true;
     sampleButton.disabled = true;
     fileInput.value = "";
     loadingFile = true;
     cancelButton.hidden = false;
     statusRoot.textContent = `Opening ${file.name}…`;
+    startRendering();
     worker.postMessage({
         type: "openFile",
         file,
@@ -333,6 +608,7 @@ fileInput.addEventListener("change", () => {
     const [file] = fileInput.files ?? [];
     openProjectFile(file);
 });
+downloadBenchmarkButton.addEventListener("click", exportBenchmarkRun);
 sampleButton.addEventListener("click", async () => {
     if (!ready) return;
     sampleButton.disabled = true;
@@ -391,6 +667,7 @@ canvas.addEventListener("pointermove", (event) => {
         cameraDelta.orbitY += deltaY;
     }
     lastPointer = [event.clientX, event.clientY];
+    wakeRendering();
 });
 function endPointer(event) {
     if (event.pointerId === activePointer) activePointer = null;
@@ -402,6 +679,7 @@ canvas.addEventListener("wheel", (event) => {
     if (!ready) return;
     event.preventDefault();
     cameraDelta.zoom += event.deltaY * 0.001;
+    wakeRendering();
 }, { passive: false });
 canvas.addEventListener("keydown", (event) => {
     if (!ready) return;
@@ -428,6 +706,7 @@ canvas.addEventListener("keydown", (event) => {
         return;
     }
     event.preventDefault();
+    wakeRendering();
 });
 }
 window.addEventListener("resize", resize);

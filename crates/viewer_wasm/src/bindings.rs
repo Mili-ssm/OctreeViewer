@@ -751,6 +751,34 @@ impl WasmVoxelViewer {
             .as_ref()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let stats = js_sys::Object::new();
+        let adapter_info = renderer.adapter_info();
+        let adapter = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &adapter,
+            &"name".into(),
+            &JsValue::from_str(&adapter_info.name),
+        )?;
+        js_sys::Reflect::set(
+            &adapter,
+            &"backend".into(),
+            &JsValue::from_str(&format!("{:?}", adapter_info.backend)),
+        )?;
+        js_sys::Reflect::set(
+            &adapter,
+            &"deviceType".into(),
+            &JsValue::from_str(&format!("{:?}", adapter_info.device_type)),
+        )?;
+        js_sys::Reflect::set(
+            &adapter,
+            &"driver".into(),
+            &JsValue::from_str(&adapter_info.driver),
+        )?;
+        js_sys::Reflect::set(
+            &adapter,
+            &"driverInfo".into(),
+            &JsValue::from_str(&adapter_info.driver_info),
+        )?;
+        js_sys::Reflect::set(&stats, &"adapter".into(), &adapter)?;
         js_sys::Reflect::set(
             &stats,
             &"uploadedBytes".into(),

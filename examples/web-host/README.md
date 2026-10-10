@@ -114,6 +114,20 @@ The host keeps at most one worker command of each repeatable kind in flight and 
 value with the latest input. It also allows only one frame request in flight; file reads remain
 synchronous inside the worker.
 
+The browser host caps the render framebuffer at 4,194,304 pixels and 4,096 pixels
+per dimension to limit swapchain, depth, and HZB allocation on high-DPI displays.
+It renders continuously while loading/refining, then idles until input or a renderer
+command needs another frame. Only the explicit 15-second FPS benchmark runs
+continuously after loading. The benchmark JSON records both the browser DPR and
+the effective framebuffer scale.
+
+For web benchmarks, open one file at a fixed viewport/detail, wait until the target LOD is complete,
+click **Run 15 s FPS benchmark**, keep the camera still until it completes, then export the JSON. It includes file/index open time, first
+coarse frame, target-LOD time, a warmed 10-second worker-frame-reply rate, reply intervals and WASM/CPU
+frame percentiles. Frame replies mean frames submitted by the worker; they are not GPU completion or
+display FPS. The [benchmark protocol](../../docs/WEB_PERFORMANCE_BENCH.md) defines a dataset-size,
+LOD-detail and viewport matrix, and `collect-benchmarks.py` aggregates repeated exports by median.
+
 The generic WASM point APIs accept typed arrays and stage them in batches of 16,384 points into
 Rust-owned storage. Full-scene inputs are limited by the renderer's visible-instance budget;
 `readNext` is limited to 65,536 points and 8 MiB of source records per response. Use
