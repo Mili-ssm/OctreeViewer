@@ -189,29 +189,47 @@ retirado: el tope actual se aplica al número de voxeles renderizados. En Majada
 los huecos reflejan el escaneo TLS y los puntos ausentes; las capturas no sustituyen una comprobación
 interactiva de UX.
 
-En la nueva comprobación del objetivo mínimo, 4 px y 2 px volvieron a renderizarse a 640×480 con
-caché de 4 GiB. Los JSON informan 13.936/58.398 voxeles y 2.764.934/17.219.840 puntos fuente,
-respectivamente: [4 px](artifacts/sensoforest/albuera-progressive-640/voxel-4px.png) ·
-[2 px](artifacts/sensoforest/albuera-progressive-640/voxel-2px.png). El renderizador nativo de
-diagnóstico carga el corte fuente entero antes de construir cada imagen. Sus intentos de 1 px con
-8 GiB y 0,5 px con 4 GiB terminaron antes de producir imagen porque el corte no cabía en caché
-(RSS máximo observado: 8.423.452 KiB y 4.216.564 KiB). Esto limita esa herramienta; no demuestra el
-resultado del worker progresivo, que carga un bloque por frame y conserva la última escena completa
-si no puede continuar. El objetivo de 1 px ya había fallado también con 12 GiB en la pasada anterior.
-La secuencia 16→8→4→2→1→0,5 px está cubierta por tests unitarios de la máquina de etapas; la
-validación del fallback con Albuera en navegador requiere un entorno con WebGPU/worker.
+#### Pipeline nativa por bloques y memoria máxima (2026-10-10)
+
+La ruta nativa anterior cargaba todos los bloques seleccionados y sus atributos en una caché antes
+de voxelizar. En Albuera, los intentos de 1 px con caché de 8 GiB y 0,5 px con caché de 4 GiB
+fallaron antes de generar una imagen (RSS pico observado: 8.423.452 KiB y 4.216.564 KiB). La causa
+era la retención del corte fuente completo, no el número de vóxeles que cabían en la imagen.
+
+La pipeline ahora lee geometría de un bloque, la acumula en un constructor incremental y libera ese
+bloque antes de leer el siguiente. No mantiene una caché de puntos del corte ni decodifica atributos
+que este render RGB no usa. El acumulador conserva solo vóxeles resultantes dentro del frustum, con
+el límite actual de 8 millones de instancias; la memoización de proyección está acotada a 262.144
+entradas. El selector 0,5 px puede recorrer casi todos los puntos, pero no necesita mantenerlos en
+RAM a la vez.
+
+Prueba release en Albuera a 640×480, Vulkan/llvmpipe. RSS máximo se midió con `/usr/bin/time -v`;
+las ejecuciones de 4 y 2 px comparten un único proceso, mientras que 1 y 0,5 px se midieron por
+separado. Los JSON guardan conteos, encuadre y adapter:
+
+| Objetivo | Puntos fuente | Bloques | Voxeles resultantes | RSS pico | Tiempo | Captura |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 4 px | 2.764.934 | 184 | 13.936 | 249,8 MiB* | 1,2 s | [PNG](artifacts/sensoforest/albuera-streaming-640/voxel-4px.png) · [JSON](artifacts/sensoforest/albuera-streaming-640/voxel-4px.json) |
+| 2 px | 17.219.840 | 654 | 58.398 | 249,8 MiB* | 6,7 s | [PNG](artifacts/sensoforest/albuera-streaming-640/voxel-2px.png) · [JSON](artifacts/sensoforest/albuera-streaming-640/voxel-2px.json) |
+| 1 px | 251.364.831 | 2.904 | 248.005 | 256,8 MiB | 181,2 s | [PNG](artifacts/sensoforest/albuera-streaming-640/voxel-1px.png) · [JSON](artifacts/sensoforest/albuera-streaming-640/voxel-1px.json) |
+| 0,5 px | 508.231.935 | 6.950 | 1.076.247 | 406,7 MiB | 252,8 s | [PNG](artifacts/sensoforest/albuera-streaming-640/voxel-0.5px.png) · [JSON](artifacts/sensoforest/albuera-streaming-640/voxel-0.5px.json) |
+
+*El proceso conjunto de 4/2 px alcanzó 255.780 KiB. Las cuatro imágenes se generaron y leyeron de
+GPU; ninguna superó su tamaño objetivo. El mayor RSS medido, 416.452 KiB (≈0,40 GiB), está muy por
+debajo del objetivo máximo de 12–16 GiB. Ese máximo es un criterio operativo, no un límite de memoria
+impuesto por el sistema. Son mediciones de la herramienta nativa con este dataset, resolución y
+adapter; no garantizan el RSS de otros encuadres, formatos o navegador. La ruta WASM mantiene su
+carga progresiva por bloque y el presupuesto de caché de origen; la validación completa de Albuera
+dentro del navegador/WebGPU queda pendiente de ese entorno.
 
 Para repetir ambas nubes después de compilar en modo optimizado:
 
 ```sh
 cargo build --release --offline -p viewer_render_wgpu --example render_dataset
-target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-640 2,4,8,16 640 480 4096
-target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-progressive-640 4,2 640 480 4096
+target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-640 2,4,8,16 640 480
+target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-streaming-640 4,2,1,0.5 640 480
 target/release/examples/render_dataset data/datasets/sensoforest/majadas-tls.oct artifacts/sensoforest/majadas-640 4,8,16 640 480
 ```
-
-Para repetir los intentos que alcanzaron el límite de caché, usar calidad `1` con 8192 MiB o `0.5`
-con 4096 MiB y mantener el ancho y alto indicados.
 
 ### Descarte de vóxeles fuera de cámara
 
@@ -1149,7 +1167,7 @@ rango proyectado, píxeles con contenido y lectura GPU completada.
 ```sh
 cargo run --offline -p viewer_render_wgpu --example render_dataset -- \
   data/samples/stanford_bunny_bun000_unstructured.oct \
-  artifacts/voxel-lod-previews/headless 0.5,1,2,4,8,16 1280 960 512
+  artifacts/voxel-lod-previews/headless 0.5,1,2,4,8,16 1280 960
 
 # Tests numéricos sin GPU y regresiones del consumidor WASM:
 cargo test --offline -p viewer_render_wgpu -p viewer_wasm
@@ -1157,9 +1175,9 @@ cargo test --offline -p viewer_render_wgpu -p viewer_wasm
 cargo test --offline -p viewer_render_wgpu -- --ignored
 ```
 
-Calidad, ancho, alto y caché en MiB son opcionales: por defecto `0.5,1,2,4,8,16`, `1280×960` y 512 MiB.
-La selección no limita puntos fuente; el límite de 8 millones se aplica a voxeles finales y la caché
-mantiene su presupuesto independiente. Cada salida se llama
+Calidad, ancho y alto son opcionales: por defecto `0.5,1,2,4,8,16` y `1280×960`. La selección no
+limita puntos fuente; el límite de 8 millones se aplica a voxeles finales. La herramienta procesa
+los bloques fuente de uno en uno y no mantiene una caché con todo el corte. Cada salida se llama
 `voxel-<objetivo>px.png` y `.json`. Para ejecución optimizada añadir `--release`.
 La herramienta admite por ahora `.oct`, RGB, sombreado por profundidad y escala visual 1;
 no ejecuta flujos de worker/UI ni sustituye sus comprobaciones. Valida dimensiones de imagen y límites

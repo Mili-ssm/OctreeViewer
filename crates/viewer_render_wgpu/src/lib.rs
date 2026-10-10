@@ -18,7 +18,8 @@ pub use scene::{
     instance_buffer_layout,
 };
 pub use voxel_grid::{
-    VoxelScene, VoxelSceneBuildError, build_voxel_scene, build_voxel_scene_with_limit,
+    VoxelScene, VoxelSceneBuildError, VoxelSceneBuilder, build_voxel_scene,
+    build_voxel_scene_with_limit,
 };
 
 use viewer_core::{Point, VisibleVoxelBatch};

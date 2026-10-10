@@ -1,23 +1,22 @@
 //! Deterministic native render diagnostics, independent of browser/UI readiness.
 use std::{
+    collections::HashSet,
     error::Error,
     fs::{self, File},
     io::BufWriter,
     path::PathBuf,
     time::Instant,
 };
-use viewer_core::{
-    DatasetSource, DecodedBlockCache, FrustumPlane, LodSelectionConfig, SpatialFrustum,
-};
+use viewer_core::{FrustumPlane, LodSelectionConfig, PointBlock, SpatialFrustum};
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{
-    OrbitCamera, RendererConfig, SceneBounds, build_voxel_scene_with_limit, render_offscreen,
+    OrbitCamera, RendererConfig, SceneBounds, VoxelSceneBuilder, render_offscreen,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() < 2 || args.len() > 6 {
-        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [0.5,1,2,4,8,16] [WIDTH=1280] [HEIGHT=960] [CACHE_MIB=512]".into());
+    if args.len() < 2 || args.len() > 5 {
+        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [0.5,1,2,4,8,16] [WIDTH=1280] [HEIGHT=960]".into());
     }
     let qualities: Vec<f64> = args
         .get(2)
@@ -39,14 +38,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     if viewport.into_iter().any(|side| side == 0 || side > 8192) {
         return Err("viewport must be 1..8192 per axis".into());
     }
-    let cache_mib = args.get(5).map_or(Ok(512_usize), |value| value.parse())?;
-    let cache_bytes = cache_mib
-        .checked_mul(1024 * 1024)
-        .filter(|bytes| cache_mib > 0 && *bytes <= isize::MAX as usize)
-        .ok_or("cache size must be a positive number of MiB that fits this platform")?;
     let voxel_budget = RendererConfig::default().gpu_budget.max_visible_instances;
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
-    let metadata = reader.metadata().clone();
+    let metadata = reader.format_metadata().dataset().clone();
     let hierarchy = metadata.hierarchy();
     let origin = metadata.coordinate_frame().origin();
     let root = hierarchy.stats().root_bounds;
@@ -97,44 +91,31 @@ fn main() -> Result<(), Box<dyn Error>> {
         if !cut.budget_limited().is_empty() {
             return Err("requested source detail exceeds the u64 point-count limit".into());
         }
-        let mut cache = DecodedBlockCache::new(cache_bytes);
-        let ids: Vec<_> = cut
-            .node_ids()
-            .iter()
-            .flat_map(|id| hierarchy.node(*id).unwrap().blocks().iter().copied())
-            .collect();
-        for id in &ids {
-            if !cache.contains(*id) {
-                if !cache.insert(reader.read_block(*id)?).cached {
-                    return Err(format!(
-                        "source cut does not fit the configured {cache_mib} MiB cache"
-                    )
-                    .into());
+        let project = |bounds| {
+            if local_frustum.intersects(&bounds) {
+                camera.projected_voxel_edge_pixels(bounds, [0.0; 3], viewport)
+            } else {
+                0.0
+            }
+        };
+        let mut builder = VoxelSceneBuilder::new(root, origin, target, voxel_budget);
+        let mut seen_blocks = HashSet::new();
+        let mut source_blocks = 0_usize;
+        for node_id in cut.node_ids() {
+            let node = hierarchy.node(*node_id).expect("selected node exists");
+            for block_id in node.blocks() {
+                if !seen_blocks.insert(*block_id) {
+                    continue;
                 }
-                // Protect completed reads so an oversized selection fails rather than evicts detail.
-                cache.set_protected_blocks(
-                    ids.iter()
-                        .copied()
-                        .filter(|id| cache.contains(*id))
-                        .collect::<Vec<_>>(),
-                );
+                // This diagnostic renders RGB only. Decode one block, fold it into the voxel map,
+                // then release it instead of retaining the full selected source cut in RAM.
+                let block =
+                    PointBlock::new(*block_id, reader.read_geometry(*block_id)?, Vec::new());
+                builder.add_block(&block, &project)?;
+                source_blocks += 1;
             }
         }
-        let voxelized = build_voxel_scene_with_limit(
-            hierarchy,
-            cut.node_ids(),
-            &cache,
-            origin,
-            target,
-            &|bounds| {
-                if local_frustum.intersects(&bounds) {
-                    camera.projected_voxel_edge_pixels(bounds, [0.0; 3], viewport)
-                } else {
-                    0.0
-                }
-            },
-            voxel_budget,
-        )?;
+        let voxelized = builder.finish(&project);
         if voxelized.scene.instance_count() == 0 || voxelized.oversized_voxels != 0 {
             return Err("empty voxel scene or projected edges exceed target".into());
         }
@@ -160,6 +141,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             "oversized_voxels": voxelized.oversized_voxels, "source_points": cut.point_count(),
             "source_nodes": cut.node_ids().len(), "rendered_voxels": voxelized.scene.instance_count(),
             "voxel_budget": voxel_budget, "source_point_budget": u64::MAX,
+            "streamed_source_blocks": source_blocks,
+            "projected_edge_cache_entries": voxelized.projected_edge_cache_entries,
             "non_background_pixels": image.non_background_pixels,
             "adapter": image.adapter.name, "backend": format!("{:?}", image.adapter.backend),
             "gpu_readback_complete": true, "elapsed_ms": start.elapsed().as_secs_f64() * 1000.0,

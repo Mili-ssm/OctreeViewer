@@ -74,15 +74,19 @@ pub struct RenderScene {
 impl RenderScene {
     pub fn from_instances(instances: Vec<InstanceRaw>) -> Self {
         let elevation_range = position_elevation_range(&instances);
-        let intensity_values: Vec<_> = instances
+        let intensity_range = instances
             .iter()
-            .filter_map(|instance| (instance.intensity >= 0.0).then_some(instance.intensity))
-            .collect();
+            .map(|instance| instance.intensity)
+            .filter(|intensity| *intensity >= 0.0)
+            .fold(None::<[f32; 2]>, |range, intensity| {
+                Some(match range {
+                    Some([min, max]) => [min.min(intensity), max.max(intensity)],
+                    None => [intensity, intensity],
+                })
+            });
         Self {
             instances,
-            intensity_range: attribute_range(
-                (!intensity_values.is_empty()).then_some(&intensity_values),
-            ),
+            intensity_range,
             elevation_range,
         }
     }
