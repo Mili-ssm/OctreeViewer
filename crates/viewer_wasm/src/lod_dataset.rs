@@ -394,6 +394,23 @@ mod tests {
     }
 
     #[test]
+    fn progressive_lod_can_refine_to_half_pixel_target() {
+        let mut stage = None;
+        let mut stages = vec![16.0];
+        loop {
+            let (next, continue_loading) = next_lod_stage(stage, 0.5, false, true);
+            if next == stage {
+                assert!(!continue_loading);
+                break;
+            }
+            stage = next;
+            stages.push(stage.unwrap());
+        }
+
+        assert_eq!(stages, [16.0, 8.0, 4.0, 2.0, 1.0, 0.5]);
+    }
+
+    #[test]
     fn progressive_lod_waits_for_current_stage_blocks_and_stops_on_read_failure() {
         assert_eq!(next_lod_stage(None, 4.0, true, true), (None, true));
         assert_eq!(

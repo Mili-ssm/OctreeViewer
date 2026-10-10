@@ -48,14 +48,15 @@ the labeled file picker to choose another local dataset. The sample is generated
 wave grid and does not depend on external or licensed point-cloud data.
 
 The demo exposes RGB, intensity, elevation, and classification color modes, plus one slider for the
-maximum target projected voxel edge (1–16 framebuffer pixels). `updateLod(targetVoxelPixels)` selects
-source detail, then aggregates it into one global adaptive dyadic grid. Cells subdivide 2×2×2 according
-to their twelve projected edges; storage-node depth and block size do not set rendered voxel size.
-The dyadic steps give approximately target/2 to target pixels per maximum cell edge. Full-resolution
-leaf points can use arbitrarily finer cells up to the precision limit (24 subdivisions). Internal
-representatives require sufficient source detail before drawing a finer grid. The 8-million safety
-cap applies to generated render voxels, not source points: framebuffer area/target² does not bound
-hidden surfaces or source points. Missing required blocks or exhausted voxel capacity preserve the
+finest projected voxel detail to try (0.5–16 framebuffer pixels). `updateLod(targetVoxelPixels)` selects
+source detail progressively from 16 px toward the requested target, then aggregates it into one global
+adaptive dyadic grid. Cells subdivide 2×2×2 according to their twelve projected edges; storage-node
+depth and block size do not set rendered voxel size. The dyadic steps give approximately target/2 to
+target pixels per maximum cell edge. Full-resolution leaf points can use arbitrarily finer cells up to
+the precision limit (24 subdivisions). Internal representatives require sufficient source detail
+before drawing a finer grid. The 8-million safety cap applies to generated render voxels, not source
+points: framebuffer area/target² does not bound hidden surfaces or source points. Missing required
+blocks or exhausted voxel capacity preserve the
 previous scene and report an error. Cells share integer identities; there is no point-size multiplier.
 Project-format files preserve their attributes for color modes; the synthetic sample only has RGB,
 so missing intensity uses grayscale luminance and missing classification keeps RGB.

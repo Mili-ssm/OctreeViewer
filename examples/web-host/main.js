@@ -93,7 +93,7 @@ function updateStats(message) {
         : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
-        `target voxel edge: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
+        `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
         `LOD stage: ${lod?.lodStagePixels ?? "—"} px`,
         `rendered voxel limit: ${lod?.voxelBudget ?? "—"}`,
         `projected voxel edges: ${lod ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—"}`,
@@ -175,7 +175,7 @@ function handleWorkerMessage(event) {
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
         updateProgressiveLoadState(data.lod);
-        statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · target ${data.lod.targetVoxelPixels} px`;
+        statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · finest target ${data.lod.targetVoxelPixels} px`;
     } else if (data.type === "lodProgress") {
         latestLodStats = data.lod;
         updateProgressiveLoadState(data.lod);

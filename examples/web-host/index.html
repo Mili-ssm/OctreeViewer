@@ -166,10 +166,10 @@
             <small id="dataset-help">The built-in sample is a local v1/v2 file. Choose another project file with the keyboard-accessible file picker. Reads run in the worker.</small>
         </section>
         <section class="panel" aria-label="Rendering options">
-            <label for="voxel-pixels">Target voxel edge <output id="voxel-pixels-value">4 px</output></label>
-            <input id="voxel-pixels" type="range" min="1" max="16" step="1" value="4"
+            <label for="voxel-pixels">Finest voxel detail <output id="voxel-pixels-value">4 px</output></label>
+            <input id="voxel-pixels" type="range" min="0.5" max="16" step="0.5" value="4"
                 aria-describedby="voxel-pixels-help" disabled />
-            <small id="voxel-pixels-help">Smaller values show finer voxels. Cells share an aligned grid and refine with camera distance; gaps remain where the scan has no samples. Detail is limited by available data and memory.</small>
+            <small id="voxel-pixels-help">Sets the finest projected voxel edge to try. The scene starts with coarse voxels and refines toward this value; if a finer step exceeds the render budget, the last complete scene stays visible. Cells share an aligned grid; gaps remain where the scan has no samples.</small>
             <label for="color-mode">Color</label>
             <select id="color-mode">
                 <option value="rgb">RGB</option>

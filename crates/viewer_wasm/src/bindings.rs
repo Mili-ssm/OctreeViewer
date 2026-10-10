@@ -529,9 +529,9 @@ impl WasmVoxelViewer {
     /// Selects a camera-aware voxel cut using the target projected voxel edge in pixels.
     #[wasm_bindgen(js_name = updateLod)]
     pub fn update_lod(&mut self, target_voxel_pixels: f64) -> Result<JsValue, JsValue> {
-        if !target_voxel_pixels.is_finite() || !(1.0..=16.0).contains(&target_voxel_pixels) {
+        if !target_voxel_pixels.is_finite() || !(0.5..=16.0).contains(&target_voxel_pixels) {
             return Err(JsValue::from_str(
-                "targetVoxelPixels must be finite and between 1 and 16",
+                "targetVoxelPixels must be finite and between 0.5 and 16",
             ));
         }
         if self.lod_config != Some(target_voxel_pixels) {

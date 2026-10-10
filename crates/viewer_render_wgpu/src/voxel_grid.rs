@@ -275,6 +275,12 @@ fn safe_render_cell_size(center: [f64; 3], cell_size: f64) -> Option<([f32; 3], 
         .then_some((center_f32, safe_size as f32))
 }
 
+fn bounds_side(bounds: SpatialBounds) -> f64 {
+    (0..3)
+        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
+        .fold(0.0, f64::max)
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
@@ -378,10 +384,4 @@ mod tests {
             VoxelSceneBuildError::InstanceLimitExceeded { limit: 2 }
         );
     }
-}
-
-fn bounds_side(bounds: SpatialBounds) -> f64 {
-    (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max)
 }

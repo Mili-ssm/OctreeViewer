@@ -169,7 +169,7 @@ objetivo de más de 500 GB.
 ### Capturas SensOFOREST por calidad (2026-10-10)
 
 Se renderizaron los `.oct` locales de Albuera UAV y Majadas TLS con el ejemplo nativo en Vulkan/
-llvmpipe, sin iniciar la aplicación. Las siete capturas comparten resolución 640×480 y encuadre
+llvmpipe, sin iniciar la aplicación. Las capturas comparten resolución 640×480 y encuadre
 automático a la raíz de cada nube. Cada PNG espera el readback de GPU y tiene un JSON con el corte
 fuente, voxeles, rango proyectado, píxeles con contenido y adapter.
 
@@ -189,15 +189,29 @@ retirado: el tope actual se aplica al número de voxeles renderizados. En Majada
 los huecos reflejan el escaneo TLS y los puntos ausentes; las capturas no sustituyen una comprobación
 interactiva de UX.
 
+En la nueva comprobación del objetivo mínimo, 4 px y 2 px volvieron a renderizarse a 640×480 con
+caché de 4 GiB. Los JSON informan 13.936/58.398 voxeles y 2.764.934/17.219.840 puntos fuente,
+respectivamente: [4 px](artifacts/sensoforest/albuera-progressive-640/voxel-4px.png) ·
+[2 px](artifacts/sensoforest/albuera-progressive-640/voxel-2px.png). El renderizador nativo de
+diagnóstico carga el corte fuente entero antes de construir cada imagen. Sus intentos de 1 px con
+8 GiB y 0,5 px con 4 GiB terminaron antes de producir imagen porque el corte no cabía en caché
+(RSS máximo observado: 8.423.452 KiB y 4.216.564 KiB). Esto limita esa herramienta; no demuestra el
+resultado del worker progresivo, que carga un bloque por frame y conserva la última escena completa
+si no puede continuar. El objetivo de 1 px ya había fallado también con 12 GiB en la pasada anterior.
+La secuencia 16→8→4→2→1→0,5 px está cubierta por tests unitarios de la máquina de etapas; la
+validación del fallback con Albuera en navegador requiere un entorno con WebGPU/worker.
+
 Para repetir ambas nubes después de compilar en modo optimizado:
 
 ```sh
 cargo build --release --offline -p viewer_render_wgpu --example render_dataset
 target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-640 2,4,8,16 640 480 4096
+target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-progressive-640 4,2 640 480 4096
 target/release/examples/render_dataset data/datasets/sensoforest/majadas-tls.oct artifacts/sensoforest/majadas-640 4,8,16 640 480
 ```
 
-El nivel de 1 px no se completó en esta pasada; con caché de 12 GiB no llegó a producir una captura.
+Para repetir los intentos que alcanzaron el límite de caché, usar calidad `1` con 8192 MiB o `0.5`
+con 4096 MiB y mantener el ancho y alto indicados.
 
 ### Descarte de vóxeles fuera de cámara
 
@@ -728,7 +742,7 @@ y presentar estado.
 - [x] Exponer apertura de metadatos, inserción de bloques RGB decodificados, actualización LOD,
   encuadre y movimiento de cámara. Los IDs y conteos `u64` se intercambian como strings para evitar
   pérdida de precisión en JavaScript.
-- [x] Unificar el control LOD en un objetivo de 1–16 píxeles por arista de vóxel. El octree fuente
+- [x] Unificar el control LOD en un objetivo de detalle mínimo de 0,5–16 píxeles por arista de vóxel. El octree fuente
   decide qué muestras cargar; una retícula diádica global subdividida 2×2×2 decide qué celdas dibujar
   según la mayor de sus doce aristas proyectadas. La arista queda aproximadamente entre objetivo/2
   y objetivo por los saltos diádicos. Las hojas conservan puntos originales: no se limitan a 8³ celdas.
@@ -737,6 +751,9 @@ y presentar estado.
   residentes. Área/objetivo² estima ocupación de pantalla, no puntos fuente incluyendo superficies
   ocultas. El voxelizador se detiene al exceder el límite de instancias; si faltan bloques, se conserva
   la escena previa y se informa un error.
+  El selector expresa el detalle más fino que se intenta alcanzar: cada vista empieza en 16 px y baja
+  por etapas a 8/4/2/1/0,5 px, recortando la última etapa al objetivo. Si una etapa falla por bloques
+  ausentes o por el límite de voxeles, se mantiene la última escena completa y se detiene el refinamiento.
   La precisión se limita a 24 subdivisiones y se cuentan las celdas que aún superan el objetivo.
 - [x] Integrar selección de archivo local, mensajes de carga/error y resumen de nodos del índice; la
   demo ejecuta visor, lector y renderer en worker.
@@ -770,8 +787,9 @@ Blob con el lector v1/v2/v3. Ejecuta `createOffscreen(canvas.transferControlToOf
 las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
 
-Después de abrir un dataset, `updateLod(targetVoxelPixels)` selecciona y guarda un objetivo de arista
-proyectada entre 1 y 16 píxeles. La selección fuente no aplica un tope fijo de puntos; la escena
+Después de abrir un dataset, `updateLod(targetVoxelPixels)` selecciona y guarda el detalle mínimo de
+arista proyectada que se quiere intentar, entre 0,5 y 16 píxeles. La progresión empieza en 16 px y
+refina por etapas hasta el objetivo. La selección fuente no aplica un tope fijo de puntos; la escena
 voxelizada se limita a 8 millones de instancias renderizadas y la memoria de bloques se limita por
 separado con `cacheBytes`. La retícula de dibujo es común, diádica
 y adaptativa según cámara. La selección y la retícula se recalculan antes de `renderFrame` tras cambios
@@ -1085,7 +1103,7 @@ temporales y tamaño total.
 **Carga progresiva implementada (2026-10-10):** `LodDataset::update_view_progressive` procesa como
 máximo un bloque pendiente por llamada y publica el corte resuelto sin esperar a que termine toda la
 vista. `WasmVoxelViewer` comienza con la frontera visible más gruesa, la dibuja a 16 px y, al completar
-cada etapa, baja a 8/4/2/1 px, recortando la última etapa al objetivo configurado. La priorización
+cada etapa, baja a 8/4/2/1/0,5 px, recortando la última etapa al objetivo configurado. La priorización
 recorre nodos visibles y elige directamente el bloque con mayor error proyectado, sin ordenar toda la
 lista pendiente. Cada `renderFrame` puede cargar un bloque antes de dibujar; entre frames el worker
 procesa cámara y controles nuevos. Un movimiento de cámara vuelve a pedir la
@@ -1131,7 +1149,7 @@ rango proyectado, píxeles con contenido y lectura GPU completada.
 ```sh
 cargo run --offline -p viewer_render_wgpu --example render_dataset -- \
   data/samples/stanford_bunny_bun000_unstructured.oct \
-  artifacts/voxel-lod-previews/headless 1,2,4,8,16 1280 960 512
+  artifacts/voxel-lod-previews/headless 0.5,1,2,4,8,16 1280 960 512
 
 # Tests numéricos sin GPU y regresiones del consumidor WASM:
 cargo test --offline -p viewer_render_wgpu -p viewer_wasm
@@ -1139,7 +1157,7 @@ cargo test --offline -p viewer_render_wgpu -p viewer_wasm
 cargo test --offline -p viewer_render_wgpu -- --ignored
 ```
 
-Calidad, ancho, alto y caché en MiB son opcionales: por defecto `1,2,4,8,16`, `1280×960` y 512 MiB.
+Calidad, ancho, alto y caché en MiB son opcionales: por defecto `0.5,1,2,4,8,16`, `1280×960` y 512 MiB.
 La selección no limita puntos fuente; el límite de 8 millones se aplica a voxeles finales y la caché
 mantiene su presupuesto independiente. Cada salida se llama
 `voxel-<objetivo>px.png` y `.json`. Para ejecución optimizada añadir `--release`.

@@ -17,20 +17,20 @@ use viewer_render_wgpu::{
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() < 2 || args.len() > 6 {
-        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [1,2,4,8,16] [WIDTH=1280] [HEIGHT=960] [CACHE_MIB=512]".into());
+        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [0.5,1,2,4,8,16] [WIDTH=1280] [HEIGHT=960] [CACHE_MIB=512]".into());
     }
     let qualities: Vec<f64> = args
         .get(2)
-        .map_or("1,2,4,8,16", String::as_str)
+        .map_or("0.5,1,2,4,8,16", String::as_str)
         .split(',')
         .map(str::parse)
         .collect::<Result<_, _>>()?;
     if qualities.is_empty()
         || qualities
             .iter()
-            .any(|value| !value.is_finite() || !(1.0..=16.0).contains(value))
+            .any(|value| !value.is_finite() || !(0.5..=16.0).contains(value))
     {
-        return Err("qualities must be finite values between 1 and 16 pixels".into());
+        return Err("qualities must be finite values between 0.5 and 16 pixels".into());
     }
     let viewport = [
         args.get(3).map_or(Ok(1280), |s| s.parse())?,
