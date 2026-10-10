@@ -466,6 +466,7 @@ Los resultados detallados, métricas por fase y estimaciones de memoria están e
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 2026-10-09 / `3761ed3` | Belvedere Glacier 2009; 81.682.329 puntos; release; opciones por defecto | 100,12 s; 815.872 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 37.612 KiB | 8.980.927.112 B (8,37 GiB; muestreo 100 ms) | 9,81 s; índice 2,87 ms | 27.024 KiB |
 | 2026-10-09 / escritura directa tras `3761ed3` | Mismo dataset y opciones; una ejecución | 101,16 s; 807.468 pt/s | 1.596.356.674 B; 2,581× | 0,4765 (52,36 % menos) | 36.068 KiB | — | — | — |
+| 2026-10-10 / `3a1812b` → árbol de trabajo | Misma lectura Belvedere; una ejecución antes/después de eliminar `Vec<[f32; 3]>` intermedio | — | — | — | — | — | 9,945 → 9,870 s | 27.412 → 26.748 KiB |
 
 La referencia de rendimiento se midió en Linux x86_64, AMD Ryzen AI 9 365 (20 hilos lógicos), Rust
 1.99.0. El pico de disco temporal se midió en una conversión adicional de la misma revisión,
@@ -892,15 +893,83 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
    Pendiente: ampliar medidas a EPT real, zoom extremo, dispositivos y datasets grandes. La ruta
    `sync_visible_blocks` genérica sigue pendiente de unificar con este contrato; su existencia no
    extiende las garantías verificadas de la ruta LOD voxelizada.
-5. **Crear comparación base de conversión en `viewer_convert` (puede avanzar en paralelo):** ejecutar
-   tres o más repeticiones por entrada/configuración, guardar medianas, fases, RSS real, bytes
-   temporales máximos y ratio de salida completa `.oct`/fuente. La base actual de Belvedere (618 MB)
-   no valida por sí sola la meta para fuentes cercanas a 10 GB.
-6. **Comparar optimizaciones de conversión:** reservar buffers cuando haya conteos fiables, liberar
-   temporales al consumirse, escribir progresivamente bloques al candidato y comparar spools actuales,
-   particionado externo y múltiples pasadas de la fuente (incluida la hipótesis de dos niveles por
-   pasada). Adoptar solo variantes con mejor tiempo, tamaño o disco temporal medidos, sin perder
-   determinismo, validación, cancelación ni checkpoints.
+5. **Cerrar una base de conversión repetible antes de cambiar estructuras:** repetir al menos tres
+   veces cada configuración emparejada en Belvedere; después cubrir Albuera UAV y Majadas TLS con el
+   mismo equipo, opciones y perfil. Registrar por fase tiempo, RSS, I/O, pico de disco temporal,
+   tamaño completo y hash del resultado. Los ensayos actuales de 1/2/4 trabajadores solo tienen dos
+   repeticiones y un dataset; justifican seguir midiendo, no cambiar el valor predeterminado.
+6. **Optimizar `viewer_convert` por cuellos medidos:** comparar reserva y vida útil de buffers,
+   sustituir la búsqueda de muestras en `BTreeMap` por acumuladores indexados para la grilla fija
+   8³, y evitar temporales usados solo para calcular cotas. Mantener orden determinista, estimación
+   de memoria, atributos, error geométrico y bytes de salida; aceptar cada cambio por separado y
+   revertir candidatos sin mejora repetible.
+7. **Reducir los spools retenidos sin duplicar la escritura incremental ya existente:** `FormatWriter`
+   ya agrega cada payload y escribe índice/footer al finalizar. El problema es que `build_spatial_plan`
+   termina antes de emitir bloques porque `FormatWriter::new` necesita la jerarquía completa. Evaluar
+   separar el append de payloads de la finalización de metadatos para emitir hojas/muestras al
+   terminarlas y liberar spools consumidos. Resolver primero IDs deterministas, reordenación acotada,
+   checkpoints y publicación recuperable. Cierre: salida válida, misma semántica, menor pico temporal
+   repetible y cancelación/reanudación equivalentes.
+8. **Aprovechar índices existentes antes de reconstruirlos:** para COPC local, evaluar leer los chunks
+   LAZ por su jerarquía y preservar una estructura aditiva, sin aplanar y volver a particionar toda la
+   nube. Verificar primero que el decodificador actual admita chunks independientes; validar páginas,
+   nodos vacíos, conteos y atributos. EPT `laszip` local ya se admite en modo aditivo. Mantener COPC
+   y EPT remoto fuera de alcance hasta medir solicitudes, bytes, latencia y cancelación.
+9. **Carga progresiva coarse-to-fine — primera implementación hecha:** abrir con el corte visible más
+   grueso; después cargar un bloque por frame, priorizando el mayor error proyectado, y refinar en
+   etapas hasta el objetivo. El movimiento de cámara recalcula la vista y reinicia desde el corte
+   grueso; si no hay una transición resuelta o falla una lectura, se conserva el último corte
+   publicado. La integración del scheduler con concurrencia real y lecturas asíncronas dentro de un
+   bloque queda pendiente si las medidas de latencia muestran que un `FileReaderSync` individual
+   bloquea demasiado tiempo. Responsables: `viewer_wasm/src/lod_dataset.rs` y `bindings.rs`,
+   `viewer_core/src/lod_transition.rs` y `scheduler.rs`, `examples/web-host/viewer-worker.js`.
+10. **Medir la carga progresiva de extremo a extremo:** apertura, tiempo hasta primer corte, tiempo
+    entre refinamientos, recorrido fijo, bloques/bytes leídos y subidos, memoria CPU/WASM/GPU
+    observable, cancelación y frames p50/p95/p99 con caché fría/caliente y lecturas deliberadamente
+    lentas. Probar Chrome/Firefox, movimiento durante lecturas y aperturas sucesivas. El éxito visual
+    de datasets pequeños no acredita escala de navegador.
+11. **Evaluar formato y representación solo con resultados de corpus:** probar tamaño de bloque,
+    orden/columnas de atributos, codecs (LZ4/raw y Zstandard con varios niveles) y cuantización por
+    separado. Medir ratio final, CPU de codificación/decodificación, primera vista, memoria y error
+    acumulado contra LAS. El experimento actual `u16` no certifica la precisión desde LAS. Mantener
+    `.oct` v3 mientras los bloques independientes y el índice residente cubran las cargas; versionar
+    solo si una mejora medida necesita otro contrato binario. Si el índice residente resulta ser el
+    límite, paginar jerarquía será una tarea distinta.
+
+**Resultado de la investigación (2026-10-10):** el método publicado para octrees masivos usa
+particionado externo en chunks, procesa subárboles en paralelo y los fusiona bottom-up; esto encaja
+con la reducción de spools pendiente. COPC y EPT ya organizan sus datos espacialmente y sirven para
+evitar reconstrucciones, aunque tienen semánticas de payload/topología distintas. La generación GPU
+de LOD es un candidato para procesar chunks, pero los resultados publicados son in-core y no
+demuestran conversión externa de más de 500 GB. Por ello se conserva `.oct` v3 y se prioriza el
+proceso, después acceso nativo a COPC y medición de carga; no se elige aún un codec, cuantización ni
+representación ganadora.
+
+**Carga progresiva implementada (2026-10-10):** `LodDataset::update_view_progressive` procesa como
+máximo un bloque pendiente por llamada y publica el corte resuelto sin esperar a que termine toda la
+vista. `WasmVoxelViewer` comienza con la frontera visible más gruesa, la dibuja a 16 px y, al completar
+cada etapa, baja a 8/4/2/1 px, recortando la última etapa al objetivo configurado. Los bloques
+pendientes se ordenan por error proyectado con la cámara actual. Cada `renderFrame` puede cargar un
+bloque antes de dibujar; entre frames el worker procesa cámara y controles nuevos. Un movimiento de cámara vuelve a pedir la
+frontera gruesa para la nueva vista. Si la transición todavía no produce un corte válido, se conserva
+el corte publicado anterior; errores de refinamiento detienen los reintentos automáticos y se exponen
+en `lodError`. La demo mide el primer frame grueso y el primer frame que alcanza el objetivo, además de
+etapa, bloques pendientes, rangos leídos, cobertura y latencia de `renderFrame`.
+
+**Pendiente de validación:** no hay navegador instalado en este entorno para probar interacción real.
+`FileReaderSync` sigue haciendo síncrona cada lectura individual de bloque; el worker cede control entre
+bloques, no durante una lectura lenta. Probar cámara en movimiento con bloques retardados y datasets
+grandes en Chrome/Firefox; medir tiempo al primer corte, tiempo al objetivo, frames p50/p95/p99 y
+retardo de entrada por bloque. Solo si esos datos lo justifican, integrar lectura asíncrona de rangos y
+el ciclo de tickets/cancelación de `BlockRequestScheduler`.
+
+**Optimización de lectura aplicada (2026-10-10):** `FormatReader::read_point_block` ahora decodifica
+las posiciones directamente en el vector final de `Point`, y rellena sus colores al recorrer el
+segmento correspondiente. Elimina la reserva y recorrido de un vector intermedio de `[f32; 3]`.
+Para el mayor bloque de Belvedere (229.177 puntos), la reserva evitada equivale a unos 2,6 MiB por
+bloque. Una lectura antes/después dio 9,945/9,870 s y 27.412/26.748 KiB de RSS en una ejecución por
+versión; el cambio no es suficiente para atribuir mejora de tiempo o RSS. Repetir tres veces con
+cache y configuración controladas antes de considerar cerrada la comparación.
 
 Los targets del conversor son **≤3×** el tamaño original (ideal **<2×**) y **<5 min** para archivos
 menores de 10 GB decimales (ideal **<1 min**) en compilación optimizada. Son objetivos para evaluar
@@ -994,6 +1063,16 @@ cambian alcance, rendimiento y compatibilidad:
 - [COPC 1.0](https://copc.io/copc-specification-1.0.pdf): formato LAZ organizado como octree para
   acceso espacial y lectura por bloques; referencia útil para evaluar interoperabilidad y decisiones
   de acceso aleatorio.
+- [Fast Out-of-Core Octree Generation for Massive Point Clouds](https://doi.org/10.1111/cgf.14134):
+  particionado jerárquico en chunks, construcción paralela de subárboles y fusión bottom-up; las
+  cifras de rendimiento del paper pertenecen a sus datasets y equipo.
+- [Entwine Point Tile (EPT)](https://entwine.io/en/latest/entwine-point-tile.html): formato octree
+  aditivo con jerarquía consultable y payloads por nodo.
+- [GPU-Accelerated LOD Generation for Point Clouds](https://arxiv.org/abs/2302.14801): LOD híbrido
+  punto/vóxel y filtrado de color; la evaluación publicada es in-core y no demuestra por sí sola
+  conversión externa a escala del objetivo del proyecto.
+- [Manual oficial de Zstandard](https://facebook.github.io/zstd/zstd_manual.html): niveles y APIs
+  de streaming para diseñar comparaciones de codec con coste de memoria/CPU explícito.
 - [Estándar LAS de OGC](https://www.ogc.org/standards/LAS/): referencia de intercambio para datos
   LiDAR que deben poder convertirse a la representación de visualización del proyecto.
 

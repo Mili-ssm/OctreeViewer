@@ -46,6 +46,13 @@ function formatBytes(bytes) {
     return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
+function updateProgressiveLoadState(lod) {
+    if (!lod) return;
+    loadingFile = !lod.lodError && (lod.pendingBlockIds.length > 0
+        || lod.lodStagePixels > lod.targetVoxelPixels);
+    cancelButton.hidden = !loadingFile;
+}
+
 function emptyCameraDelta() {
     return { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0 };
 }
@@ -82,6 +89,7 @@ function updateStats(message) {
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
         `target voxel edge: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
+        `LOD stage: ${lod?.lodStagePixels ?? "—"} px`,
         `LOD source-point cap: ${lod?.pointBudget ?? "—"}`,
         `projected voxel edges: ${lod ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—"}`,
         `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
@@ -147,23 +155,35 @@ function handleWorkerMessage(event) {
         cancelButton.hidden = false;
         statusRoot.textContent = `Read ranges: ${formatBytes(read)} of ${formatBytes(total)} (unique bytes)`;
     } else if (data.type === "dataset") {
-        loadingFile = false;
-        cancelButton.hidden = true;
         datasetName = data.name;
         latestLodStats = data.lod;
+        updateProgressiveLoadState(data.lod);
         fileInput.disabled = false;
         sampleButton.disabled = false;
         voxelPixels.disabled = false;
-        statusRoot.textContent = `${data.name}: loaded ${data.opened.nodeCount} nodes`;
+        statusRoot.textContent = `${data.name}: showing coarse view · refining LOD`;
     } else if (data.type === "datasetOpened") {
         datasetName = data.name;
         statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
-        statusRoot.textContent = `Target voxel edge: ${data.lod.targetVoxelPixels} px`;
+        updateProgressiveLoadState(data.lod);
+        statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · target ${data.lod.targetVoxelPixels} px`;
+    } else if (data.type === "lodProgress") {
+        latestLodStats = data.lod;
+        updateProgressiveLoadState(data.lod);
+        if (data.lod.lodError) {
+            statusRoot.textContent = `LOD refinement failed: ${data.lod.lodError} · keeping the last visible cut`;
+            return;
+        }
+        const firstView = data.firstCoarseMs === null
+            ? "coarse frame pending"
+            : `first coarse frame ${data.firstCoarseMs.toFixed(0)} ms`;
+        const targetView = data.targetLodMs === null
+            ? "target refining"
+            : `target reached ${data.targetLodMs.toFixed(0)} ms`;
+        statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
     } else if (data.type === "stats") {
-        loadingFile = false;
-        cancelButton.hidden = true;
         framePending = false;
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
         if (data.frameStatus?.status !== lastFrameStatus) {
@@ -171,12 +191,12 @@ function handleWorkerMessage(event) {
             if (lastFrameStatus) statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
         latestLodStats = data.lod ?? latestLodStats;
+        updateProgressiveLoadState(latestLodStats);
         updateStats(data);
     } else if (data.type === "frame") {
-        loadingFile = false;
-        cancelButton.hidden = true;
         framePending = false;
         renderCallMs = data.renderCallMs;
+        updateProgressiveLoadState(latestLodStats);
         if (data.frameStatus !== lastFrameStatus) {
             lastFrameStatus = data.frameStatus;
             statusRoot.textContent = `Renderer: ${lastFrameStatus}`;

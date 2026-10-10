@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use thiserror::Error;
 use viewer_core::{
     BlockId, CacheInsertRejection, CoordinateFrame, DatasetMetadata, DecodedBlockCache,
-    LodSelectionConfig, LodSelectionError, LodTransitionPlanner, NodeId, PointBlock, SpatialBounds,
-    SpatialHierarchy,
+    LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
+    PointBlock, SpatialBounds, SpatialHierarchy,
 };
 use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer, build_voxel_scene};
 
@@ -13,6 +16,8 @@ pub struct LodDataset {
     visual_scale: f64,
     cache: DecodedBlockCache,
     planner: LodTransitionPlanner,
+    visible_plan: Option<LodTransitionPlan>,
+    visible_scene_metrics: (f64, f64, usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +26,7 @@ pub struct LodViewStats {
     pub visible_points: u64,
     pub point_budget: u64,
     pub target_voxel_pixels: f64,
+    pub lod_stage_pixels: f64,
     pub min_voxel_edge_pixels: f64,
     pub max_voxel_edge_pixels: f64,
     pub oversized_voxels: usize,
@@ -44,8 +50,6 @@ pub enum LodDatasetError {
     BlockRead(String),
     #[error("requested detail exceeds the source-point safety limit in {0} regions")]
     SourceDetailBudgetExceeded(usize),
-    #[error("requested detail requires blocks that are not resident: {0:?}")]
-    DetailUnavailable(Vec<BlockId>),
     #[error("camera viewport is zero-sized or unavailable")]
     CameraUnavailable,
     #[error("decoded block was not cached: {0:?}")]
@@ -84,6 +88,8 @@ impl LodDataset {
             visual_scale,
             cache: DecodedBlockCache::new(cache_bytes),
             planner: LodTransitionPlanner::new(),
+            visible_plan: None,
+            visible_scene_metrics: (0.0, 0.0, 0),
         }
     }
 
@@ -133,12 +139,29 @@ impl LodDataset {
         &mut self,
         renderer: &mut SurfaceRenderer<'_>,
         target_voxel_pixels: f64,
+        load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+    ) -> Result<LodViewStats, LodDatasetError> {
+        self.update_view_progressive(
+            renderer,
+            target_voxel_pixels,
+            target_voxel_pixels,
+            target_voxel_pixels,
+            load_block,
+        )
+    }
+
+    pub fn update_view_progressive(
+        &mut self,
+        renderer: &mut SurfaceRenderer<'_>,
+        target_voxel_pixels: f64,
+        selection_error_pixels: f64,
+        stage_voxel_pixels: f64,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
         renderer.set_visual_scale(self.visual_scale)?;
         // Source representatives include hidden surfaces and are not screen-space voxels.
         let point_budget = 4_000_000;
-        let config = LodSelectionConfig::new(target_voxel_pixels, point_budget)?;
+        let config = LodSelectionConfig::new(selection_error_pixels, point_budget)?;
         let frustum = renderer
             .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
@@ -156,6 +179,8 @@ impl LodDataset {
             Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
                 renderer.sync_visible_blocks(&[], &self.cache)?;
                 self.planner.reset(&mut self.cache);
+                self.visible_plan = None;
+                self.visible_scene_metrics = (0.0, 0.0, 0);
                 return Err(LodDatasetError::Selection(error));
             }
             Err(error) => return Err(LodDatasetError::Selection(error)),
@@ -168,13 +193,18 @@ impl LodDataset {
         let initial_plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        for requested in initial_plan.pending_blocks() {
-            let Some(block) = load_block(*requested).map_err(LodDatasetError::BlockRead)? else {
-                continue;
-            };
-            if block.id() != *requested {
+        let pending = prioritized_pending_blocks(
+            self.metadata.hierarchy(),
+            initial_plan.pending_blocks(),
+            renderer,
+            self.metadata.coordinate_frame().origin(),
+        );
+        if let Some(requested) = pending.first().copied()
+            && let Some(block) = load_block(requested).map_err(LodDatasetError::BlockRead)?
+        {
+            if block.id() != requested {
                 return Err(LodDatasetError::UnexpectedBlock {
-                    requested: *requested,
+                    requested,
                     actual: block.id(),
                 });
             }
@@ -183,40 +213,48 @@ impl LodDataset {
         let plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        if !plan.pending_blocks().is_empty() {
-            return Err(LodDatasetError::DetailUnavailable(
-                plan.pending_blocks().to_vec(),
-            ));
-        }
         let coordinate_origin = self.metadata.coordinate_frame().origin();
         let local_frustum = renderer
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
-        let voxel_scene = build_voxel_scene(
-            self.metadata.hierarchy(),
-            plan.node_ids(),
-            &self.cache,
-            coordinate_origin,
-            target_voxel_pixels,
-            &|bounds| {
-                if local_frustum.intersects(&bounds) {
-                    renderer.projected_voxel_edge_pixels(bounds, [0.0; 3])
-                } else {
-                    0.0
-                }
-            },
-        );
-        renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids())?;
-        self.planner.commit(&plan, &mut self.cache);
+        if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
+            let voxel_scene = build_voxel_scene(
+                self.metadata.hierarchy(),
+                plan.node_ids(),
+                &self.cache,
+                coordinate_origin,
+                stage_voxel_pixels,
+                &|bounds| {
+                    if local_frustum.intersects(&bounds) {
+                        renderer.projected_voxel_edge_pixels(bounds, [0.0; 3])
+                    } else {
+                        0.0
+                    }
+                },
+            );
+            renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids())?;
+            self.planner.commit(&plan, &mut self.cache);
+            self.visible_plan = Some(plan.clone());
+            self.visible_scene_metrics = (
+                voxel_scene.min_edge_pixels,
+                voxel_scene.max_edge_pixels,
+                voxel_scene.oversized_voxels,
+            );
+        }
+        let visible_plan = self.visible_plan.as_ref().unwrap_or(&plan);
         let stats = LodViewStats {
-            visible_blocks: plan.block_ids().len(),
-            visible_points: plan.point_count(),
+            visible_blocks: visible_plan.block_ids().len(),
+            visible_points: visible_plan.point_count(),
             point_budget: plan.point_budget(),
             target_voxel_pixels,
-            min_voxel_edge_pixels: voxel_scene.min_edge_pixels,
-            max_voxel_edge_pixels: voxel_scene.max_edge_pixels,
-            oversized_voxels: voxel_scene.oversized_voxels,
-            max_visible_level: max_visible_level(self.metadata.hierarchy(), plan.node_ids()),
+            lod_stage_pixels: stage_voxel_pixels,
+            min_voxel_edge_pixels: self.visible_scene_metrics.0,
+            max_voxel_edge_pixels: self.visible_scene_metrics.1,
+            oversized_voxels: self.visible_scene_metrics.2,
+            max_visible_level: max_visible_level(
+                self.metadata.hierarchy(),
+                visible_plan.node_ids(),
+            ),
             cache_bytes: self.cache.used_bytes(),
             cache_budget_bytes: self.cache.max_bytes(),
             pending_block_ids: plan.pending_blocks().to_vec(),
@@ -244,6 +282,61 @@ fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Optio
         .max()
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) fn next_lod_stage(
+    current_stage: Option<f64>,
+    target_pixels: f64,
+    has_pending_blocks: bool,
+    can_load_blocks: bool,
+) -> (Option<f64>, bool) {
+    if has_pending_blocks {
+        return (current_stage, can_load_blocks);
+    }
+    let stage_pixels = current_stage.unwrap_or(16.0);
+    if stage_pixels > target_pixels {
+        return (
+            Some((stage_pixels / 2.0).max(target_pixels)),
+            can_load_blocks,
+        );
+    }
+    (Some(stage_pixels), false)
+}
+
+fn prioritized_pending_blocks(
+    hierarchy: &SpatialHierarchy,
+    pending: &[BlockId],
+    renderer: &SurfaceRenderer<'_>,
+    coordinate_origin: [f64; 3],
+) -> Vec<BlockId> {
+    let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
+    let mut priorities = HashMap::<BlockId, f64>::new();
+    for node in hierarchy.query(hierarchy.stats().root_bounds) {
+        let priority = renderer.projected_error_pixels(
+            node.bounds(),
+            node.geometric_error(),
+            coordinate_origin,
+        );
+        for block_id in node.blocks() {
+            if pending_ids.contains(block_id) {
+                priorities
+                    .entry(*block_id)
+                    .and_modify(|current| *current = current.max(priority))
+                    .or_insert(priority);
+            }
+        }
+    }
+    let mut prioritized = pending.to_vec();
+    prioritized.sort_unstable_by(|left, right| {
+        priorities
+            .get(right)
+            .copied()
+            .unwrap_or_default()
+            .total_cmp(&priorities.get(left).copied().unwrap_or_default())
+            .then_with(|| left.cmp(right))
+    });
+    prioritized
+}
+
 #[cfg(test)]
 mod tests {
     use viewer_core::{
@@ -251,7 +344,7 @@ mod tests {
         PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
     };
 
-    use super::{LodDataset, LodDatasetError, bounds_side};
+    use super::{LodDataset, LodDatasetError, bounds_side, next_lod_stage};
     use viewer_render_wgpu::{RenderScene, build_voxel_scene};
 
     fn scene_for_test(
@@ -264,6 +357,35 @@ mod tests {
             bounds_side(bounds) * 8.0
         })
         .scene
+    }
+
+    #[test]
+    fn progressive_lod_advances_from_coarse_to_requested_pixel_stages() {
+        let (stage, continue_loading) = next_lod_stage(None, 4.0, false, true);
+        assert_eq!(stage, Some(8.0));
+        assert!(continue_loading);
+
+        let (stage, continue_loading) = next_lod_stage(stage, 4.0, false, true);
+        assert_eq!(stage, Some(4.0));
+        assert!(continue_loading);
+
+        let (stage, continue_loading) = next_lod_stage(stage, 4.0, false, true);
+        assert_eq!(stage, Some(4.0));
+        assert!(!continue_loading);
+    }
+
+    #[test]
+    fn progressive_lod_waits_for_current_stage_blocks_and_stops_on_read_failure() {
+        assert_eq!(next_lod_stage(None, 4.0, true, true), (None, true));
+        assert_eq!(
+            next_lod_stage(Some(8.0), 4.0, true, true),
+            (Some(8.0), true)
+        );
+        assert_eq!(
+            next_lod_stage(Some(8.0), 4.0, true, false),
+            (Some(8.0), false)
+        );
+        assert_eq!(next_lod_stage(None, 16.0, false, true), (Some(16.0), false));
     }
 
     fn dataset(cache_bytes: usize) -> LodDataset {

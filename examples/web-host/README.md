@@ -29,7 +29,13 @@ rendering has been checked in Chrome with converted Bunny and Outer Banks datase
 requires browser validation. The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
 `WasmVoxelViewer.createOffscreen`. Select a project-format v1/v2/v3 file to call `openFormatDataset` and
-`updateLod`; requested blocks are read and decoded in the worker before each atomic visible-cut swap.
+`updateLod`; the worker publishes a coarse visible cut first, then loads at most one missing block
+per `renderFrame()` and refines through projected voxel stages until the requested detail is reached.
+Pending blocks are prioritized against the current camera, and a camera change restarts selection from
+the coarse frontier. The worker can process camera commands between block reads; each individual
+`FileReaderSync` read is still synchronous, so a slow block can delay input until that read completes.
+The host reports time to the first coarse frame and target LOD frame. Real-browser latency and frame-time validation
+remain pending in the [project roadmap](../../README.md#plan-de-trabajo).
 The camera fits dataset bounds and supports orbit, pan, zoom, and resize. Drag to orbit, use Shift+drag
 to pan, and scroll to zoom; keyboard users can focus the canvas and use arrow keys, Shift+arrows,
 `+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and

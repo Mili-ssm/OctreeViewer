@@ -3,6 +3,10 @@ import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 let viewer = null;
 let targetVoxelPixels = 4;
 let renderedFrames = 0;
+let datasetOpenedAt = 0;
+let firstCoarseMs = null;
+let targetLodMs = null;
+let lastLodProgressKey = "";
 const coalescedCommands = new Set(["resize", "color", "depthShading", "voxelPixels", "fit"]);
 
 function samplePointCloud() {
@@ -40,6 +44,40 @@ function postStats(frameStatus = null) {
     });
 }
 
+function postLodProgress(lod, afterRenderFrame = false) {
+    if (!lod) return;
+    const now = performance.now();
+    const hasVisiblePoints = Number(lod.visiblePoints) > 0;
+    if (afterRenderFrame && firstCoarseMs === null && hasVisiblePoints) {
+        firstCoarseMs = now - datasetOpenedAt;
+    }
+    const targetReached = lod.coverageComplete
+        && lod.pendingBlockIds.length === 0
+        && lod.lodStagePixels <= lod.targetVoxelPixels;
+    if (afterRenderFrame && targetLodMs === null && targetReached) {
+        targetLodMs = now - datasetOpenedAt;
+    }
+    const key = [
+        lod.lodStagePixels,
+        lod.pendingBlockIds.length,
+        lod.visibleBlocks,
+        lod.coverageComplete,
+        targetReached,
+        lod.lodError,
+        firstCoarseMs,
+        targetLodMs,
+    ].join(":");
+    if (key === lastLodProgressKey) return;
+    lastLodProgressKey = key;
+    self.postMessage({
+        type: "lodProgress",
+        lod,
+        firstCoarseMs,
+        targetLodMs,
+        elapsedMs: now - datasetOpenedAt,
+    });
+}
+
 async function handleMessage({ data }) {
     try {
         switch (data.type) {
@@ -66,18 +104,26 @@ async function handleMessage({ data }) {
                 break;
             case "voxelPixels": {
                 targetVoxelPixels = data.value;
+                targetLodMs = null;
+                lastLodProgressKey = "";
                 const lod = viewer.updateLod(targetVoxelPixels);
                 self.postMessage({ type: "lod", lod });
+                postLodProgress(lod);
                 break;
             }
             case "openFile": {
                 targetVoxelPixels = data.targetVoxelPixels;
+                datasetOpenedAt = performance.now();
+                firstCoarseMs = null;
+                targetLodMs = null;
+                lastLodProgressKey = "";
                 self.postMessage({ type: "status", message: `Opening ${data.file.name}…` });
                 const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
                 self.postMessage({ type: "datasetOpened", opened, name: data.file.name });
                 viewer.fitScene();
                 const lod = viewer.updateLod(targetVoxelPixels);
                 self.postMessage({ type: "dataset", opened, lod, name: data.file.name });
+                postLodProgress(lod);
                 break;
             }
             case "fit":
@@ -95,6 +141,7 @@ async function handleMessage({ data }) {
                 const startedAt = performance.now();
                 const frameStatus = viewer.renderFrame();
                 const renderCallMs = performance.now() - startedAt;
+                postLodProgress(viewer.lodStats(), true);
                 renderedFrames += 1;
                 if (renderedFrames % 30 === 0) {
                     postStats({ status: frameStatus, renderCallMs });

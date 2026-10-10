@@ -6,7 +6,8 @@ use web_sys::{Blob, FileReaderSync, HtmlCanvasElement};
 
 use crate::{
     LasPointStream, LodDataset, LodViewStats, RenderInstanceSnapshot, RenderSceneSnapshot,
-    ViewerConfig, ViewerController, ViewerError, lod_metadata::LodDatasetDescriptor,
+    ViewerConfig, ViewerController, ViewerError, lod_dataset::next_lod_stage,
+    lod_metadata::LodDatasetDescriptor,
 };
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
@@ -219,8 +220,10 @@ pub struct WasmVoxelViewer {
     lod_dataset: Option<LodDataset>,
     format_reader: Option<FormatReader<BrowserBlobReader>>,
     lod_config: Option<f64>,
+    lod_stage_pixels: Option<f64>,
     lod_dirty: bool,
     last_lod_stats: Option<LodViewStats>,
+    last_lod_error: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -240,8 +243,10 @@ impl WasmVoxelViewer {
             lod_dataset: None,
             format_reader: None,
             lod_config: None,
+            lod_stage_pixels: None,
             lod_dirty: false,
             last_lod_stats: None,
+            last_lod_error: None,
         })
     }
 
@@ -385,8 +390,10 @@ impl WasmVoxelViewer {
         self.lod_dataset = Some(dataset);
         self.format_reader = None;
         self.lod_config = None;
+        self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
+        self.last_lod_error = None;
         self.gpu_scene_dirty = false;
         let result = js_sys::Object::new();
         js_sys::Reflect::set(
@@ -421,8 +428,10 @@ impl WasmVoxelViewer {
         self.lod_dataset = Some(dataset);
         self.format_reader = Some(reader);
         self.lod_config = None;
+        self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
+        self.last_lod_error = None;
         self.gpu_scene_dirty = false;
 
         let result = js_sys::Object::new();
@@ -512,6 +521,7 @@ impl WasmVoxelViewer {
                 Vec::new(),
             ))
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        self.last_lod_error = None;
         self.lod_dirty = self.lod_config.is_some();
         Ok(accounted_bytes)
     }
@@ -524,10 +534,21 @@ impl WasmVoxelViewer {
                 "targetVoxelPixels must be finite and between 1 and 16",
             ));
         }
+        if self.lod_config != Some(target_voxel_pixels) {
+            self.lod_stage_pixels = None;
+        }
         self.lod_config = Some(target_voxel_pixels);
-        self.lod_dirty = false;
         let stats = self.update_lod_view(target_voxel_pixels)?;
+        self.last_lod_error = None;
         let value = lod_view_stats_to_js(&stats)?;
+        js_sys::Reflect::set(
+            &value,
+            &"lodError".into(),
+            &self
+                .last_lod_error
+                .as_ref()
+                .map_or(JsValue::NULL, |message| JsValue::from_str(message)),
+        )?;
         js_sys::Reflect::set(
             &value,
             &"targetVoxelPixels".into(),
@@ -539,7 +560,18 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = lodStats)]
     pub fn lod_stats(&self) -> Result<JsValue, JsValue> {
         match &self.last_lod_stats {
-            Some(stats) => lod_view_stats_to_js(stats),
+            Some(stats) => {
+                let value = lod_view_stats_to_js(stats)?;
+                js_sys::Reflect::set(
+                    &value,
+                    &"lodError".into(),
+                    &self
+                        .last_lod_error
+                        .as_ref()
+                        .map_or(JsValue::NULL, |message| JsValue::from_str(message)),
+                )?;
+                Ok(value)
+            }
             None => Ok(JsValue::NULL),
         }
     }
@@ -652,6 +684,7 @@ impl WasmVoxelViewer {
             renderer.fit_scene(self.inner.render_scene())
         };
         if fitted && self.lod_dataset.is_some() {
+            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(fitted)
@@ -665,6 +698,7 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.orbit_camera(delta_x, delta_y);
         if changed && self.lod_dataset.is_some() {
+            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(changed)
@@ -678,6 +712,7 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.pan_camera(delta_x, delta_y);
         if changed && self.lod_dataset.is_some() {
+            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(changed)
@@ -691,6 +726,7 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.zoom_camera(delta);
         if changed && self.lod_dataset.is_some() {
+            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(changed)
@@ -731,10 +767,26 @@ impl WasmVoxelViewer {
             return Ok(());
         };
         self.lod_dirty = false;
-        self.update_lod_view(target_voxel_pixels).map(|_| ())
+        match self.update_lod_view(target_voxel_pixels) {
+            Ok(_) => {
+                self.last_lod_error = None;
+                Ok(())
+            }
+            Err(error) => {
+                self.last_lod_error = Some(
+                    error
+                        .as_string()
+                        .unwrap_or_else(|| "LOD refinement failed".to_owned()),
+                );
+                self.lod_dirty = false;
+                Ok(())
+            }
+        }
     }
 
     fn update_lod_view(&mut self, target_voxel_pixels: f64) -> Result<LodViewStats, JsValue> {
+        let stage_pixels = self.lod_stage_pixels.unwrap_or(16.0);
+        let selection_error_pixels = stage_pixels;
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -743,20 +795,33 @@ impl WasmVoxelViewer {
             .lod_dataset
             .as_mut()
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let can_load_blocks = self.format_reader.is_some();
         let mut format_reader = self.format_reader.as_mut();
         let stats = dataset
-            .update_view_with_loader(renderer, target_voxel_pixels, |block_id| {
-                format_reader
-                    .as_mut()
-                    .map(|reader| {
-                        reader
-                            .read_block(block_id)
-                            .map(Some)
-                            .map_err(|error| error.to_string())
-                    })
-                    .unwrap_or(Ok(None))
-            })
+            .update_view_progressive(
+                renderer,
+                target_voxel_pixels,
+                selection_error_pixels,
+                stage_pixels,
+                |block_id| {
+                    format_reader
+                        .as_mut()
+                        .map(|reader| {
+                            reader
+                                .read_block(block_id)
+                                .map(Some)
+                                .map_err(|error| error.to_string())
+                        })
+                        .unwrap_or(Ok(None))
+                },
+            )
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        (self.lod_stage_pixels, self.lod_dirty) = next_lod_stage(
+            self.lod_stage_pixels,
+            target_voxel_pixels,
+            !stats.pending_block_ids.is_empty(),
+            can_load_blocks,
+        );
         self.last_lod_stats = Some(stats.clone());
         Ok(stats)
     }
@@ -768,8 +833,10 @@ impl WasmVoxelViewer {
             renderer.clear_dataset();
         }
         self.lod_config = None;
+        self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
+        self.last_lod_error = None;
         self.format_reader = None;
     }
 }
@@ -802,6 +869,11 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         &value,
         &"pointBudget".into(),
         &JsValue::from_str(&stats.point_budget.to_string()),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"lodStagePixels".into(),
+        &JsValue::from_f64(stats.lod_stage_pixels),
     )?;
     js_sys::Reflect::set(
         &value,
