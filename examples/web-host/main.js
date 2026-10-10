@@ -188,7 +188,7 @@ function handleWorkerMessage(event) {
         const targetView = data.targetLodMs === null
             ? "target refining"
             : `target reached ${data.targetLodMs.toFixed(0)} ms`;
-        statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px · frame ${formatFrameRenderMs(data.frameRenderMs)}`;
+        statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
     } else if (data.type === "stats") {
         framePending = false;
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;

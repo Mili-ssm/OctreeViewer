@@ -34,8 +34,9 @@ per `renderFrame()` and refines through projected voxel stages until the request
 Pending blocks are prioritized against the current camera, and a camera change restarts selection from
 the coarse frontier. The worker can process camera commands between block reads; each individual
 `FileReaderSync` read is still synchronous, so a slow block can delay input until that read completes.
-The host reports time to the first coarse frame and target LOD frame. Real-browser latency and frame-time validation
-remain pending in the [project roadmap](../../README.md#plan-de-trabajo).
+The host reports time to the first coarse frame and target LOD frame, plus p50/p95/p99 worker
+`renderFrame()` times over a bounded window of up to 4,096 frames. Real-browser latency and frame-time
+validation remain pending in the [project roadmap](../../README.md#plan-de-trabajo).
 The camera fits dataset bounds and supports orbit, pan, zoom, and resize. Drag to orbit, use Shift+drag
 to pan, and scroll to zoom; keyboard users can focus the canvas and use arrow keys, Shift+arrows,
 `+`/`-`, and `Home`. The camera uses Z as the vertical axis. It requires a browser/GPU with WebGPU and
