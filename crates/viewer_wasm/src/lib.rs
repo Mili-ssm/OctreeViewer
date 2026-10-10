@@ -4,6 +4,8 @@ mod lod_dataset;
 #[cfg(target_arch = "wasm32")]
 mod lod_metadata;
 #[cfg(any(target_arch = "wasm32", test))]
+mod lod_partition;
+#[cfg(any(target_arch = "wasm32", test))]
 mod lod_representatives;
 
 pub use controller::{

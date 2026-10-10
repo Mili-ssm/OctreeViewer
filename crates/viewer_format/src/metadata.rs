@@ -147,6 +147,11 @@ impl SourcePointBlock {
         self.id
     }
 
+    pub fn with_id(mut self, id: viewer_core::BlockId) -> Self {
+        self.id = id;
+        self
+    }
+
     pub fn positions_local(&self) -> &[[f64; 3]] {
         &self.positions_local
     }

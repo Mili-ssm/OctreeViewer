@@ -616,12 +616,13 @@ convertButton.addEventListener("click", () => {
     try {
         converterApi = createConverter();
         converterApi.on("status", ({ message }) => { convertStatus.textContent = message; });
-        converterApi.on("progress", ({ processedPoints, totalPoints, sourceName }) => {
+        converterApi.on("progress", ({ processedPoints, totalPoints, sourceName, stage }) => {
             const processed = Number(processedPoints);
             const total = Number(totalPoints);
             convertProgress.max = total || 1;
             convertProgress.value = processed;
-            convertStatus.textContent = `${sourceName}: ${processed.toLocaleString()} / ${total.toLocaleString()} points`;
+            const phase = stage === "writing" ? "Writing spatial LOD" : "Planning spatial LOD";
+            convertStatus.textContent = `${phase} · ${sourceName}: ${processed.toLocaleString()} / ${total.toLocaleString()} points`;
         });
         converterApi.convert(file).then(({ file: resultFile, name, points }) => {
             convertedFile = resultFile;

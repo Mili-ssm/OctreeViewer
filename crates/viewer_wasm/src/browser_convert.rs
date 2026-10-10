@@ -2,30 +2,43 @@ use std::io::{self, Seek, SeekFrom, Write};
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy,
-    SpatialNode,
+    SpatialNode, SpatialSubdivision,
 };
 use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePointBlock};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
 use crate::bindings::{BrowserBlobReader, js_error_to_io};
+use crate::lod_partition::partition_block;
 use crate::lod_representatives::{MAX_REPRESENTATIVE_POINTS, RepresentativeBuffer};
 
 const CONVERSION_POINTS_PER_BLOCK: u64 = 16_384;
 const MAX_CONVERSION_BLOCKS: u64 = 1_000_000;
+const FULL_RESOLUTION_DIVISIONS: u8 = 2;
+const FULL_RESOLUTION_CELLS: usize = 8;
+const REPRESENTATIVES_PER_CELL: u64 = MAX_REPRESENTATIVE_POINTS / FULL_RESOLUTION_CELLS as u64;
 
 /// Streams a LAS/LAZ Blob into an OPFS-backed `.oct` output inside a dedicated worker.
 /// The output sink is a FileSystemSyncAccessHandle supplied by the host.
 #[wasm_bindgen]
 pub struct WasmLasOctConverter {
     reader: las::Reader,
+    input: Blob,
+    output_handle: JsValue,
     buffer: las::PointData,
     writer: Option<FormatWriter<OpfsWriter>>,
     processed_points: u64,
     total_points: u64,
-    next_block_id: u64,
-    representatives: RepresentativeBuffer,
-    source_block_count: u64,
+    spatial_bounds: SpatialBounds,
+    frame: CoordinateFrame,
+    schema: Vec<AttributeDescriptor>,
+    subdivision: SpatialSubdivision,
+    cell_point_counts: Vec<u64>,
+    cell_block_counts: Vec<u64>,
+    cell_representatives: Vec<RepresentativeBuffer>,
+    cell_block_offsets: Vec<u64>,
+    next_cell_block: Vec<u64>,
+    writing_full_resolution: bool,
     failed: bool,
 }
 
@@ -33,7 +46,7 @@ pub struct WasmLasOctConverter {
 impl WasmLasOctConverter {
     #[wasm_bindgen(constructor)]
     pub fn new(input: Blob, output_handle: JsValue) -> Result<Self, JsValue> {
-        let source = BrowserBlobReader::new(input, false)?;
+        let source = BrowserBlobReader::new(input.clone(), false)?;
         let reader = las::Reader::new(source)
             .map_err(|error| JsValue::from_str(&format!("LAS/LAZ header: {error}")))?;
         let header = reader.header();
@@ -47,72 +60,42 @@ impl WasmLasOctConverter {
         let total_points = header.number_of_points();
         let point_format = *header.point_format();
         let block_count = total_points.div_ceil(CONVERSION_POINTS_PER_BLOCK);
-        let representative_count = total_points.min(MAX_REPRESENTATIVE_POINTS);
-        let representative_block_count = representative_count.div_ceil(CONVERSION_POINTS_PER_BLOCK);
-        if block_count.saturating_add(representative_block_count) > MAX_CONVERSION_BLOCKS {
+        if block_count
+            .saturating_mul(FULL_RESOLUTION_CELLS as u64)
+            .saturating_add(FULL_RESOLUTION_CELLS as u64)
+            > MAX_CONVERSION_BLOCKS
+        {
             return Err(JsValue::from_str(
                 "LAS/LAZ exceeds the browser converter block-index limit",
             ));
         }
-        let coarse_block_ids = (block_count..block_count + representative_block_count)
-            .map(BlockId::new)
-            .collect();
-        let full_resolution_block_ids = (0..block_count).map(BlockId::new).collect();
         let schema = las_attribute_schema(&point_format)?;
-        let root = SpatialNode::new(
-            NodeId::new(0),
-            None,
-            0,
-            spatial_bounds,
-            representative_count,
-            bounds_extent(spatial_bounds),
-            coarse_block_ids,
-        )
-        .map_err(|error| JsValue::from_str(&format!("LAS/LAZ hierarchy: {error}")))?;
-        let full_resolution = SpatialNode::new(
-            NodeId::new(1),
-            Some(NodeId::new(0)),
-            1,
-            spatial_bounds,
-            total_points,
-            0.0,
-            full_resolution_block_ids,
-        )
-        .map_err(|error| JsValue::from_str(&format!("LAS/LAZ hierarchy: {error}")))?;
-        let hierarchy = SpatialHierarchy::new_with_semantics(
-            vec![root, full_resolution],
-            schema.clone(),
-            Some(total_points),
-            HierarchySemantics::Replacement,
-        )
-        .map_err(|error| JsValue::from_str(&format!("LAS/LAZ hierarchy: {error}")))?;
-        let visual_scale = visual_scale(spatial_bounds)?;
-        let metadata = FormatMetadata::new(
-            DatasetMetadata::new(frame, hierarchy),
-            None,
-            Some(format!("browser conversion: full-resolution source points in bounded blocks with up to {MAX_REPRESENTATIVE_POINTS} deterministic reservoir samples for progressive display; extra bytes and CRS are not retained")),
-            Vec::new(),
-        )
-        .and_then(|metadata| metadata.with_visual_scale(visual_scale))
-        .map_err(|error| JsValue::from_str(&format!("output metadata: {error}")))?;
-        let sink = OpfsWriter::new(output_handle)?;
-        let options = FormatWriterOptions::new(0.01, 8 * 1024 * 1024)
-            .map_err(|error| JsValue::from_str(&format!("output options: {error}")))?;
-        let writer = FormatWriter::new(sink, metadata, options)
-            .map_err(|error| JsValue::from_str(&format!("output file: {error}")))?;
         let buffer = las::PointDataBuilder::new()
             .for_header(reader.header())
             .build();
+        let subdivision = SpatialSubdivision::new(spatial_bounds, FULL_RESOLUTION_DIVISIONS)
+            .map_err(|error| JsValue::from_str(&format!("LAS/LAZ partition: {error}")))?;
 
         Ok(Self {
             reader,
+            input,
+            output_handle,
             buffer,
-            writer: Some(writer),
+            writer: None,
             processed_points: 0,
             total_points,
-            next_block_id: 0,
-            representatives: RepresentativeBuffer::new(schema),
-            source_block_count: block_count,
+            spatial_bounds,
+            frame,
+            cell_representatives: (0..FULL_RESOLUTION_CELLS)
+                .map(|_| RepresentativeBuffer::with_limit(schema.clone(), REPRESENTATIVES_PER_CELL))
+                .collect(),
+            schema,
+            subdivision,
+            cell_point_counts: vec![0; FULL_RESOLUTION_CELLS],
+            cell_block_counts: vec![0; FULL_RESOLUTION_CELLS],
+            cell_block_offsets: vec![0; FULL_RESOLUTION_CELLS],
+            next_cell_block: vec![0; FULL_RESOLUTION_CELLS],
+            writing_full_resolution: false,
             failed: false,
         })
     }
@@ -125,8 +108,13 @@ impl WasmLasOctConverter {
                 "conversion cannot continue after a failed block",
             ));
         }
-        if self.processed_points < self.total_points
-            && let Err(error) = self.convert_block()
+        if self.processed_points < self.total_points {
+            if let Err(error) = self.convert_block() {
+                self.failed = true;
+                return Err(JsValue::from_str(&error));
+            }
+        } else if !self.writing_full_resolution
+            && let Err(error) = self.begin_full_resolution_pass()
         {
             self.failed = true;
             return Err(JsValue::from_str(&error));
@@ -145,23 +133,38 @@ impl WasmLasOctConverter {
         js_sys::Reflect::set(
             &result,
             &"done".into(),
-            &JsValue::from_bool(self.processed_points == self.total_points),
+            &JsValue::from_bool(
+                self.writing_full_resolution && self.processed_points == self.total_points,
+            ),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"stage".into(),
+            &JsValue::from_str(if self.writing_full_resolution {
+                "writing"
+            } else {
+                "planning"
+            }),
         )?;
         Ok(result.into())
     }
 
     /// Writes the final index/footer and flushes the OPFS access handle.
     pub fn finish(&mut self) -> Result<(), JsValue> {
-        if self.failed || self.processed_points != self.total_points {
+        if self.failed
+            || !self.writing_full_resolution
+            || self.processed_points != self.total_points
+        {
             return Err(JsValue::from_str("conversion is incomplete"));
         }
-        if self.representatives.point_count() > 0 {
-            let representative_buffer = std::mem::replace(
-                &mut self.representatives,
-                RepresentativeBuffer::new(Vec::new()),
-            );
-            let block = representative_buffer
-                .into_block(BlockId::new(self.source_block_count))
+        let representative_base = self.cell_block_offsets.last().copied().unwrap_or(0)
+            + self.cell_block_counts.last().copied().unwrap_or(0);
+        for (cell, representatives) in self.cell_representatives.drain(..).enumerate() {
+            if representatives.point_count() == 0 {
+                continue;
+            }
+            let block = representatives
+                .into_block(BlockId::new(representative_base + cell as u64))
                 .map_err(|error| JsValue::from_str(&format!("coarse LOD block: {error}")))?;
             self.writer
                 .as_mut()
@@ -338,6 +341,7 @@ impl WasmLasOctConverter {
                 count,
             )?);
         }
+        let world_positions = positions.clone();
         let bounds = self.reader.header().bounds();
         let origin = [bounds.min.x, bounds.min.y, bounds.min.z];
         for position in &mut positions {
@@ -345,16 +349,127 @@ impl WasmLasOctConverter {
                 position[axis] -= origin[axis];
             }
         }
-        let block =
-            SourcePointBlock::new(BlockId::new(self.next_block_id), positions, colors, columns);
-        self.representatives.include_block(&block)?;
-        self.writer
-            .as_mut()
-            .ok_or("conversion writer is closed")?
-            .write_block(block)
-            .map_err(|error| format!("writing .oct block: {error}"))?;
+        let block = SourcePointBlock::new(BlockId::new(0), positions, colors, columns);
+        let partitions = partition_block(&block, &world_positions, self.subdivision)?;
+        if self.writing_full_resolution {
+            for (cell, partition) in partitions {
+                let local_index = self.next_cell_block[cell];
+                if local_index >= self.cell_block_counts[cell] {
+                    return Err("LAS/LAZ partition changed between conversion passes".into());
+                }
+                let block_id = self.cell_block_offsets[cell] + local_index;
+                let partition = partition.with_id(BlockId::new(block_id));
+                self.writer
+                    .as_mut()
+                    .ok_or("conversion writer is closed")?
+                    .write_block(partition)
+                    .map_err(|error| format!("writing .oct spatial block: {error}"))?;
+                self.next_cell_block[cell] += 1;
+            }
+        } else {
+            for (cell, partition) in partitions {
+                let count = partition.positions_local().len() as u64;
+                self.cell_point_counts[cell] = self.cell_point_counts[cell]
+                    .checked_add(count)
+                    .ok_or("spatial point count overflow")?;
+                self.cell_block_counts[cell] += 1;
+                self.cell_representatives[cell].include_block(&partition)?;
+            }
+        }
         self.processed_points += count as u64;
-        self.next_block_id += 1;
+        Ok(())
+    }
+
+    fn begin_full_resolution_pass(&mut self) -> Result<(), String> {
+        let mut nodes = Vec::with_capacity(FULL_RESOLUTION_CELLS + 1);
+        let mut block_offset = 0_u64;
+        for (cell, block_count) in self.cell_block_counts.iter().copied().enumerate() {
+            self.cell_block_offsets[cell] = block_offset;
+            block_offset = block_offset
+                .checked_add(block_count)
+                .ok_or("spatial block index overflow")?;
+            let cell_bounds = self
+                .subdivision
+                .cell_bounds(cell)
+                .map_err(|error| error.to_string())?;
+            let block_ids = (self.cell_block_offsets[cell]..block_offset)
+                .map(BlockId::new)
+                .collect();
+            nodes.push(
+                SpatialNode::new(
+                    NodeId::new(cell as u64 + 1),
+                    Some(NodeId::new(0)),
+                    1,
+                    cell_bounds,
+                    self.cell_point_counts[cell],
+                    0.0,
+                    block_ids,
+                )
+                .map_err(|error| error.to_string())?,
+            );
+        }
+        let representative_count = self
+            .cell_representatives
+            .iter()
+            .map(|representatives| representatives.point_count() as u64)
+            .sum();
+        let representative_blocks = self
+            .cell_representatives
+            .iter()
+            .enumerate()
+            .filter(|(_, representatives)| representatives.point_count() > 0)
+            .map(|(cell, _)| BlockId::new(block_offset + cell as u64))
+            .collect();
+        nodes.push(
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                self.spatial_bounds,
+                representative_count,
+                bounds_extent(self.spatial_bounds),
+                representative_blocks,
+            )
+            .map_err(|error| error.to_string())?,
+        );
+        nodes.rotate_right(1);
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            nodes,
+            self.schema.clone(),
+            Some(self.total_points),
+            HierarchySemantics::Replacement,
+        )
+        .map_err(|error| error.to_string())?;
+        let scale = visual_scale(self.spatial_bounds).map_err(|error| format!("{error:?}"))?;
+        let metadata = FormatMetadata::new(
+            DatasetMetadata::new(self.frame, hierarchy),
+            None,
+            Some(format!("browser conversion: eight spatial full-resolution nodes with up to {MAX_REPRESENTATIVE_POINTS} deterministic reservoir representatives partitioned across the root; extra bytes and CRS are not retained")),
+            Vec::new(),
+        )
+        .and_then(|metadata| metadata.with_visual_scale(scale))
+        .map_err(|error| error.to_string())?;
+        let options =
+            FormatWriterOptions::new(0.01, 8 * 1024 * 1024).map_err(|error| error.to_string())?;
+        self.writer = Some(
+            FormatWriter::new(
+                OpfsWriter::new(self.output_handle.clone())
+                    .map_err(|error| format!("output file: {error:?}"))?,
+                metadata,
+                options,
+            )
+            .map_err(|error| format!("output file: {error}"))?,
+        );
+        self.reader = las::Reader::new(
+            BrowserBlobReader::new(self.input.clone(), false)
+                .map_err(|error| format!("reopening LAS/LAZ input: {error:?}"))?,
+        )
+        .map_err(|error| format!("reopening LAS/LAZ input: {error}"))?;
+        self.buffer = las::PointDataBuilder::new()
+            .for_header(self.reader.header())
+            .build();
+        self.processed_points = 0;
+        self.writing_full_resolution = true;
         Ok(())
     }
 }

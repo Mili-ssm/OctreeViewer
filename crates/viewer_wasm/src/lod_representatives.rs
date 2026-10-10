@@ -9,10 +9,16 @@ pub(crate) struct RepresentativeBuffer {
     colors: Vec<ColorRgb>,
     attributes: Vec<AttributeValues>,
     seen_points: u64,
+    point_limit: u64,
 }
 
 impl RepresentativeBuffer {
+    #[cfg(test)]
     pub(crate) fn new(schema: Vec<AttributeDescriptor>) -> Self {
+        Self::with_limit(schema, MAX_REPRESENTATIVE_POINTS)
+    }
+
+    pub(crate) fn with_limit(schema: Vec<AttributeDescriptor>, point_limit: u64) -> Self {
         let attributes = schema
             .iter()
             .map(|descriptor| match descriptor.data_type() {
@@ -34,6 +40,7 @@ impl RepresentativeBuffer {
             colors: Vec::new(),
             attributes,
             seen_points: 0,
+            point_limit,
         }
     }
 
@@ -44,11 +51,11 @@ impl RepresentativeBuffer {
             .map(|descriptor| descriptor.component_count() as usize)
             .collect::<Vec<_>>();
         for index in 0..block.positions_local().len() {
-            let sample_index = if self.seen_points < MAX_REPRESENTATIVE_POINTS {
+            let sample_index = if self.seen_points < self.point_limit {
                 Some(self.seen_points as usize)
             } else {
                 let candidate = stable_sample_hash(self.seen_points) % (self.seen_points + 1);
-                (candidate < MAX_REPRESENTATIVE_POINTS).then_some(candidate as usize)
+                (candidate < self.point_limit).then_some(candidate as usize)
             };
             self.seen_points = self.seen_points.saturating_add(1);
             let Some(sample_index) = sample_index else {
