@@ -98,7 +98,7 @@ una versión publicada.
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada, transiciones de cortes y subdivisión espacial uniforme compartida. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
 | `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, escala visual uniforme, HZB conservador para escenas estáticas y presupuesto configurable. | El límite contabiliza buffers y recursos HZB administrados por el renderer, no la VRAM total del proceso. |
-| `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU, carga bajo demanda y conversión web en dos pasadas a ocho nodos espaciales con hasta 4.096 representantes estratificados. | Las muestras gruesas son puntos fuente, no promedios voxelizados. El decodificador LAS/LAZ recorre la entrada dos veces; falta medir el costo y validar OPFS en Chrome/Firefox con Albuera. |
+| `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU, carga bajo demanda y conversión web en dos pasadas a ocho nodos espaciales con hasta 4.096 representantes voxelizados. | El decodificador LAS/LAZ recorre la entrada dos veces; falta medir ese costo y validar OPFS en Chrome/Firefox con Albuera. |
 | `examples/web-host` | Demo WebGPU en worker, API embebible, conversión LAS/LAZ en worker/OPFS con planificación espacial, progreso de ambas pasadas, cancelación y descarga/apertura. | La conversión a escala Albuera, el costo de la segunda pasada y la cuota OPFS siguen pendientes de validar en Chrome/Firefox. |
 | Formato propio | Especificaciones v1/v2/v3, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md), [`docs/FORMAT_V3.md`](docs/FORMAT_V3.md)). v1/v2 conservan su layout; v3 añade escala solo visual y conserva las semánticas existentes. | Fixtures prueban round-trip, bloques selectivos y lectura desde tickets del scheduler, corrupción, límites, semánticas, escala y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
 | Pruebas y rendimiento | Hay tests pequeños de núcleo e importación. | No demuestran consumo de memoria o navegación con datasets grandes ni comparan con Potree. |
@@ -856,8 +856,9 @@ límites explícitos; la demo de archivo local permanece en la ruta directa `For
 - [x] Usar la subdivisión compartida en la ruta web para planificar ocho nodos full-res, escribir
   bloques acotados por nodo y estratificar hasta 4.096 representantes deterministas en el nivel raíz.
   La planificación y escritura son dos pasadas sobre LAS/LAZ y no mantienen la nube en RAM.
-- [ ] Sustituir las muestras fuente del nivel raíz por representantes voxelizados/promediados y
-  medir el costo de decodificar dos veces antes de decidir si hace falta spool OPFS por nodo.
+- [x] Sustituir las muestras fuente por representantes en centros de una rejilla 8×8×8 por nodo:
+  promediar color/RGB y conservar el resto de atributos del punto fuente más cercano.
+- [ ] Medir el costo de las dos pasadas antes de decidir si hace falta spool OPFS por nodo.
 - [ ] Validar manejo de cuota, cancelación/temporales y escala de conversión LAS/LAZ en Chrome y
   Firefox; Albuera no se considera validada por la conversión por bloques.
 

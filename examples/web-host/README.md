@@ -132,9 +132,9 @@ converter.dispose();
 
 The host decides whether to download or open `result.file`. The worker requires OPFS and scans the
 source in two bounded passes: one to plan eight spatial child nodes and representatives, then one to
-write the output blocks. The root contains up to 4,096 deterministic reservoir representatives,
-stratified across the spatial cells. They remain source points rather than voxel averages. Extra Bytes
-and CRS are omitted. Large-file scale and OPFS quota behavior have not been validated in Chrome/Firefox
+write the output blocks. The root contains up to 4,096 representatives at voxel centers, with color
+and RGB averaged per voxel and other attributes copied from the nearest source point. Extra Bytes and
+CRS are omitted. Large-file scale and OPFS quota behavior have not been validated in Chrome/Firefox
 with Albuera.
 
 Use the keyboard-accessible **Open built-in sample** button to load the included v1/v2 file, or focus

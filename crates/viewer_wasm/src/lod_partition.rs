@@ -3,11 +3,17 @@
 use viewer_core::{AttributeColumn, AttributeValues, SpatialSubdivision};
 use viewer_format::SourcePointBlock;
 
+pub(crate) struct SpatialPartition {
+    pub(crate) cell: usize,
+    pub(crate) block: SourcePointBlock,
+    pub(crate) world_positions: Vec<[f64; 3]>,
+}
+
 pub(crate) fn partition_block(
     block: &SourcePointBlock,
     world_positions: &[[f64; 3]],
     subdivision: SpatialSubdivision,
-) -> Result<Vec<(usize, SourcePointBlock)>, String> {
+) -> Result<Vec<SpatialPartition>, String> {
     if world_positions.len() != block.positions_local().len() {
         return Err("spatial partition positions do not match the source block".into());
     }
@@ -31,6 +37,10 @@ pub(crate) fn partition_block(
                 .iter()
                 .map(|index| block.colors()[*index])
                 .collect();
+            let cell_positions = point_indices
+                .iter()
+                .map(|index| world_positions[*index])
+                .collect();
             let attributes = block
                 .attributes()
                 .iter()
@@ -42,10 +52,16 @@ pub(crate) fn partition_block(
                         .map_err(|error| error.to_string())
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok((
+            Ok(SpatialPartition {
                 cell,
-                SourcePointBlock::new(viewer_core::BlockId::new(0), positions, colors, attributes),
-            ))
+                block: SourcePointBlock::new(
+                    viewer_core::BlockId::new(0),
+                    positions,
+                    colors,
+                    attributes,
+                ),
+                world_positions: cell_positions,
+            })
         })
         .collect()
 }
@@ -127,7 +143,9 @@ mod tests {
 
         let partitions = partition_block(&block, &positions, subdivision).unwrap();
         assert_eq!(partitions.len(), 8);
-        for (cell, partition) in partitions {
+        for partition in partitions {
+            let cell = partition.cell;
+            let partition = partition.block;
             assert_eq!(partition.positions_local().len(), 1);
             assert_eq!(subdivision.cell_index(partition.positions_local()[0]), cell);
             let source_index = partition.colors()[0].r;

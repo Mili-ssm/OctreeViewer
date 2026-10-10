@@ -10,13 +10,12 @@ use web_sys::Blob;
 
 use crate::bindings::{BrowserBlobReader, js_error_to_io};
 use crate::lod_partition::partition_block;
-use crate::lod_representatives::{MAX_REPRESENTATIVE_POINTS, RepresentativeBuffer};
+use crate::lod_representatives::{MAX_REPRESENTATIVE_POINTS, VoxelRepresentativeBuffer};
 
 const CONVERSION_POINTS_PER_BLOCK: u64 = 16_384;
 const MAX_CONVERSION_BLOCKS: u64 = 1_000_000;
 const FULL_RESOLUTION_DIVISIONS: u8 = 2;
 const FULL_RESOLUTION_CELLS: usize = 8;
-const REPRESENTATIVES_PER_CELL: u64 = MAX_REPRESENTATIVE_POINTS / FULL_RESOLUTION_CELLS as u64;
 
 /// Streams a LAS/LAZ Blob into an OPFS-backed `.oct` output inside a dedicated worker.
 /// The output sink is a FileSystemSyncAccessHandle supplied by the host.
@@ -35,7 +34,7 @@ pub struct WasmLasOctConverter {
     subdivision: SpatialSubdivision,
     cell_point_counts: Vec<u64>,
     cell_block_counts: Vec<u64>,
-    cell_representatives: Vec<RepresentativeBuffer>,
+    cell_representatives: Vec<VoxelRepresentativeBuffer>,
     cell_block_offsets: Vec<u64>,
     next_cell_block: Vec<u64>,
     writing_full_resolution: bool,
@@ -75,6 +74,15 @@ impl WasmLasOctConverter {
             .build();
         let subdivision = SpatialSubdivision::new(spatial_bounds, FULL_RESOLUTION_DIVISIONS)
             .map_err(|error| JsValue::from_str(&format!("LAS/LAZ partition: {error}")))?;
+        let cell_representatives = (0..FULL_RESOLUTION_CELLS)
+            .map(|cell| {
+                let cell_bounds = subdivision
+                    .cell_bounds(cell)
+                    .map_err(|error| JsValue::from_str(&error.to_string()))?;
+                VoxelRepresentativeBuffer::new(schema.clone(), cell_bounds, frame.origin())
+                    .map_err(|error| JsValue::from_str(&error))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             reader,
@@ -86,9 +94,7 @@ impl WasmLasOctConverter {
             total_points,
             spatial_bounds,
             frame,
-            cell_representatives: (0..FULL_RESOLUTION_CELLS)
-                .map(|_| RepresentativeBuffer::with_limit(schema.clone(), REPRESENTATIVES_PER_CELL))
-                .collect(),
+            cell_representatives,
             schema,
             subdivision,
             cell_point_counts: vec![0; FULL_RESOLUTION_CELLS],
@@ -352,7 +358,9 @@ impl WasmLasOctConverter {
         let block = SourcePointBlock::new(BlockId::new(0), positions, colors, columns);
         let partitions = partition_block(&block, &world_positions, self.subdivision)?;
         if self.writing_full_resolution {
-            for (cell, partition) in partitions {
+            for partition in partitions {
+                let cell = partition.cell;
+                let partition = partition.block;
                 let local_index = self.next_cell_block[cell];
                 if local_index >= self.cell_block_counts[cell] {
                     return Err("LAS/LAZ partition changed between conversion passes".into());
@@ -367,13 +375,16 @@ impl WasmLasOctConverter {
                 self.next_cell_block[cell] += 1;
             }
         } else {
-            for (cell, partition) in partitions {
+            for partition in partitions {
+                let cell = partition.cell;
+                let cell_positions = partition.world_positions;
+                let partition = partition.block;
                 let count = partition.positions_local().len() as u64;
                 self.cell_point_counts[cell] = self.cell_point_counts[cell]
                     .checked_add(count)
                     .ok_or("spatial point count overflow")?;
                 self.cell_block_counts[cell] += 1;
-                self.cell_representatives[cell].include_block(&partition)?;
+                self.cell_representatives[cell].include_block(&partition, &cell_positions)?;
             }
         }
         self.processed_points += count as u64;
@@ -444,7 +455,7 @@ impl WasmLasOctConverter {
         let metadata = FormatMetadata::new(
             DatasetMetadata::new(self.frame, hierarchy),
             None,
-            Some(format!("browser conversion: eight spatial full-resolution nodes with up to {MAX_REPRESENTATIVE_POINTS} deterministic reservoir representatives partitioned across the root; extra bytes and CRS are not retained")),
+            Some(format!("browser conversion: eight spatial full-resolution nodes with up to {MAX_REPRESENTATIVE_POINTS} voxel-center representatives; color and RGB are averaged per voxel and other attributes come from the nearest source point; extra bytes and CRS are not retained")),
             Vec::new(),
         )
         .and_then(|metadata| metadata.with_visual_scale(scale))
