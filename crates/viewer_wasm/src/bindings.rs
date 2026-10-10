@@ -908,8 +908,13 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
     )?;
     js_sys::Reflect::set(
         &value,
-        &"pointBudget".into(),
-        &JsValue::from_str(&stats.point_budget.to_string()),
+        &"renderedVoxels".into(),
+        &JsValue::from_f64(stats.rendered_voxels as f64),
+    )?;
+    js_sys::Reflect::set(
+        &value,
+        &"voxelBudget".into(),
+        &JsValue::from_f64(stats.voxel_budget as f64),
     )?;
     js_sys::Reflect::set(
         &value,

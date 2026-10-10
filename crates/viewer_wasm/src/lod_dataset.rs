@@ -5,7 +5,9 @@ use viewer_core::{
     LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
     PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
 };
-use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer, build_voxel_scene};
+use viewer_render_wgpu::{
+    GpuRendererError, SurfaceRenderer, VoxelSceneBuildError, build_voxel_scene_with_limit,
+};
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
@@ -21,7 +23,8 @@ pub struct LodDataset {
 pub struct LodViewStats {
     pub visible_blocks: usize,
     pub visible_points: u64,
-    pub point_budget: u64,
+    pub rendered_voxels: usize,
+    pub voxel_budget: usize,
     pub target_voxel_pixels: f64,
     pub lod_stage_pixels: f64,
     pub min_voxel_edge_pixels: f64,
@@ -55,6 +58,8 @@ pub enum LodDatasetError {
     Selection(#[from] LodSelectionError),
     #[error("GPU cut update failed: {0}")]
     Gpu(#[from] GpuRendererError),
+    #[error("voxel scene build failed: {0}")]
+    VoxelScene(#[from] VoxelSceneBuildError),
 }
 
 impl LodDataset {
@@ -169,8 +174,8 @@ impl LodDataset {
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
         renderer.set_visual_scale(self.visual_scale)?;
-        // Source representatives include hidden surfaces and are not screen-space voxels.
-        let point_budget = 4_000_000;
+        // Source points are LOD input, not rendered GPU instances. Bound the output scene below.
+        let point_budget = u64::MAX;
         let config = LodSelectionConfig::new(selection_error_pixels, point_budget)?;
         let frustum = renderer
             .spatial_frustum(self.metadata.coordinate_frame().origin())
@@ -229,7 +234,7 @@ impl LodDataset {
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
-            let voxel_scene = build_voxel_scene(
+            let voxel_scene = build_voxel_scene_with_limit(
                 self.metadata.hierarchy(),
                 plan.node_ids(),
                 &self.cache,
@@ -242,7 +247,8 @@ impl LodDataset {
                         0.0
                     }
                 },
-            );
+                renderer.max_visible_instances(),
+            )?;
             renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids())?;
             self.planner.commit(&plan, &mut self.cache);
             self.visible_plan = Some(plan.clone());
@@ -256,7 +262,8 @@ impl LodDataset {
         let stats = LodViewStats {
             visible_blocks: visible_plan.block_ids().len(),
             visible_points: visible_plan.point_count(),
-            point_budget: plan.point_budget(),
+            rendered_voxels: renderer.visible_instance_count(),
+            voxel_budget: renderer.max_visible_instances(),
             target_voxel_pixels,
             lod_stage_pixels: stage_voxel_pixels,
             min_voxel_edge_pixels: self.visible_scene_metrics.0,

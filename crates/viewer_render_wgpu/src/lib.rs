@@ -9,14 +9,16 @@ pub use headless::{OffscreenImage, render_offscreen};
 mod scene;
 mod voxel_grid;
 
-pub use budget::GpuBudget;
+pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, OrbitCamera};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, SurfaceRenderer};
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,
     instance_buffer_layout,
 };
-pub use voxel_grid::{VoxelScene, build_voxel_scene};
+pub use voxel_grid::{
+    VoxelScene, VoxelSceneBuildError, build_voxel_scene, build_voxel_scene_with_limit,
+};
 
 use viewer_core::{Point, VisibleVoxelBatch};
 

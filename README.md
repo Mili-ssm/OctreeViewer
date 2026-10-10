@@ -169,12 +169,13 @@ objetivo de más de 500 GB.
 ### Capturas SensOFOREST por calidad (2026-10-10)
 
 Se renderizaron los `.oct` locales de Albuera UAV y Majadas TLS con el ejemplo nativo en Vulkan/
-llvmpipe, sin iniciar la aplicación. Las seis capturas comparten resolución 640×480 y encuadre
+llvmpipe, sin iniciar la aplicación. Las siete capturas comparten resolución 640×480 y encuadre
 automático a la raíz de cada nube. Cada PNG espera el readback de GPU y tiene un JSON con el corte
 fuente, voxeles, rango proyectado, píxeles con contenido y adapter.
 
 | Nube | Objetivo | Arista proyectada (px) | Puntos fuente cargados | Voxeles | Píxeles con contenido | Captura |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Albuera UAV | 2 px | 1,00–2,00 | 17.219.840 | 58.398 | 39.312 | [PNG](artifacts/sensoforest/albuera-640/voxel-2px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-2px.json) |
 | Albuera UAV | 4 px | 1,99–3,98 | 2.764.934 | 13.936 | 40.204 | [PNG](artifacts/sensoforest/albuera-640/voxel-4px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-4px.json) |
 | Albuera UAV | 8 px | 3,97–7,93 | 259.717 | 2.953 | 42.132 | [PNG](artifacts/sensoforest/albuera-640/voxel-8px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-8px.json) |
 | Albuera UAV | 16 px | 7,85–15,71 | 94.917 | 621 | 45.994 | [PNG](artifacts/sensoforest/albuera-640/voxel-16px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-16px.json) |
@@ -182,9 +183,9 @@ fuente, voxeles, rango proyectado, píxeles con contenido y adapter.
 | Majadas TLS | 8 px | 3,96–7,93 | 1.197.878 | 3.206 | 30.633 | [PNG](artifacts/sensoforest/majadas-640/voxel-8px.png) · [JSON](artifacts/sensoforest/majadas-640/voxel-8px.json) |
 | Majadas TLS | 16 px | 7,85–15,71 | 28.075 | 1.505 | 42.967 | [PNG](artifacts/sensoforest/majadas-640/voxel-16px.png) · [JSON](artifacts/sensoforest/majadas-640/voxel-16px.json) |
 
-Las seis imágenes tienen contenido y ninguna arista supera el objetivo. A 1280×960, el corte
-seleccionado para 4 px supera el límite actual de cuatro millones de puntos fuente en ambas nubes;
-a 640×480 queda bajo el límite y mantiene el objetivo expresado en píxeles de salida. En Majadas,
+Las siete imágenes tienen contenido y ninguna arista supera el objetivo. Los renders anteriores de
+4 px a 1280×960 superaban el antiguo límite de cuatro millones de puntos fuente. Ese límite se ha
+retirado: el tope actual se aplica al número de voxeles renderizados. En Majadas,
 los huecos reflejan el escaneo TLS y los puntos ausentes; las capturas no sustituyen una comprobación
 interactiva de UX.
 
@@ -192,9 +193,11 @@ Para repetir ambas nubes después de compilar en modo optimizado:
 
 ```sh
 cargo build --release --offline -p viewer_render_wgpu --example render_dataset
-target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-640 4,8,16 640 480
+target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-640 2,4,8,16 640 480 4096
 target/release/examples/render_dataset data/datasets/sensoforest/majadas-tls.oct artifacts/sensoforest/majadas-640 4,8,16 640 480
 ```
+
+El nivel de 1 px no se completó en esta pasada; con caché de 12 GiB no llegó a producir una captura.
 
 ### Descarte de vóxeles fuera de cámara
 
@@ -202,8 +205,9 @@ La voxelización adaptativa ahora descarta cada celda en cuanto sus límites que
 antes de crear o actualizar su acumulador. Antes, esas celdas se retenían en el mapa temporal y solo
 se excluían al construir la escena GPU. Así se reducen la memoria temporal de voxelización y las
 instancias preparadas para subir a GPU sin alterar las celdas visibles ni el tamaño objetivo en
-píxeles. La jerarquía también sigue aplicando su selección LOD y presupuesto de puntos antes de leer
-bloques. Este cambio no evita recorrer los puntos de los bloques seleccionados que intersectan la
+píxeles. La jerarquía selecciona detalle fuente por error proyectado; el límite de 8 millones se
+aplica después, al número de instancias voxel resultantes. Este cambio no evita recorrer los puntos
+de los bloques seleccionados que intersectan la
 vista; reducir ese coste requiere granularidad espacial de bloques más fina.
 
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
@@ -616,9 +620,10 @@ todavía.
   v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
   la extensión máxima a 100 unidades de render sin cambiar XYZ, origen ni CRS; versiones antiguas
   usan factor 1. Cámara, shader, frustum y error proyectado LOD aplican el mismo factor.
-- [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 4 millones de
-  instancias visibles y 256 MiB de capacidad agregada para buffers de instancias. Cada buffer también
-  respeta `max_buffer_size` del dispositivo y el límite `u32` de cada draw. La capacidad se redondea
+- [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 8 millones de
+  instancias/voxeles renderizados y 512 MiB de capacidad agregada para buffers de instancias. Cada
+  buffer también respeta `max_buffer_size` del dispositivo y el límite `u32` de cada draw. La
+  capacidad se redondea
   a potencias de dos y el chequeo de cambios atómicos incluye el pico temporal de buffers antiguos y
   nuevos. El límite solo estima buffers de instancias del renderer; no mide ni garantiza VRAM libre.
   Si se excede, devuelve un error tipado con requerido/límite y conserva la selección anterior; no
@@ -688,8 +693,8 @@ y presentar estado.
   uno en vuelo. La lectura de bloques permanece síncrona dentro del worker; cancelar termina/recrea el
   worker y descarta el dataset abierto.
 - [x] Limitar transferencias WASM: `replacePoints`/`appendPoints` y `insertLodBlock` convierten
-  arrays tipados en lotes temporales de 16.384 puntos, con un máximo de puntos de escena tomado del
-  presupuesto GPU y límite de bloque tomado de `cacheBytes`. Rust conserva los puntos al terminar;
+  arrays tipados en lotes temporales de 16.384 puntos. `renderScene` limita el total al presupuesto
+  GPU de instancias y `cacheBytes` limita los bloques fuente. Rust conserva los puntos al terminar;
   el host retiene los arrays durante la llamada. `readNext` limita cada respuesta a 65.536 puntos y
   8 MiB de registros fuente. `renderSceneBatch` limita la salida a 16.384 instancias; `renderScene`
   rechaza escenas mayores. No se comparte memoria zero-copy.
@@ -703,9 +708,11 @@ y presentar estado.
   decide qué muestras cargar; una retícula diádica global subdividida 2×2×2 decide qué celdas dibujar
   según la mayor de sus doce aristas proyectadas. La arista queda aproximadamente entre objetivo/2
   y objetivo por los saltos diádicos. Las hojas conservan puntos originales: no se limitan a 8³ celdas.
-  El límite de seguridad de puntos fuente es 4 millones, independiente del objetivo; área/objetivo²
-  estima ocupación de pantalla, no puntos fuente incluyendo superficies ocultas. Si el detalle fuente
-  requerido excede ese límite o faltan bloques, se conserva la escena previa y se informa un error.
+  La selección fuente no tiene un límite fijo de puntos: el presupuesto GPU de 8 millones se aplica
+  a las instancias voxel resultantes, mientras `cacheBytes` limita por separado los bloques fuente
+  residentes. Área/objetivo² estima ocupación de pantalla, no puntos fuente incluyendo superficies
+  ocultas. El voxelizador se detiene al exceder el límite de instancias; si faltan bloques, se conserva
+  la escena previa y se informa un error.
   La precisión se limita a 24 subdivisiones y se cuentan las celdas que aún superan el objetivo.
 - [x] Integrar selección de archivo local, mensajes de carga/error y resumen de nodos del índice; la
   demo ejecuta visor, lector y renderer en worker.
@@ -740,8 +747,9 @@ las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloqu
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
 
 Después de abrir un dataset, `updateLod(targetVoxelPixels)` selecciona y guarda un objetivo de arista
-proyectada entre 1 y 16 píxeles. La selección de bloques respeta un límite de seguridad de 4 millones
-de puntos fuente; no se estima a partir del área de pantalla. La retícula de dibujo es común, diádica
+proyectada entre 1 y 16 píxeles. La selección fuente no aplica un tope fijo de puntos; la escena
+voxelizada se limita a 8 millones de instancias renderizadas y la memoria de bloques se limita por
+separado con `cacheBytes`. La retícula de dibujo es común, diádica
 y adaptativa según cámara. La selección y la retícula se recalculan antes de `renderFrame` tras cambios
 de cámara, viewport o llegada de bloques; para encuadrar, llama primero `fitScene()` y después
 `renderFrame()`. En el camino de formato, los bloques que faltan se leen antes del cambio atómico del
@@ -750,9 +758,11 @@ de puntos, conservando la escena anterior; insertar bloques permite reintentar. 
 Las estadísticas `minVoxelEdgePixels`/`maxVoxelEdgePixels` miden el rango de las mayores aristas de
 las celdas visibles, proyectadas con perspectiva, antes del pequeño ajuste de seguridad a `f32`.
 `oversizedVoxels` informa cuántas exceden el objetivo, por ejemplo por el límite de precisión.
-Las estadísticas incluyen bloques/puntos visibles, máximo nivel del corte (`maxVisibleLevel`),
-presupuesto, uso y límite de caché decodificada (`cacheBytes`/`cacheBudgetBytes` como strings
-decimales), IDs de bloques pendientes, cobertura y nodos omitidos por presupuesto. La demo ya ejecuta
+Las estadísticas distinguen puntos fuente en el corte (`visiblePoints`), voxeles enviados a GPU
+(`renderedVoxels`) y el límite de instancias (`voxelBudget`). También incluyen bloques visibles,
+máximo nivel del corte (`maxVisibleLevel`), uso y límite de caché decodificada
+(`cacheBytes`/`cacheBudgetBytes` como strings decimales), IDs de bloques pendientes, cobertura y nodos
+omitidos por presupuesto. La demo ya ejecuta
 lector y renderer en un worker; informa bytes
 únicos cubiertos por rangos de 256 KiB. No es un porcentaje de finalización: la lectura busca
 cabeceras e índice y luego solo bloques seleccionados. Cancelar termina el worker síncrono,
@@ -1097,7 +1107,7 @@ rango proyectado, píxeles con contenido y lectura GPU completada.
 ```sh
 cargo run --offline -p viewer_render_wgpu --example render_dataset -- \
   data/samples/stanford_bunny_bun000_unstructured.oct \
-  artifacts/voxel-lod-previews/headless 1,2,4,8,16 1280 960
+  artifacts/voxel-lod-previews/headless 1,2,4,8,16 1280 960 512
 
 # Tests numéricos sin GPU y regresiones del consumidor WASM:
 cargo test --offline -p viewer_render_wgpu -p viewer_wasm
@@ -1105,11 +1115,13 @@ cargo test --offline -p viewer_render_wgpu -p viewer_wasm
 cargo test --offline -p viewer_render_wgpu -- --ignored
 ```
 
-Calidad, ancho y alto son opcionales: por defecto `1,2,4,8,16` y `1280×960`. Cada salida se llama
+Calidad, ancho, alto y caché en MiB son opcionales: por defecto `1,2,4,8,16`, `1280×960` y 512 MiB.
+La selección no limita puntos fuente; el límite de 8 millones se aplica a voxeles finales y la caché
+mantiene su presupuesto independiente. Cada salida se llama
 `voxel-<objetivo>px.png` y `.json`. Para ejecución optimizada añadir `--release`.
 La herramienta admite por ahora `.oct`, RGB, sombreado por profundidad y escala visual 1;
-no ejecuta flujos de worker/UI ni sustituye sus comprobaciones. Limita el corte a 4 M de puntos y
-la caché a 512 MiB; valida dimensiones de imagen y límites del adapter. Las aristas proyectadas
+no ejecuta flujos de worker/UI ni sustituye sus comprobaciones. Valida dimensiones de imagen y límites
+del adapter. Las aristas proyectadas
 se miden antes de rasterizar; el conteo de contenido es el número de píxeles leídos cuyo RGB difiere
 del fondo en más de un nivel de 8 bits, no un conteo de voxeles visibles.
 

@@ -1,5 +1,7 @@
 use crate::GpuRendererError;
 
+pub const DEFAULT_MAX_VISIBLE_VOXELS: usize = 8_000_000;
+
 /// Limits for instance data owned by one renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GpuBudget {
@@ -12,8 +14,8 @@ pub struct GpuBudget {
 impl Default for GpuBudget {
     fn default() -> Self {
         Self {
-            max_bytes: 256 * 1024 * 1024,
-            max_visible_instances: 4_000_000,
+            max_bytes: 512 * 1024 * 1024,
+            max_visible_instances: DEFAULT_MAX_VISIBLE_VOXELS,
         }
     }
 }
@@ -69,7 +71,9 @@ pub(crate) fn check_peak_bytes(
 
 #[cfg(test)]
 mod tests {
-    use super::{buffer_capacity, check_peak_bytes, check_visible_instances};
+    use super::{
+        DEFAULT_MAX_VISIBLE_VOXELS, buffer_capacity, check_peak_bytes, check_visible_instances,
+    };
     use crate::GpuRendererError;
 
     #[test]
@@ -106,6 +110,21 @@ mod tests {
                 requested_instances: 11,
                 max_instances: 10,
             })
+        );
+    }
+
+    #[test]
+    fn default_budget_caps_rendered_voxels_at_eight_million() {
+        let budget = crate::GpuBudget::default();
+        assert_eq!(budget.max_visible_instances, DEFAULT_MAX_VISIBLE_VOXELS);
+        assert_eq!(budget.max_bytes, 512 * 1024 * 1024);
+        assert!(
+            check_visible_instances(DEFAULT_MAX_VISIBLE_VOXELS, budget.max_visible_instances)
+                .is_ok()
+        );
+        assert!(
+            check_visible_instances(DEFAULT_MAX_VISIBLE_VOXELS + 1, budget.max_visible_instances)
+                .is_err()
         );
     }
 }

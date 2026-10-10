@@ -493,6 +493,10 @@ impl<'window> SurfaceRenderer<'window> {
         self.visible_instance_count
     }
 
+    pub fn max_visible_instances(&self) -> usize {
+        self.gpu_budget.max_visible_instances
+    }
+
     pub fn set_color_mode(&mut self, mode: ColorMode) {
         self.color_mode = mode;
     }

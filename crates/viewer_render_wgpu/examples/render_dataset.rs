@@ -10,12 +10,14 @@ use viewer_core::{
     DatasetSource, DecodedBlockCache, FrustumPlane, LodSelectionConfig, SpatialFrustum,
 };
 use viewer_format::FormatReader;
-use viewer_render_wgpu::{OrbitCamera, SceneBounds, build_voxel_scene, render_offscreen};
+use viewer_render_wgpu::{
+    OrbitCamera, RendererConfig, SceneBounds, build_voxel_scene_with_limit, render_offscreen,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() < 2 || args.len() > 5 {
-        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [1,2,4,8,16] [WIDTH=1280] [HEIGHT=960]".into());
+    if args.len() < 2 || args.len() > 6 {
+        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [1,2,4,8,16] [WIDTH=1280] [HEIGHT=960] [CACHE_MIB=512]".into());
     }
     let qualities: Vec<f64> = args
         .get(2)
@@ -37,6 +39,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     if viewport.into_iter().any(|side| side == 0 || side > 8192) {
         return Err("viewport must be 1..8192 per axis".into());
     }
+    let cache_mib = args.get(5).map_or(Ok(512_usize), |value| value.parse())?;
+    let cache_bytes = cache_mib
+        .checked_mul(1024 * 1024)
+        .filter(|bytes| cache_mib > 0 && *bytes <= isize::MAX as usize)
+        .ok_or("cache size must be a positive number of MiB that fits this platform")?;
+    let voxel_budget = RendererConfig::default().gpu_budget.max_visible_instances;
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
     let metadata = reader.metadata().clone();
     let hierarchy = metadata.hierarchy();
@@ -74,10 +82,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(&directory)?;
     for target in qualities {
         let start = Instant::now();
-        // Same source-support tolerance and safety ceiling as the viewer. Never silently coarsen.
+        // The source-point budget selects detail; the renderer independently caps output voxels.
         let cut = hierarchy.select_lod(
             &world_frustum,
-            LodSelectionConfig::new(target, 4_000_000)?,
+            LodSelectionConfig::new(target, u64::MAX)?,
             |node| {
                 let bounds = node.bounds();
                 let side = (0..3)
@@ -87,9 +95,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
         )?;
         if !cut.budget_limited().is_empty() {
-            return Err("requested source detail exceeds 4M-point safety ceiling".into());
+            return Err("requested source detail exceeds the u64 point-count limit".into());
         }
-        let mut cache = DecodedBlockCache::new(512 * 1024 * 1024);
+        let mut cache = DecodedBlockCache::new(cache_bytes);
         let ids: Vec<_> = cut
             .node_ids()
             .iter()
@@ -98,7 +106,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         for id in &ids {
             if !cache.contains(*id) {
                 if !cache.insert(reader.read_block(*id)?).cached {
-                    return Err("source cut does not fit 512 MiB cache".into());
+                    return Err(format!(
+                        "source cut does not fit the configured {cache_mib} MiB cache"
+                    )
+                    .into());
                 }
                 // Protect completed reads so an oversized selection fails rather than evicts detail.
                 cache.set_protected_blocks(
@@ -109,7 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 );
             }
         }
-        let voxelized = build_voxel_scene(
+        let voxelized = build_voxel_scene_with_limit(
             hierarchy,
             cut.node_ids(),
             &cache,
@@ -122,7 +133,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     0.0
                 }
             },
-        );
+            voxel_budget,
+        )?;
         if voxelized.scene.instance_count() == 0 || voxelized.oversized_voxels != 0 {
             return Err("empty voxel scene or projected edges exceed target".into());
         }
@@ -147,6 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "projected_edge_pixels": {"min": voxelized.min_edge_pixels, "max": voxelized.max_edge_pixels},
             "oversized_voxels": voxelized.oversized_voxels, "source_points": cut.point_count(),
             "source_nodes": cut.node_ids().len(), "rendered_voxels": voxelized.scene.instance_count(),
+            "voxel_budget": voxel_budget, "source_point_budget": u64::MAX,
             "non_background_pixels": image.non_background_pixels,
             "adapter": image.adapter.name, "backend": format!("{:?}", image.adapter.backend),
             "gpu_readback_complete": true, "elapsed_ms": start.elapsed().as_secs_f64() * 1000.0,

@@ -69,6 +69,26 @@ pub struct VoxelScene {
     pub oversized_voxels: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoxelSceneBuildError {
+    InstanceLimitExceeded { limit: usize },
+}
+
+impl std::fmt::Display for VoxelSceneBuildError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InstanceLimitExceeded { limit } => {
+                write!(
+                    formatter,
+                    "voxelized scene exceeds the {limit}-voxel instance limit"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for VoxelSceneBuildError {}
+
 #[derive(Default)]
 struct VoxelAccumulator {
     rgb: [u64; 3],
@@ -86,6 +106,27 @@ pub fn build_voxel_scene(
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,
 ) -> VoxelScene {
+    build_voxel_scene_with_limit(
+        hierarchy,
+        node_ids,
+        cache,
+        coordinate_origin,
+        target_pixels,
+        project,
+        usize::MAX,
+    )
+    .expect("unbounded voxel scene build cannot exceed usize::MAX instances")
+}
+
+pub fn build_voxel_scene_with_limit(
+    hierarchy: &SpatialHierarchy,
+    node_ids: &[NodeId],
+    cache: &DecodedBlockCache,
+    coordinate_origin: [f64; 3],
+    target_pixels: f64,
+    project: &dyn Fn(SpatialBounds) -> f64,
+    max_voxels: usize,
+) -> Result<VoxelScene, VoxelSceneBuildError> {
     let root = hierarchy.stats().root_bounds;
     let mut grid = AdaptiveVoxelGrid {
         // Use local coordinates before subdivision to retain fine cells at geographic origins.
@@ -104,7 +145,7 @@ pub fn build_voxel_scene(
             let Some(block) = cache.peek(*block_id) else {
                 continue;
             };
-            accumulate_block(block, &mut grid, &mut voxels);
+            accumulate_block(block, &mut grid, &mut voxels, max_voxels)?;
         }
     }
     let mut min_edge_pixels = f64::INFINITY;
@@ -136,7 +177,7 @@ pub fn build_voxel_scene(
             })
         })
         .collect();
-    VoxelScene {
+    Ok(VoxelScene {
         scene: RenderScene::from_instances(instances),
         min_edge_pixels: if min_edge_pixels.is_finite() {
             min_edge_pixels
@@ -145,14 +186,15 @@ pub fn build_voxel_scene(
         },
         max_edge_pixels,
         oversized_voxels,
-    }
+    })
 }
 
 fn accumulate_block(
     block: &PointBlock,
     grid: &mut AdaptiveVoxelGrid<'_>,
     voxels: &mut BTreeMap<VoxelKey, VoxelAccumulator>,
-) {
+    max_voxels: usize,
+) -> Result<(), VoxelSceneBuildError> {
     let points = block.points().points();
     let intensity = scalar_attribute(block, "intensity", points.len());
     let classification = scalar_attribute(block, "classification", points.len());
@@ -163,6 +205,9 @@ fn accumulate_block(
         let Some(key) = grid.key_for_point(point.position.map(f64::from)) else {
             continue;
         };
+        if !voxels.contains_key(&key) && voxels.len() >= max_voxels {
+            return Err(VoxelSceneBuildError::InstanceLimitExceeded { limit: max_voxels });
+        }
         let voxel = voxels.entry(key).or_default();
         if voxel.count == 0 {
             voxel.classification = classification
@@ -178,6 +223,7 @@ fn accumulate_block(
         voxel.rgb[2] += u64::from(point.color.b);
         voxel.count += 1;
     }
+    Ok(())
 }
 
 impl VoxelAccumulator {
@@ -233,8 +279,14 @@ fn safe_render_cell_size(center: [f64; 3], cell_size: f64) -> Option<([f32; 3], 
 mod tests {
     use std::cell::Cell;
 
-    use super::{AdaptiveVoxelGrid, VoxelKey};
-    use viewer_core::SpatialBounds;
+    use super::{
+        AdaptiveVoxelGrid, VoxelKey, VoxelSceneBuildError, bounds_side,
+        build_voxel_scene_with_limit,
+    };
+    use viewer_core::{
+        BlockId, ColorRgb, DecodedBlockCache, HierarchySemantics, Point, PointBatch, PointBlock,
+        SpatialBounds, SpatialHierarchy, SpatialNode,
+    };
 
     #[test]
     fn point_outside_frustum_is_culled_before_voxel_accumulation() {
@@ -275,6 +327,55 @@ mod tests {
                 depth: 0,
                 coord: [0; 3],
             })
+        );
+    }
+
+    #[test]
+    fn voxel_scene_stops_at_the_rendered_instance_limit() {
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    viewer_core::NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                    3,
+                    0.0,
+                    vec![BlockId::new(1)],
+                )
+                .unwrap(),
+            ],
+            vec![],
+            Some(3),
+            HierarchySemantics::Replacement,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(PointBlock::new(
+            BlockId::new(1),
+            PointBatch::new(vec![
+                Point::new([0.1, 0.1, 0.1], ColorRgb::new(1, 2, 3)),
+                Point::new([0.8, 0.1, 0.1], ColorRgb::new(1, 2, 3)),
+                Point::new([0.1, 0.8, 0.1], ColorRgb::new(1, 2, 3)),
+            ]),
+            vec![],
+        ));
+
+        let error = build_voxel_scene_with_limit(
+            &hierarchy,
+            &[viewer_core::NodeId::new(1)],
+            &cache,
+            [0.0; 3],
+            1.0,
+            &|bounds| bounds_side(bounds) * 16.0,
+            2,
+        )
+        .err()
+        .unwrap();
+
+        assert_eq!(
+            error,
+            VoxelSceneBuildError::InstanceLimitExceeded { limit: 2 }
         );
     }
 }
