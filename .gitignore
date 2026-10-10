@@ -1,3 +1,4 @@
 /target
 /pkg
 /examples/web-host/.cache
+/artifacts/*
