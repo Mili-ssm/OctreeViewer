@@ -24,7 +24,8 @@ use super::{
 };
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
-const CHILD_SPOOL_BUFFER_BYTES: usize = 8 * 1024;
+const SPOOL_IO_BUFFER_BYTES: usize = 64 * 1024;
+const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
 const SAMPLE_GRID_SIZE: usize = 8;
 const MAX_SPATIAL_DEPTH: u32 = 32;
 const PLANNED_NODE_BYTES: u64 = 256;
@@ -117,7 +118,10 @@ impl PlannedBlock {
             .ok_or(ConvertError::SizeOverflow)?;
         let mut file = File::open(&self.path)?;
         file.seek(SeekFrom::Start(byte_offset))?;
-        let mut reader = BufReader::new(file);
+        let mut reader = BufReader::with_capacity(SPOOL_IO_BUFFER_BYTES, file);
+        let record_bytes = self.layout.record_bytes();
+        let batch_capacity = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
+        let mut record_buffer = vec![0; batch_capacity * record_bytes];
         let mut positions = Vec::with_capacity(self.point_count);
         let mut colors = Vec::with_capacity(self.point_count);
         let mut intensities = Vec::with_capacity(self.point_count);
@@ -130,22 +134,36 @@ impl PlannedBlock {
         let mut gps_times = Vec::with_capacity(self.point_count);
         let mut rgb_values = Vec::with_capacity(self.point_count.saturating_mul(3));
         let mut nir_values = Vec::with_capacity(self.point_count);
-        for _ in 0..self.point_count {
-            let point = read_point(&mut reader, self.layout)?;
-            positions.push(std::array::from_fn(|axis| {
-                point.position[axis] - frame.origin()[axis]
-            }));
-            colors.push(point.display_color);
-            intensities.push(point.intensity);
-            classifications.push(point.classification);
-            return_numbers.push(point.return_number);
-            returns_per_pulse.push(point.returns_per_pulse);
-            scan_angles.push(point.scan_angle);
-            user_data.push(point.user_data);
-            point_source_ids.push(point.point_source_id);
-            gps_times.push(point.gps_time);
-            rgb_values.extend_from_slice(&point.rgb);
-            nir_values.push(point.nir);
+        let mut remaining = self.point_count;
+        while remaining > 0 {
+            let requested = remaining.min(batch_capacity);
+            let buffer_bytes = requested * record_bytes;
+            let records =
+                read_records(&mut reader, &mut record_buffer[..buffer_bytes], self.layout)?;
+            if records != requested {
+                return Err(ConvertError::PointCountMismatch {
+                    expected: self.point_count as u64,
+                    actual: (self.point_count - remaining + records) as u64,
+                });
+            }
+            for bytes in record_buffer[..buffer_bytes].chunks_exact(record_bytes) {
+                let point = decode_point(bytes, self.layout);
+                positions.push(std::array::from_fn(|axis| {
+                    point.position[axis] - frame.origin()[axis]
+                }));
+                colors.push(point.display_color);
+                intensities.push(point.intensity);
+                classifications.push(point.classification);
+                return_numbers.push(point.return_number);
+                returns_per_pulse.push(point.returns_per_pulse);
+                scan_angles.push(point.scan_angle);
+                user_data.push(point.user_data);
+                point_source_ids.push(point.point_source_id);
+                gps_times.push(point.gps_time);
+                rgb_values.extend_from_slice(&point.rgb);
+                nir_values.push(point.nir);
+            }
+            remaining -= records;
         }
 
         let mut attributes = Vec::with_capacity(10);
@@ -490,6 +508,10 @@ impl ChildSpool {
         self.created = true;
         Ok(())
     }
+
+    fn finish(&mut self) -> Result<(), ConvertError> {
+        self.flush()
+    }
 }
 
 struct BranchOutput {
@@ -616,7 +638,7 @@ impl SpatialBuilder<'_> {
         }
 
         for child in children.iter_mut().flatten() {
-            child.flush()?;
+            child.finish()?;
         }
         let sample_path = self.workspace.file("node-0.lod");
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
@@ -694,30 +716,41 @@ impl SpatialBuilder<'_> {
         let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
         let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
         let mut scanned = 0_u64;
-        let mut source_reader = BufReader::new(File::open(&spool_path)?);
-        while let Some(point) = read_point_if_present(&mut source_reader, self.layout)? {
-            scanned += 1;
-            for (axis, axis_bounds) in source_bounds.iter_mut().enumerate() {
-                axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
-                axis_bounds[1] = axis_bounds[1].max(point.position[axis]);
+        let mut source_reader =
+            BufReader::with_capacity(SPOOL_IO_BUFFER_BYTES, File::open(&spool_path)?);
+        let record_bytes = self.layout.record_bytes();
+        let records_per_batch = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
+        let mut record_buffer = vec![0; records_per_batch * record_bytes];
+        loop {
+            let records = read_records(&mut source_reader, &mut record_buffer, self.layout)?;
+            if records == 0 {
+                break;
             }
-            if scanned.is_multiple_of(self.point_limit) {
-                self.emit_plan_progress()?;
-            }
-            let child_key = child_index(point.position, bounds, self.spatial_divisions);
-            let child = children[child_key].get_or_insert_with(|| {
-                ChildSpool::new(
-                    self.workspace
-                        .file(&format!("node-{}-child-{child_key}.spool", id.get())),
-                    self.layout,
-                )
-            });
-            child.write_point(&point)?;
+            for bytes in record_buffer[..records * record_bytes].chunks_exact(record_bytes) {
+                let point = decode_point(bytes, self.layout);
+                scanned += 1;
+                for (axis, axis_bounds) in source_bounds.iter_mut().enumerate() {
+                    axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
+                    axis_bounds[1] = axis_bounds[1].max(point.position[axis]);
+                }
+                if scanned.is_multiple_of(self.point_limit) {
+                    self.emit_plan_progress()?;
+                }
+                let child_key = child_index(point.position, bounds, self.spatial_divisions);
+                let child = children[child_key].get_or_insert_with(|| {
+                    ChildSpool::new(
+                        self.workspace
+                            .file(&format!("node-{}-child-{child_key}.spool", id.get())),
+                        self.layout,
+                    )
+                });
+                child.write_point(&point)?;
 
-            let voxel_key = sample_index(point.position, bounds);
-            let center = voxel_center(voxel_key, bounds);
-            let sample = samples[voxel_key].get_or_insert_with(SampleAccumulator::default);
-            sample.add(point, center);
+                let voxel_key = sample_index(point.position, bounds);
+                let center = voxel_center(voxel_key, bounds);
+                let sample = samples[voxel_key].get_or_insert_with(SampleAccumulator::default);
+                sample.add(point, center);
+            }
         }
         if scanned != source_count {
             return Err(ConvertError::PointCountMismatch {
@@ -726,7 +759,7 @@ impl SpatialBuilder<'_> {
             });
         }
         for child in children.iter_mut().flatten() {
-            child.flush()?;
+            child.finish()?;
         }
 
         if source_bounds
@@ -1133,9 +1166,10 @@ impl SampleAccumulator {
             self.display_color[axis] += u128::from(point.display_color_component(axis));
             self.rgb[axis] += u128::from(point.rgb[axis]);
         }
-        let distance_squared = (0..3)
-            .map(|axis| (point.position[axis] - center[axis]).powi(2))
-            .sum::<f64>();
+        let delta_x = point.position[0] - center[0];
+        let delta_y = point.position[1] - center[1];
+        let delta_z = point.position[2] - center[2];
+        let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
         if self
             .nearest_point
             .is_none_or(|_| distance_squared < self.nearest_distance_squared)
@@ -1221,9 +1255,18 @@ fn write_source_points(
     writer: &mut impl Write,
 ) -> Result<(), ConvertError> {
     let layout = SpoolLayout::source(source);
+    let mut encoded = Vec::with_capacity(CHILD_SPOOL_BUFFER_BYTES);
     visit_source_points(data, source, processed, |point| {
-        write_point(writer, &point, layout).map_err(ConvertError::Io)
-    })
+        if encoded.len() + layout.record_bytes() > CHILD_SPOOL_BUFFER_BYTES {
+            writer.write_all(&encoded)?;
+            encoded.clear();
+        }
+        write_point(&mut encoded, &point, layout).map_err(ConvertError::Io)
+    })?;
+    if !encoded.is_empty() {
+        writer.write_all(&encoded)?;
+    }
+    Ok(())
 }
 
 fn visit_source_points(
@@ -1363,42 +1406,75 @@ fn outside_header_bounds(position: [f64; 3], bounds: SpatialBounds) -> bool {
 }
 
 fn write_point(writer: &mut impl Write, point: &SpoolPoint, layout: SpoolLayout) -> io::Result<()> {
+    let mut record = [0_u8; MAX_SPOOL_RECORD_BYTES];
+    let mut offset = 0;
+    macro_rules! append_bytes {
+        ($bytes:expr) => {{
+            let bytes = $bytes;
+            let end = offset + bytes.len();
+            record[offset..end].copy_from_slice(&bytes);
+            offset = end;
+        }};
+    }
     if layout.source_coordinates {
         for coordinate in point.raw_position {
-            writer.write_all(&coordinate.to_le_bytes())?;
+            append_bytes!(coordinate.to_le_bytes());
         }
     } else {
         for coordinate in point.position {
-            writer.write_all(&coordinate.to_le_bytes())?;
+            append_bytes!(coordinate.to_le_bytes());
         }
     }
-    writer.write_all(&point.intensity.to_le_bytes())?;
-    writer.write_all(&[
+    append_bytes!(point.intensity.to_le_bytes());
+    append_bytes!([
         point.classification,
         point.return_number,
         point.returns_per_pulse,
-    ])?;
-    writer.write_all(&point.scan_angle.to_le_bytes())?;
-    writer.write_all(&[point.user_data])?;
-    writer.write_all(&point.point_source_id.to_le_bytes())?;
+    ]);
+    append_bytes!(point.scan_angle.to_le_bytes());
+    append_bytes!([point.user_data]);
+    append_bytes!(point.point_source_id.to_le_bytes());
     if layout.has_gps_time {
-        writer.write_all(&point.gps_time.to_le_bytes())?;
+        append_bytes!(point.gps_time.to_le_bytes());
     }
     if layout.has_color {
         for channel in point.rgb {
-            writer.write_all(&channel.to_le_bytes())?;
+            append_bytes!(channel.to_le_bytes());
         }
     }
     if layout.has_nir {
-        writer.write_all(&point.nir.to_le_bytes())?;
+        append_bytes!(point.nir.to_le_bytes());
     }
-    writer.write_all(&[
+    append_bytes!([
         point.display_color.r,
         point.display_color.g,
         point.display_color.b,
-    ])
+    ]);
+    writer.write_all(&record[..offset])
 }
 
+fn read_records(
+    reader: &mut impl Read,
+    buffer: &mut [u8],
+    layout: SpoolLayout,
+) -> io::Result<usize> {
+    let mut bytes_read = 0;
+    while bytes_read < buffer.len() {
+        match reader.read(&mut buffer[bytes_read..]) {
+            Ok(0) => break,
+            Ok(count) => bytes_read += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    let record_bytes = layout.record_bytes();
+    if !bytes_read.is_multiple_of(record_bytes) {
+        return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+    }
+    Ok(bytes_read / record_bytes)
+}
+
+#[cfg(test)]
 fn read_point_if_present(
     reader: &mut impl Read,
     layout: SpoolLayout,
@@ -1413,6 +1489,7 @@ fn read_point_if_present(
     Ok(Some(decode_point(bytes, layout)))
 }
 
+#[cfg(test)]
 fn read_point(reader: &mut impl Read, layout: SpoolLayout) -> Result<SpoolPoint, ConvertError> {
     read_point_if_present(reader, layout)?
         .ok_or_else(|| ConvertError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)))
@@ -1505,20 +1582,27 @@ fn cube_side(bounds: SpatialBounds) -> f64 {
 }
 
 fn child_index(position: [f64; 3], bounds: SpatialBounds, divisions: u8) -> usize {
-    let mut cell = [0_usize; 3];
-    for axis in 0..3 {
-        let min = bounds.min()[axis];
-        let max = bounds.max()[axis];
-        if divisions == 2 {
-            let middle = min + (max - min) / 2.0;
-            cell[axis] = usize::from(position[axis] >= middle);
-        } else {
-            let cell_side = (max - min) / f64::from(divisions);
+    let divisions = usize::from(divisions);
+    let cell = if divisions == 2 {
+        let min = bounds.min();
+        let max = bounds.max();
+        let middle: [f64; 3] =
+            std::array::from_fn(|axis| min[axis] + (max[axis] - min[axis]) / 2.0);
+        [
+            usize::from(position[0] >= middle[0]),
+            usize::from(position[1] >= middle[1]),
+            usize::from(position[2] >= middle[2]),
+        ]
+    } else {
+        std::array::from_fn(|axis| {
+            let min = bounds.min()[axis];
+            let max = bounds.max()[axis];
+            let cell_side = (max - min) / divisions as f64;
             let scaled = ((position[axis] - min) / cell_side).floor();
-            cell[axis] = (scaled as usize).min(usize::from(divisions) - 1);
-        }
-    }
-    (cell[0] * usize::from(divisions) + cell[1]) * usize::from(divisions) + cell[2]
+            (scaled as usize).min(divisions - 1)
+        })
+    };
+    (cell[0] * divisions + cell[1]) * divisions + cell[2]
 }
 
 fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBounds {
@@ -1893,6 +1977,36 @@ mod partition_tests {
     }
 
     #[test]
+    fn bulk_spool_reads_decode_records_and_reject_partial_tails() {
+        for format_id in [0, 2, 3, 8] {
+            let (source, fixture) = spool_fixture(format_id);
+            let layout = SpoolLayout::source(&source);
+            let mut expected = fixture;
+            expected.raw_position[0] += 19;
+            expected.position = layout.position(expected.raw_position);
+            let mut bytes = Vec::new();
+            write_point(&mut bytes, &fixture, layout).unwrap();
+            write_point(&mut bytes, &expected, layout).unwrap();
+
+            let mut reader = bytes.as_slice();
+            let mut batch = vec![0; layout.record_bytes() * 3];
+            assert_eq!(read_records(&mut reader, &mut batch, layout).unwrap(), 2);
+            let decoded = batch
+                .chunks_exact(layout.record_bytes())
+                .map(|record| decode_point(record, layout))
+                .collect::<Vec<_>>();
+            assert_eq!(decoded[0].raw_position, fixture.raw_position);
+            assert_eq!(decoded[1].raw_position, expected.raw_position);
+            assert_eq!(decoded[1].intensity, expected.intensity);
+
+            bytes.push(0);
+            let mut truncated = bytes.as_slice();
+            let error = read_records(&mut truncated, &mut batch, layout).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        }
+    }
+
+    #[test]
     fn header_bounds_allow_small_metadata_rounding_but_reject_real_outliers() {
         let bounds = SpatialBounds::new(
             [692_199.5, 4_285_716.0, 329.910_095_214_843_75],
@@ -1913,7 +2027,7 @@ mod partition_tests {
     #[test]
     fn adaptive_cells_cover_centers_and_assign_internal_planes_to_upper_cell() {
         let bounds = SpatialBounds::new([-4.0, 2.0, -8.0], [4.0, 10.0, 0.0]).unwrap();
-        for divisions in [2, 4, 8] {
+        for divisions in [2_u8, 4, 8] {
             let divisions_usize = usize::from(divisions);
             for x in 0..divisions_usize {
                 for y in 0..divisions_usize {
@@ -1963,8 +2077,8 @@ mod partition_tests {
 
     #[test]
     fn fanout_spool_memory_is_bounded_for_supported_divisions() {
-        assert_eq!(child_spool_buffer_bytes(2).unwrap(), 64 * 1024);
-        assert_eq!(child_spool_buffer_bytes(4).unwrap(), 512 * 1024);
-        assert_eq!(child_spool_buffer_bytes(8).unwrap(), 4 * 1024 * 1024);
+        assert_eq!(child_spool_buffer_bytes(2).unwrap(), 8 * 32 * 1024);
+        assert_eq!(child_spool_buffer_bytes(4).unwrap(), 64 * 32 * 1024);
+        assert_eq!(child_spool_buffer_bytes(8).unwrap(), 512 * 32 * 1024);
     }
 }

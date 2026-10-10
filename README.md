@@ -901,8 +901,11 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
    Majadas con formato/spool v3. Con formato v4 y spool compacto, una ejecución 4×8 dio 346,5 s en
    Albuera y 356,8 s en Majadas (−8,6 % y −9,8 % frente a esas referencias, sin emparejar); no
    alcanzan los 120 s. La planificación espacial de Albuera sigue en 135 s y la jerarquía de Majadas
-   en 179 s. Los `.oct` v4 mantienen ratios de 2,89× y 5,48×. Repetir tres veces después de mejorar
-   esos cuellos. Ver [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
+   en 179 s. Los `.oct` v4 mantienen ratios de 2,89× y 5,48×. El batching de I/O bajó una ejecución
+   `release` de Albuera a 297,36 s (−14,2 %, RSS pico de 757.608 KiB); `perf` más `target-cpu=native`
+   dio 233,81 s en una ejecución. Sigue por encima de 120 s y no hay repetición nueva de Majadas.
+   Repetir tres veces por dataset y registrar hash, disco temporal y fases. Ver
+   [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 6. **Seguir optimizando `viewer_convert` por cuellos medidos:** se evita el spool de fuente para
    LAS/LAZ normal, `laz-parallel` paraleliza descompresión y la codificación/validación prepara
    bloques independientes en paralelo con escritura ordenada. El spool ahora es por esquema: fuente
@@ -910,7 +913,14 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
    `f64`; checkpoints antiguos se rechazan. En las ejecuciones nuevas se observaron al menos 20 GB y
    15 GB de temporales, y RSS pico de 675 y 315 MiB. El siguiente cuello es mejorar el reparto/coste
    de jerarquía, especialmente Majadas; medir I/O temporal con contadores explícitos antes de cambiar
-   shards o la emisión incremental. El checkpoint conserva su spool fuente para reanudar.
+   shards o la emisión incremental. Se aplicaron lecturas de spool por lotes, escrituras de fanout
+   de 32 KiB y cálculo de distancia sin `powi`; esto coincidió con −14,2 % de wall en una conversión
+   release de Albuera. El experimento de precalcular la rejilla por nodo no mostró mejora más allá de
+   variación (234,14 s vs 233,81 s, `perf`/nativo) y se retiró del código. No hay contadores `perf`
+   disponibles ni evidencia para añadir SIMD manual; revisar ramas del bucle solo con perfil y
+   mantener integridad de entrada.
+   Repetir Albuera y Majadas tres veces con los mismos perfiles/disco. El checkpoint conserva su
+   spool fuente para reanudar. Detalles y comandos en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md).
 7. **Reducir los spools retenidos sin duplicar la escritura incremental ya existente:** `FormatWriter`
    ya agrega cada payload y escribe índice/footer al finalizar. El problema es que `build_spatial_plan`
    termina antes de emitir bloques porque `FormatWriter::new` necesita la jerarquía completa. Evaluar

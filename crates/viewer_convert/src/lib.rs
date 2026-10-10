@@ -1309,7 +1309,7 @@ mod tests {
         assert_eq!(parallel.output_bytes, serial.output_bytes);
         assert_eq!(
             parallel.estimated_peak_memory_bytes,
-            serial.estimated_peak_memory_bytes + 1024 * 1024 + 512 * 1024
+            serial.estimated_peak_memory_bytes + 1024 * 1024 + 2 * 1024 * 1024
         );
         assert_eq!(
             fs::read(serial_output).unwrap(),

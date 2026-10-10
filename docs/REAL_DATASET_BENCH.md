@@ -310,6 +310,63 @@ son muestras observadas durante la ejecución, no picos exactos. Hace falta repe
 de afirmar una mejora estable. El próximo cuello a estudiar es la construcción de jerarquía, en
 especial para Majadas, seguido de mediciones explícitas de I/O temporal y reparto de trabajo.
 
+### Microoptimizaciones de recorrido y compilación
+
+El 10 de octubre se aplicaron lecturas y escrituras por lotes en las rutas de spool: lectura de hasta
+64 KiB por llamada para reconstruir jerarquía y materializar bloques, codificación de registros en
+buffer y escritura de fuente en lotes de 32 KiB. Los buffers de fanout pasaron de 8 a 32 KiB, y el
+presupuesto de memoria controlado incluye ese tamaño. También se simplificó la distancia al centro
+del LOD a tres restas y multiplicaciones explícitas. Estas modificaciones reducen llamadas de I/O y
+trabajo repetido, pero la conversión sigue teniendo scatter a spools, compresión y verificaciones
+por punto.
+
+| Albuera, 4 workers × 8 divisiones | Wall | Planificación espacial | Jerarquía | Lectura/escritura | Validación | RSS pico | Salida |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v4 antes de microoptimizaciones, `release` | 346,49 s | 135,260 s | 84,283 s | 101,639 s | 22,862 s | 675.488 KiB | 12.435.028.825 B |
+| I/O por lotes, `release` | 297,36 s | 115,154 s | 64,400 s | 92,591 s | 22,597 s | 757.608 KiB | 12.435.028.825 B |
+| I/O por lotes, `perf` + `target-cpu=native` | 233,81 s | 77,783 s | 56,564 s | 80,844 s | 16,208 s | 706.444 KiB | 12.435.028.825 B |
+| Experimento temporal: precálculo de rejilla, mismos flags `perf`/nativos | 234,14 s | 77,007 s | 54,375 s | 83,806 s | 16,366 s | 721.008 KiB | 12.435.028.825 B |
+
+Cada fila es una ejecución, no una mediana emparejada. El cambio de buffers en `release` coincidió
+con −14,2 % de wall y −23,6 % de fase de jerarquía frente a la primera fila; aumentó el RSS pico
+observado en 82.120 KiB. No debe atribuirse todo el cambio a vectorización. El perfil `perf` más
+`target-cpu=native` redujo otros 63,55 s frente al `release` ya optimizado (−21,4 % observado), pero
+mezcla nivel de optimización, LTO, unidades de código e ISA del host. La repetición con la rejilla
+varió +0,14 % en wall frente a la fila anterior: no demuestra mejora medible de esa microoptimización.
+Todas las salidas tuvieron el mismo tamaño, conteo de bloques y estadísticas de payload; no se
+compararon hashes del archivo entero en estas pasadas. `perf stat` no está instalado/disponible en el
+entorno, así que no hay contadores de ciclos, ramas o instrucciones SIMD.
+
+El experimento de rejilla conservaba límites y tamaños de celda por nodo y usaba comparaciones con
+el punto medio para dos divisiones. La prueba de equivalencia pasó, pero la medición no mostró una
+mejora; se retiró del código de producción por su complejidad adicional. El camino de coordenadas es
+irregular (cada punto escribe en un spool e índice de muestra determinados por sus valores), y mezcla
+validación, extracción de atributos e I/O; por eso no se añadió SIMD manual. LLVM/Rust habilitan vectorizadores automáticos para bucles
+adecuados, pero eso no garantiza vectorización del scatter de esta pipeline. `std::simd` sigue siendo
+una API inestable; cualquier kernel intrínseco o portable SIMD debe aislarse, conservar un camino
+portable y aportar diagnóstico/benchmark de código máquina antes de incorporarse.
+
+También se revisaron las ramas por punto. Las comprobaciones de coordenadas finitas, límites de
+cabecera y esquema de atributos validan entrada y no se eliminan. La presencia de atributos se
+comprueba una vez por bloque; opciones GPS/NIR/RGB son invariantes por archivo y predecibles durante
+su recorrido. Especializarlas en kernels separados podría quitar ramas, pero multiplicaría rutas y
+código y no hay perfil de ramas que demuestre que sea un cuello. Mantenerlas hasta tener contadores.
+Próximo cierre: repetir Albuera y Majadas tres veces en `release` y `perf` con disco/caché controlados,
+registrar hash exacto y medir I/O temporal. El perfil nativo solo es comparable en este host; no es
+una configuración portátil recomendada.
+
+Comando reproducible del binario `perf` nativo:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo build --profile perf --offline -p viewer_convert --example real_dataset_bench
+/usr/bin/time -v target/perf/examples/real_dataset_bench convert INPUT.laz OUTPUT.oct 4 8
+```
+
+Referencias primarias: [vectorizadores LLVM](https://llvm.org/docs/Vectorizers.html),
+[perfiles Cargo](https://doc.rust-lang.org/cargo/reference/profiles.html),
+[opciones de generación de código de rustc](https://doc.rust-lang.org/rustc/codegen-options/index.html)
+y [estado de portable SIMD](https://doc.rust-lang.org/nightly/unstable-book/library-features/portable-simd.html).
+
 ### Memoria esperable para render
 
 En una ruta hipotética que materialice el dataset completo, `Point` ocupa 16 B e `InstanceRaw` 32 B.
