@@ -862,13 +862,16 @@ metadatos y estadísticas sin copiar la nube al hilo principal.
   generación LOD. Un clic vacío no altera la órbita.
 - [x] Integrar selección de centro al clic; validar modos/pose/coordenadas con origen grande en tests.
 - [ ] Medir el picking en navegador y verificar errores de lectura GPU con una muestra real.
-- [ ] Auditar `dispose`, cambio/tamaño cero del canvas, respuestas tardías, fallos del worker/dispositivo
-  y límites de recursos; probar en navegador con una muestra pequeña.
+- [x] Auditar `dispose`, tamaño cero, respuestas tardías, fallos del worker y límites de recursos;
+  los errores fatales de frame/worker terminan el worker para soltar caché y recursos GPU.
+- [ ] Probar pérdida real del dispositivo, picking y cancelación en navegador con una muestra pequeña.
 
 **Validación local de esta iteración:** unit tests cubren pose/rayo/selección frontal, origen y escala,
-límite de framebuffer y presupuesto de picking; los mocks del host cubren el ciclo `dispose`, coordenadas
-CSS y rechazo de entrada/carga duplicada. El entorno actual no tiene Chromium y Firefox headless se
-había cerrado por fallo nativo, por lo que no hay evidencia de interacción WebGPU real ni de FPS del pick.
+límite de framebuffer y presupuesto de picking; los mocks del host cubren el ciclo `dispose`, errores
+fatales del worker, coordenadas CSS y rechazo de entrada/carga duplicada. Los dos tests GPU offscreen,
+omitidos por defecto, también pasaron al ejecutarlos explícitamente con Vulkan/llvmpipe. El entorno no
+tiene Chromium y Firefox headless ya había terminado con fallo nativo; no hay evidencia actual de
+interacción WebGPU real, pérdida de dispositivo ni FPS del pick.
 
 **Cierre:** una persona puede seleccionar un archivo convertido, ver progreso, navegar la nube y
 entender límites/errores sin editar el código de la demo.

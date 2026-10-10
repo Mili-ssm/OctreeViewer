@@ -451,6 +451,8 @@ function handleWorkerMessage(event) {
         if (data.operation === "frame" || data.operation === "init") {
             frameFailed = true;
             stopRendering();
+            worker?.terminate();
+            worker = null;
             reloadButton.textContent = "Recreate viewer";
         }
     }
@@ -467,14 +469,18 @@ function createWorkerViewer() {
     try {
         worker = new Worker(new URL("./viewer-worker.js", import.meta.url), { type: "module" });
         worker.addEventListener("message", handleWorkerMessage);
-        worker.addEventListener("error", (event) => {
+        const handleWorkerError = (event) => {
             if (event.currentTarget !== worker) return;
             frameFailed = true;
             loadingFile = false;
             cancelButton.hidden = true;
             stopRendering();
-            statusRoot.textContent = `Renderer worker failed: ${event.message}. Recreate the viewer to retry.`;
-        });
+            statusRoot.textContent = `Renderer worker failed: ${event.message || "message error"}. Recreate the viewer to retry.`;
+            worker.terminate();
+            worker = null;
+        };
+        worker.addEventListener("error", handleWorkerError);
+        worker.addEventListener("messageerror", handleWorkerError);
         const offscreen = canvas.transferControlToOffscreen();
         canvasTransferred = true;
         worker.postMessage({

@@ -30,13 +30,16 @@ class FakeWorker {
     listeners = new Map();
     terminated = false;
     holdApi = false;
+    events = new Map();
 
     constructor() { FakeWorker.instance = this; }
     addEventListener(type, callback) {
-        this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]);
+        const target = type === "message" ? this.listeners : this.events;
+        target.set(type, [...(target.get(type) ?? []), callback]);
     }
     removeEventListener(type, callback) {
-        this.listeners.set(type, (this.listeners.get(type) ?? []).filter((item) => item !== callback));
+        const target = type === "message" ? this.listeners : this.events;
+        target.set(type, (target.get(type) ?? []).filter((item) => item !== callback));
     }
     postMessage(message) {
         this.messages.push(message);
@@ -53,6 +56,9 @@ class FakeWorker {
     }
     send(data) {
         for (const callback of this.listeners.get("message") ?? []) callback({ data });
+    }
+    sendEvent(type, event = {}) {
+        for (const callback of this.events.get(type) ?? []) callback(event);
     }
     terminate() { this.terminated = true; }
 }
@@ -113,3 +119,55 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         Object.assign(globalThis, previous);
     }
 });
+
+for (const failure of [
+    {
+        name: "fatal frame error message",
+        emit(worker) { worker.send({ type: "error", operation: "frame", message: "frame failed" }); },
+    },
+    {
+        name: "worker error event",
+        emit(worker) { worker.sendEvent("error", { message: "worker crashed" }); },
+    },
+    {
+        name: "worker messageerror event",
+        emit(worker) { worker.sendEvent("messageerror", { message: "message decode failed" }); },
+    },
+]) {
+    test(`${failure.name} terminates worker and rejects pending requests without later resize`, async () => {
+        const previous = {
+            HTMLCanvasElement: globalThis.HTMLCanvasElement,
+            Worker: globalThis.Worker,
+            ResizeObserver: globalThis.ResizeObserver,
+            window: globalThis.window,
+            requestAnimationFrame: globalThis.requestAnimationFrame,
+            cancelAnimationFrame: globalThis.cancelAnimationFrame,
+            CustomEvent: globalThis.CustomEvent,
+        };
+        globalThis.HTMLCanvasElement = FakeCanvas;
+        globalThis.Worker = FakeWorker;
+        globalThis.ResizeObserver = FakeResizeObserver;
+        globalThis.window = { Worker: FakeWorker, devicePixelRatio: 2, addEventListener() {}, removeEventListener() {} };
+        globalThis.requestAnimationFrame = () => 1;
+        globalThis.cancelAnimationFrame = () => {};
+        globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
+        try {
+            const canvas = new FakeCanvas();
+            const viewer = createViewer(canvas);
+            await viewer.ready;
+            const worker = FakeWorker.instance;
+            worker.holdApi = true;
+            const pending = viewer.getStats();
+            failure.emit(worker);
+
+            await assert.rejects(pending, /frame failed|worker crashed|message decode failed/);
+            assert.equal(worker.terminated, true);
+            const messageCount = worker.messages.length;
+            FakeResizeObserver.instance.callback();
+            assert.equal(worker.messages.length, messageCount);
+            assert.equal(worker.messages.some((message) => message.type === "resize"), false);
+        } finally {
+            Object.assign(globalThis, previous);
+        }
+    });
+}

@@ -19,6 +19,7 @@ export function createViewer(canvas, options = {}) {
     let nextRequestId = 1;
     let disposed = false;
     let failed = false;
+    let workerTerminated = false;
     let ready = false;
     let loading = false;
     let loadInFlight = false;
@@ -54,6 +55,24 @@ export function createViewer(canvas, options = {}) {
         for (const entry of pending.values()) entry.reject(error);
         pending.clear();
     };
+    const terminateWorker = () => {
+        if (workerTerminated) return;
+        workerTerminated = true;
+        worker.terminate();
+    };
+    const failWorker = (error, detail = {}, emitError = true) => {
+        if (failed || disposed) return;
+        failed = true;
+        loading = false;
+        framePending = false;
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        const failure = error instanceof Error ? error : new Error(String(error));
+        if (emitError) emit("error", { operation: "worker", message: failure.message, ...detail });
+        rejectReady(failure);
+        rejectPending(failure);
+        terminateWorker();
+    };
     const request = (operation, values = {}) => new Promise((resolve, reject) => {
         if (disposed) return reject(new Error("viewer is disposed"));
         if (failed) return reject(new Error("viewer worker has failed"));
@@ -74,7 +93,7 @@ export function createViewer(canvas, options = {}) {
         worker.postMessage({ type: "frame", camera });
     };
     const resize = () => {
-        if (disposed) return;
+        if (disposed || failed) return;
         const [width, height] = framebufferSize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
         worker.postMessage({ type: "resize", width, height });
     };
@@ -94,13 +113,8 @@ export function createViewer(canvas, options = {}) {
             emit("error", data);
             const fatal = data.operation === "frame" || data.operation === "init";
             if (fatal) {
-                failed = true;
-                loading = false;
-                framePending = false;
-                if (raf) cancelAnimationFrame(raf);
-                raf = 0;
-                rejectReady(new Error(data.message));
-                rejectPending(new Error(data.message));
+                failWorker(new Error(data.message), data, false);
+                return;
             }
             if (!ready) rejectReady(new Error(data.message));
             if (data.requestId && pending.has(data.requestId)) {
@@ -128,15 +142,13 @@ export function createViewer(canvas, options = {}) {
             emit("status", data.message);
         }
     };
+    const onWorkerError = (event) => {
+        event.preventDefault?.();
+        failWorker(event.message || "viewer worker failed", { operation: "worker" });
+    };
     worker.addEventListener("message", onMessage);
-    worker.addEventListener("error", (event) => {
-        failed = true;
-        framePending = false;
-        const error = new Error(event.message);
-        rejectReady(error);
-        rejectPending(error);
-        emit("error", { message: event.message });
-    });
+    worker.addEventListener("error", onWorkerError);
+    worker.addEventListener("messageerror", onWorkerError);
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(canvas);
     window.addEventListener("resize", resize);
@@ -330,7 +342,9 @@ export function createViewer(canvas, options = {}) {
             canvas.removeEventListener("contextmenu", contextMenu);
             canvas.removeEventListener("keydown", keyDown);
             worker.removeEventListener("message", onMessage);
-            worker.terminate();
+            worker.removeEventListener("error", onWorkerError);
+            worker.removeEventListener("messageerror", onWorkerError);
+            terminateWorker();
             rejectPending(new Error("viewer disposed"));
             listeners.clear();
         },

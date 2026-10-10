@@ -98,6 +98,9 @@ are in source dataset coordinates, with the file's coordinate origin and visual 
 contributes a final pixel. Metadata reports bounds and coordinate origin; a CRS is not inferred when
 the file does not provide one. The canvas is transferred to a worker and cannot be reused after
 `dispose()`; create a replacement canvas before creating another viewer in its place.
+Fatal frame errors, worker errors and message decoding failures reject outstanding API requests and
+terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
+replace the transferred canvas and create a new viewer; automatic device recreation is not available.
 The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run; the
 current environment has no Chromium and Firefox headless is unstable.
 
