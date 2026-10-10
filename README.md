@@ -124,6 +124,74 @@ XYZ no lo necesita. `render_dataset` adjunta el `.octattrs` vecino si existe y u
 Las cifras históricas de Belvedere (81,7 M puntos; 100,12 s; 8,37 GiB temporales observados) pertenecen
 a versiones/configuraciones anteriores: ver el registro, no usarlas como resultado actual de v5.
 
+### Revisión de la auditoría de memoria y almacenamiento
+
+La inspección de código respalda priorizar memoria CPU, consultas del índice y temporales antes
+de cambiar precisión o codec. Identifica costes potenciales; **no mide qué fase domina** en v5.
+Las propuestas siguientes están pendientes y se adoptarán solo si mejoran una base comparable
+sin perder calidad, determinismo ni mantenibilidad.
+
+| Hallazgo contrastado | Implicación y matiz |
+| --- | --- |
+| [`VoxelSceneBuilder`](crates/viewer_render_wgpu/src/voxel_grid.rs) acumula en `BTreeMap` y mantiene una caché de proyección. | El límite de vóxeles no es un presupuesto de RAM CPU. `finish` consume el mapa mientras construye instancias: hay memoria temporal que medir, pero no demuestra dos colecciones completas duplicadas a la vez. |
+| [`FormatReader`](crates/viewer_format/src/reader.rs) lee el índice completo y construye directorios, bounds y jerarquía. | Los 256 MiB predeterminados limitan el índice serializado, no la memoria de las estructuras decodificadas ni el pico durante apertura. |
+| [`references_block`](crates/viewer_core/src/spatial.rs) recorre nodos/referencias y se usa al cargar bloques. | Es trabajo repetido candidato a lookup indexado; reutilizar un catálogo validado antes de añadir otro mapa residente. |
+| [`prepare_point_block`](crates/viewer_format/src/writer.rs) conserva coordenadas cuantizadas/reconstruidas, un buffer raw reutilizado y payloads preparados. | Medir el pico por bloque y lote de workers; reducir materializaciones antes de aumentar paralelismo. |
+| [`estimated_memory_bytes`](crates/viewer_core/src/dataset.rs) cuenta capacidades de payload, sin sobrecarga del asignador/índice de caché. | Separar presupuesto de payload, memoria residente estimada y RSS observado. Ningún límite individual representa todo el proceso. |
+| [`set_color_mode`](crates/viewer_wasm/src/bindings.rs) vacía bloques al cambiar modo o atributo seleccionado. | Aunque la lectura de columnas es selectiva, la recarga vuelve a leer geometría; medir ese coste antes de separar cachés. |
+
+El [ensayo `u16`](docs/COORDINATE_WIDTH_BENCH.md) encontró 620 puntos fuera de tolerancia 0,01
+en 19 de 1.343 bloques, con error máximo incremental 0,034913176. Descarta `u16` uniforme bajo
+ese criterio, no un esquema con fallback a `u32`. Los 490.227.702 B de ahorro son teóricos y sin
+comprimir; faltan error desde LAS/LAZ original y tamaño final con metadatos/compresión.
+Las mediciones grandes de [Albuera/Majadas](docs/REAL_DATASET_BENCH.md) corresponden a versiones
+anteriores y no validan v5. El [protocolo web](docs/WEB_PERFORMANCE_BENCH.md) sigue sin tabla de
+resultados reales; sus tamaños de ejemplo históricos deben actualizarse al medir la pareja v5.
+
+### Orden de trabajo y aceptación
+
+1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
+   al menos tres ejecuciones comparables por caso, revisión, opciones, perfil, hardware y estado de
+   caché declarados. Registrar mediana y dispersión; separar apertura, conversión, validación,
+   voxelización y subida GPU. Medir RSS pico, temporales máximos y acumulados, bytes leídos/escritos
+   y amplificación de I/O; desglosar `.oct` + `.octattrs`, índice y payloads sin contar el índice dos
+   veces. En navegador: primera vista, LOD objetivo, latencias de bloque p50/p95, puntos/vóxeles/bloques,
+   ocupación de caché y rechazos por presupuesto. Distinguir CPU nativa, heap JS/WASM y buffers GPU,
+   declarando qué memoria no se puede observar. Cierre: resultados reproducibles y cuello de botella
+   identificado; las métricas todavía no instrumentadas son parte de esta tarea.
+2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
+   Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
+   al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
+   Si el perfil lo justifica, comparar mapa actual con vector ordenado/reducción o claves compactas;
+   índice residente plano; cola de prioridad LOD con el mismo desempate; cachés de geometría/atributo
+   separadas y resumen global de rangos. Cierre: menor coste medido, mismos resultados deterministas,
+   cobertura `Replacement`/`Additive`, sin solapamientos ni crecimiento de memoria sin control.
+3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
+   y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
+   spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
+   semánticamente equivalente, RAM/temporales/I/O y tiempo por fase comparados, recuperación intacta.
+   Separar el coste de validación; no sustituir la comprobación profunda por CRC sin demostrar qué
+   corrupción, errores de descompresión y cuantización detectaría cada modo.
+4. [ ] **Representaciones experimentales — formato y render.** Un cambio por experimento:
+   `u16` con fallback, delta/shuffle u orden Morton alineado con todas las columnas, y codecs por
+   payload. Medir tamaño combinado, error local/mundo desde fuente, CPU, memoria temporal y lectura
+   aleatoria p50/p95 sobre grillas, planos, líneas, clusters y outliers. En GPU, evaluar compactar
+   `InstanceRaw` (40 B actuales) por modo conservando color/sombreado; medir buffers/draws por bloque
+   en la API que los usa antes de proponer una arena. No extrapolar ese coste a toda la ruta WASM.
+5. [ ] **Evolución estructural, condicionada a resultados.** Diseñar una nueva versión solo si
+   hacen falta cambios persistentes: índice paginado, subchunks de atributos para consultas por fila,
+   anchos de coordenadas/codec nuevos o metadatos reducidos. Compactar estructuras residentes no
+   exige por sí solo cambiar v5. Evaluar derivar RGB/bounds o reducir rangos únicamente conservando
+   sus consumidores y jerarquías arbitrarias. Cierre: beneficio medido, especificación y política
+   de compatibilidad acordadas antes de implementar; V6 no es una decisión tomada.
+
+Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
+validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
+Morton y máscaras son candidatos sobre coordenadas enteras; no reutilizar mantisas, NaN, bits de
+atributos válidos ni campos reservados de v5. Evaluar retornos/flags LAS y ángulo escalado como
+preservación de datos con round-trip y esquema explícito, no como bits libres. Reutilizar jerarquía
+COPC o ampliar EPT queda condicionado al perfil de importación y al alcance de interoperabilidad.
+
 ## Próximos criterios de cierre
 
 El seguimiento activo se mantiene en este README; no se crean Issues/PRs por defecto.
@@ -135,15 +203,13 @@ El seguimiento activo se mantiene en este README; no se crean Issues/PRs por def
   GPU, bytes leídos, primera vista y navegación separados. Fijar mínimos oficiales RAM/GPU/SO.
 - [ ] **Conversión:** matriz de fuentes <10 GB con al menos tres repeticiones y caché declarada;
   objetivos <5 min (ideal <1 min) y suma de ambos archivos ≤3× fuente (ideal <2×), no garantías.
-  Perfilar decodificación, particionado, rangos, compresión, validación y temporal antes de cambiar
-  la pipeline o adoptar codecs/representaciones nuevas. Comparar spools y escritura directa con
-  igual salida semántica; comprobar cancelación/recuperación y memoria máxima.
+  Aplicar la base v5 y el orden de optimización anterior; comprobar cancelación/recuperación.
 - [ ] **Calidad/LOD:** comparar divisiones 2/4/8 con igual presupuesto y revisión visual antes de
   cambiar el valor predeterminado 2. Extender cobertura no solapada a todos los consumidores;
   corpus grilla/plano/línea/clusters/outliers, cámaras, viewport, EPT y adapters diferentes.
 - [ ] **Lectura:** medir navegación con bloques retardados; integrar rangos asíncronos y
   tickets/cancelación del scheduler solo si la evidencia lo justifica. El worker cede entre bloques.
-- [ ] **Formato y atributos:** evaluar `u16`/coordenadas locales con error y tamaño medidos; acordar
+- [ ] **Formato y atributos:** resolver los experimentos anteriores con error y tamaño medidos; acordar
   preservación de flags/Extra Bytes/CRS, licencia y política de compatibilidad pública.
 - [ ] **Comparación:** Potree con misma fuente, equipo, configuración y calidad; registrar caché
   fría/caliente, versiones y percentiles. Acordar umbrales después de obtener una base reproducible.
@@ -165,7 +231,8 @@ python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'
 cargo test -p viewer_render_wgpu --profile fast --offline -- --ignored
 ```
 
-La última orden requiere GPU o Vulkan por software. La validación de esta revisión cubre **212 tests Rust**, **2 tests GPU adicionales**, seis suites
+La última orden requiere GPU o Vulkan por software. La validación de la implementación v5 anterior
+a esta revisión documental cubrió **212 tests Rust**, **2 tests GPU adicionales**, seis suites
 Node y tres tests Python, Clippy nativo/WASM, formato y compilación WASM release. Se generó el
 paquete local y se renderizó Outer Banks con y sin acompañante a 640×480 (2.381 vóxeles,
 12.034 píxeles de contenido; todos grises en el caso sin atributos). No certifica navegación
