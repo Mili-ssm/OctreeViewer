@@ -1,5 +1,5 @@
 use std::num::NonZeroU64;
-use std::{collections::HashMap, mem::size_of};
+use std::{collections::HashMap, mem::size_of, sync::mpsc};
 
 use bytemuck::{Pod, Zeroable};
 use viewer_core::{BlockId, DecodedBlockCache};
@@ -189,6 +189,12 @@ pub struct SurfaceRenderer<'window> {
     surface_config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     depth_texture: wgpu::Texture,
+    hzb: Option<crate::hzb::HzbResources>,
+    hzb_depth_supported: bool,
+    hzb_reference_camera: Option<([[f32; 4]; 4], [f32; 4])>,
+    hzb_scene_opaque: bool,
+    hzb_count_readback: Option<wgpu::Buffer>,
+    hzb_count_receiver: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     scene_buffer: Option<GpuInstanceBuffer>,
@@ -274,7 +280,36 @@ impl<'window> SurfaceRenderer<'window> {
             vertex_buffer,
             index_buffer,
         } = create_pipeline_resources(&device, pipeline_format).await?;
-        let depth_texture = create_depth_texture(&device, &surface_config);
+        let hzb_depth_supported = adapter
+            .get_texture_format_features(wgpu::TextureFormat::Depth32Float)
+            .allowed_usages
+            .contains(wgpu::TextureUsages::TEXTURE_BINDING);
+        let depth_texture = create_depth_texture(&device, &surface_config, hzb_depth_supported);
+        let hzb_estimated_bytes =
+            crate::hzb::estimated_pyramid_bytes([surface_config.width, surface_config.height]);
+        let hzb = if hzb_estimated_bytes <= config.gpu_budget.max_bytes / 2 {
+            crate::hzb::HzbResources::new(
+                &device,
+                &adapter,
+                &uniform_buffer,
+                &depth_texture,
+                surface_config.format,
+                [surface_config.width, surface_config.height],
+            )
+            .await
+            .ok()
+            .flatten()
+        } else {
+            None
+        };
+        let hzb_count_readback = hzb.as_ref().map(|_| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("octree-viewer-hzb-count-readback"),
+                size: size_of::<u32>() as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
+        });
         surface.configure(&device, &surface_config);
 
         Ok(Self {
@@ -284,6 +319,12 @@ impl<'window> SurfaceRenderer<'window> {
             surface_config,
             pipeline,
             depth_texture,
+            hzb,
+            hzb_depth_supported,
+            hzb_reference_camera: None,
+            hzb_scene_opaque: false,
+            hzb_count_readback,
+            hzb_count_receiver: None,
             vertex_buffer,
             index_buffer,
             scene_buffer: None,
@@ -369,11 +410,17 @@ impl<'window> SurfaceRenderer<'window> {
         }
         self.block_buffers.clear();
         self.visible_block_ids.clear();
+        self.hzb_reference_camera = None;
         self.visible_instance_count = scene.instance_count();
         self.uploaded_bytes = self.uploaded_bytes.saturating_add(bytes);
         self.scene_bounds = bounds;
         self.intensity_range = scene.intensity_range();
         self.elevation_range = scene.elevation_range();
+        self.hzb_scene_opaque = scene
+            .instances()
+            .iter()
+            .all(|instance| instance.color[3] >= 1.0);
+        self.prepare_hzb_scene(bytes);
         Ok(bytes)
     }
 
@@ -448,6 +495,11 @@ impl<'window> SurfaceRenderer<'window> {
         self.intensity_range = plan.visible_intensity_range;
         self.elevation_range = plan.visible_elevation_range;
         self.scene_buffer = None;
+        self.hzb_reference_camera = None;
+        self.hzb_scene_opaque = false;
+        if let Some(hzb) = &mut self.hzb {
+            hzb.reset_scene();
+        }
         self.uploaded_bytes = self.uploaded_bytes.saturating_add(plan.uploaded_bytes);
 
         Ok(BlockUploadStats {
@@ -464,17 +516,62 @@ impl<'window> SurfaceRenderer<'window> {
             .scene_buffer
             .as_ref()
             .map_or(0, |buffer| buffer.capacity);
-        self.block_buffers
-            .values()
-            .try_fold(scene_capacity, |sum, buffer| {
-                sum.checked_add(buffer.capacity)
-                    .ok_or(GpuRendererError::InvalidSceneSize)
-            })
+        let scene_and_blocks =
+            self.block_buffers
+                .values()
+                .try_fold(scene_capacity, |sum, buffer| {
+                    sum.checked_add(buffer.capacity)
+                        .ok_or(GpuRendererError::InvalidSceneSize)
+                })?;
+        scene_and_blocks
+            .checked_add(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()))
+            .and_then(|bytes| bytes.checked_add(self.hzb_count_readback.as_ref().map_or(0, |_| 4)))
+            .ok_or(GpuRendererError::InvalidSceneSize)
+    }
+
+    fn prepare_hzb_scene(&mut self, source_bytes: u64) {
+        self.hzb_reference_camera = None;
+        let allocated_without_hzb = self
+            .allocated_gpu_bytes()
+            .unwrap_or(self.gpu_budget.max_bytes)
+            .saturating_sub(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()));
+        let available = self
+            .gpu_budget
+            .max_bytes
+            .saturating_sub(allocated_without_hzb);
+        let Some(hzb) = &mut self.hzb else {
+            return;
+        };
+        let opaque = self.hzb_scene_opaque;
+        let Some(buffer) = &self.scene_buffer else {
+            hzb.reset_scene();
+            return;
+        };
+        if !opaque
+            || buffer.instance_count < crate::hzb::MIN_OCCLUSION_CANDIDATES as u32
+            || !hzb.can_prepare_scene(
+                &self.device,
+                source_bytes,
+                buffer.instance_count as usize,
+                available,
+            )
+        {
+            hzb.reset_scene();
+            return;
+        }
+        hzb.prepare_scene(
+            &self.device,
+            &buffer.buffer,
+            source_bytes,
+            buffer.instance_count as usize,
+        );
     }
 
     /// Drops scene and block GPU data before opening another dataset.
     pub fn clear_dataset(&mut self) {
         self.scene_buffer = None;
+        self.hzb_reference_camera = None;
+        self.hzb_scene_opaque = false;
         self.block_buffers.clear();
         self.visible_block_ids.clear();
         self.visible_instance_count = 0;
@@ -483,6 +580,9 @@ impl<'window> SurfaceRenderer<'window> {
         self.elevation_range = None;
         self.uploaded_bytes = 0;
         self.visual_scale = 1.0;
+        if let Some(hzb) = &mut self.hzb {
+            hzb.reset_scene();
+        }
     }
 
     pub fn visible_block_count(&self) -> usize {
@@ -491,6 +591,40 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn visible_instance_count(&self) -> usize {
         self.visible_instance_count
+    }
+
+    pub fn hzb_active(&self) -> bool {
+        let Some(frame) = self.camera.frame(self.viewport_size()) else {
+            return false;
+        };
+        let mut render_origin = frame.render_origin;
+        render_origin[3] = self.visual_scale as f32;
+        self.hzb_reference_camera == Some((frame.view_projection, render_origin))
+            && self
+                .hzb
+                .as_ref()
+                .is_some_and(|hzb| hzb.indexed_bind_group().is_some())
+    }
+
+    fn update_hzb_visible_count(&mut self) {
+        let Some(receiver) = &self.hzb_count_receiver else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(Ok(())) => {
+                self.hzb_count_receiver = None;
+                if let Some(buffer) = &self.hzb_count_readback {
+                    let view = buffer.slice(..).get_mapped_range();
+                    self.visible_instance_count = *bytemuck::from_bytes::<u32>(&view) as usize;
+                    drop(view);
+                    buffer.unmap();
+                }
+            }
+            Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
+                self.hzb_count_receiver = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
     }
 
     pub fn max_visible_instances(&self) -> usize {
@@ -511,6 +645,7 @@ impl<'window> SurfaceRenderer<'window> {
             return Err(GpuRendererError::InvalidVisualScale);
         }
         self.visual_scale = scale;
+        self.hzb_reference_camera = None;
         Ok(())
     }
 
@@ -685,7 +820,9 @@ impl<'window> SurfaceRenderer<'window> {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
-        self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+        self.depth_texture =
+            create_depth_texture(&self.device, &self.surface_config, self.hzb_depth_supported);
+        self.refresh_hzb_targets();
         if !self.camera.is_fitted()
             && let Some(bounds) = self.display_bounds()
         {
@@ -695,8 +832,80 @@ impl<'window> SurfaceRenderer<'window> {
         FrameStatus::Reconfigured
     }
 
+    fn refresh_hzb_targets(&mut self) {
+        self.hzb_reference_camera = None;
+        if self.hzb.is_none() {
+            return;
+        }
+        let required_bytes = crate::hzb::estimated_pyramid_bytes([
+            self.surface_config.width,
+            self.surface_config.height,
+        ]);
+        if required_bytes > self.gpu_budget.max_bytes / 2 {
+            self.hzb = None;
+            self.hzb_count_readback = None;
+            self.hzb_count_receiver = None;
+            return;
+        }
+        let resized = self.hzb.as_mut().is_some_and(|hzb| {
+            hzb.resize_targets(
+                &self.device,
+                &self.depth_texture,
+                [self.surface_config.width, self.surface_config.height],
+            )
+        });
+        if !resized {
+            self.hzb = None;
+            self.hzb_count_readback = None;
+            self.hzb_count_receiver = None;
+            return;
+        }
+        self.reprepare_hzb_scene();
+    }
+
+    fn reprepare_hzb_scene(&mut self) {
+        self.hzb_reference_camera = None;
+        let allocated_without_hzb = self
+            .allocated_gpu_bytes()
+            .unwrap_or(self.gpu_budget.max_bytes)
+            .saturating_sub(self.hzb.as_ref().map_or(0, |hzb| hzb.resource_bytes()));
+        let available = self
+            .gpu_budget
+            .max_bytes
+            .saturating_sub(allocated_without_hzb);
+        let Some(hzb) = &mut self.hzb else {
+            return;
+        };
+        if !self.hzb_scene_opaque {
+            hzb.reset_scene();
+            return;
+        }
+        let Some(buffer) = &self.scene_buffer else {
+            hzb.reset_scene();
+            return;
+        };
+        if buffer.instance_count < crate::hzb::MIN_OCCLUSION_CANDIDATES as u32
+            || !hzb.can_prepare_scene(
+                &self.device,
+                u64::from(buffer.instance_count) * size_of::<InstanceRaw>() as u64,
+                buffer.instance_count as usize,
+                available,
+            )
+        {
+            hzb.reset_scene();
+            return;
+        }
+        hzb.prepare_scene(
+            &self.device,
+            &buffer.buffer,
+            u64::from(buffer.instance_count) * size_of::<InstanceRaw>() as u64,
+            buffer.instance_count as usize,
+        );
+    }
+
     /// Presents a frame with the current camera.
     pub fn render(&mut self) -> Result<FrameStatus, wgpu::SurfaceError> {
+        self.update_hzb_visible_count();
         if self.suspended {
             return Ok(FrameStatus::Suspended);
         }
@@ -710,12 +919,29 @@ impl<'window> SurfaceRenderer<'window> {
             return Ok(FrameStatus::Suspended);
         };
         render_origin[3] = self.visual_scale as f32;
+        let camera_key = (view_projection, render_origin);
+        let use_hzb = self.hzb_reference_camera == Some(camera_key)
+            && self
+                .hzb
+                .as_ref()
+                .is_some_and(|hzb| hzb.indexed_bind_group().is_some());
+        if !use_hzb {
+            self.visible_instance_count = self
+                .scene_buffer
+                .as_ref()
+                .map_or(0, |buffer| buffer.instance_count as usize);
+        }
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Timeout) => return Ok(FrameStatus::SkippedTimeout),
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 self.surface.configure(&self.device, &self.surface_config);
-                self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+                self.depth_texture = create_depth_texture(
+                    &self.device,
+                    &self.surface_config,
+                    self.hzb_depth_supported,
+                );
+                self.refresh_hzb_targets();
                 return Ok(FrameStatus::Reconfigured);
             }
             Err(error) => return Err(error),
@@ -746,6 +972,9 @@ impl<'window> SurfaceRenderer<'window> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("octree-viewer-frame"),
             });
+        if use_hzb && let Some(hzb) = &self.hzb {
+            hzb.cull(&mut encoder, &self.queue);
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("octree-viewer-pass"),
@@ -768,16 +997,28 @@ impl<'window> SurfaceRenderer<'window> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            if let Some(buffer) = &self.scene_buffer {
+            if use_hzb {
+                if let Some(hzb) = &self.hzb
+                    && let (Some(bind_group), Some(indirect_args)) =
+                        (hzb.indexed_bind_group(), hzb.indirect_args())
+                {
+                    pass.set_pipeline(hzb.indexed_pipeline());
+                    pass.set_bind_group(0, hzb.camera_bind_group(), &[]);
+                    pass.set_bind_group(1, bind_group, &[]);
+                    pass.draw_indexed_indirect(indirect_args, 0);
+                }
+            } else {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            }
+            if !use_hzb && let Some(buffer) = &self.scene_buffer {
                 if buffer.instance_count > 0 {
                     pass.set_vertex_buffer(1, buffer.buffer.slice(..));
                     pass.draw_indexed(0..CUBE_INDICES.len() as u32, 0, 0..buffer.instance_count);
                 }
-            } else {
+            } else if !use_hzb {
                 for block_id in &self.visible_block_ids {
                     if let Some(buffer) = self.block_buffers.get(block_id)
                         && buffer.instance_count > 0
@@ -792,12 +1033,55 @@ impl<'window> SurfaceRenderer<'window> {
                 }
             }
         }
+        if !use_hzb
+            && let Some(hzb) = &self.hzb
+            && hzb.indexed_bind_group().is_some()
+        {
+            hzb.build_depth_pyramid(&mut encoder);
+            hzb.cull(&mut encoder, &self.queue);
+        }
+        if use_hzb
+            && self.hzb_count_receiver.is_none()
+            && let (Some(hzb), Some(readback)) = (&self.hzb, &self.hzb_count_readback)
+            && let Some(indirect_args) = hzb.indirect_args()
+        {
+            encoder.copy_buffer_to_buffer(
+                indirect_args,
+                size_of::<u32>() as u64,
+                readback,
+                0,
+                size_of::<u32>() as u64,
+            );
+        }
         self.queue.submit([encoder.finish()]);
+        if use_hzb
+            && self.hzb_count_receiver.is_none()
+            && let Some(readback) = &self.hzb_count_readback
+        {
+            let (sender, receiver) = mpsc::channel();
+            readback
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = sender.send(result);
+                });
+            self.hzb_count_receiver = Some(receiver);
+        }
+        self.hzb_reference_camera = if self
+            .hzb
+            .as_ref()
+            .is_some_and(|hzb| hzb.indexed_bind_group().is_some())
+        {
+            Some(camera_key)
+        } else {
+            None
+        };
         let suboptimal = frame.suboptimal;
         frame.present();
         if suboptimal {
             self.surface.configure(&self.device, &self.surface_config);
-            self.depth_texture = create_depth_texture(&self.device, &self.surface_config);
+            self.depth_texture =
+                create_depth_texture(&self.device, &self.surface_config, self.hzb_depth_supported);
+            self.refresh_hzb_targets();
             return Ok(FrameStatus::Reconfigured);
         }
         Ok(FrameStatus::Presented)
@@ -843,7 +1127,9 @@ fn create_instance_buffer(
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("octree-viewer-instances"),
         size: capacity,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::VERTEX
+            | wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     if bytes > 0 {
@@ -889,7 +1175,12 @@ fn surface_config(
 fn create_depth_texture(
     device: &wgpu::Device,
     config: &wgpu::SurfaceConfiguration,
+    sampleable: bool,
 ) -> wgpu::Texture {
+    let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+    if sampleable {
+        usage |= wgpu::TextureUsages::TEXTURE_BINDING;
+    }
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("octree-viewer-depth"),
         size: wgpu::Extent3d {
@@ -901,7 +1192,7 @@ fn create_depth_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage,
         view_formats: &[],
     })
 }

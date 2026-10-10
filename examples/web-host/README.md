@@ -53,18 +53,28 @@ source detail, then aggregates it into one global adaptive dyadic grid. Cells su
 to their twelve projected edges; storage-node depth and block size do not set rendered voxel size.
 The dyadic steps give approximately target/2 to target pixels per maximum cell edge. Full-resolution
 leaf points can use arbitrarily finer cells up to the precision limit (24 subdivisions). Internal
-representatives require sufficient source detail before drawing a finer grid. A 4-million source-point
-safety cap applies independently of target pixels: framebuffer area/target² does not bound hidden
-surfaces or source points. Missing required blocks or exhausted source capacity preserve the previous
-scene and report an error. Cells share integer identities; there is no point-size multiplier.
+representatives require sufficient source detail before drawing a finer grid. The 8-million safety
+cap applies to generated render voxels, not source points: framebuffer area/target² does not bound
+hidden surfaces or source points. Missing required blocks or exhausted voxel capacity preserve the
+previous scene and report an error. Cells share integer identities; there is no point-size multiplier.
 Project-format files preserve their attributes for color modes; the synthetic sample only has RGB,
 so missing intensity uses grayscale luminance and missing classification keeps RGB.
 The stats also expose the projected maximum-edge range and the count of voxels above the target,
-including precision-limited cells. Those measurements concern generated visible cells, not occluded
-surface fragments or raster coverage of every face.
+including precision-limited cells. The `renderedVoxels` count reflects the GPU-visible instance count
+after asynchronous HZB readback when that path is active; `hzbActive` indicates that a valid static-view
+depth pyramid is ready. Those measurements do not report rasterized fragments or pixel coverage of every face.
 Depth shading is enabled by default and can be disabled in Rendering options. It uses face orientation
 and camera depth in the existing voxel shader; it is a lightweight depth cue, not physical ambient
 occlusion.
+
+For opaque voxel scenes of at least 4,096 instances, the renderer can build a hierarchical Z buffer
+(HZB) and cull fully hidden cubes on the GPU while the camera and scene remain unchanged. The first
+frame after a camera, scene, or viewport change uses the complete scene and rebuilds the depth pyramid;
+frames without adapter support, within a tight GPU budget, with transparent cells, or on the per-block
+render path keep the direct renderer. The source instance buffer remains resident and all candidates
+are checked by the compute shader, so HZB reduces draw/vertex/raster work but does not reduce scene
+buffer memory or candidate traversal. This avoids stale-depth holes, but the GPU-time effect still
+needs measurement in Chrome and Firefox with Albuera.
 
 The stats panel reports visible source points, deduplicated voxels/blocks, deepest visible LOD level, LOD coverage,
 pending block count, decoded CPU cache usage/budget, cumulative bytes written to instance buffers, and

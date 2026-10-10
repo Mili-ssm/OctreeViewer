@@ -541,6 +541,7 @@ impl WasmVoxelViewer {
         let stats = self.update_lod_view(target_voxel_pixels)?;
         self.last_lod_error = None;
         let value = lod_view_stats_to_js(&stats)?;
+        add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
         js_sys::Reflect::set(
             &value,
             &"lodError".into(),
@@ -562,6 +563,7 @@ impl WasmVoxelViewer {
         match &self.last_lod_stats {
             Some(stats) => {
                 let value = lod_view_stats_to_js(stats)?;
+                add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
                 js_sys::Reflect::set(
                     &value,
                     &"lodError".into(),
@@ -764,6 +766,11 @@ impl WasmVoxelViewer {
             &"visibleBlocks".into(),
             &JsValue::from_f64(renderer.visible_block_count() as f64),
         )?;
+        js_sys::Reflect::set(
+            &stats,
+            &"hzbActive".into(),
+            &JsValue::from_bool(renderer.hzb_active()),
+        )?;
         Ok(stats.into())
     }
 }
@@ -959,6 +966,26 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         &JsValue::from_f64(stats.budget_omitted_nodes as f64),
     )?;
     Ok(value.into())
+}
+
+fn add_runtime_gpu_stats(
+    value: &JsValue,
+    renderer: Option<&SurfaceRenderer<'_>>,
+) -> Result<(), JsValue> {
+    let Some(renderer) = renderer else {
+        return Ok(());
+    };
+    js_sys::Reflect::set(
+        value,
+        &"renderedVoxels".into(),
+        &JsValue::from_f64(renderer.visible_instance_count() as f64),
+    )?;
+    js_sys::Reflect::set(
+        value,
+        &"hzbActive".into(),
+        &JsValue::from_bool(renderer.hzb_active()),
+    )?;
+    Ok(())
 }
 
 fn raw_scene_point_limit() -> usize {

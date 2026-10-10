@@ -100,6 +100,7 @@ function updateStats(message) {
         `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
         `visible points: ${points}`,
         `visible voxels: ${lod?.renderedVoxels ?? message.gpu.visibleInstances}`,
+        `HZB occlusion: ${(lod?.hzbActive ?? message.gpu.hzbActive) ? "active" : "inactive"}`,
         `visible blocks: ${message.gpu.visibleBlocks}`,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
         `LOD coverage: ${coverage}`,

@@ -97,7 +97,7 @@ una versión publicada.
 | Área | Estado observado | Límite actual |
 | --- | --- | --- |
 | `viewer_core` | Tipos de puntos, jerarquía AABB/frustum, selección LOD de reemplazo/aditiva, scheduler de bloques, caché LRU acotada y transiciones de cortes disponibles. | Jerarquía, scheduler y caché residen en memoria; el scheduler no ejecuta I/O. El presupuesto contabiliza el payload estimado, no el RSS ni la sobrecarga del allocator/índice. `SparseVoxelStore` mantiene voxeles en un `HashMap` y su filtro incluye por centro. |
-| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, escala visual uniforme y presupuesto configurable. | El límite GPU contabiliza buffers de instancias, no VRAM total. |
+| `viewer_render_wgpu` | Conversión a instancias, cámara orbital, modos de color, buffers GPU por bloque, escala visual uniforme, HZB conservador para escenas estáticas y presupuesto configurable. | El límite contabiliza buffers y recursos HZB administrados por el renderer, no la VRAM total del proceso. |
 | `viewer_wasm` | Bindings para el visor, sesiones LAS/LAZ, presentación WebGPU y carga bajo demanda de bloques v1/v2/v3 al corte LOD. | El host aún debe crear el worker y gestionar sus mensajes/estados. |
 | `examples/web-host` | Demo WebGPU en worker, muestra sintética, apertura de formato local, progreso por rangos, cancelación y perfiles LOD; se comprobó visualmente con Chrome en Bunny y Outer Banks. | No hay un escáner urbano de ejemplo en los archivos del repositorio; Firefox y la cancelación de una lectura local siguen pendientes. |
 | Formato propio | Especificaciones v1/v2/v3, cuantizador `u32`, codec LZ4 por bloque, CRC32, escritor incremental y lector aleatorio con límites configurables ([`docs/FORMAT_V1.md`](docs/FORMAT_V1.md), [`docs/FORMAT_V2.md`](docs/FORMAT_V2.md), [`docs/FORMAT_V3.md`](docs/FORMAT_V3.md)). v1/v2 conservan su layout; v3 añade escala solo visual y conserva las semánticas existentes. | Fixtures prueban round-trip, bloques selectivos y lectura desde tickets del scheduler, corrupción, límites, semánticas, escala y compatibilidad. XYZ `u32` conserva 12 bytes por punto, igual que `f32`; el ahorro aplica frente a `f64`. |
@@ -209,6 +209,30 @@ píxeles. La jerarquía selecciona detalle fuente por error proyectado; el lími
 aplica después, al número de instancias voxel resultantes. Este cambio no evita recorrer los puntos
 de los bloques seleccionados que intersectan la
 vista; reducir ese coste requiere granularidad espacial de bloques más fina.
+
+### Oclusión conservadora con HZB
+
+`SurfaceRenderer` construye una pirámide de profundidad (HZB) después del primer render completo de
+una escena voxelizada opaca. Si la cámara, el origen de render y la escena siguen idénticos en el
+siguiente frame, un compute shader proyecta las cajas de los voxeles y elimina las instancias
+completamente ocultas; el resto se dibuja mediante índices compactados y un draw indirecto. La
+lectura del contador real de instancias es asíncrona y puede reflejar el frame GPU anterior.
+
+Mover la cámara, cambiar la escena, cambiar el tamaño del canvas o perder/recrear la superficie
+invalida la pirámide y fuerza un frame completo antes de volver a usarla. Así se evita decidir con
+profundidad de otra vista y se recupera el contenido descubierto en el mismo frame de movimiento.
+El HZB se omite para escenas transparentes, cortes por buffers separados, escenas menores de 4.096
+instancias, adaptadores sin los formatos/compute/indirect necesarios, límites de almacenamiento
+insuficientes o presupuestos de memoria ajustados; esas situaciones conservan el render directo.
+La selección es conservadora: cajas cerca del plano cercano, con proyección incierta o sin oclusión
+completa permanecen visibles. La escena fuente sigue residente y el compute shader examina sus
+instancias candidatas en cada frame estable; el HZB reduce las instancias enviadas al draw y el
+trabajo de vértices/rasterización, pero no libera el buffer de la escena ni evita recorrer candidatos.
+
+La pirámide y las listas de índices cuentan dentro del presupuesto de recursos GPU del renderer. La
+ruta HZB se valida con el adaptador local disponible y mantiene un fallback, pero aún falta medir en
+Chrome/Firefox con Albuera la reducción de instancias y el tiempo GPU; no se afirma una mejora de
+tiempo de frame hasta tener esa medición.
 
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
 

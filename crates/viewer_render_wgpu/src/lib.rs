@@ -4,6 +4,7 @@ mod camera;
 mod gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
+mod hzb;
 #[cfg(not(target_arch = "wasm32"))]
 pub use headless::{OffscreenImage, render_offscreen};
 mod scene;
