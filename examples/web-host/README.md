@@ -170,5 +170,8 @@ Rust-owned storage. Full-scene inputs are limited by the renderer's visible-inst
 These APIs copy across JS/WASM memory; the local-format viewing path reads selected blocks directly in
 Rust and avoids materializing the full file in JS.
 
-Run the host-side queue tests with `node --test examples/web-host/tests/*.test.mjs`. Browser interaction,
-WebGPU presentation, and worker cancellation still need a real browser check.
+Run the host-side tests with `node --test examples/web-host/tests/*.test.mjs` and
+`python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'`. They cover request/resource
+caps, worker failure cleanup, benchmark-window metrics and filtering/aggregation of exported runs.
+Browser interaction, real GPU timing, device loss and cancellation during a local file read still need
+a real browser check; no native or mocked timing should be reported as browser FPS.

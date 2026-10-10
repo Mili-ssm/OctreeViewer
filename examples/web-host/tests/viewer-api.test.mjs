@@ -93,7 +93,11 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         const viewer = createViewer(canvas);
         await viewer.ready;
         await assert.rejects(viewer.load(new Blob(), { voxelPixels: 17 }), /between 0.5 and 16/);
+        await assert.rejects(viewer.load(new Blob(), { cacheBytes: 1024 ** 3 + 1 }), /cacheBytes/);
         await assert.rejects(viewer.setCamera([Number.NaN, 0, 0], [0, 0, 0]), /finite 3D coordinates/);
+        const pickCount = FakeWorker.instance.messages.filter((message) => message.operation === "pick").length;
+        assert.equal(await viewer.pick(-1, 10), null);
+        assert.equal(FakeWorker.instance.messages.filter((message) => message.operation === "pick").length, pickCount);
         const hit = await viewer.pick(100, 80);
         assert.deepEqual(hit, { voxelSize: 0.5, sceneGeneration: 9 });
         assert.deepEqual(await viewer.getCamera(), {
@@ -115,6 +119,37 @@ test("embeddable API converts CSS pick coordinates and disposes its worker resou
         await assert.rejects(loading, /disposed/);
         assert.equal(FakeWorker.instance.terminated, true);
         assert.equal(FakeResizeObserver.instance.disconnected, true);
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+});
+
+test("embeddable API caps the number of outstanding worker requests", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+        CustomEvent: globalThis.CustomEvent,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 2, addEventListener() {}, removeEventListener() {} };
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init.detail; } };
+    try {
+        const viewer = createViewer(new FakeCanvas());
+        await viewer.ready;
+        FakeWorker.instance.holdApi = true;
+        const pending = Array.from({ length: 32 }, () => viewer.getStats());
+        await assert.rejects(viewer.getStats(), /request queue is full/);
+        viewer.dispose();
+        const results = await Promise.allSettled(pending);
+        assert.ok(results.every((result) => result.status === "rejected"));
     } finally {
         Object.assign(globalThis, previous);
     }

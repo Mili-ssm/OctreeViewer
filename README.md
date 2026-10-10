@@ -868,7 +868,9 @@ metadatos y estadísticas sin copiar la nube al hilo principal.
 
 **Validación local de esta iteración:** unit tests cubren pose/rayo/selección frontal, origen y escala,
 límite de framebuffer y presupuesto de picking; los mocks del host cubren el ciclo `dispose`, errores
-fatales del worker, coordenadas CSS y rechazo de entrada/carga duplicada. Los dos tests GPU offscreen,
+fatales del worker, coordenadas CSS, rechazo de picks fuera del canvas y los límites de caché/32
+solicitudes pendientes. Tres tests Python verifican que el agregador descarte corridas inestables y
+calcule medianas solo sobre corridas válidas. Los dos tests GPU offscreen,
 omitidos por defecto, también pasaron al ejecutarlos explícitamente con Vulkan/llvmpipe. El entorno no
 tiene Chromium y Firefox headless ya había terminado con fallo nativo; no hay evidencia actual de
 interacción WebGPU real, pérdida de dispositivo ni FPS del pick.
