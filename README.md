@@ -196,6 +196,16 @@ target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct
 target/release/examples/render_dataset data/datasets/sensoforest/majadas-tls.oct artifacts/sensoforest/majadas-640 4,8,16 640 480
 ```
 
+### Descarte de vóxeles fuera de cámara
+
+La voxelización adaptativa ahora descarta cada celda en cuanto sus límites quedan fuera del frustum,
+antes de crear o actualizar su acumulador. Antes, esas celdas se retenían en el mapa temporal y solo
+se excluían al construir la escena GPU. Así se reducen la memoria temporal de voxelización y las
+instancias preparadas para subir a GPU sin alterar las celdas visibles ni el tamaño objetivo en
+píxeles. La jerarquía también sigue aplicando su selección LOD y presupuesto de puntos antes de leer
+bloques. Este cambio no evita recorrer los puntos de los bloques seleccionados que intersectan la
+vista; reducir ese coste requiere granularidad espacial de bloques más fina.
+
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
 
 **Característica:** representar datasets y consultas sin depender de una estructura residente

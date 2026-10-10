@@ -31,7 +31,7 @@ impl AdaptiveVoxelGrid<'_> {
         SpatialBounds::new(min, max).expect("dyadic cells have ordered finite bounds")
     }
 
-    fn key_for_point(&mut self, point: [f64; 3]) -> VoxelKey {
+    fn key_for_point(&mut self, point: [f64; 3]) -> Option<VoxelKey> {
         let mut key = VoxelKey {
             depth: 0,
             coord: [0; 3],
@@ -42,9 +42,14 @@ impl AdaptiveVoxelGrid<'_> {
                 .projected_edges
                 .entry(key)
                 .or_insert_with(|| (self.project)(bounds));
+            // Cull cells as soon as their bounds cannot contribute to the view. Deferring this
+            // until scene construction would retain one accumulator per off-screen voxel.
+            if edge <= 0.0 {
+                return None;
+            }
             // Beyond 24 levels f32 cannot reliably distinguish adjacent local cell faces.
             if edge <= self.target_pixels || key.depth >= 24 {
-                return key;
+                return Some(key);
             }
             key.depth += 1;
             let count = 1_u32 << key.depth;
@@ -155,7 +160,9 @@ fn accumulate_block(
         if point.position.iter().any(|value| !value.is_finite()) {
             continue;
         }
-        let key = grid.key_for_point(point.position.map(f64::from));
+        let Some(key) = grid.key_for_point(point.position.map(f64::from)) else {
+            continue;
+        };
         let voxel = voxels.entry(key).or_default();
         if voxel.count == 0 {
             voxel.classification = classification
@@ -220,6 +227,56 @@ fn safe_render_cell_size(center: [f64; 3], cell_size: f64) -> Option<([f32; 3], 
     let safe_size = cell_size * (1.0 - 1.0e-6) - 2.0 * rounding_error;
     (safe_size.is_finite() && safe_size > 0.0 && safe_size <= f64::from(f32::MAX))
         .then_some((center_f32, safe_size as f32))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::{AdaptiveVoxelGrid, VoxelKey};
+    use viewer_core::SpatialBounds;
+
+    #[test]
+    fn point_outside_frustum_is_culled_before_voxel_accumulation() {
+        let projection_calls = Cell::new(0);
+        let project = |_: SpatialBounds| {
+            projection_calls.set(projection_calls.get() + 1);
+            0.0
+        };
+        let mut grid = AdaptiveVoxelGrid {
+            origin: [0.0; 3],
+            side: 1.0,
+            target_pixels: 4.0,
+            project: &project,
+            projected_edges: Default::default(),
+        };
+
+        assert_eq!(grid.key_for_point([0.5; 3]), None);
+        assert_eq!(projection_calls.get(), 1);
+        assert!(grid.projected_edges.contains_key(&VoxelKey {
+            depth: 0,
+            coord: [0; 3],
+        }));
+    }
+
+    #[test]
+    fn visible_point_keeps_its_projected_cell() {
+        let mut grid = AdaptiveVoxelGrid {
+            origin: [0.0; 3],
+            side: 1.0,
+            target_pixels: 4.0,
+            project: &|_| 2.0,
+            projected_edges: Default::default(),
+        };
+
+        assert_eq!(
+            grid.key_for_point([0.5; 3]),
+            Some(VoxelKey {
+                depth: 0,
+                coord: [0; 3],
+            })
+        );
+    }
 }
 
 fn bounds_side(bounds: SpatialBounds) -> f64 {
