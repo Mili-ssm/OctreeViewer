@@ -40,16 +40,26 @@ Use the keyboard-accessible **Open built-in sample** button to load the included
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
 wave grid and does not depend on external or licensed point-cloud data.
 
-The demo exposes RGB, intensity, elevation, and classification color modes, plus a point-size
-multiplier from `0.1` to `4`. The renderer API accepts `0.1` to `10`. Project-format files preserve
-their attributes for color modes; the synthetic sample only has RGB, so missing intensity uses
-grayscale luminance and missing classification keeps RGB. `quality` targets 1/16 px projected error
-with a default 4 million point budget; `performance` targets 2 px and defaults to 1 million points.
+The demo exposes RGB, intensity, elevation, and classification color modes, plus one slider for the
+maximum target projected voxel edge (1–16 framebuffer pixels). `updateLod(targetVoxelPixels)` selects
+source detail, then aggregates it into one global adaptive dyadic grid. Cells subdivide 2×2×2 according
+to their twelve projected edges; storage-node depth and block size do not set rendered voxel size.
+The dyadic steps give approximately target/2 to target pixels per maximum cell edge. Full-resolution
+leaf points can use arbitrarily finer cells up to the precision limit (24 subdivisions). Internal
+representatives require sufficient source detail before drawing a finer grid. A 4-million source-point
+safety cap applies independently of target pixels: framebuffer area/target² does not bound hidden
+surfaces or source points. Missing required blocks or exhausted source capacity preserve the previous
+scene and report an error. Cells share integer identities; there is no point-size multiplier.
+Project-format files preserve their attributes for color modes; the synthetic sample only has RGB,
+so missing intensity uses grayscale luminance and missing classification keeps RGB.
+The stats also expose the projected maximum-edge range and the count of voxels above the target,
+including precision-limited cells. Those measurements concern generated visible cells, not occluded
+surface fragments or raster coverage of every face.
 Depth shading is enabled by default and can be disabled in Rendering options. It uses face orientation
 and camera depth in the existing voxel shader; it is a lightweight depth cue, not physical ambient
 occlusion.
 
-The stats panel reports visible points/instances/blocks, deepest visible LOD level, LOD coverage,
+The stats panel reports visible source points, deduplicated voxels/blocks, deepest visible LOD level, LOD coverage,
 pending block count, decoded CPU cache usage/budget, cumulative bytes written to instance buffers, and
 the synchronous CPU time spent inside the worker's `renderFrame()`. This does not measure GPU
 execution or display latency. File reads report unique

@@ -1,0 +1,22 @@
+{
+  "adapter": "llvmpipe (LLVM 22.1.8, 256 bits)",
+  "backend": "Vulkan",
+  "elapsed_ms": 2851.4897870000004,
+  "gpu_readback_complete": true,
+  "image": "artifacts/sensoforest/majadas-640/voxel-4px.png",
+  "input": "data/datasets/sensoforest/majadas-tls.oct",
+  "non_background_pixels": 20490,
+  "oversized_voxels": 0,
+  "projected_edge_pixels": {
+    "max": 3.983718490482204,
+    "min": 1.991859245241102
+  },
+  "rendered_voxels": 6387,
+  "source_nodes": 115,
+  "source_points": 2889518,
+  "target_edge_pixels": 4.0,
+  "viewport": [
+    640,
+    480
+  ]
+}

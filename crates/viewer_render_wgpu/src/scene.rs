@@ -1,5 +1,8 @@
 use bytemuck::{Pod, Zeroable};
-use viewer_core::{AttributeColumn, AttributeValues, Point, PointBlock, VisibleVoxelBatch};
+use viewer_core::{
+    AttributeColumn, AttributeValues, Point, PointBatch, PointBlock, SparseVoxelStore,
+    VisibleVoxelBatch, VoxelizationConfig,
+};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
@@ -69,37 +72,74 @@ pub struct RenderScene {
 }
 
 impl RenderScene {
-    pub fn from_points(points: &[Point]) -> Self {
-        let point_size = point_glyph_size(points);
-        let instances: Vec<_> = points
-            .iter()
-            .map(|point| InstanceRaw {
-                center: point.position,
-                size: point_size,
-                color: point.color.to_linear_rgba(),
-                intensity: -1.0,
-                classification: -1.0,
-            })
-            .collect();
-
+    pub fn from_instances(instances: Vec<InstanceRaw>) -> Self {
         let elevation_range = position_elevation_range(&instances);
+        let intensity_values: Vec<_> = instances
+            .iter()
+            .filter_map(|instance| (instance.intensity >= 0.0).then_some(instance.intensity))
+            .collect();
         Self {
             instances,
-            intensity_range: None,
+            intensity_range: attribute_range(
+                (!intensity_values.is_empty()).then_some(&intensity_values),
+            ),
             elevation_range,
         }
+    }
+
+    pub fn from_points(points: &[Point]) -> Self {
+        let points: Vec<_> = points
+            .iter()
+            .copied()
+            .filter(|point| point.position.iter().all(|value| value.is_finite()))
+            .collect();
+        let point_size = point_glyph_size(&points);
+        let origin = points.iter().fold([f32::INFINITY; 3], |mut min, point| {
+            for (axis, value) in point.position.iter().enumerate() {
+                min[axis] = min[axis].min(*value);
+            }
+            min
+        });
+        let instances = VoxelizationConfig::new(point_size, origin)
+            .ok()
+            .and_then(|config| {
+                let mut store = SparseVoxelStore::new(config);
+                store.insert_batch(&PointBatch::new(points)).ok()?;
+                let mut voxels: Vec<_> = store.iter_voxels().collect();
+                voxels.sort_by_key(|voxel| (voxel.coord.x, voxel.coord.y, voxel.coord.z));
+                Some(
+                    voxels
+                        .into_iter()
+                        .filter_map(|voxel| {
+                            let size = safe_cell_size(voxel.center, voxel.size)?;
+                            Some(InstanceRaw {
+                                center: voxel.center,
+                                size,
+                                color: voxel.color.to_linear_rgba(),
+                                intensity: -1.0,
+                                classification: -1.0,
+                            })
+                        })
+                        .collect(),
+                )
+            })
+            .unwrap_or_default();
+        Self::from_instances(instances)
     }
 
     pub fn from_visible_batch(batch: &VisibleVoxelBatch) -> Self {
         let instances: Vec<_> = batch
             .voxels()
             .iter()
-            .map(|voxel| InstanceRaw {
-                center: voxel.center,
-                size: voxel.size,
-                color: voxel.color_linear_rgba(),
-                intensity: -1.0,
-                classification: -1.0,
+            .filter_map(|voxel| {
+                let size = safe_cell_size(voxel.center, voxel.size)?;
+                Some(InstanceRaw {
+                    center: voxel.center,
+                    size,
+                    color: voxel.color_linear_rgba(),
+                    intensity: -1.0,
+                    classification: -1.0,
+                })
             })
             .collect();
 
@@ -265,6 +305,30 @@ fn point_glyph_size(points: &[Point]) -> f32 {
         (largest_extent * sample_extent_correction / estimated_count.powf(1.0 / dimension as f64))
             .clamp(f64::from(DEGENERATE_GLYPH_SIZE), f64::from(f32::MAX)) as f32
     }
+}
+
+fn safe_cell_size(center: [f32; 3], size: f32) -> Option<f32> {
+    let rounding_bound = center
+        .iter()
+        .map(|value| {
+            let magnitude = value.abs();
+            let bits = magnitude.to_bits();
+            let lower = if bits == 0 {
+                0.0
+            } else {
+                magnitude - f32::from_bits(bits - 1)
+            };
+            let upper = bits
+                .checked_add(1)
+                .map(f32::from_bits)
+                .filter(|next| next.is_finite())
+                .map_or(lower, |next| next - magnitude);
+            f64::from(lower.max(upper)) / 2.0
+        })
+        .fold(0.0, f64::max);
+    let safe_size = f64::from(size) * (1.0 - 1.0e-6) - 2.0 * rounding_bound;
+    (safe_size.is_finite() && safe_size > 0.0 && safe_size <= f64::from(f32::MAX))
+        .then_some(safe_size as f32)
 }
 
 fn splitmix64(mut value: u64) -> u64 {
@@ -591,6 +655,20 @@ mod tests {
 
         let scene = RenderScene::from_points(&points);
 
-        assert_eq!(scene.instances()[0].size, 1.0e-5);
+        assert!(scene.instances()[0].size < 1.0e-5);
+        assert!(scene.instances()[0].size > 0.9e-5);
+    }
+
+    #[test]
+    fn raw_points_are_collapsed_into_integer_grid_cells() {
+        let points = [
+            Point::new([0.1, 0.1, 0.1], viewer_core::ColorRgb::new(255, 0, 0)),
+            Point::new([0.1, 0.1, 0.1], viewer_core::ColorRgb::new(0, 0, 255)),
+        ];
+
+        let scene = RenderScene::from_points(&points);
+
+        assert_eq!(scene.instance_count(), 1);
+        assert!(scene.instances()[0].size > 0.0);
     }
 }

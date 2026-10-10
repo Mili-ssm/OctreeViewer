@@ -218,7 +218,7 @@ pub struct WasmVoxelViewer {
     gpu_scene_dirty: bool,
     lod_dataset: Option<LodDataset>,
     format_reader: Option<FormatReader<BrowserBlobReader>>,
-    lod_config: Option<(f64, u64)>,
+    lod_config: Option<f64>,
     lod_dirty: bool,
     last_lod_stats: Option<LodViewStats>,
 }
@@ -465,7 +465,7 @@ impl WasmVoxelViewer {
             .map_err(|_| JsValue::from_str("blockId must be an unsigned 64-bit integer string"))?;
         let position_components = positions.length() as usize;
         let color_components = colors.length() as usize;
-        if position_components % 3 != 0 || color_components != position_components {
+        if !position_components.is_multiple_of(3) || color_components != position_components {
             return Err(JsValue::from_str(
                 "positions and colors must contain three values per point",
             ));
@@ -516,42 +516,24 @@ impl WasmVoxelViewer {
         Ok(accounted_bytes)
     }
 
-    /// Selects a camera-aware cut using a built-in quality or performance profile.
+    /// Selects a camera-aware voxel cut using the target projected voxel edge in pixels.
     #[wasm_bindgen(js_name = updateLod)]
-    pub fn update_lod(
-        &mut self,
-        profile: String,
-        point_budget: Option<String>,
-    ) -> Result<JsValue, JsValue> {
-        let (max_error_pixels, default_point_budget) = match profile.as_str() {
-            "quality" => (1.0 / 16.0, 4_000_000),
-            "performance" => (2.0, 1_000_000),
-            _ => {
-                return Err(JsValue::from_str(
-                    "LOD profile must be quality or performance",
-                ));
-            }
-        };
-        let point_budget = point_budget
-            .as_deref()
-            .map(|value| {
-                value.parse::<u64>().map_err(|_| {
-                    JsValue::from_str("pointBudget must be an unsigned 64-bit integer string")
-                })
-            })
-            .transpose()?
-            .unwrap_or(default_point_budget);
-        self.lod_config = Some((max_error_pixels, point_budget));
+    pub fn update_lod(&mut self, target_voxel_pixels: f64) -> Result<JsValue, JsValue> {
+        if !target_voxel_pixels.is_finite() || !(1.0..=16.0).contains(&target_voxel_pixels) {
+            return Err(JsValue::from_str(
+                "targetVoxelPixels must be finite and between 1 and 16",
+            ));
+        }
+        self.lod_config = Some(target_voxel_pixels);
         self.lod_dirty = false;
-        let stats = self.update_lod_view(max_error_pixels, point_budget)?;
+        let stats = self.update_lod_view(target_voxel_pixels)?;
         let value = lod_view_stats_to_js(&stats)?;
-        js_sys::Reflect::set(&value, &"profile".into(), &JsValue::from_str(&profile))?;
         js_sys::Reflect::set(
             &value,
-            &"maxErrorPixels".into(),
-            &JsValue::from_f64(max_error_pixels),
+            &"targetVoxelPixels".into(),
+            &JsValue::from_f64(target_voxel_pixels),
         )?;
-        Ok(value.into())
+        Ok(value)
     }
 
     #[wasm_bindgen(js_name = lodStats)]
@@ -571,21 +553,6 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
             .set_color_mode(mode);
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name = setPointSize)]
-    pub fn set_point_size(&mut self, size: f32) -> Result<(), JsValue> {
-        if !size.is_finite() || !(0.1..=10.0).contains(&size) {
-            return Err(JsValue::from_str(
-                "point size multiplier must be between 0.1 and 10",
-            ));
-        }
-        self.gpu_renderer
-            .as_mut()
-            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
-            .set_point_size(size)
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
         Ok(())
     }
 
@@ -760,19 +727,14 @@ impl WasmVoxelViewer {
         if !self.lod_dirty {
             return Ok(());
         }
-        let Some((max_error_pixels, point_budget)) = self.lod_config else {
+        let Some(target_voxel_pixels) = self.lod_config else {
             return Ok(());
         };
         self.lod_dirty = false;
-        self.update_lod_view(max_error_pixels, point_budget)
-            .map(|_| ())
+        self.update_lod_view(target_voxel_pixels).map(|_| ())
     }
 
-    fn update_lod_view(
-        &mut self,
-        max_error_pixels: f64,
-        point_budget: u64,
-    ) -> Result<LodViewStats, JsValue> {
+    fn update_lod_view(&mut self, target_voxel_pixels: f64) -> Result<LodViewStats, JsValue> {
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -783,7 +745,7 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
         let mut format_reader = self.format_reader.as_mut();
         let stats = dataset
-            .update_view_with_loader(renderer, max_error_pixels, point_budget, |block_id| {
+            .update_view_with_loader(renderer, target_voxel_pixels, |block_id| {
                 format_reader
                     .as_mut()
                     .map(|reader| {
@@ -814,6 +776,18 @@ impl WasmVoxelViewer {
 
 fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
     let value = js_sys::Object::new();
+    for (name, number) in [
+        ("minVoxelEdgePixels", stats.min_voxel_edge_pixels),
+        ("maxVoxelEdgePixels", stats.max_voxel_edge_pixels),
+        ("oversizedVoxels", stats.oversized_voxels as f64),
+    ] {
+        js_sys::Reflect::set(&value, &name.into(), &JsValue::from_f64(number))?;
+    }
+    js_sys::Reflect::set(
+        &value,
+        &"targetVoxelPixels".into(),
+        &JsValue::from_f64(stats.target_voxel_pixels),
+    )?;
     js_sys::Reflect::set(
         &value,
         &"visibleBlocks".into(),
@@ -880,7 +854,7 @@ fn points_from_typed_arrays(
 ) -> Result<Vec<Point>, JsValue> {
     let position_components = positions.length() as usize;
     let color_components = colors.length() as usize;
-    if position_components % 3 != 0 || color_components != position_components {
+    if !position_components.is_multiple_of(3) || color_components != position_components {
         return Err(JsValue::from_str(
             "positions and colors must contain three values per point",
         ));
@@ -911,8 +885,10 @@ fn points_from_typed_arrays(
             .subarray(component_start, component_end)
             .copy_to(&mut color_batch[..batch_components]);
         for (position, color) in position_batch[..batch_components]
-            .chunks_exact(3)
-            .zip(color_batch[..batch_components].chunks_exact(3))
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(color_batch[..batch_components].as_chunks::<3>().0.iter())
         {
             if position.iter().any(|value| !value.is_finite()) {
                 return Err(JsValue::from_str("block positions must be finite"));

@@ -9,9 +9,8 @@ const fileInput = document.getElementById("dataset-file");
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
 const colorMode = document.getElementById("color-mode");
-const pointSize = document.getElementById("point-size");
-const pointSizeValue = document.getElementById("point-size-value");
-const lodProfile = document.getElementById("lod-profile");
+const voxelPixels = document.getElementById("voxel-pixels");
+const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
 
 let worker = null;
@@ -82,8 +81,12 @@ function updateStats(message) {
         : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
+        `target voxel edge: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
+        `LOD source-point cap: ${lod?.pointBudget ?? "—"}`,
+        `projected voxel edges: ${lod ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—"}`,
+        `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
         `visible points: ${points}`,
-        `visible instances: ${message.gpu.visibleInstances}`,
+        `visible voxels: ${message.gpu.visibleInstances}`,
         `visible blocks: ${message.gpu.visibleBlocks}`,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
         `LOD coverage: ${coverage}`,
@@ -150,14 +153,14 @@ function handleWorkerMessage(event) {
         latestLodStats = data.lod;
         fileInput.disabled = false;
         sampleButton.disabled = false;
-        lodProfile.disabled = false;
+        voxelPixels.disabled = false;
         statusRoot.textContent = `${data.name}: loaded ${data.opened.nodeCount} nodes`;
     } else if (data.type === "datasetOpened") {
         datasetName = data.name;
         statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
-        statusRoot.textContent = `LOD profile: ${data.lod.profile}`;
+        statusRoot.textContent = `Target voxel edge: ${data.lod.targetVoxelPixels} px`;
     } else if (data.type === "stats") {
         loadingFile = false;
         cancelButton.hidden = true;
@@ -219,7 +222,6 @@ function createWorkerViewer() {
             width: canvas.width,
             height: canvas.height,
             colorMode: colorMode.value,
-            pointSize: Number(pointSize.value),
             depthShading: depthShading.checked,
         }, [offscreen]);
         reloadButton.disabled = false;
@@ -246,7 +248,7 @@ function recreateViewer() {
     cancelButton.hidden = true;
     fileInput.disabled = true;
     sampleButton.disabled = true;
-    lodProfile.disabled = true;
+    voxelPixels.disabled = true;
     latestLodStats = null;
     datasetName = "Synthetic sample";
     cameraDelta = emptyCameraDelta();
@@ -273,18 +275,16 @@ cancelButton.addEventListener("click", cancelFileLoad);
 colorMode.addEventListener("change", () => {
     queueWorkerCommand("color", { value: colorMode.value });
 });
-pointSize.addEventListener("input", () => {
-    const size = Number(pointSize.value);
-    pointSizeValue.value = `${size.toFixed(1)}×`;
-    queueWorkerCommand("pointSize", { value: size });
-});
+function updateLodControls() {
+    voxelPixelsValue.value = `${voxelPixels.value} px`;
+    if (ready && latestLodStats) {
+        queueWorkerCommand("voxelPixels", { value: Number(voxelPixels.value) });
+    }
+}
+
+voxelPixels.addEventListener("input", updateLodControls);
 depthShading.addEventListener("change", () => {
     queueWorkerCommand("depthShading", { value: depthShading.checked });
-});
-lodProfile.addEventListener("change", () => {
-    if (ready && datasetName !== "Synthetic sample") {
-        queueWorkerCommand("profile", { value: lodProfile.value });
-    }
 });
 function openProjectFile(file) {
     if (!ready || !file) return;
@@ -297,7 +297,7 @@ function openProjectFile(file) {
     worker.postMessage({
         type: "openFile",
         file,
-        profile: lodProfile.value,
+        targetVoxelPixels: Number(voxelPixels.value),
         cacheBytes: 256 * 1024 * 1024,
     });
 }

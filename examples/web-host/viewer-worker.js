@@ -1,9 +1,9 @@
 import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 
 let viewer = null;
-let profile = "quality";
+let targetVoxelPixels = 4;
 let renderedFrames = 0;
-const coalescedCommands = new Set(["resize", "color", "pointSize", "depthShading", "profile", "fit"]);
+const coalescedCommands = new Set(["resize", "color", "depthShading", "voxelPixels", "fit"]);
 
 function samplePointCloud() {
     const positions = [];
@@ -48,7 +48,6 @@ async function handleMessage({ data }) {
                 viewer = await WasmVoxelViewer.createOffscreen(data.canvas, 0.6);
                 viewer.resize(data.width, data.height);
                 viewer.setColorMode(data.colorMode);
-                viewer.setPointSize(data.pointSize);
                 viewer.setDepthShading(data.depthShading);
                 const sample = samplePointCloud();
                 viewer.replacePoints(sample.positions, sample.colors);
@@ -62,25 +61,22 @@ async function handleMessage({ data }) {
             case "color":
                 viewer.setColorMode(data.value);
                 break;
-            case "pointSize":
-                viewer.setPointSize(data.value);
-                break;
             case "depthShading":
                 viewer.setDepthShading(data.value);
                 break;
-            case "profile": {
-                profile = data.value;
-                const lod = viewer.updateLod(profile);
+            case "voxelPixels": {
+                targetVoxelPixels = data.value;
+                const lod = viewer.updateLod(targetVoxelPixels);
                 self.postMessage({ type: "lod", lod });
                 break;
             }
             case "openFile": {
-                profile = data.profile;
+                targetVoxelPixels = data.targetVoxelPixels;
                 self.postMessage({ type: "status", message: `Opening ${data.file.name}…` });
                 const opened = viewer.openFormatDataset(data.file, data.cacheBytes);
                 self.postMessage({ type: "datasetOpened", opened, name: data.file.name });
                 viewer.fitScene();
-                const lod = viewer.updateLod(profile);
+                const lod = viewer.updateLod(targetVoxelPixels);
                 self.postMessage({ type: "dataset", opened, lod, name: data.file.name });
                 break;
             }

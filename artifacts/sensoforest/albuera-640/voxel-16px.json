@@ -1,0 +1,22 @@
+{
+  "adapter": "llvmpipe (LLVM 22.1.8, 256 bits)",
+  "backend": "Vulkan",
+  "elapsed_ms": 240.746959,
+  "gpu_readback_complete": true,
+  "image": "artifacts/sensoforest/albuera-640/voxel-16px.png",
+  "input": "data/datasets/sensoforest/albuera-uav.oct",
+  "non_background_pixels": 45994,
+  "oversized_voxels": 0,
+  "projected_edge_pixels": {
+    "max": 15.708332004962884,
+    "min": 7.854166002481428
+  },
+  "rendered_voxels": 621,
+  "source_nodes": 16,
+  "source_points": 94917,
+  "target_edge_pixels": 16.0,
+  "viewport": [
+    640,
+    480
+  ]
+}

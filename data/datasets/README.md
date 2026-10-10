@@ -33,6 +33,11 @@ decimales)** combinados, por debajo del límite de 50 GB solicitado. La copia lo
 | Albuera UAV LiDAR | `SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz` | 4.305.484.789 B | 508.809.556 | ETRS89 / UTM 29N |
 | Majadas TLS | `SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz` | 1.343.266.470 B | 415.465.882 | ETRS89 / UTM 30N |
 
+Las dos teselas también cuentan con capturas `.oct` a 4, 8 y 16 px (640×480) generadas por el renderer nativo sin
+interfaz. Están en [`artifacts/sensoforest`](../../artifacts/sensoforest/), con PNG y JSON de
+proyección/lectura GPU; la tabla comparativa y el límite de detalle están documentados en el
+[README del proyecto](../../README.md#capturas-sensoforest-por-calidad-2026-10-10).
+
 El registro no declara una licencia en sus metadatos; se usa la copia solo para pruebas locales, sin
 redistribuirla. El README y los archivos del [registro](https://zenodo.org/records/20000277) describen
 los sensores, fechas y zonas UTM. Los conteos se leen de la cabecera LAS de cada archivo. Los checksums MD5

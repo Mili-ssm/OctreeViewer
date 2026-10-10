@@ -1,0 +1,22 @@
+{
+  "adapter": "llvmpipe (LLVM 22.1.8, 256 bits)",
+  "backend": "Vulkan",
+  "elapsed_ms": 940.0351380000001,
+  "gpu_readback_complete": true,
+  "image": "artifacts/voxel-lod-previews/headless/voxel-16px.png",
+  "input": "data/samples/stanford_bunny_bun000_unstructured.oct",
+  "non_background_pixels": 236206,
+  "oversized_voxels": 0,
+  "projected_edge_pixels": {
+    "max": 12.077691512353624,
+    "min": 8.374582909318661
+  },
+  "rendered_voxels": 5073,
+  "source_nodes": 1,
+  "source_points": 40256,
+  "target_edge_pixels": 16.0,
+  "viewport": [
+    1280,
+    960
+  ]
+}

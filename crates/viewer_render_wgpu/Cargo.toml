@@ -11,3 +11,7 @@ wgpu.workspace = true
 
 [dev-dependencies]
 naga = { version = "24", features = ["wgsl-in"] }
+pollster = "0.4"
+png = "0.17"
+serde_json.workspace = true
+viewer_format = { path = "../viewer_format" }

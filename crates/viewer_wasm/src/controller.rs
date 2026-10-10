@@ -214,7 +214,7 @@ impl ViewerController {
     pub fn stats(&self) -> ViewerStats {
         let scene = self.renderer.scene();
         let (point_count, voxel_count) = match &self.data {
-            ViewerData::RawPoints(points) => (points.len() as u64, 0),
+            ViewerData::RawPoints(points) => (points.len() as u64, scene.instance_count()),
             ViewerData::Voxelized(store) => (store.point_count(), store.voxel_count()),
         };
 
@@ -293,10 +293,15 @@ mod tests {
 
         let stats = viewer.stats();
         assert_eq!(stats.point_count, 2);
-        assert_eq!(stats.voxel_count, 0);
+        assert_eq!(stats.voxel_count, 2);
         assert_eq!(stats.instance_count, 2);
         assert_eq!(stats.viewport_size, [640, 480]);
-        assert_eq!(viewer.render_scene().instances()[0].center, [0.1, 0.1, 0.1]);
+        assert!(
+            viewer.render_scene().instances()[0]
+                .center
+                .iter()
+                .all(|coordinate| (*coordinate - 0.65).abs() < 1.0e-6)
+        );
     }
 
     #[test]
@@ -351,19 +356,19 @@ mod tests {
             Err(ViewerError::InvalidPointPosition(_))
         ));
         assert_eq!(viewer.stats().point_count, 1);
-        assert_eq!(viewer.stats().voxel_count, 0);
+        assert_eq!(viewer.stats().voxel_count, 1);
     }
 
     #[test]
-    fn voxelization_is_an_explicit_density_reduction_path() {
+    fn raw_points_render_as_voxels_and_explicit_resolution_can_reduce_density() {
         let mut viewer = ViewerController::new(ViewerConfig::default()).unwrap();
         let positions = [0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 1.2, 0.1, 0.1];
         let colors = [255, 0, 0, 0, 255, 0, 0, 0, 255];
 
         viewer.replace_points(&positions, &colors).unwrap();
         assert_eq!(viewer.stats().point_count, 3);
-        assert_eq!(viewer.stats().voxel_count, 0);
-        assert_eq!(viewer.stats().instance_count, 3);
+        assert_eq!(viewer.stats().voxel_count, 2);
+        assert_eq!(viewer.stats().instance_count, 2);
 
         viewer
             .replace_voxelized_points(&positions, &colors)

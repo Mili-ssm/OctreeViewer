@@ -2,7 +2,12 @@ mod block_sync;
 mod budget;
 mod camera;
 mod gpu;
+#[cfg(not(target_arch = "wasm32"))]
+mod headless;
+#[cfg(not(target_arch = "wasm32"))]
+pub use headless::{OffscreenImage, render_offscreen};
 mod scene;
+mod voxel_grid;
 
 pub use budget::GpuBudget;
 pub use camera::{CameraFrame, OrbitCamera};
@@ -11,6 +16,7 @@ pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,
     instance_buffer_layout,
 };
+pub use voxel_grid::{VoxelScene, build_voxel_scene};
 
 use viewer_core::{Point, VisibleVoxelBatch};
 

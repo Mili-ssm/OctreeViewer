@@ -23,16 +23,16 @@ test("allows distinct command kinds while bounding each kind independently", () 
     const queue = new CoalescedCommandQueue((type, values) => sent.push({ type, values }));
 
     queue.enqueue("color", { value: "rgb" });
-    queue.enqueue("pointSize", { value: 1 });
-    queue.enqueue("pointSize", { value: 2 });
+    queue.enqueue("voxelPixels", { value: 1 });
+    queue.enqueue("voxelPixels", { value: 4 });
     queue.acknowledge("color");
     assert.equal(sent.length, 2);
-    queue.acknowledge("pointSize");
+    queue.acknowledge("voxelPixels");
 
     assert.deepEqual(sent, [
         { type: "color", values: { value: "rgb" } },
-        { type: "pointSize", values: { value: 1 } },
-        { type: "pointSize", values: { value: 2 } },
+        { type: "voxelPixels", values: { value: 1 } },
+        { type: "voxelPixels", values: { value: 4 } },
     ]);
 });
 

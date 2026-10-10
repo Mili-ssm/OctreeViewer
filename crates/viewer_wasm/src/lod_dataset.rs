@@ -2,10 +2,10 @@ use std::sync::Arc;
 use thiserror::Error;
 use viewer_core::{
     BlockId, CacheInsertRejection, CoordinateFrame, DatasetMetadata, DecodedBlockCache,
-    LodSelectionConfig, LodSelectionError, LodTransitionPlanner, NodeId, PointBlock,
+    LodSelectionConfig, LodSelectionError, LodTransitionPlanner, NodeId, PointBlock, SpatialBounds,
     SpatialHierarchy,
 };
-use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer};
+use viewer_render_wgpu::{GpuRendererError, SurfaceRenderer, build_voxel_scene};
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
@@ -15,11 +15,15 @@ pub struct LodDataset {
     planner: LodTransitionPlanner,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LodViewStats {
     pub visible_blocks: usize,
     pub visible_points: u64,
     pub point_budget: u64,
+    pub target_voxel_pixels: f64,
+    pub min_voxel_edge_pixels: f64,
+    pub max_voxel_edge_pixels: f64,
+    pub oversized_voxels: usize,
     pub max_visible_level: Option<u32>,
     pub cache_bytes: usize,
     pub cache_budget_bytes: usize,
@@ -38,6 +42,10 @@ pub enum LodDatasetError {
     UnexpectedBlock { requested: BlockId, actual: BlockId },
     #[error("block read failed: {0}")]
     BlockRead(String),
+    #[error("requested detail exceeds the source-point safety limit in {0} regions")]
+    SourceDetailBudgetExceeded(usize),
+    #[error("requested detail requires blocks that are not resident: {0:?}")]
+    DetailUnavailable(Vec<BlockId>),
     #[error("camera viewport is zero-sized or unavailable")]
     CameraUnavailable,
     #[error("decoded block was not cached: {0:?}")]
@@ -116,21 +124,21 @@ impl LodDataset {
     pub fn update_view(
         &mut self,
         renderer: &mut SurfaceRenderer<'_>,
-        max_error_pixels: f64,
-        point_budget: u64,
+        target_voxel_pixels: f64,
     ) -> Result<LodViewStats, LodDatasetError> {
-        self.update_view_with_loader(renderer, max_error_pixels, point_budget, |_| Ok(None))
+        self.update_view_with_loader(renderer, target_voxel_pixels, |_| Ok(None))
     }
 
     pub fn update_view_with_loader(
         &mut self,
         renderer: &mut SurfaceRenderer<'_>,
-        max_error_pixels: f64,
-        point_budget: u64,
+        target_voxel_pixels: f64,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
         renderer.set_visual_scale(self.visual_scale)?;
-        let config = LodSelectionConfig::new(max_error_pixels, point_budget)?;
+        // Source representatives include hidden surfaces and are not screen-space voxels.
+        let point_budget = 4_000_000;
+        let config = LodSelectionConfig::new(target_voxel_pixels, point_budget)?;
         let frustum = renderer
             .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
@@ -140,7 +148,7 @@ impl LodDataset {
             .select_lod(&frustum, config, |node| {
                 renderer.projected_error_pixels(
                     node.bounds(),
-                    node.geometric_error(),
+                    bounds_side(node.bounds()) / 8.0,
                     self.metadata.coordinate_frame().origin(),
                 )
             }) {
@@ -152,6 +160,11 @@ impl LodDataset {
             }
             Err(error) => return Err(LodDatasetError::Selection(error)),
         };
+        if !target.budget_limited().is_empty() {
+            return Err(LodDatasetError::SourceDetailBudgetExceeded(
+                target.budget_limited().len(),
+            ));
+        }
         let initial_plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
@@ -170,12 +183,39 @@ impl LodDataset {
         let plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        renderer.sync_visible_blocks(plan.block_ids(), &self.cache)?;
+        if !plan.pending_blocks().is_empty() {
+            return Err(LodDatasetError::DetailUnavailable(
+                plan.pending_blocks().to_vec(),
+            ));
+        }
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
+        let local_frustum = renderer
+            .spatial_frustum([0.0; 3])
+            .ok_or(LodDatasetError::CameraUnavailable)?;
+        let voxel_scene = build_voxel_scene(
+            self.metadata.hierarchy(),
+            plan.node_ids(),
+            &self.cache,
+            coordinate_origin,
+            target_voxel_pixels,
+            &|bounds| {
+                if local_frustum.intersects(&bounds) {
+                    renderer.projected_voxel_edge_pixels(bounds, [0.0; 3])
+                } else {
+                    0.0
+                }
+            },
+        );
+        renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids())?;
         self.planner.commit(&plan, &mut self.cache);
         let stats = LodViewStats {
             visible_blocks: plan.block_ids().len(),
             visible_points: plan.point_count(),
             point_budget: plan.point_budget(),
+            target_voxel_pixels,
+            min_voxel_edge_pixels: voxel_scene.min_edge_pixels,
+            max_voxel_edge_pixels: voxel_scene.max_edge_pixels,
+            oversized_voxels: voxel_scene.oversized_voxels,
             max_visible_level: max_visible_level(self.metadata.hierarchy(), plan.node_ids()),
             cache_bytes: self.cache.used_bytes(),
             cache_budget_bytes: self.cache.max_bytes(),
@@ -191,6 +231,12 @@ impl LodDataset {
     }
 }
 
+fn bounds_side(bounds: SpatialBounds) -> f64 {
+    (0..3)
+        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
+        .fold(0.0, f64::max)
+}
+
 fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
     node_ids
         .iter()
@@ -201,11 +247,24 @@ fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Optio
 #[cfg(test)]
 mod tests {
     use viewer_core::{
-        BlockId, ColorRgb, HierarchySemantics, NodeId, Point, PointBatch, PointBlock,
-        SpatialBounds, SpatialHierarchy, SpatialNode,
+        BlockId, ColorRgb, DecodedBlockCache, HierarchySemantics, NodeId, Point, PointBatch,
+        PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
     };
 
-    use super::{LodDataset, LodDatasetError};
+    use super::{LodDataset, LodDatasetError, bounds_side};
+    use viewer_render_wgpu::{RenderScene, build_voxel_scene};
+
+    fn scene_for_test(
+        hierarchy: &SpatialHierarchy,
+        ids: &[NodeId],
+        cache: &DecodedBlockCache,
+        origin: [f64; 3],
+    ) -> RenderScene {
+        build_voxel_scene(hierarchy, ids, cache, origin, 1.0, &|bounds| {
+            bounds_side(bounds) * 8.0
+        })
+        .scene
+    }
 
     fn dataset(cache_bytes: usize) -> LodDataset {
         let hierarchy = SpatialHierarchy::new_with_semantics(
@@ -278,6 +337,301 @@ mod tests {
         assert_eq!(
             super::max_visible_level(dataset.metadata.hierarchy(), &[]),
             None
+        );
+    }
+
+    #[test]
+    fn replacement_voxels_use_integer_cells_and_deduplicate_source_points() {
+        let hierarchy = dataset(4096).metadata.hierarchy().clone();
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(PointBlock::new(
+            BlockId::new(10),
+            PointBatch::new(vec![
+                Point::new([0.13, 0.2, 0.2], ColorRgb::new(100, 0, 0)),
+                Point::new([0.20, 0.2, 0.2], ColorRgb::new(0, 100, 0)),
+                Point::new([0.25, 0.2, 0.2], ColorRgb::new(0, 0, 100)),
+            ]),
+            Vec::new(),
+        ));
+
+        let scene = scene_for_test(&hierarchy, &[NodeId::new(1)], &cache, [0.0; 3]);
+        let instances = scene.instances();
+        assert_eq!(instances.len(), 2);
+        assert!(
+            instances
+                .iter()
+                .all(|instance| instance.size < 0.125 && instance.size > 0.124)
+        );
+        let mut centers: Vec<_> = instances
+            .iter()
+            .map(|instance| instance.center[0])
+            .collect();
+        centers.sort_by(f32::total_cmp);
+        assert_eq!(centers, [0.1875, 0.3125]);
+        let half_size = f32::from_bits(instances[0].size.to_bits()) / 2.0;
+        assert!(centers[0] + half_size <= centers[1] - half_size);
+    }
+
+    #[test]
+    fn voxel_scene_converts_world_bounds_back_to_dataset_local_positions() {
+        let origin = [100.0, 200.0, 300.0];
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new(origin, [101.0, 201.0, 301.0]).unwrap(),
+                    1,
+                    0.0,
+                    vec![BlockId::new(10)],
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+            Some(1),
+            HierarchySemantics::Replacement,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(PointBlock::new(
+            BlockId::new(10),
+            PointBatch::new(vec![Point::new([0.5; 3], ColorRgb::new(20, 30, 40))]),
+            Vec::new(),
+        ));
+
+        let scene = scene_for_test(&hierarchy, &[NodeId::new(1)], &cache, origin);
+
+        assert_eq!(scene.instance_count(), 1);
+        assert_eq!(scene.instances()[0].center, [0.5625; 3]);
+        assert!(scene.instances()[0].center.iter().all(|value| *value < 1.0));
+    }
+
+    #[test]
+    fn additive_ancestors_and_descendants_share_one_integer_grid() {
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                    1,
+                    0.0,
+                    vec![BlockId::new(10)],
+                )
+                .unwrap(),
+                SpatialNode::new(
+                    NodeId::new(2),
+                    Some(NodeId::new(1)),
+                    1,
+                    SpatialBounds::new([0.0; 3], [0.5; 3]).unwrap(),
+                    1,
+                    0.0,
+                    vec![BlockId::new(11)],
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+            Some(2),
+            HierarchySemantics::Additive,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        for id in [10, 11] {
+            cache.insert(PointBlock::new(
+                BlockId::new(id),
+                PointBatch::new(vec![Point::new([0.2; 3], ColorRgb::new(20, 30, 40))]),
+                Vec::new(),
+            ));
+        }
+
+        let scene = scene_for_test(
+            &hierarchy,
+            &[NodeId::new(1), NodeId::new(2)],
+            &cache,
+            [0.0; 3],
+        );
+        assert_eq!(scene.instance_count(), 1);
+        assert!(scene.instances()[0].size < 0.125);
+    }
+    #[test]
+    fn source_leaf_depth_does_not_determine_voxel_size_or_limit_granularity() {
+        let make = |id, parent: Option<u64>, level, min, max, blocks: Vec<u64>| {
+            SpatialNode::new(
+                NodeId::new(id),
+                parent.map(NodeId::new),
+                level,
+                SpatialBounds::new(min, max).unwrap(),
+                if blocks.is_empty() { 0 } else { 1 },
+                0.0,
+                blocks.into_iter().map(BlockId::new).collect(),
+            )
+            .unwrap()
+        };
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                make(1, None, 0, [0.0; 3], [2.0; 3], vec![]),
+                make(2, Some(1), 1, [0.0; 3], [1.0; 3], vec![10]),
+                make(3, Some(1), 1, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], vec![]),
+                make(4, Some(3), 2, [1.0, 0.0, 0.0], [1.5, 0.5, 0.5], vec![11]),
+            ],
+            vec![],
+            Some(2),
+            HierarchySemantics::Replacement,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        for (id, point) in [(10, [0.2, 0.2, 0.5]), (11, [1.2, 0.2, 0.5])] {
+            cache.insert(PointBlock::new(
+                BlockId::new(id),
+                PointBatch::new(vec![Point::new(point, ColorRgb::new(1, 2, 3))]),
+                vec![],
+            ));
+        }
+        let result = build_voxel_scene(
+            &hierarchy,
+            &[NodeId::new(2), NodeId::new(4)],
+            &cache,
+            [0.0; 3],
+            1.0,
+            &|bounds| bounds_side(bounds) * 32.0,
+        );
+        assert_eq!(result.scene.instance_count(), 2);
+        assert_eq!(
+            result.scene.instances()[0].size,
+            result.scene.instances()[1].size
+        );
+        assert!(result.scene.instances()[0].size < 1.0 / 32.0);
+        assert_eq!(result.oversized_voxels, 0);
+        assert!((result.max_edge_pixels - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn adaptive_cells_obey_pixel_target_grow_with_distance_and_never_overlap() {
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new([0.0; 3], [2.0; 3]).unwrap(),
+                    256,
+                    0.0,
+                    vec![BlockId::new(10)],
+                )
+                .unwrap(),
+            ],
+            vec![],
+            Some(256),
+            HierarchySemantics::Replacement,
+        )
+        .unwrap();
+        let points = (0..16)
+            .flat_map(|x| {
+                (0..16).map(move |z| {
+                    Point::new(
+                        [x as f32 / 8.0, 0.25, z as f32 / 8.0],
+                        ColorRgb::new(10, 20, 30),
+                    )
+                })
+            })
+            .collect();
+        let mut cache = DecodedBlockCache::new(65536);
+        cache.insert(PointBlock::new(
+            BlockId::new(10),
+            PointBatch::new(points),
+            vec![],
+        ));
+        let project = |bounds: SpatialBounds| bounds_side(bounds) * 16.0 / (1.0 + bounds.min()[2]);
+        for target in [1.0, 2.0, 4.0, 16.0] {
+            let result = build_voxel_scene(
+                &hierarchy,
+                &[NodeId::new(1)],
+                &cache,
+                [0.0; 3],
+                target,
+                &project,
+            );
+            assert_eq!(result.oversized_voxels, 0);
+            assert!(result.max_edge_pixels <= target + 1e-10);
+            assert!(result.min_edge_pixels >= target / 2.0 - 1e-10);
+            let instances = result.scene.instances();
+            let near = instances
+                .iter()
+                .filter(|v| v.center[2] < 0.25)
+                .map(|v| v.size)
+                .fold(f32::INFINITY, f32::min);
+            let far = instances
+                .iter()
+                .filter(|v| v.center[2] > 1.5)
+                .map(|v| v.size)
+                .fold(0.0_f32, f32::max);
+            if target <= 4.0 {
+                assert!(far > near);
+            }
+            for (i, a) in instances.iter().enumerate() {
+                for b in &instances[i + 1..] {
+                    let overlap = (0..3).all(|axis| {
+                        (f64::from(a.center[axis]) - f64::from(b.center[axis])).abs()
+                            < (f64::from(a.size) + f64::from(b.size)) * 0.5 - 1e-8
+                    });
+                    assert!(!overlap, "adaptive cells must not overlap");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fine_local_cells_survive_a_large_geographic_origin() {
+        let origin = [1.0e12; 3];
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new(origin, origin.map(|value| value + 1.0)).unwrap(),
+                    2,
+                    0.0,
+                    vec![BlockId::new(10)],
+                )
+                .unwrap(),
+            ],
+            vec![],
+            Some(2),
+            HierarchySemantics::Replacement,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(PointBlock::new(
+            BlockId::new(10),
+            PointBatch::new(vec![
+                Point::new([0.5; 3], ColorRgb::new(1, 2, 3)),
+                Point::new([0.500002, 0.5, 0.5], ColorRgb::new(1, 2, 3)),
+            ]),
+            vec![],
+        ));
+        let result = build_voxel_scene(
+            &hierarchy,
+            &[NodeId::new(1)],
+            &cache,
+            origin,
+            1.0,
+            &|bounds| bounds_side(bounds) * 1_048_576.0,
+        );
+        assert_eq!(result.scene.instance_count(), 2);
+        assert_eq!(result.oversized_voxels, 0);
+        assert_ne!(
+            result.scene.instances()[0].center,
+            result.scene.instances()[1].center
+        );
+        assert!(
+            result
+                .scene
+                .instances()
+                .iter()
+                .all(|cell| cell.size < 1.0e-6)
         );
     }
 }

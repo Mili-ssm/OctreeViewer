@@ -49,12 +49,20 @@ conteo de puntos, atributos, CRS y distribución espacial.
   descomprimirse y descartarse por separado.
 - **Nivel de detalle:** seleccionar detalle según cámara, tamaño proyectado y presupuesto, no solo
   cantidad total de puntos.
-- **Granularidad visual objetivo:** en condiciones normales, ajustar el LOD dentro de un rango
-  orientativo que va de una densidad alta de aproximadamente 2 vóxeles por píxel a una representación
-  gruesa donde cada vóxel ocupa alrededor de 16 × 16 píxeles proyectados. Este rango expresa a la vez
-  la cantidad de representantes que puede llegar a dibujarse y el tamaño visual de cada celda; no es
-  una densidad fija ni una garantía para toda cámara, viewport o dataset. La selección concreta debe
-  seguir el error proyectado y los presupuestos de puntos/GPU, y validarse visualmente con datos reales.
+- **Granularidad visual objetivo:** tratar como extremos orientativos dos vóxeles por píxel en el
+  extremo fino y 16 × 16 px por vóxel en el grueso. Para convertir el primer extremo a una medida
+  lineal de celda, usar provisionalmente ≈0,5 px por arista y validar que esa interpretación refleja
+  la densidad visual buscada. El LOD debe poder cargar niveles suficientemente pequeños para alcanzar
+  el extremo fino cuando lo permitan la fuente y el presupuesto; los huecos por celdas sin puntos son
+  aceptables y no se deben rellenar inventando geometría. El tamaño proyectado es una referencia de
+  resolución, no una promesa de densidad de muestras. La ruta LOD voxelizada mide las doce aristas
+  proyectadas de las celdas; la carga de muestras y la resolución de dibujo tienen contratos separados.
+- **Vóxeles sin solapamiento:** en el modo voxelizado, cada punto representado pertenece a una celda
+  ocupada de una retícula espacial alineada entre bloques y niveles. El corte visible no debe dibujar
+  a la vez representantes de ancestros e hijos para la misma región; el tamaño de las caras tampoco
+  debe exceder la celda. Se permiten caras contiguas y huecos donde no haya datos. Mantener todos los
+  puntos fuente sin pérdida es una necesidad distinta del modo voxelizado y no basta para demostrar
+  este invariante visual.
 - **Contratos pequeños:** separar geometría, almacenamiento, lectura, consulta espacial y
   presentación para poder extenderlos sin acoplar el núcleo a WASM o `wgpu`.
 - **Métricas antes de promesas:** toda afirmación de escala o rendimiento debe venir acompañada de
@@ -158,6 +166,36 @@ El registro no especifica una licencia; la copia se conserva para pruebas locale
 Este conjunto permite pruebas más intensas que Belvedere, pero no mide ni demuestra todavía el soporte
 objetivo de más de 500 GB.
 
+### Capturas SensOFOREST por calidad (2026-10-10)
+
+Se renderizaron los `.oct` locales de Albuera UAV y Majadas TLS con el ejemplo nativo en Vulkan/
+llvmpipe, sin iniciar la aplicación. Las seis capturas comparten resolución 640×480 y encuadre
+automático a la raíz de cada nube. Cada PNG espera el readback de GPU y tiene un JSON con el corte
+fuente, voxeles, rango proyectado, píxeles con contenido y adapter.
+
+| Nube | Objetivo | Arista proyectada (px) | Puntos fuente cargados | Voxeles | Píxeles con contenido | Captura |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Albuera UAV | 4 px | 1,99–3,98 | 2.764.934 | 13.936 | 40.204 | [PNG](artifacts/sensoforest/albuera-640/voxel-4px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-4px.json) |
+| Albuera UAV | 8 px | 3,97–7,93 | 259.717 | 2.953 | 42.132 | [PNG](artifacts/sensoforest/albuera-640/voxel-8px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-8px.json) |
+| Albuera UAV | 16 px | 7,85–15,71 | 94.917 | 621 | 45.994 | [PNG](artifacts/sensoforest/albuera-640/voxel-16px.png) · [JSON](artifacts/sensoforest/albuera-640/voxel-16px.json) |
+| Majadas TLS | 4 px | 1,99–3,98 | 2.889.518 | 6.387 | 20.490 | [PNG](artifacts/sensoforest/majadas-640/voxel-4px.png) · [JSON](artifacts/sensoforest/majadas-640/voxel-4px.json) |
+| Majadas TLS | 8 px | 3,96–7,93 | 1.197.878 | 3.206 | 30.633 | [PNG](artifacts/sensoforest/majadas-640/voxel-8px.png) · [JSON](artifacts/sensoforest/majadas-640/voxel-8px.json) |
+| Majadas TLS | 16 px | 7,85–15,71 | 28.075 | 1.505 | 42.967 | [PNG](artifacts/sensoforest/majadas-640/voxel-16px.png) · [JSON](artifacts/sensoforest/majadas-640/voxel-16px.json) |
+
+Las seis imágenes tienen contenido y ninguna arista supera el objetivo. A 1280×960, el corte
+seleccionado para 4 px supera el límite actual de cuatro millones de puntos fuente en ambas nubes;
+a 640×480 queda bajo el límite y mantiene el objetivo expresado en píxeles de salida. En Majadas,
+los huecos reflejan el escaneo TLS y los puntos ausentes; las capturas no sustituyen una comprobación
+interactiva de UX.
+
+Para repetir ambas nubes después de compilar en modo optimizado:
+
+```sh
+cargo build --release --offline -p viewer_render_wgpu --example render_dataset
+target/release/examples/render_dataset data/datasets/sensoforest/albuera-uav.oct artifacts/sensoforest/albuera-640 4,8,16 640 480
+target/release/examples/render_dataset data/datasets/sensoforest/majadas-tls.oct artifacts/sensoforest/majadas-640 4,8,16 640 480
+```
+
 ### Fase 1 — Modelo espacial y contratos comunes (`viewer_core`)
 
 **Característica:** representar datasets y consultas sin depender de una estructura residente
@@ -206,7 +244,8 @@ color agregado, y su error máximo queda acotado por la semidiagonal más el red
 `f32`. Los niveles pueden duplicar el
 tamaño de celda para mantener grillas anidadas. El conversor deberá aplicar la política y almacenar
 el máximo de esas cotas por nodo. El consumidor debe proporcionar la tolerancia en píxeles para cada
-vista; `select_lod` no inventa un umbral global.
+vista; `select_lod` no inventa un umbral global. Esta cota de error no demuestra por sí sola que dos
+cubos renderizados no se solapen.
 
 `DatasetSource` expone metadatos y lee bloques identificados por `BlockId` bajo demanda, sin acoplar
 el núcleo a archivos, red, WASM ni `wgpu`. Cada `PointBlock` lleva un lote de puntos y columnas de
@@ -222,10 +261,10 @@ hijos. El productor define la cobertura/error, y el selector cuenta puntos, no b
 selección base supera el presupuesto devuelve un error; si una mejora no cabe o no hay más
 resolución, lo informa.
 
-`ViewerController` y `WasmVoxelViewer` ahora renderizan puntos sin agregarlos por defecto. La ruta
-opcional `replaceVoxelizedPoints`/`appendVoxelizedPoints` conserva la reducción de densidad. Ambos
-caminos siguen almacenando la escena actual en memoria; la lectura de bloques persistentes y acotados
-pertenece a `viewer_format` y a las fases posteriores.
+`ViewerController` y `WasmVoxelViewer` conservan los puntos fuente en memoria, pero al dibujarlos los
+agrupan en celdas enteras para que los cubos no se solapen. `replaceVoxelizedPoints`/
+`appendVoxelizedPoints` sigue disponible para una agregación explícita a una resolución fija. La lectura
+de bloques persistentes y acotados pertenece a `viewer_format`.
 
 La importación LAS/LAZ valida límites completos del encabezado antes de aceptar el origen. Un error
 de lectura, incluido un archivo truncado, invalida la sesión para evitar continuar desde un cursor
@@ -301,6 +340,28 @@ conservan coordenadas y atributos tras escribir/leer y las corrupciones fallan c
   las copias de atributos y puntos del spool que no aportaban al formato; registrar mediciones y
   límites en [REAL_DATASET_BENCH.md](docs/REAL_DATASET_BENCH.md). Mantener la estimación conservadora
   hasta repetir el benchmark para confirmar su margen.
+- [ ] Añadir objetivos de conversión para fuentes menores de 10 GB decimales: menos de 5 minutos como
+  umbral objetivo y menos de 1 minuto como ideal, compilando en `release`/`perf` y declarando fuente,
+  CPU, almacenamiento, atributos y distribución. Son metas pendientes, no rendimientos actuales.
+- [ ] Reducir el tamaño total `.oct` a como máximo 3× el LAS/LAZ original y explorar menos de 2× como
+  ideal. Medir siempre el cociente de archivos completos por separado del ratio LZ4 de payload; la
+  referencia Belvedere actual es 2,581× respecto al COPC LAZ.
+- [ ] Perfilar tres o más ejecuciones de referencia y localizar el coste de decodificación,
+  particionado, construcción de niveles, escritura y validación antes de elegir una optimización.
+  Repetir en entradas LAS y LAZ representativas; el resultado actual de 618 MB no demuestra el
+  objetivo de latencia para cualquier archivo menor de 10 GB.
+- [ ] Comparar prototipos con la misma entrada y salida semántica: (a) pipeline actual con spools,
+  (b) particionado externo acotado y escritura progresiva al candidato `.oct`, (c) varias pasadas de
+  la fuente para construir niveles por etapas —incluida la hipótesis de dos niveles por pasada— y
+  (d) preasignación/reservas basadas en conteos fiables cuando la fuente los ofrezca. Registrar tiempo
+  por pasada/fase, CPU, RSS, bytes temporales máximos, bytes leídos/escritos, tamaño final,
+  integridad/determinismo y cancelación/reanudación. No asumir que releer LAS/LAZ comprimido será más
+  rápido que conservar spools: decidir con mediciones emparejadas.
+- [ ] Probar escritura incremental al candidato con índice compacto al final, cierre validado y
+  publicación atómica; medir el espacio simultáneo de entrada, temporales, candidato y salida. No
+  eliminar los spools de checkpoints hasta demostrar recuperación equivalente y un pico de disco
+  menor. Mantener una variante de referencia si la alternativa añade complejidad sin superar sus
+  métricas.
 - [x] Informar fases, puntos procesados, bytes escritos y errores en la API/CLI.
 - [x] Permitir cancelación cooperativa desde el callback entre bloques y durante validación; limpiar
   el temporal y no publicar una salida parcial.
@@ -455,6 +516,12 @@ y reanudarse, y produce un archivo validado y abierto por el lector del formato.
   estadísticas observables.
 - [x] Gestionar transiciones LOD por subárbol con cambio atómico, fallbacks disponibles y diagnóstico
   de regiones sin cobertura; especificar el comportamiento en los bordes de bloques.
+- [x] Convertir el corte LOD WASM en una escena voxelizada sin superponer ancestros e hijos:
+  reemplazo y jerarquías aditivas agregan en una única retícula diádica adaptativa común, con
+  resolución decidida por cámara, independiente de los nodos de almacenamiento. La escena completa
+  se sube antes de confirmar el nuevo corte.
+- [ ] Extender esta garantía a `SurfaceRenderer::sync_visible_blocks` y validar redondeo/celdas en
+  límites con archivos EPT, bloques fragmentados y escalas de coordenadas reales.
 - [x] Hacer que la consulta solo devuelva bloques dentro del presupuesto y exponer los motivos de
   omisión/atraso para diagnóstico.
 
@@ -529,12 +596,11 @@ todavía.
   en un worker.
 - [x] Añadir modos de color RGB, intensidad, elevación y clasificación cuando existe el atributo.
   Intensidad ausente usa luminancia RGB en escala de grises; clasificación ausente conserva RGB.
-  El multiplicador de tamaño de las instancias cúbicas admite valores de 0.1 a 10.
-- [x] Ajustar el tamaño base de cada punto a la extensión y densidad del bloque para evitar cubos de una
-  unidad que oculten nubes pequeñas. Para nubes grandes se estima el espaciado a partir de la extensión
-  central de una muestra determinista; nubes pequeñas usan todas sus posiciones válidas. Un único
-  tamaño global no puede eliminar huecos y solapamientos a la vez en escaneos con densidades muy
-  distintas. El formato v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
+- [x] Reemplazar el multiplicador global por instancias de celdas enteras en el corte LOD; las
+  posiciones fuente que ocupan la misma celda se agregan antes de dibujarse. Las escenas de puntos
+  en memoria también se cuantizan a una retícula inferida. El API genérico `sync_visible_blocks` aún
+  conserva su ruta por bloque y queda pendiente integrarlo en la misma agregación global. El formato
+  v3 guarda `visual_scale`: LAS/LAZ y EPT normalizan
   la extensión máxima a 100 unidades de render sin cambiar XYZ, origen ni CRS; versiones antiguas
   usan factor 1. Cámara, shader, frustum y error proyectado LOD aplican el mismo factor.
 - [x] Definir un presupuesto ajustable en `RendererConfig::gpu_budget`: por defecto 4 millones de
@@ -552,9 +618,10 @@ todavía.
 **Cierre:** el host presenta una nube real en 3D, permite navegarla y el número de bloques y bytes
 subidos corresponde a la selección visible, no al tamaño total del dataset.
 
-**Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color, tamaño
-configurable y presupuesto estricto de instancias/buffers; conserva buffers por bloque para cortes
-LOD. El host WASM expone instancias/bloques visibles y bytes subidos; la demo muestra el tiempo de
+**Estado actual:** `SurfaceRenderer` presenta escenas con cámara orbital, modos de color y presupuesto
+estricto de instancias/buffers. La ruta WASM de LOD construye una escena voxelizada por corte y la
+sube como una unidad; el API genérico todavía conserva buffers por bloque. El host WASM expone
+instancias/bloques visibles y bytes subidos; la demo muestra el tiempo de
 llamada CPU al renderer. `FormatReader` preserva la escala visual v3 al abrir archivos; las APIs de
 bloques sin archivo usan escala 1. Chrome/WebGPU presentó visualmente el Bunny y el escáner costero
 Outer Banks en dos ángulos por dataset. Los atributos de intensidad/clasificación aún no se transfieren
@@ -566,12 +633,13 @@ conserva aquella con mayor cobertura. Abrir una nube y pulsar «Fit scene» encu
 completa aunque el corte LOD visible sea parcial. La heurística garantiza incluir sus bounds; no
 optimiza el contorno real de nubes cóncavas o con outliers.
 
-**Tamaño de voxeles de visualización (2026-10-10):** el tamaño base aproxima el espaciado a partir de la
-extensión y la cantidad de puntos, con dimensión estimada por los ejes con extensión apreciable. Para
-hasta 256 puntos válidos usa todos los puntos; en nubes mayores, una muestra determinista de hasta 256
-posiciones usa el rango entre percentiles 5 y 95 para reducir la influencia de outliers. La heurística
-reduce huecos y solapamientos en distribuciones regulares. Puede ser menos precisa en nubes inclinadas
-o con densidad muy variable; un tamaño global ajustable no resuelve simultáneamente todas las escalas.
+**Tamaño de voxeles de visualización (2026-10-10):** el corte LOD ya usa índices enteros y obtiene la
+arista de cada cubo de su celda. Para datos de puntos sin jerarquía, el tamaño de celda se estima desde
+la extensión y la cantidad de puntos, con dimensión estimada por los ejes apreciables. Para hasta 256
+puntos válidos usa todos; en nubes mayores estima con una muestra determinista. Esta estimación elige
+resolución para escenas genéricas en memoria. En datasets LOD, una retícula diádica común refina
+celdas por tamaño proyectado; la profundidad de las hojas de almacenamiento no limita la granularidad
+de los puntos fuente. Sigue pendiente retirar la ruta genérica por bloque.
 
 **Sombreado de profundidad (2026-10-10):** la demo incluye una casilla para activar o desactivar un
 sombreado ligero por orientación de las caras y profundidad de cámara. Usa el shader de voxeles existente,
@@ -618,11 +686,14 @@ y presentar estado.
 - [x] Exponer apertura de metadatos, inserción de bloques RGB decodificados, actualización LOD,
   encuadre y movimiento de cámara. Los IDs y conteos `u64` se intercambian como strings para evitar
   pérdida de precisión en JavaScript.
-- [x] Añadir perfiles `performance` y `quality`: error proyectado de 2 px y 1/16 px, con presupuestos
-  de puntos por defecto de 1 millón y 4 millones. El host puede pasar otro presupuesto; ambos perfiles
-  siguen limitados por el presupuesto GPU estricto del renderer. Son una aproximación al rango
-  acordado de 2:1 a 1:16 voxeles/píxel, no una garantía de densidad exacta. Falta validar el efecto
-  visual con datasets reales.
+- [x] Unificar el control LOD en un objetivo de 1–16 píxeles por arista de vóxel. El octree fuente
+  decide qué muestras cargar; una retícula diádica global subdividida 2×2×2 decide qué celdas dibujar
+  según la mayor de sus doce aristas proyectadas. La arista queda aproximadamente entre objetivo/2
+  y objetivo por los saltos diádicos. Las hojas conservan puntos originales: no se limitan a 8³ celdas.
+  El límite de seguridad de puntos fuente es 4 millones, independiente del objetivo; área/objetivo²
+  estima ocupación de pantalla, no puntos fuente incluyendo superficies ocultas. Si el detalle fuente
+  requerido excede ese límite o faltan bloques, se conserva la escena previa y se informa un error.
+  La precisión se limita a 24 subdivisiones y se cuentan las celdas que aún superan el objetivo.
 - [x] Integrar selección de archivo local, mensajes de carga/error y resumen de nodos del índice; la
   demo ejecuta visor, lector y renderer en worker.
 - [x] Mostrar estadísticas de puntos/bloques visibles, nivel LOD más profundo, cobertura, bloques
@@ -655,10 +726,17 @@ Blob con el lector v1/v2/v3. Ejecuta `createOffscreen(canvas.transferControlToOf
 las operaciones de archivo en un worker dedicado; así `FileReaderSync` no bloquea la UI y la superficie
 WebGPU también vive en ese worker. El lector y el selector comparten la misma jerarquía en memoria.
 
-Después de abrir un dataset, `updateLod("quality" | "performance", pointBudget?)` selecciona y guarda
-el perfil. La selección se recalcula antes de `renderFrame` tras cambios de cámara o llegada de
-bloques; para encuadrar, llama primero `fitScene()` y después `renderFrame()`. En el camino de formato,
-los bloques que faltan se leen antes del cambio atómico del corte. `clear()` cierra el dataset LOD.
+Después de abrir un dataset, `updateLod(targetVoxelPixels)` selecciona y guarda un objetivo de arista
+proyectada entre 1 y 16 píxeles. La selección de bloques respeta un límite de seguridad de 4 millones
+de puntos fuente; no se estima a partir del área de pantalla. La retícula de dibujo es común, diádica
+y adaptativa según cámara. La selección y la retícula se recalculan antes de `renderFrame` tras cambios
+de cámara, viewport o llegada de bloques; para encuadrar, llama primero `fitScene()` y después
+`renderFrame()`. En el camino de formato, los bloques que faltan se leen antes del cambio atómico del
+corte. Si no se dispone del detalle necesario, el error enumera bloques pendientes o indica el límite
+de puntos, conservando la escena anterior; insertar bloques permite reintentar. `clear()` cierra el dataset LOD.
+Las estadísticas `minVoxelEdgePixels`/`maxVoxelEdgePixels` miden el rango de las mayores aristas de
+las celdas visibles, proyectadas con perspectiva, antes del pequeño ajuste de seguridad a `f32`.
+`oversizedVoxels` informa cuántas exceden el objetivo, por ejemplo por el límite de precisión.
 Las estadísticas incluyen bloques/puntos visibles, máximo nivel del corte (`maxVisibleLevel`),
 presupuesto, uso y límite de caché decodificada (`cacheBytes`/`cacheBudgetBytes` como strings
 decimales), IDs de bloques pendientes, cobertura y nodos omitidos por presupuesto. La demo ya ejecuta
@@ -696,8 +774,8 @@ y cambia el corte de forma atómica. Informa bytes únicos leídos en rangos de 
 interpretarlos como porcentaje de finalización); cancelar termina/recrea el worker y permite reintentar
 seleccionando de nuevo el archivo. Muestra estado, resumen del índice, puntos/bloques visibles, nivel
 LOD más profundo, cobertura, bytes subidos, caché decodificada usada/límite y tiempo síncrono del
-worker; permite navegar, cambiar perfil, color y tamaño. Incluye un archivo sintético `.oct` de 4.096
-puntos, generable desde un ejemplo Rust, y un control de teclado para cargarlo. Chromium con WebGPU
+worker; permite navegar, cambiar objetivo de tamaño proyectado, color y sombreado. Incluye un archivo
+sintético `.oct` de 4.096 puntos, generable desde un ejemplo Rust, y un control de teclado para cargarlo. Chromium con WebGPU
 cargó la muestra y presentó frames; el redimensionado del canvas y el layout móvil se comprobaron en
 viewport de escritorio y de 500 px. Las conversiones temporales v3 del Stanford Bunny (40.256 puntos)
 y Outer Banks (149.730 puntos) se abrieron con todos sus puntos visibles; se guardaron capturas desde
@@ -720,6 +798,21 @@ dos ángulos para cada nube. No hay datos de escáner urbano en el repositorio. 
   incluir nubes densas, dispersas, RGB y sin RGB, y declarar tamaño en GB o GiB.
 - [ ] Registrar RAM pico, memoria GPU, tiempo de conversión, tiempo a primera imagen, latencia de
   navegación, bytes leídos/subidos, frames perdidos y calidad visual.
+- [ ] Añadir una matriz de conversión para archivos LAS/LAZ de varios tamaños y distribuciones,
+  incluyendo al menos un origen menor de 10 GB: tres ejecuciones por variante en el mismo equipo,
+  perfil `release` o `perf`, mediana de tiempo y cociente `.oct`/fuente. El objetivo para <10 GB es
+  menos de 5 minutos; menos de 1 minuto es ideal. El `.oct` debe ser ≤3× el archivo original y se
+  debe investigar <2× como objetivo ideal. Reportar aparte ratio de payload comprimido, RSS y pico de
+  temporales; no extrapolar desde una única fuente.
+- [ ] Validar el invariante de no solapamiento en datos sintéticos (grilla, plano, línea, clusters y
+  densidad variable) y en escaneos reales disponibles: no repetir IDs de celda ocupada en el corte,
+  no mezclar niveles solapados, y no dibujar glyphs mayores que las celdas. Comprobar consistencia en
+  bordes de bloques/nodos y tras transiciones LOD; permitir vacíos donde no hay puntos fuente.
+- [ ] Comparar el tamaño proyectado y la densidad visible con viewport, zoom y orientación variados:
+  extremo fino de dos vóxeles por píxel (validando provisionalmente ≈0,5 px por arista) y extremo
+  grueso cercano a 16 px por arista. Registrar el error y la razón cuando el corte o el presupuesto
+  no alcanzan el nivel requerido; revisar visualmente Bunny, Outer Banks y un escaneo urbano cuando
+  haya un archivo disponible.
 - [ ] Comparar contra Potree en la misma máquina, fuente y tarea de visualización; documentar
   diferencias de conversión/formato, mantener calidad visual equivalente y evitar comparar solo FPS
   o solo tamaño convertido.
@@ -735,6 +828,135 @@ dos ángulos para cada nube. No hay datos de escáner urbano en el repositorio. 
 
 **Cierre:** se puede reproducir la prueba de más de 500 GB dentro de límites acordados y explicar con
 datos en qué áreas el proyecto supera, iguala o todavía no alcanza a Potree.
+
+#### Geometría voxel y coste de conversión (2026-10-10)
+
+**Estado:** corte voxelizado probado con Bunny en Chrome. Se corrigió la conversión entre las
+posiciones locales de los bloques y los límites globales de la jerarquía; sin ese ajuste, los
+datasets con origen geográfico producían una escena vacía fuera de cámara. El formato no cambia.
+La escala proyectada y la ausencia de solapamiento aún necesitan más validación con escaneos reales.
+
+1. **Retícula de dibujo corregida:** todos los puntos del corte se asignan a celdas con clave
+   `(profundidad, x, y, z)` entera, alineadas al origen local de la raíz. Cada celda se divide 2×2×2
+   mientras su mayor arista proyectada exceda el objetivo, con un máximo de 24 subdivisiones.
+   El predicado de división es común a todos los puntos: las celdas ocupadas nunca mezclan ancestros
+   y descendientes. Se agregan colores/atributos y se ajusta el cubo por redondeo `f32`.
+   La retícula se calcula en coordenadas locales para evitar pérdida de detalle en orígenes geográficos.
+   Los internos del conversor son muestras 8³; las hojas guardan puntos fuente y pueden voxelizarse
+   a resoluciones más finas sin reconvertir el archivo. El octree del conversor ya usa 2×2×2 por defecto.
+   La selección carga hijos si el soporte de muestras internas resulta demasiado grueso; si falta
+   detalle, conserva la escena previa y da un diagnóstico en lugar de subdividir muestras gruesas
+   como si fuesen puntos fuente nuevos.
+2. **Persistir identidad/origen/escala en `viewer_format` y producirla en `viewer_convert`:** comprobar
+   si v1/v2/v3 expresan la identidad de celda con precisión suficiente antes de proponer cambios de
+   formato. El almacenamiento actual conserva códigos XYZ `u32` por bloque y el lector los reconstruye
+   como `f32`; el nuevo índice entero se deriva al formar el corte, no se persiste como ID global.
+   Cierre: round-trip de celdas, escala, atributos y cota geométrica; compatibilidad anterior mantenida
+   o migración versionada documentada si el contrato no cabe.
+3. **Validar límites y transiciones:** probar coordenadas negativas, caras compartidas, límites de
+   cuantización, bloques fragmentados, nodos degenerados, carga/cancelación/error y cortes mixtos.
+   Verificar que el redondeo a `f32` y la conversión de centros/aristas al shader no produzcan
+   intersección interior. EPT usa retícula global; confirmar con fixtures reales y mantener la escena
+   anterior si falla una carga.
+4. **Corrección de tamaño proyectado — verificada con Bunny:** la implementación anterior
+   confundía profundidad del octree de almacenamiento, grilla 8³ de muestras internas y resolución
+   de dibujo. Eso generaba grandes cubos intercalados en hojas poco densas, incluso cargando todos
+   los puntos. Además, usar área/objetivo² como presupuesto de puntos fuente frenaba refinamientos
+   de forma desigual. Las primeras capturas no validaban la homogeneidad y se conservan como
+   contraejemplo (`bunny-{1,2,4,8,16}px.png`), no como evidencia de cumplimiento.
+   La retícula común elimina la dependencia del tamaño de bloque; 1 y 2 px ahora dibujan los 40.256
+   puntos con aristas distintas, aunque se seleccione el mismo corte fuente. Un LOD de fuente mezcla
+   profundidades para obtener muestras suficientes; eso ya no produce celdas de dibujo de tamaños
+   distintos por propietario. Los saltos de tamaño mundial obedecen a la proyección y a las divisiones
+   diádicas. Se conservan los huecos reales por ausencia de puntos.
+
+   Capturas corregidas en Chromium/WebGPU/Vulkan, framebuffer 1.175×1.100, mismo encuadre y archivo:
+
+   `cargo run --release -p viewer_convert -- data/samples/stanford_bunny_bun000_unstructured.las /tmp/stanford-bunny-pixels.oct --points-per-block 128`
+
+   | Objetivo | Aristas proyectadas (px) | Puntos del corte | Voxeles dibujados | Fuera del objetivo | Captura |
+   | ---: | ---: | ---: | ---: | ---: | --- |
+   | 1 px | 0,52–0,84 | 40.256 | 40.256 | 0 | [captura](artifacts/voxel-lod-previews/bunny-fixed-1px.png) |
+   | 2 px | 1,04–1,68 | 40.256 | 40.256 | 0 | [captura](artifacts/voxel-lod-previews/bunny-fixed-2px.png) |
+   | 4 px | 2,08–3,36 | 40.256 | 36.357 | 0 | [captura](artifacts/voxel-lod-previews/bunny-fixed-4px.png) |
+   | 8 px | 4,16–6,73 | 22.161 | 16.182 | 0 | [captura](artifacts/voxel-lod-previews/bunny-fixed-8px.png) |
+   | 16 px | 8,35–13,52 | 8.258 | 5.073 | 0 | [captura](artifacts/voxel-lod-previews/bunny-fixed-16px.png) |
+
+   Se repitió 4 px con el `.oct` original de un único nodo: los mismos 36.357 voxeles,
+   sin reconversión. Zoom y resize mantuvieron el máximo en 4,00 y 3,99 px respectivamente
+   ([diagnósticos](artifacts/voxel-lod-previews/bunny-fixed-navigation-stats.jsonl)).
+
+   Pruebas de regresión: hojas de profundidades distintas con el mismo tamaño proyectado, granularidad
+   más fina que nodo/8, celdas mayores lejos, ausencia de intersecciones de interiores, deduplicación
+   aditiva, origen local y proyección de las doce aristas con distancia/viewport/origen mundial.
+   Pendiente: ampliar medidas a EPT real, zoom extremo, dispositivos y datasets grandes. La ruta
+   `sync_visible_blocks` genérica sigue pendiente de unificar con este contrato; su existencia no
+   extiende las garantías verificadas de la ruta LOD voxelizada.
+5. **Crear comparación base de conversión en `viewer_convert` (puede avanzar en paralelo):** ejecutar
+   tres o más repeticiones por entrada/configuración, guardar medianas, fases, RSS real, bytes
+   temporales máximos y ratio de salida completa `.oct`/fuente. La base actual de Belvedere (618 MB)
+   no valida por sí sola la meta para fuentes cercanas a 10 GB.
+6. **Comparar optimizaciones de conversión:** reservar buffers cuando haya conteos fiables, liberar
+   temporales al consumirse, escribir progresivamente bloques al candidato y comparar spools actuales,
+   particionado externo y múltiples pasadas de la fuente (incluida la hipótesis de dos niveles por
+   pasada). Adoptar solo variantes con mejor tiempo, tamaño o disco temporal medidos, sin perder
+   determinismo, validación, cancelación ni checkpoints.
+
+Los targets del conversor son **≤3×** el tamaño original (ideal **<2×**) y **<5 min** para archivos
+menores de 10 GB decimales (ideal **<1 min**) en compilación optimizada. Son objetivos para evaluar
+con un corpus y equipo declarados, no garantías universales. Mantener por separado bytes de payload
+comprimido, índice/formato, archivo final, pico temporal y RSS. La medición vigente —618.390.994 B de
+COPC LAZ a 1.596.356.674 B `.oct` (2,581×), en 100,12 s y con 8,37 GiB temporales observados— es la
+referencia histórica, no el resultado de estas optimizaciones.
+
+### Imágenes de diagnóstico sin interfaz (2026-10-10)
+
+**Implementado:** `viewer_render_wgpu::render_offscreen` crea un destino RGBA8 sRGB y profundidad,
+usa la misma configuración de pipeline, shader y malla que `SurfaceRenderer`, espera la finalización
+GPU mediante `map_async` + `device.poll(Wait)` y devuelve filas RGBA sin padding. El voxelizador
+`build_voxel_scene` ahora pertenece a la librería de render y lo comparten WASM y la herramienta nativa.
+No hay espera fija ni captura de un canvas. El ejemplo lee `.oct`, encuadra con `OrbitCamera`,
+selecciona el corte y genera un PNG y JSON por calidad; falla si no hay contenido o se excede el
+objetivo proyectado. Los diagnósticos incluyen adapter/backend, viewport, corte fuente, voxeles,
+rango proyectado, píxeles con contenido y lectura GPU completada.
+
+```sh
+cargo run --offline -p viewer_render_wgpu --example render_dataset -- \
+  data/samples/stanford_bunny_bun000_unstructured.oct \
+  artifacts/voxel-lod-previews/headless 1,2,4,8,16 1280 960
+
+# Tests numéricos sin GPU y regresiones del consumidor WASM:
+cargo test --offline -p viewer_render_wgpu -p viewer_wasm
+# Tests de rasterización/readback que requieren un adapter GPU o Vulkan por software:
+cargo test --offline -p viewer_render_wgpu -- --ignored
+```
+
+Calidad, ancho y alto son opcionales: por defecto `1,2,4,8,16` y `1280×960`. Cada salida se llama
+`voxel-<objetivo>px.png` y `.json`. Para ejecución optimizada añadir `--release`.
+La herramienta admite por ahora `.oct`, RGB, sombreado por profundidad y escala visual 1;
+no ejecuta flujos de worker/UI ni sustituye sus comprobaciones. Limita el corte a 4 M de puntos y
+la caché a 512 MiB; valida dimensiones de imagen y límites del adapter. Las aristas proyectadas
+se miden antes de rasterizar; el conteo de contenido es el número de píxeles leídos cuyo RGB difiere
+del fondo en más de un nivel de 8 bits, no un conteo de voxeles visibles.
+
+**Comprobado con el Bunny original**, framebuffer 1280×960, mismo encuadre, Vulkan/llvmpipe:
+
+| Objetivo | Aristas proyectadas (px) | Voxeles | Píxeles con contenido | Imagen |
+| ---: | ---: | ---: | ---: | --- |
+| 1 px | 0,52–0,75 | 40.256 | 23.979 | [PNG](artifacts/voxel-lod-previews/headless/voxel-1px.png) |
+| 2 px | 1,04–1,49 | 40.256 | 82.339 | [PNG](artifacts/voxel-lod-previews/headless/voxel-2px.png) |
+| 4 px | 2,09–2,99 | 36.357 | 185.299 | [PNG](artifacts/voxel-lod-previews/headless/voxel-4px.png) |
+| 8 px | 4,18–5,99 | 16.182 | 217.909 | [PNG](artifacts/voxel-lod-previews/headless/voxel-8px.png) |
+| 16 px | 8,37–12,08 | 5.073 | 236.206 | [PNG](artifacts/voxel-lod-previews/headless/voxel-16px.png) |
+
+Las cinco imágenes tienen contenido y cero voxeles sobre el objetivo. Revisadas visualmente a
+1, 4 y 16 px. Las divisiones 2×2×2 producen escalones de tamaño: el objetivo es un máximo de arista,
+no una igualdad exacta. La prueba GPU compara la silueta rasterizada de un cubo frontal con la
+proyección analítica a dos resoluciones y dos distancias (tolerancia de rasterización de 2 px),
+y otra cubre readback con anchura no alineada a 256 bytes. Ambas pasaron en este entorno;
+se marcan `ignored` para poder correr los tests ordinarios sin GPU. Pendiente: corpus de imágenes
+comparables en otros adapters, EPT y datasets mayores; controles opcionales de cámara/estilo en CLI
+si hacen falta para reproducir nuevos fallos.
 
 ## Mapa por librería
 

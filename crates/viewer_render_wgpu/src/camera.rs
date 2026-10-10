@@ -268,6 +268,51 @@ impl OrbitCamera {
             / (2.0 * tan_vertical * nearest_depth)
     }
 
+    /// Maximum length of the twelve projected cube edges, in framebuffer pixels.
+    /// Uses actual perspective depth, independently of geometric-error bounds.
+    pub fn projected_voxel_edge_pixels(
+        &self,
+        bounds: SpatialBounds,
+        coordinate_origin: [f64; 3],
+        viewport: [u32; 2],
+    ) -> f64 {
+        if viewport.contains(&0) {
+            return f64::INFINITY;
+        }
+        let (position, forward, right, up) = self.basis();
+        let focal = f64::from(viewport[1]) / (2.0 * (VERTICAL_FOV * 0.5).tan());
+        let mut projected = [[0.0; 2]; 8];
+        for (index, pixel) in projected.iter_mut().enumerate() {
+            let corner = DVec3::from_array(std::array::from_fn(|axis| {
+                (if index & (1 << axis) == 0 {
+                    bounds.min()[axis]
+                } else {
+                    bounds.max()[axis]
+                }) - coordinate_origin[axis]
+            }));
+            let offset = corner - position;
+            let depth = offset.dot(forward);
+            if depth <= 0.0 {
+                return f64::INFINITY;
+            }
+            *pixel = [
+                focal * offset.dot(right) / depth,
+                focal * offset.dot(up) / depth,
+            ];
+        }
+        let mut maximum: f64 = 0.0;
+        for index in 0..8 {
+            for axis in 0..3 {
+                let other = index ^ (1 << axis);
+                maximum = maximum.max(
+                    (projected[index][0] - projected[other][0])
+                        .hypot(projected[index][1] - projected[other][1]),
+                );
+            }
+        }
+        maximum
+    }
+
     fn basis(&self) -> (DVec3, DVec3, DVec3, DVec3) {
         let offset = DVec3::new(
             self.yaw.sin() * self.pitch.cos(),
@@ -513,5 +558,79 @@ mod tests {
         let nearby_error = camera.projected_error_pixels(nearby, 0.1, [0.0; 3], [800, 600]);
         let distant_error = camera.projected_error_pixels(distant, 0.1, [0.0; 3], [800, 600]);
         assert!(nearby_error > distant_error);
+    }
+
+    #[test]
+    fn projected_cube_edges_match_perspective_distance_viewport_and_world_origin() {
+        use viewer_core::SpatialBounds;
+        let mut camera = OrbitCamera {
+            pitch: 0.0,
+            ..OrbitCamera::default()
+        };
+        let bounds = SpatialBounds::new([-0.5; 3], [0.5; 3]).unwrap();
+        let edge = camera.projected_voxel_edge_pixels(bounds, [0.0; 3], [800, 600]);
+        let focal = 600.0 / (2.0 * (super::VERTICAL_FOV * 0.5).tan());
+        assert!((edge - focal / 4.5).abs() < 1e-10);
+        assert!(
+            (camera.projected_voxel_edge_pixels(bounds, [0.0; 3], [1600, 1200]) - edge * 2.0).abs()
+                < 1e-10
+        );
+        let origin = [1_000_000.0, -2_000_000.0, 3_000_000.0];
+        let translated =
+            SpatialBounds::new(origin.map(|v| v - 0.5), origin.map(|v| v + 0.5)).unwrap();
+        assert!(
+            (camera.projected_voxel_edge_pixels(translated, origin, [800, 600]) - edge).abs()
+                < 1e-10
+        );
+        camera.zoom(2.0_f64.ln());
+        assert!(
+            (camera.projected_voxel_edge_pixels(bounds, [0.0; 3], [800, 600]) - focal / 9.5).abs()
+                < 1e-10
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore = "requires a native GPU or a software Vulkan adapter"]
+    fn rasterized_cube_edges_match_camera_projection_at_two_resolutions_and_distances() {
+        let scene = crate::RenderScene::from_instances(vec![crate::InstanceRaw {
+            center: [0.0; 3],
+            size: 1.0,
+            color: [1.0, 0.4, 0.2, 1.0],
+            intensity: -1.0,
+            classification: -1.0,
+        }]);
+        let bounds = viewer_core::SpatialBounds::new([-0.5; 3], [0.5; 3]).unwrap();
+        for (distance, viewport) in [(5.0, [257, 193]), (5.0, [514, 386]), (10.0, [257, 193])] {
+            let camera = OrbitCamera {
+                pitch: 0.0,
+                fitted: true,
+                distance,
+                ..OrbitCamera::default()
+            };
+            let image =
+                pollster::block_on(crate::render_offscreen(&scene, &camera, viewport)).unwrap();
+            let background = &image.rgba[..3];
+            let mut min = [u32::MAX; 2];
+            let mut max = [0; 2];
+            for (index, pixel) in image.rgba.as_chunks::<4>().0.iter().enumerate() {
+                if (0..3).any(|axis| pixel[axis].abs_diff(background[axis]) > 1) {
+                    let xy = [index as u32 % viewport[0], index as u32 / viewport[0]];
+                    for axis in 0..2 {
+                        min[axis] = min[axis].min(xy[axis]);
+                        max[axis] = max[axis].max(xy[axis]);
+                    }
+                }
+            }
+            assert!(image.non_background_pixels > 0);
+            let expected = camera.projected_voxel_edge_pixels(bounds, [0.0; 3], viewport);
+            for axis in 0..2 {
+                let rasterized = f64::from(max[axis] - min[axis] + 1);
+                assert!(
+                    (rasterized - expected).abs() <= 2.0,
+                    "distance={distance}, viewport={viewport:?}, actual={rasterized}, expected={expected}"
+                );
+            }
+        }
     }
 }
