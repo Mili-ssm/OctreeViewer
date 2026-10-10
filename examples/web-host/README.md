@@ -24,6 +24,32 @@ cargo run --offline -p viewer_format --example create_web_sample -- examples/web
 Use any static file server rooted at the repository. Then open `examples/web-host/index.html`. WebGPU
 and module workers require a secure context such as `localhost` or HTTPS.
 
+## Export a local single-file viewer
+
+To create a package that works offline and can be opened directly from `file://` without starting a
+server, build the WASM module and its JS bindings, then run the packager:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo build --release --offline -p viewer_wasm --target wasm32-unknown-unknown
+wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/viewer_wasm.wasm
+python3 examples/web-host/package-local.py
+```
+
+The output is `artifacts/visor-web-local/visor-web-local.zip`. Extract it and open `index.html` in a
+browser with WebGPU and OffscreenCanvas support. The HTML embeds the runtime, WASM binary and sample,
+so it does not fetch assets from the repository or the network.
+
+### Cargar una nube
+
+1. Espera a que el estado indique que el renderizador está listo.
+2. Pulsa **Open project dataset** y selecciona un archivo de proyecto `.oct` (versiones 1, 2 o 3).
+3. El visor muestra primero una vista gruesa y luego refina progresivamente. Ajusta **Finest voxel
+   detail** para elegir el detalle mínimo que quieres intentar.
+
+La nube se lee localmente en el navegador; el paquete no la sube a ningún servicio. No acepta LAS/LAZ
+directamente en este selector: conviértelos primero al formato `.oct` del proyecto.
+
 The target browsers are Chrome and Firefox builds that support WebGPU and `OffscreenCanvas`; visual
 rendering has been checked in Chrome with converted Bunny and Outer Banks datasets. Firefox still
 requires browser validation. The host transfers the canvas
