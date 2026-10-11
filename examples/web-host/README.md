@@ -21,8 +21,46 @@ cargo run --offline -p viewer_format --example create_web_sample -- examples/web
 
 ## Serve the demo
 
-Use any static file server rooted at the repository. Then open `examples/web-host/index.html`. WebGPU
-and module workers require a secure context such as `localhost` or HTTPS.
+La demo de desarrollo usa módulos externos: **no abrir este `index.html` con doble clic**.
+`file://` les asigna un origen local que provoca errores de CORS; el arranque detecta ese caso
+y muestra un enlace al visor autocontenido. Para usar la demo de desarrollo, desde la raíz:
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+Abre **http://localhost:8000/examples/web-host/index.html**. Sirve la raíz completa, incluyendo
+`pkg/`: servir solo `examples/web-host/` deja fuera los bindings y WASM. WebGPU y los workers
+requieren un contexto seguro, como localhost o HTTPS; HTTP desde otra máquina puede no servir.
+
+### Contrato de carga y prevención de regresiones CORS
+
+- **Demo y API modular:** página, workers, módulos JS/MJS y WASM deben servirse desde el mismo
+  origen (esquema, host y puerto), con sus rutas relativas intactas. Los módulos necesitan MIME
+  JavaScript y el WASM `application/wasm`. Una respuesta HTML/404 en lugar de un módulo también
+  rompe el arranque. No mezclar `localhost` con `127.0.0.1` en las URLs de recursos.
+- **Doble clic:** abrir el `artifacts/visor-web-local/index.html` generado abajo. Su script,
+  bindings, WASM y muestra están embebidos; ambos workers son Blob clásicos sin imports
+  externos. No introducir módulos externos, `import.meta.url` ni fetch de assets en esta ruta.
+  La API modular en `embed/` conserva su requisito de localhost/HTTPS.
+- **Después de cambiar el host, workers o bindings:** regenerar el paquete; el HTML/ZIP son
+  una instantánea, no se actualizan automáticamente. `package-local.py` exige encontrar sus
+  marcadores y debe fallar si una refactorización rompe la transformación del runtime.
+- No usar `fetch(..., { mode: "no-cors" })` ni desactivar la seguridad del navegador: no
+  habilitan los módulos de `file://`. La demo en un único origen no necesita cabeceras CORS
+  permisivas. [Referencia: módulos JavaScript y pruebas locales (MDN)](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules).
+
+Regresiones automatizadas (desde la raíz, Python 3 y Node.js):
+
+```bash
+node examples/web-host/tests/demo-bootstrap.test.mjs
+python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'
+```
+
+Cubren el bloqueo preventivo de cargas externas bajo `file://`, el arranque modular HTTP/HTTPS,
+y la generación/sintaxis del runtime y ambos workers autocontenidos. No sustituyen una prueba
+de renderizado WebGPU en Chrome/Firefox: abrir el paquete generado con doble clic, cargar la
+muestra y comprobar la consola; comprobar también el arranque desde localhost.
 
 ## Export a local single-file viewer
 
@@ -39,6 +77,8 @@ python3 examples/web-host/package-local.py
 The output is `artifacts/visor-web-local/visor-web-local.zip`. Extract it and open `index.html` in a
 browser with WebGPU and OffscreenCanvas support. The HTML embeds the runtime, WASM binary and sample,
 so it does not fetch assets from the repository or the network.
+También puedes abrir directamente `artifacts/visor-web-local/index.html` con doble clic; no es el
+`index.html` de desarrollo de esta carpeta.
 
 ### Convertir y cargar una nube
 

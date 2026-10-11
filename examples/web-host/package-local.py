@@ -131,6 +131,13 @@ def main() -> None:
         ";",
         "inline converter worker URL",
     )
+    # The embedded worker has no imports; match the viewer's classic Blob worker on file://.
+    converter_api_js = require_replace(
+        converter_api_js,
+        'type: "module",',
+        'type: "classic",',
+        "inline converter worker type",
+    )
     main_js = require_replace(
         main_js,
         'new Worker(new URL("./viewer-worker.js", import.meta.url), { type: "module" })',
@@ -175,12 +182,13 @@ def main() -> None:
         + main_js
         + "\n</script>"
     )
-    html = require_replace(
+    html, bootstrap_replacements = re.subn(
+        r'<script id="demo-bootstrap">[\s\S]*?</script>',
+        lambda _: inline_runtime,
         html,
-        '<script type="module" src="./main.js"></script>',
-        inline_runtime,
-        "host module script",
     )
+    if bootstrap_replacements != 1:
+        raise ValueError("expected exactly one host bootstrap script")
     html = html.replace('<html lang="en">', '<html lang="es">')
     html = html.replace("<title>viewer_wasm host demo</title>", "<title>Visor local de nubes de puntos</title>")
     html = html.replace("<h1>Embeddable voxel viewer</h1>", "<h1>Visor de nubes de puntos</h1>")

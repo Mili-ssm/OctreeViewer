@@ -233,7 +233,25 @@ worker: renderFrame() · LOD loads before draw</pre>
             aria-label="3D point cloud. Use the camera mode controls and keyboard instructions in the side panel."
             aria-describedby="camera-help"></canvas>
     </main>
-    <script type="module" src="./main.js"></script>
+    <!-- The packager replaces this entire bootstrap with the offline runtime. -->
+    <script id="demo-bootstrap">
+        const status = document.getElementById("renderer-status");
+        if (location.protocol === "file:") {
+            status.textContent = "Esta demo de desarrollo necesita localhost o HTTPS; file:// bloquea sus módulos. ";
+            const localViewer = document.createElement("a");
+            localViewer.href = "../../artifacts/visor-web-local/index.html";
+            localViewer.textContent = "Abrir visor local autocontenido";
+            status.append(localViewer, ". Si aún no existe, genéralo siguiendo examples/web-host/README.md.");
+        } else {
+            const module = document.createElement("script");
+            module.type = "module";
+            module.src = "./main.js";
+            module.addEventListener("error", () => {
+                status.textContent = "No se pudo cargar la demo. Consulta examples/web-host/README.md y sirve la raíz completa del repositorio.";
+            });
+            document.body.append(module);
+        }
+    </script>
 </body>
 
 </html>

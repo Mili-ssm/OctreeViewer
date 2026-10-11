@@ -33,6 +33,13 @@ cuando están disponibles. Los rangos finitos del dataset mantienen la misma esc
 valores no finitos o rangos constantes se muestran grises. Los enteros de 64 bits conservan sus
 bits en disco; su proyección de color mediante `f64` puede perder precisión.
 
+**Demo web y CORS:** para abrir con doble clic, usar el visor autocontenido generado en
+`artifacts/visor-web-local/index.html`. El `examples/web-host/index.html` de desarrollo necesita
+localhost/HTTPS: `python3 -m http.server 8000 --bind 127.0.0.1` desde la raíz, y abrir
+`http://localhost:8000/examples/web-host/index.html`. Su arranque detecta `file://` y ofrece el
+enlace local sin solicitar módulos externos. Regenerar el paquete tras cambiar host/WASM;
+[comandos, contrato de carga y tests contra regresiones](examples/web-host/README.md#contrato-de-carga-y-prevención-de-regresiones-cors).
+
 **Compatibilidad:** se lee/escribe solo v5. Reconstruir archivos v1–v4 desde su fuente; no se
 reinterpretan silenciosamente. Los checkpoints anteriores tampoco se reanudan. Las muestras
 versionadas están regeneradas. [Especificación completa](crates/viewer_format/FORMAT_V5.md).
