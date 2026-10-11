@@ -6,7 +6,8 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{
-    GpuRendererError, SurfaceRenderer, VoxelSceneBuildError, build_voxel_scene_with_limit,
+    GpuRendererError, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
+    build_voxel_scene_with_limits,
 };
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
@@ -17,6 +18,7 @@ pub struct LodDataset {
     planner: LodTransitionPlanner,
     visible_plan: Option<LodTransitionPlan>,
     visible_scene_metrics: (f64, f64, usize),
+    visible_voxel_memory: VoxelBuildMemoryStats,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +27,10 @@ pub struct LodViewStats {
     pub visible_points: u64,
     pub rendered_voxels: usize,
     pub voxel_budget: usize,
+    pub voxel_build_budget_bytes: u64,
+    pub voxel_build_estimated_peak_bytes: u64,
+    pub voxel_instance_capacity_bytes: u64,
+    pub projection_cache_peak_entries: usize,
     pub target_voxel_pixels: f64,
     pub lod_stage_pixels: f64,
     pub min_voxel_edge_pixels: f64,
@@ -92,6 +98,7 @@ impl LodDataset {
             planner: LodTransitionPlanner::new(),
             visible_plan: None,
             visible_scene_metrics: (0.0, 0.0, 0),
+            visible_voxel_memory: VoxelBuildMemoryStats::default(),
         }
     }
 
@@ -129,6 +136,7 @@ impl LodDataset {
         self.cache.clear();
         self.visible_plan = None;
         self.visible_scene_metrics = (0.0, 0.0, 0);
+        self.visible_voxel_memory = VoxelBuildMemoryStats::default();
         Ok(())
     }
 
@@ -196,6 +204,7 @@ impl LodDataset {
                 self.planner.reset(&mut self.cache);
                 self.visible_plan = None;
                 self.visible_scene_metrics = (0.0, 0.0, 0);
+                self.visible_voxel_memory = VoxelBuildMemoryStats::default();
                 return Err(LodDatasetError::Selection(error));
             }
             Err(error) => return Err(LodDatasetError::Selection(error)),
@@ -234,7 +243,7 @@ impl LodDataset {
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
-            let voxel_scene = build_voxel_scene_with_limit(
+            let voxel_scene = build_voxel_scene_with_limits(
                 self.metadata.hierarchy(),
                 plan.node_ids(),
                 &self.cache,
@@ -247,11 +256,12 @@ impl LodDataset {
                         0.0
                     }
                 },
-                renderer.max_visible_instances(),
+                renderer.voxel_build_limits(),
             )?;
             renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids())?;
             self.planner.commit(&plan, &mut self.cache);
             self.visible_plan = Some(plan.clone());
+            self.visible_voxel_memory = voxel_scene.memory_stats;
             self.visible_scene_metrics = (
                 voxel_scene.min_edge_pixels,
                 voxel_scene.max_edge_pixels,
@@ -263,7 +273,11 @@ impl LodDataset {
             visible_blocks: visible_plan.block_ids().len(),
             visible_points: visible_plan.point_count(),
             rendered_voxels: renderer.visible_instance_count(),
-            voxel_budget: renderer.max_visible_instances(),
+            voxel_budget: renderer.voxel_build_limits().max_voxels,
+            voxel_build_budget_bytes: renderer.voxel_build_limits().max_estimated_bytes,
+            voxel_build_estimated_peak_bytes: self.visible_voxel_memory.estimated_peak_bytes,
+            voxel_instance_capacity_bytes: self.visible_voxel_memory.instance_capacity_bytes,
+            projection_cache_peak_entries: self.visible_voxel_memory.projection_cache_peak_entries,
             target_voxel_pixels,
             lod_stage_pixels: stage_voxel_pixels,
             min_voxel_edge_pixels: self.visible_scene_metrics.0,

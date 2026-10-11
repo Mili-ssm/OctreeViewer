@@ -118,5 +118,43 @@ su orden y con iguales opciones. `OUTPUT` representa una ruta nueva bajo el dire
 no RAM decodificada. Los contadores distinguen metadatos/payload por archivo y el resumen agrupa
 geometría, RGB de presentación y cada columna por índice de esquema.
 
-Pendiente: conversiones v5 grandes repetidas, temporales máximos/acumulados e I/O por fase,
-memoria CPU de voxelización, lectura aleatoria y pruebas Chrome/Firefox con WebGPU.
+## Presupuesto CPU del builder de vóxeles
+
+Segunda entrega, comparada con `4e78489`, sin cambiar grilla, color ni orden de instancias.
+`RendererConfig` usa por defecto 256 MiB de **memoria estimada de construcción**, además del
+límite independiente de vóxeles renderizables. El ejemplo nativo acepta un sexto argumento
+opcional con ese presupuesto en bytes. Las APIs antiguas sin presupuesto de bytes se conservan.
+
+Para `n` acumuladores, el modelo carga `n × A + max(C, capacidad_instancias × 40)` bytes.
+`A` es dos veces el tamaño de `(VoxelKey, VoxelAccumulator)` más seis palabras de puntero;
+`C` reserva hasta `min(262.144, presupuesto / 8 / P)` entradas de proyección. `P` carga dos veces
+`(VoxelKey, f64)`, seis palabras de puntero y cuatro claves para la capacidad de la cola FIFO.
+En esta compilación nativa, `A = 192 B` y `P = 160 B`; dependen de la arquitectura. La reserva
+se contabiliza completa aunque la caché no se llene. Se descarta antes de reservar el vector final
+con `try_reserve_exact`, evitando el crecimiento geométrico durante la finalización.
+
+Es un modelo conservador explícito, **no una cota garantizada del asignador ni de RSS**. Excluye
+índice, bloques fuente/caché, escena anterior, picking, heap JS/WASM y buffers GPU. Las reservas
+de vector devuelven errores; las asignaciones internas de `BTreeMap` no ofrecen esa recuperación.
+Al exceder el modelo o el máximo de vóxeles, el builder queda invalidado y `try_finish` devuelve
+el error. En WASM, la construcción precede a la subida y confirmación del corte visible.
+
+Diagnóstico Outer Banks `fs_e430_n4008_18`, 640×480, objetivo 4 px, llvmpipe/Vulkan:
+PNG idéntico byte a byte antes/después, 111.190 puntos fuente, 1.849 vóxeles, 9.790 píxeles con
+geometría, cero vóxeles sobredimensionados. Capacidad final **73.960 B**; pico estimado
+**33.909.408 B**, incluyendo **33.554.400 B** de reserva de caché, que solo alcanzó 2.552 entradas.
+No se interpreta este valor como memoria residente observada ni como mejora de rendimiento.
+Una ejecución con cero bytes devuelve `EstimatedMemoryLimitExceeded` y conserva el PNG anterior.
+El estado visible del navegador sigue pendiente de prueba con Chrome/Firefox.
+
+```sh
+cargo build --profile perf -p viewer_render_wgpu --example render_dataset --offline
+target/perf/examples/render_dataset data/samples/fs_e430_n4008_18.oct target/voxel-cpu-repro 4 640 480
+# Debe fallar sin sobrescribir el PNG de la ejecución anterior:
+target/perf/examples/render_dataset data/samples/fs_e430_n4008_18.oct target/voxel-cpu-repro 4 640 480 0
+```
+
+Cobertura: frontera exacta de bytes, límite de vóxeles independiente, muchos puntos en una celda,
+caché desactivada/evicción con igual escena, error persistente, celdas no renderizables y overflow
+antes de reservar. Pendiente: calibrar el modelo/RSS conjunto, conversiones v5 grandes repetidas,
+temporales máximos/acumulados e I/O por fase, lectura aleatoria y Chrome/Firefox con WebGPU.

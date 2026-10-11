@@ -128,12 +128,12 @@ a versiones/configuraciones anteriores: ver el registro, no usarlas como resulta
 
 La inspección de código respalda priorizar memoria CPU, consultas del índice y temporales antes
 de cambiar precisión o codec. Identifica costes potenciales; **no mide qué fase domina** en v5.
-Las propuestas siguientes están pendientes y se adoptarán solo si mejoran una base comparable
-sin perder calidad, determinismo ni mantenibilidad.
+Las mejoras se contrastan contra una base comparable sin perder calidad, determinismo ni
+mantenibilidad; las tareas abiertas se detallan al final de esta sección.
 
 | Hallazgo contrastado | Implicación y matiz |
 | --- | --- |
-| [`VoxelSceneBuilder`](crates/viewer_render_wgpu/src/voxel_grid.rs) acumula en `BTreeMap` y mantiene una caché de proyección. | El límite de vóxeles no es un presupuesto de RAM CPU. `finish` consume el mapa mientras construye instancias: hay memoria temporal que medir, pero no demuestra dos colecciones completas duplicadas a la vez. |
+| [`VoxelSceneBuilder`](crates/viewer_render_wgpu/src/voxel_grid.rs) acumula en `BTreeMap` y mantiene una caché de proyección. | Desde el 11-10, la ruta WASM y el diagnóstico nativo usan un presupuesto CPU estimado de 256 MiB, independiente del límite de vóxeles. No limita RSS ni incluye bloques fuente, escena anterior o GPU. |
 | [`FormatReader`](crates/viewer_format/src/reader.rs) lee el índice completo y construye directorios, bounds y jerarquía. | Los 256 MiB predeterminados limitan el índice serializado, no la memoria de las estructuras decodificadas ni el pico durante apertura. |
 | [`references_block`](crates/viewer_core/src/spatial.rs) se usa al cargar bloques. | Desde el 11-10 usa un catálogo ordenado con búsqueda binaria. Añade 8 B por ID único; aún duplica IDs del directorio y las referencias por nodo. |
 | [`prepare_point_block`](crates/viewer_format/src/writer.rs) conserva fuente, un buffer raw reutilizado y payloads preparados. | Desde el 11-10 reconstruye bounds sin vector intermedio y libera los `u32` tras codificarlos. Falta medir el pico del lote completo de workers. |
@@ -168,9 +168,27 @@ resultados reales; sus tamaños de ejemplo históricos deben actualizarse al med
 
 Validación: **215 tests del workspace y 2 del ejemplo de benchmark**, formato, Clippy nativo y
 WASM. Comprobación de igualdad de archivos y de que cada modo lee solo los payloads solicitados.
-La base completa sigue abierta: faltan conversiones grandes repetidas con temporales/I/O por fase,
-presupuesto CPU de voxelización y mediciones reales Chrome/Firefox. El siguiente cambio prioritario
-es medir y acotar acumuladores/caché de proyección/instancias CPU con una política al agotar memoria.
+La base completa sigue abierta: faltan conversiones grandes repetidas con temporales/I/O por fase
+y mediciones reales Chrome/Firefox.
+
+### Presupuesto CPU de vóxeles — 11-10-2026
+
+- [x] `VoxelBuildLimits` separa máximo de vóxeles y bytes estimados: 256 MiB por defecto en
+  `RendererConfig`. Contabiliza acumuladores, reserva de caché de proyección y capacidad final
+  de instancias; reduce la caché con presupuestos pequeños. Las APIs anteriores conservan su
+  comportamiento sin límite de bytes; las rutas integradas usan `with_limits`/`try_finish`.
+- [x] Liberar la caché de proyección antes de reservar las instancias con `try_reserve_exact`.
+  Un error de acumulación invalida el builder: no se publica una escena parcial. WASM construye
+  antes de subir/confirmar el nuevo corte, conservando el visible si falla el presupuesto CPU.
+- [x] Exponer presupuesto, pico estimado, capacidad de instancias y máximo de entradas de caché
+  en diagnóstico nativo y estadísticas web. No son medidas de RSS; las asignaciones de `BTreeMap`
+  siguen siendo infalibles en la biblioteca estándar. Falta calibrar el modelo con procesos grandes.
+
+Validación: **223 tests del workspace**, formato y Clippy nativo/WASM. El PNG Outer Banks a
+640×480 y 4 px es idéntico byte a byte al anterior: 1.849 vóxeles y 73.960 B de instancias.
+El rechazo con presupuesto cero conserva el PNG previo; es una prueba del diagnóstico nativo,
+no una validación del navegador. Fórmula, alcance y comandos en
+[mediciones v5](docs/V5_MEMORY_BENCH.md#presupuesto-cpu-del-builder-de-vóxeles).
 
 ### Orden de trabajo y aceptación
 

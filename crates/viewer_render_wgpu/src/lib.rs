@@ -22,14 +22,16 @@ pub use scene::{
     instance_buffer_layout,
 };
 pub use voxel_grid::{
-    VoxelScene, VoxelSceneBuildError, VoxelSceneBuilder, build_voxel_scene,
-    build_voxel_scene_with_limit,
+    VoxelBuildLimits, VoxelBuildMemoryStats, VoxelScene, VoxelSceneBuildError, VoxelSceneBuilder,
+    build_voxel_scene, build_voxel_scene_with_limit, build_voxel_scene_with_limits,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RendererConfig {
     pub clear_color: wgpu::Color,
     pub gpu_budget: GpuBudget,
+    /// Independent CPU construction budget; estimated bytes are not a process RSS limit.
+    pub voxel_build_limits: VoxelBuildLimits,
 }
 
 impl Default for RendererConfig {
@@ -42,6 +44,7 @@ impl Default for RendererConfig {
                 a: 1.0,
             },
             gpu_budget: GpuBudget::default(),
+            voxel_build_limits: VoxelBuildLimits::default(),
         }
     }
 }

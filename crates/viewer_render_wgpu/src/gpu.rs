@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     CameraFrame, ColorMode, GpuBudget, InstanceRaw, OrbitCamera, RenderScene, RendererConfig,
-    SceneBounds, VOXEL_SHADER_WGSL,
+    SceneBounds, VOXEL_SHADER_WGSL, VoxelBuildLimits,
     block_sync::ResidentBlockInfo,
     block_sync::plan_block_sync,
     budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
@@ -259,6 +259,7 @@ pub struct SurfaceRenderer<'window> {
     camera: OrbitCamera,
     scene_bounds: Option<SceneBounds>,
     gpu_budget: GpuBudget,
+    voxel_build_limits: VoxelBuildLimits,
     intensity_range: Option<[f32; 2]>,
     elevation_range: Option<[f32; 2]>,
     color_mode: ColorMode,
@@ -394,6 +395,7 @@ impl<'window> SurfaceRenderer<'window> {
             camera: OrbitCamera::default(),
             scene_bounds: None,
             gpu_budget: config.gpu_budget,
+            voxel_build_limits: config.voxel_build_limits,
             intensity_range: None,
             elevation_range: None,
             color_mode: ColorMode::Rgb,
@@ -692,6 +694,16 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn max_visible_instances(&self) -> usize {
         self.gpu_budget.max_visible_instances
+    }
+
+    pub fn voxel_build_limits(&self) -> VoxelBuildLimits {
+        VoxelBuildLimits {
+            max_voxels: self
+                .voxel_build_limits
+                .max_voxels
+                .min(self.gpu_budget.max_visible_instances),
+            ..self.voxel_build_limits
+        }
     }
 
     pub fn set_color_mode(&mut self, mode: ColorMode) {

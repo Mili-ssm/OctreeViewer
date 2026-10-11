@@ -15,8 +15,8 @@ use viewer_render_wgpu::{
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() < 2 || args.len() > 5 {
-        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [0.5,1,2,4,8,16] [WIDTH=1280] [HEIGHT=960]".into());
+    if args.len() < 2 || args.len() > 6 {
+        return Err("usage: render_dataset INPUT.oct OUTPUT_DIRECTORY [0.5,1,2,4,8,16] [WIDTH=1280] [HEIGHT=960] [CPU_BUILD_BYTES=268435456]".into());
     }
     let qualities: Vec<f64> = args
         .get(2)
@@ -38,7 +38,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     if viewport.into_iter().any(|side| side == 0 || side > 8192) {
         return Err("viewport must be 1..8192 per axis".into());
     }
-    let voxel_budget = RendererConfig::default().gpu_budget.max_visible_instances;
+    let config = RendererConfig::default();
+    let voxel_budget = config.gpu_budget.max_visible_instances;
+    let mut build_limits = config.voxel_build_limits;
+    build_limits.max_voxels = build_limits.max_voxels.min(voxel_budget);
+    if let Some(bytes) = args.get(5) {
+        build_limits.max_estimated_bytes = bytes.parse()?;
+    }
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
     let attributes = std::path::Path::new(&args[0]).with_extension("octattrs");
     if attributes.exists() {
@@ -102,7 +108,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 0.0
             }
         };
-        let mut builder = VoxelSceneBuilder::new(root, origin, target, voxel_budget);
+        let mut builder = VoxelSceneBuilder::with_limits(root, origin, target, build_limits);
         let mut seen_blocks = HashSet::new();
         let mut source_blocks = 0_usize;
         for node_id in cut.node_ids() {
@@ -119,7 +125,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 source_blocks += 1;
             }
         }
-        let voxelized = builder.finish(&project);
+        let voxelized = builder.try_finish(&project)?;
         if voxelized.scene.instance_count() == 0 || voxelized.oversized_voxels != 0 {
             return Err("empty voxel scene or projected edges exceed target".into());
         }
@@ -147,6 +153,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             "voxel_budget": voxel_budget, "source_point_budget": u64::MAX,
             "streamed_source_blocks": source_blocks,
             "projected_edge_cache_entries": voxelized.projected_edge_cache_entries,
+            "voxel_build_budget_bytes": build_limits.max_estimated_bytes,
+            "voxel_build_estimated_peak_bytes": voxelized.memory_stats.estimated_peak_bytes,
+            "voxel_instance_capacity_bytes": voxelized.memory_stats.instance_capacity_bytes,
+            "projection_cache_peak_entries": voxelized.memory_stats.projection_cache_peak_entries,
             "non_background_pixels": image.non_background_pixels,
             "adapter": image.adapter.name, "backend": format!("{:?}", image.adapter.backend),
             "gpu_readback_complete": true, "elapsed_ms": start.elapsed().as_secs_f64() * 1000.0,

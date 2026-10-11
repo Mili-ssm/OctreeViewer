@@ -997,8 +997,25 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         ("minVoxelEdgePixels", stats.min_voxel_edge_pixels),
         ("maxVoxelEdgePixels", stats.max_voxel_edge_pixels),
         ("oversizedVoxels", stats.oversized_voxels as f64),
+        (
+            "projectionCachePeakEntries",
+            stats.projection_cache_peak_entries as f64,
+        ),
     ] {
         js_sys::Reflect::set(&value, &name.into(), &JsValue::from_f64(number))?;
+    }
+    for (name, bytes) in [
+        ("voxelBuildBudgetBytes", stats.voxel_build_budget_bytes),
+        (
+            "voxelBuildEstimatedPeakBytes",
+            stats.voxel_build_estimated_peak_bytes,
+        ),
+        (
+            "voxelInstanceCapacityBytes",
+            stats.voxel_instance_capacity_bytes,
+        ),
+    ] {
+        js_sys::Reflect::set(&value, &name.into(), &JsValue::from_str(&bytes.to_string()))?;
     }
     js_sys::Reflect::set(
         &value,

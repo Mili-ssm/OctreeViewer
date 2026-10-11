@@ -159,6 +159,10 @@ function exportBenchmarkRun() {
             cacheBytes: lod.cacheBytes,
             cacheBudgetBytes: lod.cacheBudgetBytes,
             voxelBudget: lod.voxelBudget,
+            voxelBuildBudgetBytes: lod.voxelBuildBudgetBytes,
+            voxelBuildEstimatedPeakBytes: lod.voxelBuildEstimatedPeakBytes,
+            voxelInstanceCapacityBytes: lod.voxelInstanceCapacityBytes,
+            projectionCachePeakEntries: lod.projectionCachePeakEntries,
             hzbActive: lod.hzbActive ?? gpu?.hzbActive ?? false,
         } : null,
         environment: {
