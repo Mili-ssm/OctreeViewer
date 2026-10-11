@@ -204,7 +204,21 @@ En Belvedere v5, tres pares alternados con 11 componentes y caché caliente: med
 repetidas **9.481 → 14 ns/consulta**. La primera pasada sigue costando aproximadamente 105 µs
 para los 11 componentes. Es un microbenchmark de metadatos, no una medida de cambio de color,
 LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-de-rangos-globales).
-Siguiente investigación: selección LOD con prioridad incremental y el mismo desempate/budget.
+
+### Base específica de selección LOD — 11-10-2026
+
+- [x] `lod_frontier_bench` mide selección de metadatos en fronteras amplias, árboles binarios y
+  cadenas; 86 casos con ambas semánticas, presupuesto parcial/completo, visibilidad y callbacks
+  declarados/sintéticos. Tres procesos, nueve muestras por caso; verifica resultados completos
+  dentro de cada proceso y conserva checksums entre ejecuciones. **226 tests del workspace**,
+  formato y Clippy nativo; la nueva regresión cubre desempates finitos/infinitos y orden de entrada.
+- [x] Identificar repetición: 3.073 nodos sintéticos requieren 1.576.448 llamadas de proyección y
+  unos 68 ms para un corte completo; una cadena de 1.024 nodos requiere 1.025 llamadas. No son
+  tiempos de frame ni datos reales. [Método, dispersión y contratos](docs/LOD_FRONTIER_BENCH.md).
+- [ ] Prototipo de prioridad incremental con memoria contabilizada y equivalencia frente al
+  algoritmo actual: menor ID en empate, orden visible original, diagnósticos y reintento tras
+  sustituciones que liberan presupuesto. Resolver estabilidad del callback antes de memorizar
+  prioridades; después medir con jerarquías reales. El algoritmo de producción sigue intacto.
 
 ### Orden de trabajo y aceptación
 

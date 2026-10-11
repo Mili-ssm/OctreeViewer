@@ -268,3 +268,78 @@ fn additive_refinement_respects_budget_without_dropping_ancestors() {
     assert_eq!(selection.point_count(), 5);
     assert_eq!(selection.budget_limited(), [NodeId::new(2)]);
 }
+
+#[test]
+fn equal_error_budget_tie_refines_the_smallest_sibling_id_for_both_semantics() {
+    fn sibling_hierarchy(
+        semantics: HierarchySemantics,
+        reverse_siblings: bool,
+    ) -> SpatialHierarchy {
+        let root = node(100, None, 0, [0.0; 3], [10.0; 3], 0);
+        let lower = node(10, Some(100), 1, [0.0; 3], [5.0, 10.0, 10.0], 2);
+        let higher = node(20, Some(100), 1, [5.0, 0.0, 0.0], [10.0; 3], 2);
+        let mut nodes = vec![root];
+        if reverse_siblings {
+            nodes.extend([higher, lower]);
+        } else {
+            nodes.extend([lower, higher]);
+        }
+        nodes.extend([
+            node(11, Some(10), 2, [0.0; 3], [2.5, 10.0, 10.0], 2),
+            node(12, Some(10), 2, [2.5, 0.0, 0.0], [5.0, 10.0, 10.0], 2),
+            node(21, Some(20), 2, [5.0, 0.0, 0.0], [7.5, 10.0, 10.0], 2),
+            node(22, Some(20), 2, [7.5, 0.0, 0.0], [10.0; 3], 2),
+        ]);
+        SpatialHierarchy::new_with_semantics(
+            nodes,
+            Vec::new(),
+            (semantics == HierarchySemantics::Additive).then_some(12),
+            semantics,
+        )
+        .unwrap()
+    }
+
+    for semantics in [
+        HierarchySemantics::Replacement,
+        HierarchySemantics::Additive,
+    ] {
+        let budget = match semantics {
+            HierarchySemantics::Replacement => 6,
+            HierarchySemantics::Additive => 8,
+        };
+        for tied_error in [5.0, f64::INFINITY] {
+            for reverse_siblings in [false, true] {
+                let hierarchy = sibling_hierarchy(semantics, reverse_siblings);
+                let selection = hierarchy
+                    .select_lod(
+                        &cube_frustum(),
+                        LodSelectionConfig::new(1.0, budget).unwrap(),
+                        |candidate| match candidate.id().get() {
+                            10 | 20 => tied_error,
+                            _ => 0.0,
+                        },
+                    )
+                    .unwrap();
+
+                let expected_ids = match (semantics, reverse_siblings) {
+                    (HierarchySemantics::Replacement, false) => vec![11, 12, 20],
+                    (HierarchySemantics::Replacement, true) => vec![20, 11, 12],
+                    (HierarchySemantics::Additive, false) => vec![10, 11, 12, 20],
+                    (HierarchySemantics::Additive, true) => vec![20, 10, 11, 12],
+                };
+                assert_eq!(
+                    selection.node_ids(),
+                    expected_ids
+                        .into_iter()
+                        .map(NodeId::new)
+                        .collect::<Vec<_>>()
+                );
+                assert_eq!(selection.point_count(), budget);
+                assert_eq!(selection.point_budget(), budget);
+                assert_eq!(selection.budget_limited(), [NodeId::new(20)]);
+                assert!(selection.resolution_limited().is_empty());
+                assert_eq!(selection.max_error_pixels(), tied_error);
+            }
+        }
+    }
+}
