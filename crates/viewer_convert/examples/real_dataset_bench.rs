@@ -59,9 +59,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ReadOrder::BlockId,
             )
         }
-        Some("read-random") if (4..=5).contains(&arguments.len()) => {
+        Some(command @ ("read-random" | "read-sample"))
+            if (if command == "read-sample" {
+                5..=6
+            } else {
+                4..=5
+            })
+            .contains(&arguments.len()) =>
+        {
             let seed = arguments[2].to_string_lossy().parse()?;
-            let mode = match (arguments[3].to_str(), arguments.get(4)) {
+            let count = if command == "read-sample" {
+                Some(arguments[3].to_string_lossy().parse::<usize>()?)
+            } else {
+                None
+            };
+            let mode_index = if count.is_some() { 4 } else { 3 };
+            let mode = match (
+                arguments[mode_index].to_str(),
+                arguments.get(mode_index + 1),
+            ) {
                 (Some("all"), None) => ReadMode::All,
                 (Some("geometry"), None) => ReadMode::Geometry,
                 (Some("attribute"), Some(index)) => {
@@ -77,7 +93,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Path::new(&arguments[1]),
                 None,
                 mode,
-                ReadOrder::Shuffled(seed),
+                match count {
+                    Some(count) => ReadOrder::Sample { seed, count },
+                    None => ReadOrder::Shuffled(seed),
+                },
             )
         }
         _ => {
@@ -85,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
             );
             eprintln!(
-                "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]"
+                "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]\n  real_dataset_bench read-sample INPUT.oct SEED COUNT all|geometry|attribute [SCHEMA_INDEX]"
             );
             Err("invalid arguments".into())
         }
@@ -159,6 +178,24 @@ enum ReadMode {
 enum ReadOrder {
     BlockId,
     Shuffled(u64),
+    Sample { seed: u64, count: usize },
+}
+
+/// Sampling takes a prefix of the existing reproducible permutation.
+/// Zero requests measures metadata only; oversized requests fail before payload I/O.
+fn select_blocks<T>(blocks: &mut [T], order: ReadOrder) -> Result<&[T], &'static str> {
+    let count = match order {
+        ReadOrder::Sample { count, .. } => count,
+        _ => blocks.len(),
+    };
+    if count > blocks.len() {
+        return Err("requested block count exceeds dataset block count");
+    }
+    match order {
+        ReadOrder::Shuffled(seed) | ReadOrder::Sample { seed, .. } => shuffle(blocks, seed),
+        ReadOrder::BlockId => {}
+    }
+    Ok(&blocks[..count])
 }
 
 /// Deterministic Fisher-Yates permutation using a fixed SplitMix64 sequence.
@@ -235,20 +272,20 @@ fn read(
     let metadata_geometry_bytes = geometry_bytes_read.load(Ordering::Relaxed);
     let metadata_attribute_bytes = attribute_bytes_read.load(Ordering::Relaxed);
     let mut stats = reader.block_storage_stats()?;
-    if let ReadOrder::Shuffled(seed) = order {
-        shuffle(&mut stats, seed);
-    }
-    let order_checksum = stats
+    let selection_started = Instant::now();
+    let selected = select_blocks(&mut stats, order)?;
+    let selection_elapsed = selection_started.elapsed();
+    let order_checksum = selected
         .iter()
         .fold(0xcbf29ce484222325_u64, |checksum, block| {
             (checksum ^ block.id.get()).wrapping_mul(0x100000001b3)
         });
     // The benchmark retains one u64 per block for exact nearest-rank percentiles.
     // These samples and the stats vectors are benchmark overhead, not reader memory.
-    let mut block_latencies_ns = Vec::with_capacity(stats.len());
+    let mut block_latencies_ns = Vec::with_capacity(selected.len());
     let decode_started = Instant::now();
     let mut decoded_points = 0_u64;
-    for block in &stats {
+    for block in selected {
         let block_started = Instant::now();
         decoded_points += match mode {
             ReadMode::All => reader.read_block(block.id)?.points().len() as u64,
@@ -284,12 +321,19 @@ fn read(
         match order {
             ReadOrder::BlockId => "block_id",
             ReadOrder::Shuffled(_) => "shuffled",
+            ReadOrder::Sample { .. } => "sampled",
         }
     );
-    if let ReadOrder::Shuffled(seed) = order {
+    if let ReadOrder::Shuffled(seed) | ReadOrder::Sample { seed, .. } = order {
         println!("shuffle_seed={seed}");
     }
     println!("block_order_checksum={order_checksum}");
+    println!("requested_block_count={}", selected.len());
+    println!(
+        "selection_ms={:.3}",
+        selection_elapsed.as_secs_f64() * 1000.0
+    );
+    println!("storage_summary_scope=whole_dataset");
     println!("attribute_file_bytes={attributes_bytes}");
     println!("output_bytes={output_bytes}");
     if let Some(input) = input {
@@ -327,9 +371,15 @@ fn read(
         }
     }
     println!(
-        "read_decode_crc_all_blocks_ms={:.3}",
+        "read_decode_crc_selected_blocks_ms={:.3}",
         decode_elapsed.as_secs_f64() * 1000.0
     );
+    if !matches!(order, ReadOrder::Sample { .. }) {
+        println!(
+            "read_decode_crc_all_blocks_ms={:.3}",
+            decode_elapsed.as_secs_f64() * 1000.0
+        );
+    }
     println!("decoded_payload_points={decoded_points}");
     println!("payload_bytes_read={payload_bytes_read}");
     let source_point_count = source_points(&reader);
@@ -505,7 +555,7 @@ fn ratio(numerator: u64, denominator: u64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CountingReader, percentile_ns, shuffle};
+    use super::{CountingReader, ReadOrder, percentile_ns, select_blocks, shuffle};
     use std::{
         io::{Cursor, Read, Seek, SeekFrom},
         sync::{
@@ -532,6 +582,30 @@ mod tests {
         assert_ne!(ids, repeated);
         ids.sort_unstable();
         assert_eq!(ids, [0, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn samples_are_nested_prefixes_without_duplicates_and_cover_boundaries() {
+        let original = [0, 1, 2, 3, 4, 5, 6, 7];
+        for count in 0..=original.len() {
+            let mut ids = original;
+            let selected = select_blocks(&mut ids, ReadOrder::Sample { seed: 42, count }).unwrap();
+            assert_eq!(selected, &[3, 1, 6, 2, 4, 0, 7, 5][..count]);
+        }
+        let mut ids = original;
+        assert!(select_blocks(&mut ids, ReadOrder::Sample { seed: 42, count: 9 }).is_err());
+        assert_eq!(ids, original);
+        let mut empty: [u64; 0] = [];
+        assert!(
+            select_blocks(&mut empty, ReadOrder::Sample { seed: 0, count: 0 })
+                .unwrap()
+                .is_empty()
+        );
+        assert!(select_blocks(&mut empty, ReadOrder::Sample { seed: 0, count: 1 }).is_err());
+        assert_eq!(
+            select_blocks(&mut ids, ReadOrder::BlockId).unwrap(),
+            original
+        );
     }
 
     #[test]

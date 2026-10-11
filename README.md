@@ -251,8 +251,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Tres pares secuencial/aleatorio sobre Belvedere v5, caché del SO caliente: mismos bytes y
   filas por modo, sin penalización clara de latencia. XYZ aleatorio muestra unos 2 MiB más de RSS,
   causa sin perfilar. [Resultados y comandos](docs/V5_MEMORY_BENCH.md#lectura-de-bloques-en-orden-aleatorio-caché-caliente).
-- [ ] Medir solicitudes parciales y condiciones frías/red/OPFS; la permutación caliente no las
-  representa. Continúan pendientes las conversiones grandes por fase y Chrome/Firefox.
+- [x] Solicitudes parciales con `read-sample`: semilla/cantidad explícitas, selección sin duplicados,
+  contadores y percentiles de los bloques solicitados. Tres repeticiones de 0/1/16/128 bloques
+  en Belvedere, XYZ/completo/columna 0. Apertura de ~7,6–7,9 ms frente a 0,245 ms de lectura
+  de columna para un bloque (medianas); no es una medida de mejora ni de navegación.
+  [Método, dispersión y comandos](docs/V5_MEMORY_BENCH.md#solicitudes-parciales-reproducibles).
+  Cuatro tests del ejemplo, equivalencia CLI con lectura completa, formato y Clippy pasan.
+- [ ] Medir condiciones frías/red/OPFS y solicitudes de cámara; las muestras calientes no las
+  representan. Continúan pendientes las conversiones grandes por fase y Chrome/Firefox.
 
 ### Orden de trabajo y aceptación
 

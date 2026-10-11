@@ -242,3 +242,69 @@ cargo test -p viewer_convert --example real_dataset_bench --profile fast --offli
 Pendiente: calibrar el modelo/RSS conjunto del builder, conversiones v5 grandes repetidas,
 temporales máximos/acumulados e I/O por fase, lectura con caché fría/red/OPFS y Chrome/Firefox
 con WebGPU; optimización LOD conforme a su base específica.
+
+
+## Solicitudes parciales reproducibles
+
+Entrega sobre `b2056cf`: `read-sample INPUT.oct SEED COUNT MODE [INDEX]` selecciona
+un prefijo de la misma permutación de `read-random`, sin reemplazo. A igual semilla,
+las muestras son anidadas y coinciden entre modos. Cero bloques mide apertura sin payloads;
+una cantidad mayor que el total devuelve error antes de leer payloads. Con todos los bloques,
+el recorrido coincide con `read-random`. No representa una trayectoria de cámara.
+
+`requested_block_count`, `decoded_payload_points`, checksum, contadores y percentiles
+describen únicamente la selección. `read_decode_crc_selected_blocks_ms` mide su lectura.
+Los comandos completos conservan también `read_decode_crc_all_blocks_ms`.
+`storage_summary_scope=whole_dataset` identifica que los tamaños, filas almacenadas y
+estimaciones finales siguen describiendo el dataset completo: no se atribuyen a la muestra.
+`selection_ms` mide permutación/selección, excluyendo materializar estadísticas y checksum.
+El benchmark conserva estadísticas de todos los bloques y el lector abre todo el índice;
+solicitar pocos bloques no hace su memoria proporcional a COUNT.
+
+Mismo Belvedere v5 y equipo de las tablas anteriores, verificados en esta entrega: Linux
+7.2.9-200.fc44.x86_64, Ryzen AI 9 365, Rust 1.99.0, perfil perf, 31.885.120 KiB RAM.
+Una lectura completa de calentamiento; tres procesos por combinación de 0/1/16/128 bloques
+y XYZ/completo/columna 0. Semilla **42 fija** para separar dispersión temporal de cambios de
+bloques; la segunda ronda invierte el orden de casos. Caché del SO caliente, sin vaciar,
+sin compilaciones concurrentes. RSS externo incluye apertura, lectura y resumen.
+Mediana y mínimo–máximo; no son mediciones de mejora frente a otra implementación.
+
+| Bloques solicitados | Modo | Apertura + asociación (ms) | Lectura + CRC + decode (ms) | RSS pico (KiB) | Payload leído (B) |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 0 | XYZ | 6.155 [5.018–7.879] | 0.000 [0.000–0.000] | 8400 [8212–8432] | 0 |
+| 0 | Completo | 7.669 [4.223–7.903] | 0.000 [0.000–0.000] | 8652 [8412–8740] | 0 |
+| 0 | Columna 0 | 6.125 [5.217–7.800] | 0.000 [0.000–0.000] | 8456 [8380–8784] | 0 |
+| 1 | XYZ | 7.669 [7.662–7.730] | 2.863 [2.858–2.877] | 8788 [8600–8856] | 430116 |
+| 1 | Completo | 7.906 [7.532–7.957] | 6.524 [3.903–6.589] | 8476 [8440–8648] | 706719 |
+| 1 | Columna 0 | 7.614 [7.337–7.680] | 0.245 [0.118–0.245] | 8668 [8600–8704] | 293 |
+| 16 | XYZ | 7.768 [7.490–7.814] | 45.365 [36.314–52.967] | 11292 [11264–11532] | 12020391 |
+| 16 | Completo | 7.729 [7.685–7.815] | 88.361 [87.730–89.283] | 14464 [14384–14744] | 19434865 |
+| 16 | Columna 0 | 7.744 [7.676–7.888] | 5.819 [4.977–5.819] | 8760 [8760–8812] | 8039 |
+| 128 | XYZ | 7.727 [7.721–7.739] | 275.768 [272.078–278.404] | 14048 [13896–14092] | 95284530 |
+| 128 | Completo | 7.645 [4.876–7.697] | 632.118 [630.365–635.879] | 18340 [18236–18348] | 154909087 |
+| 128 | Columna 0 | 7.586 [4.746–7.727] | 24.555 [20.343–33.072] | 8596 [8380–8600] | 63748 |
+
+Para un bloque, la apertura cuesta más que leer la columna seleccionada: permite identificar
+el coste fijo del índice en esta solicitud, pero no basta para justificar paginarlo. Los bloques
+no tienen tamaños iguales y una semilla no caracteriza todas las solicitudes. Los percentiles
+por bloque están en los logs; con un bloque p50 y p95 son la misma observación.
+
+En las tres rondas se comprobó igualdad de checksum/filas entre modos y repeticiones por COUNT,
+cero lectura de atributos en XYZ, cero geometría en columna 0 y cero payloads con COUNT 0.
+Las pruebas unitarias cubren prefijos de varios tamaños, ausencia de duplicados, vacío y exceso;
+la comprobación CLI de equivalencia total usa la muestra Outer Banks de un bloque.
+Formato, cuatro tests del ejemplo y Clippy de viewer_convert con todos sus targets pasan.
+No cambia el lector ni el formato. No valida caché fría, HTTP, OPFS, LOD ni navegación web.
+
+Logs locales ignorados: `target/audit-v5-sampled-read/` (36 procesos, calentamiento y
+`results.json`). Reproducir cada comando tres veces en un proceso nuevo; usar COUNT
+0/1/16/128 y modos geometry/all/attribute 0, invirtiendo el orden en la segunda ronda:
+
+```sh
+cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline
+# Calentamiento:
+target/perf/examples/real_dataset_bench read data/datasets/belv_2009_digital-aerial_pcd_copc.oct
+/usr/bin/time -v target/perf/examples/real_dataset_bench read-sample data/datasets/belv_2009_digital-aerial_pcd_copc.oct 42 16 geometry
+/usr/bin/time -v target/perf/examples/real_dataset_bench read-sample data/datasets/belv_2009_digital-aerial_pcd_copc.oct 42 16 all
+/usr/bin/time -v target/perf/examples/real_dataset_bench read-sample data/datasets/belv_2009_digital-aerial_pcd_copc.oct 42 16 attribute 0
+```
