@@ -42,6 +42,10 @@ serial local; no son garantías de conversión:
 | Albuera | 651,5 s | 6.105.617.040 B | 7.561.226.723 B | 13.666.843.763 B |
 | Majadas | 612,1 s | 4.214.687.109 B | 3.319.094.608 B | 7.533.781.717 B |
 
+La [base v5 repetida de Majadas del 12-10-2026](../../docs/V5_MEMORY_BENCH.md#conversión-v5-de-majadas-tls--12-10-2026)
+usa tres procesos `perf` con un worker, fuente verificada/calentada, tiempos por fase,
+RSS/temporales observados e I/O separado. No compara directamente esta ejecución `release`.
+
 Albuera además cuenta con renders nativos a **1920×1080** en [`artifacts/sensoforest/albuera-v5-1080p`](../../artifacts/sensoforest/albuera-v5-1080p/):
 1, 2 y 4 px, con PNG y JSON de lectura/proyección GPU. Se generaron sobre llvmpipe/Vulkan; los
 tiempos incluyen selección LOD, lectura y voxelización y no representan rendimiento de GPU dedicada.

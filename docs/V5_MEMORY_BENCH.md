@@ -290,8 +290,102 @@ Las salidas quedan para inspección; no se eliminan automáticamente ni se reuti
 existente. La interrupción del muestreador termina al hijo y marca el informe incompleto;
 puede conservar temporales, pues no equivale a la cancelación cooperativa del CLI principal.
 El perfilador mide conversiones LAS/LAZ locales sin checkpoint; no valida recuperación,
-HTTP/OPFS, Chrome/Firefox ni fuentes de más de 500 GB. Faltan Albuera/Majadas repetidas y
-calibración de los presupuestos CPU con el pico conjunto.
+HTTP/OPFS, Chrome/Firefox ni fuentes de más de 500 GB. La ampliación a Majadas se documenta
+a continuación; faltan Albuera repetida y calibración de los presupuestos CPU con el pico conjunto.
+
+## Conversión v5 de Majadas TLS — 12-10-2026
+
+Base `fe230af`, perfil `perf`, Linux 7.2.9-200.fc44.x86_64, Rust 1.99.0 y Ryzen AI 9 365;
+31.885.120 KiB de RAM total. Fuente local de **1.343.266.470 B**, **415.465.882 puntos**,
+descrita en [el corpus](../data/datasets/README.md#sensoforest-albuera-uav-y-majadas-tls).
+Tres conversiones seriales independientes, un worker, divisiones 2 y opciones restantes
+predeterminadas: 262.144 puntos/bloque, error máximo 0,01 y presupuesto controlado estimado
+de 512 MiB. Sin `RUSTFLAGS` ni `target-cpu=native`; se comprobó que el ejecutable corresponde
+al artefacto de Cargo sin esos flags. Antes de cada conversión se lee toda la fuente y se comprueba su MD5
+`fd0b4433e805246f2442df037dfadb6b`. No se vacía caché ni se garantiza residencia durante la
+conversión; no se fijan frecuencia CPU, modo de energía o writeback del SO.
+
+No hay compilaciones ni otros benchmarks concurrentes durante las medidas. Se reutiliza
+`convert-profile` y el muestreador externo cada 100 ms, con las mismas definiciones y límites
+de intervalos, I/O lógico/de almacenamiento y máximos observados descritos arriba.
+Los logs, parejas, muestras e información de entorno quedan localmente en
+`target/audit-v5-majadas-2026-10-12/`.
+
+### Resultados y equivalencia
+
+Las tres ejecuciones finalizaron con código cero y sin errores de observación. Mediana y
+mínimo–máximo entre procesos; los intervalos se delimitan por notificaciones, no por funciones:
+
+| Intervalo | Tiempo (s) |
+| --- | ---: |
+| Total hasta retorno, antes del resumen | **347,277 [345,468–356,203]** |
+| `PlanningMetadata` | 0,042 [0,032–0,053] |
+| `PlanningSpatialIndex` | 43,169 [42,214–44,246] |
+| `BuildingSpatialHierarchy` | **197,574 [196,446–208,956]** |
+| `ReadingAndWritingBlocks` | 72,285 [72,141–72,748] |
+| `ValidatingOutput` | 32,317 [32,316–32,595] |
+| `PublishingOutput` | 0,012 [0,002–0,017] |
+| `Complete` hasta retorno | 0,530 [0,511–0,739] |
+
+| Métrica del proceso | Mediana [mínimo–máximo] |
+| --- | ---: |
+| RSS pico muestreado / VmHWM máximo observado (MiB) | **77,086 [77,062–83,418]** |
+| Temporales: pico lógico muestreado (B) | **21.250.289.683 [igual en las tres]** |
+| Temporales: crecimiento positivo observado (B) | 138.297.177.192 [138.176.106.156–138.360.218.084] |
+| `conversion_io_rchar` (B) | 143.601.067.903 [143.601.067.898–143.601.067.903] |
+| `conversion_io_wchar` (B) | 142.257.783.952 [igual en las tres] |
+| `conversion_io_read_bytes` (B) | 26.358.759.424 [21.506.580.480–31.224.238.080] |
+| `conversion_io_write_bytes` (B) | 142.333.284.352 [142.324.559.872–142.337.003.520] |
+| `conversion_io_cancelled_write_bytes` (B) | 0 [igual en las tres] |
+
+RSS/VmHWM describen el proceso completo, incluido el resumen posterior; tiempos y contadores
+de conversión excluyen ese resumen. No constituyen el pico conjunto por fase ni una cota de RSS.
+La estimación controlada del conversor es **72.308.992 B**, distinta de la memoria observada.
+El pico temporal incluye candidatos de salida aún no publicados mientras coexisten con spools;
+el tamaño lógico muestreado no equivale a ocupación física. El calentamiento de la fuente no
+impide lecturas de almacenamiento posteriores de los spools; la variación de `read_bytes`
+confirma que no es una prueba con toda la conversión residente en caché.
+
+Lecturas/escrituras lógicas equivalen aproximadamente a **106,90× / 105,90×** la fuente LAZ
+comprimida, o **19,06× / 18,88×** la pareja final. Incluyen pasos temporales y validación;
+no son amplificación física del dispositivo. El crecimiento observado por muestreo no debe
+usarse como sustituto de `wchar` ni de `write_bytes`.
+
+Las tres salidas coinciden en puntos fuente (**415.465.882**), filas almacenadas con LOD
+(**415.602.190**), bloques (**6.259**) e índice serializado (**3.455.366 B**, contado una vez).
+Coordenadas: **4.214.687.109 B**; atributos: **3.319.094.608 B**; total **7.533.781.717 B**,
+ratio **5,608553×** la fuente. Los SHA-256 de cada archivo coinciden entre las tres ejecuciones:
+
+```text
+oct      f17646889c058a49262034ac28cdd744ffdcdc920069579c63e062d827180b39
+octattrs 24ea479471b7f3641d8f86879e252fffc77a049434b02f56c683754e2074ce0b
+```
+
+En esta configuración no se alcanzan los objetivos de conversión <5 min ni pareja ≤3× fuente.
+La jerarquía representa aproximadamente el **57 %** del tiempo frente al **9 %** de validación:
+priorizar el perfil de clasificación espacial, profundidad y reescritura de spools antes de
+rediseñarlos. El índice ocupa solo el **0,046 %** de la pareja: reducir metadatos no resolvería
+por sí solo el objetivo de tamaño. Los experimentos de payload deben conservar precisión y
+atributos, conforme al orden de trabajo del README. Estos resultados no comparan revisiones,
+no prueban una mejora ni sustituyen una medida de navegador/GPU.
+
+Validación de esta entrega: integridad MD5 previa a cada proceso, validación profunda del
+conversor, estado completo de los tres informes, invariantes comunes y SHA-256 de ambas salidas.
+`summary.json` conserva los valores agregados y de cada ejecución; `environment.json` registra
+revisión, entorno, opciones y hash del binario. Los checks de código de `fe230af` siguen vigentes:
+esta entrega cambia documentación, no implementación. Albuera repetida y host web siguen pendientes.
+
+Reproducción desde la raíz, compilando antes de iniciar las medidas:
+
+```sh
+cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline
+# Calentar/verificar antes de CADA repetición; comprobar el MD5 indicado arriba:
+md5sum data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz \
+  target/majadas-v5-repro/run-1 --workers 1 --divisions 2 --interval-ms 100
+# Repetir calentamiento y conversión con directorios nuevos run-2 y run-3.
+```
 
 ## Lectura de bloques en orden aleatorio, caché caliente
 
