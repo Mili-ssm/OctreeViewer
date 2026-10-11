@@ -62,9 +62,9 @@ tiempo de frame ni FPS. Una cola de prioridad todavía no se ha comparado con es
   necesita resolver ese contrato; cambiar el número de callbacks puede ser observable. No añadir
   una caché sin límite ni sacrificar la memoria para acelerar solo el caso sintético.
 
-Siguiente subtarea: prototipo de prioridad incremental con memoria contabilizada y comparación
-contra esta base y cortes de datos reales; mantener la implementación actual hasta verificar
-equivalencia y beneficio. El benchmark por sí solo no justifica una nueva API o un índice nuevo.
+La prioridad incremental sigue pendiente: requiere memoria contabilizada y comparación contra
+esta base y cortes reales. La primera mejora implementada reutiliza temporales, descrita debajo.
+El benchmark por sí solo no justifica una nueva API o un índice nuevo.
 
 ```sh
 cargo run --profile perf -p viewer_core --example lod_frontier_bench --offline
@@ -72,3 +72,79 @@ cargo test -p viewer_core --test lod --profile fast --offline
 ```
 
 Logs locales excluidos de Git: `target/audit-lod-frontier/run-{1,2,3}.txt` y `summary.json`.
+
+## Reutilización de temporales — 11-10-2026
+
+Comparación contra `ffd4af9`, con los mismos ejemplos en ambos binarios. `select_lod` reutiliza
+los vectores del recorrido, hijos candidatos/ganadores y diagnósticos durante una llamada;
+inserta los hijos en la selección sin clonar un vector intermedio. Mantiene los recorridos y
+las reevaluaciones del callback: no añade caché, cola, índice persistente ni cambios de API.
+Las capacidades crecen según las fronteras encontradas y se liberan al volver; esto no establece
+un presupuesto en bytes ni reduce la complejidad cuadrática del escaneo.
+
+Mismo entorno y perfil anteriores. Tres pares de procesos, alternando antes/después,
+después/antes, antes/después, sin compilaciones/checks concurrentes. Cada caso usa calentamiento
+y nueve muestras. Tablas: mediana de las tres medianas, con mínimo–máximo entre corchetes.
+Los 86 casos sintéticos conservaron contadores y checksums entre versiones; cada muestra
+comprueba el resultado completo contra su calentamiento. No hubo regresiones de mediana
+superiores al 2 % en esta matriz; no es una garantía para otras jerarquías.
+
+Frustum completo y callback declarado; presupuesto completo salvo indicación:
+
+| Jerarquía / semántica | Antes (ms) | Después (ms) |
+| --- | ---: | ---: |
+| 1.024 ramas / Replacement | 68,422 [68,411–68,819] | 61,118 [61,074–61,666] |
+| 1.024 ramas / Additive | 69,270 [68,496–69,300] | 61,479 [61,438–61,987] |
+| 1.024 ramas / Replacement, presupuesto 1.536 | 46,179 [45,885–46,196] | 41,269 [41,230–41,445] |
+| Binario profundidad 10 / Replacement | 31,407 [31,269–31,486] | 28,193 [28,091–28,306] |
+| Cadena / Replacement | 0,087 [0,086–0,090] | 0,080 [0,079–0,081] |
+
+El nuevo `viewer_render_wgpu/examples/lod_selection_bench.rs` abre solo metadatos de Belvedere
+v5 (1.343 nodos), ajusta `OrbitCamera` al dataset y usa su proyección/frustum a 640×480, sin crear
+dispositivo GPU. Combina objetivos de 1/4/16 px con presupuestos de 1 M/4 M/`u64::MAX`
+representantes del índice. Son nueve selecciones diagnósticas; no cambian límites del renderer.
+El cronómetro excluye apertura, payloads, voxelización y renderizado. Los IDs completos de
+selección y diagnósticos, conteos, bits del error máximo y llamadas coinciden entre todas las
+ejecuciones de ambas versiones.
+
+| Objetivo / presupuesto | Nodos seleccionados | Callbacks | Antes (ms) | Después (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 px / sin límite | 1.083 | 133.766 | 10,252 [10,220–10,298] | 9,417 [9,374–9,438] |
+| 4 px / sin límite | 320 | 15.116 | 1,180 [1,179–1,183] | 1,079 [1,078–1,103] |
+| 4 px / 4 M | 143 | 3.358 | 0,544 [0,542–0,550] | 0,487 [0,483–0,496] |
+| 16 px / sin límite | 19 | 69 | 0,0051 [0,0051–0,0052] | 0,0050 [0,0049–0,0050] |
+
+Los casos reales de 1 px con presupuestos 1 M/4 M tuvieron dispersión amplia y rangos
+solapados; no permiten atribuir una mejora estable. La reducción observada del corte completo
+de Belvedere a 1 px es del 8,1 %; la frontera sintética amplia `Replacement` mejora un 10,7 %.
+
+RSS pico del proceso completo (`/usr/bin/time -v`), mediana [mínimo–máximo], en KiB:
+
+| Ejemplo | Antes | Después |
+| --- | ---: | ---: |
+| Sintético | 4.412 [4.280–4.476] | 4.412 [4.276–4.480] |
+| Belvedere | 6.672 [6.668–6.744] | 6.672 [6.552–6.792] |
+
+No se observa reducción de RSS; estos valores incluyen índice y benchmark, no aíslan los
+temporales. No se midieron FPS ni Chrome/Firefox. Como regresión nativa, `render_dataset` con
+`fs_e430_n4008_18.oct`, 4 px y 640×480 produjo el mismo PNG byte a byte que la referencia:
+1.849 vóxeles, 111.190 puntos fuente, 9.790 píxeles no vacíos, sin vóxeles sobredimensionados.
+
+Cinco tests nuevos comparan con una copia independiente del algoritmo anterior: 192 combinaciones
+de semántica, frustum, presupuesto, tolerancia, entrada y callbacks estables/con estado;
+errores inválidos en candidatos y validación final, overflow de base/candidato, y buffers sin
+residuos con capacidad reutilizada. Pasan 231 tests del workspace (dos GPU ignorados), formato,
+Clippy nativo/WASM y checks nativos/WASM.
+
+```sh
+cargo run --profile perf -p viewer_render_wgpu --example lod_selection_bench --offline -- INPUT.oct
+cargo run --profile perf -p viewer_core --example lod_frontier_bench --offline
+cargo test-fast --offline
+cargo clippy --workspace --all-targets --offline -- -D warnings
+cargo clippy -p viewer_wasm --target wasm32-unknown-unknown --offline -- -D warnings
+cargo check-all --offline
+cargo check-web --offline
+```
+
+Logs locales excluidos de Git: `target/audit-lod-scratch/{synthetic,real}-{before,after}-{0,1,2}.txt`,
+sus `.time.txt`, `summary.json` y `render/voxel-4px.png`.

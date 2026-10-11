@@ -706,7 +706,9 @@ impl SpatialHierarchy {
         config: LodSelectionConfig,
         projected_error_pixels: impl Fn(&SpatialNode) -> f64,
     ) -> Result<LodSelection, LodSelectionError> {
-        let mut selected = self.visible_frontier([self.root], frustum);
+        let mut pending = Vec::new();
+        let mut selected = Vec::new();
+        self.visible_frontier_into([self.root], frustum, &mut pending, &mut selected);
         let mut frontier = selected.clone();
         let mut point_count = self.count_points(&selected)?;
         if point_count > config.point_budget {
@@ -716,10 +718,15 @@ impl SpatialHierarchy {
             });
         }
 
+        // Retain scratch capacity within this selection, without caching projections or cuts.
+        let mut children = Vec::new();
+        let mut best_children = Vec::new();
+        let mut budget_limited = Vec::new();
+        let mut resolution_limited = Vec::new();
         loop {
-            let mut best: Option<(usize, NodeId, f64, Vec<NodeId>, u64)> = None;
-            let mut budget_limited = Vec::new();
-            let mut resolution_limited = Vec::new();
+            let mut best: Option<(usize, NodeId, f64, u64)> = None;
+            budget_limited.clear();
+            resolution_limited.clear();
 
             for (index, id) in frontier.iter().copied().enumerate() {
                 let node = &self.nodes[&id].metadata;
@@ -731,8 +738,12 @@ impl SpatialHierarchy {
                     continue;
                 }
 
-                let children =
-                    self.visible_frontier(self.nodes[&id].children.iter().copied(), frustum);
+                self.visible_frontier_into(
+                    self.nodes[&id].children.iter().copied(),
+                    frustum,
+                    &mut pending,
+                    &mut children,
+                );
                 if children.is_empty() {
                     resolution_limited.push(id);
                     continue;
@@ -752,15 +763,16 @@ impl SpatialHierarchy {
                     continue;
                 }
 
-                let should_replace = best.as_ref().is_none_or(|(_, best_id, best_error, _, _)| {
+                let should_replace = best.as_ref().is_none_or(|(_, best_id, best_error, _)| {
                     error > *best_error || (error == *best_error && id < *best_id)
                 });
                 if should_replace {
-                    best = Some((index, id, error, children, candidate_count));
+                    std::mem::swap(&mut children, &mut best_children);
+                    best = Some((index, id, error, candidate_count));
                 }
             }
 
-            let Some((index, _, _, replacement, new_point_count)) = best else {
+            let Some((index, _, _, new_point_count)) = best else {
                 let mut max_error_pixels: f64 = 0.0;
                 for id in &frontier {
                     let error = projected_error_pixels(&self.nodes[id].metadata);
@@ -781,29 +793,35 @@ impl SpatialHierarchy {
 
             match self.semantics {
                 HierarchySemantics::Replacement => {
-                    selected.splice(index..=index, replacement.clone());
+                    selected.splice(index..=index, best_children.iter().copied());
                 }
                 HierarchySemantics::Additive => {
                     let selected_index = selected
                         .iter()
                         .position(|selected_id| *selected_id == frontier[index])
                         .expect("frontier payload is selected");
-                    selected.splice(selected_index + 1..selected_index + 1, replacement.clone());
+                    selected.splice(
+                        selected_index + 1..selected_index + 1,
+                        best_children.iter().copied(),
+                    );
                 }
             }
-            frontier.splice(index..=index, replacement);
+            frontier.splice(index..=index, best_children.drain(..));
             point_count = new_point_count;
         }
     }
 
-    fn visible_frontier(
+    fn visible_frontier_into(
         &self,
         starts: impl IntoIterator<Item = NodeId>,
         frustum: &SpatialFrustum,
-    ) -> Vec<NodeId> {
-        let mut pending = starts.into_iter().collect::<Vec<_>>();
+        pending: &mut Vec<NodeId>,
+        frontier: &mut Vec<NodeId>,
+    ) {
+        pending.clear();
+        pending.extend(starts);
         pending.reverse();
-        let mut frontier = Vec::new();
+        frontier.clear();
         while let Some(id) = pending.pop() {
             let indexed = &self.nodes[&id];
             if !frustum.intersects(&indexed.metadata.bounds) {
@@ -815,7 +833,6 @@ impl SpatialHierarchy {
                 pending.extend(indexed.children.iter().rev().copied());
             }
         }
-        frontier
     }
 
     fn count_points(&self, ids: &[NodeId]) -> Result<u64, LodSelectionError> {
@@ -826,6 +843,10 @@ impl SpatialHierarchy {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "spatial_lod_tests.rs"]
+mod lod_tests;
 
 enum SpatialQueryRegion {
     Bounds(SpatialBounds),

@@ -218,7 +218,22 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [ ] Prototipo de prioridad incremental con memoria contabilizada y equivalencia frente al
   algoritmo actual: menor ID en empate, orden visible original, diagnósticos y reintento tras
   sustituciones que liberan presupuesto. Resolver estabilidad del callback antes de memorizar
-  prioridades; después medir con jerarquías reales. El algoritmo de producción sigue intacto.
+  prioridades. La reutilización de temporales ya está medida; la cola incremental sigue pendiente.
+
+### Reutilización de temporales LOD — 11-10-2026
+
+- [x] Reutilizar buffers de recorrido, hijos y diagnósticos dentro de cada selección, evitando
+  asignaciones y clones repetidos. Se conserva la API, el orden y número de callbacks, incluso
+  con estado; no se memorizan prioridades. Las capacidades se liberan al terminar la llamada.
+- [x] Cinco regresiones nuevas: equivalencia con el algoritmo anterior en 192 combinaciones,
+  errores/overflow y reutilización sin residuos. **231 tests del workspace**, formato, Clippy
+  y comprobaciones nativas/WASM. La imagen nativa de referencia coincide byte a byte.
+- [x] Tres pares antes/después: 86 casos sintéticos y nueve cortes de Belvedere con cámara real.
+  Frontera amplia: **68,42 → 61,12 ms**; Belvedere a 1 px sin límite de representantes:
+  **10,25 → 9,42 ms**. RSS mediano sin cambio; son tiempos de selección CPU, no FPS.
+  [Resultados, dispersión y comandos](docs/LOD_FRONTIER_BENCH.md#reutilización-de-temporales--11-10-2026).
+- [ ] Reducir recorridos repetidos de la frontera: siguen presentes. Resolver el contrato del
+  callback y contabilizar memoria antes de introducir prioridades incrementales.
 
 ### Lectura aleatoria reproducible — 11-10-2026
 
