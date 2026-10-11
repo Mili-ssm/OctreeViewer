@@ -657,3 +657,74 @@ target/perf/examples/real_dataset_bench read data/datasets/belv_2009_digital-aer
 /usr/bin/time -v target/perf/examples/real_dataset_bench read-sample data/datasets/belv_2009_digital-aerial_pcd_copc.oct 42 16 all
 /usr/bin/time -v target/perf/examples/real_dataset_bench read-sample data/datasets/belv_2009_digital-aerial_pcd_copc.oct 42 16 attribute 0
 ```
+
+## RSS y temporales por intervalo de conversión — 12-10-2026
+
+Entrega sobre `390fb88`: `convert-profile` conserva tiempos/I/O y añade límites Unix en
+nanosegundos por ordinal. El muestreador registra inicio y fin de cada observación y atribuye
+RSS y tamaño lógico temporal solo si **toda** la observación cae en un intervalo. No depende
+de cuándo se vacía stdout; las fases repetidas siguen separadas. `report.json` añade `phases`
+(nombre, ordinal, límites, muestras y dos picos) y `phase_unassigned_sample_count`.
+
+Las muestras que cruzan una transición o caen fuera de la conversión cuentan como no asignadas;
+siguen participando en las métricas globales. Una fase sin muestras tiene picos `null`, no cero.
+VmHWM permanece global: atribuir su valor a una fase posterior confundiría el máximo histórico
+del proceso con memoria de esa fase. Los dos picos por fase pueden ocurrir en instantes diferentes;
+no se suman RAM y disco ni máximos de distintas fases. Los JSONL conservan las observaciones
+para analizar coincidencias. La agregación recorre el JSONL sin cargar todas las muestras en RAM.
+
+Se requiere reloj de pared estable entre ambos procesos. Se rechazan límites invertidos,
+discontinuos, duplicados o ausentes, ordinales incompletos y muestras que retroceden en el tiempo;
+eso no detecta todos los ajustes de reloj posibles. Ante metadatos ausentes/inválidos, incluso con
+exit cero y pareja publicada, el informe queda incompleto. Recompilar el ejemplo antes de usar
+este muestreador; los binarios anteriores carecen de estos límites. Las duraciones existentes
+siguen usando `Instant`. Una conversión fallida conserva logs/muestras y no se presenta como éxito.
+
+### Belvedere: tres procesos con atribución por fase
+
+Mismo Linux/Rust/CPU del apartado inicial, disco del checkout, perfil `perf`, un worker,
+divisiones 2 y opciones restantes predeterminadas, sin checkpoint. Fuente de 618.390.994 B,
+MD5 `197534e677ae2521a97a114bef005ec9` leído antes de cada proceso para verificar/calentar;
+no se vació la caché ni se controlaron frecuencia CPU, writeback o carga externa. No hubo
+compilaciones ni otros benchmarks concurrentes. Muestreo de 100 ms, sin medir su overhead.
+Mediana [mínimo–máximo] de los **picos muestreados por proceso**:
+
+| Intervalo | RSS (MiB) | Temporales lógicos (B) |
+| --- | ---: | ---: |
+| `PlanningSpatialIndex` | 67,746 [67,305–68,293] | 3.334.178.261 [3.329.329.929–3.335.848.970] |
+| `BuildingSpatialHierarchy` | 68,938 [68,281–69,027] | 4.633.019.920 [4.625.878.458–4.651.870.730] |
+| `ReadingAndWritingBlocks` | 86,785 [85,082–86,938] | 3.346.811.976 [3.341.551.805–3.350.223.351] |
+| `ValidatingOutput` | 93,023 [92,551–93,176] | 1.591.650.185 [1.591.650.185–1.591.650.185] |
+
+Las otras cinco fases no tuvieron muestras enteramente contenidas en ninguna ejecución;
+no se infiere su consumo. Totales de muestras 442/500/463, de las que 1/1/2 no fueron asignadas.
+Tiempo de conversión monotónico: 46,231 [44,183–49,965] s. Esta ronda no compara una mejora.
+El mayor temporal observado pertenece a jerarquía y el mayor RSS muestreado a validación,
+en los tres procesos. No identifica qué función interna causa esos máximos ni mide memoria
+exclusiva de cada fase: RSS incluye los recursos del proceso que siguen vivos.
+
+Validación profunda del conversor, SHA-256 y `cmp`: ambos archivos coinciden en los tres
+procesos y con la pareja v5 de referencia. Coordenadas **981.063.326 B**, atributos
+**610.586.859 B**; SHA-256 respectivos:
+
+```text
+oct      2faa89194c199dba65955d0442b129d0c5f339a1f8ddf89d1181920f51f82d0d
+octattrs 013b8fe420ba82aee1775f08800d0c2dcd94796dc8f096b0824e4d80310fa294
+```
+
+Logs/informes/muestras locales ignorados en `target/phase-peaks-belvedere/run-{1,2,3}/`.
+Pasan ocho tests Python (transiciones, fases repetidas/vacías, metadatos inválidos,
+reloj invertido y éxito aparente), siete tests del ejemplo Rust, Clippy de `viewer_convert`
+con todos sus targets, formato, compilación Python y diff. Ruff no está instalado.
+Pendientes otras fuentes y lotes con varios workers; tampoco valida navegador ni GPU.
+
+Reproducir tres veces, con directorios nuevos, sin otras compilaciones/benchmarks concurrentes:
+
+```sh
+cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline
+md5sum data/datasets/belv_2009_digital-aerial_pcd_copc.laz
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz target/phase-peaks-belvedere/run-1 \
+  --workers 1 --divisions 2 --interval-ms 100
+# Repetir MD5 y perfilado para run-2 y run-3; comparar ambas salidas byte a byte.
+```

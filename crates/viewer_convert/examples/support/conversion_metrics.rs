@@ -1,7 +1,10 @@
 //! Optional Linux process I/O accounting for the native conversion benchmark.
 //! Intervals follow progress notifications, not internal converter function boundaries.
 
-use std::{fs, io, time::Instant};
+use std::{
+    fs, io,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use viewer_convert::ConversionStage;
 
@@ -78,11 +81,14 @@ struct Interval {
     stage: Option<ConversionStage>,
     elapsed_ms: f64,
     io: Option<ProcessIo>,
+    start_unix_ns: u128,
+    end_unix_ns: u128,
 }
 
 pub(super) struct ConversionMetrics {
     current_stage: Option<ConversionStage>,
     started: Instant,
+    started_unix_ns: u128,
     initial_io: Option<ProcessIo>,
     previous_io: Option<ProcessIo>,
     intervals: Vec<Interval>,
@@ -94,6 +100,7 @@ impl ConversionMetrics {
         Ok(Self {
             current_stage: None,
             started: Instant::now(),
+            started_unix_ns: unix_ns()?,
             initial_io,
             previous_io: initial_io,
             intervals: Vec::new(),
@@ -111,6 +118,7 @@ impl ConversionMetrics {
     fn close_interval(&mut self) -> io::Result<()> {
         let current_io = self.initial_io.map(|_| ProcessIo::read()).transpose()?;
         let now = Instant::now();
+        let end_unix_ns = unix_ns()?;
         let delta = current_io
             .zip(self.previous_io)
             .map(|(current, previous)| current.since(previous))
@@ -119,9 +127,12 @@ impl ConversionMetrics {
             stage: self.current_stage,
             elapsed_ms: now.duration_since(self.started).as_secs_f64() * 1000.0,
             io: delta,
+            start_unix_ns: self.started_unix_ns,
+            end_unix_ns,
         });
         self.previous_io = current_io;
         self.started = now;
+        self.started_unix_ns = end_unix_ns;
         Ok(())
     }
 
@@ -141,6 +152,8 @@ impl ConversionMetrics {
             if self.initial_io.is_some() {
                 println!("phase_{index}_name={name}");
                 println!("phase_{index}_ms={:.3}", interval.elapsed_ms);
+                println!("phase_{index}_start_unix_ns={}", interval.start_unix_ns);
+                println!("phase_{index}_end_unix_ns={}", interval.end_unix_ns);
                 if let Some(counters) = interval.io {
                     counters.print(&format!("phase_{index}_io"));
                 }
@@ -151,6 +164,13 @@ impl ConversionMetrics {
         }
         Ok(())
     }
+}
+
+fn unix_ns() -> io::Result<u128> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .map_err(io::Error::other)
 }
 
 #[cfg(test)]
@@ -222,6 +242,18 @@ mod tests {
                 .intervals
                 .iter()
                 .all(|interval| interval.io.is_none())
+        );
+        assert!(
+            metrics
+                .intervals
+                .iter()
+                .all(|interval| interval.end_unix_ns >= interval.start_unix_ns)
+        );
+        assert!(
+            metrics
+                .intervals
+                .windows(2)
+                .all(|pair| pair[0].end_unix_ns == pair[1].start_unix_ns)
         );
     }
 }

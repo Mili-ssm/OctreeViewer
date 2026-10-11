@@ -16,6 +16,58 @@ SPEC.loader.exec_module(profile_conversion)
 
 
 class ProfileConversionTests(unittest.TestCase):
+    def test_phase_peaks_exclude_transitions_and_do_not_attribute_lifetime_hwm(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stdout = root / "stdout.log"
+            samples = root / "samples.jsonl"
+            stdout.write_text("noise=ignored\n" + "".join(
+                f"phase_{index}_name={name}\nphase_{index}_start_unix_ns={start}\n"
+                f"phase_{index}_end_unix_ns={end}\n"
+                for index, (name, start, end) in enumerate([
+                    ("Planning", 10, 20), ("Writing", 20, 30),
+                    ("Planning", 30, 31), ("Complete", 31, 40),
+                ])
+            ))
+            samples.write_text("".join(json.dumps({
+                "start_unix_ns": start, "end_unix_ns": end,
+                "rss_bytes": rss, "temporary_bytes": disk, "vmhwm_bytes": 9999,
+            }) + "\n" for start, end, rss, disk in [
+                (0, 5, 999, 999), (10, 12, 50, 100), (13, 19, 70, 90),
+                (19, 21, 900, 900), (21, 25, 30, 200), (30, 32, 800, 800),
+                (33, 35, None, 0), (40, 41, 999, 999),
+            ]))
+            result = profile_conversion.phase_peaks(stdout, samples)
+            phases = result["phases"]
+            self.assertEqual(result["phase_unassigned_sample_count"], 4)
+            self.assertEqual([phase["sample_count"] for phase in phases], [2, 1, 0, 1])
+            self.assertEqual([phase["rss_sampled_peak_bytes"] for phase in phases],
+                             [70, 30, None, None])
+            self.assertEqual([phase["temporary_sampled_peak_bytes"] for phase in phases],
+                             [100, 200, None, 0])
+            self.assertEqual([phase["ordinal"] for phase in phases], [0, 1, 2, 3])
+
+    def test_phase_attribution_rejects_missing_duplicate_and_invalid_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stdout, samples = root / "stdout.log", root / "samples.jsonl"
+            samples.write_text("")
+            valid = "phase_0_name=Planning\nphase_0_start_unix_ns=10\nphase_0_end_unix_ns=20\n"
+            for content in ("", "phase_0_name=Planning\n", valid + "phase_0_name=Other\n",
+                            valid.replace("=20", "=9"), valid.replace("phase_0", "phase_1"),
+                            valid + valid.replace("phase_0", "phase_1")):
+                stdout.write_text(content)
+                with self.subTest(content=content), self.assertRaises(ValueError):
+                    profile_conversion.phase_peaks(stdout, samples)
+            stdout.write_text(valid)
+            for intervals in ([(15, 14)], [(15, 16), (14, 17)]):
+                samples.write_text("".join(json.dumps({
+                    "start_unix_ns": start, "end_unix_ns": end,
+                    "rss_bytes": 10, "temporary_bytes": 20,
+                }) + "\n" for start, end in intervals))
+                with self.subTest(intervals=intervals), self.assertRaises(ValueError):
+                    profile_conversion.phase_peaks(stdout, samples)
+
     def test_temporary_sizes_exclude_outputs_logs_and_symlinks_and_dedupe_hardlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -72,6 +124,7 @@ class ProfileConversionTests(unittest.TestCase):
             fake.write_text(
                 "#!/usr/bin/env python3\n"
                 "import pathlib, sys, time\n"
+                "start = time.time_ns()\n"
                 "output = pathlib.Path(sys.argv[3])\n"
                 "output.write_bytes(b'final-oct')\n"
                 "output.with_suffix('.octattrs').write_bytes(b'final-attrs')\n"
@@ -80,6 +133,9 @@ class ProfileConversionTests(unittest.TestCase):
                 "(work / 'source.spool').write_bytes(b'x' * 1000)\n"
                 "(output.parent / 'candidate.tmp').write_bytes(b't' * 20)\n"
                 "time.sleep(0.08)\n"
+                "print('phase_0_name=Fake')\n"
+                "print(f'phase_0_start_unix_ns={start}')\n"
+                "print(f'phase_0_end_unix_ns={time.time_ns()}')\n"
                 "raise SystemExit(7 if output.parent.name == 'run-7' else 0)\n"
             )
             fake.chmod(0o755)
@@ -99,6 +155,7 @@ class ProfileConversionTests(unittest.TestCase):
                 self.assertTrue((run_dir / "stdout.log").is_file())
                 self.assertTrue((run_dir / "stderr.log").is_file())
                 self.assertTrue((run_dir / "samples.jsonl").is_file())
+                self.assertEqual(report["phases"][0]["name"], "Fake")
 
     def test_exit_zero_requires_both_nonempty_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -124,6 +181,28 @@ class ProfileConversionTests(unittest.TestCase):
                 self.assertEqual(report["status"], "incomplete")
                 self.assertTrue(report["observation_errors"])
                 self.assertEqual((run_dir / "output.oct").read_bytes(), b"coordinates")
+
+    def test_exit_zero_with_output_pair_but_no_phase_metadata_is_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            input_path = root / "input.las"
+            input_path.write_bytes(b"input")
+            fake = root / "legacy-converter"
+            fake.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "output = pathlib.Path(sys.argv[3])\n"
+                "output.write_bytes(b'coordinates')\n"
+                "output.with_suffix('.octattrs').write_bytes(b'attributes')\n"
+            )
+            fake.chmod(0o755)
+            run_dir = root / "run"
+            self.assertEqual(profile_conversion.profile(input_path, run_dir, fake, 1, 2, 10), 1)
+            report = json.loads((run_dir / "report.json").read_text())
+            self.assertEqual(report["exit_code"], 0)
+            self.assertEqual(report["status"], "incomplete")
+            self.assertEqual(report["phases"], [])
+            self.assertTrue(any("phase attribution" in error for error in report["observation_errors"]))
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -89,6 +90,56 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any]:
+    """Attribute only observations wholly inside one progress interval; stream samples."""
+    fields: dict[int, dict[str, Any]] = {}
+    with stdout_path.open(encoding="utf-8") as stdout:
+        for line in stdout:
+            match = re.fullmatch(r"phase_(\d+)_(name|start_unix_ns|end_unix_ns)=(.+)\n?", line)
+            if match is None:
+                continue
+            ordinal, key, value = match.groups()
+            phase = fields.setdefault(int(ordinal), {})
+            if key in phase:
+                raise ValueError("duplicate phase boundary field")
+            phase[key] = value if key == "name" else int(value)
+    if not fields or sorted(fields) != list(range(len(fields))):
+        raise ValueError("missing or non-contiguous phase metadata")
+    phases = [fields[index] for index in range(len(fields))]
+    for index, phase in enumerate(phases):
+        if set(phase) != {"name", "start_unix_ns", "end_unix_ns"}:
+            raise ValueError("incomplete phase metadata")
+        if phase["start_unix_ns"] < 0 or phase["end_unix_ns"] < phase["start_unix_ns"]:
+            raise ValueError("invalid phase boundaries (possible clock change)")
+        if index and phases[index - 1]["end_unix_ns"] != phase["start_unix_ns"]:
+            raise ValueError("non-contiguous phase boundaries")
+        phase.update(ordinal=index, sample_count=0, rss_sampled_peak_bytes=None,
+                     temporary_sampled_peak_bytes=None)
+    unassigned = 0
+    cursor = 0
+    previous_end = 0
+    with samples_path.open(encoding="utf-8") as samples:
+        for line in samples:
+            sample = json.loads(line)
+            start, end = sample["start_unix_ns"], sample["end_unix_ns"]
+            if start < previous_end or end < start:
+                raise ValueError("non-monotonic sample timestamps (possible clock change)")
+            previous_end = end
+            while cursor < len(phases) and start >= phases[cursor]["end_unix_ns"]:
+                cursor += 1
+            if (cursor == len(phases) or start < phases[cursor]["start_unix_ns"]
+                    or end > phases[cursor]["end_unix_ns"]):
+                unassigned += 1
+                continue
+            phase = phases[cursor]
+            phase["sample_count"] += 1
+            for source, target in (("rss_bytes", "rss_sampled_peak_bytes"),
+                                   ("temporary_bytes", "temporary_sampled_peak_bytes")):
+                if sample[source] is not None:
+                    phase[target] = max(phase[target] or 0, sample[source])
+    return {"phases": phases, "phase_unassigned_sample_count": unassigned}
+
+
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,
             interval_ms: int) -> int:
     if not input_path.is_file():
@@ -114,6 +165,8 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
         "output_oct_bytes": None,
         "output_octattrs_bytes": None,
         "observation_errors": [],
+        "phases": [],
+        "phase_unassigned_sample_count": None,
     }
     errors: list[str] = report["observation_errors"]
     previous_sizes: dict[str, int] = {}
@@ -128,7 +181,8 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
             with samples_path.open("w", encoding="utf-8") as samples:
                 while process.poll() is None:
                     sample_time = time.monotonic()
-                    sample: dict[str, Any] = {"elapsed_seconds": sample_time - started}
+                    sample: dict[str, Any] = {"elapsed_seconds": sample_time - started,
+                                              "start_unix_ns": time.time_ns()}
                     try:
                         rss, hwm = read_proc_memory(process.pid)
                         sample["rss_bytes"] = rss
@@ -160,6 +214,7 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
                     except OSError as error:
                         _record_error(errors, f"temporary-file scan: {error}")
                         sample["temporary_bytes"] = None
+                    sample["end_unix_ns"] = time.time_ns()
                     samples.write(json.dumps(sample, sort_keys=True) + "\n")
                     samples.flush()
                     report["sample_count"] += 1
@@ -183,6 +238,10 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
         report["temporary_sampled_peak_bytes"] = temporary_peak
         report["output_oct_bytes"] = final_size(output_path)
         report["output_octattrs_bytes"] = final_size(output_path.with_suffix(".octattrs"))
+        try:
+            report.update(phase_peaks(run_dir / "stdout.log", samples_path))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            _record_error(errors, f"phase attribution: {error}")
         if report["exit_code"] == 0 and any(
             report[key] in (None, 0) for key in ("output_oct_bytes", "output_octattrs_bytes")
         ):
@@ -191,6 +250,10 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
             report["status"] = "incomplete"
         report["temporary_peak_note"] = "sampled logical sizes; may miss short peaks"
         report["temporary_growth_note"] = "sum of positive per-path size deltas between samples; not exact I/O"
+        report["phase_peak_note"] = (
+            "only samples wholly within progress intervals; empty phases have null peaks; "
+            "VmHWM is process lifetime and is not attributed; Unix wall clock must remain stable"
+        )
         write_json(run_dir / "report.json", report)
     return 0 if report["status"] == "complete" else 1
 

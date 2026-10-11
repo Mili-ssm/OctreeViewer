@@ -306,6 +306,21 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Tests de rangos compartidos/LOD, workers y reanudación; workspace, Clippy nativo/WASM y formato.
   Pendiente medir esta mejora en Albuera/Majadas y perfilar el pico de planificación.
 
+### Picos por intervalo del conversor — 12-10-2026
+
+- [x] Atribuir muestras RSS/temporales a intervalos de progreso con ordinales y límites
+  explícitos. Excluir capturas que cruzan una transición; conservar fases repetidas y picos
+  `null` cuando no hay muestras. VmHWM sigue siendo global. Metadatos inválidos/ausentes dejan
+  el informe incompleto; la agregación recorre las muestras sin cargarlas todas en memoria.
+- [x] Tres conversiones Belvedere v5, un worker/divisiones 2, muestreo 100 ms: mayor pico temporal
+  en jerarquía, mediana **4.633.019.920 B**; mayor RSS muestreado en validación, **93,023 MiB**.
+  Ambas salidas coinciden con la referencia v5 en las tres ejecuciones. No mide una mejora;
+  los máximos breves y fases sin muestras siguen sin resolverse.
+  [Método, dispersión y límites](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
+- [x] Ocho tests Python, siete del ejemplo Rust, Clippy de `viewer_convert` con todos sus targets,
+  formato, compilación Python y diff. Ruff no está instalado. Pendientes Albuera/Majadas por fase,
+  lote de workers y host web; estas observaciones no aíslan operaciones internas CPU/I/O.
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
@@ -320,7 +335,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Avance: perfilador nativo Linux `convert-profile` y muestreo externo de RSS/temporales;
    tres conversiones por dataset con tiempos por fase de Belvedere, Majadas y Albuera en
    [mediciones v5](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
-   Faltan pico conjunto por fase y host web.
+   Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
+   en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
+   Faltan Albuera/Majadas por fase y host web.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
