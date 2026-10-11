@@ -153,7 +153,9 @@ Fatal frame errors, worker errors and message decoding failures reject outstandi
 terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
 replace the transferred canvas and create a new viewer; automatic device recreation is not available.
 The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run; the
-current environment has no Chromium and Firefox headless is unstable.
+current environment has no Chromium. Firefox 157.0.1 headless can present with WebGPU enabled
+in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
+in [web performance](../../docs/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
 
 The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
 `File`, runs in another worker, and returns `{ file, name, attributesFile, outputAttributesName, points, timings }`; progress/status events and

@@ -3,14 +3,16 @@ export const FRAME_RATE_WARMUP_MS = 5_000;
 
 export function measureFrameRate(frameReplies, benchmarkStartedAt, now = performance.now()) {
     if (!Number.isFinite(benchmarkStartedAt)) {
-        return { sampleCount: 0, durationMs: 0, meanFps: null, intervalP50Ms: null, intervalP95Ms: null };
+        return { sampleCount: 0, durationMs: 0, windowDurationMs: 0, meanFps: null, intervalP50Ms: null, intervalP95Ms: null };
     }
     const start = Math.max(now - FRAME_RATE_WINDOW_MS, benchmarkStartedAt + FRAME_RATE_WARMUP_MS);
+    const windowDurationMs = Math.max(0, now - start);
     const samples = frameReplies.filter((sample) => sample.time >= start && sample.time <= now);
     if (samples.length < 2) {
         return {
             sampleCount: samples.length,
             durationMs: 0,
+            windowDurationMs,
             meanFps: null,
             intervalP50Ms: null,
             intervalP95Ms: null,
@@ -27,6 +29,7 @@ export function measureFrameRate(frameReplies, benchmarkStartedAt, now = perform
     return {
         sampleCount: intervals.length,
         durationMs,
+        windowDurationMs,
         meanFps: durationMs > 0 ? intervals.length * 1000 / durationMs : null,
         intervalP50Ms: percentile(intervals, 0.50),
         intervalP95Ms: percentile(intervals, 0.95),

@@ -136,7 +136,8 @@ function exportBenchmarkRun() {
         },
         steadyState: {
             warmupAfterBenchmarkStartMs: FRAME_RATE_WARMUP_MS,
-            measurementWindowMs: fps.durationMs,
+            measurementWindowMs: fps.windowDurationMs,
+            frameReplySpanMs: fps.durationMs,
             frameReplies: fps.sampleCount,
             meanFps: fps.meanFps,
             frameReplyIntervalP50Ms: fps.intervalP50Ms,

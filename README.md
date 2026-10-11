@@ -321,6 +321,20 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   formato, compilación Python y diff. Ruff no está instalado. Pendientes Albuera/Majadas por fase,
   lote de workers y host web; estas observaciones no aíslan operaciones internas CPU/I/O.
 
+### Primera base Firefox y ventana del benchmark — 12-10-2026
+
+- [x] Reproducir y corregir el rechazo de rondas completas: separar los 10 s de observación
+  del intervalo entre primer/último frame. Mantener el cálculo FPS y exportar ambos tiempos.
+  La regresión falla antes y pasa después; siete suites Node (25 tests), cuatro tests Python
+  y empaquetado local pasan. Visor autocontenido regenerado.
+- [x] Tres rondas válidas de Outer Banks XYZ gris en Firefox 157.0.1 headless, WebGPU activado
+  en perfil temporal, 1280×720 y 4 px: mediana **251 ms** hasta LOD objetivo, **60,00 FPS** de
+  respuestas del worker, **2.410 vóxeles**. Adaptador y heap JS no identificables en los exports;
+  no certifica FPS de GPU/pantalla ni interacción. [Método y dispersión](docs/WEB_PERFORMANCE_BENCH.md).
+- [ ] Chrome/Chromium no instalado; falta matriz grande y pareja/color/OPFS/picking/pérdida
+  de GPU. Intento exploratorio Belvedere sin LOD objetivo tras 120 s, causa sin resolver.
+  No mezclar ese intento con la base pequeña corregida.
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
@@ -337,7 +351,7 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    [mediciones v5](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
    Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
-   Faltan Albuera/Majadas por fase y host web.
+   Faltan Albuera/Majadas por fase y matriz web; primera base pequeña Firefox documentada.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.

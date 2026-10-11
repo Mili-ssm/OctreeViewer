@@ -25,3 +25,19 @@ test("does not report FPS before the target is stable or with fewer than two rep
     assert.equal(measureFrameRate([{ time: 5_000, renderCallMs: 1 }], 0, 5_000).meanFps, null);
     assert.equal(measureFrameRate([{ time: 1_000, renderCallMs: 1 }, { time: 2_000, renderCallMs: 1 }], null, 2_000).sampleCount, 0);
 });
+
+test("keeps a complete observation window when replies do not land on its boundaries", () => {
+    const replies = Array.from({ length: 625 }, (_, index) => ({
+        time: 5_008 + index * 16,
+        renderCallMs: 1,
+    }));
+    const result = measureFrameRate(replies, 0, 15_000);
+
+    assert.equal(result.windowDurationMs, 10_000);
+    assert.equal(result.durationMs, 9_984);
+    assert.equal(result.meanFps, 62.5);
+    assert.equal(measureFrameRate(replies, 0, 14_000).windowDurationMs, 9_000);
+    assert.equal(measureFrameRate([], 0, 4_000).windowDurationMs, 0);
+    assert.equal(measureFrameRate([], null, 15_000).windowDurationMs, 0);
+    assert.equal(measureFrameRate([], 0, 15_000).meanFps, null);
+});
