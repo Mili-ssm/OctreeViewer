@@ -42,11 +42,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Path::new(&arguments[1]),
             arguments.get(2).map(Path::new),
             ReadMode::All,
+            ReadOrder::BlockId,
         ),
         Some("read-geometry") if arguments.len() == 2 || arguments.len() == 3 => read(
             Path::new(&arguments[1]),
             arguments.get(2).map(Path::new),
             ReadMode::Geometry,
+            ReadOrder::BlockId,
         ),
         Some("read-attribute") if (3..=4).contains(&arguments.len()) => {
             let schema_index = arguments[2].to_string_lossy().parse()?;
@@ -54,11 +56,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Path::new(&arguments[1]),
                 arguments.get(3).map(Path::new),
                 ReadMode::Attribute(schema_index),
+                ReadOrder::BlockId,
+            )
+        }
+        Some("read-random") if (4..=5).contains(&arguments.len()) => {
+            let seed = arguments[2].to_string_lossy().parse()?;
+            let mode = match (arguments[3].to_str(), arguments.get(4)) {
+                (Some("all"), None) => ReadMode::All,
+                (Some("geometry"), None) => ReadMode::Geometry,
+                (Some("attribute"), Some(index)) => {
+                    ReadMode::Attribute(index.to_string_lossy().parse()?)
+                }
+                _ => {
+                    return Err(
+                        "random mode must be all, geometry, or attribute SCHEMA_INDEX".into(),
+                    );
+                }
+            };
+            read(
+                Path::new(&arguments[1]),
+                None,
+                mode,
+                ReadOrder::Shuffled(seed),
             )
         }
         _ => {
             eprintln!(
                 "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
+            );
+            eprintln!(
+                "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]"
             );
             Err("invalid arguments".into())
         }
@@ -128,6 +155,25 @@ enum ReadMode {
     Attribute(u32),
 }
 
+#[derive(Clone, Copy)]
+enum ReadOrder {
+    BlockId,
+    Shuffled(u64),
+}
+
+/// Deterministic Fisher-Yates permutation using a fixed SplitMix64 sequence.
+/// The fixed generator and modulo mapping preserve block order across platforms.
+fn shuffle<T>(values: &mut [T], mut seed: u64) {
+    for index in (1..values.len()).rev() {
+        seed = seed.wrapping_add(0x9e3779b97f4a7c15);
+        let mut value = seed;
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+        value ^= value >> 31;
+        values.swap(index, (value % (index as u64 + 1)) as usize);
+    }
+}
+
 struct CountingReader<R> {
     inner: R,
     bytes_read: Arc<AtomicU64>,
@@ -157,6 +203,7 @@ fn read(
     output: &Path,
     input: Option<&Path>,
     mode: ReadMode,
+    order: ReadOrder,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let geometry_bytes = fs::metadata(output)?.len();
     let attributes_bytes = fs::metadata(output.with_extension("octattrs"))
@@ -187,7 +234,15 @@ fn read(
     let open_elapsed = started.elapsed();
     let metadata_geometry_bytes = geometry_bytes_read.load(Ordering::Relaxed);
     let metadata_attribute_bytes = attribute_bytes_read.load(Ordering::Relaxed);
-    let stats = reader.block_storage_stats()?;
+    let mut stats = reader.block_storage_stats()?;
+    if let ReadOrder::Shuffled(seed) = order {
+        shuffle(&mut stats, seed);
+    }
+    let order_checksum = stats
+        .iter()
+        .fold(0xcbf29ce484222325_u64, |checksum, block| {
+            (checksum ^ block.id.get()).wrapping_mul(0x100000001b3)
+        });
     // The benchmark retains one u64 per block for exact nearest-rank percentiles.
     // These samples and the stats vectors are benchmark overhead, not reader memory.
     let mut block_latencies_ns = Vec::with_capacity(stats.len());
@@ -224,6 +279,17 @@ fn read(
         }
     );
     println!("geometry_file_bytes={geometry_bytes}");
+    println!(
+        "read_order={}",
+        match order {
+            ReadOrder::BlockId => "block_id",
+            ReadOrder::Shuffled(_) => "shuffled",
+        }
+    );
+    if let ReadOrder::Shuffled(seed) = order {
+        println!("shuffle_seed={seed}");
+    }
+    println!("block_order_checksum={order_checksum}");
     println!("attribute_file_bytes={attributes_bytes}");
     println!("output_bytes={output_bytes}");
     if let Some(input) = input {
@@ -439,7 +505,7 @@ fn ratio(numerator: u64, denominator: u64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CountingReader, percentile_ns};
+    use super::{CountingReader, percentile_ns, shuffle};
     use std::{
         io::{Cursor, Read, Seek, SeekFrom},
         sync::{
@@ -447,6 +513,26 @@ mod tests {
             atomic::{AtomicU64, Ordering},
         },
     };
+
+    #[test]
+    fn shuffle_is_reproducible_and_visits_each_block_once() {
+        let mut empty: [u64; 0] = [];
+        shuffle(&mut empty, 42);
+        let mut single = [7];
+        shuffle(&mut single, 42);
+        assert_eq!(single, [7]);
+        let mut ids = [0, 1, 2, 3, 4, 5, 6, 7];
+        shuffle(&mut ids, 42);
+        assert_eq!(ids, [3, 1, 6, 2, 4, 0, 7, 5]);
+        let mut repeated = [0, 1, 2, 3, 4, 5, 6, 7];
+        shuffle(&mut repeated, 42);
+        assert_eq!(ids, repeated);
+        repeated = [0, 1, 2, 3, 4, 5, 6, 7];
+        shuffle(&mut repeated, 0);
+        assert_ne!(ids, repeated);
+        ids.sort_unstable();
+        assert_eq!(ids, [0, 1, 2, 3, 4, 5, 6, 7]);
+    }
 
     #[test]
     fn percentiles_use_nearest_rank_and_handle_empty_or_single_runs() {

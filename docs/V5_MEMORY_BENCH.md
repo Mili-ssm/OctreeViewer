@@ -190,5 +190,55 @@ forks y añade coste a índices pequeños; no se midió contención entre hilos.
 cargo run --profile perf -p viewer_format --example attribute_range_bench --offline -- data/datasets/belv_2009_digital-aerial_pcd_copc.oct 100000
 ```
 
+## Lectura de bloques en orden aleatorio, caché caliente
+
+Entrega sobre `90202f1`: el ejemplo existente añade `read-random INPUT.oct SEED MODE [INDEX]`.
+Permuta la lista de bloques con Fisher-Yates/SplitMix64 fijo, sin otra copia del directorio, y
+lee **cada bloque una vez**. Imprime orden, semilla y checksum de IDs para reproducir el recorrido.
+Los modos y comandos secuenciales conservan su comportamiento; se reutilizan lector, contadores,
+CRC/decodificación y percentiles. Estadísticas/permutación quedan fuera de la ventana de lectura.
+
+Misma pareja Belvedere v5, perfil `perf` y entorno anterior. Un calentamiento completo de ambos
+archivos, seguido de tres pares alternando orden secuencial/aleatorio **por modo**; semillas 1/2/3.
+Caché del SO caliente, sin vaciarla, sin compilaciones/checks concurrentes. Un proceso por muestra;
+RSS externo con `/usr/bin/time -v`. Esta prueba mide una permutación completa sin repetición,
+no una muestra pequeña de bloques ni una distribución de solicitudes de cámara/red.
+
+| Modo / orden | Lectura + CRC + decode (ms) | p50 por bloque (ms) | p95 por bloque (ms) |
+| --- | ---: | ---: | ---: |
+| XYZ / secuencial | 2.729,633 [2.711,974–2.758,282] | 1,947 [1,932–1,954] | 4,732 [4,719–4,815] |
+| XYZ / aleatorio | 2.723,885 [2.714,736–2.733,697] | 1,947 [1,933–1,955] | 4,717 [4,717–4,752] |
+| Completo / secuencial | 6.223,845 [6.154,694–6.265,173] | 4,340 [4,296–4,355] | 11,155 [10,978–11,240] |
+| Completo / aleatorio | 6.231,545 [6.207,612–6.292,019] | 4,405 [4,371–4,449] | 11,233 [11,105–11,375] |
+| Columna 0 / secuencial | 204,405 [200,455–207,309] | 0,145 [0,142–0,146] | 0,355 [0,347–0,361] |
+| Columna 0 / aleatorio | 204,783 [200,411–205,401] | 0,145 [0,140–0,145] | 0,358 [0,348–0,359] |
+
+Mediana y rango entre tres procesos; p50/p95 nearest-rank calculados dentro de cada proceso,
+sin combinar muestras. Se verificó igual cantidad de bloques/filas y bytes por archivo entre los
+dos órdenes: 1.343 bloques, 81.706.211 filas. XYZ lee 980.255.704 B de payload geométrico y cero
+atributos; columna 0 lee 656.109 B de atributos y cero geometría; completo lee 980.255.704 B y
+610.586.795 B respectivamente. Con cada semilla, el checksum de orden coincide entre modos.
+
+| Modo | RSS pico secuencial (KiB) | RSS pico aleatorio (KiB) |
+| --- | ---: | ---: |
+| XYZ | 13.800 [13.772–14.052] | 15.876 [15.872–16.088] |
+| Completo | 18.632 [18.580–18.644] | 18.412 [18.248–18.816] |
+| Columna 0 | 8.592 [8.328–8.808] | 8.488 [8.428–8.616] |
+
+No se observa una penalización clara de latencia por orden en esta condición caliente. XYZ sí
+presenta unos 2 MiB más de RSS en orden aleatorio; la causa no está perfilada y no se atribuye a
+la memoria del índice. RSS incluye overhead del benchmark y asignador. No extrapolar a disco
+frío, HTTP Range, OPFS, latencia de cámara ni Chrome/Firefox. Logs locales ignorados:
+`target/audit-v5-random-read/`.
+
+```sh
+cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline
+target/perf/examples/real_dataset_bench read-random data/datasets/belv_2009_digital-aerial_pcd_copc.oct 1 geometry
+target/perf/examples/real_dataset_bench read-random data/datasets/belv_2009_digital-aerial_pcd_copc.oct 1 all
+target/perf/examples/real_dataset_bench read-random data/datasets/belv_2009_digital-aerial_pcd_copc.oct 1 attribute 0
+cargo test -p viewer_convert --example real_dataset_bench --profile fast --offline
+```
+
 Pendiente: calibrar el modelo/RSS conjunto del builder, conversiones v5 grandes repetidas,
-temporales máximos/acumulados e I/O por fase, lectura aleatoria y Chrome/Firefox con WebGPU.
+temporales máximos/acumulados e I/O por fase, lectura con caché fría/red/OPFS y Chrome/Firefox
+con WebGPU; optimización LOD conforme a su base específica.

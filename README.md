@@ -220,6 +220,18 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   sustituciones que liberan presupuesto. Resolver estabilidad del callback antes de memorizar
   prioridades; después medir con jerarquías reales. El algoritmo de producción sigue intacto.
 
+### Lectura aleatoria reproducible — 11-10-2026
+
+- [x] `real_dataset_bench read-random` permuta todos los bloques una vez, con semilla y checksum
+  del recorrido. Reutiliza los modos XYZ/completo/columna, contadores de I/O y latencias p50/p95.
+  Los comandos anteriores se conservan. Tres tests del ejemplo comprueban percentiles, contadores
+  y permutación reproducible; formato y Clippy de `viewer_convert` pasan.
+- [x] Tres pares secuencial/aleatorio sobre Belvedere v5, caché del SO caliente: mismos bytes y
+  filas por modo, sin penalización clara de latencia. XYZ aleatorio muestra unos 2 MiB más de RSS,
+  causa sin perfilar. [Resultados y comandos](docs/V5_MEMORY_BENCH.md#lectura-de-bloques-en-orden-aleatorio-caché-caliente).
+- [ ] Medir solicitudes parciales y condiciones frías/red/OPFS; la permutación caliente no las
+  representa. Continúan pendientes las conversiones grandes por fase y Chrome/Firefox.
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
