@@ -190,6 +190,109 @@ forks y añade coste a índices pequeños; no se midió contención entre hilos.
 cargo run --profile perf -p viewer_format --example attribute_range_bench --offline -- data/datasets/belv_2009_digital-aerial_pcd_copc.oct 100000
 ```
 
+## Perfil de conversión nativa por fase
+
+Entrega sobre `71d5fb9`, incluyendo la instrumentación local de `convert-profile` y el
+muestreador `crates/viewer_convert/benchmarks/profile_conversion.py`. Este último exige un
+directorio nuevo, conserva logs/pareja/samples y escribe `report.json` también al fallar o
+interrumpirse. Un código cero sin ambos archivos no vacíos se considera incompleto; esto no
+sustituye la validación profunda que ya realiza el conversor antes de publicar.
+
+`convert` conserva los campos anteriores sin depender de `/proc`; `convert-profile` añade
+contadores Linux de `/proc/self/io`. Los intervalos `phase_N` van de una notificación de progreso
+a la siguiente y conservan etapas repetidas. No son cronómetros internos de cada función:
+`PlanningMetadata` puede incluir trabajo inicial anterior a la primera notificación espacial;
+`ReadingAndWritingBlocks` incluye cierre del writer y preparación para validar. `Complete`
+mide el intervalo hasta que vuelve el conversor, incluyendo destrucción de sus temporales.
+`conversion_elapsed_ms` excluye el resumen posterior de almacenamiento.
+
+El muestreador externo observa RSS y VmHWM del hijo y tamaños lógicos de `.tmp` y archivos bajo
+directorios `.work` cada 100 ms. Excluye logs y salidas finales; deduplica enlaces duros por inode.
+No mide espacio físico asignado ni garantiza capturar picos breves. El crecimiento acumulado
+suma deltas positivos por ruta entre muestras: omite reescrituras y archivos efímeros, y **no es
+I/O exacto**. RSS/VmHWM observados tampoco identifican por sí solos la fase del máximo real.
+
+`rchar/wchar` son bytes de llamadas de lectura/escritura del proceso, incluyendo buffers/spools
+y las pequeñas lecturas propias de `/proc/self/io`. `read_bytes/write_bytes` son contadores de
+almacenamiento Linux, afectados por caché/writeback; no son los anteriores ni transferencia
+física medida en el dispositivo. `cancelled_write_bytes` se conserva por separado. El proceso
+muestreador no entra en esos contadores del conversor.
+
+### Belvedere: tres conversiones v5
+
+Mismo equipo/Rust/Linux descritos al principio, perfil `perf`, un worker, divisiones 2 y opciones
+restantes predeterminadas. Fuente de 618.390.994 B y 81.682.329 puntos. Una conversión de
+calentamiento seguida de tres procesos secuenciales (`belvedere-run-2/3/4`), sin compilaciones
+ni otros benchmarks concurrentes. Caché del SO previamente calentada y sin vaciar; no se fija su
+residencia: `read_bytes` fue 0, 0 y 88.432.640 B respectivamente. No se fijaron frecuencia CPU,
+modo de energía o writeback del sistema. El muestreo externo puede introducir overhead, que no
+se ha aislado con una ronda sin muestreador. Mediana y mínimo–máximo entre tres procesos:
+
+| Intervalo entre notificaciones | Tiempo (s) |
+| --- | ---: |
+| Total hasta retorno, antes del resumen | 46,286 [45,625–46,460] |
+| `PlanningMetadata` | 0,044 [0,043–0,052] |
+| `PlanningSpatialIndex` | 10,353 [10,295–10,400] |
+| `BuildingSpatialHierarchy` | 18,216 [17,684–18,392] |
+| `ReadingAndWritingBlocks` | 11,343 [11,108–11,349] |
+| `ValidatingOutput` | 6,191 [6,140–6,203] |
+| `PublishingOutput` | 0,016 [0,006–0,032] |
+| `Complete` hasta retorno | 0,169 [0,157–0,170] |
+
+La jerarquía es el mayor intervalo observado (~39 % del total), seguido de escritura/compresión
+y planificación espacial. La validación ocupa ~13 %: esta base no justifica sustituirla por
+una comprobación más débil. Tampoco compara dos implementaciones ni demuestra una aceleración.
+Queda por separar CPU/descompresión/I/O dentro de cada intervalo antes de optimizar los spools.
+
+| Métrica del proceso completo | Mediana [mínimo–máximo] |
+| --- | ---: |
+| RSS pico muestreado / VmHWM máximo observado (MiB) | 94,254 [93,445–95,277] |
+| Temporales: pico lógico muestreado (B) | 4.941.891.420 [igual en las tres] |
+| Temporales: crecimiento positivo observado (B) | 17.112.157.133 [17.018.786.107–17.158.453.922] |
+| `conversion_io_rchar` (B) | 18.375.221.641 [18.375.221.641–18.375.221.682] |
+| `conversion_io_wchar` (B) | 17.756.806.959 [igual en las tres] |
+| `conversion_io_write_bytes` (B) | 17.768.312.832 [17.763.926.016–17.768.574.976] |
+| `conversion_io_cancelled_write_bytes` (B) | 0 [igual en las tres] |
+
+Las llamadas del conversor solicitan leer ~29,71× y escribir ~28,71× el tamaño de la fuente LAZ
+comprimida (o ~11,54×/~11,16× la pareja final). Es amplificación de bytes de llamadas del proceso,
+incluye spools sin comprimir y lectura de validación; no es amplificación física del SSD.
+Los máximos RSS/VmHWM observados coinciden en estas tres ejecuciones; no equivalen a una medida
+externa completa del pico ni al presupuesto controlado estimado de 62.940.928 B del conversor.
+
+Cada ejecución produce 1.343 bloques, 81.706.211 filas incluyendo LOD y la misma pareja:
+981.063.326 B de coordenadas + 610.586.859 B de atributos = **1.591.650.185 B**, ratio **2,574×**
+la fuente. Se verificó igualdad byte a byte mediante SHA-256 de cada archivo entre las tres
+repeticiones y el calentamiento:
+
+```text
+oct      2faa89194c199dba65955d0442b129d0c5f339a1f8ddf89d1181920f51f82d0d
+octattrs 013b8fe420ba82aee1775f08800d0c2dcd94796dc8f096b0824e4d80310fa294
+```
+
+Logs, muestras y resumen local: `target/audit-v5-conversion-phases/` (`summary.json`).
+Validación: tests del workspace, siete tests del ejemplo, cinco tests Python, compilación
+Python, formato y Clippy nativo/WASM pasan. Ruff no está instalado en este entorno.
+
+Reproducción desde la raíz, sin compilaciones ni otros benchmarks concurrentes durante la medida:
+
+```sh
+cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline
+python3 -m unittest discover -s crates/viewer_convert/benchmarks -p 'test_*.py'
+cargo test -p viewer_convert --example real_dataset_bench --profile fast --offline
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz \
+  target/conversion-profile-repro/warmup --workers 1 --divisions 2 --interval-ms 100
+# Repetir con directorios nuevos run-1, run-2 y run-3 tras el calentamiento.
+```
+
+Las salidas quedan para inspección; no se eliminan automáticamente ni se reutiliza un destino
+existente. La interrupción del muestreador termina al hijo y marca el informe incompleto;
+puede conservar temporales, pues no equivale a la cancelación cooperativa del CLI principal.
+El perfilador mide conversiones LAS/LAZ locales sin checkpoint; no valida recuperación,
+HTTP/OPFS, Chrome/Firefox ni fuentes de más de 500 GB. Faltan Albuera/Majadas repetidas y
+calibración de los presupuestos CPU con el pico conjunto.
+
 ## Lectura de bloques en orden aleatorio, caché caliente
 
 Entrega sobre `90202f1`: el ejemplo existente añade `read-random INPUT.oct SEED MODE [INDEX]`.

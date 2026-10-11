@@ -17,10 +17,14 @@ use viewer_format::{
     BlockCodec, BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReader,
 };
 
+#[path = "support/conversion_metrics.rs"]
+mod conversion_metrics;
+use conversion_metrics::ConversionMetrics;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     match arguments.first().and_then(|value| value.to_str()) {
-        Some("convert") if (3..=5).contains(&arguments.len()) => {
+        Some(command @ ("convert" | "convert-profile")) if (3..=5).contains(&arguments.len()) => {
             let workers = arguments
                 .get(3)
                 .map(|value| value.to_string_lossy().parse())
@@ -36,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Path::new(&arguments[2]),
                 workers,
                 divisions,
+                command == "convert-profile",
             )
         }
         Some("read") if arguments.len() == 2 || arguments.len() == 3 => read(
@@ -106,6 +111,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!(
                 "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]\n  real_dataset_bench read-sample INPUT.oct SEED COUNT all|geometry|attribute [SCHEMA_INDEX]"
             );
+            eprintln!(
+                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]] (Linux process I/O)"
+            );
             Err("invalid arguments".into())
         }
     }
@@ -116,28 +124,27 @@ fn convert(
     output: &Path,
     workers: usize,
     divisions: u8,
+    process_io: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input_bytes = fs::metadata(input)?.len();
     let started = Instant::now();
-    let mut current_stage = None;
-    let mut stage_started = started;
-    let mut stage_times = Vec::new();
+    let mut metrics = ConversionMetrics::new(process_io)?;
+    let mut metrics_error = None;
     let options = ConvertOptions::default()
         .with_spatial_workers(workers)?
         .with_spatial_divisions(divisions)?;
     let report = convert_file_with_progress(input, output, options, |progress| {
-        if current_stage != Some(progress.stage) {
-            if let Some(stage) = current_stage {
-                stage_times.push((stage, stage_started.elapsed()));
-            }
-            current_stage = Some(progress.stage);
-            stage_started = Instant::now();
+        if let Err(error) = metrics.observe(progress.stage) {
+            metrics_error = Some(error);
+            return false;
         }
         true
-    })?;
-    if let Some(stage) = current_stage {
-        stage_times.push((stage, stage_started.elapsed()));
+    });
+    if let Some(error) = metrics_error {
+        return Err(error.into());
     }
+    let report = report?;
+    metrics.finish()?;
     let elapsed = started.elapsed();
     println!("mode=convert");
     println!("spatial_workers={workers}");
@@ -158,9 +165,7 @@ fn convert(
         "source_points_per_second={:.3}",
         report.point_count as f64 / elapsed.as_secs_f64()
     );
-    for (stage, duration) in stage_times {
-        println!("stage_{stage:?}_ms={:.3}", duration.as_secs_f64() * 1000.0);
-    }
+    metrics.print()?;
     for dimension in report.omitted_dimensions {
         println!("omitted_dimension={dimension}");
     }

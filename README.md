@@ -260,6 +260,20 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [ ] Medir condiciones frías/red/OPFS y solicitudes de cámara; las muestras calientes no las
   representan. Continúan pendientes las conversiones grandes por fase y Chrome/Firefox.
 
+### Perfil de conversión nativa — 11-10-2026
+
+- [x] Completar y verificar la instrumentación local `convert-profile`: tiempos entre notificaciones
+  y contadores Linux por intervalo; muestreador externo de RSS/VmHWM y temporales con logs e informe
+  de ejecución parcial. Rechazar éxito aparente si falta un archivo de la pareja o está vacío.
+- [x] Belvedere v5: calentamiento y tres conversiones con un worker/divisiones 2; mediana
+  **46,286 s**, validación **6,191 s**, RSS pico observado **94,254 MiB** y temporales máximos
+  muestreados **4.941.891.420 B**. Ambos archivos coinciden byte a byte en las cuatro ejecuciones.
+  El mayor intervalo es construir la jerarquía (**18,216 s**); no se ha aislado CPU frente a I/O.
+  [Método, dispersión, amplificación de bytes y límites](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
+- [x] Tests del workspace, siete del ejemplo y cinco Python; formato, Clippy nativo/WASM y
+  compilación Python. Ruff no está instalado. No es una comparación de mejora ni cierra la base
+  de escala: faltan Albuera/Majadas repetidas y pruebas reales de navegador.
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
@@ -271,6 +285,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    ocupación de caché y rechazos por presupuesto. Distinguir CPU nativa, heap JS/WASM y buffers GPU,
    declarando qué memoria no se puede observar. Cierre: resultados reproducibles y cuello de botella
    identificado; las métricas todavía no instrumentadas son parte de esta tarea.
+   Avance: perfilador nativo Linux `convert-profile` y muestreo externo de RSS/temporales;
+   resultados por fase de Belvedere en
+   [mediciones v5](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
+   Faltan repeticiones de Albuera/Majadas, pico conjunto por fase y host web.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
@@ -297,6 +315,15 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    exige por sí solo cambiar v5. Evaluar derivar RGB/bounds o reducir rangos únicamente conservando
    sus consumidores y jerarquías arbitrarias. Cierre: beneficio medido, especificación y política
    de compatibilidad acordadas antes de implementar; V6 no es una decisión tomada.
+6. [ ] **Evaluar portar el renderizador a Bevy — prioridad baja.** Comparar un prototipo acotado
+   con `viewer_render_wgpu` antes de decidir la migración. Condición de avance: reducir complejidad
+   y código propio de cámara, escena e interacción, sin duplicar motores ni perder presupuestos,
+   streaming/LOD, grilla no solapada o soporte WebGPU en Chrome/Firefox. Medir también tamaño WASM,
+   arranque, memoria y rendimiento con la misma nube/cámara/calidad. Facilitar como objetivos futuros:
+   varias nubes simultáneas con marcos de coordenadas explícitos; mediciones con unidades y precisión
+   conocidas; puntos etiquetados con información persistente y navegación directa. Cierre de la
+   evaluación: evidencia y decisión documentadas; portar solo si el balance de simplicidad y
+   extensibilidad resulta favorable. Estas funciones y la migración todavía no están implementadas.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
