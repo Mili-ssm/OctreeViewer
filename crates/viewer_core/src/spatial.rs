@@ -492,6 +492,7 @@ struct IndexedNode {
 pub struct SpatialHierarchy {
     root: NodeId,
     nodes: HashMap<NodeId, IndexedNode>,
+    block_ids: Box<[BlockId]>,
     attributes: Vec<AttributeDescriptor>,
     stats: SpatialStats,
     semantics: HierarchySemantics,
@@ -618,9 +619,17 @@ impl SpatialHierarchy {
             }
         }
 
+        let mut block_ids = node_map
+            .values()
+            .flat_map(|indexed| indexed.metadata.blocks.iter().copied())
+            .collect::<Vec<_>>();
+        block_ids.sort_unstable();
+        block_ids.dedup();
+
         Ok(Self {
             root,
             nodes: node_map,
+            block_ids: block_ids.into_boxed_slice(),
             attributes,
             stats,
             semantics,
@@ -635,11 +644,16 @@ impl SpatialHierarchy {
         self.nodes.get(&id).map(|indexed| &indexed.metadata)
     }
 
+    /// Returns all referenced dataset-local block IDs in ascending order, without duplicates.
+    ///
+    /// The catalog stores one additional `u64` (8 bytes) per unique block ID.
+    pub fn block_ids(&self) -> &[BlockId] {
+        &self.block_ids
+    }
+
     /// Checks whether any node references the dataset-local block identifier.
     pub fn references_block(&self, block_id: BlockId) -> bool {
-        self.nodes
-            .values()
-            .any(|indexed| indexed.metadata.blocks.contains(&block_id))
+        self.block_ids.binary_search(&block_id).is_ok()
     }
 
     pub(crate) fn child_ids(&self, id: NodeId) -> &[NodeId] {

@@ -303,6 +303,12 @@ impl<R: Read + Seek> FormatReader<R> {
         &self.metadata
     }
 
+    /// Bytes of the serialized common index, stored only in the primary file.
+    /// This is not an estimate of resident or peak memory used by the decoded index.
+    pub fn index_size_bytes(&self) -> u64 {
+        self.index_identity.1
+    }
+
     /// Returns aggregate block sizes from the validated directory without payload I/O.
     /// Inspect `block_payload_storage_stats` for per-payload codecs and sizes.
     pub fn block_storage_stats(&self) -> Result<Vec<BlockStorageStats>, FormatError> {

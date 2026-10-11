@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env,
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
@@ -12,7 +13,9 @@ use std::{
 
 use viewer_convert::{ConvertOptions, convert_file_with_progress};
 use viewer_core::{DatasetSource, Point};
-use viewer_format::{BlockCodec, BlockPayloadStorageStats, BlockStorageStats, FormatReader};
+use viewer_format::{
+    BlockCodec, BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReader,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
@@ -163,26 +166,35 @@ fn read(
         .checked_add(attributes_bytes)
         .ok_or("size overflow")?;
     let started = Instant::now();
-    let bytes_read = Arc::new(AtomicU64::new(0));
+    let geometry_bytes_read = Arc::new(AtomicU64::new(0));
+    let attribute_bytes_read = Arc::new(AtomicU64::new(0));
     let mut reader = FormatReader::new(CountingReader::new(
         File::open(output)?,
-        Arc::clone(&bytes_read),
+        Arc::clone(&geometry_bytes_read),
     ))?;
+    let index_open_elapsed = started.elapsed();
+    let attach_started = Instant::now();
     if !matches!(mode, ReadMode::Geometry) && attributes_bytes > 0 {
         reader.attach_attributes(CountingReader::new(
             File::open(output.with_extension("octattrs"))?,
-            Arc::clone(&bytes_read),
+            Arc::clone(&attribute_bytes_read),
         ))?;
     }
+    let attach_elapsed = attach_started.elapsed();
     if matches!(mode, ReadMode::All) && !reader.has_attributes() {
         return Err("full-payload benchmark requires the .octattrs companion; use read-geometry for XYZ only".into());
     }
     let open_elapsed = started.elapsed();
-    let payload_read_start = bytes_read.load(Ordering::Relaxed);
+    let metadata_geometry_bytes = geometry_bytes_read.load(Ordering::Relaxed);
+    let metadata_attribute_bytes = attribute_bytes_read.load(Ordering::Relaxed);
     let stats = reader.block_storage_stats()?;
+    // The benchmark retains one u64 per block for exact nearest-rank percentiles.
+    // These samples and the stats vectors are benchmark overhead, not reader memory.
+    let mut block_latencies_ns = Vec::with_capacity(stats.len());
     let decode_started = Instant::now();
     let mut decoded_points = 0_u64;
     for block in &stats {
+        let block_started = Instant::now();
         decoded_points += match mode {
             ReadMode::All => reader.read_block(block.id)?.points().len() as u64,
             ReadMode::Geometry => reader.read_positions(block.id)?.len() as u64,
@@ -191,11 +203,18 @@ fn read(
                 block.point_count
             }
         };
+        block_latencies_ns
+            .push(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
     }
     let decode_elapsed = decode_started.elapsed();
-    let payload_bytes_read = bytes_read
+    let geometry_payload_bytes_read = geometry_bytes_read
         .load(Ordering::Relaxed)
-        .saturating_sub(payload_read_start);
+        .saturating_sub(metadata_geometry_bytes);
+    let attribute_payload_bytes_read = attribute_bytes_read
+        .load(Ordering::Relaxed)
+        .saturating_sub(metadata_attribute_bytes);
+    let payload_bytes_read = geometry_payload_bytes_read + attribute_payload_bytes_read;
+    block_latencies_ns.sort_unstable();
     println!(
         "mode={}",
         match mode {
@@ -211,6 +230,36 @@ fn read(
         println!("input_bytes={}", fs::metadata(input)?.len());
     }
     println!("open_index_ms={:.3}", open_elapsed.as_secs_f64() * 1000.0);
+    // Retain open_index_ms as the legacy total; split it for v5 comparisons.
+    println!(
+        "open_primary_index_ms={:.3}",
+        index_open_elapsed.as_secs_f64() * 1000.0
+    );
+    println!(
+        "attach_attributes_ms={:.3}",
+        if matches!(mode, ReadMode::Geometry) || attributes_bytes == 0 {
+            0.0
+        } else {
+            attach_elapsed.as_secs_f64() * 1000.0
+        }
+    );
+    println!("serialized_index_bytes={}", reader.index_size_bytes());
+    println!(
+        "block_id_catalog_bytes={}",
+        size_of_val(reader.metadata().hierarchy().block_ids())
+    );
+    println!("metadata_geometry_bytes_read={metadata_geometry_bytes}");
+    println!("metadata_attribute_bytes_read={metadata_attribute_bytes}");
+    println!("geometry_payload_bytes_read={geometry_payload_bytes_read}");
+    println!("attribute_payload_bytes_read={attribute_payload_bytes_read}");
+    for percentile in [50, 95] {
+        if let Some(latency) = percentile_ns(&block_latencies_ns, percentile) {
+            println!(
+                "block_read_decode_crc_p{percentile}_ms={:.6}",
+                latency as f64 / 1_000_000.0
+            );
+        }
+    }
     println!(
         "read_decode_crc_all_blocks_ms={:.3}",
         decode_elapsed.as_secs_f64() * 1000.0
@@ -247,6 +296,9 @@ fn summarize_output(
         .checked_add(attributes_bytes)
         .ok_or("size overflow")?;
     let reader = FormatReader::new(File::open(output)?)?;
+    println!("geometry_file_bytes={geometry_bytes}");
+    println!("attribute_file_bytes={attributes_bytes}");
+    println!("serialized_index_bytes={}", reader.index_size_bytes());
     let stats = reader.block_storage_stats()?;
     println!("output_size_bytes={output_bytes}");
     if let Some(input_bytes) = input_bytes {
@@ -318,6 +370,34 @@ fn summarize_stats(
     );
     println!("largest_raw_block_bytes={largest_raw_block}");
     println!("largest_stored_block_bytes={largest_stored_block}");
+    let mut by_kind = BTreeMap::<String, (u64, u64)>::new();
+    for payload in payloads {
+        let key = match &payload.kind {
+            BlockPayloadKind::Geometry => "geometry".to_owned(),
+            BlockPayloadKind::DisplayColor => "display_rgb".to_owned(),
+            BlockPayloadKind::Attribute { schema_index, .. } => format!("attribute_{schema_index}"),
+        };
+        let sizes = by_kind.entry(key).or_default();
+        sizes.0 += payload.stored_bytes;
+        sizes.1 += payload.raw_bytes;
+    }
+    for (kind, (stored, raw)) in by_kind {
+        println!("{kind}_stored_payload_bytes={stored}");
+        println!("{kind}_raw_payload_bytes={raw}");
+    }
+}
+
+/// Nearest-rank percentile of sorted nanosecond samples; empty runs have no latency.
+fn percentile_ns(sorted_samples: &[u64], percentile: usize) -> Option<u64> {
+    assert!((1..=100).contains(&percentile));
+    if sorted_samples.is_empty() {
+        return None;
+    }
+    let rank = sorted_samples
+        .len()
+        .saturating_mul(percentile)
+        .div_ceil(100);
+    Some(sorted_samples[rank - 1])
 }
 
 fn summarize_memory(source_points: u64, stats: &[BlockStorageStats]) {
@@ -354,5 +434,45 @@ fn ratio(numerator: u64, denominator: u64) -> f64 {
         0.0
     } else {
         numerator as f64 / denominator as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CountingReader, percentile_ns};
+    use std::{
+        io::{Cursor, Read, Seek, SeekFrom},
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+    };
+
+    #[test]
+    fn percentiles_use_nearest_rank_and_handle_empty_or_single_runs() {
+        assert_eq!(percentile_ns(&[], 95), None);
+        assert_eq!(percentile_ns(&[17], 50), Some(17));
+        assert_eq!(percentile_ns(&[17], 95), Some(17));
+        let samples: Vec<u64> = (1..=100).collect();
+        assert_eq!(percentile_ns(&samples, 50), Some(50));
+        assert_eq!(percentile_ns(&samples, 95), Some(95));
+        assert_eq!(percentile_ns(&[10, 20, 30], 50), Some(20));
+        assert_eq!(percentile_ns(&[10, 20, 30], 95), Some(30));
+    }
+
+    #[test]
+    fn counters_count_actual_reads_and_rereads_without_counting_seeks() {
+        let first_count = Arc::new(AtomicU64::new(0));
+        let second_count = Arc::new(AtomicU64::new(0));
+        let mut first = CountingReader::new(Cursor::new(vec![1, 2, 3]), Arc::clone(&first_count));
+        let mut second = CountingReader::new(Cursor::new(vec![4]), Arc::clone(&second_count));
+        let mut buffer = [0; 8];
+        assert_eq!(first.read(&mut buffer).unwrap(), 3);
+        first.seek(SeekFrom::Start(1)).unwrap();
+        assert_eq!(first.read(&mut buffer).unwrap(), 2);
+        assert_eq!(first.read(&mut buffer).unwrap(), 0);
+        assert_eq!(second.read(&mut buffer).unwrap(), 1);
+        assert_eq!(first_count.load(Ordering::Relaxed), 5);
+        assert_eq!(second_count.load(Ordering::Relaxed), 1);
     }
 }

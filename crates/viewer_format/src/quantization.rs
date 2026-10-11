@@ -42,22 +42,26 @@ impl QuantizedCoordinates {
 
     /// Reconstructs only this block into the local `f32` render coordinate frame.
     pub fn decode_local(&self) -> Result<Vec<[f32; 3]>, QuantizationError> {
-        self.coordinates
-            .iter()
-            .map(|coordinate| {
-                let decoded = std::array::from_fn(|axis| {
-                    self.transform.origin[axis]
-                        + f64::from(coordinate[axis]) * self.transform.scale[axis]
-                });
-                let local = decoded.map(|value| value as f32);
-                if decoded.iter().any(|value| !value.is_finite())
-                    || local.iter().any(|value| !value.is_finite())
-                {
-                    return Err(QuantizationError::DecodedPositionOutOfRange(decoded));
-                }
-                Ok(local)
-            })
-            .collect()
+        self.decoded_local_positions().collect()
+    }
+
+    /// Visits reconstructed positions without allocating another point-sized buffer.
+    pub(crate) fn decoded_local_positions(
+        &self,
+    ) -> impl Iterator<Item = Result<[f32; 3], QuantizationError>> + '_ {
+        self.coordinates.iter().map(|coordinate| {
+            let decoded = std::array::from_fn(|axis| {
+                self.transform.origin[axis]
+                    + f64::from(coordinate[axis]) * self.transform.scale[axis]
+            });
+            let local = decoded.map(|value| value as f32);
+            if decoded.iter().any(|value| !value.is_finite())
+                || local.iter().any(|value| !value.is_finite())
+            {
+                return Err(QuantizationError::DecodedPositionOutOfRange(decoded));
+            }
+            Ok(local)
+        })
     }
 }
 

@@ -135,8 +135,8 @@ sin perder calidad, determinismo ni mantenibilidad.
 | --- | --- |
 | [`VoxelSceneBuilder`](crates/viewer_render_wgpu/src/voxel_grid.rs) acumula en `BTreeMap` y mantiene una caché de proyección. | El límite de vóxeles no es un presupuesto de RAM CPU. `finish` consume el mapa mientras construye instancias: hay memoria temporal que medir, pero no demuestra dos colecciones completas duplicadas a la vez. |
 | [`FormatReader`](crates/viewer_format/src/reader.rs) lee el índice completo y construye directorios, bounds y jerarquía. | Los 256 MiB predeterminados limitan el índice serializado, no la memoria de las estructuras decodificadas ni el pico durante apertura. |
-| [`references_block`](crates/viewer_core/src/spatial.rs) recorre nodos/referencias y se usa al cargar bloques. | Es trabajo repetido candidato a lookup indexado; reutilizar un catálogo validado antes de añadir otro mapa residente. |
-| [`prepare_point_block`](crates/viewer_format/src/writer.rs) conserva coordenadas cuantizadas/reconstruidas, un buffer raw reutilizado y payloads preparados. | Medir el pico por bloque y lote de workers; reducir materializaciones antes de aumentar paralelismo. |
+| [`references_block`](crates/viewer_core/src/spatial.rs) se usa al cargar bloques. | Desde el 11-10 usa un catálogo ordenado con búsqueda binaria. Añade 8 B por ID único; aún duplica IDs del directorio y las referencias por nodo. |
+| [`prepare_point_block`](crates/viewer_format/src/writer.rs) conserva fuente, un buffer raw reutilizado y payloads preparados. | Desde el 11-10 reconstruye bounds sin vector intermedio y libera los `u32` tras codificarlos. Falta medir el pico del lote completo de workers. |
 | [`estimated_memory_bytes`](crates/viewer_core/src/dataset.rs) cuenta capacidades de payload, sin sobrecarga del asignador/índice de caché. | Separar presupuesto de payload, memoria residente estimada y RSS observado. Ningún límite individual representa todo el proceso. |
 | [`set_color_mode`](crates/viewer_wasm/src/bindings.rs) vacía bloques al cambiar modo o atributo seleccionado. | Aunque la lectura de columnas es selectiva, la recarga vuelve a leer geometría; medir ese coste antes de separar cachés. |
 
@@ -147,6 +147,30 @@ comprimir; faltan error desde LAS/LAZ original y tamaño final con metadatos/com
 Las mediciones grandes de [Albuera/Majadas](docs/REAL_DATASET_BENCH.md) corresponden a versiones
 anteriores y no validan v5. El [protocolo web](docs/WEB_PERFORMANCE_BENCH.md) sigue sin tabla de
 resultados reales; sus tamaños de ejemplo históricos deben actualizarse al medir la pareja v5.
+
+### Primera implementación de la auditoría — 11-10-2026
+
+- [x] **Lookup de bloques:** catálogo inmutable ordenado/deduplicado en `SpatialHierarchy`, sin
+  nuevo mapa ni cambios de IDs persistentes. Pruebas de equivalencia con el escaneo, IDs `u64`
+  extremos, referencias compartidas/duplicadas y semánticas `Replacement`/`Additive`. El catálogo
+  también sirve a fuentes sin `FormatReader`; su coste residente sigue siendo un compromiso explícito.
+- [x] **Temporales del writer:** eliminar el vector reconstruido de 12 B/punto y liberar el vector
+  cuantizado de otros 12 B/punto antes de comprimir. Conservar aritmética, error y bounds de fuente
+  más reconstrucción. Ambas muestras Outer Banks producen la misma pareja byte a byte antes/después.
+- [x] **Instrumentación nativa v5:** separar apertura del índice y asociación de atributos, exponer
+  bytes del índice serializado, contar I/O de cada archivo y desglosar payloads; latencias por bloque
+  p50/p95 en lectura secuencial con CRC/decodificación. `open_index_ms` conserva el total anterior;
+  los nuevos campos distinguen ambas fases. No mide lectura aleatoria, navegador ni GPU.
+- [x] **Primera medición:** tres pares de conversiones pequeñas y tres lecturas por modo sobre
+  Belvedere v5; resultados, RSS externo, dispersión, limitaciones y comandos en
+  [mediciones de memoria y lectura v5](docs/V5_MEMORY_BENCH.md). El benchmark sintético de lookup
+  compara nueve pares alternados; su resultado no predice una aceleración del visor completo.
+
+Validación: **215 tests del workspace y 2 del ejemplo de benchmark**, formato, Clippy nativo y
+WASM. Comprobación de igualdad de archivos y de que cada modo lee solo los payloads solicitados.
+La base completa sigue abierta: faltan conversiones grandes repetidas con temporales/I/O por fase,
+presupuesto CPU de voxelización y mediciones reales Chrome/Firefox. El siguiente cambio prioritario
+es medir y acotar acumuladores/caché de proyección/instancias CPU con una política al agotar memoria.
 
 ### Orden de trabajo y aceptación
 

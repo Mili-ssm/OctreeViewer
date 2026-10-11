@@ -100,6 +100,50 @@ fn prepares_blocks_independently_and_appends_them_to_v5_writer() {
 }
 
 #[test]
+fn streamed_bounds_match_materialized_source_and_render_positions() {
+    let origins = [[0.0; 3], [1.0e12, -2.0e12, 10.0]];
+    let cases = [
+        Vec::new(),
+        vec![[0.0, 1.0, -2.0]; 3],
+        vec![[0.1, 0.7, -0.1]],
+        vec![[0.1, 0.7, -0.1], [1.9, -0.7, -1.9], [0.3, 0.0, 0.3]],
+    ];
+    for origin in origins {
+        for source in &cases {
+            let quantized = crate::quantize_local_positions(source, 0.001).unwrap();
+            let decoded = quantized.decode_local().unwrap();
+            let bounds = SpatialBounds::new([-3.0e12; 3], [3.0e12; 3]).unwrap();
+            let node = SpatialNode::new(NodeId::new(0), None, 0, bounds, 0, 0.0, vec![]).unwrap();
+            let metadata = DatasetMetadata::new(
+                CoordinateFrame::new(origin).unwrap(),
+                SpatialHierarchy::new(vec![node], vec![], None).unwrap(),
+            );
+            // Reference the former materialized path, including source positions that
+            // can lie outside rounded f32 endpoints and decoded positions that expand them.
+            let mut expected = super::BoundsAccumulator::empty();
+            for local in source {
+                expected.include_point(std::array::from_fn(|axis| origin[axis] + local[axis]));
+            }
+            for local in decoded {
+                expected.include_point(std::array::from_fn(|axis| {
+                    origin[axis] + f64::from(local[axis])
+                }));
+            }
+            let expected = if expected.is_empty() {
+                None
+            } else {
+                Some(expected.to_bounds().unwrap())
+            };
+            assert_eq!(
+                super::block_world_bounds(source, &quantized, &metadata).unwrap(),
+                expected,
+                "source={source:?} origin={origin:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn refuses_to_finalize_when_a_referenced_block_is_missing() {
     let writer = FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
 

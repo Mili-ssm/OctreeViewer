@@ -361,7 +361,9 @@ pub fn prepare_point_block(
     }
     let quantized =
         quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
-    let decoded = quantized.decode_local()?;
+    let world_bounds = block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
+    let transform = quantized.transform();
+    let quantization_error = quantized.max_error();
     let geometry_length = usize::try_from(
         (point_count as u64)
             .checked_mul(12)
@@ -369,6 +371,9 @@ pub fn prepare_point_block(
     )
     .map_err(|_| FormatError::BlockSizeOverflow)?;
     let mut raw = encode_geometry(&quantized, geometry_length)?;
+    // The u32 coordinates have been encoded; retain only their scalar transform/error
+    // while compressing payloads, rather than another 12 bytes per point.
+    drop(quantized);
     let mut bytes = Vec::new();
     let mut payloads = Vec::new();
     payloads
@@ -389,13 +394,12 @@ pub fn prepare_point_block(
         encode_values(column.values(), &mut raw);
         append_payload(&raw, &mut bytes, &mut payloads)?;
     }
-    let world_bounds = block_world_bounds(block.positions_local(), &decoded, metadata.dataset())?;
     Ok(PreparedPointBlock {
         id: block.id(),
         point_count: u64::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?,
-        quantization_error: quantized.max_error(),
-        origin: quantized.transform().origin(),
-        scale: quantized.transform().scale(),
+        quantization_error,
+        origin: transform.origin(),
+        scale: transform.scale(),
         world_bounds,
         bytes,
         payloads,
@@ -562,7 +566,7 @@ fn encode_values(values: &AttributeValues, output: &mut Vec<u8>) {
 
 fn block_world_bounds(
     source_positions: &[[f64; 3]],
-    decoded_local: &[[f32; 3]],
+    quantized: &crate::QuantizedCoordinates,
     metadata: &DatasetMetadata,
 ) -> Result<Option<SpatialBounds>, FormatError> {
     let origin = metadata.coordinate_frame().origin();
@@ -570,7 +574,8 @@ fn block_world_bounds(
     for local in source_positions {
         bounds.include_point(std::array::from_fn(|axis| origin[axis] + local[axis]));
     }
-    for local in decoded_local {
+    for local in quantized.decoded_local_positions() {
+        let local = local?;
         bounds.include_point(std::array::from_fn(|axis| {
             origin[axis] + f64::from(local[axis])
         }));

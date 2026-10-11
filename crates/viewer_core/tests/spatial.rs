@@ -198,6 +198,65 @@ fn validates_node_identity_parent_levels_and_containment() {
 }
 
 #[test]
+fn hierarchy_block_catalog_is_sorted_unique_and_matches_node_scan_for_both_semantics() {
+    use viewer_core::HierarchySemantics;
+
+    for semantics in [
+        HierarchySemantics::Replacement,
+        HierarchySemantics::Additive,
+    ] {
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                node(9, Some(1), 1, [0.0; 3], [0.5; 3], 0, &[u64::MAX, 7, 7]),
+                node(1, None, 0, [0.0; 3], [1.0; 3], 0, &[42, u64::MAX]),
+                node(5, Some(1), 1, [0.5; 3], [1.0; 3], 0, &[7, 1]),
+            ],
+            Vec::new(),
+            None,
+            semantics,
+        )
+        .unwrap();
+
+        let scanned = hierarchy
+            .query(bounds([0.0; 3], [1.0; 3]))
+            .flat_map(|item| item.blocks().iter().copied())
+            .collect::<std::collections::BTreeSet<_>>();
+        let catalog = hierarchy.block_ids();
+        assert_eq!(
+            catalog.to_vec(),
+            scanned.iter().copied().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            catalog,
+            [
+                BlockId::new(1),
+                BlockId::new(7),
+                BlockId::new(42),
+                BlockId::new(u64::MAX)
+            ]
+        );
+        for id in [1, 7, 42, u64::MAX] {
+            assert!(hierarchy.references_block(BlockId::new(id)));
+        }
+        for id in [0, 8, 43, u64::MAX - 1] {
+            assert!(!hierarchy.references_block(BlockId::new(id)));
+        }
+    }
+}
+
+#[test]
+fn hierarchy_block_catalog_is_empty_when_no_node_references_blocks() {
+    let hierarchy = SpatialHierarchy::new(
+        vec![node(1, None, 0, [0.0; 3], [1.0; 3], 0, &[])],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    assert!(hierarchy.block_ids().is_empty());
+    assert!(!hierarchy.references_block(BlockId::new(u64::MAX)));
+}
+
+#[test]
 fn validates_spatial_numeric_values_and_preserves_large_world_coordinates() {
     assert!(matches!(
         SpatialBounds::new([0.0, f64::NAN, 0.0], [1.0; 3]),
