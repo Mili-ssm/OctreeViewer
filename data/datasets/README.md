@@ -46,6 +46,10 @@ La [base v5 repetida de Majadas del 12-10-2026](../../docs/V5_MEMORY_BENCH.md#co
 usa tres procesos `perf` con un worker, fuente verificada/calentada, tiempos por fase,
 RSS/temporales observados e I/O separado. No compara directamente esta ejecución `release`.
 
+La [base v5 repetida de Albuera del 12-10-2026](../../docs/V5_MEMORY_BENCH.md#conversión-v5-de-albuera-uav--12-10-2026)
+añade tres conversiones `perf` con MD5 previo, tiempos por fase, RSS, temporales, I/O y SHA-256
+de ambas salidas. Tampoco es una comparación con los tiempos históricos de esta tabla.
+
 Albuera además cuenta con renders nativos a **1920×1080** en [`artifacts/sensoforest/albuera-v5-1080p`](../../artifacts/sensoforest/albuera-v5-1080p/):
 1, 2 y 4 px, con PNG y JSON de lectura/proyección GPU. Se generaron sobre llvmpipe/Vulkan; los
 tiempos incluyen selección LOD, lectura y voxelización y no representan rendimiento de GPU dedicada.

@@ -387,6 +387,84 @@ python3 crates/viewer_convert/benchmarks/profile_conversion.py \
 # Repetir calentamiento y conversión con directorios nuevos run-2 y run-3.
 ```
 
+## Conversión v5 de Albuera UAV — 12-10-2026
+
+Base `d2af4b3` (misma implementación que `fe230af`), perfil `perf` sin `RUSTFLAGS`, un worker,
+divisiones 2, 262.144 puntos/bloque, error máximo 0,01 y presupuesto estimado 512 MiB.
+Mismo Linux/Rust/equipo que Majadas;
+fuente local de **4.305.484.789 B** y **508.809.556 puntos**. Tres procesos seriales, fuente
+leída y verificada mediante MD5 `71ff22c046d6eb83c371791f680bea13` antes de cada uno.
+No se vacía caché ni se garantiza residencia; frecuencia CPU, energía y writeback sin fijar.
+
+El ejecutable de referencia permanece fijo durante las tres medidas, sin compilaciones ni
+otros benchmarks concurrentes. La preparación del cambio de liberación de spools en fuentes
+no modifica ese binario ni estos resultados. Muestreo externo cada 100 ms, intervalos de
+notificaciones y contadores Linux con las mismas definiciones/limitaciones descritas arriba.
+Logs, parejas, muestras, entorno y resumen local: `target/audit-v5-albuera-2026-10-12/`.
+
+Las tres conversiones finalizaron con código cero, validación profunda y sin errores de
+observación. Mediana y mínimo–máximo entre procesos:
+
+| Intervalo | Tiempo (s) |
+| --- | ---: |
+| Total hasta retorno, antes del resumen | 400,158 [397,782–453,562] |
+| PlanningMetadata | 0,050 [0,048–0,050] |
+| PlanningSpatialIndex | 75,004 [74,405–78,685] |
+| BuildingSpatialHierarchy | 179,764 [178,552–213,306] |
+| ReadingAndWritingBlocks | 91,984 [91,741–113,756] |
+| ValidatingOutput | 50,579 [50,110–50,966] |
+| PublishingOutput | 0,003 [0,003–0,003] |
+| Complete hasta retorno | 0,852 [0,774–0,865] |
+
+| Métrica del proceso | Mediana [mínimo–máximo] |
+| --- | ---: |
+| RSS pico muestreado (MiB) | 101,246 [101,238–106,449] |
+| VmHWM máximo observado (MiB) | 101,246 [101,238–106,449] |
+| Temporales: pico lógico muestreado (B) | 34.537.564.482 [igual en las tres] |
+| Temporales: crecimiento positivo observado (B) | 143.983.844.793 [143.609.752.071–144.096.277.837] |
+| `conversion_io_rchar` (B) | 152.901.387.041 [152.901.387.026–152.901.387.051] |
+| `conversion_io_wchar` (B) | 148.595.885.658 [igual en las tres] |
+| `conversion_io_read_bytes` (B) | 57.192.673.280 [50.362.712.064–62.517.932.032] |
+| `conversion_io_write_bytes` (B) | 148.679.835.648 [148.670.361.600–148.696.592.384] |
+| `conversion_io_cancelled_write_bytes` (B) | 0 [igual en las tres] |
+
+RSS/VmHWM incluyen el resumen posterior; tiempos e I/O de conversión lo excluyen. La estimación
+controlada es **71.020.864 B**; no es RSS ni su límite garantizado.
+El pico temporal cuenta candidatos aún no publicados junto a spools, no espacio físico de disco;
+el crecimiento muestreado no sustituye I/O exacto. Los contadores lógicos medianos equivalen a
+**35,51× lectura / 34,51× escritura** de la fuente comprimida;
+la variación de almacenamiento refleja caché/writeback y no se interpreta como tráfico físico.
+
+Invariantes comunes: **508.809.556 puntos fuente**, **508.989.347 filas con LOD**,
+**8.437 bloques**, índice serializado **5.071.052 B** contado una vez.
+Geometría: **6.105.617.040 B**; atributos: **7.561.226.723 B**;
+pareja: **13.666.843.763 B**, ratio **3,174287×** la fuente.
+SHA-256 iguales para cada archivo en las tres repeticiones:
+
+```text
+oct      8bca49854c48af8a976e6e37b3c569f047dcd2d1f6c6b5d57f89356f22b3be02
+octattrs 7b16a940b28eb57350dd3021f1ecaf1505947f8570b9abc48fa711707246abed
+```
+
+Esta configuración tampoco alcanza <5 min ni pareja ≤3× fuente. El mayor intervalo es construir
+la jerarquía; estos tiempos no separan CPU de I/O. La siguiente mejora local evaluará liberar spools ya
+consumidos durante escritura, con una comparación independiente: esta base no demuestra su efecto.
+Siguen pendientes pico conjunto por fase, navegador/OPFS y mediciones de presentación GPU.
+
+Validación: MD5 antes de cada proceso, informes completos, invariantes y SHA-256 de ambas salidas.
+`summary.json` conserva datos agregados y crudos; `environment.json`, revisión, opciones, entorno y
+hash del ejecutable. Este registro no cambia la implementación medida.
+
+```sh
+cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline
+# Antes de CADA repetición, comprobar el MD5 indicado arriba:
+md5sum data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz \
+  target/albuera-v5-repro/run-1 --workers 1 --divisions 2 --interval-ms 100
+# Repetir con directorios nuevos run-2 y run-3.
+```
+
 ## Lectura de bloques en orden aleatorio, caché caliente
 
 Entrega sobre `90202f1`: el ejemplo existente añade `read-random INPUT.oct SEED MODE [INDEX]`.

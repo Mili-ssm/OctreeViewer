@@ -153,7 +153,7 @@ en 19 de 1.343 bloques, con error máximo incremental 0,034913176. Descarta `u16
 ese criterio, no un esquema con fallback a `u32`. Los 490.227.702 B de ahorro son teóricos y sin
 comprimir; faltan error desde LAS/LAZ original y tamaño final con metadatos/compresión.
 Las mediciones históricas de [Albuera/Majadas](docs/REAL_DATASET_BENCH.md) corresponden a versiones
-anteriores y no validan v5; la base v5 repetida de Majadas se documenta más abajo.
+anteriores y no validan v5; las bases v5 repetidas de Majadas y Albuera se documentan más abajo.
 El [protocolo web](docs/WEB_PERFORMANCE_BENCH.md) sigue sin tabla de
 resultados reales; sus tamaños de ejemplo históricos deben actualizarse al medir la pareja v5.
 
@@ -285,6 +285,16 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   [Método, dispersión, I/O y siguientes preguntas](docs/V5_MEMORY_BENCH.md#conversión-v5-de-majadas-tls--12-10-2026).
   Priorizar perfilar jerarquía/spools; no se ha aislado CPU frente a I/O ni demostrado una mejora.
 
+### Base nativa de Albuera UAV — 12-10-2026
+
+- [x] Tres conversiones v5 `perf`, un worker/divisiones 2, MD5 previo y fuente leída antes de
+  cada proceso. Mediana **400,158 [397,782–453,562] s**, jerarquía **179,764 s**.
+  RSS pico observado **101,246 MiB**;
+  temporales máximos muestreados **34.537.564.482 B**.
+- [x] Validación profunda e igualdad SHA-256 de ambas salidas: **13.666.843.763 B**,
+  **3,174287×** fuente. Tampoco cumple <5 min ni ≤3× en esta configuración.
+  [Método, dispersión e I/O](docs/V5_MEMORY_BENCH.md#conversión-v5-de-albuera-uav--12-10-2026).
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
@@ -297,9 +307,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    declarando qué memoria no se puede observar. Cierre: resultados reproducibles y cuello de botella
    identificado; las métricas todavía no instrumentadas son parte de esta tarea.
    Avance: perfilador nativo Linux `convert-profile` y muestreo externo de RSS/temporales;
-   tres conversiones por dataset con tiempos por fase de Belvedere y Majadas en
+   tres conversiones por dataset con tiempos por fase de Belvedere, Majadas y Albuera en
    [mediciones v5](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
-   Faltan repeticiones de Albuera, pico conjunto por fase y host web.
+   Faltan pico conjunto por fase y host web.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
