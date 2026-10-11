@@ -295,6 +295,17 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   **3,174287×** fuente. Tampoco cumple <5 min ni ≤3× en esta configuración.
   [Método, dispersión e I/O](docs/V5_MEMORY_BENCH.md#conversión-v5-de-albuera-uav--12-10-2026).
 
+### Temporales consumidos del conversor — 12-10-2026
+
+- [x] Liberar hojas/LOD después de escribir su último rango, tras terminar las lecturas del lote.
+  Conservar el spool durable del checkpoint y la recuperación tras cancelación.
+- [x] Tres pares alternados de Belvedere v5: pico temporal lógico muestreado de
+  **4.941.891.420 B** a **4.647.826.988 B** (**6,0 %** menos en la mediana).
+  Ambas salidas tienen SHA-256 iguales en los seis procesos. No se extrapola a fuentes mayores.
+  [Método, tiempos, RSS e I/O](docs/V5_MEMORY_BENCH.md#liberación-de-spools-consumidos--12-10-2026).
+- [x] Tests de rangos compartidos/LOD, workers y reanudación; workspace, Clippy nativo/WASM y formato.
+  Pendiente medir esta mejora en Albuera/Majadas y perfilar el pico de planificación.
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
@@ -322,6 +333,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
    semánticamente equivalente, RAM/temporales/I/O y tiempo por fase comparados, recuperación intacta.
+   Avance: liberación de spools consumidos validada y comparada en Belvedere; pendiente medir
+   Albuera/Majadas y reducir el pico de planificación.
    Separar el coste de validación; no sustituir la comprobación profunda por CRC sin demostrar qué
    corrupción, errores de descompresión y cuantización detectaría cada modo.
 4. [ ] **Representaciones experimentales — formato y render.** Un cambio por experimento:

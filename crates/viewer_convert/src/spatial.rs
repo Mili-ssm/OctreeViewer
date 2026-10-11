@@ -104,11 +104,21 @@ pub(crate) struct PlannedBlock {
     point_count: usize,
     layout: SpoolLayout,
     pub is_source_points: bool,
+    // Blocks sharing a spool stay in construction order when streamed. Only the
+    // last range may release it, after all reads in its worker batch have joined.
+    final_block_in_spool: bool,
 }
 
 impl PlannedBlock {
     pub fn point_count(&self) -> usize {
         self.point_count
+    }
+
+    pub fn release_spool_after_write(&self) -> Result<(), ConvertError> {
+        if self.final_block_in_spool {
+            fs::remove_file(&self.path)?;
+        }
+        Ok(())
     }
 
     pub fn read(&self, frame: super::CoordinateFrame) -> Result<SourcePointBlock, ConvertError> {
@@ -684,6 +694,7 @@ impl SpatialBuilder<'_> {
                 point_count: sample_count,
                 layout: self.layout.lod(),
                 is_source_points: false,
+                final_block_in_spool: true,
             });
             vec![block_id]
         } else {
@@ -820,6 +831,7 @@ impl SpatialBuilder<'_> {
                 point_count: sample_count,
                 layout: self.layout.lod(),
                 is_source_points: false,
+                final_block_in_spool: true,
             });
             vec![block_id]
         } else {
@@ -1128,6 +1140,7 @@ impl SpatialBuilder<'_> {
                 point_count: count,
                 layout: self.layout,
                 is_source_points: true,
+                final_block_in_spool: offset_points + count as u64 == source_count,
             });
             offset_points += count as u64;
         }
@@ -1943,6 +1956,7 @@ mod partition_tests {
                     point_count: 1,
                     layout,
                     is_source_points: layout.source_coordinates,
+                    final_block_in_spool: true,
                 }
                 .read(source.frame)
                 .unwrap();

@@ -729,6 +729,8 @@ fn stream_blocks(
             .collect::<Result<Vec<_>, _>>()?;
         for (block, prepared) in batch.iter().zip(prepared) {
             writer.write_prepared_block(prepared)?;
+            // The whole batch has finished reading before any shared spool is removed.
+            block.release_spool_after_write()?;
             if block.is_source_points {
                 processed += block.point_count() as u64;
             }
@@ -1247,6 +1249,39 @@ mod tests {
         }
     }
 
+    fn coincident_fixture(path: &std::path::Path) {
+        let header = Builder::from((1, 2)).into_header().unwrap();
+        let mut writer = Writer::from_path(path, header).unwrap();
+        for intensity in [1, 2, 3, 4, 5] {
+            writer
+                .write_point(Point {
+                    x: 10.0,
+                    y: 20.0,
+                    z: 30.0,
+                    intensity,
+                    ..Point::default()
+                })
+                .unwrap();
+        }
+    }
+
+    fn spool_file_count(directory: &std::path::Path) -> usize {
+        fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    spool_file_count(&path)
+                } else {
+                    usize::from(matches!(
+                        path.extension().and_then(|extension| extension.to_str()),
+                        Some("spool" | "lod")
+                    ))
+                }
+            })
+            .sum()
+    }
+
     fn extended_fixture(path: &std::path::Path) {
         let mut builder = Builder::from((1, 4));
         builder.point_format = Format::new(8).unwrap();
@@ -1645,20 +1680,7 @@ mod tests {
         let dir = test_dir();
         let input = dir.join("identical.las");
         let output = dir.join("result.oct");
-        let header = Builder::from((1, 2)).into_header().unwrap();
-        let mut writer = Writer::from_path(&input, header).unwrap();
-        for intensity in [1, 2, 3, 4, 5] {
-            writer
-                .write_point(Point {
-                    x: 10.0,
-                    y: 20.0,
-                    z: 30.0,
-                    intensity,
-                    ..Point::default()
-                })
-                .unwrap();
-        }
-        drop(writer);
+        coincident_fixture(&input);
 
         let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
         assert_eq!(report.point_count, 5);
@@ -1686,6 +1708,44 @@ mod tests {
         intensities.sort_unstable();
         assert_eq!(intensities, [1, 2, 3, 4, 5]);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn shared_leaf_and_lod_spools_are_released_before_validation() {
+        for shared_spool in [true, false] {
+            for workers in [1, 2, 3] {
+                let dir = test_dir();
+                let input = dir.join("source.las");
+                let output = dir.join("result.oct");
+                if shared_spool {
+                    coincident_fixture(&input);
+                } else {
+                    fixture(&input, false, true, 5);
+                }
+                let options = ConvertOptions::new(2, 0.01)
+                    .unwrap()
+                    .with_spatial_workers(workers)
+                    .unwrap();
+                let mut validated = false;
+                convert_file_with_progress(&input, &output, options, |progress| {
+                    if shared_spool && progress.stage == ConversionStage::ReadingAndWritingBlocks {
+                        assert_eq!(
+                            spool_file_count(&dir),
+                            usize::from(progress.points_processed < 5),
+                            "a shared spool must survive until its final range is written"
+                        );
+                    }
+                    if progress.stage == ConversionStage::ValidatingOutput {
+                        validated = true;
+                        assert_eq!(spool_file_count(&dir), 0);
+                    }
+                    true
+                })
+                .unwrap();
+                assert!(validated);
+                fs::remove_dir_all(dir).unwrap();
+            }
+        }
     }
 
     #[test]
@@ -1805,21 +1865,37 @@ mod tests {
         let mut checkpoint_dir = output.as_os_str().to_owned();
         checkpoint_dir.push(".checkpoint");
         let checkpoint_dir = PathBuf::from(checkpoint_dir);
-        fixture(&input, false, false, 5);
+        coincident_fixture(&input);
         let options = ConvertOptions::new(2, 0.01)
             .unwrap()
             .with_spatial_workers(2)
             .unwrap();
 
+        let mut checkpoint_source = None;
         let cancelled = convert_file_with_checkpoint(
             &input,
             &output,
             options,
             CheckpointMode::Create,
-            |event| event.stage != ConversionStage::BuildingSpatialHierarchy,
+            |event| {
+                if event.stage == ConversionStage::ReadingAndWritingBlocks {
+                    checkpoint_source.get_or_insert_with(|| {
+                        fs::read(checkpoint_dir.join("source.spool")).unwrap()
+                    });
+                    if event.points_processed == 5 {
+                        assert_eq!(spool_file_count(&checkpoint_dir.join("plan")), 0);
+                        return false;
+                    }
+                }
+                true
+            },
         );
         assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
         assert!(checkpoint_dir.join("source.spool").is_file());
+        assert_eq!(
+            fs::read(checkpoint_dir.join("source.spool")).unwrap(),
+            checkpoint_source.expect("cancelled after consuming some planned spools")
+        );
         assert!(!output.exists());
 
         let changed_options = ConvertOptions::new(3, 0.01).unwrap();
@@ -1854,7 +1930,11 @@ mod tests {
         assert!(!checkpoint_dir.exists());
 
         convert_file(&input, &expected, options).unwrap();
-        assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
+        assert_eq!(fs::read(&output).unwrap(), fs::read(&expected).unwrap());
+        assert_eq!(
+            fs::read(output_attributes_path(&output)).unwrap(),
+            fs::read(output_attributes_path(&expected)).unwrap()
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -465,6 +465,80 @@ python3 crates/viewer_convert/benchmarks/profile_conversion.py \
 # Repetir con directorios nuevos run-2 y run-3.
 ```
 
+## Liberación de spools consumidos — 12-10-2026
+
+Comparación con `85fd324` (misma implementación nativa que `fe230af`): se elimina cada spool
+hoja/LOD después de escribir su último rango, en lugar de conservarlo hasta destruir el plan.
+Los rangos compartidos mantienen el orden de construcción; primero terminan todas las lecturas
+paralelas del lote, después se escribe y libera. No añade mapas ni contadores globales de archivos.
+Un fallo al eliminar aborta antes de publicar; la limpieza de workspace sigue cubriendo restos.
+El spool fuente durable del checkpoint es independiente del enlace desechable del plan: no se borra.
+Reanudar reconstruye el plan, incluidos sus spools.
+
+Mismo Linux/Rust/equipo, perfil `perf` sin `RUSTFLAGS`, Belvedere local, un worker/divisiones 2,
+262.144 puntos/bloque, error 0,01, presupuesto estimado 512 MiB, sin checkpoint.
+Tres pares seriales con orden base/candidato, candidato/base, base/candidato. Antes de **cada**
+proceso se lee la fuente completa y se comprueba MD5 `197534e677ae2521a97a114bef005ec9`.
+No se vacía caché ni se garantiza residencia; frecuencia CPU, energía y writeback sin fijar.
+Binarios copiados antes de las medidas y hashes registrados; sin compilaciones ni otros benchmarks
+concurrentes. Muestreo externo a 100 ms y definiciones de fases/RSS/temporales/I/O anteriores.
+Logs, binarios, patch, entorno y resumen crudo/agregado: `target/audit-spool-release-2026-10-12/`.
+Mediana y rango mínimo–máximo de tres procesos **por variante**:
+
+| Métrica | Base | Liberación temprana |
+| --- | ---: | ---: |
+| Total conversión (s) | 50,723 [49,946–50,734] | 50,672 [49,631–53,568] |
+| Planificación espacial (s) | 10,959 [10,846–11,031] | 11,176 [10,812–12,707] |
+| Jerarquía (s) | 20,760 [20,121–20,785] | 20,622 [20,195–23,182] |
+| Lectura/escritura (s) | 12,500 [12,489–12,556] | 12,314 [11,459–12,530] |
+| Validación (s) | 6,279 [6,224–6,317] | 6,261 [6,166–6,295] |
+| Complete hasta retorno (s) | 0,121 [0,113–0,126] | 0,001 [0,001–0,001] |
+| RSS pico muestreado (MiB) | 92,898 [92,246–93,180] | 94,582 [93,500–94,867] |
+| VmHWM máximo observado (MiB) | 92,898 [92,246–93,180] | 94,582 [93,500–94,867] |
+| Temporales: pico lógico muestreado (B) | 4.941.891.420 [4.941.891.420–4.941.891.420] | 4.647.826.988 [4.645.646.520–4.671.709.980] |
+| Temporales: crecimiento positivo observado (B) | 17.176.521.262 [17.141.706.233–17.246.082.072] | 17.256.957.166 [17.096.447.692–17.281.479.186] |
+| `conversion_io_rchar` (B) | 18.375.221.691 [18.375.221.686–18.375.221.709] | 18.375.221.704 [18.375.221.696–18.375.221.711] |
+| `conversion_io_wchar` (B) | 17.756.806.959 [17.756.806.959–17.756.806.959] | 17.756.806.959 [17.756.806.959–17.756.806.959] |
+| `conversion_io_read_bytes` (B) | 5.556.133.888 [4.908.154.880–6.082.396.160] | 4.246.888.448 [1.893.785.600–4.754.579.456] |
+| `conversion_io_write_bytes` (B) | 17.772.195.840 [17.770.496.000–17.775.779.840] | 17.772.691.456 [17.769.046.016–17.773.826.048] |
+| `conversion_io_cancelled_write_bytes` (B) | 0 [0–0] | 0 [0–0] |
+
+Reducción del pico temporal lógico mediano observado: **6,0 %**. En las tres muestras candidatas, el máximo
+se observa dentro del intervalo de construcción de jerarquía, antes de consumir los bloques;
+no se extrapola a Albuera/Majadas. Los tiempos se solapan y no prueban una aceleración general.
+El RSS mediano observado sube de 92,898 a 94,582 MiB; no se concluye ahorro de RAM ni se ha
+aislado la causa de esa diferencia.
+Liberar spools no reduce los bytes lógicos que se escribieron para construirlos; crecimiento
+muestreado e I/O Linux se presentan separados, sin tratarlos como ocupación física del dispositivo.
+
+Los seis procesos finalizan con validación profunda e informes completos sin errores de observación.
+Invariantes: 81.682.329 puntos fuente, 81.706.211 filas con LOD, 1.343 bloques, índice 807.558 B;
+geometría 981.063.326 B + atributos 610.586.859 B = **1.591.650.185 B**. SHA-256 comunes a las seis:
+
+```text
+oct      2faa89194c199dba65955d0442b129d0c5f339a1f8ddf89d1181920f51f82d0d
+octattrs 013b8fe420ba82aee1775f08800d0c2dcd94796dc8f096b0824e4d80310fa294
+```
+
+Tests: spools compartidos conservados hasta su último rango con 1/2/3 workers; hojas y LOD ausentes
+antes de validar; cancelación tras consumir el plan conserva bytes del spool fuente del checkpoint,
+reanuda sin releer LAS y produce ambas salidas idénticas a conversión fresca. Pasan tests del workspace,
+Clippy nativo con todos los targets, Clippy WASM y formato. Esta medida no valida navegador/OPFS.
+
+Para reproducir, compilar/copiar el ejecutable de `85fd324` como `BASE` y el de esta entrega como
+`CANDIDATE`, ambos con el comando `cargo build --profile perf -p viewer_convert --example real_dataset_bench --offline`.
+Antes de cada proceso verificar/calentar la fuente con `md5sum`; alternar orden en tres pares,
+con directorios nuevos y sin otras compilaciones/benchmarks:
+
+```sh
+md5sum data/datasets/belv_2009_digital-aerial_pcd_copc.laz
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz target/spool-repro/base-1 \
+  --binary BASE --workers 1 --divisions 2 --interval-ms 100
+# Repetir con --binary CANDIDATE, luego CANDIDATE/BASE y BASE/CANDIDATE.
+# Comparar SHA-256 de ambos archivos en las seis salidas.
+```
+
 ## Lectura de bloques en orden aleatorio, caché caliente
 
 Entrega sobre `90202f1`: el ejemplo existente añade `read-random INPUT.oct SEED MODE [INDEX]`.
