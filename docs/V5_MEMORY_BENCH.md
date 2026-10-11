@@ -156,5 +156,39 @@ target/perf/examples/render_dataset data/samples/fs_e430_n4008_18.oct target/vox
 
 Cobertura: frontera exacta de bytes, límite de vóxeles independiente, muchos puntos en una celda,
 caché desactivada/evicción con igual escena, error persistente, celdas no renderizables y overflow
-antes de reservar. Pendiente: calibrar el modelo/RSS conjunto, conversiones v5 grandes repetidas,
+antes de reservar.
+
+## Consultas repetidas de rangos globales
+
+Tercera entrega: `FormatReader::attribute_range` memoriza las últimas 64 consultas de atributo y
+componente en una cola LRU compartida por lectores derivados. Conserva `None`, valida antes del
+lookup y calcula un miss recorriendo los metadatos existentes. Los rangos por nodo permanecen
+intactos: no se modifica v5, no se altera la escala de color ni se leen payloads. El máximo de
+entradas es fijo, independiente del total de atributos/componentes permitido por el esquema.
+
+Comparación con `d8c354a`, compilando **el mismo ejemplo** contra ambas revisiones, perfil `perf`,
+entorno nativo anterior y Belvedere v5 de 1.343 nodos/11 componentes. Tres pares de procesos
+alternando orden, sin compilaciones/checks concurrentes. Cada proceso consulta primero todos los
+componentes y luego mide nueve lotes de 100.000 consultas cíclicas al conjunto completo. Se usa
+`black_box` y se comprueba que los checksums de resultados coinciden entre revisiones. La primera
+pasada incluye el cálculo; los lotes miden reutilización con metadatos/caché calientes.
+
+| Ruta | Primera pasada, 11 componentes (µs) | Consultas repetidas (ns/consulta) |
+| --- | ---: | ---: |
+| Escaneo anterior | 105,969 [102,211–155,793] | 9.480,974 [9.321,823–9.665,739] |
+| Caché LRU | 104,596 [103,404–135,655] | 13,945 [13,926–14,118] |
+
+Mediana y mínimo–máximo de tres procesos; cada dato de consultas repetidas es la mediana de
+nueve lotes. Un calentamiento exploratorio con 10.000 consultas mostró más dispersión en el
+candidato (13,901–29,629 ns), por lo que se aumentó el lote. No se concluye una mejora de apertura,
+cambio de color completo, LOD o FPS. El caso medido cabe en la caché; un patrón de más de 64
+componentes puede provocar evicción y repetir escaneos. La sincronización serializa misses entre
+forks y añade coste a índices pequeños; no se midió contención entre hilos. Logs locales ignorados:
+`target/audit-attribute-ranges/repeated-100k/`.
+
+```sh
+cargo run --profile perf -p viewer_format --example attribute_range_bench --offline -- data/datasets/belv_2009_digital-aerial_pcd_copc.oct 100000
+```
+
+Pendiente: calibrar el modelo/RSS conjunto del builder, conversiones v5 grandes repetidas,
 temporales máximos/acumulados e I/O por fase, lectura aleatoria y Chrome/Firefox con WebGPU.

@@ -88,6 +88,99 @@ fn format_bytes() -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+fn empty_attribute_range_bytes() -> Vec<u8> {
+    let origin = [0.0; 3];
+    let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                0,
+                0.0,
+                vec![],
+            )
+            .unwrap(),
+        ],
+        vec![descriptor],
+        Some(0),
+    )
+    .unwrap();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(CoordinateFrame::new(origin).unwrap(), hierarchy),
+        None,
+        None,
+        Vec::new(),
+    )
+    .unwrap();
+    FormatWriter::new(
+        Cursor::new(Vec::new()),
+        metadata,
+        FormatWriterOptions::new(0.001, 1024).unwrap(),
+    )
+    .unwrap()
+    .finish()
+    .unwrap()
+    .into_inner()
+}
+
+fn multicomponent_range_bytes() -> Vec<u8> {
+    const COMPONENTS: usize = 65;
+    let origin = [0.0; 3];
+    let block_id = BlockId::new(42);
+    let descriptor =
+        AttributeDescriptor::new("vector", AttributeDataType::U64, COMPONENTS as u32).unwrap();
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                2,
+                0.0,
+                vec![block_id],
+            )
+            .unwrap(),
+        ],
+        vec![descriptor.clone()],
+        Some(2),
+    )
+    .unwrap();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(CoordinateFrame::new(origin).unwrap(), hierarchy),
+        None,
+        None,
+        Vec::new(),
+    )
+    .unwrap();
+    let mut values = (0..COMPONENTS)
+        .map(|component| component as u64)
+        .chain((0..COMPONENTS).map(|component| component as u64 + 10))
+        .collect::<Vec<_>>();
+    values[0] = u64::MAX - 1;
+    values[COMPONENTS] = u64::MAX;
+    values[1] = 7;
+    values[COMPONENTS + 1] = 11;
+    let column = AttributeColumn::new(descriptor, AttributeValues::U64(values), 2).unwrap();
+    let block = SourcePointBlock::new(
+        block_id,
+        vec![[0.0; 3]; 2],
+        vec![ColorRgb::new(1, 2, 3); 2],
+        vec![column],
+    );
+    let mut writer = FormatWriter::new(
+        Cursor::new(Vec::new()),
+        metadata,
+        FormatWriterOptions::new(0.001, 4096).unwrap(),
+    )
+    .unwrap();
+    writer.write_block(block).unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
 fn additive_format_bytes() -> Vec<u8> {
     let mut writer = FormatWriter::new(
         Cursor::new(Vec::new()),
@@ -135,6 +228,9 @@ fn reads_metadata_and_only_the_requested_point_block() {
 
     let entry = format.blocks[&BlockId::new(42)].clone();
     reads.borrow_mut().clear();
+    assert_eq!(format.attribute_range(0, 0).unwrap(), Some([100.0, 200.0]));
+    assert_eq!(format.attribute_range(0, 0).unwrap(), Some([100.0, 200.0]));
+    assert!(reads.borrow().is_empty());
     let block = format.read_block(BlockId::new(42)).unwrap();
     assert_eq!(block.points().points()[0].position, [0.25, 0.5, 0.0]);
     assert_eq!(block.points().points()[1].color, ColorRgb::new(40, 50, 60));
@@ -151,10 +247,16 @@ fn reads_metadata_and_only_the_requested_point_block() {
 fn forked_readers_share_the_index_and_read_with_independent_cursors() {
     let bytes = format_bytes();
     let reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([100.0, 200.0]));
     let first = reader.fork_reader(Cursor::new(bytes.clone()));
     let second = reader.fork_reader(Cursor::new(bytes));
     assert!(std::sync::Arc::ptr_eq(&first.blocks, &second.blocks));
     assert!(std::sync::Arc::ptr_eq(&first.metadata, &second.metadata));
+    assert!(std::sync::Arc::ptr_eq(
+        &first.attribute_range_cache,
+        &second.attribute_range_cache
+    ));
+    assert_eq!(first.attribute_range(0, 0).unwrap(), Some([100.0, 200.0]));
 
     let (first_points, second_points) = std::thread::scope(|scope| {
         let first = scope.spawn(move || {
@@ -1071,6 +1173,7 @@ fn finite_ranges_are_derived_per_node_and_combined_across_lod() {
         .unwrap();
     let reader = FormatReader::new(writer.finish().unwrap()).unwrap();
     assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([100.0, 600.0]));
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([100.0, 600.0]));
     assert_eq!(
         reader
             .format_metadata()
@@ -1085,4 +1188,53 @@ fn finite_ranges_are_derived_per_node_and_combined_across_lod() {
             .min(),
         &AttributeValues::U16(vec![500])
     );
+}
+
+#[test]
+fn attribute_range_cache_validates_before_lookup_and_memoizes_none() {
+    let reader = FormatReader::new(Cursor::new(format_bytes())).unwrap();
+    assert!(matches!(
+        reader.attribute_range(1, 0),
+        Err(FormatError::UnknownAttribute(1))
+    ));
+    assert!(matches!(
+        reader.attribute_range(0, 1),
+        Err(FormatError::InvalidSchema)
+    ));
+    assert!(reader.attribute_range_cache.lock().unwrap().is_empty());
+
+    let empty = FormatReader::new(Cursor::new(empty_attribute_range_bytes())).unwrap();
+    assert_eq!(empty.attribute_range(0, 0).unwrap(), None);
+    assert_eq!(empty.attribute_range(0, 0).unwrap(), None);
+    let cache = empty.attribute_range_cache.lock().unwrap();
+    assert_eq!(cache.len(), 1);
+    assert_eq!(cache[0].range, None);
+}
+
+#[test]
+fn attribute_range_cache_preserves_multicomponent_integer_ranges_and_evicts_lru() {
+    const COMPONENTS: u32 = 65;
+    let reader = FormatReader::new(Cursor::new(multicomponent_range_bytes())).unwrap();
+    assert_eq!(
+        reader.attribute_range(0, 0).unwrap(),
+        Some([(u64::MAX - 1) as f64, u64::MAX as f64])
+    );
+    assert_eq!(reader.attribute_range(0, 1).unwrap(), Some([7.0, 11.0]));
+
+    for component in 0..64 {
+        reader.attribute_range(0, component).unwrap();
+    }
+    // Refresh component zero so component one becomes the least recently used entry.
+    reader.attribute_range(0, 0).unwrap();
+    reader.attribute_range(0, COMPONENTS - 1).unwrap();
+
+    let cache = reader.attribute_range_cache.lock().unwrap();
+    assert_eq!(cache.len(), 64);
+    assert_eq!(cache.front().unwrap().component, 2);
+    assert!(!cache.iter().any(|entry| entry.component == 1));
+    assert!(cache.iter().any(|entry| entry.component == 0));
+    assert!(cache.iter().any(|entry| entry.component == COMPONENTS - 1));
+    drop(cache);
+    assert_eq!(reader.attribute_range(0, 1).unwrap(), Some([7.0, 11.0]));
+    assert_eq!(reader.attribute_range_cache.lock().unwrap().len(), 64);
 }

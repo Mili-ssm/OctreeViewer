@@ -136,6 +136,7 @@ mantenibilidad; las tareas abiertas se detallan al final de esta sección.
 | [`VoxelSceneBuilder`](crates/viewer_render_wgpu/src/voxel_grid.rs) acumula en `BTreeMap` y mantiene una caché de proyección. | Desde el 11-10, la ruta WASM y el diagnóstico nativo usan un presupuesto CPU estimado de 256 MiB, independiente del límite de vóxeles. No limita RSS ni incluye bloques fuente, escena anterior o GPU. |
 | [`FormatReader`](crates/viewer_format/src/reader.rs) lee el índice completo y construye directorios, bounds y jerarquía. | Los 256 MiB predeterminados limitan el índice serializado, no la memoria de las estructuras decodificadas ni el pico durante apertura. |
 | [`references_block`](crates/viewer_core/src/spatial.rs) se usa al cargar bloques. | Desde el 11-10 usa un catálogo ordenado con búsqueda binaria. Añade 8 B por ID único; aún duplica IDs del directorio y las referencias por nodo. |
+| [`attribute_range`](crates/viewer_format/src/reader.rs) agrega rangos por nodo para colorear con una escala global. | Desde el 11-10 memoriza las últimas 64 consultas de componente, compartidas por lectores derivados. La primera consulta sigue recorriendo metadatos; se conservan los rangos regionales y el formato v5. |
 | [`prepare_point_block`](crates/viewer_format/src/writer.rs) conserva fuente, un buffer raw reutilizado y payloads preparados. | Desde el 11-10 reconstruye bounds sin vector intermedio y libera los `u32` tras codificarlos. Falta medir el pico del lote completo de workers. |
 | [`estimated_memory_bytes`](crates/viewer_core/src/dataset.rs) cuenta capacidades de payload, sin sobrecarga del asignador/índice de caché. | Separar presupuesto de payload, memoria residente estimada y RSS observado. Ningún límite individual representa todo el proceso. |
 | [`set_color_mode`](crates/viewer_wasm/src/bindings.rs) vacía bloques al cambiar modo o atributo seleccionado. | Aunque la lectura de columnas es selectiva, la recarga vuelve a leer geometría; medir ese coste antes de separar cachés. |
@@ -190,6 +191,21 @@ El rechazo con presupuesto cero conserva el PNG previo; es una prueba del diagn�
 no una validación del navegador. Fórmula, alcance y comandos en
 [mediciones v5](docs/V5_MEMORY_BENCH.md#presupuesto-cpu-del-builder-de-vóxeles).
 
+### Rangos globales reutilizables — 11-10-2026
+
+- [x] Caché LRU lazy de 64 consultas `(atributo, componente)`, incluyendo rangos ausentes,
+  compartida por `fork_reader`. Validar índices antes de consultarla; mantener las conversiones
+  numéricas y los rangos por nodo. No precalcula todos los componentes al abrir ni cambia v5.
+- [x] Pruebas de evicción/reconsulta, extremos `u64`, componentes múltiples, rangos agregados,
+  errores, ausencia de I/O y caché compartida. **225 tests del workspace**, formato y Clippy
+  nativo/WASM. Benchmark reproducible en `viewer_format/examples/attribute_range_bench.rs`.
+
+En Belvedere v5, tres pares alternados con 11 componentes y caché caliente: mediana de consultas
+repetidas **9.481 → 14 ns/consulta**. La primera pasada sigue costando aproximadamente 105 µs
+para los 11 componentes. Es un microbenchmark de metadatos, no una medida de cambio de color,
+LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-de-rangos-globales).
+Siguiente investigación: selección LOD con prioridad incremental y el mismo desempate/budget.
+
 ### Orden de trabajo y aceptación
 
 1. [ ] **Base v5 — conversor, lector y host web.** Muestras pequeñas, Belvedere y Albuera/Majadas;
@@ -206,7 +222,8 @@ no una validación del navegador. Fórmula, alcance y comandos en
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
    Si el perfil lo justifica, comparar mapa actual con vector ordenado/reducción o claves compactas;
    índice residente plano; cola de prioridad LOD con el mismo desempate; cachés de geometría/atributo
-   separadas y resumen global de rangos. Cierre: menor coste medido, mismos resultados deterministas,
+   separadas. Lookup y reutilización acotada de rangos globales ya implementados. Cierre: menor coste
+   medido, mismos resultados deterministas,
    cobertura `Replacement`/`Additive`, sin solapamientos ni crecimiento de memoria sin control.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar

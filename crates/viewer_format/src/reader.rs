@@ -1,7 +1,7 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     io::{Read, Seek, SeekFrom},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use viewer_core::{
@@ -24,6 +24,14 @@ const MAX_INDEX_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
 const MAX_BLOCK_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
 const MAX_NODES_DEFAULT: u64 = 2_000_000;
 const MAX_BLOCKS_DEFAULT: u64 = 2_000_000;
+const ATTRIBUTE_RANGE_CACHE_CAPACITY: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CachedAttributeRange {
+    schema_index: u32,
+    component: u32,
+    range: Option<[f64; 2]>,
+}
 
 /// Resource limits checked before reader allocations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +151,7 @@ pub struct FormatReader<R> {
     metadata: Arc<FormatMetadata>,
     blocks: Arc<BTreeMap<BlockId, BlockDirectoryEntry>>,
     block_bounds: Arc<BTreeMap<BlockId, Vec<SpatialBounds>>>,
+    attribute_range_cache: Arc<Mutex<VecDeque<CachedAttributeRange>>>,
     limits: FormatReaderLimits,
 }
 
@@ -222,6 +231,7 @@ impl<R: Read + Seek> FormatReader<R> {
             metadata: Arc::new(metadata),
             blocks: Arc::new(blocks),
             block_bounds: Arc::new(block_bounds),
+            attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
             limits,
         })
     }
@@ -262,6 +272,8 @@ impl<R: Read + Seek> FormatReader<R> {
     }
 
     /// Finite range over all node payloads, used consistently across LOD blocks.
+    /// The last 64 component queries (including absent ranges) are cached across forked readers.
+    /// The first query scans resident metadata; neither hits nor misses read payloads.
     pub fn attribute_range(
         &self,
         schema_index: u32,
@@ -277,6 +289,20 @@ impl<R: Read + Seek> FormatReader<R> {
         if component >= descriptor.component_count() {
             return Err(FormatError::InvalidSchema);
         }
+        let mut cache = self
+            .attribute_range_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(position) = cache
+            .iter()
+            .position(|entry| entry.schema_index == schema_index && entry.component == component)
+        {
+            let entry = cache.remove(position).expect("located range cache entry");
+            let range = entry.range;
+            cache.push_back(entry);
+            return Ok(range);
+        }
+
         let mut result: Option<[f64; 2]> = None;
         for (_, ranges) in self.metadata.node_range_entries() {
             if let Some(range) = ranges
@@ -296,6 +322,14 @@ impl<R: Read + Seek> FormatReader<R> {
                 }
             }
         }
+        if cache.len() == ATTRIBUTE_RANGE_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back(CachedAttributeRange {
+            schema_index,
+            component,
+            range: result,
+        });
         Ok(result)
     }
 
@@ -384,6 +418,7 @@ impl<R: Read + Seek> FormatReader<R> {
             metadata: Arc::clone(&self.metadata),
             blocks: Arc::clone(&self.blocks),
             block_bounds: Arc::clone(&self.block_bounds),
+            attribute_range_cache: Arc::clone(&self.attribute_range_cache),
             limits: self.limits,
         }
     }
