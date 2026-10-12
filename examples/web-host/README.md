@@ -301,3 +301,12 @@ and sidecar loaded; keyboard type-ahead selected Classification, complete 4,096-
 and a 10,000 ms benchmark export succeeded. This validates the standalone load path and that
 selector interaction, not OPFS/conversion, all keyboard controls or Chrome. Evidence:
 `target/offline-package-smoke/classification.json` and `.png`.
+
+El diagnóstico `lodStats().cacheActivity` y `scene.cacheActivity` del export conserva
+contadores de inserciones, evicciones y rechazos durante la vida del dataset, incluso
+tras vaciar payloads al cambiar atributos. Son strings decimales; reabrir reinicia la
+caché. `refinementWork.evictedPendingBlocks` cuenta expulsiones de bloques que el
+plan objetivo vuelve a pedir inmediatamente y se reinicia con los demás contadores
+de trabajo. Puede haber presión sin rechazos: el padre visible está protegido y
+los hijos aún incompletos pueden expulsarse entre sí. Ver el
+[contrato y prueba](../../docs/WEB_PERFORMANCE_BENCH.md#cache-pressure-diagnostics--12-10-2026).

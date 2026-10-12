@@ -26,6 +26,9 @@ self.onmessage = async () => {
         // Both tiny fixtures fit in their metadata-open cache fills, excluded from LOD accounting.
         assert(loaded.refinementWork.rangeReadCalls === 0
             && loaded.refinementWork.rangeReadBytes === "0", "metadata reads leaked into block accounting");
+        assert(loaded.cacheActivity.insertions === "1" && loaded.cacheActivity.evictions === "0",
+            "invalid cache insertion accounting");
+        assert(loaded.refinementWork.evictedPendingBlocks === 0, "unexpected target eviction");
         const repeated = finish();
         const reads = repeated.refinementWork;
         assert(Number.isFinite(reads.rangeReadMs) && reads.rangeReadMs >= 0
@@ -61,6 +64,8 @@ self.onmessage = async () => {
             rejected = String(error).includes("ProtectedEntries");
         }
         assert(rejected, "protected visible payload was replaced");
+        assert(viewer.lodStats().cacheActivity.rejectedProtected === "1",
+            "failed insertion was hidden behind the last scene snapshot");
         const retained = finish(2);
         assert(retained.refinementWork.sceneBuilds === finer.refinementWork.sceneBuilds
             && retained.renderedVoxels === finer.renderedVoxels, "failed replacement changed the scene");
@@ -78,6 +83,8 @@ self.onmessage = async () => {
         const reopened = finish();
         assert(reopened.refinementWork.loadedBlocks === 1 && reopened.refinementWork.sceneBuilds === 3,
             "dataset reopen retained old accounting or scene");
+        assert(reopened.cacheActivity.insertions === "1"
+            && reopened.cacheActivity.rejectedProtected === "0", "reopen retained cache activity");
         assert(reopened.refinementWork.rangeReadCalls === 0
             && reopened.refinementWork.rangeReadBytes === "0", "reopen retained range accounting");
         self.postMessage({ type: "probeResult", passed: true,

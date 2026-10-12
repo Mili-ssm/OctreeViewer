@@ -474,6 +474,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    separadas. Lookup y reutilización acotada de rangos globales ya implementados. Cierre: menor coste
    medido, mismos resultados deterministas,
    cobertura `Replacement`/`Additive`, sin solapamientos ni crecimiento de memoria sin control.
+   Descubrimiento reproducido: con un padre protegido y espacio para un solo hijo, las
+   inserciones alternan hijos pendientes sin rechazos. Prueba de regresión añadida;
+   `cacheActivity` y `refinementWork.evictedPendingBlocks` permiten medirlo en navegador.
+   Pendiente confirmar el caso real Belvedere y definir respuesta explícita sin perder cobertura.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida

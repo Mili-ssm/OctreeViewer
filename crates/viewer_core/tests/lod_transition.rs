@@ -358,3 +358,36 @@ fn multi_block_nodes_are_admitted_as_a_whole_and_empty_cuts_fit_zero_budget() {
     assert_eq!(empty.point_budget(), 0);
     assert!(empty.coverage_complete());
 }
+
+#[test]
+fn protected_fallback_and_one_child_budget_can_starve_replacement_targets() {
+    let hierarchy = hierarchy(HierarchySemantics::Replacement);
+    let root = block(10);
+    let size = root.estimated_memory_bytes();
+    let mut cache = DecodedBlockCache::new(size * 2);
+    assert!(cache.insert(root).cached);
+    let mut planner = LodTransitionPlanner::new();
+    planner.update(&hierarchy, &target(&hierarchy, false, 10), &mut cache);
+    let desired = target(&hierarchy, true, 10);
+
+    for (arriving, pending, evicted) in [(20, 30, None), (30, 20, Some(20)), (20, 30, Some(30))] {
+        let inserted = cache.insert(block(arriving));
+        assert!(inserted.cached);
+        assert_eq!(inserted.rejection, None);
+        assert_eq!(
+            inserted.evicted_blocks,
+            evicted.into_iter().map(BlockId::new).collect::<Vec<_>>()
+        );
+        let plan = planner.update(&hierarchy, &desired, &mut cache);
+        assert_eq!(plan.node_ids(), [NodeId::new(1)]);
+        assert_eq!(plan.block_ids(), [BlockId::new(10)]);
+        assert_eq!(plan.fallback_nodes(), [NodeId::new(1)]);
+        assert_eq!(plan.pending_blocks(), [BlockId::new(pending)]);
+        assert!(plan.coverage_complete());
+        assert!(cache.contains(BlockId::new(10)));
+        assert!(!cache.contains(BlockId::new(pending)));
+    }
+    assert_eq!(cache.stats().rejected_oversize, 0);
+    assert_eq!(cache.stats().rejected_protected, 0);
+    assert_eq!(cache.stats().evictions, 2);
+}

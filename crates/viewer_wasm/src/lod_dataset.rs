@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 use viewer_core::{
-    BlockId, CacheInsertRejection, CoordinateFrame, DatasetMetadata, DecodedBlockCache,
-    LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
-    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
+    BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
+    DatasetMetadata, DecodedBlockCache, LodSelectionConfig, LodSelectionError, LodTransitionPlan,
+    LodTransitionPlanner, NodeId, PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{
     GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
@@ -30,6 +30,8 @@ pub struct LodWorkStats {
     pub update_calls: u64,
     pub block_load_calls: u64,
     pub loaded_blocks: u64,
+    /// Evicted by this load and immediately missing from the requested target cut.
+    pub evicted_pending_blocks: u64,
     pub scene_builds: u64,
     pub voxel_source_points: u64,
     pub selection_ms: f64,
@@ -137,6 +139,10 @@ impl LodDataset {
     }
 
     pub fn insert_block(&mut self, block: PointBlock) -> Result<usize, LodDatasetError> {
+        self.cache_block(block).map(|result| result.accounted_bytes)
+    }
+
+    fn cache_block(&mut self, block: PointBlock) -> Result<CacheInsertResult, LodDatasetError> {
         let id = block.id();
         if !self.metadata.hierarchy().references_block(id) {
             return Err(LodDatasetError::UnknownBlock(id));
@@ -156,7 +162,7 @@ impl LodDataset {
         {
             self.last_successful_build = None;
         }
-        Ok(result.accounted_bytes)
+        Ok(result)
     }
 
     pub fn block_cache_budget_bytes(&self) -> usize {
@@ -274,6 +280,7 @@ impl LodDataset {
             self.metadata.coordinate_frame().origin(),
         );
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        let mut evicted_blocks = Vec::new();
         if let Some(requested) = next_block {
             self.refinement_work.block_load_calls += 1;
             let load_started = WorkClock::start();
@@ -286,7 +293,7 @@ impl LodDataset {
                         actual: block.id(),
                     });
                 }
-                self.insert_block(block)?;
+                evicted_blocks = self.cache_block(block)?.evicted_blocks;
                 self.refinement_work.loaded_blocks += 1;
             }
         }
@@ -295,6 +302,10 @@ impl LodDataset {
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        self.refinement_work.evicted_pending_blocks += evicted_blocks
+            .iter()
+            .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
+            .count() as u64;
         let coordinate_origin = self.metadata.coordinate_frame().origin();
         let local_frustum = renderer
             .spatial_frustum([0.0; 3])
@@ -385,6 +396,11 @@ impl LodDataset {
             refinement_work: self.refinement_work.clone(),
         };
         Ok(stats)
+    }
+
+    /// Dataset-lifetime activity; clearing payloads preserves the cache's counters.
+    pub fn cache_stats(&self) -> BlockCacheStats {
+        self.cache.stats()
     }
 
     pub fn cache_bytes(&self) -> usize {
@@ -718,11 +734,14 @@ mod tests {
         ));
         let accounted_bytes = dataset.insert_block(block(10)).unwrap();
         assert_eq!(accounted_bytes, payload_bytes);
+        assert_eq!(dataset.cache_stats().insertions, 1);
         assert_eq!(dataset.cache_bytes(), payload_bytes);
         assert!(matches!(
             dataset.insert_block(block_with_points(10, 2)),
             Err(LodDatasetError::CacheRejected(_))
         ));
+        assert_eq!(dataset.cache_stats().rejected_oversize, 1);
+        assert_eq!(dataset.cache_stats().insertions, 1);
     }
 
     #[test]

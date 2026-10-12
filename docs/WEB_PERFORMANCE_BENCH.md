@@ -506,3 +506,32 @@ Local evidence: `target/belvedere-reuse-bench/session.json`,
 `belvedere-1-failure.json` and `belvedere-1-failure.png`. The staged HTTP server exposed
 only public host/runtime assets. OS cache was not flushed; adapter identity, JS/WASM
 heap and process/GPU memory remain unmeasured.
+
+### Cache pressure diagnostics — 12-10-2026
+
+`lodStats().cacheActivity` exposes decimal-string counters `insertions`, `evictions`,
+`rejectedOversize` and `rejectedProtected`, also exported as `scene.cacheActivity`.
+They cover the lifetime of the dataset's cache, including attribute resets that
+clear its payloads. Reopening a dataset starts new counters. Cache activity is live
+even if the last accepted scene predates a failed insertion; other scene/work fields
+retain their existing snapshot contract. Older exports omit these diagnostics.
+
+`refinementWork.evictedPendingBlocks` counts blocks evicted by a successful LOD load
+that are immediately pending in the subsequent target plan. It follows the work
+counters' cache-reset scope, not the longer cache-activity scope. This is direct
+evidence that some target work was displaced; one occurrence alone does not establish
+a permanent stall. It does not count unique blocks, bytes or physical reads.
+
+A deterministic core regression reproduces a possible cycle: protect visible parent
+R, leave room for only one of target children A/B, then insert A→B→A. Each insertion
+succeeds, evicts the other child after the first, and keeps R covering the view, with
+one child always pending and zero rejections. Thus zero rejected insertions does not
+prove that a requested replacement can fit alongside its fallback. No admission or
+transition policy changes in this instrumentation.
+
+Validation: core/WASM tests, native and WASM Clippy, release WASM, 26 Node tests, six
+Python host tests, formatting and local packaging pass. The Firefox dedicated-worker
+probe verifies initial insertion counters, a failed protected replacement visible
+through `lodStats()`, unchanged-scene reuse and dataset-reopen counter reset. Local
+evidence: `target/cache-pressure-probe/small/`. Confirm pressure over successive
+fixed-camera Belvedere snapshots before selecting a mitigation.

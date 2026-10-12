@@ -422,6 +422,7 @@ impl WasmVoxelViewer {
         self.last_lod_error = None;
         let value = lod_view_stats_to_js(&stats, self.lod_range_read_stats)?;
         add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
+        add_cache_activity(&value, self.lod_dataset.as_ref())?;
         js_sys::Reflect::set(
             &value,
             &"lodError".into(),
@@ -444,6 +445,7 @@ impl WasmVoxelViewer {
             Some((stats, range_read_stats)) => {
                 let value = lod_view_stats_to_js(stats, *range_read_stats)?;
                 add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
+                add_cache_activity(&value, self.lod_dataset.as_ref())?;
                 js_sys::Reflect::set(
                     &value,
                     &"lodError".into(),
@@ -1051,6 +1053,29 @@ fn reset_browser_read_stats(stats: &Mutex<BrowserReadStats>) {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = BrowserReadStats::default();
 }
 
+// Cache activity is live even when the last accepted scene predates a failed insertion.
+fn add_cache_activity(value: &JsValue, dataset: Option<&LodDataset>) -> Result<(), JsValue> {
+    let Some(dataset) = dataset else {
+        return Ok(());
+    };
+    let stats = dataset.cache_stats();
+    let activity = js_sys::Object::new();
+    for (name, count) in [
+        ("insertions", stats.insertions),
+        ("evictions", stats.evictions),
+        ("rejectedOversize", stats.rejected_oversize),
+        ("rejectedProtected", stats.rejected_protected),
+    ] {
+        js_sys::Reflect::set(
+            &activity,
+            &name.into(),
+            &JsValue::from_str(&count.to_string()),
+        )?;
+    }
+    js_sys::Reflect::set(value, &"cacheActivity".into(), &activity)?;
+    Ok(())
+}
+
 fn lod_view_stats_to_js(
     stats: &LodViewStats,
     range_read_stats: BrowserReadStats,
@@ -1155,6 +1180,10 @@ fn lod_view_stats_to_js(
             stats.refinement_work.block_load_calls as f64,
         ),
         ("loadedBlocks", stats.refinement_work.loaded_blocks as f64),
+        (
+            "evictedPendingBlocks",
+            stats.refinement_work.evicted_pending_blocks as f64,
+        ),
         ("sceneBuilds", stats.refinement_work.scene_builds as f64),
         (
             "reusedSceneUpdates",
