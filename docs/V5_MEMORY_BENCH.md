@@ -849,3 +849,63 @@ solicitados, divisiones 2, `RAYON_NUM_THREADS=1`: lote de un bloque, techo Rayon
 validación uno. Conversión 84,097 ms; el muestreo de 100 ms no capturó picos por fase.
 Este smoke comprueba el informe, no una mejora de rendimiento. El contraste grande
 1/2 workers y la medición interna del lote completo siguen pendientes.
+
+### Uno frente a dos workers en Belvedere — 12-10-2026
+
+Revisión `48e851f`, mismo binario `perf` (hash en el registro local), Ryzen AI 9 365,
+31.885.120 KiB de RAM total, Fedora/Linux 7.2.9. Tres pares en orden 1→2, procesos
+separados, divisiones 2 y presupuesto predeterminado. SHA-256 completo de la fuente
+antes de cada ejecución; caché del SO sin vaciar. Sin compilaciones, conversiones
+adicionales ni benchmarks de navegador concurrentes. Muestreador externo cada 100 ms.
+
+Mediana [mínimo–máximo] de tres procesos por configuración:
+
+| Métrica | 1 worker | 2 workers |
+| --- | ---: | ---: |
+| Conversión total (s) | 46,037 [45,985–47,225] | 34,928 [34,533–35,463] |
+| Planificación espacial (s) | 10,724 [10,094–10,901] | 10,728 [10,404–10,752] |
+| Jerarquía (s) | 17,324 [17,139–18,492] | 10,745 [10,559–11,773] |
+| Lectura/preparación/escritura (s) | 11,821 [11,707–12,140] | 10,027 [9,619–10,219] |
+| Validación (s) | 6,223 [6,127–6,361] | 3,301 [3,278–3,336] |
+| RSS pico muestreado (MiB) | 93,785 [93,613–94,125] | 165,355 [154,234–171,125] |
+| RSS en escritura (MiB) | 88,801 [88,566–89,141] | 142,164 [131,125–148,344] |
+| Temporales máximos lógicos (GiB) | 4,334 [4,332–4,337] | 5,459 [5,418–5,506] |
+| Crecimiento temporal observado (GiB) | 15,914 [15,835–15,965] | 16,046 [16,036–16,133] |
+
+En los seis procesos el lote y los threads de validación reportados son exactamente
+1 o 2 según lo solicitado; el pool Rayon tiene 20 threads. Dos workers también cambian
+la concurrencia de jerarquía, por lo que la reducción total no es una ganancia aislada
+de compresión. La mayor observación de RSS está en validación en ambos grupos; no
+identifica por sí sola buffers responsables ni memoria exclusiva de esa fase.
+Estimaciones por worker: preparación **45.050.560 B**, validación **38.633.604 B** en
+ambos grupos; no son límites del RSS total. No cambia el default a partir de este caso.
+
+Fuente **618.390.994 B**, SHA-256
+`73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1`.
+Cada salida contiene 81.682.329 puntos fuente / 1.343 bloques y pareja
+**1.591.650.185 B**. La validación profunda pasa y ambos SHA-256 coinciden en los seis:
+
+```text
+oct      2faa89194c199dba65955d0442b129d0c5f339a1f8ddf89d1181920f51f82d0d
+octattrs 013b8fe420ba82aee1775f08800d0c2dcd94796dc8f096b0824e4d80310fa294
+```
+
+Evidencia local: `target/worker-comparison-belvedere/session.json`, `summary.json`,
+`pair-N-workers-W/{stdout.log,stderr.log,report.json,samples.jsonl,output.oct,output.octattrs}`
+y drivers `run.py`/`summarize.py`. Reproducción con el mismo binario, por cada par:
+
+```sh
+sha256sum data/datasets/belv_2009_digital-aerial_pcd_copc.laz
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz target/workers-repro/pair-1-workers-1 \
+  --workers 1 --divisions 2 --interval-ms 100
+sha256sum data/datasets/belv_2009_digital-aerial_pcd_copc.laz
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz target/workers-repro/pair-1-workers-2 \
+  --workers 2 --divisions 2 --interval-ms 100
+```
+
+Repetir con directorios nuevos para pares 2 y 3 y comparar hashes de ambas salidas.
+Pendientes Majadas/Albuera, caché fría y perfil interno de jerarquía/lote/readers.
+Picos y crecimiento siguen siendo observaciones muestreadas; no son disco físico ni
+I/O exacto. Los tiempos por intervalo conservan los límites de callbacks ya descritos.

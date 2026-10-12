@@ -296,6 +296,17 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   **3,174287×** fuente. Tampoco cumple <5 min ni ≤3× en esta configuración.
   [Método, dispersión e I/O](docs/V5_MEMORY_BENCH.md#conversión-v5-de-albuera-uav--12-10-2026).
 
+### Concurrencia nativa medida — 12-10-2026
+
+- [x] Tres pares alternados Belvedere, uno/dos workers, mismo binario `perf`, divisiones 2,
+  fuente leída antes de cada proceso y muestreo 100 ms: mediana **46,037 → 34,928 s**.
+  Validación profunda y SHA-256 iguales de `.oct` y `.octattrs` en los seis procesos.
+- [x] Coste asociado: RSS pico muestreado **93,785 → 165,355 MiB**, temporales máximos
+  **4,334 → 5,459 GiB**. Lote y workers de validación efectivos 1/2; pool Rayon 20 threads.
+  [Dispersión y fases](docs/V5_MEMORY_BENCH.md#uno-frente-a-dos-workers-en-belvedere--12-10-2026).
+- [ ] Repetir en Majadas/Albuera y medir internamente el lote y readers: el RSS mayor aparece
+  en validación, pero los intervalos no atribuyen el coste a una estructura concreta.
+
 ### Temporales consumidos del conversor — 12-10-2026
 
 - [x] Liberar hojas/LOD después de escribir su último rango, tras terminar las lecturas del lote.
@@ -448,7 +459,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
    Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
    El benchmark ya informa lote efectivo de preparación, límite de threads Rayon, workers de
-   validación y estimaciones por worker; falta el contraste repetido 1/2 workers.
+   validación y estimaciones por worker; contraste repetido 1/2 completado en Belvedere,
+   pendiente en Majadas/Albuera.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
@@ -467,7 +479,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
    semánticamente equivalente, RAM/temporales/I/O y tiempo por fase comparados, recuperación intacta.
    Avance: liberación de spools consumidos comparada en Belvedere y ronda posterior por fase
-   en Albuera/Majadas. Faltan contraste emparejado grande, varios workers y perfil interno de
+   en Albuera/Majadas; tres pares 1/2 workers Belvedere medidos. Faltan contraste emparejado
+   grande, varios workers en Majadas/Albuera y perfil interno de
    jerarquía/spools y RSS de validación.
    Separar el coste de validación; no sustituir la comprobación profunda por CRC sin demostrar qué
    corrupción, errores de descompresión y cuantización detectaría cada modo.
