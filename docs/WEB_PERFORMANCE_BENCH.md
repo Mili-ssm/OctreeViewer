@@ -308,6 +308,31 @@ and the Firefox success/error/recovery flow pass. The package builder's exact me
 marker was updated alongside the new window constant. Next: repeat isolated large column reloads
 from a stable RGB view, then complete the remaining large/browser/memory cells.
 
+### Repeated Majadas intensity reload — 12-10-2026
+
+Revision `ca30050`, Firefox 157.0.1 headless, new WebGPU-enabled profile, HTTP caches disabled,
+OS cache not flushed, fit camera / 1280×720 / 4 px / depth shading / 256 MiB. Each of three page
+loads opens matching Majadas XYZ/sidecar in RGB, waits for its complete target, selects
+`attribute:0:0` (intensity), immediately arms FPS and waits for the new target plus 5 s warmup /
+10 s observation. No concurrent compilation or benchmark. These are reloads from a resident RGB
+view with retained reader/OS caches, not cold initial selected-column loads.
+
+| Run | Initial RGB target ms | Reload first frame ms | Reload target ms | Read/copy ms | Decode/other ms | Voxel build ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 22,420 | 6 | 21,018 | 380 | 660 | 16,293 |
+| 2 | 22,750 | 6 | 21,696 | 185 | 702 | 17,181 |
+| 3 | 20,242 | 7 | 20,322 | 188 | 672 | 15,969 |
+
+**3/3 valid**, reload median **21,018 ms [20,322–21,696]**, first frame **6 ms [6–7]**.
+Every reload: 239 loaded blocks, 98 builds, 141 reuses, 773 range fills / 202,119,152 bytes
+including repeated XYZ/selected-column fills. Final 6,397 voxels, 7,015,449 source points,
+202 blocks, zero pending, complete 4 px coverage and 112,290,672 cache bytes. All observation
+windows are 10,000 ms, approximately 60 frame replies/s. The collector reports `Timing phase=color`
+and reload times; metadata time remains that of the initial opening. Voxel construction still
+dominates measured work. Other components/datasets, cold cache, GPU time and browser memory
+remain open; no speedup ratio is claimed. Raw exports, schema choices, session and capture:
+`target/column-reload-bench/majadas-intensity/`.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.
