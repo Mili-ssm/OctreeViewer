@@ -15,6 +15,7 @@ a steady-state frame sample.
 | `load.targetLodMs` | Worker open command to complete coverage at the requested projected voxel edge. |
 | `steadyState.meanFps` | Frame replies per second after the user starts the 15 s benchmark and a 5 s warm-up, over the next 10 s. This is worker frame submission cadence, not GPU completion or display scanout. |
 | `steadyState.measurementWindowMs`, `frameReplySpanMs` | Elapsed observation window after warm-up (at most 10 s), and the span between its first/last sampled reply. FPS uses the latter; validity uses the former. Replies need not land on exact window boundaries. |
+| `load.refinementWork` | Cumulative synchronous LOD work, also exposed by `lodStats().refinementWork`; see the phase definitions below. Older exports omit it. |
 | `steadyState.frameReplyIntervalP50Ms/P95Ms` | Browser-observed spacing between returned frame messages; helps reveal stalls. |
 | `steadyState.workerRenderCallP50Ms/P95Ms/P99Ms` | WASM/CPU `renderFrame()` percentiles during the stable sample; they exclude asynchronous GPU completion. `workerRenderCallDuringLoadMs` retains the worker's rolling percentiles from the whole load/run. |
 | `scene.renderedVoxels`, cache and `environment.jsHeapUsedBytes` | Scene work and observable memory context. JS heap and GPU memory are incomplete proxies for total process/GPU memory. |
@@ -34,6 +35,77 @@ or fewer than 10 s of stable frame replies are exploratory and should not be com
 Keep GPU adapter, OS, browser version, power mode, color mode, depth shading, cache budget, and camera
 fit fixed. The file cache of the OS is not reset by this page; record whether the browser was restarted
 and treat repeated same-process reads as warm-cache runs.
+
+## Refinement phase accounting
+
+`lodStats().refinementWork` is a cumulative snapshot since dataset creation or the last
+successful attribute/cache reset. The host exports the latest snapshot as
+`load.refinementWork`; repeating only the FPS window does not reset it. Camera/LOD changes
+also accumulate work, so reopen the dataset for an independent load comparison.
+
+| Field | Measured work |
+| --- | --- |
+| `selectionMs` | Hierarchy LOD selection, including projected-error callbacks. |
+| `planningMs` | Both transition-plan preparations and pending-block priority lookup. |
+| `blockLoadMs` | Synchronous loader callback: file-range access, decompression, geometry/color/selected-attribute decoding. Includes read wait; excludes cache insertion and metadata opening. Reading and decoding are not yet separated. |
+| `voxelBuildMs` | Building the whole visible voxel cut, including projection and cell aggregation. |
+| `uploadMs` | `upload_voxel_cut` CPU preparation and enqueue; excludes GPU completion and the subsequent frame render. |
+| `updateCalls`, `blockLoadCalls`, `loadedBlocks` | Update attempts, loader invocations, and blocks successfully inserted into the decoded cache. A loader may return no block or fail. |
+| `sceneBuilds`, `voxelSourcePoints` | Whole-cut build attempts and sum of their input cut source-point counts, including repeated cuts. The point sum is a decimal string; it is neither unique points nor final rendered voxels. |
+
+Intervals do not overlap and are elapsed synchronous wall time, not CPU-cycle accounting.
+They omit cache insertion, plan commit/cloning, general orchestration, frame rendering and
+messaging; their sum need not equal `targetLodMs`. Native uses `Instant`; browser uses
+`performance.now()` (with `Date.now()` fallback if the global Performance object is absent).
+Browser timer precision can make short intervals zero. Each completed phase records elapsed
+time even if it returns an error; the JS stats API retains its last successful view snapshot
+until a later successful update exposes accumulated work. Scene-build counters include failed
+build attempts. Existing selection, budgets, cache behavior and render output are unchanged.
+
+### Instrumentation smoke run — 12-10-2026
+
+Release WASM rebuilt offline with the instrumentation, Firefox 157.0.1 headless and a fresh
+profile, WebGPU enabled, HTTP memory/disk cache disabled, 1280×720 framebuffer, 4 px target,
+fit camera, gray XYZ, depth shading and 256 MiB cache. OS cache was not flushed. No conversion
+or compilation ran concurrently with the browser probe; GPU identity remains undisclosed.
+
+Three valid exports using the **synthetic `examples/web-host/sample.oct`**, 4,096 source points,
+41,247 B, one node, consistently report one loaded block, three update/build calls and
+12,288 accumulated cut source points. All retain 4,096 rendered voxels and complete coverage.
+This validates accounting across the 16/8/4 px stages, not an optimization or an Outer Banks
+baseline. Median [min–max] phase times: selection 0 [0–0] ms, planning 0 [0–0] ms,
+read/decode 1 [0–2] ms, voxel construction 75 [74–108] ms, upload CPU 1 [0–4] ms.
+Zeros reflect timer precision. Existing 23 `viewer_wasm` tests, 25 host Node tests, four
+host Python tests, native/WASM Clippy with warnings denied and formatting checks passed;
+local packaged HTML/ZIP regenerated. Browser exports were checked for phase-counter
+invariants, finite nonnegative timings, target coverage and the full 10 s stable window.
+
+One subsequent **Majadas** load under the same settings completed target LOD in **162,900 ms**
+(first coarse 69 ms). It is a single exploratory load, not three repeated measurements or a
+before/after speedup. Complete 4 px coverage, zero pending blocks, 202 visible blocks,
+7,015,449 selected source points, 6,397 rendered voxels, 102,958,469 unique bytes read and
+112,290,672 decoded-cache bytes match the previous large-run scene counters.
+
+| Majadas accumulated phase | Elapsed ms |
+| --- | ---: |
+| Selection | 149 |
+| Transition planning and priority | 593 |
+| Read/decode callback | 1,111 |
+| Whole-cut voxel construction | 157,422 |
+| Upload CPU | 115 |
+| Measured phase sum | 159,390 |
+
+239 update calls loaded 239 blocks and attempted 239 scene builds, with **522,040,584**
+accumulated cut source points (~74.4× the final cut source count). Voxel construction accounts
+for **98.8% of the measured phase sum**. This identifies the constructor as the dominant measured
+phase in this run; it does not prove every repeated source visit is avoidable, since progressive
+stages and visible cuts differ. Next compare rebuilds at unchanged cuts and profile cell/projection
+work before introducing incremental caches; preserve integer-cell non-overlap and budget limits.
+Read versus decode, the omitted orchestration costs, browser RSS and GPU completion remain open.
+
+Raw exports, adapter/session details and first screenshots are under ignored
+`target/web-browser-probe/refinement-work-runs/` (`sample-{1,2,3}.json`, `majadas-1.json`).
+`dataset.name=sample.oct` records the synthetic input used for the three small runs.
 
 ## Comparison matrix
 

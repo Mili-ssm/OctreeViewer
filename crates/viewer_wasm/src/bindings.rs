@@ -1084,6 +1084,29 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         &"budgetOmittedNodes".into(),
         &JsValue::from_f64(stats.budget_omitted_nodes as f64),
     )?;
+    let work = js_sys::Object::new();
+    for (name, number) in [
+        ("updateCalls", stats.refinement_work.update_calls as f64),
+        (
+            "blockLoadCalls",
+            stats.refinement_work.block_load_calls as f64,
+        ),
+        ("loadedBlocks", stats.refinement_work.loaded_blocks as f64),
+        ("sceneBuilds", stats.refinement_work.scene_builds as f64),
+        ("selectionMs", stats.refinement_work.selection_ms),
+        ("planningMs", stats.refinement_work.planning_ms),
+        ("blockLoadMs", stats.refinement_work.block_load_ms),
+        ("voxelBuildMs", stats.refinement_work.voxel_build_ms),
+        ("uploadMs", stats.refinement_work.upload_ms),
+    ] {
+        js_sys::Reflect::set(&work, &name.into(), &JsValue::from_f64(number))?;
+    }
+    js_sys::Reflect::set(
+        &work,
+        &"voxelSourcePoints".into(),
+        &JsValue::from_str(&stats.refinement_work.voxel_source_points.to_string()),
+    )?;
+    js_sys::Reflect::set(&value, &"refinementWork".into(), &work)?;
     Ok(value.into())
 }
 

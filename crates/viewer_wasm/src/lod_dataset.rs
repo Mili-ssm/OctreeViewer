@@ -19,6 +19,23 @@ pub struct LodDataset {
     visible_plan: Option<LodTransitionPlan>,
     visible_scene_metrics: (f64, f64, usize),
     visible_voxel_memory: VoxelBuildMemoryStats,
+    refinement_work: LodWorkStats,
+}
+
+/// Cumulative synchronous work while refining this dataset's visible cut.
+/// Times include blocking read waits and exclude asynchronous GPU completion.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LodWorkStats {
+    pub update_calls: u64,
+    pub block_load_calls: u64,
+    pub loaded_blocks: u64,
+    pub scene_builds: u64,
+    pub voxel_source_points: u64,
+    pub selection_ms: f64,
+    pub planning_ms: f64,
+    pub block_load_ms: f64,
+    pub voxel_build_ms: f64,
+    pub upload_ms: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +59,7 @@ pub struct LodViewStats {
     pub pending_block_ids: Vec<BlockId>,
     pub uncovered_nodes: usize,
     pub budget_omitted_nodes: usize,
+    pub refinement_work: LodWorkStats,
 }
 
 #[derive(Debug, Error)]
@@ -99,6 +117,7 @@ impl LodDataset {
             visible_plan: None,
             visible_scene_metrics: (0.0, 0.0, 0),
             visible_voxel_memory: VoxelBuildMemoryStats::default(),
+            refinement_work: LodWorkStats::default(),
         }
     }
 
@@ -137,6 +156,7 @@ impl LodDataset {
         self.visible_plan = None;
         self.visible_scene_metrics = (0.0, 0.0, 0);
         self.visible_voxel_memory = VoxelBuildMemoryStats::default();
+        self.refinement_work = LodWorkStats::default();
         Ok(())
     }
 
@@ -181,6 +201,7 @@ impl LodDataset {
         stage_voxel_pixels: f64,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
+        self.refinement_work.update_calls += 1;
         renderer.set_visual_scale(self.visual_scale)?;
         // Source points are LOD input, not rendered GPU instances. Bound the output scene below.
         let point_budget = u64::MAX;
@@ -188,7 +209,8 @@ impl LodDataset {
         let frustum = renderer
             .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
-        let target = match self
+        let selection_started = WorkClock::start();
+        let selection = self
             .metadata
             .hierarchy()
             .select_lod(&frustum, config, |node| {
@@ -197,7 +219,9 @@ impl LodDataset {
                     bounds_side(node.bounds()) / 8.0,
                     self.metadata.coordinate_frame().origin(),
                 )
-            }) {
+            });
+        self.refinement_work.selection_ms += selection_started.elapsed_ms();
+        let target = match selection {
             Ok(target) => target,
             Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
                 renderer.sync_visible_blocks(&[], &self.cache)?;
@@ -214,6 +238,7 @@ impl LodDataset {
                 target.budget_limited().len(),
             ));
         }
+        let planning_started = WorkClock::start();
         let initial_plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
@@ -224,26 +249,37 @@ impl LodDataset {
             renderer,
             self.metadata.coordinate_frame().origin(),
         );
-        if let Some(requested) = next_block
-            && let Some(block) = load_block(requested).map_err(LodDatasetError::BlockRead)?
-        {
-            if block.id() != requested {
-                return Err(LodDatasetError::UnexpectedBlock {
-                    requested,
-                    actual: block.id(),
-                });
+        self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        if let Some(requested) = next_block {
+            self.refinement_work.block_load_calls += 1;
+            let load_started = WorkClock::start();
+            let loaded = load_block(requested);
+            self.refinement_work.block_load_ms += load_started.elapsed_ms();
+            if let Some(block) = loaded.map_err(LodDatasetError::BlockRead)? {
+                if block.id() != requested {
+                    return Err(LodDatasetError::UnexpectedBlock {
+                        requested,
+                        actual: block.id(),
+                    });
+                }
+                self.insert_block(block)?;
+                self.refinement_work.loaded_blocks += 1;
             }
-            self.insert_block(block)?;
         }
+        let planning_started = WorkClock::start();
         let plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
+        self.refinement_work.planning_ms += planning_started.elapsed_ms();
         let coordinate_origin = self.metadata.coordinate_frame().origin();
         let local_frustum = renderer
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
-            let voxel_scene = build_voxel_scene_with_limits(
+            self.refinement_work.scene_builds += 1;
+            self.refinement_work.voxel_source_points += plan.point_count();
+            let build_started = WorkClock::start();
+            let voxel_scene_result = build_voxel_scene_with_limits(
                 self.metadata.hierarchy(),
                 plan.node_ids(),
                 &self.cache,
@@ -257,8 +293,13 @@ impl LodDataset {
                     }
                 },
                 renderer.voxel_build_limits(),
-            )?;
-            renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids())?;
+            );
+            self.refinement_work.voxel_build_ms += build_started.elapsed_ms();
+            let voxel_scene = voxel_scene_result?;
+            let upload_started = WorkClock::start();
+            let upload_result = renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids());
+            self.refinement_work.upload_ms += upload_started.elapsed_ms();
+            upload_result?;
             self.planner.commit(&plan, &mut self.cache);
             self.visible_plan = Some(plan.clone());
             self.visible_voxel_memory = voxel_scene.memory_stats;
@@ -292,12 +333,56 @@ impl LodDataset {
             pending_block_ids: plan.pending_blocks().to_vec(),
             uncovered_nodes: plan.uncovered_nodes().len(),
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
+            refinement_work: self.refinement_work.clone(),
         };
         Ok(stats)
     }
 
     pub fn cache_bytes(&self) -> usize {
         self.cache.used_bytes()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct WorkClock(std::time::Instant);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl WorkClock {
+    fn start() -> Self {
+        Self(std::time::Instant::now())
+    }
+
+    fn elapsed_ms(self) -> f64 {
+        self.0.elapsed().as_secs_f64() * 1000.0
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+enum WorkClock {
+    Performance(web_sys::Performance, f64),
+    Date(f64),
+}
+
+#[cfg(target_arch = "wasm32")]
+impl WorkClock {
+    fn start() -> Self {
+        use wasm_bindgen::JsCast;
+
+        let global = js_sys::global();
+        let performance = js_sys::Reflect::get(&global, &"performance".into())
+            .ok()
+            .and_then(|value| value.dyn_into::<web_sys::Performance>().ok());
+        performance.map_or_else(
+            || Self::Date(js_sys::Date::now()),
+            |performance| Self::Performance(performance.clone(), performance.now()),
+        )
+    }
+
+    fn elapsed_ms(self) -> f64 {
+        match self {
+            Self::Performance(performance, started) => (performance.now() - started).max(0.0),
+            Self::Date(started) => (js_sys::Date::now() - started).max(0.0),
+        }
     }
 }
 

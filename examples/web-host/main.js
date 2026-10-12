@@ -133,6 +133,7 @@ function exportBenchmarkRun() {
             firstCoarseFrameMs: benchmarkRun.firstCoarseFrameMs,
             targetLodMs: benchmarkRun.targetLodMs,
             uniqueBytesRead: benchmarkRun.uniqueBytesRead,
+            refinementWork: lod?.refinementWork ?? null,
         },
         steadyState: {
             warmupAfterBenchmarkStartMs: FRAME_RATE_WARMUP_MS,
@@ -176,6 +177,7 @@ function exportBenchmarkRun() {
         },
         notes: [
             "FPS counts worker frame replies (submitted frames), not GPU completion or display scanout.",
+            "refinementWork accumulates synchronous LOD work since open or attribute-cache reset; uploadMs measures CPU preparation/enqueue, not GPU completion.",
             "Use only runs with cameraChanged=false, viewportChanged=false, settingsChanged=false, complete coverage, and a >=10 s stable window for comparisons.",
         ],
     };

@@ -358,8 +358,17 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   (corte 8 px, 64 bloques pendientes); Albuera en Firefox nuevo a **300 s** (corte 4 px,
   187 pendientes). Ambos muestran nube y cobertura del corte actual, que no cierra el objetivo.
   [Métricas, condiciones y límites](docs/WEB_PERFORMANCE_BENCH.md#large-file-experiments--12-10-2026).
-- [ ] Instrumentar por separado lectura/decodificación, selección, voxelización y subida CPU
-  durante el refinamiento; contrastar repetición de trabajo antes de cambiar cachés/builder.
+- [x] Instrumentar lectura/decodificación conjunta, selección, planificación, voxelización y
+  preparación/subida CPU durante el refinamiento, con contadores de bloques y reconstrucciones.
+  `lodStats().refinementWork` y el export web conservan el desglose acumulado; no mide GPU ni RSS.
+  [Contrato de las fases](docs/WEB_PERFORMANCE_BENCH.md#refinement-phase-accounting).
+- [x] Verificar fases en Firefox: tres rondas sintéticas y una Majadas exploratoria. Majadas:
+  239 reconstrucciones, 522 M puntos de entrada acumulados; voxelización **157,4 s de 159,4 s**
+  entre fases medidas. Mismo corte final de 6.397 vóxeles que las rondas anteriores; no es una
+  comparación de velocidad ni prueba de que todas las reconstrucciones sean evitables.
+- [ ] Perfilar celdas/proyección y reconstrucciones con corte sin cambios antes de introducir
+  reutilización incremental; conservar equivalencia, límites y ausencia de solapamientos.
+  Separar lectura de decodificación y completar repeticiones grandes comparables.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
   contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
 
@@ -381,7 +390,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
    Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
-   internos CPU/I/O y fases del refinamiento web siguen sin aislar.
+   internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
+   lectura/decodificación conjunta, voxelización y subida CPU; falta separar lectura y decode.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.

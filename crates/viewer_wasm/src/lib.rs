@@ -14,7 +14,7 @@ mod lod_representatives;
 pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
 };
-pub use lod_dataset::{LodDataset, LodDatasetError, LodViewStats};
+pub use lod_dataset::{LodDataset, LodDatasetError, LodViewStats, LodWorkStats};
 
 #[cfg(target_arch = "wasm32")]
 mod bindings;
