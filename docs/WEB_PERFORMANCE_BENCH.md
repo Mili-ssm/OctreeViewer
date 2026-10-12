@@ -139,6 +139,39 @@ formatting and release WASM build passed. The next task is to skip only matched 
 preserving planner/cache commits, payload invalidation, camera/viewport/stage changes and scene
 identity, then measure again.
 
+### Identical-scene reuse — 12-10-2026
+
+Matched scenes now skip construction and CPU upload. Planner commits and cache protection still
+run on every update. `sceneBuilds` and `voxelSourcePoints` count actual construction;
+`reusedSceneUpdates` and decimal-string `reusedSourcePoints` count avoided work. The earlier
+candidate-build counters remain available, but stay zero when all matching builds are skipped.
+Camera, viewport, voxel stage and successful visible-payload changes invalidate reuse. Protected
+visible cache entries reject replacement; a rejected insertion preserves the existing scene.
+
+Three Firefox runs with the preceding XYZ-only Majadas protocol completed without failures:
+
+| Run | Target LOD ms | Voxel construction ms | Builds / reused updates |
+| --- | ---: | ---: | ---: |
+| 1 | 30,827 | 19,564 | 98 / 141 |
+| 2 | 21,677 | 16,847 | 98 / 141 |
+| 3 | 29,488 | 17,453 | 98 / 141 |
+
+Each loaded 239 blocks, constructed from 166,721,822 accumulated source points and avoided
+355,318,762 repeated inputs. All ended with 6,397 voxels, 7,015,449 visible source points,
+202 visible blocks and complete coverage; the stable observation window was 10,000 ms with
+approximately 60 frame replies/s. Target median is 29,488 ms [21,677–30,827]. The preceding
+sessions were not paired, so these times do not establish a controlled speedup ratio. Concrete
+GPU identity, GPU timings and memory remain unmeasured. Raw exports/capture/session:
+`target/unchanged-cut-bench/reused/`.
+
+The dedicated-worker regression `examples/web-host/tests/lod-reuse.browser.mjs` fails with
+“identical scene was rebuilt” before this change and passes afterwards. It checks identical view,
+camera, viewport, stage, protected/replaced payload, attribute reset and dataset reopen. Serve
+rebuilt `pkg/` and web-host fixtures over HTTP, create it as a module Worker, post an empty
+message, and wait for `type: "probeResult"` (ignoring progress messages). WebGPU and
+OffscreenCanvas are required; this is separate from the Node host suite. Validation also passed
+83 native tests (two diagnostic tests ignored), native/WASM Clippy, release WASM and formatting.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.

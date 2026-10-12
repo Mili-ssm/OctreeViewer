@@ -379,8 +379,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   los que **141** mantienen también cámara exacta, viewport, etapa y payload visible. Consumen
   **41,0 de 59,1 s** de voxelización; 355 M puntos acumulados reutilizables. Es una medición
   exploratoria, no un ahorro prometido. [Contrato y evidencia](docs/WEB_PERFORMANCE_BENCH.md#unchanged-cut-instrumentation--12-10-2026).
-- [ ] Omitir construcción/subida de escenas idénticas, conservando commit del plan y protección
-  de caché; invalidar al cambiar cámara, viewport, etapa o payload visible y comprobar la escena.
+- [x] Omitir construcción/subida de escenas idénticas, conservando commit del plan y protección
+  de caché. Prueba Firefox de siete flujos: vista idéntica, cámara, viewport, etapa, payload,
+  atributos y reapertura. Majadas **3/3**: **98 construcciones y 141 reutilizaciones**, mismos
+  6.397 vóxeles finales; objetivo mediano **29,5 s [21,7–30,8]**. Sesiones no emparejadas:
+  no se presenta un ratio de aceleración. [Resultados](docs/WEB_PERFORMANCE_BENCH.md#identical-scene-reuse--12-10-2026).
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Separar lectura de decodificación y completar repeticiones grandes comparables.

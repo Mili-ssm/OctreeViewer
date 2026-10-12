@@ -37,6 +37,8 @@ pub struct LodWorkStats {
     pub block_load_ms: f64,
     pub voxel_build_ms: f64,
     pub upload_ms: f64,
+    pub reused_scene_updates: u64,
+    pub reused_source_points: u64,
     pub unchanged_cut_builds: u64,
     pub reusable_scene_builds: u64,
     pub reusable_voxel_build_ms: f64,
@@ -298,8 +300,6 @@ impl LodDataset {
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
-            self.refinement_work.scene_builds += 1;
-            self.refinement_work.voxel_source_points += plan.point_count();
             let build_context = SuccessfulBuildContext {
                 camera: renderer.camera_snapshot(),
                 viewport: renderer.viewport_size(),
@@ -313,48 +313,50 @@ impl LodDataset {
                 self.last_successful_build.as_ref(),
                 &build_context,
             );
-            if same_visible_cut {
-                self.refinement_work.unchanged_cut_builds += 1;
-            }
             if reusable_scene {
-                self.refinement_work.reusable_scene_builds += 1;
-                self.refinement_work.reusable_voxel_source_points += plan.point_count();
+                self.refinement_work.reused_scene_updates += 1;
+                self.refinement_work.reused_source_points += plan.point_count();
+            } else {
+                self.refinement_work.scene_builds += 1;
+                self.refinement_work.voxel_source_points += plan.point_count();
+                if same_visible_cut {
+                    self.refinement_work.unchanged_cut_builds += 1;
+                }
+                let build_started = WorkClock::start();
+                let voxel_scene_result = build_voxel_scene_with_limits(
+                    self.metadata.hierarchy(),
+                    plan.node_ids(),
+                    &self.cache,
+                    coordinate_origin,
+                    stage_voxel_pixels,
+                    &|bounds| {
+                        if local_frustum.intersects(&bounds) {
+                            renderer.projected_voxel_edge_pixels(bounds, [0.0; 3])
+                        } else {
+                            0.0
+                        }
+                    },
+                    renderer.voxel_build_limits(),
+                );
+                let build_elapsed_ms = build_started.elapsed_ms();
+                self.refinement_work.voxel_build_ms += build_elapsed_ms;
+                let voxel_scene = voxel_scene_result?;
+                let upload_started = WorkClock::start();
+                let upload_result = renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids());
+                self.refinement_work.upload_ms += upload_started.elapsed_ms();
+                upload_result?;
+                self.visible_voxel_memory = voxel_scene.memory_stats;
+                self.visible_scene_metrics = (
+                    voxel_scene.min_edge_pixels,
+                    voxel_scene.max_edge_pixels,
+                    voxel_scene.oversized_voxels,
+                );
             }
-            let build_started = WorkClock::start();
-            let voxel_scene_result = build_voxel_scene_with_limits(
-                self.metadata.hierarchy(),
-                plan.node_ids(),
-                &self.cache,
-                coordinate_origin,
-                stage_voxel_pixels,
-                &|bounds| {
-                    if local_frustum.intersects(&bounds) {
-                        renderer.projected_voxel_edge_pixels(bounds, [0.0; 3])
-                    } else {
-                        0.0
-                    }
-                },
-                renderer.voxel_build_limits(),
-            );
-            let build_elapsed_ms = build_started.elapsed_ms();
-            self.refinement_work.voxel_build_ms += build_elapsed_ms;
-            if reusable_scene {
-                self.refinement_work.reusable_voxel_build_ms += build_elapsed_ms;
-            }
-            let voxel_scene = voxel_scene_result?;
-            let upload_started = WorkClock::start();
-            let upload_result = renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids());
-            self.refinement_work.upload_ms += upload_started.elapsed_ms();
-            upload_result?;
+            // Even with identical geometry, publish new pending/coverage information and retain
+            // the planner's cache protection. Only voxel construction and upload are omitted.
             self.planner.commit(&plan, &mut self.cache);
             self.visible_plan = Some(plan.clone());
             self.last_successful_build = Some(build_context);
-            self.visible_voxel_memory = voxel_scene.memory_stats;
-            self.visible_scene_metrics = (
-                voxel_scene.min_edge_pixels,
-                voxel_scene.max_edge_pixels,
-                voxel_scene.oversized_voxels,
-            );
         }
         let visible_plan = self.visible_plan.as_ref().unwrap_or(&plan);
         let stats = LodViewStats {

@@ -1093,6 +1093,10 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         ),
         ("loadedBlocks", stats.refinement_work.loaded_blocks as f64),
         ("sceneBuilds", stats.refinement_work.scene_builds as f64),
+        (
+            "reusedSceneUpdates",
+            stats.refinement_work.reused_scene_updates as f64,
+        ),
         ("selectionMs", stats.refinement_work.selection_ms),
         ("planningMs", stats.refinement_work.planning_ms),
         ("blockLoadMs", stats.refinement_work.block_load_ms),
@@ -1127,6 +1131,11 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
                 .reusable_voxel_source_points
                 .to_string(),
         ),
+    )?;
+    js_sys::Reflect::set(
+        &work,
+        &"reusedSourcePoints".into(),
+        &JsValue::from_str(&stats.refinement_work.reused_source_points.to_string()),
     )?;
     js_sys::Reflect::set(&value, &"refinementWork".into(), &work)?;
     Ok(value.into())
