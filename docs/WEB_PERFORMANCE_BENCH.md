@@ -484,3 +484,25 @@ during refinement dominates before changing caches or scene construction. Reprod
 third-attempt browser/automation failure separately. Closing the large-file baseline requires
 three valid comparable runs per cell with failed attempts counted, including Chrome and
 the paired/color path; the current evidence does not close that baseline.
+
+### Belvedere after scene reuse — 12-10-2026
+
+One gray XYZ attempt in a fresh Firefox 157.0.1 headless profile, WebGPU enabled,
+1280×720, 4 px target and 256 MiB decoded cache, with the scene-reuse and range-read
+instrumentation. No native conversion or build ran concurrently. The driver stopped
+after the first failed attempt; this is not a three-run baseline.
+
+The 300 s completion limit expired without an enabled benchmark export. The final DOM
+reported first coarse frame **24 ms**, stage **4 px**, **782 pending blocks**, complete
+coverage (zero uncovered), **14,871,589 selected source points**, **20,977 current
+HZB-visible voxels**, 339 visible blocks and decoded cache **255.8 / 256.0 MiB**.
+The last CPU render call was 60 ms; rolling p50/p95/p99 were 64/71/2,034 ms over
+2,338 frames. These mixed-window values are not stable FPS or target completion times.
+The near-full cache is an observation, not evidence of a rejected insertion or the
+cause of incomplete refinement. Diagnose cache rejections and actual block progress
+before changing the budget or transition policy.
+
+Local evidence: `target/belvedere-reuse-bench/session.json`,
+`belvedere-1-failure.json` and `belvedere-1-failure.png`. The staged HTTP server exposed
+only public host/runtime assets. OS cache was not flushed; adapter identity, JS/WASM
+heap and process/GPU memory remain unmeasured.

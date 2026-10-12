@@ -351,6 +351,12 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 
 ### Exploración web de datasets grandes — 12-10-2026
 
+- [x] Repetir Belvedere XYZ tras reutilizar escenas: un intento limitado a **300 s**, sin
+  benchmark completo; primera vista **24 ms**, corte 4 px, **782 bloques pendientes**,
+  cobertura completa y caché **255,8 / 256 MiB**. No demuestra rechazo por presupuesto
+  ni permite atribuir el estancamiento a la caché. Conservar diagnóstico y medir rechazos/
+  progreso antes de cambiar presupuestos o el planificador.
+
 - [x] Firefox headless, XYZ gris, 1280×720 y 4 px: Majadas produce **dos exports válidos de
   tres intentos**. Primera vista **61–76 ms**, LOD objetivo **152.983–161.454 ms**, luego
   ~**60 FPS** de respuestas. Tercer intento sin respuesta BiDi >30 s, sin export; no es una
