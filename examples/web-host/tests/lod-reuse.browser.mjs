@@ -23,6 +23,10 @@ self.onmessage = async () => {
         viewer.openFormatDataset(coordinates, 256 * 1024 * 1024, attributes);
         viewer.fitScene();
         const loaded = finish();
+        // Exercise HZB allocation and the first indirect draw on the 4,096-voxel fixture.
+        // Chrome software WebGPU previously rejected mapped creation of the args buffer.
+        assert(viewer.renderFrame() === "presented", "first sample frame was not presented");
+        assert(viewer.renderFrame() === "presented", "sample indirect frame was not presented");
         // Both tiny fixtures fit in their metadata-open cache fills, excluded from LOD accounting.
         assert(loaded.refinementWork.rangeReadCalls === 0
             && loaded.refinementWork.rangeReadBytes === "0", "metadata reads leaked into block accounting");

@@ -6,3 +6,4 @@ __pycache__/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
 .playwright/
+.playwright-mcp/

@@ -284,19 +284,16 @@ impl HzbResources {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
-        let indirect_args = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        // cull() initializes every argument before dispatch/draw. Avoid mapped creation:
+        // Chrome software WebGPU can reject this 20-byte mapped allocation.
+        let indirect_args = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("octree-viewer-hzb-indirect-args"),
-            contents: bytemuck::bytes_of(&DrawIndexedIndirectArgs {
-                index_count: CUBE_INDEX_COUNT,
-                instance_count: 0,
-                first_index: 0,
-                base_vertex: 0,
-                first_instance: 0,
-            }),
+            size: size_of::<DrawIndexedIndirectArgs>() as u64,
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::INDIRECT
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
         let cull_layout = self.cull_pipeline.get_bind_group_layout(1);
         let cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -952,6 +949,8 @@ fn fs_indexed(input: VertexOutput) -> @location(0) vec4<f32> {
 
 #[cfg(test)]
 mod tests {
+    use super::{CUBE_INDEX_COUNT, DrawIndexedIndirectArgs};
+
     #[test]
     fn hzb_shaders_parse_as_wgsl() {
         for source in [super::HZB_SHADER, super::CULL_SHADER, super::INDEXED_SHADER] {
@@ -1150,16 +1149,16 @@ mod tests {
             hzb.cull(&mut encoder, &queue);
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("octree-viewer-hzb-cull-test-count"),
-                size: (size_of::<u32>() * 2) as u64,
+                size: (size_of::<DrawIndexedIndirectArgs>() + size_of::<u32>()) as u64,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
             encoder.copy_buffer_to_buffer(
                 hzb.indirect_args().expect("prepared indirect args"),
-                size_of::<u32>() as u64,
+                0,
                 &readback,
                 0,
-                size_of::<u32>() as u64,
+                size_of::<DrawIndexedIndirectArgs>() as u64,
             );
             encoder.copy_buffer_to_buffer(
                 hzb.visible_indices
@@ -1167,7 +1166,7 @@ mod tests {
                     .expect("prepared visible indices"),
                 0,
                 &readback,
-                size_of::<u32>() as u64,
+                size_of::<DrawIndexedIndirectArgs>() as u64,
                 size_of::<u32>() as u64,
             );
             queue.submit([encoder.finish()]);
@@ -1183,10 +1182,10 @@ mod tests {
                 .expect("GPU mapping callback")
                 .expect("GPU readback mapping");
             let mapped = readback.slice(..).get_mapped_range();
-            let visible = *bytemuck::from_bytes::<[u32; 2]>(&mapped);
+            let visible = *bytemuck::from_bytes::<[u32; 6]>(&mapped);
             drop(mapped);
             readback.unmap();
-            assert_eq!(visible, [1, 1]);
+            assert_eq!(visible, [CUBE_INDEX_COUNT, 1, 0, 0, 0, 1]);
         });
     }
 }

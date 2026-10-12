@@ -877,3 +877,44 @@ statistics panel stays empty, recorded as `domMatchesExport: false`; completion 
 fresh worker/export counters. Node syntax check and all 26 existing host tests pass.
 Next: repeat the 1 GiB changed-camera case with this fresh-export driver and isolate
 progressive accumulator reuse before changing product memory defaults.
+
+### Chrome software WebGPU HZB buffer fix — 13-10-2026
+
+After Chrome became available to Playwright MCP, default headless startup exposed
+`navigator.gpu` but no compatible adapter. Launching channel `chrome` with
+`--enable-unsafe-webgpu --use-angle=swiftshader` presented the initial scene. Chrome version
+**155.0.8059.39**. These are software-adapter functional checks, not hardware performance.
+
+Opening the built-in sample then failed consistently: initially a WASM `unreachable` panic,
+followed by misleading `recursive use ... unsafe aliasing` errors after the trap. A temporary
+instrumented worker traced the original failure to `GPUDevice.createBuffer` for
+`octree-viewer-hzb-indirect-args`, **20 B**, usage 396, `mappedAtCreation: true`. Chrome threw
+`RangeError` about the mapped allocation; wgpu's WebGPU backend unwrap then panicked.
+No viewer-method reentry was observed; the existing serialized worker queue is retained.
+Instrumented copies are under ignored `target/chrome-reentry/`.
+
+The localized correction creates this buffer unmapped. `HzbResources::cull` already writes
+all five indirect arguments via `queue.write_buffer` before every dispatch/draw, so initial
+mapped contents were redundant. Buffer size, resource accounting and draw arguments remain
+unchanged. The native GPU regression now reads back **all five arguments plus the visible
+index**, expecting `[36, 1, 0, 0, 0, 1]` for the occlusion fixture. The existing browser
+reuse probe explicitly presents the first two sample frames to exercise HZB creation/use.
+
+Rebuilt release WASM and repeated the same Playwright opening: target complete with **4,096
+voxels**, one visible block, zero pending and HZB active. Classification, ArrowRight, fit
+and resize from a 1280×900 desktop viewport to 390×844 all retain complete target coverage.
+The seven-flow worker probe passes identical view, camera, viewport, stage, payload,
+attributes and reopen. No page exceptions; the unrelated `/favicon.ico` 404 remains in the
+console. The default-launch adapter limitation is distinct from this corrected mapped-buffer
+failure. The initial experimental wait-on-status driver was discarded because host status
+can change to `Renderer: presented`; final verification reads fresh scene/refinement exports.
+
+Validation: 85 renderer/WASM tests, three focused HZB tests including native GPU readback,
+format check, native/WASM Clippy with warnings denied, and release WASM/bindings rebuild pass.
+Screenshots saved as `target/chrome-hzb-desktop.png` and `target/chrome-hzb-mobile.png`
+show a white canvas under this SwiftShader/Playwright setup despite the successful worker
+exports; mobile canvas framebuffer is 364×547. Thus these checks certify functional
+completion/counters, not correct Chrome visual output. Firefox visual captures remain
+separate evidence.
+This closes the small Chrome functional case only; visual Chrome output, large datasets, physical GPU behavior,
+performance repetitions and remaining interaction matrix are pending.

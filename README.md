@@ -343,7 +343,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   en perfil temporal, 1280×720 y 4 px: mediana **251 ms** hasta LOD objetivo, **60,00 FPS** de
   respuestas del worker, **2.410 vóxeles**. Adaptador y heap JS no identificables en los exports;
   no certifica FPS de GPU/pantalla ni interacción. [Método y dispersión](docs/WEB_PERFORMANCE_BENCH.md).
-- [ ] Chrome/Chromium no instalado; Belvedere RGB completa 3/3 a 8 px; falta 4 px y
+- [ ] Chrome 155 con SwiftShader pasa muestra RGB/clasificación, cámara, móvil y siete flujos API;
+  falta matriz grande y GPU física. Belvedere RGB Firefox completa 3/3 a 8 px; falta 4 px y
   OPFS/picking/pérdida de GPU.
   Pareja y columnas Majadas en Firefox verificadas abajo. El primer timeout Belvedere por texto de estado era inconcluyente; las nuevas rondas
   usan la finalización del benchmark y conservan estados/fallos como se detalla abajo.
@@ -442,6 +443,12 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Repetir cámara tras presión de caché a 256 MiB hasta una nueva pausa estable, con
   export fresco y contadores nuevos del worker. Belvedere conserva escena y cobertura, pero
   quedan 780 bloques del objetivo pendientes; capacidad y caso a 1 GiB siguen abiertos.
+- [x] Reproducir y corregir el panic HZB de Chrome software al abrir la muestra: buffer de
+  argumentos indirectos creado sin mapeo; `cull` inicializa sus cinco campos antes del draw.
+  Playwright MCP pasa RGB/clasificación, cámara, ajuste y móvil, más siete flujos API;
+  test GPU verifica argumentos completos. Capturas Chrome/SwiftShader muestran canvas blanco:
+  validación visual Chrome pendiente. 85 tests renderer/WASM, formato y Clippy pasan.
+  [Causa y validación](docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
@@ -595,7 +602,8 @@ COPC o ampliar EPT queda condicionado al perfil de importación y al alcance de 
 El seguimiento activo se mantiene en este README; no se crean Issues/PRs por defecto.
 
 - [ ] **Navegador:** apertura gris, pareja y componentes comprobados en Firefox; paquete `file://`
-  y teclado del selector también. Faltan Chrome, resto de teclado, corrupción de payloads,
+  y teclado del selector también. Chrome 155 con SwiftShader pasa muestra, clasificación, cámara
+  y viewport móvil; faltan matriz grande/GPU física Chrome, resto de teclado, corrupción de payloads,
   OPFS/cuota, cancelación durante lectura, picking y pérdida real de GPU. Los tests Rust/JS y renders nativos no sustituyen esa interacción.
 - [ ] **Escala:** medir hasta una fuente mayor de 500 GB decimales, con índice, spools, RSS, recursos
   GPU, bytes leídos, primera vista y navegación separados. Fijar mínimos oficiales RAM/GPU/SO.

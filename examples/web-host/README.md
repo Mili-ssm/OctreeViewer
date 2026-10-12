@@ -153,7 +153,8 @@ Fatal frame errors, worker errors and message decoding failures reject outstandi
 terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
 replace the transferred canvas and create a new viewer; automatic device recreation is not available.
 The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run; the
-current environment has no Chromium. Firefox 157.0.1 headless can present with WebGPU enabled
+Chrome 155 is now available and the small software-WebGPU flows pass, but pick/device loss remain
+unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
 in [web performance](../../docs/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
 
@@ -343,3 +344,10 @@ Outputs include session metadata, snapshots, console errors and a final screensh
 fail the command; a recorded cache pause or observation cap is a diagnostic outcome, not a
 successful target or valid steady-state FPS benchmark. This probe does not measure GPU memory,
 heap JS or a paired performance improvement. Compare equivalent runs separately.
+
+For Playwright MCP with Chrome software WebGPU, launch channel `chrome` with
+`--enable-unsafe-webgpu --use-angle=swiftshader`. The default headless launch may expose
+`navigator.gpu` while returning no adapter. Chrome 155 functional coverage and the mapped
+HZB-buffer regression are recorded in
+[the web measurements](../../docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
+Software-adapter checks do not establish hardware performance.
