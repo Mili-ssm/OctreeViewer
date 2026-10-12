@@ -270,7 +270,17 @@ callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes
 the collector separates absent, present and unknown legacy companions, and displays color/depth
 settings. Names/sizes describe inputs, not cryptographic content identity.
 
-Majadas RGB pairing completed three Firefox runs with the same final geometry and a visibly
-colored capture; the small worker probe checks attribute cache reset/reload. Large selected-column
-loads, mismatched-pair browser failures and other browsers remain pending. See the
+The reproducible 4,096-point fixture now includes typed intensity (`u16`, 0–65,016) and
+classification (`u8`, 0–3), with unchanged positions/display colors. Regenerate the pair with
+`cargo run --offline -p viewer_format --example create_web_sample` and repackage the local demo.
+
+Majadas RGB pairing completed three Firefox runs with the same final geometry counters and a
+visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed sample by default;
+create it as a module Worker and post one message. Optionally supply coordinate/attribute Blobs,
+`modes` and an `incompatibleAttributes` Blob. It validates complete refinement, matching geometry
+counts, invalid-column rejection and retention after failed sidecar attachment. It requires
+rebuilt WASM/WebGPU/OffscreenCanvas and is separate from the Node suite. Majadas passed intensity
+and RGB-component selection plus rejection of Albuera's sidecar. Its sequential API loop timings
+are integration diagnostics, not host load/FPS benchmarks. Repeated host column-change loads and
+other browsers remain pending. See the
 [measured matrix](../../docs/WEB_PERFORMANCE_BENCH.md).

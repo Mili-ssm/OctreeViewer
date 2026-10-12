@@ -251,6 +251,31 @@ Names and byte counts are provenance hints, not content hashes. Schema version 1
 for this additive field. Node host tests (25), Python host tests (5), JS/Python syntax and diff
 checks pass. Large selected-column comparisons and browser mismatched-pair rejection are next.
 
+### Typed-attribute integration probe — 12-10-2026
+
+The old built-in pair had display RGB but no selectable numeric schema. Its initial typed probe
+therefore failed the schema assertion; the fixture generator now emits intensity `u16` and
+classification `u8`. Positions, display colors and 4,096 source points are unchanged. Native
+fixture validation checks exact ranges [0,65,016] and [0,3] and intensity row count. The new
+`lod-attributes.browser.mjs` passes generic intensity selection, classification and invalid-index
+rejection; the seven-flow reuse/read probe still passes with the regenerated pair.
+
+A separate Firefox worker integration run uses Majadas XYZ/sidecar and explicitly selects
+`attribute:0:0` (intensity) and `attribute:7:1` (RGB component). Both complete with 6,397 voxels,
+7,015,449 visible source points, 202 visible blocks and 112,290,672 cache bytes. Repeated range
+fill bytes are respectively 202,119,152 and 235,149,296. Invalid-column selection is rejected;
+attaching Albuera's sidecar to Majadas is rejected and retains the previous completed scene.
+Raw result: `target/unchanged-cut-bench/probe-attributes-majadas/result.json`; small result:
+`target/unchanged-cut-bench/probe-attributes-typed/result.json`.
+
+This probe calls update/render sequentially, yielding between iterations. Its single reload
+intervals (17,991/18,607 ms) are **not** host-loading benchmarks, FPS or repeated performance
+baselines; counter equality is not a full spatial/color scene hash. A proper host column-change
+benchmark must first distinguish reload timing from the initial RGB target: the current color
+command leaves the previous `targetLodMs` intact. Browser memory/peak attribute decode and other
+browsers remain open. Validation: 42 format tests, format Clippy, both Firefox probes, JS syntax,
+formatting and diff checks pass. No storage/renderer algorithm change was needed.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.

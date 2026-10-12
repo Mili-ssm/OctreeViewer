@@ -1,8 +1,9 @@
 use std::{env, error::Error, fs::File, path::PathBuf};
 
 use viewer_core::{
-    BlockId, ColorRgb, CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds,
-    SpatialHierarchy, SpatialNode,
+    AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
+    CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy,
+    SpatialNode,
 };
 use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePointBlock};
 
@@ -18,6 +19,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let block_id = BlockId::new(1);
     let node_id = NodeId::new(1);
     let point_count = 64 * 64;
+    let intensity = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1)?;
+    let classification = AttributeDescriptor::new("classification", AttributeDataType::U8, 1)?;
     let hierarchy = SpatialHierarchy::new_with_semantics(
         vec![SpatialNode::new(
             node_id,
@@ -28,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             1.0,
             vec![block_id],
         )?],
-        Vec::new(),
+        vec![intensity.clone(), classification.clone()],
         Some(point_count),
         HierarchySemantics::Replacement,
     )?;
@@ -40,12 +43,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     let mut positions = Vec::with_capacity(point_count as usize);
     let mut colors = Vec::with_capacity(point_count as usize);
+    let mut intensities = Vec::with_capacity(point_count as usize);
+    let mut classifications = Vec::with_capacity(point_count as usize);
     for y in 0..64 {
         for x in 0..64 {
             let x_phase = f64::from(x) * 0.19;
             let y_phase = f64::from(y) * 0.16;
             let z = (x_phase.sin() * y_phase.cos() * 2.0) + 2.0;
             positions.push([f64::from(x), f64::from(y), z]);
+            intensities.push((x * 1024 + y * 8) as u16);
+            classifications.push(((x / 16 + y / 16) % 4) as u8);
             colors.push(ColorRgb::new(
                 40 + x as u8 * 3,
                 45 + y as u8 * 3,
@@ -64,7 +71,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         block_id,
         positions,
         colors,
-        Vec::new(),
+        vec![
+            AttributeColumn::new(
+                intensity,
+                AttributeValues::U16(intensities),
+                point_count as usize,
+            )?,
+            AttributeColumn::new(
+                classification,
+                AttributeValues::U8(classifications),
+                point_count as usize,
+            )?,
+        ],
     ))?;
     writer.finish()?;
     Ok(())

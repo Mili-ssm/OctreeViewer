@@ -17,6 +17,11 @@ fn web_host_sample_is_a_readable_project_dataset() {
             include_bytes!("../../../examples/web-host/sample.octattrs").as_slice(),
         ))
         .unwrap();
+    assert_eq!(reader.attribute_range(0, 0).unwrap(), Some([0.0, 65016.0]));
+    assert_eq!(reader.attribute_range(1, 0).unwrap(), Some([0.0, 3.0]));
+    let intensity = reader.read_attribute(BlockId::new(1), 0).unwrap();
+    assert_eq!(intensity.descriptor().name(), "intensity");
+    assert_eq!(intensity.values().len(), 4096);
     let block = reader.read_block(BlockId::new(1)).unwrap();
     assert_eq!(block.points().len(), 4096);
     assert_eq!(block.id(), BlockId::new(1));

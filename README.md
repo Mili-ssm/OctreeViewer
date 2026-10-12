@@ -399,9 +399,16 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   sidecar; el recolector separa atributos ausentes/presentes/desconocidos y muestra modo/color.
   Regresión reproducida: antes mezclaba cuatro configuraciones en una fila; ahora quedan separadas.
   [Resultados y límites](docs/WEB_PERFORMANCE_BENCH.md#majadas-rgb-sidecar--12-10-2026).
+- [x] Añadir columnas tipadas al fixture reproducible (intensidad `u16` y clasificación `u8`)
+  y probe browser para selección, columna inválida y sidecar incompatible. Firefox pasa fixture
+  pequeño y Majadas con intensidad/componente RGB: mismos contadores finales, 6.397 vóxeles y
+  caché de 112 MB. Rechazar `.octattrs` de Albuera conserva la escena anterior. Es validación
+  API/worker; falta benchmark repetido del flujo de cambio de columna en el host.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
-  Completar repeticiones grandes comparables, incluyendo `.octattrs` y columnas seleccionadas.
+  Completar Belvedere/otros navegadores y repeticiones del cambio de columna. Definir primero
+  tiempos de recarga separados de la carga inicial RGB: cambiar color actualmente conserva el
+  tiempo de objetivo previo en el host, por lo que no sirve como baseline de una columna.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
   contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
 
