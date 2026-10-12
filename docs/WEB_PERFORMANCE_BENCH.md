@@ -220,6 +220,36 @@ sessions are preserved above; this is not a paired speedup comparison. GPU ident
 execution time, JS/WASM/RSS memory and RGB/typed-attribute runs remain open. Raw exports,
 first-run capture and session: `target/unchanged-cut-bench/albuera-reused/`.
 
+### Albuera RGB sidecar — 12-10-2026
+
+Release WASM, Firefox 157.0.1 headless with fresh WebGPU-enabled profile, HTTP memory/disk cache
+disabled, OS cache not flushed, 1280×720/DPR 1, 4 px, depth shading and 256 MiB decoded cache.
+Three sequential page/worker/dataset loads used matching `albuera-uav.oct` (6,105,617,040 B) and
+`.octattrs` (7,561,226,723 B). No native conversion or build ran concurrently. All three exports
+passed the exact framebuffer, completed-coverage, zero-pending and 10 s observation-window checks;
+the first capture was visually inspected and shows RGB color.
+
+| Run | Metadata ms | First coarse frame ms | Target LOD ms | Range read ms | Decode/other ms | Voxel build ms | FPS replies |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 59 | 72 | 142,524 | 6,638 | 1,282 | 97,593 | 59.996 |
+| 2 | 98 | 110 | 137,601 | 1,005 | 1,282 | 99,069 | 60.008 |
+| 3 | 103 | 114 | 139,616 | 997 | 1,264 | 97,757 | 59.996 |
+
+Target median **139,616 ms [137,601–142,524]**; first coarse frame **110 ms [72–114]**. Each
+run loaded 746 blocks, built 233 scenes and reused 513; total voxelization consumed inputs from
+503,187,945 source points and skipped repeated work over 1,115,026,990 inputs. Final cut is stable
+across runs: 17,030 voxels, 12,673,149 visible source points, 568 blocks, full coverage, zero
+pending, 203,065,440 cache bytes and HZB active. Unique bytes read: 276,320,912; range fills
+including rereads: 575,143,936 across 2,194 calls. The first run's range-read time is an outlier;
+read time includes cache fills, and is not a cold-storage or physical-I/O measurement. All three
+steady windows recorded about 60 worker frame replies/s, not GPU/display FPS.
+
+The browser does not expose its JS heap here (`jsHeapUsedBytes: null`), device-memory estimate or
+concrete GPU adapter; uploaded instance bytes are 97,115,760, not total GPU memory. These are RGB
+load measurements, not a controlled comparison with the separate XYZ-only sessions. Raw JSON,
+first colored capture, schema choices and adapter fields:
+`target/unchanged-cut-bench/albuera-rgb/`.
+
 ### Majadas RGB sidecar — 12-10-2026
 
 WASM from `980b1c5`, Firefox 157.0.1, new WebGPU-enabled profile, same fit-camera/1280×720/4 px/
