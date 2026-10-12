@@ -906,6 +906,50 @@ python3 crates/viewer_convert/benchmarks/profile_conversion.py \
 ```
 
 Repetir con directorios nuevos para pares 2 y 3 y comparar hashes de ambas salidas.
-Pendientes Majadas/Albuera, caché fría y perfil interno de jerarquía/lote/readers.
-Picos y crecimiento siguen siendo observaciones muestreadas; no son disco físico ni
-I/O exacto. Los tiempos por intervalo conservan los límites de callbacks ya descritos.
+Pendientes Albuera, caché fría y perfil interno de jerarquía/lote/readers. Picos y crecimiento
+siguen siendo observaciones muestreadas; no son disco físico ni I/O exacto. Los tiempos por
+intervalo conservan los límites de callbacks ya descritos.
+
+### Uno frente a dos workers en Majadas — 12-10-2026
+
+Mismo binario `perf` (`e48716c18ab36252d525e7911f76f6aec90a75365051c23e06555d053c8888c1`),
+Ryzen AI 9 365, Fedora/Linux 7.2.9 y fuente Majadas TLS local de **1.343.266.470 B**. Tres pares secuenciales
+1→2 workers, divisiones 2 y presupuesto predeterminado; no hubo compilaciones, conversiones ni
+benchmarks concurrentes. Se calculó SHA-256 completo de la fuente antes y después de cada proceso;
+no se vació la caché del SO. La lectura previa puede calentarla, pero no garantiza residencia.
+El tiempo de conversión procede del reporte del proceso e incluye conversión y validación profunda,
+no el hash posterior de los outputs. El muestreador observó RSS y archivos temporales cada 100 ms.
+
+Mediana [mínimo–máximo] de tres procesos por modo:
+
+| Métrica | 1 worker | 2 workers |
+| --- | ---: | ---: |
+| Conversión total (s) | 340,921 [337,008–398,197] | 377,710 [350,859–433,760] |
+| Índice espacial (s) | 43,313 [43,037–44,497] | 43,149 [42,673–43,853] |
+| Jerarquía (s) | 196,608 [191,567–203,044] | 189,797 [181,178–218,523] |
+| Lectura/preparación/escritura (s) | 68,920 [68,743–118,950] | 126,815 [109,709–146,779] |
+| Validación (s) | 32,071 [31,897–32,996] | 17,182 [17,079–25,145] |
+| RSS pico muestreado (MiB) | 97,035 [95,022–101,748] | 181,769 [156,285–202,671] |
+| Temporales máximos lógicos (GiB) | 18,824 [18,824–18,830] | 18,899 [18,824–19,320] |
+
+En esta muestra, dos workers tardaron **10,8 %** más en la mediana y elevaron el RSS pico
+muestreado **87,3 %**; el pico temporal lógico cambió **0,4 %**. La preparación se ejecutó en
+lotes de 1/2 bloques y la validación con 1/2 workers; por ello la comparación mezcla concurrencia
+de jerarquía, preparación, escritura y validación, y no atribuye causalidad a un único cuello. La
+planificación del índice apenas cambia; la fase de lectura/preparación/escritura fue más larga con
+dos workers en los tres pares. No se modifica el valor predeterminado por un dataset.
+
+Los seis reportes completan validación, tienen cero errores del muestreador y declaran 415.465.882
+puntos de fuente / 6.259 bloques. Cada `.oct` mide **4.214.687.109 B** y cada `.octattrs`
+**3.319.094.608 B**. En los tres pares coinciden ambos SHA-256 de salida:
+
+```text
+oct      f17646889c058a49262034ac28cdd744ffdcdc920069579c63e062d827180b39
+octattrs 24ea479471b7f3641d8f86879e252fffc77a049434b02f56c683754e2074ce0b
+```
+
+La fuente SHA-256 es `7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33`.
+Estimaciones reportadas por worker: **51.375.040 B** para preparación y **35.648.020 B** para
+validación; no son límites del RSS total. Esta comparación no vacía caché, no separa el coste de
+CPU de la variación de I/O y no establece una regla para otras fuentes. Albuera y caché fría
+siguen pendientes.
