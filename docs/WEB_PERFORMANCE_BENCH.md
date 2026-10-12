@@ -764,9 +764,31 @@ no-camera run. Do not infer a runtime speedup from these sessions.
 
 Raw samples and final export are in `target/cache-pressure-probe/belvedere-cache512-followup/`;
 the staged `main.js` and Firefox profile are under `target/web-browser-probe/site-cache512/` and
-`target/firefox-cache512-followup-profile/`. The next bounded test is the API's 1 GiB maximum cache
-budget with an explicit camera change after the initial pause. If it still cannot complete, quantify
-the requested working set and eviction sequence before deciding whether more memory is useful.
+`target/firefox-cache512-followup-profile/`. The 1 GiB follow-up below tests the API's maximum;
+quantify the requested working set and eviction sequence before deciding whether more memory is useful.
+
+### Belvedere 1 GiB cache and camera observation — 13-10-2026
+
+A fresh WebGPU Firefox profile used the same Belvedere coordinate file without a sidecar, 1280×720,
+4 px target and staged host, this time setting the cache to the API maximum of 1 GiB. After **900 s**
+the initial target still had **357 pending blocks**, with 868 loaded, **732.4 MiB resident**, no
+evictions, and `targetLodMs: null`. Accumulated `voxelBuildMs` was **836,998 ms**; selection was
+11,831 ms, planning 18,948 ms, block loading 5,478 ms and upload 176 ms. This cumulative synchronous
+accounting points to voxel construction as the dominant measured work in this run, not cache
+pressure. It does not establish a representative per-frame cost or a completed target.
+
+An `ArrowRight` event after the 900 s cap set `cameraChanged=true`. The immediate export still
+reported the earlier 8 px/zero-pending snapshot, while the host's final stats displayed the changed
+4 px cut with 368 blocks pending and a 722 MiB cache. Its reported render-call p95 was 8,877 ms.
+The post-camera sampler stopped after 10 seconds without a new export signature, too soon to resolve
+that high-latency build. Treat the camera result as **inconclusive**; no full target completion or
+pause was observed after the camera event.
+
+Raw 30 s samples, camera snapshot and final DOM/export are in
+`target/cache-pressure-probe/belvedere-cache1024-long/`; staged host and profile are under
+`target/web-browser-probe/site-cache1024/` and `target/firefox-cache1024-long-profile/`. Next:
+profile the voxel-build hot path at a representative native/WASM boundary, then repeat the browser
+camera probe with a longer no-progress window and an export tied to the latest worker stats.
 
 
 ### External Firefox process-tree PSS — 12-10-2026

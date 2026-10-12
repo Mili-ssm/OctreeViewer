@@ -503,8 +503,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    **8,03 μs** y creación del checkpoint **8,89 μs**; no incluye navegador ni actualización LOD.
    Un probe sin movimiento a 512 MiB llegó a 765 bloques cargados y pausó a los 480 s con 559
    pendientes, 211 evicciones (98 objetivos); duplicar 256 MiB retrasó la presión pero no completó
-   4 px. Siguiente: probar 1 GiB y cambiar explícitamente la cámara tras la pausa. Falta medir el
-   efecto WASM/end-to-end del detector.
+   4 px. A 1 GiB, 900 s dejaron 357 pendientes sin evicciones (732 MiB residentes); `voxelBuildMs`
+   acumuló 837 s. El export inmediato tras orbitar quedó atrasado respecto a las estadísticas DOM
+   (corte nuevo a 4 px, 368 pendientes) y la ventana de 10 s fue demasiado corta para concluir.
+   Siguiente: perfilar voxelización y repetir la observación hasta estabilizar la muestra. Falta
+   medir el efecto WASM/end-to-end del detector.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
