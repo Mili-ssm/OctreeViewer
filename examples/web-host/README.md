@@ -310,3 +310,36 @@ plan objetivo vuelve a pedir inmediatamente y se reinicia con los demás contado
 de trabajo. Puede haber presión sin rechazos: el padre visible está protegido y
 los hijos aún incompletos pueden expulsarse entre sí. Ver el
 [contrato y prueba](../../docs/WEB_PERFORMANCE_BENCH.md#cache-pressure-diagnostics--12-10-2026).
+
+## Reproduce a cache/camera diagnostic in Firefox
+
+From the repository root, rebuild the release WASM and bindings as above, serve the repository
+on port 8767, and start a dedicated Firefox profile with WebGPU enabled:
+
+```bash
+mkdir -p target/firefox-camera-probe
+printf '%s\n' 'user_pref("dom.webgpu.enabled", true);' 'user_pref("dom.webgpu.service.enabled", true);' > target/firefox-camera-probe/user.js
+firefox --headless --no-remote --profile "$PWD/target/firefox-camera-probe" --remote-debugging-port 9222 about:blank
+```
+
+In another terminal (Node 22 or newer, built-in `WebSocket`, no npm dependencies):
+
+```bash
+node examples/web-host/probe-cache-camera.mjs data/datasets/belv_2009_digital-aerial_pcd_copc.oct target/cache-camera-probe
+```
+
+The optional third argument changes the host URL. The probe owns and closes that Firefox
+session; use a dedicated instance. It loads coordinates without a sidecar, fits a 1280×720
+framebuffer at the host's default detail/cache budget, then sends one `ArrowRight` after the
+initial observation. Each phase ends on a detector pause, target completion, 120 seconds
+without counter changes, or a 600-second cap. An observation cap is an incomplete result.
+A paused retained cut can have complete coverage while the requested 4 px target remains pending.
+
+Each 10-second sample awaits the exact newly exported Blob and saves both its counters and
+the visible panel. `domMatchesExport` records whether stage/pending agree: progress can update
+exported counters before the next rendered frame updates the panel. Camera completion/pause
+requires changed worker counters after the input, not only the host's `cameraChanged` flag.
+Outputs include session metadata, snapshots, console errors and a final screenshot. Exceptions
+fail the command; a recorded cache pause or observation cap is a diagnostic outcome, not a
+successful target or valid steady-state FPS benchmark. This probe does not measure GPU memory,
+heap JS or a paired performance improvement. Compare equivalent runs separately.

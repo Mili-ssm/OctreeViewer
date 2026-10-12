@@ -830,3 +830,50 @@ it does not justify changing application memory budgets.
 Raw 1 s process-tree and host-memory samples, per-run completion markers, exports and driver logs
 are in `target/browser-memory/albuera-rgb/`. Reproduction driver: `python3
 target/browser-memory/sample_firefox_tree.py` while the root HTTP server is available on port 8765.
+
+### Fresh-export camera recovery at 256 MiB — 13-10-2026
+
+Release WASM rebuilt from `21615df`, Firefox 157.0.1 headless with WebGPU, 1280×720
+framebuffer, DPR 1, fitted camera, 4 px target and the unchanged product cache budget of
+256 MiB. Belvedere coordinates only, no sidecar; RGB control therefore renders gray.
+The dedicated profile was previously used only for short driver setup attempts; OS cache
+was warm and HTTP cache was not explicitly disabled. No native compilation or benchmark
+ran during the Belvedere observation. This is one recovery diagnostic, not three timing
+repetitions or a before/after browser speed comparison.
+
+The committed `examples/web-host/probe-cache-camera.mjs` waits for the exact new exported
+Blob instead of reading a previous asynchronous result. It saves the panel in the same JS
+task as the export request. Stage/pending may differ while progressing because progress
+messages update exported `latestLodStats` before a rendered frame updates the panel;
+`domMatchesExport` makes that visible. Both terminal snapshots here match the panel.
+The driver requires changed worker counters after `ArrowRight` before accepting a pause
+or completion, and allows 120 seconds without progress instead of the earlier 10 seconds.
+
+| Observation | Driver time in phase | Cumulative loads | Pending target blocks | Cache MiB | Evictions / evicted targets | Voxels |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Initial detector pause | 120.2 s | 507 | 782 | 255.60 | 137 / 64 | 20,977 |
+| Pause after one ArrowRight | 50.1 s | 686 | 780 | 254.21 | 316 / 171 | 20,707 |
+
+The camera restarts real work: **179 additional loads**, **74 additional scene builds** and
+**104 reused scene updates**. The detector pauses again; `targetLodMs` remains null. The
+retained cut reports coverage complete at stage 4 px, but the requested target remains
+incomplete. This closes the narrow observation of camera resumption/re-pause at 256 MiB;
+it does not close the previous 1 GiB scenario, solve cache capacity or establish a speedup.
+Accumulated voxel work is 102,443 ms before the camera and 138,471 ms at the second pause.
+Zero browser console errors; final screenshot retained. Heap JS and dedicated GPU memory
+are unavailable. Playwright MCP could not start because its configured Chrome executable
+is absent; Firefox BiDi supplied this browser evidence.
+
+Reproduction commands and stop conditions are in
+[the host README](../examples/web-host/README.md#reproduce-a-cachecamera-diagnostic-in-firefox).
+Raw snapshots/session/console/screenshot: ignored
+`target/cache-pressure-probe/belvedere-entry-camera-fresh/`.
+WASM SHA-256: `4d996a69ad6b9189bb37401b0dd9a7897c5432af6ada9fcf0ea617f0d969f294`.
+Earlier driver setup attempts stopped on disabled-button handling and on treating normal
+panel lag as a fatal mismatch; they are excluded from timing/recovery conclusions.
+The small coordinate-only sample also completes both phases with 4,096 voxels and no
+console errors; worker scene-build counters increase from 3 to 6 after camera input. Its
+statistics panel stays empty, recorded as `domMatchesExport: false`; completion is based on
+fresh worker/export counters. Node syntax check and all 26 existing host tests pass.
+Next: repeat the 1 GiB changed-camera case with this fresh-export driver and isolate
+progressive accumulator reuse before changing product memory defaults.
