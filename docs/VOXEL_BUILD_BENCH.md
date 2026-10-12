@@ -154,3 +154,47 @@ Raw JSON and the frozen diagnostic executable are under ignored `target/voxel-ph
 Next: measure a localized reduction of redundant accumulator-map lookups with alternating
 before/after builds, preserving scene bytes and budget errors; then revisit progressive work
 and the browser sample after camera input.
+
+## Single accumulator lookup — 13-10-2026
+
+`accumulate_block` now uses one `BTreeMap::entry` lookup per retained point. Occupied
+entries keep accumulating directly; vacant entries check renderability, voxel count and
+estimated memory before insertion. Integer keys, traversal, attribute aggregation and sorted
+scene emission are unchanged. This localized change was already present in the working tree
+when this measurement started; the baseline is `ef82604` and the after binary includes only
+that `voxel_grid.rs` diff.
+
+Same native perf profile, Ryzen AI 9 365/Linux/rustc 1.99.0, fitted camera, 1280×720,
+coordinate-only blocks. Three process pairs alternate before/after, after/before,
+before/after, each process building three times (nine samples per version/case).
+Reads are outside the timer; OS cache is not flushed. No compilation, tests or browser
+runs overlap the valid series. Belvedere 4 px uses the explicit 2 GiB diagnostic cap;
+8 px and Majadas use 256 MiB. These are resident final-cut CPU measurements.
+
+Accumulation seconds, median [minimum–maximum]:
+
+| Case | Before | After | Median reduction |
+| --- | ---: | ---: | ---: |
+| Belvedere 4 px | 12.73875 [12.60519–12.85715] | 11.45416 [11.32916–11.58113] | 10.1% |
+| Belvedere 8 px | 1.43873 [1.41818–1.47185] | 1.23878 [1.23075–1.25659] | 13.9% |
+| Majadas 4 px | 0.34209 [0.33808–0.36128] | 0.28681 [0.28437–0.31772] | 16.2% |
+
+All 18 scene builds per case preserve scene checksum, voxel/block/source counts,
+projected edge range, zero oversized voxels, callback counts and builder-memory metrics.
+Checksums are `a22b8f76486544d3`, `c057ef2774b0ca75`, `563a1f928baa5a75` respectively.
+Finish medians before/after are 5.415/5.412 ms, 1.281/1.285 ms and 1.476/1.461 ms.
+No progressive WASM/browser improvement or RSS reduction is established by this series.
+
+Frozen executables, environment, raw JSON and summary: ignored `target/voxel-entry-verified/`.
+Binary SHA-256 before: `322d36894ecb93f11282f9c253fd937fa5ade7093b2946c6ff69c4c49e1029b3`;
+after: `e9678be313682e1b31e4daf44cf3b01eae8491c9b413ce9b8d55495be45d4815`.
+An earlier attempted series in `target/voxel-entry-bench/` reused the baseline executable
+for both labels and is excluded; binary hashes were checked before the valid rerun.
+
+Renderer/WASM tests pass (85 tests, two GPU diagnostics and one microbenchmark ignored).
+Formatting and native/WASM Clippy with warnings denied also pass.
+Existing regressions exercise repeated occupied cells under an exact one-voxel budget,
+new-cell memory/instance failures, RGB and typed attributes, and nonoverlapping integer cells.
+Next: rebuild release WASM and repeat the changed-camera observation with fresh exports
+and a longer no-progress window. The 1 GiB cache still cannot hold the complete fitted 4 px
+native cut; faster lookup does not resolve that capacity constraint.

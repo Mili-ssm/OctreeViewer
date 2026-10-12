@@ -435,6 +435,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Validar paquete autocontenido en Firefox desde `file://`, con servidor HTTP detenido:
   muestra/sidecar embebidos, selección de clasificación mediante teclado y export de 10 s
   pasan; 4.096 vóxeles, cobertura completa. No valida conversión/OPFS ni todos los controles.
+- [x] Validar una sola búsqueda del acumulador por punto con `BTreeMap::entry`: misma escena,
+  atributos y errores de presupuesto; 85 tests renderer/WASM, formato y Clippy nativo/WASM pasan.
+  Reducción mediana de acumulación nativa de 10,1–16,2% en los tres casos medidos.
+  [Mediciones y límites](docs/VOXEL_BUILD_BENCH.md#single-accumulator-lookup--13-10-2026).
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
@@ -512,8 +516,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    la escala visual del archivo (antes normalizada a 1); conserva cortes y checksums de Belvedere.
    No mide el working set progresivo ni cierra la observación de cámara en Firefox.
    [Fases, capacidad y reproducción](docs/VOXEL_BUILD_BENCH.md#belvedere-phase-and-capacity-diagnostic--13-10-2026).
-   Siguiente: medir una sola búsqueda del acumulador por punto y repetir la observación de cámara
-   hasta estabilizar la muestra. Falta medir el efecto WASM/end-to-end del detector.
+   Acumulador con una sola búsqueda por punto validado: tres parejas alternadas, nueve muestras
+   por versión/caso, misma escena y presupuestos. Acumulación nativa mediana **12,739→11,454 s**
+   en Belvedere 4 px (**−10,1%**), **1,439→1,239 s** a 8 px (**−13,9%**) y
+   **0,342→0,287 s** en Majadas (**−16,2%**); no demuestra mejora WASM ni menor RSS.
+   [Comparación y serie excluida](docs/VOXEL_BUILD_BENCH.md#single-accumulator-lookup--13-10-2026).
+   Siguiente: repetir la observación de cámara hasta estabilizar la muestra, con export fresco.
+   Falta medir el efecto WASM/end-to-end del detector.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida

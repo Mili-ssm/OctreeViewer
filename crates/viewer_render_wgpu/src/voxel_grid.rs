@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque, btree_map::Entry};
 
 use viewer_core::{DecodedBlockCache, NodeId, PointBlock, SpatialBounds, SpatialHierarchy};
 
@@ -496,31 +496,34 @@ fn accumulate_block(
         let Some(key) = grid.key_for_point(point.position.map(f64::from), project)? else {
             continue;
         };
-        if !voxels.contains_key(&key) {
-            // Do not retain cells that cannot be represented safely by the renderer.
-            if grid.render_cell(key).is_none() {
-                continue;
+        let voxel_count = voxels.len();
+        let voxel = match voxels.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                // Do not retain cells that cannot be represented safely by the renderer.
+                if grid.render_cell(key).is_none() {
+                    continue;
+                }
+                let next_count = voxel_count
+                    .checked_add(1)
+                    .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+                if next_count > limits.max_voxels {
+                    return Err(VoxelSceneBuildError::InstanceLimitExceeded {
+                        limit: limits.max_voxels,
+                    });
+                }
+                let accumulator_bytes = checked_charge(next_count, accumulator_charge_bytes)?;
+                let instance_bytes = next_count
+                    .checked_mul(std::mem::size_of::<InstanceRaw>())
+                    .and_then(|bytes| u64::try_from(bytes).ok())
+                    .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+                let required_bytes = accumulator_bytes
+                    .checked_add(cache_reservation_bytes.max(instance_bytes))
+                    .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+                check_memory_limit(required_bytes, limits.max_estimated_bytes)?;
+                entry.insert(VoxelAccumulator::default())
             }
-            let next_count = voxels
-                .len()
-                .checked_add(1)
-                .ok_or(VoxelSceneBuildError::SizeOverflow)?;
-            if next_count > limits.max_voxels {
-                return Err(VoxelSceneBuildError::InstanceLimitExceeded {
-                    limit: limits.max_voxels,
-                });
-            }
-            let accumulator_bytes = checked_charge(next_count, accumulator_charge_bytes)?;
-            let instance_bytes = next_count
-                .checked_mul(std::mem::size_of::<InstanceRaw>())
-                .and_then(|bytes| u64::try_from(bytes).ok())
-                .ok_or(VoxelSceneBuildError::SizeOverflow)?;
-            let required_bytes = accumulator_bytes
-                .checked_add(cache_reservation_bytes.max(instance_bytes))
-                .ok_or(VoxelSceneBuildError::SizeOverflow)?;
-            check_memory_limit(required_bytes, limits.max_estimated_bytes)?;
-        }
-        let voxel = voxels.entry(key).or_default();
+        };
         if voxel.count == 0 {
             voxel.classification = classification.and_then(|values| values.value_at(index));
         }
