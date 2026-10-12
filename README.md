@@ -478,9 +478,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    inserciones alternan hijos pendientes sin rechazos. Prueba de regresión añadida;
    `cacheActivity` y `refinementWork.evictedPendingBlocks` permiten medirlo en navegador.
    Belvedere confirma el ciclo. El detector Brent de un checkpoint pausa tras repetir estado
-   LRU con vista/corte constantes; conserva la escena y permite recuperación. Firefox repite
-   el corte a 8 px con cobertura completa en 48,6 s. Pendiente abrir/reintentar también con
-   cambios de cámara y medir el overhead del detector en flujos sin presión.
+   LRU con vista/corte constantes y conserva la escena. Firefox reanuda tras cambiar detalle:
+   cobertura completa a 8 px en 48,6 s. También reanuda tras orbitar la cámara: 782→68 pendientes
+   y una carga adicional, aún sin completar el nuevo corte. Falta medir overhead y completar el
+   nuevo objetivo tras el cambio de cámara.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida

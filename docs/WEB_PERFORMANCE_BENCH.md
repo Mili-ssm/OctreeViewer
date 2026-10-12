@@ -574,8 +574,9 @@ test recovery via coarser detail/camera changes, and rerun the real diagnostic.
 
 Release WASM build `3c3bc4d` with the cache-cycle detector, fresh Firefox 157.0.1
 headless WebGPU profile, gray XYZ, 1280×720, 4 px target and 256 MiB decoded
-cache. One run hit the limit at 150 s; a clean repeat hit it at 180 s. No native
-benchmark or build ran during either browser run. Cache snapshots are forced diagnostic
+cache. An initial pressure diagnostic reached 150 s without evictions; a later clean
+repeat with the detector paused at 180 s. No native benchmark or build ran during either
+browser run. Cache snapshots are forced diagnostic
 exports; no target/FPS benchmark was armed, and neither run is a valid large-file
 performance benchmark.
 
@@ -597,9 +598,10 @@ the pause. This does not measure heap, RSS or physical I/O.
 After changing detail from 4 to **8 px**, the same second run reached the coarser target
 in **48,618 ms** with first coarse frame at **2,359 ms**, 0 pending blocks, complete
 coverage, **13,238,581 source points**, 5,140 voxels, 320 visible blocks and HZB active.
-The benchmark was not armed, so this does not report FPS. This runtime check establishes
-that an explicit detail change resumes the same dataset and cache after pause; it does
-not yet exercise camera-only recovery.
+A separate repeat then changed only the camera orbit with ArrowRight after the pause. The
+worker resumed and loaded another block; pending work fell from 782 to 68 and the stage
+restarted at 16 px. The new camera target was still incomplete in that capture, so this
+confirms retry initiation, not completed recovery. Neither run armed the FPS benchmark.
 
 The detector retains one normalized LRU checkpoint and Brent counters, compares block
 ID/size/protection order exactly, and pauses only when that state repeats for the same
@@ -617,6 +619,7 @@ and the Firefox worker probe pass. The small Firefox probe verifies activity res
 reopen and live rejection counters while preserving the scene.
 
 Local evidence is under `target/cache-pressure-probe/`:
-`belvedere-initial-cycle/` and `belvedere-cache-cycle-final/` hold the two pause runs;
+`belvedere-initial-cycle/`, `belvedere-cache-cycle-final/` and
+`belvedere-camera-recovery/` hold the diagnostic, pause/detail recovery and camera retry runs;
 the latter also contains `recovery.json`, `recovery-status.json`, `final-dom.json` and
 `final.png`. `final.json` exports are explicitly marked incomplete.
