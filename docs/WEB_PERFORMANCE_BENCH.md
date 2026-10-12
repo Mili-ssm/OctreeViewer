@@ -748,6 +748,26 @@ decode/cache insertion, and the full `update_lod`/WASM/browser path. These micro
 an end-to-end frame improvement or quantify Firefox overhead. Source: the ignored diagnostic test
 `cache_cycle_detector_microbenchmark` in `crates/viewer_wasm/src/lod_dataset.rs`.
 
+### Belvedere 512 MiB decoded-cache capacity probe — 13-10-2026
+
+A fresh Firefox WebGPU profile opens the same Belvedere coordinate file without a sidecar, at
+1280×720 and a 4 px target. The staged host sets both its cache allocation and exported budget to
+512 MiB; other application files are unchanged. No camera input is sent. The OS file cache is warm
+from earlier runs, so this is a capacity/completion probe, not a timing comparison.
+
+At 450 s the decoded cache held **511.3 MiB**, with 665 loaded blocks and no evictions. At 480 s,
+the detector paused: **765 loaded blocks**, **510.9 MiB resident**, **211 evictions**, including 98
+evicted target blocks, and **559 target blocks pending**. `targetLodMs` remained null. The retained
+visible cut reported complete coverage; the requested 4 px cut did not complete. Doubling the
+budget delayed pressure relative to the prior 256 MiB probe but did not remove the cycle in this
+no-camera run. Do not infer a runtime speedup from these sessions.
+
+Raw samples and final export are in `target/cache-pressure-probe/belvedere-cache512-followup/`;
+the staged `main.js` and Firefox profile are under `target/web-browser-probe/site-cache512/` and
+`target/firefox-cache512-followup-profile/`. The next bounded test is the API's 1 GiB maximum cache
+budget with an explicit camera change after the initial pause. If it still cannot complete, quantify
+the requested working set and eviction sequence before deciding whether more memory is useful.
+
 
 ### External Firefox process-tree PSS — 12-10-2026
 

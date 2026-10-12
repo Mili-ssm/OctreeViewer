@@ -501,7 +501,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    describe el último corte visible retenido, no el objetivo solicitado. Microbenchmark nativo
    release con 500 bloques: comprobación coincidente **4,45 μs**, discrepancia de recorrido completo
    **8,03 μs** y creación del checkpoint **8,89 μs**; no incluye navegador ni actualización LOD.
-   Falta el efecto WASM/end-to-end y probar si una caché mayor completa el corte cambiado.
+   Un probe sin movimiento a 512 MiB llegó a 765 bloques cargados y pausó a los 480 s con 559
+   pendientes, 211 evicciones (98 objetivos); duplicar 256 MiB retrasó la presión pero no completó
+   4 px. Siguiente: probar 1 GiB y cambiar explícitamente la cámara tras la pausa. Falta medir el
+   efecto WASM/end-to-end del detector.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
