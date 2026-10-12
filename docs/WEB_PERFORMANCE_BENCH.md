@@ -277,6 +277,38 @@ load measurements, not a controlled comparison with the separate XYZ-only sessio
 first colored capture, schema choices and adapter fields:
 `target/unchanged-cut-bench/albuera-rgb/`.
 
+### Albuera intensity-column reload — 12-10-2026
+
+Three valid Firefox 157.0.1 headless rounds open matching Albuera XYZ/sidecar in RGB, wait for the
+complete target, then select `attribute:0:0` (intensity) and measure the resulting `color` refinement.
+Fresh WebGPU-enabled profile for the retry; HTTP caches disabled and OS cache not flushed;
+1280×720/DPR 1, 4 px, depth shading and 256 MiB. One third attempt failed before export when the
+BiDi driver timed out on `script.evaluate`; it reported no viewer/worker error. A retry in a fresh
+profile with a longer command timeout completed. Thus **3/3 valid exports, one failed attempt**;
+the third result is a retry, not the third page in the first browser session.
+
+| Valid run | Initial RGB target ms | Intensity first frame ms | Intensity target ms | Range read ms | Decode/other ms | Voxel build ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 149,789 | 9 | 136,702 | 858 | 1,348 | 96,666 |
+| 2 | 124,117 | 18 | 119,098 | 877 | 1,375 | 95,432 |
+| 3 (retry) | 147,380 | 10 | 137,661 | 836 | 1,342 | 96,485 |
+
+Initial RGB target median **147,380 ms [124,117–149,789]**; intensity target median
+**136,702 ms [119,098–137,661]**, with first frame **10 ms [9–18]** after the column change. All
+valid exports selected intensity and retained the same final scene: 17,030 voxels, 12,673,149
+visible source points, 568 visible blocks, full coverage, 0 pending and 203,065,440 cache bytes.
+Each refinement read/loaded 746 blocks; paired initial + reload counters show 1,492 insertions,
+with no eviction/rejection. The reload therefore still voxelizes about 96 s: immutable geometry
+selections retain their counters and final scene, but selected intensity requires new decoding and
+scene output. The 10 s windows record ~60 worker frame replies/s, not display/GPU FPS. The numeric
+range/decode work is below 2.3 s combined; voxel construction dominates. No paired/controlled
+comparison with RGB target time is claimed.
+
+The renderer exports no browser JS heap or total GPU memory; adapter identity is unavailable. Raw
+valid exports are in `target/column-reload-bench/albuera-intensity/` (runs 1–2) and
+`target/column-reload-bench/albuera-intensity-retry/` (run 3). The failed attempt is recorded as
+`albuera-3-failure.json` in the first directory.
+
 ### Majadas RGB sidecar — 12-10-2026
 
 WASM from `980b1c5`, Firefox 157.0.1, new WebGPU-enabled profile, same fit-camera/1280×720/4 px/
