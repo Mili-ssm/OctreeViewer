@@ -728,3 +728,95 @@ python3 crates/viewer_convert/benchmarks/profile_conversion.py \
   --workers 1 --divisions 2 --interval-ms 100
 # Repetir MD5 y perfilado para run-2 y run-3; comparar ambas salidas byte a byte.
 ```
+
+## Albuera y Majadas: picos por fase — 12-10-2026
+
+Seis procesos seriales, tres por fuente, con el conversor de `66ea003` (ya libera spools
+consumidos). Binario `perf` fijo, SHA-256
+`c4013e7330f97715e0518f4ac072ef4a42442646b2c239a8abfbd4a107ae054e`.
+Mismo Linux/Rust/equipo del apartado inicial; un worker, divisiones 2, opciones restantes
+predeterminadas, sin checkpoint y sin `RUSTFLAGS`. No hubo conversiones simultáneas,
+compilaciones ni benchmarks de navegador durante las medidas. La corrección JS del benchmark
+web no cambia este ejecutable nativo. No se fijaron energía, frecuencia, carga externa o writeback.
+
+Antes de cada proceso se leyó/verificó la fuente completa: Majadas **1.343.266.470 B**, MD5
+`fd0b4433e805246f2442df037dfadb6b`; Albuera **4.305.484.789 B**, MD5
+`71ff22c046d6eb83c371791f680bea13`. Caché sin vaciar; el calentamiento no garantiza residencia
+de la fuente ni de spools. Muestreo solicitado cada 100 ms; escaneo y planificación del SO pueden
+alargar el intervalo real. No se aisló overhead del muestreador. Se aplican los límites de
+atribución descritos arriba: solo capturas enteramente contenidas, VmHWM global y picos breves
+posiblemente omitidos. Los picos RAM/disco pueden ocurrir en instantes diferentes.
+
+Mediana [mínimo–máximo] de tres procesos por fuente; tiempos entre notificaciones, RSS del
+proceso completo y tamaños lógicos muestreados. No sumar medianas de fases para reconstruir
+la mediana total: pueden pertenecer a procesos distintos.
+
+### Majadas TLS
+
+| Intervalo | Tiempo (s) | RSS pico muestreado (MiB) | Temporales pico muestreado (B) |
+| --- | ---: | ---: | ---: |
+| PlanningSpatialIndex | 43,769 [42,069–44,450] | 45,141 [42,941–51,254] | 13.685.415.744 [13.685.415.744–13.701.751.008] |
+| BuildingSpatialHierarchy | 194,680 [186,634–201,831] | 50,664 [48,477–56,812] | 18.804.783.558 [18.799.578.534–18.824.457.894] |
+| ReadingAndWritingBlocks | 84,642 [68,819–97,265] | 84,855 [82,844–91,094] | 13.714.267.023 [13.713.615.390–13.721.170.377] |
+| ValidatingOutput | 32,922 [32,644–33,265] | 98,703 [96,691–105,004] | 7.533.781.717 [igual en las tres] |
+
+Total hasta retorno **349,051 [347,401–366,716] s**. Muestras totales 3.342/3.631/3.451;
+dos no asignadas en cada proceso. Las otras cinco fases no tienen muestras contenidas: picos
+`null`, sin inferir consumo cero. VmHWM observado coincide con el RSS pico global en los tres.
+
+### Albuera UAV
+
+| Intervalo | Tiempo (s) | RSS pico muestreado (MiB) | Temporales pico muestreado (B) |
+| --- | ---: | ---: | ---: |
+| PlanningSpatialIndex | 77,563 [77,220–77,658] | 44,898 [40,461–47,004] | 20.858.408.757 [20.836.460.227–20.858.408.757] |
+| BuildingSpatialHierarchy | 232,137 [198,049–283,789] | 50,309 [45,926–52,473] | 27.429.926.943 [27.419.646.264–27.463.839.467] |
+| ReadingAndWritingBlocks | 128,001 [124,299–184,744] | 96,750 [91,332–97,879] | 20.870.870.399 [20.869.779.384–20.872.554.105] |
+| ValidatingOutput | 52,986 [52,131–54,088] | 110,988 [105,570–112,117] | 13.666.843.763 [igual en las tres] |
+
+Total hasta retorno **513,502 [489,904–539,482] s**. Muestras totales 4.707/5.057/5.004;
+dos no asignadas en cada proceso. Las otras cinco fases tampoco tienen muestras contenidas.
+VmHWM observado coincide con el RSS pico global en los tres.
+
+### I/O y verificación
+
+Bytes por proceso, mediana [mínimo–máximo]; mismas definiciones Linux anteriores:
+
+| Contador | Majadas | Albuera |
+| --- | ---: | ---: |
+| `rchar` | 143.601.067.898 [143.601.067.893–143.601.067.908] | 152.901.387.047 [152.901.387.046–152.901.387.052] |
+| `wchar` | 142.257.783.952 [igual] | 148.595.885.658 [igual] |
+| `read_bytes` | 15.971.323.904 [12.127.416.320–25.597.689.856] | 45.330.464.768 [44.555.083.776–56.913.240.064] |
+| `write_bytes` | 142.332.952.576 [142.329.679.872–142.344.290.304] | 148.693.774.336 [148.690.595.840–148.694.028.288] |
+| `cancelled_write_bytes` | 0 [igual] | 0 [igual] |
+| Crecimiento temporal positivo observado | 138.151.447.690 [136.381.487.927–138.202.995.929] | 143.238.118.012 [141.603.641.653–144.140.568.844] |
+
+Las seis ejecuciones tienen exit cero, validación profunda, informes completos y ninguna
+incidencia del observador. Los SHA-256 de ambos archivos coinciden en las tres repeticiones y
+con las referencias v5 publicadas arriba. Majadas conserva **415.465.882** puntos fuente,
+**415.602.190** filas con LOD, **6.259** bloques e índice **3.455.366 B**; pareja
+**4.214.687.109 + 3.319.094.608 = 7.533.781.717 B** (**5,608553×** fuente).
+Albuera conserva **508.809.556** puntos, **508.989.347** filas, **8.437** bloques e índice
+**5.071.052 B**; pareja **6.105.617.040 + 7.561.226.723 = 13.666.843.763 B**
+(**3,174287×** fuente). Índices contados una vez; no cambian precisión, codec ni atributos.
+
+En ambas fuentes y en los seis procesos, el máximo temporal muestreado pertenece a jerarquía
+y el máximo RSS muestreado a validación. La jerarquía sigue siendo el intervalo más largo;
+Albuera muestra también dispersión importante al escribir bloques. Priorizar el perfil interno
+de jerarquía/spools para tiempo/disco, y validar el lote/reader para entender RSS. Los contadores
+no aíslan CPU frente a I/O ni memoria exclusiva de una función. No se propone rebajar validación.
+
+Los picos temporales son menores que en las rondas históricas anteriores a liberar spools,
+pero RSS es mayor y Albuera también tarda más. **No es una comparación emparejada antes/después**:
+no atribuir esas diferencias a una optimización ni prometer aceleración/ahorro RAM. Siguen sin
+cumplirse <5 min y pareja ≤3× en ambas fuentes. Falta medir varios workers, condiciones frías,
+memoria de navegador y escala; no se cierra la base completa del README.
+
+Logs, parejas, muestras, entorno/binario y datos crudos/agregados:
+`target/phase-peaks-large-2026-10-12/{majadas,albuera}/run-{1,2,3}/`, `environment.json`,
+`results.json` y `summary.json`. Se comprobaron estados, contabilidad de muestras, invariantes,
+hashes de las salidas y que el ejecutable permaneció fijo. Esta entrega de resultados no cambia
+código nativo; los ocho tests Python del perfilador pasaron antes de iniciar las medidas.
+
+Reproducir con el comando de perfilado anterior, cambiando fuente y directorio por los de cada
+dataset, y leyendo/verificando su MD5 antes de cada una de las tres repeticiones. Preservar
+logs y fallos; no ejecutar otros benchmarks o compilaciones simultáneamente.

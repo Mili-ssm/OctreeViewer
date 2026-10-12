@@ -304,7 +304,7 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   Ambas salidas tienen SHA-256 iguales en los seis procesos. No se extrapola a fuentes mayores.
   [Método, tiempos, RSS e I/O](docs/V5_MEMORY_BENCH.md#liberación-de-spools-consumidos--12-10-2026).
 - [x] Tests de rangos compartidos/LOD, workers y reanudación; workspace, Clippy nativo/WASM y formato.
-  Pendiente medir esta mejora en Albuera/Majadas y perfilar el pico de planificación.
+  Ronda posterior en Albuera/Majadas documentada abajo; falta contraste emparejado de la mejora.
 
 ### Picos por intervalo del conversor — 12-10-2026
 
@@ -318,8 +318,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   los máximos breves y fases sin muestras siguen sin resolverse.
   [Método, dispersión y límites](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
 - [x] Ocho tests Python, siete del ejemplo Rust, Clippy de `viewer_convert` con todos sus targets,
-  formato, compilación Python y diff. Ruff no está instalado. Pendientes Albuera/Majadas por fase,
-  lote de workers y host web; estas observaciones no aíslan operaciones internas CPU/I/O.
+  formato, compilación Python y diff. Ruff no está instalado. Albuera/Majadas por fase medidas
+  abajo; pendientes lote de workers y matriz web. No se aíslan operaciones internas CPU/I/O.
 
 ### Primera base Firefox y ventana del benchmark — 12-10-2026
 
@@ -334,6 +334,19 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [ ] Chrome/Chromium no instalado; falta matriz grande y pareja/color/OPFS/picking/pérdida
   de GPU. Intento exploratorio Belvedere sin LOD objetivo tras 120 s, causa sin resolver.
   No mezclar ese intento con la base pequeña corregida.
+
+### Albuera y Majadas por fase — 12-10-2026
+
+- [x] Tres conversiones por fuente con binario `perf` fijo, un worker/divisiones 2, MD5 previo
+  y muestreo 100 ms; informes completos, validación profunda y hashes de ambas salidas iguales
+  a las referencias v5. Medianas: **349,051 s** Majadas y **513,502 s** Albuera.
+- [x] Mayor pico temporal muestreado en jerarquía: **18.804.783.558 B** Majadas,
+  **27.429.926.943 B** Albuera. Mayor RSS muestreado en validación: **98,703 / 110,988 MiB**.
+  [Dispersión, I/O, invariantes y reproducción](docs/V5_MEMORY_BENCH.md#albuera-y-majadas-picos-por-fase--12-10-2026).
+- [ ] Perfilar internamente jerarquía/spools para tiempo/disco y lote/reader de validación para
+  RSS; falta varios workers. Frente a rondas históricas hay menos temporales, más RSS y mayor
+  tiempo en Albuera: no es contraste emparejado ni prueba de mejora. Ambas fuentes siguen sin
+  cumplir <5 min y pareja ≤3×. No rebajar la validación profunda para alcanzar esos objetivos.
 
 ### Orden de trabajo y aceptación
 
@@ -351,7 +364,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    [mediciones v5](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
    Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
-   Faltan Albuera/Majadas por fase y matriz web; primera base pequeña Firefox documentada.
+   Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
+   Primera base pequeña Firefox documentada; los cuellos internos CPU/I/O siguen sin aislar.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
@@ -364,8 +378,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
    semánticamente equivalente, RAM/temporales/I/O y tiempo por fase comparados, recuperación intacta.
-   Avance: liberación de spools consumidos validada y comparada en Belvedere; pendiente medir
-   Albuera/Majadas y reducir el pico de planificación.
+   Avance: liberación de spools consumidos comparada en Belvedere y ronda posterior por fase
+   en Albuera/Majadas. Faltan contraste emparejado grande, varios workers y perfil interno de
+   jerarquía/spools y RSS de validación.
    Separar el coste de validación; no sustituir la comprobación profunda por CRC sin demostrar qué
    corrupción, errores de descompresión y cuantización detectaría cada modo.
 4. [ ] **Representaciones experimentales — formato y render.** Un cambio por experimento:
