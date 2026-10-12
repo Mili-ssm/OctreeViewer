@@ -470,8 +470,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
    CPU. Albuera XYZ/RGB/intensidad, Majadas RGB/intensidad y Belvedere RGB a 8 px tienen tres
    rondas válidas; Albuera intensidad registra un timeout BiDi en cuatro intentos. Falta cerrar Belvedere a 4 px, medir más componentes/datasets y otros navegadores. PSS externo
-   del árbol Firefox en tres cargas fue **0,98/6,58/0,99 GiB**; el pico de la segunda fue aislado y
-   requiere atribución. Albuera RGB: objetivo
+   del árbol Firefox en tres cargas fue **0,98/6,58/0,99 GiB**; dos cargas nuevas no reprodujeron
+   el pico. Albuera RGB: objetivo
    mediano **139,6 s [137,6–142,5]**, primer frame **110 ms [72–114]**, 17.030 vóxeles y cobertura
    completa; ~60 respuestas/s de worker. Heap JS y memoria GPU no están disponibles en Firefox.
    [Albuera RGB](docs/WEB_PERFORMANCE_BENCH.md#albuera-rgb-sidecar--12-10-2026),
@@ -486,8 +486,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    medido, mismos resultados deterministas,
    cobertura `Replacement`/`Additive`, sin solapamientos ni crecimiento de memoria sin control.
    Tres cargas Albuera medidas con PSS externo del árbol Firefox: **0,98/6,58/0,99 GiB**;
-   una exportación mostró un pico transitorio de 6,58 GiB en el proceso principal, que bajó al
-   navegar a la carga siguiente. La causa no está aislada; GPU VRAM/heap JS siguen fuera de la medida.
+   una exportación mostró un pico transitorio de 6,58 GiB en el proceso principal. Dos cargas
+   frescas posteriores quedaron en **0,98/0,99 GiB** y no cruzaron el umbral de captura de VMA.
+   La causa sigue sin aislar; GPU VRAM/heap JS siguen fuera de la medida.
    [Muestreo y límites](docs/WEB_PERFORMANCE_BENCH.md#external-firefox-process-tree-pss--12-10-2026).
    Descubrimiento reproducido: con un padre protegido y espacio para un solo hijo, las
    inserciones alternan hijos pendientes sin rechazos. Prueba de regresión añadida;

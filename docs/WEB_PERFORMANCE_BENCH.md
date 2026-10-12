@@ -735,8 +735,21 @@ cause. The lowest sampled host memory availability was 13.08 GiB and swap free r
 7.38 GiB. The RSS column sums per-process RSS and double-counts shared mappings; use tree PSS for
 the process group. Frame timings from this memory run are not compared to unsampled runs.
 
+A fresh-profile follow-up sampled Firefox `smaps_rollup` once per second over two sequential loads
+and inspected the main process's largest mappings whenever tree PSS reached 2 GiB. Both exports
+completed (147,510 and 135,438 ms), with full coverage, zero pending blocks, and the same 17,030
+voxels/568 blocks. Sampled tree PSS peaked at **0.978/0.986 GiB**; its anonymous component peaked
+at **0.798/0.805 GiB**, file-backed at **0.172/0.174 GiB**, and shared memory at **0.007 GiB**.
+Host `MemAvailable` stayed above 18.5 GiB and swap free above 7.38 GiB. Neither load crossed the
+2 GiB mapping-capture threshold, so this run did not reproduce the earlier 6.58 GiB event and has
+no large-VMA snapshot to attribute. The spike is therefore intermittent under this protocol; its
+owner and cause remain unknown. The one-second sampling interval can still miss shorter events.
+
+Raw follow-up samples and valid exports are in `target/browser-memory/albuera-rgb-smaps/`; the
+temporary capture script is `target/browser-memory/sample_firefox_smaps.py`. This bounded retry
+narrows the next step to capturing a reproduced event with a profiler or higher-frequency sampler;
+it does not justify changing application memory budgets.
+
 Raw 1 s process-tree and host-memory samples, per-run completion markers, exports and driver logs
 are in `target/browser-memory/albuera-rgb/`. Reproduction driver: `python3
 target/browser-memory/sample_firefox_tree.py` while the root HTTP server is available on port 8765.
-The next memory step is to capture PSS anon/file/shmem breakdowns at the peak and repeat before
-assigning the growth to decoded blocks, file-backed mappings or browser bookkeeping.
