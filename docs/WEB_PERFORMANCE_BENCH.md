@@ -333,6 +333,19 @@ dominates measured work. Other components/datasets, cold cache, GPU time and bro
 remain open; no speedup ratio is claimed. Raw exports, schema choices, session and capture:
 `target/column-reload-bench/majadas-intensity/`.
 
+### Standalone file-origin interaction check — 12-10-2026
+
+The regenerated `artifacts/visor-web-local/index.html` was opened directly via `file://` in a
+fresh Firefox 157.0.1 WebGPU-enabled headless profile, with the HTTP server stopped. The page
+reports a secure file context, loads embedded coordinates/sidecar and completes refinement.
+Focusing the color selector and pressing the `c` key selects Classification through native
+keyboard type-ahead. The ensuing export has `refinement.trigger=color`, classification,
+4,096 voxels, zero pending, full coverage and exactly 10,000 ms observation. Capture inspected.
+Raw export/session/capture: `target/offline-package-smoke/`. The single 154 ms target interval
+is a functional diagnostic, not a performance baseline. This does not validate conversion,
+OPFS/quota, all keyboard interactions, device loss or Chrome. The modular development host
+continues to require HTTP/HTTPS; this check applies to the deliberately packaged HTML/ZIP.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.

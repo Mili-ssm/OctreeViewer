@@ -414,6 +414,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   primer frame mediano **6 ms [6–7]**, objetivo **21,0 s [20,3–21,7]**, mismos 6.397 vóxeles.
   Lectura/copia **185–380 ms**, residual **660–702 ms**, voxelización **16,0–17,2 s**.
   [Protocolo de recarga y límites](docs/WEB_PERFORMANCE_BENCH.md#repeated-majadas-intensity-reload--12-10-2026).
+- [x] Validar paquete autocontenido en Firefox desde `file://`, con servidor HTTP detenido:
+  muestra/sidecar embebidos, selección de clasificación mediante teclado y export de 10 s
+  pasan; 4.096 vóxeles, cobertura completa. No valida conversión/OPFS ni todos los controles.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Completar Belvedere/Albuera RGB/otros navegadores, componentes adicionales y memoria de
@@ -508,9 +511,9 @@ COPC o ampliar EPT queda condicionado al perfil de importación y al alcance de 
 
 El seguimiento activo se mantiene en este README; no se crean Issues/PRs por defecto.
 
-- [ ] **Navegador:** apertura gris, pareja y componentes ya comprobados en Firefox; faltan Chrome,
-  teclado, corrupción de payloads, OPFS/cuota, cancelación durante lectura, picking y pérdida real
-  de GPU. Los tests Rust/JS y renders nativos no sustituyen esa interacción.
+- [ ] **Navegador:** apertura gris, pareja y componentes comprobados en Firefox; paquete `file://`
+  y teclado del selector también. Faltan Chrome, resto de teclado, corrupción de payloads,
+  OPFS/cuota, cancelación durante lectura, picking y pérdida real de GPU. Los tests Rust/JS y renders nativos no sustituyen esa interacción.
 - [ ] **Escala:** medir hasta una fuente mayor de 500 GB decimales, con índice, spools, RSS, recursos
   GPU, bytes leídos, primera vista y navegación separados. Fijar mínimos oficiales RAM/GPU/SO.
 - [ ] **Conversión:** matriz de fuentes <10 GB con al menos tres repeticiones y caché declarada;

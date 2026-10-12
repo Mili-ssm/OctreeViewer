@@ -294,3 +294,10 @@ and RGB-component selection plus rejection of Albuera's sidecar. Its sequential 
 are integration diagnostics, not host load/FPS benchmarks. Repeated host column-change loads and
 other browsers remain pending. See the
 [measured matrix](../../docs/WEB_PERFORMANCE_BENCH.md).
+
+Firefox 157.0.1 headless also passed opening the regenerated local package directly through
+`file://` with the HTTP server stopped and a fresh WebGPU-enabled profile. The embedded sample
+and sidecar loaded; keyboard type-ahead selected Classification, complete 4,096-voxel refinement
+and a 10,000 ms benchmark export succeeded. This validates the standalone load path and that
+selector interaction, not OPFS/conversion, all keyboard controls or Chrome. Evidence:
+`target/offline-package-smoke/classification.json` and `.png`.
