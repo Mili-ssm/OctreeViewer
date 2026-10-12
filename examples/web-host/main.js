@@ -116,6 +116,7 @@ function exportBenchmarkRun() {
         dataset: {
             name: benchmarkRun.datasetName,
             fileBytes: benchmarkRun.fileBytes,
+            attributes: benchmarkRun.attributes,
             sourcePointCount: benchmarkRun.sourcePointCount,
             nodeCount: benchmarkRun.nodeCount,
         },
@@ -713,6 +714,7 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     benchmarkRun = {
         datasetName: displayName,
         fileBytes: file.size,
+        attributes: attributesFile ? { name: attributesFile.name, fileBytes: attributesFile.size } : null,
         sourcePointCount: null,
         nodeCount: null,
         startedAt: performance.now(),

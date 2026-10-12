@@ -264,6 +264,13 @@ can leave partial entries. Successful output remains in site storage until remov
 
 The native stream format also permits monolithic v5 files for integrations, but both converters
 produce pairs. Previous format versions require reconversion. The current range-progress events
-count reads from the coordinate file; they do not include companion I/O. No real-browser validation
-of the new pair/component flow has been performed in this revision; Rust/WASM checks and mocked
-worker/API tests cover the contracts only.
+count unique reads from the coordinate file; they do not include companion I/O. In contrast,
+`refinementWork.rangeReadBytes` includes repeated Blob-cache fills from both files inside LOD
+callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes}` or `null`;
+the collector separates absent, present and unknown legacy companions, and displays color/depth
+settings. Names/sizes describe inputs, not cryptographic content identity.
+
+Majadas RGB pairing completed three Firefox runs with the same final geometry and a visibly
+colored capture; the small worker probe checks attribute cache reset/reload. Large selected-column
+loads, mismatched-pair browser failures and other browsers remain pending. See the
+[measured matrix](../../docs/WEB_PERFORMANCE_BENCH.md).

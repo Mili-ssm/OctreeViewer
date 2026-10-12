@@ -220,6 +220,37 @@ sessions are preserved above; this is not a paired speedup comparison. GPU ident
 execution time, JS/WASM/RSS memory and RGB/typed-attribute runs remain open. Raw exports,
 first-run capture and session: `target/unchanged-cut-bench/albuera-reused/`.
 
+### Majadas RGB sidecar — 12-10-2026
+
+WASM from `980b1c5`, Firefox 157.0.1, new WebGPU-enabled profile, same fit-camera/1280×720/4 px/
+256 MiB/depth-shading protocol. Three sequential loads with matching `majadas-tls.octattrs`
+(3,319,094,608 bytes) and coordinates (4,214,687,109 bytes). HTTP caches disabled, OS cache
+not flushed, no concurrent compilation/benchmark. All exports valid, colored capture inspected:
+
+| Run | First coarse frame ms | Target LOD ms | Range read ms | Decode/other ms | Voxel build ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 65 | 31,335 | 675 | 758 | 16,285 |
+| 2 | 79 | 28,860 | 362 | 742 | 17,773 |
+| 3 | 43 | 20,458 | 225 | 672 | 15,795 |
+
+Target median **28,860 ms [20,458–31,335]**; first coarse frame median **65 ms [43–79]**.
+Every run: 239 loads, 98 builds, 141 reused updates; 851 range fills / 222,393,664 bytes from
+both readers including repeated fills. Final geometry unchanged: 6,397 voxels, 7,015,449 source
+points, 202 visible blocks, full coverage, zero pending and 112,290,672 cache bytes. Stable
+10 s windows approximately 60 frame replies/s. The selector exposes eight schemas including
+RGB components, intensity and classification; presence in the selector does not validate a
+large selected-column load. These sessions are not paired against gray runs, so do not infer
+an attribute overhead ratio. GPU identity, GPU duration and browser memory remain unknown.
+Raw exports/capture/schema choices: `target/unchanged-cut-bench/majadas-rgb/`.
+
+The export now records `dataset.attributes` as `{name, fileBytes}` or explicit `null`. Legacy
+exports without the field mean unknown, not no sidecar. The collector groups these separately
+and includes name/size, color and depth shading in its displayed rows. A regression initially
+merged four unknown/absent/different-sidecar inputs into one row; it now produces four groups.
+Names and byte counts are provenance hints, not content hashes. Schema version 1 is retained
+for this additive field. Node host tests (25), Python host tests (5), JS/Python syntax and diff
+checks pass. Large selected-column comparisons and browser mismatched-pair rejection are next.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.

@@ -76,6 +76,25 @@ class BenchmarkCollectorTests(unittest.TestCase):
         self.assertEqual(rows[0][11], "55.00 [50.00–60.00]")
         self.assertEqual(rows[0][14], "88.00 [88.00–88.00]")
 
+    def test_collect_separates_unknown_absent_and_different_sidecars(self):
+        samples = [run() for _ in range(4)]
+        samples[1]["dataset"]["attributes"] = None
+        samples[2]["dataset"]["attributes"] = {"name": "cloud.octattrs", "fileBytes": 100}
+        samples[3]["dataset"]["attributes"] = {"name": "cloud.octattrs", "fileBytes": 200}
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for index, sample in enumerate(samples):
+                path = Path(directory) / f"run-{index}.json"
+                path.write_text(json.dumps(sample), encoding="utf-8")
+                paths.append(path)
+            rows = collect_benchmarks.collect(paths)
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(row[7] == "1/1" for row in rows))
+        self.assertEqual(
+            {row[-3] for row in rows},
+            {"unknown (legacy)", "none", "cloud.octattrs (100 B)", "cloud.octattrs (200 B)"},
+        )
+
     def test_collect_rejects_unknown_schema_versions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "unsupported.json"

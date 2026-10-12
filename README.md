@@ -394,6 +394,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   lectura/copia y **900 ms** restantes, 542 rellenos/142 MB con relecturas. Prueba Firefox de
   metadatos, vista repetida y reapertura; Clippy nativo/WASM, build release y 25 tests pasan.
   El residual incluye CRC, conversión y copias: no es descompresión pura ni I/O físico.
+- [x] Validar Majadas RGB con `.octattrs`: **3/3 Firefox**, primera vista **65 ms [43–79]**,
+  objetivo **28,9 s [20,5–31,3]**, misma geometría y captura con color. El export identifica el
+  sidecar; el recolector separa atributos ausentes/presentes/desconocidos y muestra modo/color.
+  Regresión reproducida: antes mezclaba cuatro configuraciones en una fila; ahora quedan separadas.
+  [Resultados y límites](docs/WEB_PERFORMANCE_BENCH.md#majadas-rgb-sidecar--12-10-2026).
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Completar repeticiones grandes comparables, incluyendo `.octattrs` y columnas seleccionadas.

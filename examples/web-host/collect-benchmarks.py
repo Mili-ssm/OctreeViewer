@@ -42,6 +42,12 @@ def run_group_key(run: dict[str, Any]) -> tuple[Any, ...]:
     configuration = run.get("configuration", {})
     environment = run.get("environment", {})
     adapter = environment.get("gpuStats", {}).get("adapter", {}) or {}
+    attributes = dataset.get("attributes")
+    attribute_key = (
+        ("sidecar", attributes.get("name"), attributes.get("fileBytes"))
+        if attributes is not None
+        else ("none" if "attributes" in dataset else "unknown", None, None)
+    )
     return (
         environment.get("userAgent", "unknown browser"),
         adapter.get("name", "unknown GPU"),
@@ -52,6 +58,7 @@ def run_group_key(run: dict[str, Any]) -> tuple[Any, ...]:
         configuration.get("targetVoxelPixels"),
         configuration.get("colorMode"),
         configuration.get("depthShading"),
+        attribute_key,
     )
 
 
@@ -66,8 +73,21 @@ def collect(paths: list[Path]) -> list[list[str]]:
     rows: list[list[str]] = []
     for key, runs in sorted(groups.items(), key=lambda entry: str(entry[0])):
         valid = [run for run in runs if comparable(run)]
+        attribute_kind, attribute_name, attribute_bytes = key[9]
+        if attribute_kind == "sidecar":
+            attribute_label = f"{attribute_name} ({attribute_bytes} B)"
+        elif attribute_kind == "none":
+            attribute_label = "none"
+        else:
+            attribute_label = "unknown (legacy)"
+        configuration_labels = [attribute_label, str(key[7] or "—"), str(key[8])]
         if not valid:
-            rows.append([key[0], key[1], str(key[2]), str(key[3] or "—"), str(key[4] or "—"), "×".join(map(str, key[5])) or "—", str(key[6] or "—"), f"0/{len(runs)}", *(["—"] * 8)])
+            rows.append([
+                str(key[0]), str(key[1]), str(key[2]), str(key[3] or "—"),
+                str(key[4] or "—"), "×".join(map(str, key[5])) or "—",
+                str(key[6] or "—"), f"0/{len(runs)}", *(["—"] * 8),
+                *configuration_labels,
+            ])
             continue
         loads = [run.get("load", {}) for run in valid]
         steady = [run.get("steadyState", {}) for run in valid]
@@ -90,6 +110,7 @@ def collect(paths: list[Path]) -> list[list[str]]:
             median([steady.get("workerRenderCallP95Ms") for steady in steady]),
             median([scene.get("renderedVoxels") for scene in scenes]),
             median([environment.get("jsHeapUsedBytes") for environment in environments]),
+            *configuration_labels,
         ])
     return rows
 
@@ -102,7 +123,7 @@ def main() -> None:
     headers = [
         "Browser", "GPU adapter", "Dataset", "Points", "File bytes", "Viewport", "Target px",
         "Valid runs", "Metadata ms", "First coarse ms", "Target LOD ms", "FPS", "Reply p95 ms",
-        "CPU frame p95 ms", "Voxels", "JS heap bytes",
+        "CPU frame p95 ms", "Voxels", "JS heap bytes", "Attributes", "Color", "Depth shading",
     ]
     rows = collect(args.runs)
     if args.format == "csv":
