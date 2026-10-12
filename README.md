@@ -447,6 +447,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
    Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
+   El benchmark ya informa lote efectivo de preparación, límite de threads Rayon, workers de
+   validación y estimaciones por worker; falta el contraste repetido 1/2 workers.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida

@@ -426,7 +426,7 @@ pub(super) fn convert(
         memory_budget_bytes: options.max_memory_budget_bytes(),
         reserved_memory_bytes: 0,
     };
-    let output_bytes = publish_output_pair(
+    let (output_bytes, output_validation) = publish_output_pair(
         &temporary.geometry.path,
         &attributes_temporary_path,
         output_path,
@@ -445,6 +445,8 @@ pub(super) fn convert(
         output_bytes,
         estimated_peak_memory_bytes: memory_estimate,
         omitted_dimensions: omitted,
+        block_preparation: None,
+        output_validation,
     })
 }
 
@@ -825,6 +827,8 @@ mod tests {
             })
             .unwrap();
         assert_eq!(report.point_count, 3);
+        assert_eq!(report.block_preparation, None);
+        assert!(report.output_validation.worker_limit > 0);
         assert_eq!(report.block_count, 3);
         assert_eq!(
             progress.first().unwrap().stage,

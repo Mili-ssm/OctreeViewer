@@ -174,6 +174,15 @@ impl Default for ConvertOptions {
     }
 }
 
+/// Concurrency ceiling selected from the requested count, block count and memory budget.
+/// For preparation this is the retained batch width; Rayon may use fewer threads.
+/// The byte estimate is a planning model, not observed RSS or retained payload size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConversionWorkerStats {
+    pub worker_limit: usize,
+    pub estimated_bytes_per_worker: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversionReport {
     pub point_count: u64,
@@ -181,6 +190,9 @@ pub struct ConversionReport {
     pub output_bytes: u64,
     pub estimated_peak_memory_bytes: u64,
     pub omitted_dimensions: Vec<String>,
+    /// None when this invocation skips batched preparation (resume or serial EPT ingestion).
+    pub block_preparation: Option<ConversionWorkerStats>,
+    pub output_validation: ConversionWorkerStats,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,11 +458,16 @@ fn convert_file_inner(
         {
             return Err(ConvertError::OutputExists(attributes_path));
         }
-        let output_bytes = if output_path.exists() && attributes_path.exists() {
-            validate_output_pair(output_path, &attributes_path, &validation, on_progress)?;
-            candidate_length
-                .checked_add(attributes_fingerprint.bytes)
-                .ok_or(ConvertError::SizeOverflow)?
+        let (output_bytes, output_validation) = if output_path.exists() && attributes_path.exists()
+        {
+            let output_validation =
+                validate_output_pair(output_path, &attributes_path, &validation, on_progress)?;
+            (
+                candidate_length
+                    .checked_add(attributes_fingerprint.bytes)
+                    .ok_or(ConvertError::SizeOverflow)?,
+                output_validation,
+            )
         } else {
             publish_output_pair(
                 &candidate_path,
@@ -473,6 +490,8 @@ fn convert_file_inner(
             output_bytes,
             estimated_peak_memory_bytes: estimated_memory_bytes,
             omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+            block_preparation: None,
+            output_validation,
         });
     }
 
@@ -562,7 +581,7 @@ fn convert_file_inner(
     };
     let mut writer =
         FormatWriter::new_split(file, attributes_file, plan.metadata.clone(), writer_options)?;
-    stream_blocks(
+    let block_preparation = stream_blocks(
         &mut writer,
         &plan,
         &temporary_path,
@@ -608,7 +627,7 @@ fn convert_file_inner(
         memory_budget_bytes: options.max_memory_budget_bytes(),
         reserved_memory_bytes: plan.estimated_peak_memory_bytes,
     };
-    let output_bytes = publish_output_pair(
+    let (output_bytes, output_validation) = publish_output_pair(
         &temporary_path,
         &attributes_path,
         output_path,
@@ -633,6 +652,8 @@ fn convert_file_inner(
         output_bytes,
         estimated_peak_memory_bytes: plan.estimated_peak_memory_bytes,
         omitted_dimensions: plan.omitted_dimensions,
+        block_preparation: Some(block_preparation),
+        output_validation,
     })
 }
 
@@ -691,7 +712,7 @@ fn stream_blocks(
     requested_workers: usize,
     memory_budget_bytes: u64,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
-) -> Result<(), ConvertError> {
+) -> Result<ConversionWorkerStats, ConvertError> {
     emit_progress(
         on_progress,
         ConversionProgress {
@@ -752,7 +773,10 @@ fn stream_blocks(
             actual: processed,
         });
     }
-    Ok(())
+    Ok(ConversionWorkerStats {
+        worker_limit: worker_count,
+        estimated_bytes_per_worker: bytes_per_worker,
+    })
 }
 
 fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {
@@ -860,7 +884,7 @@ fn validate_output_pair(
     attributes_path: &Path,
     validation: &OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
-) -> Result<(), ConvertError> {
+) -> Result<ConversionWorkerStats, ConvertError> {
     let OutputValidation {
         total_points,
         block_ids,
@@ -1002,7 +1026,10 @@ fn validate_output_pair(
             actual: validated_points,
         });
     }
-    Ok(())
+    Ok(ConversionWorkerStats {
+        worker_limit: worker_count,
+        estimated_bytes_per_worker: worker_bytes,
+    })
 }
 
 enum ValidationMessage {
@@ -1016,8 +1043,8 @@ fn publish_output_pair(
     output_path: &Path,
     validation: OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
-) -> Result<u64, ConvertError> {
-    validate_output_pair(
+) -> Result<(u64, ConversionWorkerStats), ConvertError> {
+    let output_validation = validate_output_pair(
         temporary_path,
         attributes_temporary_path,
         &validation,
@@ -1081,7 +1108,7 @@ fn publish_output_pair(
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     File::open(parent)?.sync_all()?;
-    Ok(output_bytes)
+    Ok((output_bytes, output_validation))
 }
 
 fn emit_progress(
@@ -1160,7 +1187,7 @@ fn create_temporary_pair(output_path: &Path) -> Result<TemporaryPair, ConvertErr
 
 #[cfg(test)]
 mod tests {
-    use super::output_attributes_path;
+    use super::{OutputValidation, output_attributes_path, output_block_ids, validate_output_pair};
     use std::{
         fs,
         io::{Read, Seek, SeekFrom, Write},
@@ -1498,6 +1525,42 @@ mod tests {
         let serial = convert_file(&input, &serial_output, serial_options).unwrap();
         let parallel = convert_file(&input, &parallel_output, parallel_options).unwrap();
 
+        assert_eq!(serial.block_preparation.unwrap().worker_limit, 1);
+        assert_eq!(serial.output_validation.worker_limit, 1);
+        assert_eq!(parallel.block_preparation.unwrap().worker_limit, 2);
+        assert_eq!(parallel.output_validation.worker_limit, 2);
+        assert!(
+            parallel
+                .block_preparation
+                .unwrap()
+                .estimated_bytes_per_worker
+                > 0
+        );
+        assert!(parallel.output_validation.estimated_bytes_per_worker > 0);
+        let attributes_path = output_attributes_path(&parallel_output);
+        let (block_ids, source_block_ids) = output_block_ids(&parallel_output).unwrap();
+        let limited = validate_output_pair(
+            &parallel_output,
+            &attributes_path,
+            &OutputValidation {
+                total_points: parallel.point_count,
+                block_ids: &block_ids,
+                source_block_ids: &source_block_ids,
+                file_length: fs::metadata(&parallel_output).unwrap().len(),
+                attributes_length: fs::metadata(&attributes_path).unwrap().len(),
+                requested_workers: 2,
+                memory_budget_bytes: 1,
+                reserved_memory_bytes: 1,
+            },
+            &mut |_| true,
+        )
+        .unwrap();
+        assert_eq!(limited.worker_limit, 1);
+        assert_eq!(
+            limited.estimated_bytes_per_worker,
+            parallel.output_validation.estimated_bytes_per_worker
+        );
+
         assert_eq!(parallel.point_count, serial.point_count);
         assert_eq!(parallel.block_count, serial.block_count);
         assert_eq!(parallel.output_bytes, serial.output_bytes);
@@ -1506,8 +1569,12 @@ mod tests {
             serial.estimated_peak_memory_bytes + 1024 * 1024 + 2 * 1024 * 1024
         );
         assert_eq!(
-            fs::read(serial_output).unwrap(),
-            fs::read(parallel_output).unwrap()
+            fs::read(&serial_output).unwrap(),
+            fs::read(&parallel_output).unwrap()
+        );
+        assert_eq!(
+            fs::read(output_attributes_path(&serial_output)).unwrap(),
+            fs::read(output_attributes_path(&parallel_output)).unwrap()
         );
         fs::remove_dir_all(dir).unwrap();
     }
@@ -1980,6 +2047,8 @@ mod tests {
             })
             .unwrap();
         assert_eq!(report.point_count, 5);
+        assert_eq!(report.block_preparation, None);
+        assert!(report.output_validation.worker_limit > 0);
         assert!(!checkpoint_dir.exists());
 
         convert_file(&input, &expected, options).unwrap();

@@ -820,3 +820,32 @@ código nativo; los ocho tests Python del perfilador pasaron antes de iniciar la
 Reproducir con el comando de perfilado anterior, cambiando fuente y directorio por los de cada
 dataset, y leyendo/verificando su MD5 antes de cada una de las tres repeticiones. Preservar
 logs y fallos; no ejecutar otros benchmarks o compilaciones simultáneamente.
+
+### Concurrencia seleccionada por fase — 12-10-2026
+
+`ConversionReport` expone `block_preparation` y `output_validation`, con límite de
+workers y bytes estimados por worker. `block_preparation = None` significa que esa
+invocación no ejecutó preparación por lotes: reanudación desde salida preparada o
+ingestión EPT serial. No significa cero trabajo de lectura en EPT. La validación
+reporta los threads creados tras limitar por memoria y número de bloques.
+
+`real_dataset_bench convert/convert-profile` conserva `spatial_workers` solicitado y añade:
+
+- `preparation_batch_blocks`: máximo de bloques preparados retenidos antes de escribir.
+- `rayon_pool_threads` y `preparation_thread_limit`: capacidad del pool y techo de
+  concurrencia de ese lote; no miden threads ocupados simultáneamente.
+- `validation_workers`: threads de validación creados.
+- `preparation_estimated_bytes_per_worker` / `validation_estimated_bytes_per_worker`:
+  modelos existentes de admisión; no son RSS, tamaño medido del lote ni pico conjunto.
+
+No cambian la política de admisión, el formato ni la validación profunda. Tests con
+1/2 workers conservan ambas salidas byte a byte; una validación con presupuesto
+disponible cero limita dos workers solicitados a uno. EPT y reanudación verifican la
+ausencia de un lote inventado. Pasan 37 tests de biblioteca, un test CLI, ocho tests
+del muestreador, Clippy nativo, fmt y check WASM.
+
+Smoke externo: `target/worker-limits-smoke/`, `fs_e430_n4008_18.las`, dos workers
+solicitados, divisiones 2, `RAYON_NUM_THREADS=1`: lote de un bloque, techo Rayon uno,
+validación uno. Conversión 84,097 ms; el muestreo de 100 ms no capturó picos por fase.
+Este smoke comprueba el informe, no una mejora de rendimiento. El contraste grande
+1/2 workers y la medición interna del lote completo siguen pendientes.
