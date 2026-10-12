@@ -8,13 +8,14 @@ let targetLodStartedAt = 0;
 let firstCoarseMs = null;
 let targetLodMs = null;
 let lastLodProgressKey = "";
+let refinementContext = { id: 0, trigger: "dataset", colorMode: "rgb" };
 let currentMetadata = null;
 let sceneGeneration = 0;
 const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
-const coalescedCommands = new Set(["resize", "color", "depthShading", "voxelPixels", "fit", "birdView"]);
+const coalescedCommands = new Set(["resize", "refine", "depthShading", "fit", "birdView"]);
 
 function samplePointCloud() {
     const positions = [];
@@ -45,6 +46,15 @@ function resetFrameRenderSamples() {
     frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
     frameRenderSampleCount = 0;
     nextFrameRenderSample = 0;
+}
+
+function beginRefinement(trigger, id, colorMode, startedAt = performance.now()) {
+    targetLodStartedAt = startedAt;
+    firstCoarseMs = null;
+    targetLodMs = null;
+    lastLodProgressKey = "";
+    resetFrameRenderSamples();
+    refinementContext = { id, trigger, colorMode };
 }
 
 function recordFrameRenderSample(durationMs) {
@@ -94,7 +104,7 @@ function postLodProgress(lod, afterRenderFrame = false) {
     const now = performance.now();
     const hasVisiblePoints = Number(lod.visiblePoints) > 0;
     if (afterRenderFrame && firstCoarseMs === null && hasVisiblePoints) {
-        firstCoarseMs = now - datasetOpenedAt;
+        firstCoarseMs = now - targetLodStartedAt;
     }
     const targetReached = lod.coverageComplete
         && lod.pendingBlockIds.length === 0
@@ -121,6 +131,11 @@ function postLodProgress(lod, afterRenderFrame = false) {
         firstCoarseMs,
         targetLodMs,
         elapsedMs: now - datasetOpenedAt,
+        refinement: {
+            ...refinementContext,
+            firstFrameMs: firstCoarseMs,
+            targetLodMs,
+        },
     });
 }
 
@@ -146,9 +161,7 @@ async function handleMessage({ data }) {
                         sceneGeneration += 1;
                         targetVoxelPixels = data.targetVoxelPixels;
                         datasetOpenedAt = performance.now();
-                        targetLodStartedAt = datasetOpenedAt;
-                        firstCoarseMs = null;
-                        targetLodMs = null;
+                        beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
                         const opened = viewer.openFormatDataset(data.file, data.cacheBytes, data.attributes);
                         viewer.fitScene();
                         const lod = viewer.updateLod(targetVoxelPixels);
@@ -218,33 +231,27 @@ async function handleMessage({ data }) {
                 sceneGeneration += 1;
                 viewer.resize(data.width, data.height);
                 break;
-            case "color":
-                viewer.setColorMode(data.value);
+            case "refine": {
+                const startedAt = performance.now();
+                viewer.setColorMode(data.colorMode);
+                sceneGeneration += 1;
+                targetVoxelPixels = data.targetVoxelPixels;
+                beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
+                if (viewer.lodStats()) {
+                    const lod = viewer.updateLod(targetVoxelPixels);
+                    self.postMessage({ type: "lod", lod });
+                    postLodProgress(lod);
+                }
                 break;
+            }
             case "depthShading":
                 viewer.setDepthShading(data.value);
                 break;
-            case "voxelPixels": {
-                sceneGeneration += 1;
-                targetVoxelPixels = data.value;
-                targetLodStartedAt = performance.now();
-                targetLodMs = null;
-                lastLodProgressKey = "";
-                resetFrameRenderSamples();
-                const lod = viewer.updateLod(targetVoxelPixels);
-                self.postMessage({ type: "lod", lod });
-                postLodProgress(lod);
-                break;
-            }
             case "openFile": {
                 sceneGeneration += 1;
                 targetVoxelPixels = data.targetVoxelPixels;
                 datasetOpenedAt = performance.now();
-                targetLodStartedAt = datasetOpenedAt;
-                firstCoarseMs = null;
-                targetLodMs = null;
-                lastLodProgressKey = "";
-                resetFrameRenderSamples();
+                beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
                 const name = data.name ?? data.file.name;
                 self.postMessage({ type: "status", message: `Opening ${name}…` });
                 const opened = viewer.openFormatDataset(data.file, data.cacheBytes, data.attributes);

@@ -404,11 +404,15 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   pequeño y Majadas con intensidad/componente RGB: mismos contadores finales, 6.397 vóxeles y
   caché de 112 MB. Rechazar `.octattrs` de Albuera conserva la escena anterior. Es validación
   API/worker; falta benchmark repetido del flujo de cambio de columna en el host.
+- [x] Corregir tiempos de cambio de columna/detalle: `load` conserva apertura RGB y
+  `refinement` identifica la petición actual. Color/detalle se coalescen juntos; FPS espera el
+  último objetivo. Firefox pasa carga, columna, error y recuperación con cambios rápidos.
+  Corregido también cierre prematuro de ventana (9.999 ms observado); 26 tests Node/6 Python
+  y paquete local pasan. [Contrato y regresiones](docs/WEB_PERFORMANCE_BENCH.md#scoped-host-refinement-timing--12-10-2026).
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
-  Completar Belvedere/otros navegadores y repeticiones del cambio de columna. Definir primero
-  tiempos de recarga separados de la carga inicial RGB: cambiar color actualmente conserva el
-  tiempo de objetivo previo en el host, por lo que no sirve como baseline de una columna.
+  Completar Belvedere/otros navegadores y tres repeticiones de cambio de columna desde la misma
+  vista RGB estable; usar `refinement` para recarga y mantener `load` como apertura inicial.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
   contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
 
@@ -432,7 +436,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
-   CPU. Albuera XYZ gris ya tiene tres rondas completas; faltan Belvedere, color y atributos.
+   CPU. Albuera XYZ gris y Majadas RGB tienen tres rondas; faltan Belvedere, Albuera RGB,
+   recargas tipadas repetidas, otros navegadores y memoria.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.

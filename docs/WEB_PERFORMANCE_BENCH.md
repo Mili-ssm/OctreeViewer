@@ -270,11 +270,43 @@ Raw result: `target/unchanged-cut-bench/probe-attributes-majadas/result.json`; s
 
 This probe calls update/render sequentially, yielding between iterations. Its single reload
 intervals (17,991/18,607 ms) are **not** host-loading benchmarks, FPS or repeated performance
-baselines; counter equality is not a full spatial/color scene hash. A proper host column-change
-benchmark must first distinguish reload timing from the initial RGB target: the current color
-command leaves the previous `targetLodMs` intact. Browser memory/peak attribute decode and other
+baselines; counter equality is not a full spatial/color scene hash. At this point the host color command still retained the previous RGB `targetLodMs`; the
+scoped-timing change below corrects that before repeated host column-change benchmarks. Browser memory/peak attribute decode and other
 browsers remain open. Validation: 42 format tests, format Clippy, both Firefox probes, JS syntax,
 formatting and diff checks pass. No storage/renderer algorithm change was needed.
+
+### Scoped host refinement timing — 12-10-2026
+
+A mocked worker regression against the preceding implementation observes 25 ms from the initial
+load where the new color request should report its own 30 ms first-frame interval. The worker now
+restarts its timing context only after a successful settings request. `refinement` exports request
+ID, trigger (`dataset`, `color`, `detail`), color, `firstFrameMs` and `targetLodMs`; `load` retains
+initial RGB timing and initial target pixels. IDs order UI responses, not storage/cache revisions.
+Color and detail travel in one bounded coalesced settings command, so the last pending request
+carries both current values. The host ignores older progress, cancels previous FPS windows on
+settings/new-file changes, and waits for a rendered target frame for the newest request.
+
+The collector uses current refinement first/target times, separates triggers and rejects explicit
+pending/stale-color contexts. Legacy exports without `refinement` retain initial-load behavior.
+`load.refinementWork` retains its cache-reset scope, which can span multiple detail requests;
+the legacy `workerRenderCallDuringLoadMs` label reports active-refinement render samples.
+
+Firefox desktop 1688×768 / framebuffer 1280×720 interaction check with the typed fixture passes:
+initial RGB target 216 ms; selected intensity target 104 ms; rapid color/detail changes after an
+intentional invalid selection end at classification / 3 px, target 254 ms and 4,096 voxels. All
+three final exports have 10,000 ms observation windows and retain initial `load.targetLodMs=216`.
+These are functional diagnostics, not repeated timing baselines. Screenshot inspected; no layout
+change was needed. Artifacts: `target/color-refinement-bench/after4/`.
+
+The first interaction attempt exposed a separate early timer completion: a **9,999 ms** export,
+preserved as `target/color-refinement-bench/initial.json`. Completion now reschedules only the
+missing interval rather than publishing an incomplete window. Intermediate scripts needed fixes
+for expected-error polling and BiDi global-const reuse; those partial outputs remain under
+`after/`, `after2/`, `after3/` and do not count as completed interaction checks or benchmark repeats.
+Final checks: 26 Node tests, 6 Python tests, JS/Python syntax, diff checks, local HTML/ZIP packaging
+and the Firefox success/error/recovery flow pass. The package builder's exact metrics-import
+marker was updated alongside the new window constant. Next: repeat isolated large column reloads
+from a stable RGB view, then complete the remaining large/browser/memory cells.
 
 ## Comparison matrix
 

@@ -252,6 +252,16 @@ caps, worker failure cleanup, benchmark-window metrics and filtering/aggregation
 Browser interaction, real GPU timing, device loss and cancellation during a local file read still need
 a real browser check; no native or mocked timing should be reported as browser FPS.
 
+Benchmark exports retain initial RGB open times under `load` (including its initial detail), and
+publish the latest `refinement` with request ID, `trigger` (`dataset`, `color`, `detail`), color,
+first-frame and target times. Color/detail share one coalesced settings command. Starting FPS
+immediately after a change waits for the newest request and a rendered target frame; changing
+settings cancels an older FPS window. Opening another dataset cancels its old window as well.
+The collector separates timing triggers and uses refinement times, retaining legacy exports.
+`load.refinementWork` still follows its existing cumulative cache-reset scope, not the request
+ID; `workerRenderCallDuringLoadMs` is a legacy label for the active refinement's render samples.
+The window finisher waits for the full 10,000 ms even if the browser timer fires early.
+
 ## Coordinate and attribute files (v5)
 
 Open `.oct` alone for gray geometry. Select its optional `.octattrs` before opening coordinates or

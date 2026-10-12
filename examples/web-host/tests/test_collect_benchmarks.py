@@ -91,9 +91,30 @@ class BenchmarkCollectorTests(unittest.TestCase):
         self.assertEqual(len(rows), 4)
         self.assertTrue(all(row[7] == "1/1" for row in rows))
         self.assertEqual(
-            {row[-3] for row in rows},
+            {row[-4] for row in rows},
             {"unknown (legacy)", "none", "cloud.octattrs (100 B)", "cloud.octattrs (200 B)"},
         )
+
+    def test_collect_uses_reload_timing_and_rejects_pending_or_stale_refinement(self):
+        sample = run()
+        sample["refinement"] = {
+            "trigger": "color", "colorMode": "rgb", "firstFrameMs": 40, "targetLodMs": 90,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reload.json"
+            path.write_text(json.dumps(sample), encoding="utf-8")
+            initial_path = Path(directory) / "initial.json"
+            initial_path.write_text(json.dumps(run()), encoding="utf-8")
+            rows = collect_benchmarks.collect([path, initial_path])
+        self.assertEqual(len(rows), 2)
+        rows = [row for row in rows if row[-1] == "color"]
+        self.assertEqual(rows[0][9:11], ["40.00", "90.00"])
+        self.assertEqual(rows[0][-1], "color")
+        self.assertTrue(collect_benchmarks.comparable(sample))
+        sample["refinement"]["colorMode"] = "intensity"
+        self.assertFalse(collect_benchmarks.comparable(sample))
+        sample["refinement"] = None
+        self.assertFalse(collect_benchmarks.comparable(sample))
 
     def test_collect_rejects_unknown_schema_versions(self):
         with tempfile.TemporaryDirectory() as directory:

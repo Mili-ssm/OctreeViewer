@@ -1,5 +1,5 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
-import { FRAME_RATE_WARMUP_MS, measureFrameRate } from "./benchmark-metrics.mjs";
+import { FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, measureFrameRate } from "./benchmark-metrics.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 
@@ -70,6 +70,8 @@ let sampleFetchController = null;
 let benchmarkRun = null;
 let frameSamples = [];
 let benchmarkArmed = false;
+let requestedRefinementId = 0;
+let observedRefinementId = 0;
 
 
 function formatBytes(bytes) {
@@ -86,8 +88,9 @@ function formatBytes(bytes) {
 
 function updateProgressiveLoadState(lod) {
     if (!lod) return;
-    loadingFile = !lod.lodError && (lod.pendingBlockIds.length > 0
-        || lod.lodStagePixels > lod.targetVoxelPixels);
+    loadingFile = observedRefinementId !== requestedRefinementId
+        || (!lod.lodError && (benchmarkRun?.refinement?.targetLodMs === null
+            || lod.pendingBlockIds.length > 0 || lod.lodStagePixels > lod.targetVoxelPixels));
     cancelButton.hidden = !loadingFile;
     if (loadingFile) startRendering();
     else if (!benchmarkStopTimer) stopRendering();
@@ -129,7 +132,10 @@ function exportBenchmarkRun() {
             depthShading: depthShading.checked,
             cacheBudgetBytes: 256 * 1024 * 1024,
         },
+        refinement: benchmarkRun.refinement,
         load: {
+            colorMode: "rgb",
+            targetVoxelPixels: benchmarkRun.initialTargetVoxelPixels,
             metadataOpenMs: benchmarkRun.metadataOpenMs,
             firstCoarseFrameMs: benchmarkRun.firstCoarseFrameMs,
             targetLodMs: benchmarkRun.targetLodMs,
@@ -178,6 +184,7 @@ function exportBenchmarkRun() {
         },
         notes: [
             "FPS counts worker frame replies (submitted frames), not GPU completion or display scanout.",
+            "load timing describes initial RGB opening; refinement describes the latest dataset/color/detail request. Legacy workerRenderCallDuringLoadMs describes the active refinement.",
             "refinementWork accumulates synchronous LOD work since open or attribute-cache reset; uploadMs measures CPU preparation/enqueue, not GPU completion.",
             "Use only runs with cameraChanged=false, viewportChanged=false, settingsChanged=false, complete coverage, and a >=10 s stable window for comparisons.",
         ],
@@ -311,7 +318,13 @@ function acknowledgeFrame() {
 function finishBenchmarkWindow() {
     benchmarkStopTimer = 0;
     if (!benchmarkRun || loadingFile) return;
-    benchmarkRun.finalFps = measureFrameRate(frameSamples, benchmarkRun.measurementStartedAt);
+    const measured = measureFrameRate(frameSamples, benchmarkRun.measurementStartedAt);
+    if (measured.windowDurationMs < FRAME_RATE_WINDOW_MS) {
+        benchmarkStopTimer = setTimeout(finishBenchmarkWindow,
+            Math.max(1, Math.ceil(FRAME_RATE_WINDOW_MS - measured.windowDurationMs)));
+        return;
+    }
+    benchmarkRun.finalFps = measured;
     startBenchmarkButton.disabled = false;
     startBenchmarkButton.textContent = "Repeat 15 s benchmark";
     downloadBenchmarkButton.disabled = false;
@@ -327,7 +340,7 @@ function beginBenchmarkWindow() {
     startBenchmarkButton.textContent = "Benchmark running…";
     clearTimeout(benchmarkStopTimer);
     startRendering();
-    benchmarkStopTimer = setTimeout(finishBenchmarkWindow, FRAME_RATE_WARMUP_MS + 10_000);
+    benchmarkStopTimer = setTimeout(finishBenchmarkWindow, FRAME_RATE_WARMUP_MS + FRAME_RATE_WINDOW_MS);
 }
 
 function startBenchmark() {
@@ -413,10 +426,15 @@ function handleWorkerMessage(event) {
         updateProgressiveLoadState(data.lod);
         statusRoot.textContent = `LOD stage ${data.lod.lodStagePixels} px · finest target ${data.lod.targetVoxelPixels} px`;
     } else if (data.type === "lodProgress") {
+        if (data.refinement?.id !== requestedRefinementId) return;
+        observedRefinementId = data.refinement.id;
         latestLodStats = data.lod;
         if (benchmarkRun) {
-            benchmarkRun.firstCoarseFrameMs = data.firstCoarseMs;
-            benchmarkRun.targetLodMs = data.targetLodMs;
+            benchmarkRun.refinement = data.refinement;
+            if (data.refinement.trigger === "dataset") {
+                benchmarkRun.firstCoarseFrameMs = data.firstCoarseMs;
+                benchmarkRun.targetLodMs = data.targetLodMs;
+            }
             benchmarkRun.frameRenderMs = data.frameRenderMs;
         }
         updateProgressiveLoadState(data.lod);
@@ -468,11 +486,12 @@ function handleWorkerMessage(event) {
         }
     } else if (data.type === "error") {
         loadingFile = false;
+        observedRefinementId = requestedRefinementId;
         benchmarkArmed = false;
         clearTimeout(benchmarkStopTimer);
         benchmarkStopTimer = 0;
         stopRendering();
-        startBenchmarkButton.disabled = !benchmarkRun;
+        startBenchmarkButton.disabled = !benchmarkRun?.refinement;
         startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
         cancelButton.hidden = true;
         fileInput.disabled = false;
@@ -583,26 +602,47 @@ function cancelFileLoad() {
 reloadButton.addEventListener("click", recreateViewer);
 cancelButton.addEventListener("click", cancelFileLoad);
 startBenchmarkButton.addEventListener("click", startBenchmark);
+function resetBenchmarkWindow() {
+    if (!benchmarkRun) return;
+    benchmarkRun.settingsChanged = true;
+    benchmarkRun.measurementStartedAt = null;
+    benchmarkRun.finalFps = null;
+    benchmarkArmed = false;
+    clearTimeout(benchmarkStopTimer);
+    benchmarkStopTimer = 0;
+    startBenchmarkButton.disabled = false;
+    startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
+    downloadBenchmarkButton.disabled = true;
+}
+
+function requestRefinement() {
+    requestedRefinementId += 1;
+    loadingFile = true;
+    benchmarkRun.refinement = null;
+    return requestedRefinementId;
+}
+
+function queueRefinement(trigger) {
+    if (!ready || frameFailed) return;
+    const refinementId = benchmarkRun ? requestRefinement() : undefined;
+    queueWorkerCommand("refine", {
+        trigger, refinementId, colorMode: colorMode.value,
+        targetVoxelPixels: Number(voxelPixels.value),
+    });
+}
+
 colorMode.addEventListener("change", () => {
-    if (benchmarkRun) benchmarkRun.settingsChanged = true;
-    queueWorkerCommand("color", { value: colorMode.value });
+    resetBenchmarkWindow();
+    queueRefinement("color");
 });
 function updateLodControls() {
     voxelPixelsValue.value = `${voxelPixels.value} px`;
     if (ready && latestLodStats) {
         if (benchmarkRun && Number(voxelPixels.value) !== benchmarkRun.targetVoxelPixels) {
             benchmarkRun.targetVoxelPixels = Number(voxelPixels.value);
-            benchmarkRun.settingsChanged = true;
-            benchmarkRun.measurementStartedAt = null;
-            benchmarkRun.finalFps = null;
-            benchmarkArmed = false;
-            clearTimeout(benchmarkStopTimer);
-            benchmarkStopTimer = 0;
-            startBenchmarkButton.disabled = false;
-            startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
-            downloadBenchmarkButton.disabled = true;
+            resetBenchmarkWindow();
         }
-        queueWorkerCommand("voxelPixels", { value: Number(voxelPixels.value) });
+        queueRefinement("detail");
     }
 }
 
@@ -710,6 +750,7 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     if (!ready || !file) return;
     currentProjectFile = file;
     currentProjectName = displayName;
+    resetBenchmarkWindow();
     colorMode.value = "rgb";
     benchmarkRun = {
         datasetName: displayName,
@@ -719,6 +760,8 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
         nodeCount: null,
         startedAt: performance.now(),
         startedAtIso: new Date().toISOString(),
+        refinement: null,
+        initialTargetVoxelPixels: Number(voxelPixels.value),
         metadataOpenMs: null,
         firstCoarseFrameMs: null,
         targetLodMs: null,
@@ -751,6 +794,7 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     startRendering();
     worker.postMessage({
         type: "openFile",
+        refinementId: requestRefinement(),
         file,
         attributes: attributesFile,
         name: displayName,

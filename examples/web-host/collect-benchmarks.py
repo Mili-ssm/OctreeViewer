@@ -16,6 +16,13 @@ from typing import Any
 def comparable(run: dict[str, Any]) -> bool:
     stable = run.get("steadyState", {})
     scene = run.get("scene") or {}
+    refinement = run.get("refinement")
+    if "refinement" in run and (
+        not refinement
+        or refinement.get("targetLodMs") is None
+        or refinement.get("colorMode") != run.get("configuration", {}).get("colorMode")
+    ):
+        return False
     return (
         not stable.get("cameraChanged", True)
         and not stable.get("viewportChanged", True)
@@ -59,6 +66,7 @@ def run_group_key(run: dict[str, Any]) -> tuple[Any, ...]:
         configuration.get("colorMode"),
         configuration.get("depthShading"),
         attribute_key,
+        (run.get("refinement") or {}).get("trigger", "dataset"),
     )
 
 
@@ -80,7 +88,7 @@ def collect(paths: list[Path]) -> list[list[str]]:
             attribute_label = "none"
         else:
             attribute_label = "unknown (legacy)"
-        configuration_labels = [attribute_label, str(key[7] or "—"), str(key[8])]
+        configuration_labels = [attribute_label, str(key[7] or "—"), str(key[8]), str(key[10])]
         if not valid:
             rows.append([
                 str(key[0]), str(key[1]), str(key[2]), str(key[3] or "—"),
@@ -90,6 +98,13 @@ def collect(paths: list[Path]) -> list[list[str]]:
             ])
             continue
         loads = [run.get("load", {}) for run in valid]
+        timings = [
+            run.get("refinement") or {
+                "firstFrameMs": run.get("load", {}).get("firstCoarseFrameMs"),
+                "targetLodMs": run.get("load", {}).get("targetLodMs"),
+            }
+            for run in valid
+        ]
         steady = [run.get("steadyState", {}) for run in valid]
         scenes = [run.get("scene", {}) or {} for run in valid]
         environments = [run.get("environment", {}) for run in valid]
@@ -103,8 +118,8 @@ def collect(paths: list[Path]) -> list[list[str]]:
             str(key[6] or "—"),
             f"{len(valid)}/{len(runs)}",
             median([load.get("metadataOpenMs") for load in loads]),
-            median([load.get("firstCoarseFrameMs") for load in loads]),
-            median([load.get("targetLodMs") for load in loads]),
+            median([timing.get("firstFrameMs") for timing in timings]),
+            median([timing.get("targetLodMs") for timing in timings]),
             median([steady.get("meanFps") for steady in steady]),
             median([steady.get("frameReplyIntervalP95Ms") for steady in steady]),
             median([steady.get("workerRenderCallP95Ms") for steady in steady]),
@@ -122,8 +137,8 @@ def main() -> None:
     args = parser.parse_args()
     headers = [
         "Browser", "GPU adapter", "Dataset", "Points", "File bytes", "Viewport", "Target px",
-        "Valid runs", "Metadata ms", "First coarse ms", "Target LOD ms", "FPS", "Reply p95 ms",
-        "CPU frame p95 ms", "Voxels", "JS heap bytes", "Attributes", "Color", "Depth shading",
+        "Valid runs", "Metadata ms", "First phase frame ms", "Target LOD ms", "FPS", "Reply p95 ms",
+        "CPU frame p95 ms", "Voxels", "JS heap bytes", "Attributes", "Color", "Depth shading", "Timing phase",
     ]
     rows = collect(args.runs)
     if args.format == "csv":
