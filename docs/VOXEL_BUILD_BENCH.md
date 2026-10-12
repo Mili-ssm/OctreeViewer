@@ -16,8 +16,12 @@ cargo run --profile perf --offline -p viewer_render_wgpu --example voxel_build_b
 ```
 
 `voxel_build_bench` selects the fitted-camera final cut at 1280×720 and 4 px, reads coordinates
-only (gray), then times accumulation plus finish. It prepares the same unique blocks outside
-the timer and keeps them resident, capped at 256 MiB of `PointBlock::estimated_memory_bytes()`.
+only (gray), then times accumulation plus finish, also reporting those phases separately. It
+prepares the same unique blocks outside the timer and keeps them resident, capped by default
+at 256 MiB of `PointBlock::estimated_memory_bytes()`. Optional `MAX_DECODED_MIB` (1–2048) and
+`TARGET_PIXELS` (0.5–16) follow `RUNS`. Before reading payloads, it sums selected storage point
+counts plus `PointBlock` headers and rejects a cut whose lower bound exceeds the cap; it also
+checks actual accounted block memory while decoding.
 The cap excludes index, allocator and blocks-vector overhead; there may also be transient
 reader allocations. This diagnostic is not an out-of-core or RSS measurement. It requires
 1–20 runs (default three), checks identical scenes within each process, and outputs JSON with
@@ -98,3 +102,55 @@ ratio. The earlier third-attempt BiDi timeout did not recur in these three runs,
 cause remains unknown. Albuera/Belvedere, RGB/attribute pairs and Chrome remain open.
 Raw exports, screenshots, session/adapter details and summary: ignored
 `target/voxel-hint-bench/web-after/` and `web-summary.json`.
+
+## Belvedere phase and capacity diagnostic — 13-10-2026
+
+The diagnostic now exports `samples_accumulate_seconds`, `samples_finish_seconds`,
+`selected_source_points_from_storage` and `selected_decoded_bytes_floor`. The lower bound is
+point count × native `size_of::<Point>()` plus one `PointBlock` header per unique block. It is
+neither RSS nor a browser cache measurement. Raising its optional cap allows a bounded native
+fixture; it does not raise the product's browser cache limit.
+
+```bash
+# Preflight rejection before reading point payloads:
+cargo run --profile perf --offline -p viewer_render_wgpu --example voxel_build_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.oct 1 1024 4
+# Retain the complete native cut for phase timing:
+cargo run --profile perf --offline -p viewer_render_wgpu --example voxel_build_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.oct 3 2048 4
+# Coarser cut within the default fixture cap:
+cargo run --profile perf --offline -p viewer_render_wgpu --example voxel_build_bench -- data/datasets/belv_2009_digital-aerial_pcd_copc.oct 3 256 8
+```
+
+At 4 px, preflight reports **1,004 unique blocks**, **74,188,113 source points** and a minimum
+**1,187,066,032 B (1,132.1 MiB)** decoded payload. That cut cannot fit in 1 GiB even before
+allocator/index overhead. The explicit 2 GiB diagnostic fixture retains exactly that accounted
+payload. The diagnostic now applies the metadata visual scale to camera fit, frustum, node errors and
+voxel projection, matching the renderer formulas. Belvedere stores scale **0.01649201621495024**;
+earlier diagnostic measurements used normalized scale 1.0. Historical paired speed ratios remain
+limited to that shared native fixture and are not browser speed ratios.
+This is capacity evidence for this fitted native target, not proof of the exact live browser
+cache working set: progressive refinement also retains fallback blocks and pending selections.
+It does not complete the previous camera-change browser observation.
+
+Three builds per process, median [minimum–maximum]:
+
+| Target | Source points / blocks | Accumulation (s) | Finish (ms) | Final voxels |
+| --- | ---: | ---: | ---: | ---: |
+| 4 px | 74,188,113 / 1004 | 12.7368 [12.5165–12.7766] | 5.518 [5.374–5.538] | 20,977 |
+| 8 px | 13,238,581 / 320 | 1.4350 [1.4334–1.4386] | 1.298 [1.277–1.298] | 5,140 |
+
+Accumulation accounts for >99.9% of timed construction. Checksums at 4/8 px are respectively
+`a22b8f76486544d3` / `c057ef2774b0ca75`; both match the normalized-scale fixture.
+The corrected scale preserves these cuts and scene bytes for Belvedere; equivalence is not
+assumed for every dataset.
+
+All runs use the native `perf` profile on the same Ryzen AI 9 365/Linux host, fitted camera,
+1280×720, coordinate-only input and depth-independent CPU construction. Reads are outside the
+timer; no compilation or browser probe runs concurrently with the reported series. A preliminary
+series overlapped static checks and is excluded. The checksum remains stable across builds.
+Final-cut CPU times must not be divided into the 837 s of accumulated Firefox voxel work to
+claim a native/WASM speed ratio: that browser run builds many intermediate cuts.
+
+Raw JSON and the frozen diagnostic executable are under ignored `target/voxel-phase-bench/`.
+Next: measure a localized reduction of redundant accumulator-map lookups with alternating
+before/after builds, preserving scene bytes and budget errors; then revisit progressive work
+and the browser sample after camera input.

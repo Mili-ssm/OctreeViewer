@@ -506,8 +506,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    4 px. A 1 GiB, 900 s dejaron 357 pendientes sin evicciones (732 MiB residentes); `voxelBuildMs`
    acumuló 837 s. El export inmediato tras orbitar quedó atrasado respecto a las estadísticas DOM
    (corte nuevo a 4 px, 368 pendientes) y la ventana de 10 s fue demasiado corta para concluir.
-   Siguiente: perfilar voxelización y repetir la observación hasta estabilizar la muestra. Falta
-   medir el efecto WASM/end-to-end del detector.
+   Perfil nativo cerrado: acumulación mediana **12,74 s** a 4 px frente a **5,52 ms** de
+   finalización; a 8 px, **1,435 s / 1,298 ms**. El corte ajustado de 4 px suma 1.004 bloques,
+   74,19 M puntos y al menos **1.132 MiB** decodificados, por encima de 1 GiB. El banco aplica ya
+   la escala visual del archivo (antes normalizada a 1); conserva cortes y checksums de Belvedere.
+   No mide el working set progresivo ni cierra la observación de cámara en Firefox.
+   [Fases, capacidad y reproducción](docs/VOXEL_BUILD_BENCH.md#belvedere-phase-and-capacity-diagnostic--13-10-2026).
+   Siguiente: medir una sola búsqueda del acumulador por punto y repetir la observación de cámara
+   hasta estabilizar la muestra. Falta medir el efecto WASM/end-to-end del detector.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
