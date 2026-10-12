@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use serde_wasm_bindgen::to_value;
 use viewer_core::{BlockId, ColorRgb, DatasetSource, Point, PointBatch, PointBlock};
 use wasm_bindgen::prelude::*;
@@ -5,7 +7,9 @@ use web_sys::{Blob, HtmlCanvasElement};
 
 use crate::{
     LodDataset, LodViewStats, RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError,
-    browser_io::BrowserBlobReader, lod_dataset::next_lod_stage, lod_metadata::LodDatasetDescriptor,
+    browser_io::{BrowserBlobReader, BrowserReadStats},
+    lod_dataset::next_lod_stage,
+    lod_metadata::LodDatasetDescriptor,
 };
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
@@ -19,12 +23,14 @@ pub struct WasmVoxelViewer {
     gpu_scene_dirty: bool,
     lod_dataset: Option<LodDataset>,
     format_reader: Option<FormatReader<BrowserBlobReader>>,
+    browser_read_stats: Arc<Mutex<BrowserReadStats>>,
+    lod_range_read_stats: BrowserReadStats,
     selected_attribute: Option<(u32, u32)>,
     selected_attribute_range: Option<[f64; 2]>,
     lod_config: Option<f64>,
     lod_stage_pixels: Option<f64>,
     lod_dirty: bool,
-    last_lod_stats: Option<LodViewStats>,
+    last_lod_stats: Option<(LodViewStats, BrowserReadStats)>,
     last_lod_error: Option<String>,
 }
 
@@ -44,6 +50,8 @@ impl WasmVoxelViewer {
             gpu_scene_dirty: true,
             lod_dataset: None,
             format_reader: None,
+            browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
+            lod_range_read_stats: BrowserReadStats::default(),
             selected_attribute: None,
             selected_attribute_range: None,
             lod_config: None,
@@ -193,6 +201,7 @@ impl WasmVoxelViewer {
         }
         self.lod_dataset = Some(dataset);
         self.format_reader = None;
+        self.reset_range_read_stats();
         self.selected_attribute = None;
         self.selected_attribute_range = None;
         self.lod_config = None;
@@ -218,15 +227,23 @@ impl WasmVoxelViewer {
         cache_bytes: u32,
         attributes: Option<Blob>,
     ) -> Result<JsValue, JsValue> {
-        let source = BrowserBlobReader::new(file, true)?;
+        let browser_read_stats = Arc::new(Mutex::new(BrowserReadStats::default()));
+        let source =
+            BrowserBlobReader::new_with_stats(file, true, Arc::clone(&browser_read_stats))?;
         let mut reader =
             FormatReader::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
         if let Some(attributes) = attributes {
-            let source = BrowserBlobReader::new(attributes, false)?;
+            let source = BrowserBlobReader::new_with_stats(
+                attributes,
+                false,
+                Arc::clone(&browser_read_stats),
+            )?;
             reader
                 .attach_attributes(source)
                 .map_err(|error| JsValue::from_str(&error.to_string()))?;
         }
+        // Exclude metadata open/attribute attachment reads; report LOD block fills only.
+        reset_browser_read_stats(&browser_read_stats);
         let hierarchy_stats = reader.metadata().hierarchy().stats();
         let visual_scale = reader.format_metadata().visual_scale();
         let metadata = reader.format_metadata().shared_dataset();
@@ -243,6 +260,8 @@ impl WasmVoxelViewer {
             renderer.set_color_mode(ColorMode::Rgb);
         }
         self.lod_dataset = Some(dataset);
+        self.browser_read_stats = browser_read_stats;
+        self.lod_range_read_stats = BrowserReadStats::default();
         self.selected_attribute = None;
         self.selected_attribute_range = None;
         self.lod_config = None;
@@ -401,7 +420,7 @@ impl WasmVoxelViewer {
         self.lod_config = Some(target_voxel_pixels);
         let stats = self.update_lod_view(target_voxel_pixels)?;
         self.last_lod_error = None;
-        let value = lod_view_stats_to_js(&stats)?;
+        let value = lod_view_stats_to_js(&stats, self.lod_range_read_stats)?;
         add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
         js_sys::Reflect::set(
             &value,
@@ -422,8 +441,8 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = lodStats)]
     pub fn lod_stats(&self) -> Result<JsValue, JsValue> {
         match &self.last_lod_stats {
-            Some(stats) => {
-                let value = lod_view_stats_to_js(stats)?;
+            Some((stats, range_read_stats)) => {
+                let value = lod_view_stats_to_js(stats, *range_read_stats)?;
                 add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
                 js_sys::Reflect::set(
                     &value,
@@ -486,6 +505,7 @@ impl WasmVoxelViewer {
                 dataset
                     .clear_loaded_blocks(renderer)
                     .map_err(|error| JsValue::from_str(&error.to_string()))?;
+                self.reset_range_read_stats();
                 self.lod_stage_pixels = Some(16.0);
                 self.lod_dirty = true;
             }
@@ -893,6 +913,8 @@ impl WasmVoxelViewer {
         let requested_attribute = requested_mode.and_then(color_attribute_name);
         let selected_attribute = self.selected_attribute;
         let selected_range = self.selected_attribute_range;
+        let browser_read_stats = Arc::clone(&self.browser_read_stats);
+        let mut lod_range_read_stats = self.lod_range_read_stats;
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -903,16 +925,17 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
         let can_load_blocks = self.format_reader.is_some();
         let mut format_reader = self.format_reader.as_mut();
-        let stats = dataset
-            .update_view_progressive(
-                renderer,
-                target_voxel_pixels,
-                selection_error_pixels,
-                stage_pixels,
-                |block_id| {
-                    format_reader
-                        .as_mut()
-                        .map(|reader| {
+        let stats = dataset.update_view_progressive(
+            renderer,
+            target_voxel_pixels,
+            selection_error_pixels,
+            stage_pixels,
+            |block_id| {
+                format_reader
+                    .as_mut()
+                    .map(|reader| {
+                        let before = snapshot_browser_read_stats(&browser_read_stats);
+                        let loaded = (|| -> Result<Option<PointBlock>, String> {
                             let mut geometry = if selected_attribute.is_none()
                                 && requested_mode == Some(ColorMode::Rgb)
                             {
@@ -953,18 +976,23 @@ impl WasmVoxelViewer {
                                 );
                             }
                             Ok(Some(PointBlock::new(block_id, geometry, attributes)))
-                        })
-                        .unwrap_or(Ok(None))
-                },
-            )
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+                        })();
+                        let after = snapshot_browser_read_stats(&browser_read_stats);
+                        accumulate_browser_read_delta(&mut lod_range_read_stats, before, after);
+                        loaded
+                    })
+                    .unwrap_or(Ok(None))
+            },
+        );
+        self.lod_range_read_stats = lod_range_read_stats;
+        let stats = stats.map_err(|error| JsValue::from_str(&error.to_string()))?;
         (self.lod_stage_pixels, self.lod_dirty) = next_lod_stage(
             self.lod_stage_pixels,
             target_voxel_pixels,
             !stats.pending_block_ids.is_empty(),
             can_load_blocks,
         );
-        self.last_lod_stats = Some(stats.clone());
+        self.last_lod_stats = Some((stats.clone(), lod_range_read_stats));
         Ok(stats)
     }
 
@@ -980,6 +1008,12 @@ impl WasmVoxelViewer {
         self.last_lod_stats = None;
         self.last_lod_error = None;
         self.format_reader = None;
+        self.reset_range_read_stats();
+    }
+
+    fn reset_range_read_stats(&mut self) {
+        reset_browser_read_stats(&self.browser_read_stats);
+        self.lod_range_read_stats = BrowserReadStats::default();
     }
 }
 
@@ -991,7 +1025,36 @@ const fn color_attribute_name(mode: ColorMode) -> Option<&'static str> {
     }
 }
 
-fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
+fn accumulate_browser_read_delta(
+    total: &mut BrowserReadStats,
+    before: BrowserReadStats,
+    after: BrowserReadStats,
+) {
+    total.calls = total
+        .calls
+        .saturating_add(after.calls.saturating_sub(before.calls));
+    total.bytes = total
+        .bytes
+        .saturating_add(after.bytes.saturating_sub(before.bytes));
+    total.elapsed_ms += (after.elapsed_ms - before.elapsed_ms).max(0.0);
+}
+
+fn snapshot_browser_read_stats(stats: &Mutex<BrowserReadStats>) -> BrowserReadStats {
+    *stats
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn reset_browser_read_stats(stats: &Mutex<BrowserReadStats>) {
+    *stats
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = BrowserReadStats::default();
+}
+
+fn lod_view_stats_to_js(
+    stats: &LodViewStats,
+    range_read_stats: BrowserReadStats,
+) -> Result<JsValue, JsValue> {
     let value = js_sys::Object::new();
     for (name, number) in [
         ("minVoxelEdgePixels", stats.min_voxel_edge_pixels),
@@ -1100,6 +1163,12 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         ("selectionMs", stats.refinement_work.selection_ms),
         ("planningMs", stats.refinement_work.planning_ms),
         ("blockLoadMs", stats.refinement_work.block_load_ms),
+        ("rangeReadMs", range_read_stats.elapsed_ms),
+        // Residual synchronous block-callback time; it is not pure decompression CPU time.
+        (
+            "decodeAndOtherCpuMs",
+            (stats.refinement_work.block_load_ms - range_read_stats.elapsed_ms).max(0.0),
+        ),
         ("voxelBuildMs", stats.refinement_work.voxel_build_ms),
         ("uploadMs", stats.refinement_work.upload_ms),
         (
@@ -1117,6 +1186,16 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
     ] {
         js_sys::Reflect::set(&work, &name.into(), &JsValue::from_f64(number))?;
     }
+    js_sys::Reflect::set(
+        &work,
+        &"rangeReadCalls".into(),
+        &JsValue::from_f64(range_read_stats.calls as f64),
+    )?;
+    js_sys::Reflect::set(
+        &work,
+        &"rangeReadBytes".into(),
+        &JsValue::from_str(&range_read_stats.bytes.to_string()),
+    )?;
     js_sys::Reflect::set(
         &work,
         &"voxelSourcePoints".into(),

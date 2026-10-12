@@ -47,17 +47,22 @@ also accumulate work, so reopen the dataset for an independent load comparison.
 | --- | --- |
 | `selectionMs` | Hierarchy LOD selection, including projected-error callbacks. |
 | `planningMs` | Both transition-plan preparations and pending-block priority lookup. |
-| `blockLoadMs` | Synchronous loader callback: file-range access, decompression, geometry/color/selected-attribute decoding. Includes read wait; excludes cache insertion and metadata opening. Reading and decoding are not yet separated. |
+| `blockLoadMs` | Synchronous loader callback: file-range access, decompression, geometry/color/selected-attribute decoding. Includes read wait; excludes cache insertion and metadata opening. |
+| `rangeReadMs`, `rangeReadCalls`, `rangeReadBytes` | Browser Blob-cache fills inside loader callbacks, shared across coordinates and attributes: slice, synchronous ArrayBuffer read, cache allocation/copy. Attempts include failed reads; decimal-string bytes count successful fills, including repeats. Metadata opening and attribute-range scans outside the callback are excluded. |
+| `decodeAndOtherCpuMs` | `max(0, blockLoadMs - rangeReadMs)`: residual decoding, CRC, conversion, allocation, cache-hit copying, seeking and orchestration; not isolated decompression time. |
 | `voxelBuildMs` | Building the whole visible voxel cut, including projection and cell aggregation. |
 | `uploadMs` | `upload_voxel_cut` CPU preparation and enqueue; excludes GPU completion and the subsequent frame render. |
 | `updateCalls`, `blockLoadCalls`, `loadedBlocks` | Update attempts, loader invocations, and blocks successfully inserted into the decoded cache. A loader may return no block or fail. |
 | `sceneBuilds`, `voxelSourcePoints` | Whole-cut build attempts and sum of their input cut source-point counts, including repeated cuts. The point sum is a decimal string; it is neither unique points nor final rendered voxels. |
 
-Intervals do not overlap and are elapsed synchronous wall time, not CPU-cycle accounting.
+`rangeReadMs` and its residual subdivide `blockLoadMs`; do not add them again to the phase total.
+The other intervals do not overlap and are elapsed synchronous wall time, not CPU-cycle accounting.
 They omit cache insertion, plan commit/cloning, general orchestration, frame rendering and
 messaging; their sum need not equal `targetLodMs`. Native uses `Instant`; browser uses
 `performance.now()` (with `Date.now()` fallback if the global Performance object is absent).
-Browser timer precision can make short intervals zero. Each completed phase records elapsed
+Browser timer precision can make short intervals zero. The read residual is clamped at zero
+when independent interval rounding would otherwise make it negative; cache-fill bytes do not
+represent physical disk I/O or unique file coverage. Each completed phase records elapsed
 time even if it returns an error; the JS stats API retains its last successful view snapshot
 until a later successful update exposes accumulated work. Scene-build counters include failed
 build attempts. Existing selection, budgets, cache behavior and render output are unchanged.
@@ -171,6 +176,49 @@ rebuilt `pkg/` and web-host fixtures over HTTP, create it as a module Worker, po
 message, and wait for `type: "probeResult"` (ignoring progress messages). WebGPU and
 OffscreenCanvas are required; this is separate from the Node host suite. Validation also passed
 83 native tests (two diagnostic tests ignored), native/WASM Clippy, release WASM and formatting.
+
+### Browser range-read accounting smoke — 12-10-2026
+
+One Majadas XYZ-only Firefox run with the same viewport/cache/4 px protocol records
+**1,175 ms** block loading: **275 ms** range-cache fills and **900 ms** residual decoding/other
+work. **542 fills**, **142,082,048 bytes** including rereads; this differs deliberately from
+unique file-coverage bytes. Final scene remains 6,397 voxels, full coverage, 98 builds and
+141 reused updates. Target: 34,558 ms. This single run validates observability, not instrumentation
+overhead or a speedup. Metadata/sidecar opening and non-loader attribute scans are excluded by
+before/after snapshots around each callback. Coordinates and optional attributes share counters.
+Counters reset with dataset/cache resets; errors accumulate internally and the public API retains
+one coherent last-successful snapshot until the next success. Conversion readers remain
+uninstrumented and preserve the LAS reader's Send/Sync contract without unsafe implementations.
+
+Firefox worker regression passes metadata exclusion, repeated-view no-read and reopen checks
+alongside the seven reuse flows. Native 25 tests, native/WASM Clippy, release WASM, formatting
+and diff checks pass. Raw diagnostic: `target/unchanged-cut-bench/read-metrics/majadas-1.json`;
+probe: `target/unchanged-cut-bench/probe-read-metrics/result.json`. Repeated range/decode
+measurements, attribute-sidecar cells, concrete GPU identity and browser memory remain pending.
+
+### Albuera repeated gray load after reuse — 12-10-2026
+
+Release WASM from `0c69c86`, Firefox 157.0.1, fresh WebGPU-enabled profile, XYZ-only
+(default RGB mode therefore gray), fit camera, 1280×720, 4 px, depth shading, 256 MiB cache.
+HTTP memory/disk cache disabled; OS cache not flushed. Three sequential loads in one browser
+session; no compilation or other benchmark ran concurrently. All three exports completed:
+
+| Run | First coarse frame ms | Target LOD ms | Voxel construction ms |
+| --- | ---: | ---: | ---: |
+| 1 | 89 | 151,399 | 103,626 |
+| 2 | 61 | 119,886 | 96,539 |
+| 3 | 55 | 140,347 | 99,333 |
+
+Target median **140,347 ms [119,886–151,399]**; first coarse frame median 61 ms [55–89].
+Every run loaded 746 blocks, built 233 scenes and reused 513: 503,187,945 accumulated inputs
+constructed and 1,115,026,990 avoided. Final scene: 17,030 voxels, 12,673,149 source points,
+568 visible blocks, zero pending, 4 px and full coverage. Cache: 203,065,440 bytes; unique
+coordinate bytes read: 276,320,912. Stable 10 s windows recorded approximately 60 replies/s.
+Selection took 5,955–6,342 ms, planning 8,138–8,703 ms and combined block loading
+1,604–2,950 ms; voxel construction remains the largest measured phase. Earlier failed
+sessions are preserved above; this is not a paired speedup comparison. GPU identity, GPU
+execution time, JS/WASM/RSS memory and RGB/typed-attribute runs remain open. Raw exports,
+first-run capture and session: `target/unchanged-cut-bench/albuera-reused/`.
 
 ## Comparison matrix
 

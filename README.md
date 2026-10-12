@@ -384,9 +384,19 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   atributos y reapertura. Majadas **3/3**: **98 construcciones y 141 reutilizaciones**, mismos
   6.397 vóxeles finales; objetivo mediano **29,5 s [21,7–30,8]**. Sesiones no emparejadas:
   no se presenta un ratio de aceleración. [Resultados](docs/WEB_PERFORMANCE_BENCH.md#identical-scene-reuse--12-10-2026).
+- [x] Completar Albuera XYZ gris tras la reutilización: **3/3 rondas Firefox**, primera vista
+  mediana **61 ms [55–89]**, objetivo **140,3 s [119,9–151,4]**; mismos 17.030 vóxeles,
+  568 bloques visibles y cobertura completa. 233 construcciones/513 reutilizaciones por ronda.
+  Voxelización sigue dominando; faltan color/atributos y memoria real de navegador.
+  [Condiciones y desglose](docs/WEB_PERFORMANCE_BENCH.md#albuera-repeated-gray-load-after-reuse--12-10-2026).
+- [x] Separar lectura de rangos y trabajo restante del callback LOD, compartiendo contadores
+  XYZ/atributos y excluyendo metadatos/consultas externas. Majadas exploratoria: **275 ms** de
+  lectura/copia y **900 ms** restantes, 542 rellenos/142 MB con relecturas. Prueba Firefox de
+  metadatos, vista repetida y reapertura; Clippy nativo/WASM, build release y 25 tests pasan.
+  El residual incluye CRC, conversión y copias: no es descompresión pura ni I/O físico.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
-  Separar lectura de decodificación y completar repeticiones grandes comparables.
+  Completar repeticiones grandes comparables, incluyendo `.octattrs` y columnas seleccionadas.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
   contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
 
@@ -409,7 +419,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
-   lectura/decodificación conjunta, voxelización y subida CPU; falta separar lectura y decode.
+   carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
+   CPU. Albuera XYZ gris ya tiene tres rondas completas; faltan Belvedere, color y atributos.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.

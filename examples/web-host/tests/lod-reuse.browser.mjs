@@ -23,7 +23,18 @@ self.onmessage = async () => {
         viewer.openFormatDataset(coordinates, 256 * 1024 * 1024, attributes);
         viewer.fitScene();
         const loaded = finish();
+        // Both tiny fixtures fit in their metadata-open cache fills, excluded from LOD accounting.
+        assert(loaded.refinementWork.rangeReadCalls === 0
+            && loaded.refinementWork.rangeReadBytes === "0", "metadata reads leaked into block accounting");
         const repeated = finish();
+        const reads = repeated.refinementWork;
+        assert(Number.isFinite(reads.rangeReadMs) && reads.rangeReadMs >= 0
+            && Number.isFinite(reads.decodeAndOtherCpuMs) && reads.decodeAndOtherCpuMs >= 0,
+            "invalid read/decode accounting");
+        assert(reads.rangeReadCalls === loaded.refinementWork.rangeReadCalls
+            && reads.rangeReadBytes === loaded.refinementWork.rangeReadBytes,
+            "identical scene performed additional file reads");
+        assert(typeof reads.rangeReadBytes === "string", "read byte count lost integer representation");
         assert(repeated.refinementWork.sceneBuilds === loaded.refinementWork.sceneBuilds,
             "identical scene was rebuilt");
         assert(repeated.refinementWork.reusedSceneUpdates === loaded.refinementWork.reusedSceneUpdates + 1,
@@ -67,6 +78,8 @@ self.onmessage = async () => {
         const reopened = finish();
         assert(reopened.refinementWork.loadedBlocks === 1 && reopened.refinementWork.sceneBuilds === 3,
             "dataset reopen retained old accounting or scene");
+        assert(reopened.refinementWork.rangeReadCalls === 0
+            && reopened.refinementWork.rangeReadBytes === "0", "reopen retained range accounting");
         self.postMessage({ type: "probeResult", passed: true,
             checks: ["identical view", "camera", "viewport", "stage", "payload", "attributes", "reopen"] });
     } catch (error) {

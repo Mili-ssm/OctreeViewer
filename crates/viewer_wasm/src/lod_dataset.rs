@@ -393,28 +393,28 @@ impl LodDataset {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-struct WorkClock(std::time::Instant);
+pub(crate) struct WorkClock(std::time::Instant);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl WorkClock {
-    fn start() -> Self {
+    pub(crate) fn start() -> Self {
         Self(std::time::Instant::now())
     }
 
-    fn elapsed_ms(self) -> f64 {
+    pub(crate) fn elapsed_ms(self) -> f64 {
         self.0.elapsed().as_secs_f64() * 1000.0
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-enum WorkClock {
+pub(crate) enum WorkClock {
     Performance(web_sys::Performance, f64),
     Date(f64),
 }
 
 #[cfg(target_arch = "wasm32")]
 impl WorkClock {
-    fn start() -> Self {
+    pub(crate) fn start() -> Self {
         use wasm_bindgen::JsCast;
 
         let global = js_sys::global();
@@ -427,7 +427,7 @@ impl WorkClock {
         )
     }
 
-    fn elapsed_ms(self) -> f64 {
+    pub(crate) fn elapsed_ms(self) -> f64 {
         match self {
             Self::Performance(performance, started) => (performance.now() - started).max(0.0),
             Self::Date(started) => (js_sys::Date::now() - started).max(0.0),
