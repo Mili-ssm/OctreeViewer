@@ -220,6 +220,33 @@ sessions are preserved above; this is not a paired speedup comparison. GPU ident
 execution time, JS/WASM/RSS memory and RGB/typed-attribute runs remain open. Raw exports,
 first-run capture and session: `target/unchanged-cut-bench/albuera-reused/`.
 
+### Belvedere RGB at 8 px — 12-10-2026
+
+Release WASM, Firefox 157.0.1 headless with a fresh WebGPU-enabled profile, HTTP memory/disk caches
+disabled, OS cache not flushed, 1280×720/DPR 1, 8 px, depth shading and 256 MiB decoded cache.
+Three sequential page/worker/dataset loads used matching Belvedere `.oct` (981,063,326 B) and
+`.octattrs` (610,586,859 B). No build or native conversion ran concurrently. All exports passed
+framebuffer, target, complete-coverage, zero-pending and 10 s steady-window checks; the first
+capture was visually inspected.
+
+| Run | First coarse frame ms | Target LOD ms | Voxel build ms | Range read ms | Decode/other ms | FPS replies |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 32 | 122,576 | 94,227 | 1,466 | 1,338 | 60.002 |
+| 2 | 20 | 102,805 | 94,676 | 403 | 1,206 | 60.002 |
+| 3 | 39 | 124,256 | 100,504 | 1,387 | 1,392 | 60.006 |
+
+Target median **122,576 ms [102,805–124,256]**; first coarse frame **32 ms [20–39]**. Each run
+loaded 389 blocks, built 151 scenes and reused 238 updates. Final cut: 4,835 voxels, 13,238,581
+visible source points, 320 blocks, full coverage, 0 pending, HZB active and 211,910,672 decoded
+cache bytes. No cache eviction or rejected insertions occurred at this target. Each run recorded
+402,391,040 range-fill bytes in 1,535 calls; about 60 worker frame replies/s over the steady window.
+
+These are 8 px RGB measurements: they do not close the 4 px Belvedere target, which previously
+reached a cache-cycle pause, and are not directly comparable to 4 px measurements of other datasets.
+Browser JS heap and concrete GPU adapter remain unavailable; uploaded instance bytes are
+16,709,480, not total GPU memory. Raw exports, schema and first capture:
+`target/unchanged-cut-bench/belvedere-rgb-8px/`.
+
 ### Albuera RGB sidecar — 12-10-2026
 
 Release WASM, Firefox 157.0.1 headless with fresh WebGPU-enabled profile, HTTP memory/disk cache

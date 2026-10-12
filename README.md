@@ -343,7 +343,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   en perfil temporal, 1280×720 y 4 px: mediana **251 ms** hasta LOD objetivo, **60,00 FPS** de
   respuestas del worker, **2.410 vóxeles**. Adaptador y heap JS no identificables en los exports;
   no certifica FPS de GPU/pantalla ni interacción. [Método y dispersión](docs/WEB_PERFORMANCE_BENCH.md).
-- [ ] Chrome/Chromium no instalado; falta completar Belvedere y OPFS/picking/pérdida de GPU.
+- [ ] Chrome/Chromium no instalado; Belvedere RGB completa 3/3 a 8 px; falta 4 px y
+  OPFS/picking/pérdida de GPU.
   Pareja y columnas Majadas en Firefox verificadas abajo. El primer timeout Belvedere por texto de estado era inconcluyente; las nuevas rondas
   usan la finalización del benchmark y conservan estados/fallos como se detalla abajo.
 
@@ -436,8 +437,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   pasan; 4.096 vóxeles, cobertura completa. No valida conversión/OPFS ni todos los controles.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
-  Albuera RGB pasa 3/3 en Firefox; falta Belvedere, otros navegadores, componentes adicionales y
-  memoria de navegador. Usar `refinement` para recarga y mantener `load` como apertura inicial.
+  Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
+  presión de caché. Faltan otros navegadores, componentes adicionales y memoria. Usar `refinement`
+  para recarga y mantener `load` como apertura inicial.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
   contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
 
@@ -465,11 +467,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
-   CPU. Albuera XYZ gris/RGB y Majadas RGB tienen tres rondas; falta Belvedere, más componentes/datasets,
-   otros navegadores y memoria; intensidad Majadas ya tiene tres recargas. Albuera RGB: objetivo
+   CPU. Albuera XYZ gris/RGB, Majadas RGB y Belvedere RGB a 8 px tienen tres rondas; falta cerrar
+   Belvedere a 4 px, medir más componentes/datasets, otros navegadores y memoria; intensidad Majadas
+   ya tiene tres recargas. Albuera RGB: objetivo
    mediano **139,6 s [137,6–142,5]**, primer frame **110 ms [72–114]**, 17.030 vóxeles y cobertura
    completa; ~60 respuestas/s de worker. La memoria de navegador no está disponible.
-   [Detalle y fases](docs/WEB_PERFORMANCE_BENCH.md#albuera-rgb-sidecar--12-10-2026).
+   [Albuera RGB](docs/WEB_PERFORMANCE_BENCH.md#albuera-rgb-sidecar--12-10-2026) y
+   [Belvedere RGB a 8 px](docs/WEB_PERFORMANCE_BENCH.md#belvedere-rgb-at-8-px--12-10-2026).
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
