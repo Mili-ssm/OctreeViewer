@@ -498,8 +498,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    cobertura completa a 8 px en 48,6 s. También reanuda tras orbitar la cámara: 782→68 pendientes
    en la captura temprana. Una repetición prolongada con cinco órbitas cargó 727 bloques más, pero
    volvió a pausar en cada ciclo: quedaron 805 pendientes y `targetLodMs` nulo. `coverageComplete`
-   describe el último corte visible retenido, no el objetivo solicitado. Falta medir overhead y
-   probar si un presupuesto de caché mayor permite completar el corte cambiado.
+   describe el último corte visible retenido, no el objetivo solicitado. Microbenchmark nativo
+   release con 500 bloques: comprobación coincidente **4,45 μs**, discrepancia de recorrido completo
+   **8,03 μs** y creación del checkpoint **8,89 μs**; no incluye navegador ni actualización LOD.
+   Falta el efecto WASM/end-to-end y probar si una caché mayor completa el corte cambiado.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida

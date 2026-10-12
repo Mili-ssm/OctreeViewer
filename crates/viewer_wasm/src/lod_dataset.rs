@@ -907,6 +907,66 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "release microbenchmark; run with --release --ignored --nocapture"]
+    fn cache_cycle_detector_microbenchmark() {
+        use std::{hint::black_box, time::Instant};
+
+        const ENTRIES: u64 = 500;
+        const ITERATIONS: u64 = 100_000;
+        const ROUNDS: usize = 5;
+
+        fn populated_cache() -> DecodedBlockCache {
+            let mut cache = DecodedBlockCache::new(usize::MAX);
+            for id in 1..=ENTRIES {
+                cache.insert(block(id));
+            }
+            cache
+        }
+
+        let init_cache = populated_cache();
+        let init_started = Instant::now();
+        for _ in 0..ITERATIONS / 10 {
+            black_box(CacheCycleDetector::new(&init_cache, 4.0, 4.0));
+        }
+        let init_ns = init_started.elapsed().as_nanos() / u128::from(ITERATIONS / 10);
+
+        let mut match_ns = Vec::with_capacity(ROUNDS);
+        let mut mismatch_ns = Vec::with_capacity(ROUNDS);
+        for _ in 0..ROUNDS {
+            let matching_cache = populated_cache();
+            let mut matching_detector = CacheCycleDetector::new(&matching_cache, 4.0, 4.0);
+            matching_detector.power = u64::MAX;
+            let match_started = Instant::now();
+            for _ in 0..ITERATIONS {
+                black_box(matching_detector.observe(&matching_cache));
+            }
+            match_ns.push(match_started.elapsed().as_nanos() / u128::from(ITERATIONS));
+
+            let mut changed_cache = populated_cache();
+            let mut changed_detector = CacheCycleDetector::new(&changed_cache, 4.0, 4.0);
+            changed_detector.power = u64::MAX;
+            // Protecting the MRU entry makes the only state difference occur at the final item.
+            changed_cache.set_protected_blocks([BlockId::new(ENTRIES)]);
+            let mismatch_started = Instant::now();
+            for _ in 0..ITERATIONS {
+                black_box(changed_detector.observe(&changed_cache));
+            }
+            mismatch_ns.push(mismatch_started.elapsed().as_nanos() / u128::from(ITERATIONS));
+        }
+        match_ns.sort_unstable();
+        mismatch_ns.sort_unstable();
+        eprintln!(
+            "entries={ENTRIES}, detector_init_ns={init_ns}, matching_check_ns=[{}, {}, {}], full_scan_mismatch_ns=[{}, {}, {}]",
+            match_ns[0],
+            match_ns[ROUNDS / 2],
+            match_ns[ROUNDS - 1],
+            mismatch_ns[0],
+            mismatch_ns[ROUNDS / 2],
+            mismatch_ns[ROUNDS - 1],
+        );
+    }
+
+    #[test]
     fn reports_cache_budget_for_bounding_external_block_imports() {
         let dataset = dataset(4096);
         assert_eq!(dataset.block_cache_budget_bytes(), 4096);

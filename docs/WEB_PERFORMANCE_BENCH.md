@@ -729,8 +729,24 @@ The earlier one-orbit probe only captured one additional block and was too short
 recovery. The five-change run took about 336 s after the first pause; its incomplete snapshots and
 final image are under `target/cache-pressure-probe/belvedere-camera-retry-settled/`. A separate
 attempt with a default Firefox profile failed before data loading because WebGPU was disabled;
-that attempt is excluded. Next: measure detector overhead independently, then test a bounded cache
-increase to see whether the same changed-camera target can complete.
+that attempt is excluded. Next: test a bounded cache increase to see whether the same changed-camera
+target can complete.
+
+### Brent cache-cycle detector microbenchmark — 13-10-2026
+
+An ignored native Rust release test measures `CacheCycleDetector` with 500 synthetic resident
+blocks, close to the 507 blocks loaded before the Belvedere pause. Three invocations each take five
+timed rounds of 100,000 checks. Median per-invocation results were **4.45 μs** for an identical
+checkpoint, **8.03 μs** for a mismatch at the final LRU entry (full comparison), and **8.89 μs** to
+construct the detector/checkpoint. The three per-invocation medians ranged 4.44–4.56 μs, 8.02–8.23
+μs and 6.74–9.02 μs respectively.
+
+Run with `cargo test --offline --release -p viewer_wasm cache_cycle_detector_microbenchmark --
+--ignored --nocapture`. The probe forces a long checkpoint interval to isolate equality-check cost;
+it measures checkpoint allocation separately, but excludes occasional checkpoint refreshes, block
+decode/cache insertion, and the full `update_lod`/WASM/browser path. These microseconds do not prove
+an end-to-end frame improvement or quantify Firefox overhead. Source: the ignored diagnostic test
+`cache_cycle_detector_microbenchmark` in `crates/viewer_wasm/src/lod_dataset.rs`.
 
 
 ### External Firefox process-tree PSS — 12-10-2026
