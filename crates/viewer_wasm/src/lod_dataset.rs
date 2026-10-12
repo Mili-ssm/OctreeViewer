@@ -6,7 +6,7 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{
-    GpuRendererError, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
+    GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
     build_voxel_scene_with_limits,
 };
 
@@ -17,6 +17,7 @@ pub struct LodDataset {
     cache: DecodedBlockCache,
     planner: LodTransitionPlanner,
     visible_plan: Option<LodTransitionPlan>,
+    last_successful_build: Option<SuccessfulBuildContext>,
     visible_scene_metrics: (f64, f64, usize),
     visible_voxel_memory: VoxelBuildMemoryStats,
     refinement_work: LodWorkStats,
@@ -36,6 +37,17 @@ pub struct LodWorkStats {
     pub block_load_ms: f64,
     pub voxel_build_ms: f64,
     pub upload_ms: f64,
+    pub unchanged_cut_builds: u64,
+    pub reusable_scene_builds: u64,
+    pub reusable_voxel_build_ms: f64,
+    pub reusable_voxel_source_points: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SuccessfulBuildContext {
+    camera: OrbitCamera,
+    viewport: [u32; 2],
+    stage_voxel_pixels: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +127,7 @@ impl LodDataset {
             cache: DecodedBlockCache::new(cache_bytes),
             planner: LodTransitionPlanner::new(),
             visible_plan: None,
+            last_successful_build: None,
             visible_scene_metrics: (0.0, 0.0, 0),
             visible_voxel_memory: VoxelBuildMemoryStats::default(),
             refinement_work: LodWorkStats::default(),
@@ -133,6 +146,13 @@ impl LodDataset {
                     .rejection
                     .expect("rejected cache insert includes a reason"),
             ));
+        }
+        if self
+            .visible_plan
+            .as_ref()
+            .is_some_and(|plan| plan.block_ids().contains(&id))
+        {
+            self.last_successful_build = None;
         }
         Ok(result.accounted_bytes)
     }
@@ -154,6 +174,7 @@ impl LodDataset {
         self.planner.reset(&mut self.cache);
         self.cache.clear();
         self.visible_plan = None;
+        self.last_successful_build = None;
         self.visible_scene_metrics = (0.0, 0.0, 0);
         self.visible_voxel_memory = VoxelBuildMemoryStats::default();
         self.refinement_work = LodWorkStats::default();
@@ -227,6 +248,7 @@ impl LodDataset {
                 renderer.sync_visible_blocks(&[], &self.cache)?;
                 self.planner.reset(&mut self.cache);
                 self.visible_plan = None;
+                self.last_successful_build = None;
                 self.visible_scene_metrics = (0.0, 0.0, 0);
                 self.visible_voxel_memory = VoxelBuildMemoryStats::default();
                 return Err(LodDatasetError::Selection(error));
@@ -278,6 +300,26 @@ impl LodDataset {
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
             self.refinement_work.scene_builds += 1;
             self.refinement_work.voxel_source_points += plan.point_count();
+            let build_context = SuccessfulBuildContext {
+                camera: renderer.camera_snapshot(),
+                viewport: renderer.viewport_size(),
+                stage_voxel_pixels,
+            };
+            let (same_visible_cut, reusable_scene) = reusable_build_match(
+                self.visible_plan.as_ref().map(LodTransitionPlan::node_ids),
+                self.visible_plan.as_ref().map(LodTransitionPlan::block_ids),
+                plan.node_ids(),
+                plan.block_ids(),
+                self.last_successful_build.as_ref(),
+                &build_context,
+            );
+            if same_visible_cut {
+                self.refinement_work.unchanged_cut_builds += 1;
+            }
+            if reusable_scene {
+                self.refinement_work.reusable_scene_builds += 1;
+                self.refinement_work.reusable_voxel_source_points += plan.point_count();
+            }
             let build_started = WorkClock::start();
             let voxel_scene_result = build_voxel_scene_with_limits(
                 self.metadata.hierarchy(),
@@ -294,7 +336,11 @@ impl LodDataset {
                 },
                 renderer.voxel_build_limits(),
             );
-            self.refinement_work.voxel_build_ms += build_started.elapsed_ms();
+            let build_elapsed_ms = build_started.elapsed_ms();
+            self.refinement_work.voxel_build_ms += build_elapsed_ms;
+            if reusable_scene {
+                self.refinement_work.reusable_voxel_build_ms += build_elapsed_ms;
+            }
             let voxel_scene = voxel_scene_result?;
             let upload_started = WorkClock::start();
             let upload_result = renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids());
@@ -302,6 +348,7 @@ impl LodDataset {
             upload_result?;
             self.planner.commit(&plan, &mut self.cache);
             self.visible_plan = Some(plan.clone());
+            self.last_successful_build = Some(build_context);
             self.visible_voxel_memory = voxel_scene.memory_stats;
             self.visible_scene_metrics = (
                 voxel_scene.min_edge_pixels,
@@ -392,6 +439,24 @@ fn bounds_side(bounds: SpatialBounds) -> f64 {
         .fold(0.0, f64::max)
 }
 
+fn reusable_build_match(
+    visible_node_ids: Option<&[NodeId]>,
+    visible_block_ids: Option<&[BlockId]>,
+    next_node_ids: &[NodeId],
+    next_block_ids: &[BlockId],
+    previous_context: Option<&SuccessfulBuildContext>,
+    next_context: &SuccessfulBuildContext,
+) -> (bool, bool) {
+    let same_cut =
+        visible_node_ids == Some(next_node_ids) && visible_block_ids == Some(next_block_ids);
+    let same_inputs = previous_context.is_some_and(|previous| {
+        previous.camera == next_context.camera
+            && previous.viewport == next_context.viewport
+            && previous.stage_voxel_pixels == next_context.stage_voxel_pixels
+    });
+    (same_cut, same_cut && same_inputs)
+}
+
 fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
     node_ids
         .iter()
@@ -462,8 +527,11 @@ mod tests {
         PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
     };
 
-    use super::{LodDataset, LodDatasetError, bounds_side, next_lod_stage, priority_precedes};
-    use viewer_render_wgpu::{RenderScene, build_voxel_scene};
+    use super::{
+        LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side, next_lod_stage,
+        priority_precedes, reusable_build_match,
+    };
+    use viewer_render_wgpu::{OrbitCamera, RenderScene, build_voxel_scene};
 
     fn scene_for_test(
         hierarchy: &SpatialHierarchy,
@@ -577,6 +645,67 @@ mod tests {
         )
     }
 
+    fn build_context(
+        plane_offset: f64,
+        viewport: [u32; 2],
+        stage_voxel_pixels: f64,
+    ) -> SuccessfulBuildContext {
+        let mut camera = OrbitCamera::default();
+        camera.set_pose([plane_offset, -5.0, 2.0], [0.0; 3]);
+        SuccessfulBuildContext {
+            camera,
+            viewport,
+            stage_voxel_pixels,
+        }
+    }
+
+    #[test]
+    fn reusable_build_match_requires_same_cut_and_every_build_input() {
+        let nodes = [NodeId::new(1), NodeId::new(2)];
+        let blocks = [BlockId::new(10), BlockId::new(11)];
+        let baseline = build_context(1.0, [800, 600], 4.0);
+
+        assert_eq!(
+            reusable_build_match(
+                Some(&nodes),
+                Some(&blocks),
+                &nodes,
+                &blocks,
+                Some(&baseline),
+                &baseline
+            ),
+            (true, true)
+        );
+        assert_eq!(
+            reusable_build_match(
+                Some(&nodes),
+                Some(&blocks),
+                &[NodeId::new(1)],
+                &blocks,
+                Some(&baseline),
+                &baseline
+            ),
+            (false, false)
+        );
+        for changed in [
+            build_context(2.0, [800, 600], 4.0),
+            build_context(1.0, [1024, 600], 4.0),
+            build_context(1.0, [800, 600], 8.0),
+        ] {
+            assert_eq!(
+                reusable_build_match(
+                    Some(&nodes),
+                    Some(&blocks),
+                    &nodes,
+                    &blocks,
+                    Some(&baseline),
+                    &changed
+                ),
+                (true, false)
+            );
+        }
+    }
+
     #[test]
     fn accepts_only_referenced_blocks_and_accounts_decoded_memory() {
         let payload_bytes = block(10).estimated_memory_bytes();
@@ -592,6 +721,35 @@ mod tests {
             dataset.insert_block(block_with_points(10, 2)),
             Err(LodDatasetError::CacheRejected(_))
         ));
+    }
+
+    #[test]
+    fn replacing_visible_payload_invalidates_build_context_only_after_success() {
+        let mut dataset = dataset(block(10).estimated_memory_bytes());
+        dataset.insert_block(block(10)).unwrap();
+        let frustum = viewer_core::SpatialFrustum::new(vec![
+            viewer_core::FrustumPlane::new([1.0, 0.0, 0.0], 1.0).unwrap(),
+        ])
+        .unwrap();
+        let target = dataset
+            .metadata
+            .hierarchy()
+            .select_lod(
+                &frustum,
+                viewer_core::LodSelectionConfig::new(4.0, u64::MAX).unwrap(),
+                |_| 0.0,
+            )
+            .unwrap();
+        dataset.visible_plan = Some(dataset.planner.prepare(
+            dataset.metadata.hierarchy(),
+            &target,
+            &dataset.cache,
+        ));
+        dataset.last_successful_build = Some(build_context(1.0, [800, 600], 4.0));
+        assert!(dataset.insert_block(block_with_points(10, 2)).is_err());
+        assert!(dataset.last_successful_build.is_some());
+        dataset.insert_block(block(10)).unwrap();
+        assert!(dataset.last_successful_build.is_none());
     }
 
     #[test]

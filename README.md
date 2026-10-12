@@ -375,7 +375,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Validar WASM optimizado en Majadas: **3/3 rondas Firefox**, objetivo mediano **59,7 s**
   [58,4–65,9], mismos contadores finales y captura idéntica a la anterior. Las sesiones web
   previas no están emparejadas; los ratios de mejora anteriores corresponden solo a CPU nativa.
-- [ ] Medir reconstrucciones con corte sin cambios antes de introducir reutilización incremental;
+- [x] Medir reconstrucciones sin cambios: una ronda Majadas registra **143 cortes repetidos**, de
+  los que **141** mantienen también cámara exacta, viewport, etapa y payload visible. Consumen
+  **41,0 de 59,1 s** de voxelización; 355 M puntos acumulados reutilizables. Es una medición
+  exploratoria, no un ahorro prometido. [Contrato y evidencia](docs/WEB_PERFORMANCE_BENCH.md#unchanged-cut-instrumentation--12-10-2026).
+- [ ] Omitir construcción/subida de escenas idénticas, conservando commit del plan y protección
+  de caché; invalidar al cambiar cámara, viewport, etapa o payload visible y comprobar la escena.
+- [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Separar lectura de decodificación y completar repeticiones grandes comparables.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
@@ -439,6 +445,21 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    conocidas; puntos etiquetados con información persistente y navegación directa. Cierre de la
    evaluación: evidencia y decisión documentadas; portar solo si el balance de simplicidad y
    extensibilidad resulta favorable. Estas funciones y la migración todavía no están implementadas.
+7. [ ] **Estudiar metadatos compactos por vóxel, compresión y transiciones LOD.** Evaluar la
+   propuesta de un byte: 1 bit para hijos iguales, 3 para el número de hijos directos y 4 para
+   posiciones ocupadas/vacías. Definir qué significa «iguales» (geometría y atributos) y comprobar
+   su capacidad: 4 bits no representan todas las máscaras de 8 posiciones y 3 bits requieren una
+   convención adicional para distinguir los recuentos de 0 a 8; considerar también divisiones 4³/8³.
+   Comparar alternativas como máscaras, valores heredados y eliminación de subárboles redundantes,
+   además de mecanismos que suavicen transiciones LOD conservando vóxeles enteros sin solapamiento.
+   Cierre: viabilidad documentada y comparación de tamaño neto comprimido (incluidos metadatos),
+   CPU, memoria, lectura selectiva y calidad de transición; no asumir ahorro por añadir el byte.
+8. [ ] **Revisar abstracciones y propiedad en Rust.** Identificar lugares concretos donde `enum`,
+   `Box`, `dyn Trait`, genéricos, `Arc`, `Rc` o préstamos puedan mejorar rendimiento, acoplamiento
+   y mantenibilidad. Revisar despacho estático/dinámico, asignaciones, copias, propiedad compartida
+   y requisitos `Send`/`Sync` en nativo y WASM; comparar con la solución actual antes de cambiarla.
+   Cierre: propuestas localizadas con beneficio justificado, mediciones cuando se alegue rendimiento
+   y checks pertinentes; priorizar simplicidad y buenas prácticas, evitando abstracciones sin uso.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).

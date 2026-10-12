@@ -118,6 +118,27 @@ no browser speedup ratio is inferred. [Native paired benchmark, method and limit
 separate the cell-reuse effect from progressive web timing. The earlier BiDi failure remains
 unexplained; it did not recur in these three attempts. Other large/browser/color cells stay open.
 
+### Unchanged-cut instrumentation — 12-10-2026
+
+`refinementWork.unchangedCutBuilds` counts build attempts with the same visible node/block IDs.
+`reusableSceneBuilds` additionally requires the exact local `OrbitCamera` state, viewport and
+voxel stage to match the last successfully uploaded scene. Replacing a visible decoded block
+invalidates the saved context even if its ID is unchanged. Cache/dataset resets clear it.
+`reusableVoxelBuildMs` is the subset of build elapsed time for those candidates;
+`reusableVoxelSourcePoints` is their accumulated cut input count (decimal string).
+These counters measure candidates; this revision still performs every build/upload.
+
+One exploratory Majadas run under the preceding Firefox/gray/1280×720/4 px protocol records
+239 loaded blocks/builds, **143 unchanged cuts**, **141 reusable scenes**, **355,318,762** reusable
+cut source points and **40,972 ms** reusable construction out of **59,090 ms** voxel construction.
+The two unchanged cuts that fail the input match coincide with progressive voxel-stage changes.
+Target completes in 65,772 ms, with the same final 6,397 voxels and complete coverage. This is
+one diagnostic run, not a repeated timing baseline or promised saving. Raw export:
+`target/unchanged-cut-bench/measured/majadas-1.json`. 25 WASM-crate tests, native/WASM Clippy,
+formatting and release WASM build passed. The next task is to skip only matched builds while
+preserving planner/cache commits, payload invalidation, camera/viewport/stage changes and scene
+identity, then measure again.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.

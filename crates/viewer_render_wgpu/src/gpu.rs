@@ -809,6 +809,11 @@ impl<'window> SurfaceRenderer<'window> {
         )
     }
 
+    /// Exact local camera state for detecting changes to voxel projection inputs.
+    pub fn camera_snapshot(&self) -> OrbitCamera {
+        self.camera
+    }
+
     /// Sets the pose in source dataset coordinates.
     pub fn set_camera_pose(&mut self, position: [f64; 3], target: [f64; 3]) -> bool {
         let to_local = |point: [f64; 3]| {

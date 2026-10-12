@@ -1098,6 +1098,18 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         ("blockLoadMs", stats.refinement_work.block_load_ms),
         ("voxelBuildMs", stats.refinement_work.voxel_build_ms),
         ("uploadMs", stats.refinement_work.upload_ms),
+        (
+            "unchangedCutBuilds",
+            stats.refinement_work.unchanged_cut_builds as f64,
+        ),
+        (
+            "reusableSceneBuilds",
+            stats.refinement_work.reusable_scene_builds as f64,
+        ),
+        (
+            "reusableVoxelBuildMs",
+            stats.refinement_work.reusable_voxel_build_ms,
+        ),
     ] {
         js_sys::Reflect::set(&work, &name.into(), &JsValue::from_f64(number))?;
     }
@@ -1105,6 +1117,16 @@ fn lod_view_stats_to_js(stats: &LodViewStats) -> Result<JsValue, JsValue> {
         &work,
         &"voxelSourcePoints".into(),
         &JsValue::from_str(&stats.refinement_work.voxel_source_points.to_string()),
+    )?;
+    js_sys::Reflect::set(
+        &work,
+        &"reusableVoxelSourcePoints".into(),
+        &JsValue::from_str(
+            &stats
+                .refinement_work
+                .reusable_voxel_source_points
+                .to_string(),
+        ),
     )?;
     js_sys::Reflect::set(&value, &"refinementWork".into(), &work)?;
     Ok(value.into())
