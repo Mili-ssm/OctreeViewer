@@ -847,8 +847,8 @@ del muestreador, Clippy nativo, fmt y check WASM.
 Smoke externo: `target/worker-limits-smoke/`, `fs_e430_n4008_18.las`, dos workers
 solicitados, divisiones 2, `RAYON_NUM_THREADS=1`: lote de un bloque, techo Rayon uno,
 validación uno. Conversión 84,097 ms; el muestreo de 100 ms no capturó picos por fase.
-Este smoke comprueba el informe, no una mejora de rendimiento. El contraste grande
-1/2 workers y la medición interna del lote completo siguen pendientes.
+Este smoke comprueba el informe, no una mejora de rendimiento. El contraste 1/2
+workers en Belvedere se completa abajo; Majadas/Albuera y el lote interno siguen pendientes.
 
 ### Uno frente a dos workers en Belvedere — 12-10-2026
 

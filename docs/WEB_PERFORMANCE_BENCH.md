@@ -535,3 +535,37 @@ probe verifies initial insertion counters, a failed protected replacement visibl
 through `lodStats()`, unchanged-scene reuse and dataset-reopen counter reset. Local
 evidence: `target/cache-pressure-probe/small/`. Confirm pressure over successive
 fixed-camera Belvedere snapshots before selecting a mitigation.
+
+### Belvedere target-block displacement — 12-10-2026
+
+One diagnostic run on `3c3bc4d`, release WASM, fresh Firefox 157.0.1 headless profile,
+WebGPU enabled, XYZ gray, 1280×720, target 4 px and 256 MiB cache. No build/native
+benchmark ran concurrently. Six snapshots at 30 s intervals use the host export
+handler directly; **these are incomplete diagnostic exports, not completed FPS
+benchmarks**. OS cache was not flushed.
+
+| Driver elapsed (s) | Stage (px) | Pending | Cache bytes | Loaded blocks | Evictions | Evicted target blocks | Scene builds | Scene reuses |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 30 | 8 | 98 | 78,222,096 | 291 | 0 | 0 | 95 | 196 |
+| 60 | 8 | 53 | 131,925,632 | 336 | 0 | 0 | 121 | 215 |
+| 90 | 8 | 21 | 175,674,864 | 368 | 0 | 0 | 136 | 232 |
+| 120 | 8 | 3 | 207,399,376 | 386 | 0 | 0 | 149 | 237 |
+| 150 | 4 | 782 | 267,888,736 | 443 | 0 | 0 | 156 | 287 |
+| 180 | 4 | 785 | 267,705,040 | 848 | 481 | 408 | 156 | 692 |
+
+All snapshots have complete current-cut coverage, no oversize/protected rejection
+and no target completion time. The 150/180 s snapshots both retain **14,871,589 source
+points**, **20,977 current HZB-visible voxels**, 339 blocks and 156 builds. First coarse
+frame 29 ms. The final capture shows the gray cloud. DOM statistics update on their
+own cadence: the final DOM had 459 evictions / 386 evicted targets, so use the exported
+snapshots for the table, not a mixture of DOM/export counts.
+
+This confirms successful cache insertions displacing still-requested blocks during
+a fixed-view interval without scene progress. It does not prove that every eviction
+is harmful or that no different transition policy could complete under the same
+budget. It motivates an explicit bounded response to repeated displacement while
+retaining the accepted cut. GPU/display FPS, heap/RSS and named adapter are not measured.
+
+Evidence: `target/cache-pressure-probe/belvedere/{session.json,snapshot-1.json,…,snapshot-6.json,final-dom.json,final.png}`;
+driver `target/cache-pressure-belvedere.mjs`. Pending: avoid unbounded repeated work,
+test recovery via coarser detail/camera changes, and rerun the real diagnostic.
