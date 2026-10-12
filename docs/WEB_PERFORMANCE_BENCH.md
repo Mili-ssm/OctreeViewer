@@ -713,6 +713,25 @@ Local evidence is under `target/cache-pressure-probe/`:
 the latter also contains `recovery.json`, `recovery-status.json`, `final-dom.json` and
 `final.png`. `final.json` exports are explicitly marked incomplete.
 
+### Belvedere repeated camera recovery — 13-10-2026
+
+Firefox 157.0.1 headless with the prepared WebGPU profile, Belvedere coordinates without a sidecar,
+1280×720, 4 px target and 256 MiB decoded cache. The initial refinement paused after 180 s with
+782 target blocks pending and 507 cumulative loads. Five successive `ArrowRight` camera changes
+were allowed to progress until the detector paused again. Across those retries, cumulative loads reached 1,234
+and `evictedPendingBlocks` reached 426; the final snapshot still had **805 target blocks pending**,
+`targetLodMs: null` and the paused status. The renderer retained a complete visible cut, which is
+distinct from completing the requested target cut. This run demonstrates renewed work after each
+view change, but not recovery to the 4 px target under this cache budget. It does not identify
+whether a larger cache would complete the target, and it does not measure detector overhead.
+
+The earlier one-orbit probe only captured one additional block and was too short to characterize
+recovery. The five-change run took about 336 s after the first pause; its incomplete snapshots and
+final image are under `target/cache-pressure-probe/belvedere-camera-retry-settled/`. A separate
+attempt with a default Firefox profile failed before data loading because WebGPU was disabled;
+that attempt is excluded. Next: measure detector overhead independently, then test a bounded cache
+increase to see whether the same changed-camera target can complete.
+
 
 ### External Firefox process-tree PSS — 12-10-2026
 

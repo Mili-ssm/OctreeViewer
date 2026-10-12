@@ -496,8 +496,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Belvedere confirma el ciclo. El detector Brent de un checkpoint pausa tras repetir estado
    LRU con vista/corte constantes y conserva la escena. Firefox reanuda tras cambiar detalle:
    cobertura completa a 8 px en 48,6 s. También reanuda tras orbitar la cámara: 782→68 pendientes
-   y una carga adicional, aún sin completar el nuevo corte. Falta medir overhead y completar el
-   nuevo objetivo tras el cambio de cámara.
+   en la captura temprana. Una repetición prolongada con cinco órbitas cargó 727 bloques más, pero
+   volvió a pausar en cada ciclo: quedaron 805 pendientes y `targetLodMs` nulo. `coverageComplete`
+   describe el último corte visible retenido, no el objetivo solicitado. Falta medir overhead y
+   probar si un presupuesto de caché mayor permite completar el corte cambiado.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
