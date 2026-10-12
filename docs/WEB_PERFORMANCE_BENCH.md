@@ -95,11 +95,11 @@ be established. Treat these results as a separate headless environment, not as a
 baseline or interactive Chrome/Firefox validation. JS heap memory is unavailable in these
 Firefox exports; renderer resource estimates do not supply missing JS/WASM/process memory.
 
-Chrome/Chromium is not installed. An exploratory Belvedere load did not reach the target
-within 120 s (last reported unique range bytes: ~129.1 MiB). That attempt used cached old
-host modules and is retained separately, not mixed into this corrected baseline. Its cause
-is unresolved; it does not establish successful large-file browser navigation. Large datasets,
-sidecar association, color changes, OPFS, cancellation, picking, actual GPU loss and headed
+Chrome/Chromium is not installed. The first Belvedere waiter timed out after 120 s watching
+status text (~129.1 MiB of unique range reads). That text can be overwritten by other messages,
+and the attempt used cached old host modules: it does not establish whether the target was
+reached. The corrected large-file experiments below supersede this inconclusive attempt.
+Sidecar association, color changes, OPFS, cancellation, picking, actual GPU loss and headed
 browser measurements remain pending.
 
 Local raw exports and profile capabilities: `target/web-browser-probe/final-runs/`;
@@ -110,3 +110,66 @@ sample, not the repository root or datasets; file inputs supply the local `.oct`
 Reproduce manually with the protocol above and run the collector on the three exported files.
 Seven Node suites (25 tests), four Python tests and local packaging pass; the single-file
 viewer was regenerated after the change. Automated tests do not certify the pending flows.
+
+### Large-file experiments — 12-10-2026
+
+Same Firefox/headless/WebGPU settings, release WASM, gray XYZ without sidecar, 1280×720,
+4 px target and 256 MiB cache. No native conversions ran concurrently. The page and worker
+are recreated for each attempt; OS cache is not reset or guaranteed resident. Adapter details
+remain undisclosed, so these are not measurements attributable to a named GPU. Albuera uses
+a fresh browser process/profile with the same preferences after the Majadas automation failure.
+
+The revised automation arms the existing benchmark after selecting the file and waits for
+the export button to enable. The host starts its 15 s window only once the target has complete
+coverage, no pending blocks and the requested stage. Successful exports are checked again
+for viewport, stage, coverage, pending blocks and a 10 s stable window. It no longer waits
+for transient `renderer-status` text. Timeouts below bound **load plus benchmark completion**,
+not just loading. After a failed cell, repetitions stop and the failure is preserved.
+
+Majadas completed **two valid exports from three attempts**; the third lost BiDi
+`script.evaluate` responsiveness for over 30 s, without an export or final DOM/screenshot.
+The cause is unresolved. This is an exploratory series, not a completed three-valid-run
+baseline. Median [minimum–maximum] over its two valid exports:
+
+| Dataset | XYZ file (B) | Metadata (ms) | First coarse (ms) | Target 4 px (ms) | FPS | Reply p95 (ms) | Stable CPU p95 (ms) | Submitted/current HZB-visible voxels |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Majadas TLS | 4,214,687,109 | 57.5 [48–67] | 68.5 [61–76] | 157,218.5 [152,983–161,454] | 60.00 [60.00–60.00] | 18 [18–18] | 1 [1–1] | 6,397 [6,397–6,397] |
+
+Both valid Majadas exports report **415,465,882 dataset points**, **7,015,449 selected source
+points**, 202 visible blocks, zero pending blocks, complete coverage and HZB active.
+Unique bytes read **102,958,469**; decoded cache **112,290,672 B**. CPU build peak estimate
+**34,629,024 B**, final instance capacity **255,880 B** and projection-cache peak **11,917**
+entries. These are resource counters/models, not JS/WASM/process RSS or total GPU memory.
+The whole-load/run rolling worker-call p95 is **873/933 ms** and p99 **1,428/1,516 ms**;
+those mixed-window values are distinct from the stable-window p95 of 1 ms. A quick coarse
+view and ~60 reply FPS after loading do not imply quick refinement or responsive loading.
+These FPS count replies; they do not measure GPU completion or visible pixel count.
+
+Two other cells did not produce a completed benchmark. Their last **DOM observations** are
+retained with screenshots, not converted into FPS or aggregate medians:
+
+| Dataset / attempts | Completion limit | Current stage | Pending blocks | Current coverage | Selected source points | Current HZB-visible voxels | Last CPU render call | Decoded cache / budget |
+| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| Belvedere / 1 | 180 s | 8 px | 64 | complete, 0 uncovered | 6,985,426 | 5,140 | 1,983 ms | ~108.6 / 256 MiB |
+| Albuera / 1, fresh browser | 300 s | 4 px | 187 | complete, 0 uncovered | 2,176,303 | 16,674 | 769 ms | ~33.5 / 256 MiB |
+
+Both show a visible gray cloud in the inspected screenshot. Coverage of the **current cut**
+does not establish completion of the requested refinement while blocks remain pending.
+Albuera already reports stage 4 px but still has pending blocks; it is not a completed
+target benchmark. Read progress was ~155.4 MiB of Belvedere's 981,063,326 B XYZ file and
+~134.5 MiB of Albuera's 6,105,617,040 B XYZ file. Albuera's last rolling call p50/p95/p99
+was 755/793/804 ms; Belvedere's was 265/1,225/1,764 ms. No rejection by the CPU/cache budget
+was observed in those snapshots; no conclusion about the cause follows from their sizes.
+
+Local evidence: `target/web-browser-probe/large-final-runs/` holds the two Majadas JSON exports,
+its third-attempt failure and the Belvedere DOM/screenshot; `albuera-final-runs/` holds Albuera's
+separate profile capabilities and failure DOM/screenshot. File-input selection keeps datasets
+local; the staged HTTP server exposes only host/runtime assets. Driver logs include shared-texture
+fallback warnings; these do not establish hardware/software execution or explain the failure.
+
+The next measured work is to split block read/decode, LOD selection, voxel construction and
+upload CPU time, retaining the last visible cut and the budgets. Test whether repeated work
+during refinement dominates before changing caches or scene construction. Reproduce the
+third-attempt browser/automation failure separately. Closing the large-file baseline requires
+three valid comparable runs per cell with failed attempts counted, including Chrome and
+the paired/color path; the current evidence does not close that baseline.

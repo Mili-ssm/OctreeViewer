@@ -331,9 +331,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   en perfil temporal, 1280×720 y 4 px: mediana **251 ms** hasta LOD objetivo, **60,00 FPS** de
   respuestas del worker, **2.410 vóxeles**. Adaptador y heap JS no identificables en los exports;
   no certifica FPS de GPU/pantalla ni interacción. [Método y dispersión](docs/WEB_PERFORMANCE_BENCH.md).
-- [ ] Chrome/Chromium no instalado; falta matriz grande y pareja/color/OPFS/picking/pérdida
-  de GPU. Intento exploratorio Belvedere sin LOD objetivo tras 120 s, causa sin resolver.
-  No mezclar ese intento con la base pequeña corregida.
+- [ ] Chrome/Chromium no instalado; falta cerrar matriz grande y pareja/color/OPFS/picking/pérdida
+  de GPU. El primer timeout Belvedere por texto de estado era inconcluyente; las nuevas rondas
+  usan la finalización del benchmark y conservan estados/fallos como se detalla abajo.
 
 ### Albuera y Majadas por fase — 12-10-2026
 
@@ -347,6 +347,21 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   RSS; falta varios workers. Frente a rondas históricas hay menos temporales, más RSS y mayor
   tiempo en Albuera: no es contraste emparejado ni prueba de mejora. Ambas fuentes siguen sin
   cumplir <5 min y pareja ≤3×. No rebajar la validación profunda para alcanzar esos objetivos.
+
+### Exploración web de datasets grandes — 12-10-2026
+
+- [x] Firefox headless, XYZ gris, 1280×720 y 4 px: Majadas produce **dos exports válidos de
+  tres intentos**. Primera vista **61–76 ms**, LOD objetivo **152.983–161.454 ms**, luego
+  ~**60 FPS** de respuestas. Tercer intento sin respuesta BiDi >30 s, sin export; no es una
+  base cerrada de tres rondas válidas. GPU concreta y heap JS/WASM/RSS siguen sin identificar.
+- [x] Conservar intentos incompletos y capturas: Belvedere sin benchmark completo a **180 s**
+  (corte 8 px, 64 bloques pendientes); Albuera en Firefox nuevo a **300 s** (corte 4 px,
+  187 pendientes). Ambos muestran nube y cobertura del corte actual, que no cierra el objetivo.
+  [Métricas, condiciones y límites](docs/WEB_PERFORMANCE_BENCH.md#large-file-experiments--12-10-2026).
+- [ ] Instrumentar por separado lectura/decodificación, selección, voxelización y subida CPU
+  durante el refinamiento; contrastar repetición de trabajo antes de cambiar cachés/builder.
+  Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
+  contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
 
 ### Orden de trabajo y aceptación
 
@@ -365,7 +380,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
    Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
-   Primera base pequeña Firefox documentada; los cuellos internos CPU/I/O siguen sin aislar.
+   Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
+   internos CPU/I/O y fases del refinamiento web siguen sin aislar.
 2. [ ] **RAM y consultas — `viewer_core`, `viewer_format`, `viewer_render_wgpu`, `viewer_wasm`.**
    Definir presupuestos en bytes para acumulación CPU, caché y recursos GPU, con respuesta explícita
    al agotarlos y medición del pico conjunto. Priorizar lookup de `BlockId` y buffers reutilizables.
