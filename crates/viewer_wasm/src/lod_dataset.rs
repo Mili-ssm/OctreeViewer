@@ -21,6 +21,50 @@ pub struct LodDataset {
     visible_scene_metrics: (f64, f64, usize),
     visible_voxel_memory: VoxelBuildMemoryStats,
     refinement_work: LodWorkStats,
+    cache_cycle: Option<CacheCycleDetector>,
+}
+
+/// Brent's cycle detection with one exact, normalized LRU checkpoint.
+/// Only automatic loads with an unchanged build context/cut feed this detector.
+struct CacheCycleDetector {
+    checkpoint: Vec<(BlockId, usize, bool)>,
+    power: u64,
+    steps: u64,
+    paused: bool,
+    selection_error_pixels: f64,
+    target_voxel_pixels: f64,
+}
+
+impl CacheCycleDetector {
+    fn new(
+        cache: &DecodedBlockCache,
+        selection_error_pixels: f64,
+        target_voxel_pixels: f64,
+    ) -> Self {
+        Self {
+            checkpoint: cache.lru_entries().collect(),
+            power: 1,
+            steps: 0,
+            paused: false,
+            selection_error_pixels,
+            target_voxel_pixels,
+        }
+    }
+
+    fn observe(&mut self, cache: &DecodedBlockCache) -> bool {
+        self.steps = self.steps.saturating_add(1);
+        if cache.lru_entries().eq(self.checkpoint.iter().copied()) {
+            self.paused = true;
+            return true;
+        }
+        if self.steps == self.power {
+            self.checkpoint.clear();
+            self.checkpoint.extend(cache.lru_entries());
+            self.power = self.power.saturating_mul(2);
+            self.steps = 0;
+        }
+        false
+    }
 }
 
 /// Cumulative synchronous work while refining this dataset's visible cut.
@@ -94,6 +138,10 @@ pub enum LodDatasetError {
     CameraUnavailable,
     #[error("decoded block was not cached: {0:?}")]
     CacheRejected(CacheInsertRejection),
+    #[error(
+        "refinement paused after repeated decoded-cache state displaced target blocks; change the view or choose coarser detail"
+    )]
+    CacheCyclePaused,
     #[error("LOD selection failed: {0}")]
     Selection(#[from] LodSelectionError),
     #[error("GPU cut update failed: {0}")]
@@ -135,11 +183,14 @@ impl LodDataset {
             visible_scene_metrics: (0.0, 0.0, 0),
             visible_voxel_memory: VoxelBuildMemoryStats::default(),
             refinement_work: LodWorkStats::default(),
+            cache_cycle: None,
         }
     }
 
     pub fn insert_block(&mut self, block: PointBlock) -> Result<usize, LodDatasetError> {
-        self.cache_block(block).map(|result| result.accounted_bytes)
+        let result = self.cache_block(block)?;
+        self.cache_cycle = None;
+        Ok(result.accounted_bytes)
     }
 
     fn cache_block(&mut self, block: PointBlock) -> Result<CacheInsertResult, LodDatasetError> {
@@ -186,6 +237,7 @@ impl LodDataset {
         self.visible_scene_metrics = (0.0, 0.0, 0);
         self.visible_voxel_memory = VoxelBuildMemoryStats::default();
         self.refinement_work = LodWorkStats::default();
+        self.cache_cycle = None;
         Ok(())
     }
 
@@ -230,6 +282,22 @@ impl LodDataset {
         stage_voxel_pixels: f64,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
+        let build_context = SuccessfulBuildContext {
+            camera: renderer.camera_snapshot(),
+            viewport: renderer.viewport_size(),
+            stage_voxel_pixels,
+        };
+        if self.last_successful_build.as_ref() != Some(&build_context)
+            || self.cache_cycle.as_ref().is_some_and(|cycle| {
+                cycle.selection_error_pixels != selection_error_pixels
+                    || cycle.target_voxel_pixels != target_voxel_pixels
+            })
+        {
+            self.cache_cycle = None;
+        }
+        if self.cache_cycle.as_ref().is_some_and(|cycle| cycle.paused) {
+            return Err(LodDatasetError::CacheCyclePaused);
+        }
         self.refinement_work.update_calls += 1;
         renderer.set_visual_scale(self.visual_scale)?;
         // Source points are LOD input, not rendered GPU instances. Bound the output scene below.
@@ -281,6 +349,7 @@ impl LodDataset {
         );
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
         let mut evicted_blocks = Vec::new();
+        let mut loaded_block = false;
         if let Some(requested) = next_block {
             self.refinement_work.block_load_calls += 1;
             let load_started = WorkClock::start();
@@ -295,6 +364,7 @@ impl LodDataset {
                 }
                 evicted_blocks = self.cache_block(block)?.evicted_blocks;
                 self.refinement_work.loaded_blocks += 1;
+                loaded_block = true;
             }
         }
         let planning_started = WorkClock::start();
@@ -302,20 +372,16 @@ impl LodDataset {
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
-        self.refinement_work.evicted_pending_blocks += evicted_blocks
+        let evicted_pending_blocks = evicted_blocks
             .iter()
             .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
             .count() as u64;
+        self.refinement_work.evicted_pending_blocks += evicted_pending_blocks;
         let coordinate_origin = self.metadata.coordinate_frame().origin();
         let local_frustum = renderer
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
-            let build_context = SuccessfulBuildContext {
-                camera: renderer.camera_snapshot(),
-                viewport: renderer.viewport_size(),
-                stage_voxel_pixels,
-            };
             let (same_visible_cut, reusable_scene) = reusable_build_match(
                 self.visible_plan.as_ref().map(LodTransitionPlan::node_ids),
                 self.visible_plan.as_ref().map(LodTransitionPlan::block_ids),
@@ -324,6 +390,21 @@ impl LodDataset {
                 self.last_successful_build.as_ref(),
                 &build_context,
             );
+            if !reusable_scene || plan.pending_blocks().is_empty() {
+                self.cache_cycle = None;
+            } else if loaded_block {
+                if let Some(cycle) = self.cache_cycle.as_mut() {
+                    if cycle.observe(&self.cache) {
+                        return Err(LodDatasetError::CacheCyclePaused);
+                    }
+                } else if evicted_pending_blocks > 0 {
+                    self.cache_cycle = Some(CacheCycleDetector::new(
+                        &self.cache,
+                        selection_error_pixels,
+                        target_voxel_pixels,
+                    ));
+                }
+            }
             if reusable_scene {
                 self.refinement_work.reused_scene_updates += 1;
                 self.refinement_work.reused_source_points += plan.point_count();
@@ -396,6 +477,11 @@ impl LodDataset {
             refinement_work: self.refinement_work.clone(),
         };
         Ok(stats)
+    }
+
+    /// Current cache-reset-scoped work counters, including a failed scene update.
+    pub fn refinement_work(&self) -> &LodWorkStats {
+        &self.refinement_work
     }
 
     /// Dataset-lifetime activity; clearing payloads preserves the cache's counters.
@@ -546,8 +632,8 @@ mod tests {
     };
 
     use super::{
-        LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side, next_lod_stage,
-        priority_precedes, reusable_build_match,
+        CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
+        next_lod_stage, priority_precedes, reusable_build_match,
     };
     use viewer_render_wgpu::{OrbitCamera, RenderScene, build_voxel_scene};
 
@@ -769,8 +855,55 @@ mod tests {
         dataset.last_successful_build = Some(build_context(1.0, [800, 600], 4.0));
         assert!(dataset.insert_block(block_with_points(10, 2)).is_err());
         assert!(dataset.last_successful_build.is_some());
+        dataset.cache_cycle = Some(CacheCycleDetector::new(&dataset.cache, 4.0, 4.0));
         dataset.insert_block(block(10)).unwrap();
+        assert!(dataset.cache_cycle.is_none());
         assert!(dataset.last_successful_build.is_none());
+    }
+
+    #[test]
+    fn cache_cycles_compare_order_sizes_and_protection_without_activity_counters() {
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(block(10));
+        cache.insert(block(11));
+        let mut detector = CacheCycleDetector::new(&cache, 4.0, 4.0);
+        // A different LRU order must not match, despite identical membership.
+        cache.get(BlockId::new(10));
+        assert!(!detector.observe(&cache));
+        cache.set_protected_blocks([BlockId::new(10)]);
+        assert!(!detector.observe(&cache));
+        cache.set_protected_blocks([]);
+        cache.insert(block_with_points(10, 2));
+        assert!(!detector.observe(&cache));
+        // Resident state can recur even though hit/insertion counters have advanced.
+        let mut detector = CacheCycleDetector::new(&cache, 4.0, 4.0);
+        cache.get(BlockId::new(11));
+        cache.get(BlockId::new(10));
+        assert!(detector.observe(&cache));
+        assert!(detector.paused);
+    }
+
+    #[test]
+    fn cache_cycle_detection_handles_longer_cycles_and_finite_progress() {
+        let mut cache = DecodedBlockCache::new(block(10).estimated_memory_bytes());
+        cache.insert(block(10));
+        let mut detector = CacheCycleDetector::new(&cache, 4.0, 4.0);
+        // A long sequence of new states is progress, regardless of checkpoint intervals.
+        for id in 11..30 {
+            cache.insert(block(id));
+            assert!(!detector.observe(&cache));
+        }
+        // A cycle longer than two is detected without retaining its full history.
+        let mut detected = false;
+        for id in [40, 41, 42, 43].into_iter().cycle().take(32) {
+            cache.insert(block(id));
+            if detector.observe(&cache) {
+                detected = true;
+                break;
+            }
+        }
+        assert!(detected);
+        assert_eq!(detector.checkpoint.len(), 1);
     }
 
     #[test]

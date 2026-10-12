@@ -569,3 +569,54 @@ retaining the accepted cut. GPU/display FPS, heap/RSS and named adapter are not 
 Evidence: `target/cache-pressure-probe/belvedere/{session.json,snapshot-1.json,…,snapshot-6.json,final-dom.json,final.png}`;
 driver `target/cache-pressure-belvedere.mjs`. Pending: avoid unbounded repeated work,
 test recovery via coarser detail/camera changes, and rerun the real diagnostic.
+
+### Belvedere cache-cycle pause and recovery — 12-10-2026
+
+Release WASM build `3c3bc4d` with the cache-cycle detector, fresh Firefox 157.0.1
+headless WebGPU profile, gray XYZ, 1280×720, 4 px target and 256 MiB decoded
+cache. One run hit the limit at 150 s; a clean repeat hit it at 180 s. No native
+benchmark or build ran during either browser run. Cache snapshots are forced diagnostic
+exports; no target/FPS benchmark was armed, and neither run is a valid large-file
+performance benchmark.
+
+| Repeat | Elapsed | Stage | Pending | Cache bytes | Insertions | Evictions | Evicted target blocks | Loaded blocks | Scene builds / reuses |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| First | 150 s | 4 px | 782 | 267,888,736 | 443 | 0 | 0 | 443 | 156 / 287 |
+| First | 180 s | 4 px | 785 | 267,705,040 | 848 | 481 | 408 | 848 | 156 / 692 |
+| Clean repeat | 150 s | 4 px | 809 | 240,448,400 | 416 | 0 | 0 | 416 | 153 / 263 |
+| Clean repeat | 180 s | 4 px | 782 | 268,017,232 | 507 | 137 | 64 | 506 | 156 / 350 |
+
+At each 180 s pause, the active cut stayed covered: **14,871,589 selected source points**,
+**20,977 rendered voxels**, **339 blocks**, 0 uncovered nodes and no rejected insertions.
+Evicted target blocks are a count of IDs from the eviction immediately missing from
+the subsequent plan; they are not unique-block or byte counts. The second run paused
+with the expected message and kept the screenshot's gray visible cloud. Its range reader
+had filled **215.1 MiB of 935.6 MiB** of unique source bytes when the driver captured
+the pause. This does not measure heap, RSS or physical I/O.
+
+After changing detail from 4 to **8 px**, the same second run reached the coarser target
+in **48,618 ms** with first coarse frame at **2,359 ms**, 0 pending blocks, complete
+coverage, **13,238,581 source points**, 5,140 voxels, 320 visible blocks and HZB active.
+The benchmark was not armed, so this does not report FPS. This runtime check establishes
+that an explicit detail change resumes the same dataset and cache after pause; it does
+not yet exercise camera-only recovery.
+
+The detector retains one normalized LRU checkpoint and Brent counters, compares block
+ID/size/protection order exactly, and pauses only when that state repeats for the same
+camera, viewport, voxel stage, selection error and target detail while the current scene
+is reusable. Reader callbacks use the immutable opened v5 files. Changing camera/viewport,
+selection/detail or successfully inserting a block clears the detector and permits retry.
+This detects an exact recurring state for this deterministic read path; it does not call
+a one-time eviction an impossible budget or assert that every cache cycle proves the
+whole target cut can never fit.
+
+Unit coverage checks longer cycles, changing LRU/order/protection/size, counter changes,
+finite progress and external-insert reset. Core/WASM tests, native/WASM Clippy, release
+WASM compilation, 26 Node tests, six Python host tests, formatting, package validation
+and the Firefox worker probe pass. The small Firefox probe verifies activity reset on
+reopen and live rejection counters while preserving the scene.
+
+Local evidence is under `target/cache-pressure-probe/`:
+`belvedere-initial-cycle/` and `belvedere-cache-cycle-final/` hold the two pause runs;
+the latter also contains `recovery.json`, `recovery-status.json`, `final-dom.json` and
+`final.png`. `final.json` exports are explicitly marked incomplete.

@@ -75,6 +75,18 @@ impl DecodedBlockCache {
         self.stats
     }
 
+    /// Resident entries from least to most recently used, with accounted bytes and protection.
+    /// Absolute recency sequence numbers and activity counters are intentionally excluded.
+    pub fn lru_entries(&self) -> impl Iterator<Item = (BlockId, usize, bool)> + '_ {
+        self.recency.iter().map(|(_, id)| {
+            (
+                *id,
+                self.entries[id].accounted_bytes,
+                self.protected.contains(id),
+            )
+        })
+    }
+
     /// Checks presence without changing LRU order or hit/miss counters.
     pub fn contains(&self, id: BlockId) -> bool {
         self.entries.contains_key(&id)

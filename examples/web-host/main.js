@@ -253,10 +253,8 @@ function updateStats(message) {
         `visible blocks: ${message.gpu.visibleBlocks}`,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
         `LOD coverage: ${coverage}`,
-        `pending blocks: ${lod?.pendingBlockIds.length ?? 0}`,
-        `decoded cache: ${cache}`,
-        `cache evictions / rejected inserts: ${lod?.cacheActivity?.evictions ?? "—"} / ${lod?.cacheActivity ? Number(lod.cacheActivity.rejectedOversize) + Number(lod.cacheActivity.rejectedProtected) : "—"}`,
-        `evicted target blocks: ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
+        `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
+        `decoded cache: ${cache} · evictions / rejects ${lod?.cacheActivity?.evictions ?? "—"} / ${lod?.cacheActivity ? Number(lod.cacheActivity.rejectedOversize) + Number(lod.cacheActivity.rejectedProtected) : "—"}`,
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
         `renderFrame p50/p95/p99: ${formatFrameRenderMs(message.frameRenderMs)}`,
@@ -445,7 +443,9 @@ function handleWorkerMessage(event) {
             benchmarkArmed = false;
             startBenchmarkButton.disabled = false;
             startBenchmarkButton.textContent = "Run 15 s FPS benchmark";
-            statusRoot.textContent = `LOD refinement failed: ${data.lod.lodError} · keeping the last visible cut`;
+            const action = data.lod.lodError.startsWith("refinement paused")
+                ? "paused" : "failed";
+            statusRoot.textContent = `LOD refinement ${action}: ${data.lod.lodError} · keeping the last visible cut`;
             return;
         }
         if (benchmarkArmed && data.targetLodMs !== null) beginBenchmarkWindow();

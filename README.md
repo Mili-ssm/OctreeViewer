@@ -477,9 +477,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Descubrimiento reproducido: con un padre protegido y espacio para un solo hijo, las
    inserciones alternan hijos pendientes sin rechazos. Prueba de regresión añadida;
    `cacheActivity` y `refinementWork.evictedPendingBlocks` permiten medirlo en navegador.
-   Confirmado en Belvedere: 481 evicciones / 408 bloques expulsados de nuevo pendientes a
-   180 s, sin rechazos; el corte no cambió entre 150 y 180 s. Pendiente detener recargas sin
-   progreso y responder explícitamente, preservando cobertura y recuperación al cambiar vista.
+   Belvedere confirma el ciclo. El detector Brent de un checkpoint pausa tras repetir estado
+   LRU con vista/corte constantes; conserva la escena y permite recuperación. Firefox repite
+   el corte a 8 px con cobertura completa en 48,6 s. Pendiente abrir/reintentar también con
+   cambios de cámara y medir el overhead del detector en flujos sin presión.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida

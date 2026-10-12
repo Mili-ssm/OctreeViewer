@@ -443,7 +443,11 @@ impl WasmVoxelViewer {
     pub fn lod_stats(&self) -> Result<JsValue, JsValue> {
         match &self.last_lod_stats {
             Some((stats, range_read_stats)) => {
-                let value = lod_view_stats_to_js(stats, *range_read_stats)?;
+                let mut current_stats = stats.clone();
+                if let Some(dataset) = self.lod_dataset.as_ref() {
+                    current_stats.refinement_work = dataset.refinement_work().clone();
+                }
+                let value = lod_view_stats_to_js(&current_stats, *range_read_stats)?;
                 add_runtime_gpu_stats(&value, self.gpu_renderer.as_ref())?;
                 add_cache_activity(&value, self.lod_dataset.as_ref())?;
                 js_sys::Reflect::set(
