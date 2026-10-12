@@ -457,10 +457,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    [mediciones v5](docs/V5_MEMORY_BENCH.md#perfil-de-conversión-nativa-por-fase).
    Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
-   Albuera/Majadas por fase medidas con tres repeticiones; faltan lote de workers y matriz web.
+   Albuera/Majadas por fase medidas con tres repeticiones; matriz de workers 1/2 completa para
+   los tres datasets, matriz web y memoria observable del navegador aún pendientes.
    El benchmark ya informa lote efectivo de preparación, límite de threads Rayon, workers de
-   validación y estimaciones por worker; contraste repetido 1/2 completado en Belvedere,
-   completado también en Majadas; Albuera aún pendiente.
+   validación y estimaciones por worker; contraste 1/2 completado en Belvedere, Majadas y
+   Albuera. La matriz web y la memoria observable del navegador siguen pendientes.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
@@ -487,9 +488,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
    semánticamente equivalente, RAM/temporales/I/O y tiempo por fase comparados, recuperación intacta.
    Avance: liberación de spools consumidos comparada en Belvedere y ronda posterior por fase
-   en Albuera/Majadas; tres pares 1/2 workers Belvedere medidos. Faltan contraste emparejado en Albuera y perfil interno de jerarquía/spools y RSS de validación. En Majadas, tres pares 1/2 dieron mediana **340,9/377,7 s**, con 10,8 % más
-   tiempo y 87,3 % más RSS muestreado usando dos workers, aunque hashes de salida idénticos;
-   resultado limitado a este dataset. [Condiciones y fases](docs/V5_MEMORY_BENCH.md#uno-frente-a-dos-workers-en-majadas--12-10-2026).
+   en Albuera/Majadas; tres pares 1/2 workers Belvedere medidos. Los tres pares 1/2 por dataset
+   ya están medidos: dos workers aumentan RSS en los tres; el tiempo mediano baja en
+   Belvedere/Albuera y sube en Majadas. En Albuera: **604,5/560,7 s**,
+   pero RSS **100/213,7 MiB** y dispersión amplia. Salidas validadas e idénticas por hashes.
+   No cambiar el valor predeterminado. RSS por fase, incluida validación, ya se observó externamente;
+   falta aislar internamente jerarquía, spools y buffers de validación.
+   [Majadas](docs/V5_MEMORY_BENCH.md#uno-frente-a-dos-workers-en-majadas--12-10-2026) ·
+   [Albuera](docs/V5_MEMORY_BENCH.md#uno-frente-a-dos-workers-en-albuera--12-10-2026).
    Separar el coste de validación; no sustituir la comprobación profunda por CRC sin demostrar qué
    corrupción, errores de descompresión y cuantización detectaría cada modo.
 4. [ ] **Representaciones experimentales — formato y render.** Un cambio por experimento:

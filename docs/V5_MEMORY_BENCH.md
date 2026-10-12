@@ -929,8 +929,8 @@ Mediana [mínimo–máximo] de tres procesos por modo:
 | Jerarquía (s) | 196,608 [191,567–203,044] | 189,797 [181,178–218,523] |
 | Lectura/preparación/escritura (s) | 68,920 [68,743–118,950] | 126,815 [109,709–146,779] |
 | Validación (s) | 32,071 [31,897–32,996] | 17,182 [17,079–25,145] |
-| RSS pico muestreado (MiB) | 97,035 [95,022–101,748] | 181,769 [156,285–202,671] |
-| Temporales máximos lógicos (GiB) | 18,824 [18,824–18,830] | 18,899 [18,824–19,320] |
+| RSS pico muestreado (MiB) | 97,035 [95,070–101,176] | 181,746 [156,285–202,746] |
+| Temporales máximos lógicos (GiB) | 17,529 [17,529–17,535] | 17,597 [17,529–17,990] |
 
 En esta muestra, dos workers tardaron **10,8 %** más en la mediana y elevaron el RSS pico
 muestreado **87,3 %**; el pico temporal lógico cambió **0,4 %**. La preparación se ejecutó en
@@ -953,3 +953,48 @@ Estimaciones reportadas por worker: **51.375.040 B** para preparación y **35.64
 validación; no son límites del RSS total. Esta comparación no vacía caché, no separa el coste de
 CPU de la variación de I/O y no establece una regla para otras fuentes. Albuera y caché fría
 siguen pendientes.
+
+### Uno frente a dos workers en Albuera — 12-10-2026
+
+Mismo binario `perf` (`e48716c18ab36252d525e7911f76f6aec90a75365051c23e06555d053c8888c1`),
+Ryzen AI 9 365, Fedora/Linux 7.2.9 y fuente Albuera UAV local de **4.305.484.789 B**. Tres pares
+secuenciales 1→2 workers, divisiones 2 y presupuesto predeterminado; no hubo compilaciones,
+conversiones ni benchmarks concurrentes. Se calculó SHA-256 completo de la fuente antes y después
+de cada proceso; no se vació la caché del SO. El tiempo reportado incluye conversión y validación
+profunda, pero no los hashes posteriores de los outputs. RSS y temporales se muestrearon cada
+100 ms; los temporales son tamaños lógicos observados, no I/O físico.
+
+Mediana [mínimo–máximo] de tres procesos por modo:
+
+| Métrica | 1 worker | 2 workers |
+| --- | ---: | ---: |
+| Conversión total (s) | 604,467 [574,660–612,543] | 560,688 [443,604–573,506] |
+| Índice espacial (s) | 77,070 [76,917–77,662] | 77,853 [77,271–79,547] |
+| Jerarquía (s) | 284,641 [256,405–293,881] | 287,279 [233,822–287,613] |
+| Lectura/preparación/escritura (s) | 188,463 [186,765–190,067] | 164,997 [104,077–174,292] |
+| Validación (s) | 53,100 [52,470–53,677] | 30,976 [26,031–33,560] |
+| RSS pico muestreado (MiB) | 100,395 [100,215–110,297] | 213,738 [206,176–230,527] |
+| Temporales máximos lógicos (GiB) | 25,546 [25,297–25,574] | 27,719 [27,348–27,927] |
+
+Dos workers redujeron **7,2 %** la mediana del tiempo, elevaron **112,9 %** el RSS pico muestreado
+y aumentaron **8,5 %** el pico de temporales lógicos. Sin embargo, el rango 2-worker es amplio
+(443,6–573,5 s) y no se solapa con 1-worker (574,7–612,5 s); queda una brecha de 1,2 s. El cambio
+mezcla concurrencia de jerarquía, lote de preparación (1/2 bloques) y validación (1/2 workers).
+La planificación del índice y la jerarquía no mejoran en la mediana; la lectura/preparación/escritura
+y la validación son menores con 2 workers. No se atribuye el total a una fase ni se extrapola el
+resultado a otros datasets.
+
+Los seis reportes completan validación profunda, con cero errores del muestreador, y declaran
+508.809.556 puntos / 8.437 bloques. Cada `.oct` mide **6.105.617.040 B** y `.octattrs`
+**7.561.226.723 B**. En los tres pares coinciden ambos SHA-256 de salida:
+
+```text
+oct      8bca49854c48af8a976e6e37b3c569f047dcd2d1f6c6b5d57f89356f22b3be02
+octattrs 7b16a940b28eb57350dd3021f1ecaf1505947f8570b9abc48fa711707246abed
+```
+
+Fuente SHA-256: `071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f`.
+Estimaciones por worker: preparación **48.415.552 B**, validación **41.507.868 B**; no son límites
+del RSS total. Junto a Belvedere y Majadas, se han cerrado tres pares por cada fuente; los resultados
+de tiempo difieren entre datasets y dos workers elevaron el RSS en los tres casos. No se cambia el
+default. Caché fría y aislamiento interno de jerarquía, spools y validación siguen pendientes.
