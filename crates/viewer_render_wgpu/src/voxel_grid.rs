@@ -52,6 +52,7 @@ struct AdaptiveVoxelGrid {
     projected_edges: BTreeMap<VoxelKey, f64>,
     projected_edge_order: VecDeque<VoxelKey>,
     projected_edge_peak_entries: usize,
+    last_resolved_cell: Option<(VoxelKey, bool)>,
 }
 
 impl AdaptiveVoxelGrid {
@@ -100,6 +101,13 @@ impl AdaptiveVoxelGrid {
         point: [f64; 3],
         project: &dyn Fn(SpatialBounds) -> f64,
     ) -> Result<Option<VoxelKey>, VoxelSceneBuildError> {
+        // Nearby source points often share a terminal cell. Match the exact integer mapping
+        // used by descent, including clamping outside the root, before reusing its result.
+        if let Some((key, visible)) = self.last_resolved_cell
+            && self.key_at_depth(point, key.depth) == key
+        {
+            return Ok(visible.then_some(key));
+        }
         let mut key = VoxelKey {
             depth: 0,
             coord: [0; 3],
@@ -109,19 +117,27 @@ impl AdaptiveVoxelGrid {
             // Cull cells as soon as their bounds cannot contribute to the view. Deferring this
             // until scene construction would retain one accumulator per off-screen voxel.
             if edge <= 0.0 {
+                self.last_resolved_cell = Some((key, false));
                 return Ok(None);
             }
             // Beyond 24 levels f32 cannot reliably distinguish adjacent local cell faces.
             if edge <= self.target_pixels || key.depth >= 24 {
+                self.last_resolved_cell = Some((key, true));
                 return Ok(Some(key));
             }
-            key.depth += 1;
-            let count = 1_u32 << key.depth;
-            key.coord = std::array::from_fn(|axis| {
+            key = self.key_at_depth(point, key.depth + 1);
+        }
+    }
+
+    fn key_at_depth(&self, point: [f64; 3], depth: u8) -> VoxelKey {
+        let count = 1_u32 << depth;
+        VoxelKey {
+            depth,
+            coord: std::array::from_fn(|axis| {
                 (((point[axis] - self.origin[axis]) / self.side * f64::from(count))
                     .floor()
                     .clamp(0.0, f64::from(count - 1))) as u32
-            });
+            }),
         }
     }
 
@@ -255,6 +271,7 @@ impl VoxelSceneBuilder {
                 projected_edges: BTreeMap::new(),
                 projected_edge_order: VecDeque::new(),
                 projected_edge_peak_entries: 0,
+                last_resolved_cell: None,
             },
             voxels: BTreeMap::new(),
             limits,
@@ -621,6 +638,7 @@ mod tests {
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
             projected_edge_peak_entries: 0,
+            last_resolved_cell: None,
         };
 
         assert_eq!(grid.key_for_point([0.5; 3], &project).unwrap(), None);
@@ -638,6 +656,7 @@ mod tests {
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
             projected_edge_peak_entries: 0,
+            last_resolved_cell: None,
         };
 
         assert_eq!(
@@ -650,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn uncached_projected_edges_are_recomputed_after_cache_fills() {
+    fn terminal_hint_reuses_result_with_projection_cache_disabled() {
         let projection_calls = Cell::new(0);
         let project = |_: SpatialBounds| {
             projection_calls.set(projection_calls.get() + 1);
@@ -664,12 +683,126 @@ mod tests {
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
             projected_edge_peak_entries: 0,
+            last_resolved_cell: None,
         };
 
         assert!(grid.key_for_point([0.5; 3], &project).unwrap().is_some());
         assert!(grid.key_for_point([0.5; 3], &project).unwrap().is_some());
-        assert_eq!(projection_calls.get(), 2);
+        assert_eq!(projection_calls.get(), 1);
         assert!(grid.projected_edges.is_empty());
+    }
+
+    #[test]
+    fn terminal_hint_matches_full_descent_at_boundaries_and_with_eviction() {
+        let bounds = SpatialBounds::new([-1.0; 3], [1.0; 3]).unwrap();
+        let mut points = vec![[-2.0; 3], [-1.0; 3], [0.0; 3], [1.0; 3], [2.0; 3]];
+        for face in [-0.5_f64, 0.0, 0.5] {
+            points.extend([
+                [face - f64::EPSILON; 3],
+                [face; 3],
+                [face + f64::EPSILON; 3],
+            ]);
+        }
+        let mut seed = 17_u64;
+        for _ in 0..2_000 {
+            points.push(std::array::from_fn(|_| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (seed >> 32) as f64 / u32::MAX as f64 * 4.0 - 2.0
+            }));
+        }
+        for cache_limit in [0, 1, 32] {
+            for target in [0.5, 4.0, 16.0] {
+                let mut hinted = VoxelSceneBuilder::new(bounds, [0.0; 3], target, 64).grid;
+                let mut reference = VoxelSceneBuilder::new(bounds, [0.0; 3], target, 64).grid;
+                hinted.projected_edge_cache_limit = cache_limit;
+                reference.projected_edge_cache_limit = cache_limit;
+                let project = |bounds: SpatialBounds| {
+                    if bounds.min()[0] >= 0.5 {
+                        0.0
+                    } else {
+                        bounds_side(bounds) * 64.0 / (1.0 + bounds.min()[2].abs())
+                    }
+                };
+                for point in &points {
+                    // Reset only the hint to exercise the original root-to-terminal descent.
+                    reference.last_resolved_cell = None;
+                    let expected = reference.key_for_point(*point, &project).unwrap();
+                    assert_eq!(hinted.key_for_point(*point, &project).unwrap(), expected);
+                    assert_eq!(hinted.key_for_point(*point, &project).unwrap(), expected);
+                }
+            }
+        }
+        // Nonfinite projected edges retain the existing depth-24 fallback.
+        let mut grid = VoxelSceneBuilder::new(bounds, [0.0; 3], 4.0, 64).grid;
+        let key = grid.key_for_point([0.25; 3], &|_| f64::NAN).unwrap();
+        assert_eq!(key.unwrap().depth, 24);
+        assert_eq!(grid.key_for_point([0.25; 3], &|_| f64::NAN).unwrap(), key);
+    }
+
+    #[test]
+    fn terminal_hint_preserves_scene_colors_attributes_and_budget_errors() {
+        use viewer_core::{
+            AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues,
+        };
+        let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
+        let project = |bounds: SpatialBounds| bounds_side(bounds) * 32.0;
+        let make_block = |index: usize| {
+            PointBlock::new(
+                BlockId::new(index as u64),
+                PointBatch::new(vec![Point::new(
+                    [index as f32 / 200.0; 3],
+                    ColorRgb::new(index as u8, 20, 90),
+                )]),
+                vec![
+                    AttributeColumn::new(
+                        AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap(),
+                        AttributeValues::U16(vec![index as u16 * 3]),
+                        1,
+                    )
+                    .unwrap(),
+                    AttributeColumn::new(
+                        AttributeDescriptor::new("classification", AttributeDataType::U8, 1)
+                            .unwrap(),
+                        AttributeValues::U8(vec![(index % 8) as u8]),
+                        1,
+                    )
+                    .unwrap(),
+                ],
+            )
+        };
+        for limits in [
+            VoxelBuildLimits::default(),
+            VoxelBuildLimits {
+                max_voxels: 1,
+                ..VoxelBuildLimits::default()
+            },
+            VoxelBuildLimits {
+                max_estimated_bytes: 256,
+                ..VoxelBuildLimits::default()
+            },
+        ] {
+            let mut hinted = VoxelSceneBuilder::with_limits(bounds, [0.0; 3], 4.0, limits);
+            let mut reference = VoxelSceneBuilder::with_limits(bounds, [0.0; 3], 4.0, limits);
+            for index in 0..100 {
+                let block = make_block(index);
+                reference.grid.last_resolved_cell = None;
+                let expected = reference.add_block(&block, &project);
+                assert_eq!(hinted.add_block(&block, &project), expected);
+                if expected.is_err() {
+                    break;
+                }
+            }
+            match (hinted.try_finish(&project), reference.try_finish(&project)) {
+                (Ok(actual), Ok(expected)) => {
+                    assert_eq!(actual.scene, expected.scene);
+                    assert_eq!(actual.min_edge_pixels, expected.min_edge_pixels);
+                    assert_eq!(actual.max_edge_pixels, expected.max_edge_pixels);
+                    assert_eq!(actual.oversized_voxels, 0);
+                }
+                (Err(actual), Err(expected)) => assert_eq!(actual, expected),
+                _ => panic!("hint changed scene completion"),
+            }
+        }
     }
 
     #[test]

@@ -107,6 +107,17 @@ Raw exports, adapter/session details and first screenshots are under ignored
 `target/web-browser-probe/refinement-work-runs/` (`sample-{1,2,3}.json`, `majadas-1.json`).
 `dataset.name=sample.oct` records the synthetic input used for the three small runs.
 
+### Majadas after terminal-cell reuse — 12-10-2026
+
+The current release WASM produces **3/3 valid Majadas runs** at 1280×720, 4 px, gray XYZ in
+Firefox 157.0.1 headless: target LOD median **59,696 [58,370–65,937] ms**, first coarse
+**46 [45–76] ms**, accumulated voxel construction **53,422 [52,723–58,964] ms**, ~60 reply FPS.
+All retain the previous scene/work counters; the first screenshot is byte-identical to the
+previous Majadas screenshot. The old sessions are not paired with these browser runs, so
+no browser speedup ratio is inferred. [Native paired benchmark, method and limits](VOXEL_BUILD_BENCH.md)
+separate the cell-reuse effect from progressive web timing. The earlier BiDi failure remains
+unexplained; it did not recur in these three attempts. Other large/browser/color cells stay open.
+
 ## Comparison matrix
 
 Use the same browser/device and three runs per cell; the collector reports median and min–max range.

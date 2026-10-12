@@ -366,8 +366,17 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   239 reconstrucciones, 522 M puntos de entrada acumulados; voxelización **157,4 s de 159,4 s**
   entre fases medidas. Mismo corte final de 6.397 vóxeles que las rondas anteriores; no es una
   comparación de velocidad ni prueba de que todas las reconstrucciones sean evitables.
-- [ ] Perfilar celdas/proyección y reconstrucciones con corte sin cambios antes de introducir
-  reutilización incremental; conservar equivalencia, límites y ausencia de solapamientos.
+- [x] Reutilizar la última celda terminal dentro del constructor, verificando la misma clave
+  entera antes de omitir el recorrido desde la raíz. Memoria fija; mismo acumulador y presupuestos.
+  Tres pares nativos × tres reconstrucciones: **3,73× Majadas**, **1,95× Albuera**, **2,22× Outer
+  Banks** en construcción del corte final, con misma huella de escena, atributos y límites.
+  No son ratios de FPS ni de carga web. Belvedere rechazado por el límite del diagnóstico.
+  [Protocolo y resultados](docs/VOXEL_BUILD_BENCH.md).
+- [x] Validar WASM optimizado en Majadas: **3/3 rondas Firefox**, objetivo mediano **59,7 s**
+  [58,4–65,9], mismos contadores finales y captura idéntica a la anterior. Las sesiones web
+  previas no están emparejadas; los ratios de mejora anteriores corresponden solo a CPU nativa.
+- [ ] Medir reconstrucciones con corte sin cambios antes de introducir reutilización incremental;
+  conservar equivalencia, límites y ausencia de solapamientos.
   Separar lectura de decodificación y completar repeticiones grandes comparables.
   Reproducir el fallo del tercer intento y obtener tres rondas válidas comparables por celda,
   contabilizando fallos. Mantener presupuestos, escena visible y validación de pareja/color.
