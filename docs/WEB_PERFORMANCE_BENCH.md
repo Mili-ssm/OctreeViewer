@@ -712,3 +712,31 @@ Local evidence is under `target/cache-pressure-probe/`:
 `belvedere-camera-recovery/` hold the diagnostic, pause/detail recovery and camera retry runs;
 the latter also contains `recovery.json`, `recovery-status.json`, `final-dom.json` and
 `final.png`. `final.json` exports are explicitly marked incomplete.
+
+
+### External Firefox process-tree PSS — 12-10-2026
+
+During three sequential Albuera RGB runs at 1280×720, 4 px and 256 MiB cache, an external Linux
+monitor sampled `/proc` once per second. It followed the Firefox parent and descendants, summing
+`Pss` from each `smaps_rollup`; PSS apportions shared pages across processes. The sample does not
+include dedicated GPU memory, does not expose the JS/WASM heap separately and can miss sub-second
+peaks. No build or native conversion ran concurrently.
+
+| Load | Valid target export | Tree PSS sampled peak | Tree RSS sum peak | Minimum host `MemAvailable` |
+| --- | --- | ---: | ---: | ---: |
+| 1 | 152,401 ms, complete | 0.978 GiB | 1.651 GiB | 18.35 GiB |
+| 2 | 120,234 ms, complete | 6.584 GiB | 7.268 GiB | 13.08 GiB |
+| 3 | 137,271 ms, complete | 0.986 GiB | 1.663 GiB | 18.72 GiB |
+
+One isolated second-load sample reached **6.584 GiB PSS**, mainly in the Firefox parent process,
+about 38 ms before the export-complete marker. After navigating to the third run, PSS returned to
+about **0.8–1.0 GiB**. This single-profile observation does not establish a persistent leak or its
+cause. The lowest sampled host memory availability was 13.08 GiB and swap free remained at least
+7.38 GiB. The RSS column sums per-process RSS and double-counts shared mappings; use tree PSS for
+the process group. Frame timings from this memory run are not compared to unsampled runs.
+
+Raw 1 s process-tree and host-memory samples, per-run completion markers, exports and driver logs
+are in `target/browser-memory/albuera-rgb/`. Reproduction driver: `python3
+target/browser-memory/sample_firefox_tree.py` while the root HTTP server is available on port 8765.
+The next memory step is to capture PSS anon/file/shmem breakdowns at the peak and repeat before
+assigning the growth to decoded blocks, file-backed mappings or browser bookkeeping.

@@ -460,18 +460,20 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Atribución de RSS y temporales por intervalo implementada; medición repetida en Belvedere
    en [mediciones v5](docs/V5_MEMORY_BENCH.md#rss-y-temporales-por-intervalo-de-conversión--12-10-2026).
    Albuera/Majadas por fase medidas con tres repeticiones; matriz de workers 1/2 completa para
-   los tres datasets, matriz web y memoria observable del navegador aún pendientes.
+   los tres datasets; matriz web parcial. PSS externo Firefox medido en tres cargas; heap JS y VRAM
+   siguen sin lectura directa.
    El benchmark ya informa lote efectivo de preparación, límite de threads Rayon, workers de
    validación y estimaciones por worker; contraste 1/2 completado en Belvedere, Majadas y
-   Albuera. La matriz web y la memoria observable del navegador siguen pendientes.
+   Albuera. La matriz web continúa parcial; queda validar más navegadores y medir memoria GPU/heap JS.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida
    CPU. Albuera XYZ/RGB/intensidad, Majadas RGB/intensidad y Belvedere RGB a 8 px tienen tres
-   rondas válidas; Albuera intensidad registra un timeout BiDi en cuatro intentos. Falta cerrar
-   Belvedere a 4 px, medir más componentes/datasets, otros navegadores y memoria. Albuera RGB: objetivo
+   rondas válidas; Albuera intensidad registra un timeout BiDi en cuatro intentos. Falta cerrar Belvedere a 4 px, medir más componentes/datasets y otros navegadores. PSS externo
+   del árbol Firefox en tres cargas fue **0,98/6,58/0,99 GiB**; el pico de la segunda fue aislado y
+   requiere atribución. Albuera RGB: objetivo
    mediano **139,6 s [137,6–142,5]**, primer frame **110 ms [72–114]**, 17.030 vóxeles y cobertura
-   completa; ~60 respuestas/s de worker. La memoria de navegador no está disponible.
+   completa; ~60 respuestas/s de worker. Heap JS y memoria GPU no están disponibles en Firefox.
    [Albuera RGB](docs/WEB_PERFORMANCE_BENCH.md#albuera-rgb-sidecar--12-10-2026),
    [Albuera intensidad](docs/WEB_PERFORMANCE_BENCH.md#albuera-intensity-column-reload--12-10-2026) y
    [Belvedere RGB a 8 px](docs/WEB_PERFORMANCE_BENCH.md#belvedere-rgb-at-8-px--12-10-2026).
@@ -483,6 +485,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    separadas. Lookup y reutilización acotada de rangos globales ya implementados. Cierre: menor coste
    medido, mismos resultados deterministas,
    cobertura `Replacement`/`Additive`, sin solapamientos ni crecimiento de memoria sin control.
+   Tres cargas Albuera medidas con PSS externo del árbol Firefox: **0,98/6,58/0,99 GiB**;
+   una exportación mostró un pico transitorio de 6,58 GiB en el proceso principal, que bajó al
+   navegar a la carga siguiente. La causa no está aislada; GPU VRAM/heap JS siguen fuera de la medida.
+   [Muestreo y límites](docs/WEB_PERFORMANCE_BENCH.md#external-firefox-process-tree-pss--12-10-2026).
    Descubrimiento reproducido: con un padre protegido y espacio para un solo hijo, las
    inserciones alternan hijos pendientes sin rechazos. Prueba de regresión añadida;
    `cacheActivity` y `refinementWork.evictedPendingBlocks` permiten medirlo en navegador.
