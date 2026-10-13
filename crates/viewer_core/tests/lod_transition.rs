@@ -114,12 +114,12 @@ fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
     );
     assert!(waiting.coverage_complete());
 
-    assert!(cache.insert(child_a).cached);
+    assert!(cache.insert(child_a).cached());
     let partial = planner.update(&hierarchy, &desired, &mut cache);
     assert_eq!(partial.node_ids(), [NodeId::new(1)]);
     assert!(partial.coverage_complete());
 
-    assert!(cache.insert(child_b).cached);
+    assert!(cache.insert(child_b).cached());
     let complete = planner.update(&hierarchy, &desired, &mut cache);
     assert_eq!(complete.node_ids(), [NodeId::new(2), NodeId::new(3)]);
     assert_eq!(complete.block_ids(), [BlockId::new(20), BlockId::new(30)]);
@@ -144,7 +144,7 @@ fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
     assert_eq!(coarsening.uncovered_nodes(), [NodeId::new(1)]);
     assert!(!coarsening.coverage_complete());
 
-    assert!(cache.insert(block(10)).cached);
+    assert!(cache.insert(block(10)).cached());
     let within_budget = planner.update(&hierarchy, &target(&hierarchy, false, 1), &mut cache);
     assert_eq!(within_budget.node_ids(), [NodeId::new(1)]);
     assert_eq!(within_budget.point_count(), 1);
@@ -166,21 +166,21 @@ fn protected_active_cut_blocks_an_over_budget_transition_without_eviction() {
     planner.update(&hierarchy, &target(&hierarchy, false, 10), &mut cache);
 
     let rejected = cache.insert(replacement);
-    assert!(!rejected.cached);
+    assert!(!rejected.cached());
     assert_eq!(
-        rejected.rejection,
+        rejected.rejection(),
         Some(viewer_core::CacheInsertRejection::ProtectedEntries)
     );
     assert!(cache.contains(BlockId::new(10)));
     assert!(!cache.contains(BlockId::new(20)));
     assert!(cache.contains(BlockId::new(11)));
-    assert!(rejected.evicted_blocks.is_empty());
+    assert!(rejected.evicted_blocks().is_empty());
     assert_eq!(cache.used_bytes(), budget);
 
     planner.reset(&mut cache);
     let replacement_result = cache.insert(block_with_points(20, 3));
-    assert!(replacement_result.cached);
-    assert_eq!(replacement_result.evicted_blocks, [BlockId::new(10)]);
+    assert!(replacement_result.cached());
+    assert_eq!(replacement_result.evicted_blocks(), [BlockId::new(10)]);
     assert!(cache.contains(BlockId::new(11)));
 }
 
@@ -204,7 +204,7 @@ fn prepared_cut_does_not_change_active_cache_protection_until_commit() {
 
     let child_target = target(&hierarchy, true, 10);
     let _child_plan = planner.prepare(&hierarchy, &child_target, &cache);
-    assert!(cache.insert(block(40)).cached);
+    assert!(cache.insert(block(40)).cached());
     assert!(cache.contains(BlockId::new(10)));
     assert!(!cache.contains(BlockId::new(20)));
     assert_eq!(
@@ -220,7 +220,7 @@ fn prepared_cut_does_not_change_active_cache_protection_until_commit() {
     planner.update(&hierarchy, &root_target, &mut cache);
     let child_plan = planner.prepare(&hierarchy, &child_target, &cache);
     planner.commit(&child_plan, &mut cache);
-    assert!(cache.insert(block(40)).cached);
+    assert!(cache.insert(block(40)).cached());
     assert!(!cache.contains(BlockId::new(10)));
     assert!(cache.contains(BlockId::new(20)));
     assert!(cache.contains(BlockId::new(30)));
@@ -365,17 +365,17 @@ fn protected_fallback_and_one_child_budget_can_starve_replacement_targets() {
     let root = block(10);
     let size = root.estimated_memory_bytes();
     let mut cache = DecodedBlockCache::new(size * 2);
-    assert!(cache.insert(root).cached);
+    assert!(cache.insert(root).cached());
     let mut planner = LodTransitionPlanner::new();
     planner.update(&hierarchy, &target(&hierarchy, false, 10), &mut cache);
     let desired = target(&hierarchy, true, 10);
 
     for (arriving, pending, evicted) in [(20, 30, None), (30, 20, Some(20)), (20, 30, Some(30))] {
         let inserted = cache.insert(block(arriving));
-        assert!(inserted.cached);
-        assert_eq!(inserted.rejection, None);
+        assert!(inserted.cached());
+        assert_eq!(inserted.rejection(), None);
         assert_eq!(
-            inserted.evicted_blocks,
+            inserted.evicted_blocks(),
             evicted.into_iter().map(BlockId::new).collect::<Vec<_>>()
         );
         let plan = planner.update(&hierarchy, &desired, &mut cache);
@@ -390,4 +390,47 @@ fn protected_fallback_and_one_child_budget_can_starve_replacement_targets() {
     assert_eq!(cache.stats().rejected_oversize, 0);
     assert_eq!(cache.stats().rejected_protected, 0);
     assert_eq!(cache.stats().evictions, 2);
+}
+
+/// An experiment can own decoded blocks without adopting the LRU policy.
+struct ResidentBlocks(Vec<PointBlock>);
+
+impl viewer_core::ResidentBlockSource for ResidentBlocks {
+    fn peek(&self, id: BlockId) -> Option<&PointBlock> {
+        self.0.iter().find(|block| block.id() == id)
+    }
+}
+
+#[test]
+fn alternate_resident_source_preserves_lod_fallback_and_budgets_without_touching_lru() {
+    for semantics in [
+        HierarchySemantics::Replacement,
+        HierarchySemantics::Additive,
+    ] {
+        let hierarchy = hierarchy(semantics);
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(block(10));
+        let mut planner = LodTransitionPlanner::new();
+        planner.update(&hierarchy, &target(&hierarchy, false, 10), &mut cache);
+        // Exercise absent target blocks, partial refinement, then a complete cut.
+        for ids in [vec![10], vec![10, 20], vec![10, 20, 30]] {
+            let alternative = ResidentBlocks(ids.iter().map(|id| block(*id)).collect());
+            for id in ids {
+                if !cache.contains(BlockId::new(id)) {
+                    assert!(cache.insert(block(id)).cached());
+                }
+            }
+            let stats = cache.stats();
+            let recency = cache.lru_entries().collect::<Vec<_>>();
+            for budget in [1, 2, 10] {
+                let target = target(&hierarchy, true, budget);
+                let expected = planner.prepare(&hierarchy, &target, &cache);
+                assert_eq!(planner.prepare(&hierarchy, &target, &alternative), expected);
+                let erased: &dyn viewer_core::ResidentBlockSource = &alternative;
+                assert_eq!(planner.prepare(&hierarchy, &target, erased), expected);
+            }
+            assert_eq!(cache.stats(), stats);
+            assert_eq!(cache.lru_entries().collect::<Vec<_>>(), recency);
+        }
+    }
 }

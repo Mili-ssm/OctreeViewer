@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use viewer_core::{BlockId, DecodedBlockCache};
+use viewer_core::{BlockId, ResidentBlockSource};
 
 use crate::{
     GpuBudget, GpuRendererError, RenderScene, SceneBounds,
@@ -29,10 +29,10 @@ pub(crate) struct BlockSyncPlan {
     pub visible_elevation_range: Option<[f32; 2]>,
 }
 
-pub(crate) fn plan_block_sync(
+pub(crate) fn plan_block_sync<S: ResidentBlockSource + ?Sized>(
     resident: &[ResidentBlockInfo],
     requested_ids: &[BlockId],
-    cache: &DecodedBlockCache,
+    cache: &S,
     max_buffer_size: u64,
     budget: GpuBudget,
     other_buffer_bytes: u64,
@@ -179,9 +179,52 @@ mod tests {
     fn cache(blocks: impl IntoIterator<Item = PointBlock>) -> DecodedBlockCache {
         let mut cache = DecodedBlockCache::new(1024 * 1024);
         for block in blocks {
-            assert!(cache.insert(block).cached);
+            assert!(cache.insert(block).cached());
         }
         cache
+    }
+
+    #[test]
+    fn alternate_source_preserves_sync_scene_and_missing_payload_error() {
+        struct SingleBlock(PointBlock);
+        impl viewer_core::ResidentBlockSource for SingleBlock {
+            fn peek(&self, id: BlockId) -> Option<&PointBlock> {
+                (self.0.id() == id).then_some(&self.0)
+            }
+        }
+        let alternate = SingleBlock(block(1, &[[0.0; 3], [2.0; 3]]));
+        let cache = cache([alternate.0.clone()]);
+        let source: &dyn viewer_core::ResidentBlockSource = &alternate;
+        let expected = plan_block_sync(&[], &[BlockId::new(1)], &cache, 1024).unwrap();
+        let actual = plan_block_sync_with_budget(
+            &[],
+            &[BlockId::new(1)],
+            source,
+            1024,
+            GpuBudget::default(),
+            0,
+        )
+        .unwrap();
+        assert_eq!(actual.added, expected.added);
+        assert_eq!(actual.selected, expected.selected);
+        assert_eq!(
+            actual.visible_instance_count,
+            expected.visible_instance_count
+        );
+        assert_eq!(actual.uploaded_bytes, expected.uploaded_bytes);
+        assert_eq!(actual.visible_bounds, expected.visible_bounds);
+        assert_eq!(
+            plan_block_sync_with_budget(
+                &[],
+                &[BlockId::new(2)],
+                source,
+                1024,
+                GpuBudget::default(),
+                0,
+            )
+            .unwrap_err(),
+            crate::GpuRendererError::MissingBlockPayload(BlockId::new(2)),
+        );
     }
 
     #[test]

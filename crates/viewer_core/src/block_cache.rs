@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::{BlockId, PointBlock};
+use crate::{BlockId, PointBlock, ResidentBlockSource};
 
 /// Statistics for decoded-block cache activity.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -21,11 +21,47 @@ pub enum CacheInsertRejection {
 
 /// Result of adding a decoded block to the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CacheInsertResult {
-    pub cached: bool,
-    pub rejection: Option<CacheInsertRejection>,
-    pub evicted_blocks: Vec<BlockId>,
-    pub accounted_bytes: usize,
+pub enum CacheInsertResult {
+    Cached {
+        evicted_blocks: Vec<BlockId>,
+        accounted_bytes: usize,
+    },
+    Rejected {
+        reason: CacheInsertRejection,
+        accounted_bytes: usize,
+    },
+}
+
+impl CacheInsertResult {
+    pub const fn cached(&self) -> bool {
+        matches!(self, Self::Cached { .. })
+    }
+
+    pub const fn rejection(&self) -> Option<CacheInsertRejection> {
+        match self {
+            Self::Cached { .. } => None,
+            Self::Rejected { reason, .. } => Some(*reason),
+        }
+    }
+
+    pub fn evicted_blocks(&self) -> &[BlockId] {
+        match self {
+            Self::Cached { evicted_blocks, .. } => evicted_blocks,
+            Self::Rejected { .. } => &[],
+        }
+    }
+
+    /// Estimated bytes of the attempted payload, including when it was rejected.
+    pub const fn accounted_bytes(&self) -> usize {
+        match self {
+            Self::Cached {
+                accounted_bytes, ..
+            }
+            | Self::Rejected {
+                accounted_bytes, ..
+            } => *accounted_bytes,
+        }
+    }
 }
 
 /// Byte-bounded LRU cache for decompressed spatial blocks.
@@ -127,19 +163,15 @@ impl DecodedBlockCache {
         let accounted_bytes = block.estimated_memory_bytes();
         if accounted_bytes > self.max_bytes {
             self.stats.rejected_oversize = self.stats.rejected_oversize.saturating_add(1);
-            return CacheInsertResult {
-                cached: false,
-                rejection: Some(CacheInsertRejection::Oversize),
-                evicted_blocks: Vec::new(),
+            return CacheInsertResult::Rejected {
+                reason: CacheInsertRejection::Oversize,
                 accounted_bytes,
             };
         }
         if self.protected.contains(&id) {
             self.stats.rejected_protected = self.stats.rejected_protected.saturating_add(1);
-            return CacheInsertResult {
-                cached: false,
-                rejection: Some(CacheInsertRejection::ProtectedEntries),
-                evicted_blocks: Vec::new(),
+            return CacheInsertResult::Rejected {
+                reason: CacheInsertRejection::ProtectedEntries,
                 accounted_bytes,
             };
         }
@@ -165,10 +197,8 @@ impl DecodedBlockCache {
         }
         if retained_bytes.saturating_add(accounted_bytes) > self.max_bytes {
             self.stats.rejected_protected = self.stats.rejected_protected.saturating_add(1);
-            return CacheInsertResult {
-                cached: false,
-                rejection: Some(CacheInsertRejection::ProtectedEntries),
-                evicted_blocks: Vec::new(),
+            return CacheInsertResult::Rejected {
+                reason: CacheInsertRejection::ProtectedEntries,
                 accounted_bytes,
             };
         }
@@ -190,9 +220,7 @@ impl DecodedBlockCache {
         );
         self.recency.insert((sequence, id));
         self.stats.insertions = self.stats.insertions.saturating_add(1);
-        CacheInsertResult {
-            cached: true,
-            rejection: None,
+        CacheInsertResult::Cached {
             evicted_blocks,
             accounted_bytes,
         }
@@ -238,6 +266,16 @@ impl DecodedBlockCache {
     }
 }
 
+impl ResidentBlockSource for DecodedBlockCache {
+    fn peek(&self, id: BlockId) -> Option<&PointBlock> {
+        DecodedBlockCache::peek(self, id)
+    }
+
+    fn contains(&self, id: BlockId) -> bool {
+        DecodedBlockCache::contains(self, id)
+    }
+}
+
 struct CacheEntry {
     block: PointBlock,
     accounted_bytes: usize,
@@ -252,13 +290,33 @@ mod tests {
     };
 
     use super::{CacheInsertRejection, DecodedBlockCache};
-    use crate::{BlockId, PointBlock};
+    use crate::{BlockId, PointBlock, ResidentBlockSource};
 
     fn block(id: u64, point_count: usize) -> PointBlock {
         let points = (0..point_count)
             .map(|index| Point::new([index as f32, 0.0, 0.0], ColorRgb::new(1, 2, 3)))
             .collect();
         PointBlock::new(BlockId::new(id), PointBatch::new(points), Vec::new())
+    }
+
+    #[test]
+    fn trait_queries_borrow_payloads_without_changing_cache_state() {
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(block(1, 1));
+        cache.insert(block(2, 1));
+        cache.set_protected_blocks([BlockId::new(1)]);
+        let stats = cache.stats();
+        let recency = cache.lru_entries().collect::<Vec<_>>();
+        let source: &dyn ResidentBlockSource = &cache;
+        assert!(source.contains(BlockId::new(1)));
+        assert!(!source.contains(BlockId::new(3)));
+        assert!(source.peek(BlockId::new(3)).is_none());
+        assert!(std::ptr::eq(
+            source.peek(BlockId::new(1)).unwrap(),
+            cache.peek(BlockId::new(1)).unwrap(),
+        ));
+        assert_eq!(cache.stats(), stats);
+        assert_eq!(cache.lru_entries().collect::<Vec<_>>(), recency);
     }
 
     #[test]
@@ -269,15 +327,15 @@ mod tests {
         let second_size = second.estimated_memory_bytes();
         let mut cache = DecodedBlockCache::new(first_size + second_size);
 
-        assert!(cache.insert(first).cached);
-        assert!(cache.insert(second).cached);
+        assert!(cache.insert(first).cached());
+        assert!(cache.insert(second).cached());
         assert_eq!(cache.used_bytes(), first_size + second_size);
         assert!(cache.get(BlockId::new(1)).is_some());
 
         let third = block(3, 2);
         let result = cache.insert(third);
-        assert!(result.cached);
-        assert_eq!(result.evicted_blocks, [BlockId::new(2)]);
+        assert!(result.cached());
+        assert_eq!(result.evicted_blocks(), [BlockId::new(2)]);
         assert!(cache.get(BlockId::new(2)).is_none());
         assert!(cache.get(BlockId::new(1)).is_some());
         assert!(cache.get(BlockId::new(3)).is_some());
@@ -292,8 +350,8 @@ mod tests {
         let size = block.estimated_memory_bytes();
         let result = cache.insert(block);
 
-        assert!(!result.cached);
-        assert_eq!(result.accounted_bytes, size);
+        assert!(!result.cached());
+        assert_eq!(result.accounted_bytes(), size);
         assert_eq!(cache.used_bytes(), 0);
         assert!(cache.get(BlockId::new(1)).is_none());
         assert_eq!(cache.stats().rejected_oversize, 1);
@@ -345,12 +403,12 @@ mod tests {
         cache.set_protected_blocks([BlockId::new(1)]);
 
         let result = cache.insert(block(2, 2));
-        assert!(!result.cached);
+        assert!(!result.cached());
         assert_eq!(
-            result.rejection,
+            result.rejection(),
             Some(CacheInsertRejection::ProtectedEntries)
         );
-        assert!(result.evicted_blocks.is_empty());
+        assert!(result.evicted_blocks().is_empty());
         assert!(cache.contains(BlockId::new(1)));
         assert!(!cache.contains(BlockId::new(2)));
         assert_eq!(cache.used_bytes(), size);

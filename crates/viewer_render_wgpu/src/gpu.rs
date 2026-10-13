@@ -2,7 +2,7 @@ use std::num::NonZeroU64;
 use std::{collections::HashMap, mem::size_of, sync::mpsc};
 
 use bytemuck::{Pod, Zeroable};
-use viewer_core::{BlockId, DecodedBlockCache};
+use viewer_core::{BlockId, ResidentBlockSource};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -522,10 +522,10 @@ impl<'window> SurfaceRenderer<'window> {
     /// Synchronizes GPU residency to a deduplicated renderable block cut.
     /// IDs are dataset-local; call `clear_dataset` before using IDs from another dataset.
     /// The previous cut remains active if validation fails.
-    pub fn sync_visible_blocks(
+    pub fn sync_visible_blocks<S: ResidentBlockSource + ?Sized>(
         &mut self,
         block_ids: &[BlockId],
-        cache: &DecodedBlockCache,
+        cache: &S,
     ) -> Result<BlockUploadStats, GpuRendererError> {
         let resident: Vec<_> = self
             .block_buffers

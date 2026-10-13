@@ -1,6 +1,9 @@
 use std::collections::{BTreeSet, HashSet};
 
-use crate::{DecodedBlockCache, HierarchySemantics, LodSelection, NodeId, SpatialHierarchy};
+use crate::{
+    DecodedBlockCache, HierarchySemantics, LodSelection, NodeId, ResidentBlockSource,
+    SpatialHierarchy,
+};
 
 /// Renderable block cut after reconciling an LOD target with decoded cache contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,11 +78,11 @@ impl LodTransitionPlanner {
 
     /// Resolves target nodes against cache residency without changing the active cut
     /// or cache protection. Call [`Self::commit`] after downstream consumers accept it.
-    pub fn prepare(
+    pub fn prepare<S: ResidentBlockSource + ?Sized>(
         &self,
         hierarchy: &SpatialHierarchy,
         target: &LodSelection,
-        cache: &DecodedBlockCache,
+        cache: &S,
     ) -> LodTransitionPlan {
         let target_nodes = target.node_ids().iter().copied().collect::<HashSet<_>>();
         let active_nodes = self.active_nodes.iter().copied().collect::<HashSet<_>>();
@@ -207,13 +210,13 @@ struct ResolvedCut {
     complete: bool,
 }
 
-fn resolve_replacement(
+fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
     hierarchy: &SpatialHierarchy,
     node_id: NodeId,
     target_nodes: &HashSet<NodeId>,
     branch_nodes: &HashSet<NodeId>,
     active_nodes: &HashSet<NodeId>,
-    cache: &DecodedBlockCache,
+    cache: &S,
 ) -> ResolvedCut {
     if !branch_nodes.contains(&node_id) {
         return ResolvedCut {
@@ -309,10 +312,10 @@ fn resolve_replacement(
     result
 }
 
-fn resolve_additive(
+fn resolve_additive<S: ResidentBlockSource + ?Sized>(
     hierarchy: &SpatialHierarchy,
     target_nodes: &HashSet<NodeId>,
-    cache: &DecodedBlockCache,
+    cache: &S,
 ) -> ResolvedCut {
     let mut result = ResolvedCut {
         complete: true,

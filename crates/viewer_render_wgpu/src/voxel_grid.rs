@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque, btree_map::Entry};
 
-use viewer_core::{DecodedBlockCache, NodeId, PointBlock, SpatialBounds, SpatialHierarchy};
+use viewer_core::{NodeId, PointBlock, ResidentBlockSource, SpatialBounds, SpatialHierarchy};
 
 use crate::{InstanceRaw, RenderScene, attributes::ScalarAttribute};
 
@@ -401,10 +401,10 @@ impl VoxelSceneBuilder {
 }
 
 /// Builds a voxel scene with the legacy CPU-only limit and no estimated-memory limit.
-pub fn build_voxel_scene(
+pub fn build_voxel_scene<S: ResidentBlockSource + ?Sized>(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
-    cache: &DecodedBlockCache,
+    cache: &S,
     coordinate_origin: [f64; 3],
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,
@@ -422,10 +422,10 @@ pub fn build_voxel_scene(
 }
 
 /// Builds with a voxel-count limit and no estimated-memory limit.
-pub fn build_voxel_scene_with_limit(
+pub fn build_voxel_scene_with_limit<S: ResidentBlockSource + ?Sized>(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
-    cache: &DecodedBlockCache,
+    cache: &S,
     coordinate_origin: [f64; 3],
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,
@@ -448,10 +448,10 @@ pub fn build_voxel_scene_with_limit(
 /// Builds with voxel-count and conservative estimated-memory limits.
 ///
 /// `project` must return stable results for equal bounds throughout scene construction.
-pub fn build_voxel_scene_with_limits(
+pub fn build_voxel_scene_with_limits<S: ResidentBlockSource + ?Sized>(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
-    cache: &DecodedBlockCache,
+    cache: &S,
     coordinate_origin: [f64; 3],
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,
@@ -860,6 +860,77 @@ mod tests {
         assert_eq!(actual.min_edge_pixels, expected.min_edge_pixels);
         assert_eq!(actual.max_edge_pixels, expected.max_edge_pixels);
         assert_eq!(actual.oversized_voxels, expected.oversized_voxels);
+    }
+
+    #[test]
+    fn alternate_resident_source_preserves_voxels_missing_blocks_and_limits() {
+        struct ResidentBlocks(Vec<PointBlock>);
+        impl viewer_core::ResidentBlockSource for ResidentBlocks {
+            fn peek(&self, id: BlockId) -> Option<&PointBlock> {
+                self.0.iter().find(|block| block.id() == id)
+            }
+        }
+        let hierarchy = SpatialHierarchy::new(
+            vec![
+                SpatialNode::new(
+                    viewer_core::NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                    3,
+                    0.0,
+                    vec![BlockId::new(1)],
+                )
+                .unwrap(),
+            ],
+            vec![],
+            Some(3),
+        )
+        .unwrap();
+        let blocks = ResidentBlocks(vec![block(vec![
+            point([0.1; 3]),
+            point([0.8, 0.1, 0.1]),
+            point([0.1, 0.8, 0.1]),
+        ])]);
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(blocks.0[0].clone());
+        let stats = cache.stats();
+        let recency = cache.lru_entries().collect::<Vec<_>>();
+        let erased: &dyn viewer_core::ResidentBlockSource = &blocks;
+        let nodes = [viewer_core::NodeId::new(1), viewer_core::NodeId::new(999)];
+        let project = |bounds| bounds_side(bounds) * 16.0;
+        for limits in [
+            VoxelBuildLimits {
+                max_voxels: 10,
+                max_estimated_bytes: u64::MAX,
+            },
+            VoxelBuildLimits {
+                max_voxels: 2,
+                max_estimated_bytes: u64::MAX,
+            },
+            VoxelBuildLimits {
+                max_voxels: 10,
+                max_estimated_bytes: 0,
+            },
+        ] {
+            let build = |source: &dyn viewer_core::ResidentBlockSource| {
+                super::build_voxel_scene_with_limits(
+                    &hierarchy, &nodes, source, [0.0; 3], 1.0, &project, limits,
+                )
+                .map(|result| result.scene)
+            };
+            let concrete = super::build_voxel_scene_with_limits(
+                &hierarchy, &nodes, &blocks, [0.0; 3], 1.0, &project, limits,
+            )
+            .map(|result| result.scene);
+            assert_eq!(concrete, build(&cache));
+            assert_eq!(build(erased), build(&cache));
+        }
+        let absent = ResidentBlocks(vec![]);
+        let empty = super::build_voxel_scene(&hierarchy, &nodes, &absent, [0.0; 3], 1.0, &project);
+        assert_eq!(empty.scene.instance_count(), 0);
+        assert_eq!(cache.stats(), stats);
+        assert_eq!(cache.lru_entries().collect::<Vec<_>>(), recency);
     }
 
     #[test]

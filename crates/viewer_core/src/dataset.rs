@@ -312,6 +312,20 @@ impl PointBlock {
     }
 }
 
+/// Borrowed access to already decoded resident blocks, without I/O or ownership transfer.
+///
+/// Queries must not change residency, recency or activity counters. A returned block
+/// must have the requested ID. Presence and payload must remain consistent throughout
+/// a consumer operation; `contains` overrides must agree with `peek`.
+/// No thread-safety bounds are imposed on implementations.
+pub trait ResidentBlockSource {
+    fn peek(&self, id: BlockId) -> Option<&PointBlock>;
+
+    fn contains(&self, id: BlockId) -> bool {
+        self.peek(id).is_some()
+    }
+}
+
 /// Platform-independent contract for reading selected blocks from a dataset.
 /// Implementations may perform blocking I/O; callers choose the appropriate worker.
 pub trait DatasetSource {

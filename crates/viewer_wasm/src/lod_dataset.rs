@@ -196,7 +196,7 @@ impl LodDataset {
     pub fn insert_block(&mut self, block: PointBlock) -> Result<usize, LodDatasetError> {
         let result = self.cache_block(block)?;
         self.cache_cycle = None;
-        Ok(result.accounted_bytes)
+        Ok(result.accounted_bytes())
     }
 
     fn cache_block(&mut self, block: PointBlock) -> Result<CacheInsertResult, LodDatasetError> {
@@ -205,12 +205,8 @@ impl LodDataset {
             return Err(LodDatasetError::UnknownBlock(id));
         }
         let result = self.cache.insert(block);
-        if !result.cached {
-            return Err(LodDatasetError::CacheRejected(
-                result
-                    .rejection
-                    .expect("rejected cache insert includes a reason"),
-            ));
+        if let Some(reason) = result.rejection() {
+            return Err(LodDatasetError::CacheRejected(reason));
         }
         if self
             .visible_plan
@@ -368,7 +364,13 @@ impl LodDataset {
                         actual: block.id(),
                     });
                 }
-                evicted_blocks = self.cache_block(block)?.evicted_blocks;
+                if let CacheInsertResult::Cached {
+                    evicted_blocks: evicted,
+                    ..
+                } = self.cache_block(block)?
+                {
+                    evicted_blocks = evicted;
+                }
                 self.refinement_work.loaded_blocks += 1;
                 loaded_block = true;
             }
@@ -1041,7 +1043,7 @@ mod tests {
         .unwrap();
         let mut cache = DecodedBlockCache::new(4096);
         for id in 10..=13 {
-            assert!(cache.insert(block(id)).cached);
+            assert!(cache.insert(block(id)).cached());
         }
         let baseline = build_context(1.0, [800, 600], 4.0);
         let measure = |old: &[u64], new: &[u64], context: Option<&SuccessfulBuildContext>| {

@@ -15,6 +15,7 @@ pub use block_cache::{
 };
 pub use dataset::{
     AttributeColumn, AttributeValues, DatasetError, DatasetMetadata, DatasetSource, PointBlock,
+    ResidentBlockSource,
 };
 pub use geometry::{
     Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,

@@ -725,22 +725,82 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    padding, atributos y metadatos; (c) medir CPU, memoria, lectura selectiva y transiciones, y
    comprobar cobertura y no solapamiento. Evidencia: `viewer_render_wgpu/src/voxel_grid.rs`,
    `viewer_core/src/lod_transition.rs` y `viewer_format/FORMAT_V5.md`.
-8. [x] **Revisar abstracciones y propiedad en Rust.** Auditoría localizada completada el 13-10-2026;
-   no justifica cambios de código sin evidencia adicional. `FormatMetadata` y `LodDataset` comparten
-   el `Arc<DatasetMetadata>` inmutable para no clonar la jerarquía; `Arc<Mutex<BrowserReadStats>>`
-   comparte contadores con los lectores síncronos Blob y el viewer, aunque una alternativa
-   `Rc<RefCell<_>>` solo merecería evaluarse con una medición del coste de instrumentación.
-   `SpatialHierarchy` conserva los IDs deduplicados en `Box<[BlockId]>` y las estructuras de estado
-   usan `enum` explícitos; pasar a `Vec`, flags o `Box` en `ViewerData` no aporta un consumidor ni
-   un ahorro demostrado. Los proyectores `&dyn Fn` son prestados y no asignan en heap; genéricos
-   permitirían despacho estático, pero propagarían parámetros por la cadena del builder y no hay
-   comparación de rendimiento que justifique ese acoplamiento/código monomorfizado.
-   No se halló requisito adicional de `Send`/`Sync` para lectores del navegador; la conversión sí
-   usa workers nativos en `viewer_convert`. Reabrir solo con un perfil que identifique un coste o
-   un problema de propiedad concreto. Referencias: `viewer_format/src/metadata.rs`,
-   `viewer_wasm/src/lod_dataset.rs`, `viewer_wasm/src/browser_io.rs`,
-   `viewer_core/src/spatial.rs`, `viewer_wasm/src/controller.rs` y
-   `viewer_render_wgpu/src/voxel_grid.rs`.
+8. [x] **Refactorizar contratos y propiedad en Rust (primera fase).** Plan ampliado el 13-10-2026 a petición
+   del usuario; sustituye la auditoría localizada anterior. Assessment arquitectónico de los cinco
+   crates y de sus consumidores nativos/WASM, ejemplos, tests y host web; no es un perfil exhaustivo
+   de cada función. Objetivo: intercambiar implementaciones pequeñas sin convertir el workspace en
+   un framework ni modificar v5, la API JavaScript o la semántica de vóxeles enteros no solapados.
+
+   | Área | Evaluación y decisión |
+   | --- | --- |
+   | `viewer_core`: geometría, atributos, jerarquía, LOD, scheduler, caché y voxel store | `DatasetSource` ya separa E/S. `AttributeValues`, `RequestState` y `HierarchySemantics` modelan alternativas cerradas. La lectura de residentes debe depender de un contrato pequeño, mientras la protección/evicción sigue perteneciendo a la caché. |
+   | `viewer_format`: reader/writer, codecs, cuantización y layout | Conservar `Read + Seek` / `Write + Seek`, enums de codec/atributos y `Arc` de metadatos/directorios compartidos por `fork_reader`. Un trait de formato nuevo sin segundo consumidor duplicaría contratos. |
+   | `viewer_convert`: LAS/LAZ, EPT, planificación espacial, workers y checkpoints | `SpatialInput`, fases y mensajes ya usan enums. Mantener `Arc<AtomicBool>` de cancelación y callbacks prestados. No unificar spools y fuentes detrás de un trait hasta tener operaciones y errores comunes reales. |
+   | `viewer_render_wgpu`: escena, grilla, atributos, cámara, buffers y HZB | Separar consulta de bloques de la política LRU en preparación de escena y sincronización GPU. Mantener layouts explícitos de GPU y enums de modos; no introducir `dyn Renderer` con un único backend. |
+   | `viewer_wasm`: controller, LOD, Blob, conversión y bindings | `ViewerData` ya evita coexistencia de puntos brutos y store. Mantener metadatos compartidos; migrar consumidores del resultado de caché. Unificar el estado de dataset en bindings es candidato posterior con pruebas de sustitución/cancelación. |
+   | Host web, scripts, ejemplos y tests | No son candidatos a traits Rust. Conservar el protocolo JS/worker y adaptar ejemplos/tests que consuman las APIs Rust modificadas. |
+
+   Plan de implementación y cierre:
+
+   - [x] **Contrato de bloques residentes.** Añadir `ResidentBlockSource` con consulta prestada,
+     sin E/S, clonación de payload, cambios LRU ni requisitos `Send`/`Sync`. Usar genéricos
+     `S: ResidentBlockSource + ?Sized` en preparación LOD, grilla y sincronización GPU: admitir
+     implementaciones concretas y `&dyn ResidentBlockSource`. Conservar operaciones mutables
+     de protección/evicción en `DecodedBlockCache`. Cierre: misma cobertura, presupuestos y errores
+     con caché LRU y proveedor alternativo, también mediante objeto trait.
+   - [x] **Resultado de inserción como enum.** Reemplazar `cached: bool` + rechazo opcional por
+     variantes de éxito/rechazo que impidan estados contradictorios. Migrar todos los consumidores
+     y eliminar el `expect` del rechazo en LOD. Es un cambio de API Rust; documentar accesores.
+     Cierre: tests de éxito, oversize, protección, evicción y atomicidad conservados.
+     Migración Rust: `result.cached`, `.rejection`, `.evicted_blocks` y `.accounted_bytes`
+     pasan a métodos con `()`; para mover el vector sin clonarlo, desestructurar
+     `CacheInsertResult::Cached { evicted_blocks, .. }`. `Rejected` contiene motivo y bytes
+     intentados, y no puede contener expulsiones. Los consumidores del workspace están migrados.
+     Layout medido con rustc 1.99.0 (b940084d7), x86_64, perfil `fast`: estructura anterior
+     40 B / alineación 8 B; enum 32 B / alineación 8 B. Reproducir con
+     `cargo run -p viewer_core --profile fast --offline --example cache_result_layout`.
+     Es el tamaño inline de un resultado temporal, no de las entradas residentes: no demuestra
+     reducción de RSS, rendimiento ni un layout estable en otros compiladores o targets.
+   - [x] **Validación y commit.** `cargo test-fast --offline`: 321 tests pasan, 3 ignorados
+     (benchmarks/pruebas GPU opcionales); fmt, Clippy nativo con `--all-targets -D warnings`,
+     Clippy WASM con `-D warnings`, `cargo check-web --offline` y `git diff --check` pasan.
+     Cuatro regresiones nuevas comprueban proveedores alternativos en LOD, grilla y planificación
+     GPU, y consultas prestadas sin cambios LRU/estadísticas. No se modifica interfaz/protocolo web;
+     no se ejecuta navegador ni se afirma una medición de rendimiento end-to-end.
+     Cambios agrupados para el commit de esta primera fase.
+
+   Sugerencias condicionadas a evidencia, fuera de esta primera implementación:
+
+   - [ ] **Proyectores genéricos o estrategia de grilla.** Comparar `&dyn Fn` prestado con
+     genéricos y una segunda estrategia real usando iguales entradas, cámara, checksum y límites.
+     Medir tiempo, tamaño binario/WASM y compilación antes de propagar tipos por todo el builder.
+     El contrato actual no asigna un callback en heap.
+   - [ ] **Estado de dataset en bindings como enum.** Evaluar agrupar lector/LOD/configuración
+     hoy opcionales cuando se definan los modos manual, descriptor externo y archivo. Cierre:
+     transiciones válidas explícitas, fallos de apertura y reemplazo atómicos, regresión navegador.
+   - [ ] **`Box` y layouts.** Medir `size_of`, alineación, número de instancias y asignaciones
+     antes de encajonar variantes grandes de `ViewerData` o estados del converter. Un enum ocupa
+     espacio suficiente para su mayor variante; añadir variantes no reduce memoria automáticamente.
+     `Box<[BlockId]>` ya es adecuado para IDs finalizados. No encajonar payloads GPU ni puntos
+     individuales: la indirección y las asignaciones perjudicarían su localidad.
+   - [ ] **`Rc` frente a `Arc`.** Mantener `Arc` en metadatos y lectores compartidos por workers
+     nativos. Evaluar `Rc<RefCell<BrowserReadStats>>` solo para contadores confinados al worker WASM,
+     con medición de instrumentación y comprobación de préstamos/reentrancia; no sustituir todos
+     los `Arc` ni añadir sincronización a los nuevos traits.
+   - [ ] **Caché de rangos compartida.** Comparar `Arc<Mutex<_>>` con caché por lector bajo
+     validación concurrente y lectura de atributos; medir contención, reutilización y memoria total.
+     La caché independiente puede duplicar trabajo y memoria.
+
+   Ejemplo de intercambio: implementar `ResidentBlockSource::peek` en un store experimental y
+   pasar `&store` a `LodTransitionPlanner::prepare` o `build_voxel_scene_with_limits`; para elegir
+   proveedor en ejecución, pasar `&dyn ResidentBlockSource`. El préstamo evita clonar bloques y no
+   requiere `Box`, `Rc` ni `Arc`. `commit/update/reset` conservan la caché concreta porque gestionan
+   protección. Una segunda política completa de caché necesitará además un contrato de mutación
+   con las mismas garantías de presupuesto/atomicidad, antes de sustituirla en `LodDataset`.
+
+   Las sugerencias requieren experimento antes de decidir implementación; no son mejoras de
+   rendimiento demostradas ni compromisos de introducir todos estos tipos. Esta fase entrega
+   desacoplamiento y estados válidos; cualquier ahorro de layout/tiempo se registra por separado.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
