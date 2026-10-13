@@ -887,7 +887,10 @@ fitButton.addEventListener("click", () => {
 });
 cameraMode.addEventListener("change", () => {
     activeCameraMode = cameraMode.value;
-    if (activeCameraMode === "bird") queueWorkerCommand("birdView");
+    if (activeCameraMode === "bird") {
+        queueWorkerCommand("birdView");
+        canvas.focus({ preventScroll: true });
+    }
     cameraModeHelp.textContent = activeCameraMode === "bird"
         ? `Bird: drag pans, right drag rotates, WASD/QE moves · speed ${movementSpeed.toFixed(2)} · wheel changes speed.`
         : "Observer: click a voxel to set the center, left drag pans, right drag rotates, wheel changes radius.";

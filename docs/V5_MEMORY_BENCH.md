@@ -1,5 +1,10 @@
 # Memoria y lectura v5 — 11-10-2026
 
+Este documento conserva series fechadas: las notas «pendiente» describen lo que faltaba en cada
+medición y no forman por sí solas la cola activa. El estado y las tareas abiertas vigentes están en
+el [README del proyecto](../README.md). Para el pico conjunto de construcción, consultar también
+el [benchmark de vóxeles](VOXEL_BUILD_BENCH.md#joint-native-construction-memory-diagnostic--13-10-2026).
+
 Primera medición de la auditoría, con formato, precisión y codecs v5 conservados.
 Base: `ddb3076`; candidato: esa revisión más los cambios de lookup, temporales e instrumentación
 de esta entrega. No constituye el cierre de la matriz de escala del README.

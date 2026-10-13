@@ -5,10 +5,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::ConvertOptions;
 use thiserror::Error;
+use viewer_format::{FormatVersion, HEADER_ENVELOPE_VERSION};
 
-// V4 fingerprints both V5 output files as well as the compact source spool.
-const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V4";
+// V5 binds resumable state to the exact output header identity and envelope.
+const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V5";
 const HASH_OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
 const HASH_PRIME: u128 = 0x0000000001000000000000000000013b;
 
@@ -39,6 +41,7 @@ pub(crate) enum CheckpointStage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Manifest {
+    output_version: FormatVersion,
     source: FileFingerprint,
     points_per_block: u64,
     max_quantization_error_bits: u64,
@@ -76,10 +79,7 @@ impl Checkpoint {
         output_path: &Path,
         mode: CheckpointMode,
         source: FileFingerprint,
-        points_per_block: u64,
-        max_quantization_error: f64,
-        max_memory_bytes: u64,
-        spatial_divisions: u8,
+        options: ConvertOptions,
     ) -> Result<Self, CheckpointError> {
         let root = checkpoint_path(output_path);
         match mode {
@@ -109,11 +109,12 @@ impl Checkpoint {
         }
 
         let expected = Manifest {
+            output_version: options.format_version(),
             source,
-            points_per_block,
-            max_quantization_error_bits: max_quantization_error.to_bits(),
-            max_memory_bytes,
-            spatial_divisions,
+            points_per_block: options.points_per_block(),
+            max_quantization_error_bits: options.max_quantization_error().to_bits(),
+            max_memory_bytes: options.max_memory_budget_bytes(),
+            spatial_divisions: options.spatial_divisions(),
             stage: CheckpointStage::Started,
         };
         let manifest_path = root.join("manifest.txt");
@@ -127,8 +128,9 @@ impl Checkpoint {
                 expected
             }
             CheckpointMode::Resume => {
-                let existing = read_manifest(&manifest_path)?;
-                if existing.source != expected.source
+                let existing = read_manifest(&manifest_path, expected.output_version)?;
+                if existing.output_version != expected.output_version
+                    || existing.source != expected.source
                     || existing.points_per_block != expected.points_per_block
                     || existing.max_quantization_error_bits != expected.max_quantization_error_bits
                     || existing.max_memory_bytes != expected.max_memory_bytes
@@ -341,7 +343,9 @@ fn encode_manifest(manifest: &Manifest) -> String {
         _ => (0, 0, 0),
     };
     format!(
-        "{MANIFEST_VERSION}\nstage={stage}\nsource_bytes={}\nsource_hash={:032x}\npoints_per_block={}\nmax_error_bits={:016x}\nmax_memory_bytes={}\nspatial_divisions={}\nartifact_bytes={}\nartifact_hash={:032x}\nattributes_bytes={}\nattributes_hash={:032x}\npoint_count={point_count}\nblock_count={block_count}\nestimated_memory_bytes={estimated_memory_bytes}\n",
+        "{MANIFEST_VERSION}\noutput_major={}\noutput_revision={}\nheader_envelope={HEADER_ENVELOPE_VERSION}\nstage={stage}\nsource_bytes={}\nsource_hash={:032x}\npoints_per_block={}\nmax_error_bits={:016x}\nmax_memory_bytes={}\nspatial_divisions={}\nartifact_bytes={}\nartifact_hash={:032x}\nattributes_bytes={}\nattributes_hash={:032x}\npoint_count={point_count}\nblock_count={block_count}\nestimated_memory_bytes={estimated_memory_bytes}\n",
+        manifest.output_version.major(),
+        manifest.output_version.revision(),
         manifest.source.bytes,
         manifest.source.hash,
         manifest.points_per_block,
@@ -367,7 +371,10 @@ fn encode_manifest(manifest: &Manifest) -> String {
     )
 }
 
-fn read_manifest(path: &Path) -> Result<Manifest, CheckpointError> {
+fn read_manifest(
+    path: &Path,
+    expected_output_version: FormatVersion,
+) -> Result<Manifest, CheckpointError> {
     let content = fs::read_to_string(path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             CheckpointError::Invalid("manifest is missing".to_owned())
@@ -398,6 +405,30 @@ fn read_manifest(path: &Path) -> Result<Manifest, CheckpointError> {
             .get(key)
             .ok_or_else(|| CheckpointError::Invalid(format!("missing {key}")))
     };
+    let output_major: u16 = parse("output_major")?
+        .parse()
+        .map_err(|_| CheckpointError::Invalid("invalid output major version".to_owned()))?;
+    let output_revision: u32 = parse("output_revision")?
+        .parse()
+        .map_err(|_| CheckpointError::Invalid("invalid output revision".to_owned()))?;
+    let header_envelope: u16 = parse("header_envelope")?
+        .parse()
+        .map_err(|_| CheckpointError::Invalid("invalid header envelope".to_owned()))?;
+    if output_major != expected_output_version.major() {
+        return Err(CheckpointError::Invalid(
+            "unsupported output major version".to_owned(),
+        ));
+    }
+    if output_revision != expected_output_version.revision() {
+        return Err(CheckpointError::Invalid(
+            "unsupported output revision".to_owned(),
+        ));
+    }
+    if header_envelope != HEADER_ENVELOPE_VERSION {
+        return Err(CheckpointError::Invalid(
+            "unsupported output header envelope".to_owned(),
+        ));
+    }
     let source = FileFingerprint {
         bytes: parse("source_bytes")?
             .parse()
@@ -442,6 +473,7 @@ fn read_manifest(path: &Path) -> Result<Manifest, CheckpointError> {
         }
     };
     Ok(Manifest {
+        output_version: expected_output_version,
         source,
         points_per_block: parse("points_per_block")?
             .parse()
@@ -482,6 +514,8 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
+    use crate::ConvertOptions;
+
     use super::{
         Checkpoint, CheckpointError, CheckpointMode, CheckpointStage, FileFingerprint,
         MANIFEST_VERSION,
@@ -497,6 +531,13 @@ mod tests {
         ))
     }
 
+    fn options(points_per_block: u64, spatial_divisions: u8) -> ConvertOptions {
+        ConvertOptions::with_memory_budget(points_per_block, 0.01, 1024)
+            .unwrap()
+            .with_spatial_divisions(spatial_divisions)
+            .unwrap()
+    }
+
     #[test]
     fn persists_phase_and_rejects_changed_options_without_mutating_checkpoint() {
         let output = output();
@@ -505,13 +546,13 @@ mod tests {
             hash: 456,
         };
         let checkpoint =
-            Checkpoint::open(&output, CheckpointMode::Create, source, 32, 0.01, 1024, 2).unwrap();
+            Checkpoint::open(&output, CheckpointMode::Create, source, options(32, 2)).unwrap();
         let root = checkpoint.root().to_owned();
         assert_eq!(checkpoint.stage(), &CheckpointStage::Started);
         drop(checkpoint);
 
         assert!(matches!(
-            Checkpoint::open(&output, CheckpointMode::Resume, source, 64, 0.01, 1024, 2),
+            Checkpoint::open(&output, CheckpointMode::Resume, source, options(64, 2)),
             Err(CheckpointError::Mismatch)
         ));
         assert!(root.join("manifest.txt").is_file());
@@ -526,9 +567,9 @@ mod tests {
             hash: 456,
         };
         let checkpoint =
-            Checkpoint::open(&output, CheckpointMode::Create, source, 32, 0.01, 1024, 2).unwrap();
+            Checkpoint::open(&output, CheckpointMode::Create, source, options(32, 2)).unwrap();
         assert!(matches!(
-            Checkpoint::open(&output, CheckpointMode::Resume, source, 32, 0.01, 1024, 2),
+            Checkpoint::open(&output, CheckpointMode::Resume, source, options(32, 2)),
             Err(CheckpointError::Locked)
         ));
         let root = checkpoint.root().to_owned();
@@ -544,12 +585,12 @@ mod tests {
             hash: 456,
         };
         let checkpoint =
-            Checkpoint::open(&output, CheckpointMode::Create, source, 32, 0.01, 1024, 2).unwrap();
+            Checkpoint::open(&output, CheckpointMode::Create, source, options(32, 2)).unwrap();
         let root = checkpoint.root().to_owned();
         drop(checkpoint);
 
         assert!(matches!(
-            Checkpoint::open(&output, CheckpointMode::Resume, source, 32, 0.01, 1024, 4),
+            Checkpoint::open(&output, CheckpointMode::Resume, source, options(32, 4)),
             Err(CheckpointError::Mismatch)
         ));
         fs::remove_dir_all(root).unwrap();
@@ -563,7 +604,7 @@ mod tests {
             hash: 456,
         };
         let checkpoint =
-            Checkpoint::open(&output, CheckpointMode::Create, source, 32, 0.01, 1024, 2).unwrap();
+            Checkpoint::open(&output, CheckpointMode::Create, source, options(32, 2)).unwrap();
         let root = checkpoint.root().to_owned();
         drop(checkpoint);
 
@@ -572,6 +613,8 @@ mod tests {
         for version in [
             "OCTREE_CONVERSION_CHECKPOINT_V1",
             "OCTREE_CONVERSION_CHECKPOINT_V2",
+            "OCTREE_CONVERSION_CHECKPOINT_V3",
+            "OCTREE_CONVERSION_CHECKPOINT_V4",
         ] {
             fs::write(
                 &manifest_path,
@@ -579,8 +622,38 @@ mod tests {
             )
             .unwrap();
             assert!(matches!(
-                Checkpoint::open(&output, CheckpointMode::Resume, source, 32, 0.01, 1024, 2),
+                Checkpoint::open(&output, CheckpointMode::Resume, source, options(32, 2)),
                 Err(CheckpointError::Invalid(reason)) if reason == "unsupported manifest version"
+            ));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resume_rejects_missing_or_different_output_identity() {
+        let output = output();
+        let source = FileFingerprint {
+            bytes: 123,
+            hash: 456,
+        };
+        let checkpoint =
+            Checkpoint::open(&output, CheckpointMode::Create, source, options(32, 2)).unwrap();
+        let root = checkpoint.root().to_owned();
+        drop(checkpoint);
+
+        let manifest_path = root.join("manifest.txt");
+        let valid = fs::read_to_string(&manifest_path).unwrap();
+        let invalid_manifests = [
+            valid.replace("output_major=5\n", ""),
+            valid.replace("output_major=5", "output_major=6"),
+            valid.replace("output_revision=0", "output_revision=1"),
+            valid.replace("header_envelope=1", "header_envelope=2"),
+        ];
+        for content in invalid_manifests {
+            fs::write(&manifest_path, content).unwrap();
+            assert!(matches!(
+                Checkpoint::open(&output, CheckpointMode::Resume, source, options(32, 2)),
+                Err(CheckpointError::Invalid(_))
             ));
         }
         fs::remove_dir_all(root).unwrap();

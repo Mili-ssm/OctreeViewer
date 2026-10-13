@@ -1,8 +1,9 @@
 # Experimento de ramificación espacial
 
-Estado: comparativa sintética y conversiones directas 2/4/8 completadas. Los resultados informan la
-selección de partición, pero no fijan la política de producción; falta validar cortes con presupuestos
-visibles equivalentes y revisar calidad visual.
+Estado: experimento exploratorio; la comparativa sintética y las conversiones directas 2/4/8 están
+registradas. Los resultados informan la selección de partición, pero no fijan la política de
+producción. Cualquier validación futura de cortes o calidad visual se sigue desde el
+[README del proyecto](../README.md), que es la única hoja de ruta activa.
 
 Repetir con:
 

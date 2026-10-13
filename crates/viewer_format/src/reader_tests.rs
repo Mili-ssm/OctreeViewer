@@ -13,7 +13,7 @@ use viewer_core::{
 
 use crate::{FormatMetadata, FormatReaderLimits, SourcePointBlock};
 
-use super::{FormatError, FormatReader};
+use super::{FormatError, IndexedReader as FormatReader};
 use crate::writer::{FormatWriter, FormatWriterOptions};
 
 fn metadata() -> FormatMetadata {
@@ -28,6 +28,36 @@ fn metadata() -> FormatMetadata {
         DatasetMetadata::new(CoordinateFrame::new(origin).unwrap(), hierarchy),
         Some("EPSG:4978".to_owned()),
         Some("uniform voxel sampling".to_owned()),
+        Vec::new(),
+    )
+    .unwrap()
+}
+
+fn metadata_for_count(count: usize) -> FormatMetadata {
+    let base = metadata();
+    let block_id = BlockId::new(42);
+    let bounds = base.dataset().hierarchy().stats().root_bounds;
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                bounds,
+                count as u64,
+                0.0,
+                vec![block_id],
+            )
+            .unwrap(),
+        ],
+        base.dataset().hierarchy().attributes().to_vec(),
+        Some(count as u64),
+    )
+    .unwrap();
+    FormatMetadata::new(
+        DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+        base.crs().map(str::to_owned),
+        base.sampling_policy().map(str::to_owned),
         Vec::new(),
     )
     .unwrap()
@@ -206,6 +236,11 @@ fn reads_metadata_and_only_the_requested_point_block() {
     assert_eq!(storage[0].id, BlockId::new(42));
     assert_eq!(storage[0].point_count, 2);
     assert_eq!(storage[0].raw_bytes, 34);
+    assert_eq!(storage[0].logical_bytes, 34);
+    assert_eq!(
+        storage[0].geometry_encoding,
+        crate::GeometryEncoding::RawU32
+    );
     assert!(storage[0].stored_bytes < storage[0].raw_bytes);
     let index_offset = u64::from_le_bytes(
         bytes[bytes.len() - 32..bytes.len() - 24]
@@ -359,7 +394,7 @@ fn rejects_corrupt_index_and_blocks_over_the_configured_limit() {
 }
 
 #[test]
-fn rejects_truncated_and_non_v5_version_files() {
+fn rejects_truncated_and_unsupported_legacy_version_files() {
     let mut truncated = format_bytes();
     truncated.pop();
     assert!(matches!(
@@ -367,7 +402,7 @@ fn rejects_truncated_and_non_v5_version_files() {
         Err(FormatError::InvalidFooter)
     ));
 
-    for version in [1_u16, 2, 3, 4, 6] {
+    for version in [1_u16, 2, 3, 4] {
         let mut unsupported = format_bytes();
         unsupported[8..10].copy_from_slice(&version.to_le_bytes());
         let crc = crate::crc32(&unsupported[..20]);
@@ -386,6 +421,46 @@ fn rejects_truncated_and_non_v5_version_files() {
         FormatReader::new(Cursor::new(bad_footer)),
         Err(FormatError::InvalidFooter)
     ));
+}
+
+#[test]
+fn reads_v6_pre1_delta_geometry_and_reports_encoded_raw_bytes() {
+    let positions = vec![[0.5, 0.5, 0.5]; 4096];
+    let colors = vec![ColorRgb::new(20, 40, 60); positions.len()];
+    let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
+    let column = AttributeColumn::new(
+        descriptor,
+        AttributeValues::U16(vec![128; positions.len()]),
+        positions.len(),
+    )
+    .unwrap();
+    let block = SourcePointBlock::new(BlockId::new(42), positions, colors, vec![column]);
+    let mut writer = FormatWriter::new_for_version(
+        crate::FormatVersion::V6_PRE1,
+        Cursor::new(Vec::new()),
+        metadata_for_count(4096),
+        FormatWriterOptions::new(0.001, 1024 * 1024).unwrap(),
+    )
+    .unwrap();
+    writer.write_block(block).unwrap();
+    let bytes = writer.finish().unwrap().into_inner();
+    let mut reader = FormatReader::new(Cursor::new(bytes)).unwrap();
+
+    assert_eq!(reader.format_version(), crate::FormatVersion::V6_PRE1);
+    let storage = reader.block_storage_stats().unwrap();
+    assert_eq!(
+        storage[0].geometry_encoding,
+        crate::GeometryEncoding::DeltaVarint
+    );
+    assert!(storage[0].raw_bytes < storage[0].logical_bytes);
+    let points = reader.read_positions(BlockId::new(42)).unwrap();
+    assert_eq!(points.len(), 4096);
+    assert!(
+        points
+            .points()
+            .iter()
+            .all(|point| point.position == [0.5; 3])
+    );
 }
 
 #[test]
@@ -497,6 +572,7 @@ fn reads_an_independently_compressed_block() {
     assert!(storage[0].stored_bytes < storage[0].raw_bytes);
     let block = reader.read_block(block_id).unwrap();
     assert_eq!(block.points().len(), 4096);
+    assert!(block.estimated_memory_bytes() < 4096 * 128);
     assert_eq!(block.points().points()[2048].position, [0.25, 0.5, 0.75]);
     assert_eq!(
         block.attributes()[0].values(),

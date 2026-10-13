@@ -6,7 +6,7 @@ use viewer_core::{
 };
 
 use crate::{
-    FormatMetadata, OctreeWriter, PreparedOctreeWriter, SourcePointBlock, crc32,
+    FormatMetadata, FormatVersion, OctreeWriter, PreparedOctreeWriter, SourcePointBlock, crc32,
     prepare_point_block,
 };
 
@@ -146,13 +146,89 @@ fn prepared_writer_contract_matches_direct_block_writing() {
 }
 
 #[test]
+fn prepared_block_from_another_version_is_rejected_without_poisoning_writer() {
+    let metadata = sample_metadata();
+    let prepared_v5 = prepare_point_block(sample_block(), &metadata, options()).unwrap();
+    let mut writer = FormatWriter::new_for_version(
+        FormatVersion::V6_PRE1,
+        Cursor::new(Vec::new()),
+        metadata,
+        options(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        writer.write_prepared_block(prepared_v5),
+        Err(FormatError::PreparedVersionMismatch {
+            writer: FormatVersion::V6Pre(_),
+            block: FormatVersion::V5,
+        })
+    ));
+    assert_eq!(writer.format_version(), FormatVersion::V6_PRE1);
+    writer.write_block(sample_block()).unwrap();
+    assert!(!writer.finish().unwrap().into_inner().is_empty());
+}
+
+#[test]
+fn v6_rejects_logical_block_over_limit_even_when_delta_would_be_small() {
+    let point_count = 1_000;
+    let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
+    let block_id = BlockId::new(7);
+    let root = SpatialNode::new(
+        NodeId::new(0),
+        None,
+        0,
+        bounds,
+        point_count as u64,
+        0.25,
+        vec![block_id],
+    )
+    .unwrap();
+    let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
+    let hierarchy = SpatialHierarchy::new(
+        vec![root],
+        vec![descriptor.clone()],
+        Some(point_count as u64),
+    )
+    .unwrap();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(CoordinateFrame::new([0.0; 3]).unwrap(), hierarchy),
+        None,
+        None,
+        Vec::new(),
+    )
+    .unwrap();
+    let values = AttributeColumn::new(
+        descriptor,
+        AttributeValues::U16(vec![128; point_count]),
+        point_count,
+    )
+    .unwrap();
+    let block = SourcePointBlock::new(
+        block_id,
+        vec![[0.5; 3]; point_count],
+        vec![ColorRgb::new(20, 40, 60); point_count],
+        vec![values],
+    );
+    let options = FormatWriterOptions::new(0.001, 1024).unwrap();
+
+    assert!(matches!(
+        super::prepare_point_block_for_version(FormatVersion::V6_PRE1, block, &metadata, options,),
+        Err(FormatError::BlockExceedsLimit {
+            requested: 17_000,
+            limit: 1024,
+        })
+    ));
+}
+
+#[test]
 fn writes_a_closed_file_with_checksums_and_quantized_block() {
     let mut writer =
         FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
     writer.write_block(sample_block()).unwrap();
     let bytes = writer.finish().unwrap().into_inner();
 
-    assert_eq!(&bytes[..8], b"OCTVWFRM");
+    assert_eq!(&bytes[..8], b"OCTVFRM1");
     assert_eq!(
         u32::from_le_bytes(bytes[20..24].try_into().unwrap()),
         crc32(&bytes[..20])

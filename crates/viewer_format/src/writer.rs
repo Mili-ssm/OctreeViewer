@@ -8,14 +8,16 @@ use viewer_core::{
     SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
+use crate::geometry::{GeometryEncoding, encode_delta};
 use crate::layout::{
-    FOOTER_MAGIC, FOOTER_SIZE, FORMAT_VERSION, HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC,
-    PayloadDirectoryEntry, attribute_payload_size, block_payload_size,
+    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, attribute_payload_size,
+    block_payload_size,
 };
 use crate::metadata::validate_metadata;
+use crate::version::FileRole;
 use crate::{
-    Crc32, FormatError, FormatMetadata, SourcePointBlock, compress_block, crc32,
-    quantize_local_positions,
+    Crc32, FormatError, FormatIdentity, FormatMetadata, FormatVersion, SourcePointBlock,
+    compress_block, crc32, quantize_local_positions,
 };
 
 /// Bounds per-block allocations made by the writer.
@@ -47,6 +49,8 @@ impl FormatWriterOptions {
 
 /// A fully encoded block ready for ordered append to a format writer.
 pub struct PreparedPointBlock {
+    layout: StorageLayout,
+    geometry_encoding: GeometryEncoding,
     id: BlockId,
     point_count: u64,
     quantization_error: f64,
@@ -72,16 +76,53 @@ pub struct FormatWriter<W> {
     attributes: Option<W>,
     metadata: FormatMetadata,
     options: FormatWriterOptions,
+    layout: StorageLayout,
     block_nodes: BTreeMap<BlockId, Vec<NodeId>>,
     blocks: BTreeMap<BlockId, BlockRecord>,
     failed: bool,
 }
 
 impl<W: Write + Seek> FormatWriter<W> {
+    pub fn format_version(&self) -> FormatVersion {
+        self.layout.version()
+    }
+
+    /// Select the output backend explicitly. Unsupported identities fail before I/O.
+    pub fn new_for_version(
+        version: crate::FormatVersion,
+        writer: W,
+        metadata: FormatMetadata,
+        options: FormatWriterOptions,
+    ) -> Result<Self, FormatError> {
+        let layout = StorageLayout::from_version(version)?;
+        Self::new_with_layout(writer, metadata, options, layout)
+    }
+
+    /// Select a backend for a primary/companion pair before touching either sink.
+    pub fn new_split_for_version(
+        version: crate::FormatVersion,
+        writer: W,
+        attributes: W,
+        metadata: FormatMetadata,
+        options: FormatWriterOptions,
+    ) -> Result<Self, FormatError> {
+        let layout = StorageLayout::from_version(version)?;
+        Self::new_split_with_layout(writer, attributes, metadata, options, layout)
+    }
+
     pub fn new(
+        writer: W,
+        metadata: FormatMetadata,
+        options: FormatWriterOptions,
+    ) -> Result<Self, FormatError> {
+        Self::new_with_layout(writer, metadata, options, StorageLayout::V5)
+    }
+
+    fn new_with_layout(
         mut writer: W,
         metadata: FormatMetadata,
         options: FormatWriterOptions,
+        layout: StorageLayout,
     ) -> Result<Self, FormatError> {
         if writer.stream_position()? != 0 || writer.seek(SeekFrom::End(0))? != 0 {
             return Err(FormatError::OutputMustBeEmpty);
@@ -89,12 +130,13 @@ impl<W: Write + Seek> FormatWriter<W> {
         writer.seek(SeekFrom::Start(0))?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
-        writer.write_all(&header_bytes())?;
+        writer.write_all(&header_for_role(layout.version(), FileRole::Monolithic)?)?;
         Ok(Self {
             writer,
             attributes: None,
             metadata,
             options,
+            layout,
             block_nodes,
             blocks: BTreeMap::new(),
             failed: false,
@@ -104,19 +146,29 @@ impl<W: Write + Seek> FormatWriter<W> {
     /// Streams XYZ to the primary file and display color/columns to an optional companion.
     pub fn new_split(
         writer: W,
+        attributes: W,
+        metadata: FormatMetadata,
+        options: FormatWriterOptions,
+    ) -> Result<Self, FormatError> {
+        Self::new_split_with_layout(writer, attributes, metadata, options, StorageLayout::V5)
+    }
+
+    fn new_split_with_layout(
+        writer: W,
         mut attributes: W,
         metadata: FormatMetadata,
         options: FormatWriterOptions,
+        layout: StorageLayout,
     ) -> Result<Self, FormatError> {
         if attributes.stream_position()? != 0 || attributes.seek(SeekFrom::End(0))? != 0 {
             return Err(FormatError::OutputMustBeEmpty);
         }
-        let mut result = Self::new(writer, metadata, options)?;
-        attributes.write_all(&flagged_header(crate::layout::ATTRIBUTE_FILE))?;
+        let mut result = Self::new_with_layout(writer, metadata, options, layout)?;
+        attributes.write_all(&header_for_role(layout.version(), FileRole::Attributes)?)?;
         result.writer.seek(SeekFrom::Start(0))?;
         result
             .writer
-            .write_all(&flagged_header(crate::layout::SPLIT_ATTRIBUTES))?;
+            .write_all(&header_for_role(layout.version(), FileRole::SplitPrimary)?)?;
         result.attributes = Some(attributes);
         Ok(result)
     }
@@ -124,7 +176,12 @@ impl<W: Write + Seek> FormatWriter<W> {
     /// Encodes and appends one block while retaining only its directory metadata afterward.
     pub fn write_block(&mut self, block: SourcePointBlock) -> Result<(), FormatError> {
         self.ensure_block_available(block.id())?;
-        self.write_prepared_block(prepare_point_block(block, &self.metadata, self.options)?)
+        self.write_prepared_block(prepare_point_block_for_version(
+            self.layout.version(),
+            block,
+            &self.metadata,
+            self.options,
+        )?)
     }
 
     /// Appends a block encoded independently from this writer.
@@ -132,6 +189,12 @@ impl<W: Write + Seek> FormatWriter<W> {
         &mut self,
         mut prepared: PreparedPointBlock,
     ) -> Result<(), FormatError> {
+        if prepared.layout != self.layout {
+            return Err(FormatError::PreparedVersionMismatch {
+                writer: self.layout.version(),
+                block: prepared.layout.version(),
+            });
+        }
         self.ensure_block_available(prepared.id)?;
         let offset = self.writer.stream_position()?;
         let split_at = if self.attributes.is_some() {
@@ -164,6 +227,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 offset,
                 payload_length,
                 point_count: prepared.point_count,
+                geometry_encoding: prepared.geometry_encoding,
                 quantization_error: prepared.quantization_error,
                 origin: prepared.origin,
                 scale: prepared.scale,
@@ -209,7 +273,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         validate_metadata(&metadata)?;
         let index_offset = self.writer.stream_position()?;
         let (index_length, index_checksum) =
-            write_index(&mut self.writer, &metadata, &self.blocks)?;
+            write_index(&mut self.writer, &metadata, &self.blocks, self.layout)?;
         let file_length = index_offset
             .checked_add(index_length)
             .and_then(|value| value.checked_add(FOOTER_SIZE))
@@ -220,6 +284,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 .checked_add(FOOTER_SIZE)
                 .ok_or(FormatError::FileSizeOverflow)?;
             attributes.write_all(&footer_bytes(
+                self.layout.footer_magic(),
                 index_offset,
                 index_length,
                 length,
@@ -227,7 +292,13 @@ impl<W: Write + Seek> FormatWriter<W> {
             ))?;
             attributes.flush()?;
         }
-        let footer = footer_bytes(index_offset, index_length, file_length, index_checksum);
+        let footer = footer_bytes(
+            self.layout.footer_magic(),
+            index_offset,
+            index_length,
+            file_length,
+            index_checksum,
+        );
         self.writer.write_all(&footer)?;
         self.writer.flush()?;
         Ok((self.writer, self.attributes))
@@ -345,6 +416,16 @@ pub fn prepare_point_block(
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
 ) -> Result<PreparedPointBlock, FormatError> {
+    prepare_point_block_for_version(FormatVersion::V5, block, metadata, options)
+}
+
+pub(crate) fn prepare_point_block_for_version(
+    version: FormatVersion,
+    block: SourcePointBlock,
+    metadata: &FormatMetadata,
+    options: FormatWriterOptions,
+) -> Result<PreparedPointBlock, FormatError> {
+    let layout = StorageLayout::from_version(version)?;
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
         return Err(FormatError::ColorCountMismatch {
@@ -377,7 +458,36 @@ pub fn prepare_point_block(
             .ok_or(FormatError::BlockSizeOverflow)?,
     )
     .map_err(|_| FormatError::BlockSizeOverflow)?;
-    let mut raw = encode_geometry(&quantized, geometry_length)?;
+    let raw_geometry = encode_geometry(&quantized, geometry_length)?;
+    let raw_geometry_length = raw_geometry.len();
+    let (geometry_encoding, encoded_geometry, geometry_raw_length) = if layout == StorageLayout::V5
+    {
+        (
+            GeometryEncoding::RawU32,
+            compress_block(&raw_geometry),
+            raw_geometry_length,
+        )
+    } else {
+        let delta = encode_delta(quantized.coordinates())?;
+        let delta_length = delta.len();
+        let other_raw_size = uncompressed_size
+            .checked_sub(geometry_length as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        let delta_total = other_raw_size
+            .checked_add(delta.len() as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        let raw_encoded = compress_block(&raw_geometry);
+        if delta_total <= options.max_uncompressed_block_bytes {
+            let delta_encoded = compress_block(&delta);
+            if delta_encoded.bytes().len() < raw_encoded.bytes().len() {
+                (GeometryEncoding::DeltaVarint, delta_encoded, delta_length)
+            } else {
+                (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
+            }
+        } else {
+            (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
+        }
+    };
     // The u32 coordinates have been encoded; retain only their scalar transform/error
     // while compressing payloads, rather than another 12 bytes per point.
     drop(quantized);
@@ -386,7 +496,13 @@ pub fn prepare_point_block(
     payloads
         .try_reserve_exact(schema.len() + 2)
         .map_err(|_| FormatError::AllocationFailed(schema.len() + 2))?;
-    append_payload(&raw, &mut bytes, &mut payloads)?;
+    let mut raw = raw_geometry;
+    append_encoded_payload(
+        encoded_geometry,
+        geometry_raw_length,
+        &mut bytes,
+        &mut payloads,
+    )?;
     raw.clear();
     for color in block.colors() {
         raw.extend_from_slice(&[color.r, color.g, color.b]);
@@ -402,6 +518,8 @@ pub fn prepare_point_block(
         append_payload(&raw, &mut bytes, &mut payloads)?;
     }
     Ok(PreparedPointBlock {
+        layout,
+        geometry_encoding,
         id: block.id(),
         point_count: u64::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?,
         quantization_error,
@@ -419,6 +537,7 @@ struct BlockRecord {
     offset: u64,
     payload_length: u64,
     point_count: u64,
+    geometry_encoding: GeometryEncoding,
     quantization_error: f64,
     origin: [f64; 3],
     scale: [f64; 3],
@@ -526,13 +645,22 @@ fn append_payload(
     payloads: &mut Vec<PayloadDirectoryEntry>,
 ) -> Result<(), FormatError> {
     let encoded = compress_block(raw);
+    append_encoded_payload(encoded, raw.len(), bytes, payloads)
+}
+
+fn append_encoded_payload(
+    encoded: crate::EncodedBlock,
+    raw_length: usize,
+    bytes: &mut Vec<u8>,
+    payloads: &mut Vec<PayloadDirectoryEntry>,
+) -> Result<(), FormatError> {
     bytes
         .try_reserve(encoded.bytes().len())
         .map_err(|_| FormatError::AllocationFailed(encoded.bytes().len()))?;
     payloads.push(PayloadDirectoryEntry {
         offset: bytes.len() as u64,
         stored_length: encoded.bytes().len() as u64,
-        raw_length: raw.len() as u64,
+        raw_length: raw_length as u64,
         codec: encoded.codec(),
         checksum: crc32(encoded.bytes()),
     });
@@ -643,29 +771,22 @@ impl BoundsAccumulator {
     }
 }
 
-fn header_bytes() -> [u8; HEADER_SIZE as usize] {
-    flagged_header(0)
-}
-
-fn flagged_header(flags: u32) -> [u8; HEADER_SIZE as usize] {
-    let mut bytes = [0; HEADER_SIZE as usize];
-    bytes[..8].copy_from_slice(HEADER_MAGIC);
-    bytes[8..10].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
-    bytes[10..12].copy_from_slice(&(HEADER_SIZE as u16).to_le_bytes());
-    bytes[12..16].copy_from_slice(&flags.to_le_bytes());
-    let checksum = crc32(&bytes[..20]);
-    bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
-    bytes
+fn header_for_role(
+    version: FormatVersion,
+    role: FileRole,
+) -> Result<[u8; HEADER_SIZE as usize], FormatError> {
+    FormatIdentity { version, role }.to_header_bytes()
 }
 
 fn footer_bytes(
+    magic: &'static [u8; 8],
     index_offset: u64,
     index_length: u64,
     file_length: u64,
     index_crc: u32,
 ) -> [u8; 40] {
     let mut bytes = [0; 40];
-    bytes[..8].copy_from_slice(FOOTER_MAGIC);
+    bytes[..8].copy_from_slice(magic);
     bytes[8..16].copy_from_slice(&index_offset.to_le_bytes());
     bytes[16..24].copy_from_slice(&index_length.to_le_bytes());
     bytes[24..32].copy_from_slice(&file_length.to_le_bytes());
@@ -713,13 +834,14 @@ fn write_index<W: Write>(
     writer: &mut W,
     metadata: &FormatMetadata,
     blocks: &BTreeMap<BlockId, BlockRecord>,
+    layout: StorageLayout,
 ) -> Result<(u64, u32), FormatError> {
     let mut index = IndexWriter {
         writer,
         checksum: Crc32::new(),
         length: 0,
     };
-    index.write(INDEX_MAGIC)?;
+    index.write(layout.index_magic())?;
     for coordinate in metadata.dataset().coordinate_frame().origin() {
         index.f64(coordinate)?;
     }
@@ -802,6 +924,9 @@ fn write_index<W: Write>(
         index.u64(block.offset)?;
         index.u64(block.payload_length)?;
         index.u64(block.point_count)?;
+        if layout != StorageLayout::V5 {
+            index.u8(block.geometry_encoding as u8)?;
+        }
         index.f64(block.quantization_error)?;
         for value in block.origin {
             index.f64(value)?;

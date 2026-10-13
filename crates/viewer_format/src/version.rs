@@ -1,0 +1,247 @@
+use std::{
+    fmt,
+    io::{Read, Seek, SeekFrom},
+    num::NonZeroU32,
+};
+
+use crate::{
+    FormatError, crc32,
+    layout::{HEADER_MAGIC, HEADER_SIZE, PROVISIONAL_HEADER_MAGIC},
+};
+
+/// Binary compatibility identity, independent of crate/build versions and checksums.
+/// Pre-release revisions are exact identities, never an implicit compatibility range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FormatVersion {
+    V5,
+    V6Pre(NonZeroU32),
+    V6,
+    Unknown { major: u16, revision: u32 },
+}
+
+impl FormatVersion {
+    /// First experimental v6 payload layout. Final v6 remains unsupported.
+    pub const V6_PRE1: Self = Self::V6Pre(NonZeroU32::new(1).expect("nonzero revision"));
+
+    /// Reject unimplemented output formats before touching any output stream.
+    pub fn ensure_writable(self) -> Result<(), FormatError> {
+        crate::layout::StorageLayout::from_version(self).map(|_| ())
+    }
+
+    pub const fn major(self) -> u16 {
+        match self {
+            Self::V5 => 5,
+            Self::V6Pre(_) | Self::V6 => 6,
+            Self::Unknown { major, .. } => major,
+        }
+    }
+
+    pub const fn revision(self) -> u32 {
+        match self {
+            Self::V6Pre(revision) => revision.get(),
+            Self::Unknown { revision, .. } => revision,
+            Self::V5 | Self::V6 => 0,
+        }
+    }
+}
+
+impl fmt::Display for FormatVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::V5 => f.write_str("v5"),
+            Self::V6 => f.write_str("v6"),
+            Self::V6Pre(revision) => write!(f, "v6.{revision}-pre"),
+            Self::Unknown { major, revision } => write!(f, "unknown({major}, {revision})"),
+        }
+    }
+}
+
+impl std::str::FromStr for FormatVersion {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "v5" => Ok(Self::V5),
+            "v6" => Ok(Self::V6),
+            _ => value
+                .strip_prefix("v6.")
+                .and_then(|v| v.strip_suffix("-pre"))
+                .and_then(|v| v.parse::<NonZeroU32>().ok())
+                .map(Self::V6Pre)
+                .ok_or("expected v5, v6 or v6.N-pre with a positive revision"),
+        }
+    }
+}
+
+/// Recognized header identity does not imply that a payload decoder is available.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FileRole {
+    Monolithic,
+    SplitPrimary,
+    Attributes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatIdentity {
+    pub version: FormatVersion,
+    pub role: FileRole,
+}
+
+impl FormatIdentity {
+    /// Encode the common v5/v6 header envelope. This does not encode a payload.
+    pub fn to_header_bytes(self) -> Result<[u8; HEADER_SIZE as usize], FormatError> {
+        let mut header = [0; HEADER_SIZE as usize];
+        header[..8].copy_from_slice(HEADER_MAGIC);
+        header[8..10].copy_from_slice(&self.version.major().to_le_bytes());
+        header[10..12].copy_from_slice(&(HEADER_SIZE as u16).to_le_bytes());
+        let role: u32 = match self.role {
+            FileRole::Monolithic => 0,
+            FileRole::SplitPrimary => 1,
+            FileRole::Attributes => 2,
+        };
+        header[12..16].copy_from_slice(&role.to_le_bytes());
+        header[16..20].copy_from_slice(&self.version.revision().to_le_bytes());
+        let checksum = crc32(&header[..20]);
+        header[20..24].copy_from_slice(&checksum.to_le_bytes());
+        if matches!(self.version, FormatVersion::Unknown { .. }) {
+            return Err(FormatError::UnsupportedFormatVersion(self.version));
+        }
+        Ok(header)
+    }
+}
+
+/// Inspect only the common 24-byte envelope, restoring the cursor even on parse failure.
+/// No index/payload is read. A recognized identity can still lack a payload decoder.
+pub fn probe_format<R: Read + Seek>(reader: &mut R) -> Result<FormatIdentity, FormatError> {
+    let position = reader.stream_position()?;
+    let result = (|| {
+        reader.seek(SeekFrom::Start(0))?;
+        let mut header = [0; HEADER_SIZE as usize];
+        reader.read_exact(&mut header)?;
+        parse_identity(&header)
+    })();
+    reader.seek(SeekFrom::Start(position))?;
+    result
+}
+
+pub(crate) fn parse_identity(
+    header: &[u8; HEADER_SIZE as usize],
+) -> Result<FormatIdentity, FormatError> {
+    if &header[..8] == PROVISIONAL_HEADER_MAGIC {
+        return Err(FormatError::ProvisionalFormat);
+    }
+    let major = u16::from_le_bytes(header[8..10].try_into().expect("fixed width"));
+    let length = u16::from_le_bytes(header[10..12].try_into().expect("fixed width"));
+    let flags = u32::from_le_bytes(header[12..16].try_into().expect("fixed width"));
+    let revision = u32::from_le_bytes(header[16..20].try_into().expect("fixed width"));
+    let checksum = u32::from_le_bytes(header[20..24].try_into().expect("fixed width"));
+    if &header[..8] != HEADER_MAGIC
+        || u64::from(length) != HEADER_SIZE
+        || !matches!(flags, 0..=2)
+        || checksum != crc32(&header[..20])
+        || (major == 5 && revision != 0)
+    {
+        return Err(FormatError::InvalidHeader);
+    }
+    let version = match (major, NonZeroU32::new(revision)) {
+        (5, None) => FormatVersion::V5,
+        (6, None) => FormatVersion::V6,
+        (6, Some(revision)) => FormatVersion::V6Pre(revision),
+        _ => FormatVersion::Unknown { major, revision },
+    };
+    let role = match flags {
+        0 => FileRole::Monolithic,
+        1 => FileRole::SplitPrimary,
+        2 => FileRole::Attributes,
+        _ => unreachable!(),
+    };
+    Ok(FormatIdentity { version, role })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn header(major: u16, revision: u32) -> Vec<u8> {
+        let mut bytes = vec![0; 24];
+        bytes[..8].copy_from_slice(HEADER_MAGIC);
+        bytes[8..10].copy_from_slice(&major.to_le_bytes());
+        bytes[10..12].copy_from_slice(&24_u16.to_le_bytes());
+        bytes[16..20].copy_from_slice(&revision.to_le_bytes());
+        let checksum = crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn identifies_exact_revisions_without_consuming_the_stream() {
+        for (major, revision, label) in [
+            (5, 0, "v5"),
+            (6, 1, "v6.1-pre"),
+            (6, 2, "v6.2-pre"),
+            (6, 0, "v6"),
+            (7, 9, "unknown(7, 9)"),
+        ] {
+            let mut input = Cursor::new(header(major, revision));
+            input.set_position(11);
+            let identity = probe_format(&mut input).unwrap();
+            assert_eq!(identity.version.to_string(), label);
+            assert_eq!(identity.version.major(), major);
+            assert_eq!(identity.version.revision(), revision);
+            assert_eq!(input.position(), 11);
+        }
+    }
+
+    #[test]
+    fn rejects_corrupt_reserved_and_truncated_headers_and_restores_cursor() {
+        let mut corrupt = header(6, 1);
+        corrupt[16] ^= 1;
+        for bytes in [corrupt, header(5, 1), vec![0; 10]] {
+            let mut input = Cursor::new(bytes);
+            input.set_position(3);
+            assert!(probe_format(&mut input).is_err());
+            assert_eq!(input.position(), 3);
+        }
+    }
+
+    #[test]
+    fn recognizes_roles_and_encodes_the_same_v5_header() {
+        for (role, encoded) in [
+            (FileRole::Monolithic, 0_u32),
+            (FileRole::SplitPrimary, 1),
+            (FileRole::Attributes, 2),
+        ] {
+            let identity = FormatIdentity {
+                version: FormatVersion::V5,
+                role,
+            };
+            let bytes = identity.to_header_bytes().unwrap();
+            assert_eq!(
+                u32::from_le_bytes(bytes[12..16].try_into().unwrap()),
+                encoded
+            );
+            assert_eq!(parse_identity(&bytes).unwrap(), identity);
+        }
+    }
+
+    #[test]
+    fn identifies_provisional_magic_for_regeneration() {
+        let mut bytes = header(5, 0);
+        bytes[..8].copy_from_slice(PROVISIONAL_HEADER_MAGIC);
+        let checksum = crc32(&bytes[..20]);
+        bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
+        let error = probe_format(&mut Cursor::new(bytes)).unwrap_err();
+        assert!(matches!(error, FormatError::ProvisionalFormat));
+        assert!(error.to_string().contains("regenerate from LAS/LAZ/EPT"));
+    }
+
+    #[test]
+    fn detection_never_enables_an_unimplemented_decoder() {
+        let mut bytes = header(6, 2);
+        bytes.resize(64, 0);
+        assert!(matches!(crate::FormatReader::new(Cursor::new(bytes)),
+            Err(FormatError::UnsupportedFormatVersion(FormatVersion::V6Pre(revision)))
+                if revision.get() == 2));
+    }
+}

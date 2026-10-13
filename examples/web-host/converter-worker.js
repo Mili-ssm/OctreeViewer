@@ -7,11 +7,11 @@ self.addEventListener("message", ({ data }) => {
         cancelRequested = true;
     } else if (data?.type === "convert") {
         cancelRequested = false;
-        void convert(data.file);
+        void convert(data.file, data.formatVersion ?? "v5");
     }
 });
 
-async function convert(file) {
+async function convert(file, formatVersion) {
     const conversionStartedAt = performance.now();
     let stage = "planning";
     let stageStartedAt = conversionStartedAt;
@@ -41,7 +41,9 @@ async function convert(file) {
         attributesAccessHandle = await attributesOutput.createSyncAccessHandle();
         accessHandle.truncate(0);
         attributesAccessHandle.truncate(0);
-        converter = new WasmLasOctConverter(file, accessHandle, attributesAccessHandle);
+        converter = formatVersion === "v5"
+            ? new WasmLasOctConverter(file, accessHandle, attributesAccessHandle)
+            : WasmLasOctConverter.createForVersion(file, accessHandle, attributesAccessHandle, formatVersion);
         self.postMessage({ type: "status", message: `Converting ${file.name} locally…` });
 
         let progress;

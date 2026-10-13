@@ -1,15 +1,56 @@
-//! Binary layout shared by the reader and writer. Only the current pre-release version is supported.
+//! Binary layouts shared by the reader and writer.
 use viewer_core::AttributeDataType;
 
 use crate::{BlockCodec, FormatError};
 
 pub const FORMAT_VERSION: u16 = 5;
+/// Common header envelope, identified by the final byte of OCTVFRM1.
+pub const HEADER_ENVELOPE_VERSION: u16 = 1;
 
 pub(crate) const HEADER_SIZE: u64 = 24;
 pub(crate) const FOOTER_SIZE: u64 = 40;
-pub(crate) const HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
+pub const HEADER_MAGIC: &[u8; 8] = b"OCTVFRM1";
+pub(crate) const PROVISIONAL_HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
 pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX5";
 pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND5";
+
+/// Only exact implemented identities select a payload layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StorageLayout {
+    V5,
+    V6Pre1,
+}
+
+impl StorageLayout {
+    pub(crate) fn from_version(version: crate::FormatVersion) -> Result<Self, FormatError> {
+        match version {
+            crate::FormatVersion::V5 => Ok(Self::V5),
+            crate::FormatVersion::V6Pre(revision) if revision.get() == 1 => Ok(Self::V6Pre1),
+            _ => Err(FormatError::UnsupportedFormatVersion(version)),
+        }
+    }
+
+    pub(crate) const fn version(self) -> crate::FormatVersion {
+        match self {
+            Self::V5 => crate::FormatVersion::V5,
+            Self::V6Pre1 => crate::FormatVersion::V6_PRE1,
+        }
+    }
+
+    pub(crate) const fn index_magic(self) -> &'static [u8; 8] {
+        match self {
+            Self::V5 => INDEX_MAGIC,
+            Self::V6Pre1 => b"OCTVI61P",
+        }
+    }
+
+    pub(crate) const fn footer_magic(self) -> &'static [u8; 8] {
+        match self {
+            Self::V5 => FOOTER_MAGIC,
+            Self::V6Pre1 => b"OCTVE61P",
+        }
+    }
+}
 
 /// One independently compressed payload. Offsets are relative to the primary block, or absolute in a split companion.
 #[derive(Debug, Clone)]
@@ -54,6 +95,3 @@ fn primitive_width(data_type: AttributeDataType) -> u64 {
         AttributeDataType::U64 | AttributeDataType::I64 | AttributeDataType::F64 => 8,
     }
 }
-
-pub(crate) const SPLIT_ATTRIBUTES: u32 = 1;
-pub(crate) const ATTRIBUTE_FILE: u32 = 2;

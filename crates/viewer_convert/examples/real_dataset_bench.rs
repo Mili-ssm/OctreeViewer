@@ -27,7 +27,7 @@ use conversion_metrics::ConversionMetrics;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     match arguments.first().and_then(|value| value.to_str()) {
-        Some(command @ ("convert" | "convert-profile")) if (3..=5).contains(&arguments.len()) => {
+        Some(command @ ("convert" | "convert-profile")) if (3..=7).contains(&arguments.len()) => {
             let workers = arguments
                 .get(3)
                 .map(|value| value.to_string_lossy().parse())
@@ -38,11 +38,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|value| value.to_string_lossy().parse())
                 .transpose()?
                 .unwrap_or(2);
+            let points_per_block = arguments
+                .get(5)
+                .map(|value| value.to_string_lossy().parse())
+                .transpose()?
+                .unwrap_or(ConvertOptions::default().points_per_block());
+            let format_version = arguments
+                .get(6)
+                .map(|value| {
+                    value
+                        .to_string_lossy()
+                        .parse::<viewer_format::FormatVersion>()
+                })
+                .transpose()?
+                .unwrap_or(viewer_format::FormatVersion::V5);
             convert(
                 Path::new(&arguments[1]),
                 Path::new(&arguments[2]),
                 workers,
                 divisions,
+                points_per_block,
+                format_version,
                 command == "convert-profile",
             )
         }
@@ -109,13 +125,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
+                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION]]]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
             );
             eprintln!(
                 "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]\n  real_dataset_bench read-sample INPUT.oct SEED COUNT all|geometry|attribute [SCHEMA_INDEX]"
             );
             eprintln!(
-                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS]] (Linux process I/O)"
+                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION]]]] (Linux process I/O)"
             );
             Err("invalid arguments".into())
         }
@@ -127,15 +143,21 @@ fn convert(
     output: &Path,
     workers: usize,
     divisions: u8,
+    points_per_block: u64,
+    format_version: viewer_format::FormatVersion,
     process_io: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input_bytes = fs::metadata(input)?.len();
     let started = Instant::now();
     let mut metrics = ConversionMetrics::new(process_io)?;
     let mut metrics_error = None;
-    let options = ConvertOptions::default()
-        .with_spatial_workers(workers)?
-        .with_spatial_divisions(divisions)?;
+    let options = ConvertOptions::new(
+        points_per_block,
+        ConvertOptions::default().max_quantization_error(),
+    )?
+    .with_format_version(format_version)?
+    .with_spatial_workers(workers)?
+    .with_spatial_divisions(divisions)?;
     let mut on_progress = |progress: ConversionProgress| {
         if let Err(error) = metrics.observe(progress.stage) {
             metrics_error = Some(error);
@@ -161,6 +183,8 @@ fn convert(
     metrics.finish()?;
     let elapsed = started.elapsed();
     println!("mode=convert");
+    println!("format_version={}", options.format_version());
+    println!("header_envelope={}", viewer_format::HEADER_ENVELOPE_VERSION);
     if let Some(diagnostics) = diagnostics.as_ref() {
         print_internal_window("spatial_planning", diagnostics.spatial_planning);
         print_internal_window("block_stream", diagnostics.block_stream);
@@ -246,6 +270,9 @@ fn convert(
         if let Some(elapsed_ns) = diagnostics.ordered_write_and_release_elapsed_ns {
             println!("internal_ordered_write_and_release_elapsed_ns={elapsed_ns}");
         }
+        if let Some(elapsed_ns) = diagnostics.finalize_and_sync_elapsed_ns {
+            println!("internal_finalize_and_sync_elapsed_ns={elapsed_ns}");
+        }
     }
     println!("spatial_workers={workers}");
     println!("rayon_pool_threads={}", rayon::current_num_threads());
@@ -271,6 +298,7 @@ fn convert(
         report.output_validation.estimated_bytes_per_worker
     );
     println!("spatial_divisions={divisions}");
+    println!("points_per_block={points_per_block}");
     println!("input_bytes={input_bytes}");
     println!("output_bytes={}", report.output_bytes);
     println!("source_points={}", report.point_count);
@@ -615,6 +643,24 @@ fn summarize_stats(
     println!("lz4_payload_count={compressed_payloads}");
     println!("raw_payload_count={raw_payloads}");
     println!("raw_payload_bytes={raw_bytes}");
+    println!(
+        "logical_payload_bytes={}",
+        stats.iter().map(|b| b.logical_bytes).sum::<u64>()
+    );
+    println!(
+        "geometry_delta_block_count={}",
+        stats
+            .iter()
+            .filter(|b| b.geometry_encoding == viewer_format::GeometryEncoding::DeltaVarint)
+            .count()
+    );
+    println!(
+        "geometry_raw_block_count={}",
+        stats
+            .iter()
+            .filter(|b| b.geometry_encoding == viewer_format::GeometryEncoding::RawU32)
+            .count()
+    );
     println!("stored_payload_bytes={stored_bytes}");
     println!(
         "payload_compression_ratio={:.6}",

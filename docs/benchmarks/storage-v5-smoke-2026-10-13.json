@@ -1,0 +1,2015 @@
+{
+  "binaries": {
+    "convert": {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+      "sha256": "aaf921a147ca988b0b0ce744efa813deb2c2893abf7eb0275b627fe4d611153c"
+    },
+    "read": {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+      "sha256": "546945d8c8dc4aca5f5509790bc88a61c84438b4f53e4b980e399aaf9d4e7b70"
+    }
+  },
+  "conversions": [
+    {
+      "artifacts": {
+        "oct": {
+          "bytes": 1341889,
+          "path": "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+          "sha256": "6e5660cd8b674a03c924b8c372fd21df66521d22c1f195f3adb3314f59cc87b0"
+        },
+        "octattrs": {
+          "bytes": 914965,
+          "path": "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.octattrs",
+          "sha256": "76004ddc58e81b004a39fb02f687c23682f2b9cf1955879dc446829a5389b913"
+        }
+      },
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+        "convert-profile",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+        "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+        "1",
+        "2",
+        "10000"
+      ],
+      "exit_code": 0,
+      "metrics": {
+        "attribute_0_raw_payload_bytes": 223536,
+        "attribute_0_stored_payload_bytes": 217115,
+        "attribute_1_raw_payload_bytes": 111768,
+        "attribute_1_stored_payload_bytes": 976,
+        "attribute_2_raw_payload_bytes": 111768,
+        "attribute_2_stored_payload_bytes": 976,
+        "attribute_3_raw_payload_bytes": 111768,
+        "attribute_3_stored_payload_bytes": 976,
+        "attribute_4_raw_payload_bytes": 447072,
+        "attribute_4_stored_payload_bytes": 2287,
+        "attribute_5_raw_payload_bytes": 111768,
+        "attribute_5_stored_payload_bytes": 976,
+        "attribute_6_raw_payload_bytes": 223536,
+        "attribute_6_stored_payload_bytes": 1415,
+        "attribute_7_raw_payload_bytes": 894144,
+        "attribute_7_stored_payload_bytes": 624554,
+        "attribute_file_bytes": 914965,
+        "controlled_memory_estimate_bytes": 19126528,
+        "conversion_blocks": 47,
+        "conversion_elapsed_ms": 65.246,
+        "conversion_io_cancelled_write_bytes": 0,
+        "conversion_io_rchar": 19159588,
+        "conversion_io_read_bytes": 0,
+        "conversion_io_wchar": 16036699,
+        "conversion_io_write_bytes": 0,
+        "display_rgb_raw_payload_bytes": 335304,
+        "display_rgb_stored_payload_bytes": 65626,
+        "format_overhead_bytes": 26663,
+        "geometry_file_bytes": 1341889,
+        "geometry_raw_payload_bytes": 1341216,
+        "geometry_stored_payload_bytes": 1315290,
+        "hypothetical_full_point_storage_bytes": 1779040,
+        "input_bytes": 3113649,
+        "internal_block_preparation_elapsed_ns": 21480684,
+        "internal_block_stream_available": "true",
+        "internal_block_stream_elapsed_ns": 22351307,
+        "internal_block_stream_end_unix_ns": 1791915010112145245,
+        "internal_block_stream_lod_payload_read_bytes": 27166,
+        "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": 215808,
+        "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": 215808,
+        "internal_block_stream_max_prepared_blocks": 1,
+        "internal_block_stream_source_payload_read_bytes": 3891650,
+        "internal_block_stream_start_unix_ns": 1791915010089794118,
+        "internal_finalize_and_sync_elapsed_ns": 1067623,
+        "internal_ordered_write_and_release_elapsed_ns": 857602,
+        "internal_output_validation_available": "true",
+        "internal_output_validation_elapsed_ns": 18296348,
+        "internal_output_validation_end_unix_ns": 1791915010131512012,
+        "internal_output_validation_start_unix_ns": 1791915010113215734,
+        "internal_spatial_phase_lod_sample_write_elapsed_ns": 125296,
+        "internal_spatial_phase_root_las_fill_elapsed_ns": 391223,
+        "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": 20098757,
+        "internal_spatial_phase_spool_scan_read_elapsed_ns": 1516712,
+        "internal_spatial_planning_available": "true",
+        "internal_spatial_planning_elapsed_ns": 23300158,
+        "internal_spatial_planning_end_unix_ns": 1791915010089759253,
+        "internal_spatial_planning_start_unix_ns": 1791915010066459225,
+        "internal_spatial_spool_child_payload_scanned_bytes": 9861005,
+        "internal_spatial_spool_child_payload_written_bytes": 13752655,
+        "internal_spatial_spool_lod_payload_written_bytes": 27166,
+        "internal_spatial_spool_source_payload_scanned_bytes": 0,
+        "internal_spatial_spool_source_payload_written_bytes": 0,
+        "internal_validation_worker_0_blocks_read": 47,
+        "internal_validation_worker_0_max_decoded_block_estimated_bytes": 324383,
+        "internal_validation_worker_0_points_read": 111768,
+        "internal_validation_worker_0_read_elapsed_ns": 17817994,
+        "largest_block_point_storage_bytes": 143872,
+        "largest_payload_block_points": 8992,
+        "largest_raw_block_bytes": 314720,
+        "largest_stored_block_bytes": 179768,
+        "lod_sample_points": 578,
+        "lz4_payload_count": 446,
+        "mode": "convert",
+        "omitted_dimension": "CRS/WKT metadata",
+        "output_bytes": 2256854,
+        "output_size_bytes": 2256854,
+        "output_to_input_ratio": 0.724826,
+        "payload_block_count": 47,
+        "payload_compression_factor": 1.754056,
+        "payload_compression_ratio": 0.570107,
+        "payload_points_including_lod": 111768,
+        "payload_size_reduction_percent": 42.989,
+        "phase_0_end_unix_ns": 1791915010066387120,
+        "phase_0_io_cancelled_write_bytes": 0,
+        "phase_0_io_rchar": 362,
+        "phase_0_io_read_bytes": 0,
+        "phase_0_io_wchar": 0,
+        "phase_0_io_write_bytes": 0,
+        "phase_0_ms": 0.059,
+        "phase_0_name": "BeforeFirstProgress",
+        "phase_0_start_unix_ns": 1791915010066328590,
+        "phase_1_end_unix_ns": 1791915010066438016,
+        "phase_1_io_cancelled_write_bytes": 0,
+        "phase_1_io_rchar": 8286,
+        "phase_1_io_read_bytes": 0,
+        "phase_1_io_wchar": 0,
+        "phase_1_io_write_bytes": 0,
+        "phase_1_ms": 0.051,
+        "phase_1_name": "InspectingInput",
+        "phase_1_start_unix_ns": 1791915010066387120,
+        "phase_2_end_unix_ns": 1791915010067196929,
+        "phase_2_io_cancelled_write_bytes": 0,
+        "phase_2_io_rchar": 280095,
+        "phase_2_io_read_bytes": 0,
+        "phase_2_io_wchar": 327600,
+        "phase_2_io_write_bytes": 0,
+        "phase_2_ms": 0.759,
+        "phase_2_name": "PlanningMetadata",
+        "phase_2_start_unix_ns": 1791915010066438016,
+        "phase_3_end_unix_ns": 1791915010073238946,
+        "phase_3_io_cancelled_write_bytes": 0,
+        "phase_3_io_rchar": 2833422,
+        "phase_3_io_read_bytes": 0,
+        "phase_3_io_wchar": 3564849,
+        "phase_3_io_write_bytes": 0,
+        "phase_3_ms": 6.042,
+        "phase_3_name": "PlanningSpatialIndex",
+        "phase_3_start_unix_ns": 1791915010067196929,
+        "phase_4_end_unix_ns": 1791915010089802273,
+        "phase_4_io_cancelled_write_bytes": 0,
+        "phase_4_io_rchar": 9861110,
+        "phase_4_io_read_bytes": 0,
+        "phase_4_io_wchar": 9887444,
+        "phase_4_io_write_bytes": 0,
+        "phase_4_ms": 16.563,
+        "phase_4_name": "BuildingSpatialHierarchy",
+        "phase_4_start_unix_ns": 1791915010073238946,
+        "phase_5_end_unix_ns": 1791915010113390381,
+        "phase_5_io_cancelled_write_bytes": 0,
+        "phase_5_io_rchar": 3945731,
+        "phase_5_io_read_bytes": 0,
+        "phase_5_io_wchar": 2256806,
+        "phase_5_io_write_bytes": 0,
+        "phase_5_ms": 23.588,
+        "phase_5_name": "ReadingAndWritingBlocks",
+        "phase_5_start_unix_ns": 1791915010089802273,
+        "phase_6_end_unix_ns": 1791915010131521660,
+        "phase_6_io_cancelled_write_bytes": 0,
+        "phase_6_io_rchar": 2230364,
+        "phase_6_io_read_bytes": 0,
+        "phase_6_io_wchar": 0,
+        "phase_6_io_write_bytes": 0,
+        "phase_6_ms": 18.131,
+        "phase_6_name": "ValidatingOutput",
+        "phase_6_start_unix_ns": 1791915010113390381,
+        "phase_7_end_unix_ns": 1791915010131543822,
+        "phase_7_io_cancelled_write_bytes": 0,
+        "phase_7_io_rchar": 109,
+        "phase_7_io_read_bytes": 0,
+        "phase_7_io_wchar": 0,
+        "phase_7_io_write_bytes": 0,
+        "phase_7_ms": 0.022,
+        "phase_7_name": "PublishingOutput",
+        "phase_7_start_unix_ns": 1791915010131521660,
+        "phase_8_end_unix_ns": 1791915010131564100,
+        "phase_8_io_cancelled_write_bytes": 0,
+        "phase_8_io_rchar": 109,
+        "phase_8_io_read_bytes": 0,
+        "phase_8_io_wchar": 0,
+        "phase_8_io_write_bytes": 0,
+        "phase_8_ms": 0.02,
+        "phase_8_name": "Complete",
+        "phase_8_start_unix_ns": 1791915010131543822,
+        "points_per_block": 10000,
+        "preparation_batch_blocks": 1,
+        "preparation_estimated_bytes_per_worker": 2775040,
+        "preparation_thread_limit": 1,
+        "process_io_enabled": "true",
+        "raw_payload_bytes": 3911880,
+        "raw_payload_count": 24,
+        "rayon_pool_threads": 20,
+        "rust_point_size_bytes": 16,
+        "serialized_index_bytes": 26535,
+        "source_points": 111190,
+        "source_points_per_second": 1704169.717,
+        "spatial_divisions": 2,
+        "spatial_workers": 1,
+        "stage_BeforeFirstProgress_ms": 0.059,
+        "stage_BuildingSpatialHierarchy_ms": 16.563,
+        "stage_Complete_ms": 0.02,
+        "stage_InspectingInput_ms": 0.051,
+        "stage_PlanningMetadata_ms": 0.759,
+        "stage_PlanningSpatialIndex_ms": 6.042,
+        "stage_PublishingOutput_ms": 0.022,
+        "stage_ReadingAndWritingBlocks_ms": 23.588,
+        "stage_ValidatingOutput_ms": 18.131,
+        "stored_payload_bytes": 2230191,
+        "validation_estimated_bytes_per_worker": 2307456,
+        "validation_workers": 1
+      },
+      "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+      "repetition": 1,
+      "stderr_log": "convert-001.stderr.log",
+      "stdout_log": "convert-001.stdout.log"
+    },
+    {
+      "artifacts": {
+        "oct": {
+          "bytes": 1341889,
+          "path": "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+          "sha256": "6e5660cd8b674a03c924b8c372fd21df66521d22c1f195f3adb3314f59cc87b0"
+        },
+        "octattrs": {
+          "bytes": 914965,
+          "path": "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.octattrs",
+          "sha256": "76004ddc58e81b004a39fb02f687c23682f2b9cf1955879dc446829a5389b913"
+        }
+      },
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+        "convert-profile",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+        "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+        "1",
+        "2",
+        "10000"
+      ],
+      "exit_code": 0,
+      "metrics": {
+        "attribute_0_raw_payload_bytes": 223536,
+        "attribute_0_stored_payload_bytes": 217115,
+        "attribute_1_raw_payload_bytes": 111768,
+        "attribute_1_stored_payload_bytes": 976,
+        "attribute_2_raw_payload_bytes": 111768,
+        "attribute_2_stored_payload_bytes": 976,
+        "attribute_3_raw_payload_bytes": 111768,
+        "attribute_3_stored_payload_bytes": 976,
+        "attribute_4_raw_payload_bytes": 447072,
+        "attribute_4_stored_payload_bytes": 2287,
+        "attribute_5_raw_payload_bytes": 111768,
+        "attribute_5_stored_payload_bytes": 976,
+        "attribute_6_raw_payload_bytes": 223536,
+        "attribute_6_stored_payload_bytes": 1415,
+        "attribute_7_raw_payload_bytes": 894144,
+        "attribute_7_stored_payload_bytes": 624554,
+        "attribute_file_bytes": 914965,
+        "controlled_memory_estimate_bytes": 19126528,
+        "conversion_blocks": 47,
+        "conversion_elapsed_ms": 79.444,
+        "conversion_io_cancelled_write_bytes": 0,
+        "conversion_io_rchar": 19159588,
+        "conversion_io_read_bytes": 0,
+        "conversion_io_wchar": 16036699,
+        "conversion_io_write_bytes": 0,
+        "display_rgb_raw_payload_bytes": 335304,
+        "display_rgb_stored_payload_bytes": 65626,
+        "format_overhead_bytes": 26663,
+        "geometry_file_bytes": 1341889,
+        "geometry_raw_payload_bytes": 1341216,
+        "geometry_stored_payload_bytes": 1315290,
+        "hypothetical_full_point_storage_bytes": 1779040,
+        "input_bytes": 3113649,
+        "internal_block_preparation_elapsed_ns": 31779927,
+        "internal_block_stream_available": "true",
+        "internal_block_stream_elapsed_ns": 33129760,
+        "internal_block_stream_end_unix_ns": 1791915010250861755,
+        "internal_block_stream_lod_payload_read_bytes": 27166,
+        "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": 215808,
+        "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": 215808,
+        "internal_block_stream_max_prepared_blocks": 1,
+        "internal_block_stream_source_payload_read_bytes": 3891650,
+        "internal_block_stream_start_unix_ns": 1791915010217732205,
+        "internal_finalize_and_sync_elapsed_ns": 1603689,
+        "internal_ordered_write_and_release_elapsed_ns": 1328158,
+        "internal_output_validation_available": "true",
+        "internal_output_validation_elapsed_ns": 18495513,
+        "internal_output_validation_end_unix_ns": 1791915010270965766,
+        "internal_output_validation_start_unix_ns": 1791915010252470353,
+        "internal_spatial_phase_lod_sample_write_elapsed_ns": 150972,
+        "internal_spatial_phase_root_las_fill_elapsed_ns": 530816,
+        "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": 22257732,
+        "internal_spatial_phase_spool_scan_read_elapsed_ns": 1695252,
+        "internal_spatial_planning_available": "true",
+        "internal_spatial_planning_elapsed_ns": 25901969,
+        "internal_spatial_planning_end_unix_ns": 1791915010217698011,
+        "internal_spatial_planning_start_unix_ns": 1791915010191796222,
+        "internal_spatial_spool_child_payload_scanned_bytes": 9861005,
+        "internal_spatial_spool_child_payload_written_bytes": 13752655,
+        "internal_spatial_spool_lod_payload_written_bytes": 27166,
+        "internal_spatial_spool_source_payload_scanned_bytes": 0,
+        "internal_spatial_spool_source_payload_written_bytes": 0,
+        "internal_validation_worker_0_blocks_read": 47,
+        "internal_validation_worker_0_max_decoded_block_estimated_bytes": 324383,
+        "internal_validation_worker_0_points_read": 111768,
+        "internal_validation_worker_0_read_elapsed_ns": 18009559,
+        "largest_block_point_storage_bytes": 143872,
+        "largest_payload_block_points": 8992,
+        "largest_raw_block_bytes": 314720,
+        "largest_stored_block_bytes": 179768,
+        "lod_sample_points": 578,
+        "lz4_payload_count": 446,
+        "mode": "convert",
+        "omitted_dimension": "CRS/WKT metadata",
+        "output_bytes": 2256854,
+        "output_size_bytes": 2256854,
+        "output_to_input_ratio": 0.724826,
+        "payload_block_count": 47,
+        "payload_compression_factor": 1.754056,
+        "payload_compression_ratio": 0.570107,
+        "payload_points_including_lod": 111768,
+        "payload_size_reduction_percent": 42.989,
+        "phase_0_end_unix_ns": 1791915010191703748,
+        "phase_0_io_cancelled_write_bytes": 0,
+        "phase_0_io_rchar": 362,
+        "phase_0_io_read_bytes": 0,
+        "phase_0_io_wchar": 0,
+        "phase_0_io_write_bytes": 0,
+        "phase_0_ms": 0.078,
+        "phase_0_name": "BeforeFirstProgress",
+        "phase_0_start_unix_ns": 1791915010191625301,
+        "phase_1_end_unix_ns": 1791915010191765364,
+        "phase_1_io_cancelled_write_bytes": 0,
+        "phase_1_io_rchar": 8286,
+        "phase_1_io_read_bytes": 0,
+        "phase_1_io_wchar": 0,
+        "phase_1_io_write_bytes": 0,
+        "phase_1_ms": 0.062,
+        "phase_1_name": "InspectingInput",
+        "phase_1_start_unix_ns": 1791915010191703748,
+        "phase_2_end_unix_ns": 1791915010192896316,
+        "phase_2_io_cancelled_write_bytes": 0,
+        "phase_2_io_rchar": 280095,
+        "phase_2_io_read_bytes": 0,
+        "phase_2_io_wchar": 327600,
+        "phase_2_io_write_bytes": 0,
+        "phase_2_ms": 1.131,
+        "phase_2_name": "PlanningMetadata",
+        "phase_2_start_unix_ns": 1791915010191765364,
+        "phase_3_end_unix_ns": 1791915010200388674,
+        "phase_3_io_cancelled_write_bytes": 0,
+        "phase_3_io_rchar": 2833422,
+        "phase_3_io_read_bytes": 0,
+        "phase_3_io_wchar": 3564849,
+        "phase_3_io_write_bytes": 0,
+        "phase_3_ms": 7.492,
+        "phase_3_name": "PlanningSpatialIndex",
+        "phase_3_start_unix_ns": 1791915010192896316,
+        "phase_4_end_unix_ns": 1791915010217745580,
+        "phase_4_io_cancelled_write_bytes": 0,
+        "phase_4_io_rchar": 9861110,
+        "phase_4_io_read_bytes": 0,
+        "phase_4_io_wchar": 9887444,
+        "phase_4_io_write_bytes": 0,
+        "phase_4_ms": 17.357,
+        "phase_4_name": "BuildingSpatialHierarchy",
+        "phase_4_start_unix_ns": 1791915010200388674,
+        "phase_5_end_unix_ns": 1791915010252737995,
+        "phase_5_io_cancelled_write_bytes": 0,
+        "phase_5_io_rchar": 3945731,
+        "phase_5_io_read_bytes": 0,
+        "phase_5_io_wchar": 2256806,
+        "phase_5_io_write_bytes": 0,
+        "phase_5_ms": 34.992,
+        "phase_5_name": "ReadingAndWritingBlocks",
+        "phase_5_start_unix_ns": 1791915010217745580,
+        "phase_6_end_unix_ns": 1791915010270980583,
+        "phase_6_io_cancelled_write_bytes": 0,
+        "phase_6_io_rchar": 2230364,
+        "phase_6_io_read_bytes": 0,
+        "phase_6_io_wchar": 0,
+        "phase_6_io_write_bytes": 0,
+        "phase_6_ms": 18.243,
+        "phase_6_name": "ValidatingOutput",
+        "phase_6_start_unix_ns": 1791915010252737995,
+        "phase_7_end_unix_ns": 1791915010271020618,
+        "phase_7_io_cancelled_write_bytes": 0,
+        "phase_7_io_rchar": 109,
+        "phase_7_io_read_bytes": 0,
+        "phase_7_io_wchar": 0,
+        "phase_7_io_write_bytes": 0,
+        "phase_7_ms": 0.04,
+        "phase_7_name": "PublishingOutput",
+        "phase_7_start_unix_ns": 1791915010270980583,
+        "phase_8_end_unix_ns": 1791915010271055183,
+        "phase_8_io_cancelled_write_bytes": 0,
+        "phase_8_io_rchar": 109,
+        "phase_8_io_read_bytes": 0,
+        "phase_8_io_wchar": 0,
+        "phase_8_io_write_bytes": 0,
+        "phase_8_ms": 0.035,
+        "phase_8_name": "Complete",
+        "phase_8_start_unix_ns": 1791915010271020618,
+        "points_per_block": 10000,
+        "preparation_batch_blocks": 1,
+        "preparation_estimated_bytes_per_worker": 2775040,
+        "preparation_thread_limit": 1,
+        "process_io_enabled": "true",
+        "raw_payload_bytes": 3911880,
+        "raw_payload_count": 24,
+        "rayon_pool_threads": 20,
+        "rust_point_size_bytes": 16,
+        "serialized_index_bytes": 26535,
+        "source_points": 111190,
+        "source_points_per_second": 1399601.02,
+        "spatial_divisions": 2,
+        "spatial_workers": 1,
+        "stage_BeforeFirstProgress_ms": 0.078,
+        "stage_BuildingSpatialHierarchy_ms": 17.357,
+        "stage_Complete_ms": 0.035,
+        "stage_InspectingInput_ms": 0.062,
+        "stage_PlanningMetadata_ms": 1.131,
+        "stage_PlanningSpatialIndex_ms": 7.492,
+        "stage_PublishingOutput_ms": 0.04,
+        "stage_ReadingAndWritingBlocks_ms": 34.992,
+        "stage_ValidatingOutput_ms": 18.243,
+        "stored_payload_bytes": 2230191,
+        "validation_estimated_bytes_per_worker": 2307456,
+        "validation_workers": 1
+      },
+      "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+      "repetition": 2,
+      "stderr_log": "convert-002.stderr.log",
+      "stdout_log": "convert-002.stdout.log"
+    },
+    {
+      "artifacts": {
+        "oct": {
+          "bytes": 1341889,
+          "path": "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+          "sha256": "6e5660cd8b674a03c924b8c372fd21df66521d22c1f195f3adb3314f59cc87b0"
+        },
+        "octattrs": {
+          "bytes": 914965,
+          "path": "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.octattrs",
+          "sha256": "76004ddc58e81b004a39fb02f687c23682f2b9cf1955879dc446829a5389b913"
+        }
+      },
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+        "convert-profile",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+        "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+        "1",
+        "2",
+        "10000"
+      ],
+      "exit_code": 0,
+      "metrics": {
+        "attribute_0_raw_payload_bytes": 223536,
+        "attribute_0_stored_payload_bytes": 217115,
+        "attribute_1_raw_payload_bytes": 111768,
+        "attribute_1_stored_payload_bytes": 976,
+        "attribute_2_raw_payload_bytes": 111768,
+        "attribute_2_stored_payload_bytes": 976,
+        "attribute_3_raw_payload_bytes": 111768,
+        "attribute_3_stored_payload_bytes": 976,
+        "attribute_4_raw_payload_bytes": 447072,
+        "attribute_4_stored_payload_bytes": 2287,
+        "attribute_5_raw_payload_bytes": 111768,
+        "attribute_5_stored_payload_bytes": 976,
+        "attribute_6_raw_payload_bytes": 223536,
+        "attribute_6_stored_payload_bytes": 1415,
+        "attribute_7_raw_payload_bytes": 894144,
+        "attribute_7_stored_payload_bytes": 624554,
+        "attribute_file_bytes": 914965,
+        "controlled_memory_estimate_bytes": 19126528,
+        "conversion_blocks": 47,
+        "conversion_elapsed_ms": 69.872,
+        "conversion_io_cancelled_write_bytes": 0,
+        "conversion_io_rchar": 19159598,
+        "conversion_io_read_bytes": 0,
+        "conversion_io_wchar": 16036699,
+        "conversion_io_write_bytes": 0,
+        "display_rgb_raw_payload_bytes": 335304,
+        "display_rgb_stored_payload_bytes": 65626,
+        "format_overhead_bytes": 26663,
+        "geometry_file_bytes": 1341889,
+        "geometry_raw_payload_bytes": 1341216,
+        "geometry_stored_payload_bytes": 1315290,
+        "hypothetical_full_point_storage_bytes": 1779040,
+        "input_bytes": 3113649,
+        "internal_block_preparation_elapsed_ns": 21464283,
+        "internal_block_stream_available": "true",
+        "internal_block_stream_elapsed_ns": 22407513,
+        "internal_block_stream_end_unix_ns": 1791915010383037533,
+        "internal_block_stream_lod_payload_read_bytes": 27166,
+        "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": 215808,
+        "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": 215808,
+        "internal_block_stream_max_prepared_blocks": 1,
+        "internal_block_stream_source_payload_read_bytes": 3891650,
+        "internal_block_stream_start_unix_ns": 1791915010360630090,
+        "internal_finalize_and_sync_elapsed_ns": 1049049,
+        "internal_ordered_write_and_release_elapsed_ns": 923394,
+        "internal_output_validation_available": "true",
+        "internal_output_validation_elapsed_ns": 18652066,
+        "internal_output_validation_end_unix_ns": 1791915010402741483,
+        "internal_output_validation_start_unix_ns": 1791915010384089477,
+        "internal_spatial_phase_lod_sample_write_elapsed_ns": 159649,
+        "internal_spatial_phase_root_las_fill_elapsed_ns": 557244,
+        "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": 23695456,
+        "internal_spatial_phase_spool_scan_read_elapsed_ns": 1658734,
+        "internal_spatial_planning_available": "true",
+        "internal_spatial_planning_elapsed_ns": 27455654,
+        "internal_spatial_planning_end_unix_ns": 1791915010360594203,
+        "internal_spatial_planning_start_unix_ns": 1791915010333138669,
+        "internal_spatial_spool_child_payload_scanned_bytes": 9861005,
+        "internal_spatial_spool_child_payload_written_bytes": 13752655,
+        "internal_spatial_spool_lod_payload_written_bytes": 27166,
+        "internal_spatial_spool_source_payload_scanned_bytes": 0,
+        "internal_spatial_spool_source_payload_written_bytes": 0,
+        "internal_validation_worker_0_blocks_read": 47,
+        "internal_validation_worker_0_max_decoded_block_estimated_bytes": 324383,
+        "internal_validation_worker_0_points_read": 111768,
+        "internal_validation_worker_0_read_elapsed_ns": 17748991,
+        "largest_block_point_storage_bytes": 143872,
+        "largest_payload_block_points": 8992,
+        "largest_raw_block_bytes": 314720,
+        "largest_stored_block_bytes": 179768,
+        "lod_sample_points": 578,
+        "lz4_payload_count": 446,
+        "mode": "convert",
+        "omitted_dimension": "CRS/WKT metadata",
+        "output_bytes": 2256854,
+        "output_size_bytes": 2256854,
+        "output_to_input_ratio": 0.724826,
+        "payload_block_count": 47,
+        "payload_compression_factor": 1.754056,
+        "payload_compression_ratio": 0.570107,
+        "payload_points_including_lod": 111768,
+        "payload_size_reduction_percent": 42.989,
+        "phase_0_end_unix_ns": 1791915010333019415,
+        "phase_0_io_cancelled_write_bytes": 0,
+        "phase_0_io_rchar": 362,
+        "phase_0_io_read_bytes": 0,
+        "phase_0_io_wchar": 0,
+        "phase_0_io_write_bytes": 0,
+        "phase_0_ms": 0.081,
+        "phase_0_name": "BeforeFirstProgress",
+        "phase_0_start_unix_ns": 1791915010332938484,
+        "phase_1_end_unix_ns": 1791915010333102040,
+        "phase_1_io_cancelled_write_bytes": 0,
+        "phase_1_io_rchar": 8286,
+        "phase_1_io_read_bytes": 0,
+        "phase_1_io_wchar": 0,
+        "phase_1_io_write_bytes": 0,
+        "phase_1_ms": 0.083,
+        "phase_1_name": "InspectingInput",
+        "phase_1_start_unix_ns": 1791915010333019415,
+        "phase_2_end_unix_ns": 1791915010334281493,
+        "phase_2_io_cancelled_write_bytes": 0,
+        "phase_2_io_rchar": 280095,
+        "phase_2_io_read_bytes": 0,
+        "phase_2_io_wchar": 327600,
+        "phase_2_io_write_bytes": 0,
+        "phase_2_ms": 1.179,
+        "phase_2_name": "PlanningMetadata",
+        "phase_2_start_unix_ns": 1791915010333102040,
+        "phase_3_end_unix_ns": 1791915010343005251,
+        "phase_3_io_cancelled_write_bytes": 0,
+        "phase_3_io_rchar": 2833422,
+        "phase_3_io_read_bytes": 0,
+        "phase_3_io_wchar": 3564849,
+        "phase_3_io_write_bytes": 0,
+        "phase_3_ms": 8.724,
+        "phase_3_name": "PlanningSpatialIndex",
+        "phase_3_start_unix_ns": 1791915010334281493,
+        "phase_4_end_unix_ns": 1791915010360644658,
+        "phase_4_io_cancelled_write_bytes": 0,
+        "phase_4_io_rchar": 9861110,
+        "phase_4_io_read_bytes": 0,
+        "phase_4_io_wchar": 9887444,
+        "phase_4_io_write_bytes": 0,
+        "phase_4_ms": 17.639,
+        "phase_4_name": "BuildingSpatialHierarchy",
+        "phase_4_start_unix_ns": 1791915010343005251,
+        "phase_5_end_unix_ns": 1791915010384262812,
+        "phase_5_io_cancelled_write_bytes": 0,
+        "phase_5_io_rchar": 3945741,
+        "phase_5_io_read_bytes": 0,
+        "phase_5_io_wchar": 2256806,
+        "phase_5_io_write_bytes": 0,
+        "phase_5_ms": 23.618,
+        "phase_5_name": "ReadingAndWritingBlocks",
+        "phase_5_start_unix_ns": 1791915010360644658,
+        "phase_6_end_unix_ns": 1791915010402750921,
+        "phase_6_io_cancelled_write_bytes": 0,
+        "phase_6_io_rchar": 2230364,
+        "phase_6_io_read_bytes": 0,
+        "phase_6_io_wchar": 0,
+        "phase_6_io_write_bytes": 0,
+        "phase_6_ms": 18.488,
+        "phase_6_name": "ValidatingOutput",
+        "phase_6_start_unix_ns": 1791915010384262812,
+        "phase_7_end_unix_ns": 1791915010402773864,
+        "phase_7_io_cancelled_write_bytes": 0,
+        "phase_7_io_rchar": 109,
+        "phase_7_io_read_bytes": 0,
+        "phase_7_io_wchar": 0,
+        "phase_7_io_write_bytes": 0,
+        "phase_7_ms": 0.023,
+        "phase_7_name": "PublishingOutput",
+        "phase_7_start_unix_ns": 1791915010402750921,
+        "phase_8_end_unix_ns": 1791915010402795955,
+        "phase_8_io_cancelled_write_bytes": 0,
+        "phase_8_io_rchar": 109,
+        "phase_8_io_read_bytes": 0,
+        "phase_8_io_wchar": 0,
+        "phase_8_io_write_bytes": 0,
+        "phase_8_ms": 0.022,
+        "phase_8_name": "Complete",
+        "phase_8_start_unix_ns": 1791915010402773864,
+        "points_per_block": 10000,
+        "preparation_batch_blocks": 1,
+        "preparation_estimated_bytes_per_worker": 2775040,
+        "preparation_thread_limit": 1,
+        "process_io_enabled": "true",
+        "raw_payload_bytes": 3911880,
+        "raw_payload_count": 24,
+        "rayon_pool_threads": 20,
+        "rust_point_size_bytes": 16,
+        "serialized_index_bytes": 26535,
+        "source_points": 111190,
+        "source_points_per_second": 1591345.781,
+        "spatial_divisions": 2,
+        "spatial_workers": 1,
+        "stage_BeforeFirstProgress_ms": 0.081,
+        "stage_BuildingSpatialHierarchy_ms": 17.639,
+        "stage_Complete_ms": 0.022,
+        "stage_InspectingInput_ms": 0.083,
+        "stage_PlanningMetadata_ms": 1.179,
+        "stage_PlanningSpatialIndex_ms": 8.724,
+        "stage_PublishingOutput_ms": 0.023,
+        "stage_ReadingAndWritingBlocks_ms": 23.618,
+        "stage_ValidatingOutput_ms": 18.488,
+        "stored_payload_bytes": 2230191,
+        "validation_estimated_bytes_per_worker": 2307456,
+        "validation_workers": 1
+      },
+      "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+      "repetition": 3,
+      "stderr_log": "convert-003.stderr.log",
+      "stdout_log": "convert-003.stdout.log"
+    }
+  ],
+  "environment": {
+    "cpu": "x86_64",
+    "git_dirty": true,
+    "git_head": "187b860b19916e341ca9ad9b30c8ede31d938eed",
+    "platform": "Linux-7.2.9-200.fc44.x86_64-x86_64-with-glibc2.43",
+    "python": "3.14.8",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "error": null,
+  "input": {
+    "bytes": 3113649,
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+    "sha256": "a4900d81f9eed572e8f3dd9f60ddcd9e995a1dd455b4270069d6403b19087456"
+  },
+  "options": {
+    "cache_state": "sin purga; lecturas tras conversion, validacion y hashing",
+    "divisions": 2,
+    "max_decoded_mib": 512,
+    "points_per_block": 10000,
+    "profile": "perf",
+    "repetitions": 3,
+    "workers": 1
+  },
+  "reads": {
+    "hierarchy": [
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+          "hierarchy",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.0,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 5700168,
+            "decoded_estimate_bytes": 5700168,
+            "format_version": "v5",
+            "full_ms": 0.225,
+            "load_ms": 0,
+            "max_block_estimate_bytes": 458592,
+            "mode": "hierarchy",
+            "oct_bytes": 1341889,
+            "open_ms": 0.213,
+            "rep": 1
+          }
+        ],
+        "mode": "hierarchy",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+        "repetition": 1,
+        "stderr_log": "read-001-hierarchy.stderr.log",
+        "stdout_log": "read-001-hierarchy.stdout.log"
+      },
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+          "hierarchy",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.0,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 5700168,
+            "decoded_estimate_bytes": 5700168,
+            "format_version": "v5",
+            "full_ms": 0.361,
+            "load_ms": 0,
+            "max_block_estimate_bytes": 458592,
+            "mode": "hierarchy",
+            "oct_bytes": 1341889,
+            "open_ms": 0.349,
+            "rep": 1
+          }
+        ],
+        "mode": "hierarchy",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+        "repetition": 2,
+        "stderr_log": "read-002-hierarchy.stderr.log",
+        "stdout_log": "read-002-hierarchy.stdout.log"
+      },
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+          "hierarchy",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.0,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 5700168,
+            "decoded_estimate_bytes": 5700168,
+            "format_version": "v5",
+            "full_ms": 0.243,
+            "load_ms": 0,
+            "max_block_estimate_bytes": 458592,
+            "mode": "hierarchy",
+            "oct_bytes": 1341889,
+            "open_ms": 0.233,
+            "rep": 1
+          }
+        ],
+        "mode": "hierarchy",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+        "repetition": 3,
+        "stderr_log": "read-003-hierarchy.stderr.log",
+        "stdout_log": "read-003-hierarchy.stdout.log"
+      }
+    ],
+    "progressive": [
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+          "progressive",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.004,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 458592,
+            "checksum": "67cb12883d2e5d7c",
+            "decoded_estimate_bytes": 5700168,
+            "first_root_ms": 0.012,
+            "format_version": "v5",
+            "full_ms": 25.276,
+            "load_ms": 18.195,
+            "max_block_estimate_bytes": 458592,
+            "mode": "progressive",
+            "oct_bytes": 1341889,
+            "open_ms": 0.294,
+            "points": 111768,
+            "rep": 1,
+            "verify_ms": 6.68
+          },
+          {
+            "blocks": 1,
+            "level": 0,
+            "node_p50_ms": 0.012,
+            "node_p95_ms": 0.012,
+            "nodes": 1,
+            "points": 17,
+            "rep": 1
+          },
+          {
+            "blocks": 2,
+            "level": 1,
+            "node_p50_ms": 0.01,
+            "node_p95_ms": 0.011,
+            "nodes": 2,
+            "points": 54,
+            "rep": 1
+          },
+          {
+            "blocks": 6,
+            "level": 2,
+            "node_p50_ms": 0.013,
+            "node_p95_ms": 1.516,
+            "nodes": 6,
+            "points": 10362,
+            "rep": 1
+          },
+          {
+            "blocks": 14,
+            "level": 3,
+            "node_p50_ms": 0.043,
+            "node_p95_ms": 1.061,
+            "nodes": 14,
+            "points": 31771,
+            "rep": 1
+          },
+          {
+            "blocks": 24,
+            "level": 4,
+            "node_p50_ms": 0.495,
+            "node_p95_ms": 0.791,
+            "nodes": 24,
+            "points": 69564,
+            "rep": 1
+          }
+        ],
+        "mode": "progressive",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+        "repetition": 1,
+        "stderr_log": "read-001-progressive.stderr.log",
+        "stdout_log": "read-001-progressive.stdout.log"
+      },
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+          "progressive",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.004,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 458592,
+            "checksum": "67cb12883d2e5d7c",
+            "decoded_estimate_bytes": 5700168,
+            "first_root_ms": 0.013,
+            "format_version": "v5",
+            "full_ms": 21.192,
+            "load_ms": 15.123,
+            "max_block_estimate_bytes": 458592,
+            "mode": "progressive",
+            "oct_bytes": 1341889,
+            "open_ms": 0.299,
+            "points": 111768,
+            "rep": 1,
+            "verify_ms": 5.645
+          },
+          {
+            "blocks": 1,
+            "level": 0,
+            "node_p50_ms": 0.013,
+            "node_p95_ms": 0.013,
+            "nodes": 1,
+            "points": 17,
+            "rep": 1
+          },
+          {
+            "blocks": 2,
+            "level": 1,
+            "node_p50_ms": 0.01,
+            "node_p95_ms": 0.011,
+            "nodes": 2,
+            "points": 54,
+            "rep": 1
+          },
+          {
+            "blocks": 6,
+            "level": 2,
+            "node_p50_ms": 0.013,
+            "node_p95_ms": 1.526,
+            "nodes": 6,
+            "points": 10362,
+            "rep": 1
+          },
+          {
+            "blocks": 14,
+            "level": 3,
+            "node_p50_ms": 0.043,
+            "node_p95_ms": 1.036,
+            "nodes": 14,
+            "points": 31771,
+            "rep": 1
+          },
+          {
+            "blocks": 24,
+            "level": 4,
+            "node_p50_ms": 0.363,
+            "node_p95_ms": 0.542,
+            "nodes": 24,
+            "points": 69564,
+            "rep": 1
+          }
+        ],
+        "mode": "progressive",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+        "repetition": 2,
+        "stderr_log": "read-002-progressive.stderr.log",
+        "stdout_log": "read-002-progressive.stdout.log"
+      },
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+          "progressive",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.004,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 458592,
+            "checksum": "67cb12883d2e5d7c",
+            "decoded_estimate_bytes": 5700168,
+            "first_root_ms": 0.012,
+            "format_version": "v5",
+            "full_ms": 19.377,
+            "load_ms": 14.136,
+            "max_block_estimate_bytes": 458592,
+            "mode": "progressive",
+            "oct_bytes": 1341889,
+            "open_ms": 0.286,
+            "points": 111768,
+            "rep": 1,
+            "verify_ms": 4.842
+          },
+          {
+            "blocks": 1,
+            "level": 0,
+            "node_p50_ms": 0.012,
+            "node_p95_ms": 0.012,
+            "nodes": 1,
+            "points": 17,
+            "rep": 1
+          },
+          {
+            "blocks": 2,
+            "level": 1,
+            "node_p50_ms": 0.01,
+            "node_p95_ms": 0.01,
+            "nodes": 2,
+            "points": 54,
+            "rep": 1
+          },
+          {
+            "blocks": 6,
+            "level": 2,
+            "node_p50_ms": 0.013,
+            "node_p95_ms": 1.513,
+            "nodes": 6,
+            "points": 10362,
+            "rep": 1
+          },
+          {
+            "blocks": 14,
+            "level": 3,
+            "node_p50_ms": 0.03,
+            "node_p95_ms": 1.287,
+            "nodes": 14,
+            "points": 31771,
+            "rep": 1
+          },
+          {
+            "blocks": 24,
+            "level": 4,
+            "node_p50_ms": 0.322,
+            "node_p95_ms": 0.498,
+            "nodes": 24,
+            "points": 69564,
+            "rep": 1
+          }
+        ],
+        "mode": "progressive",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+        "repetition": 3,
+        "stderr_log": "read-003-progressive.stderr.log",
+        "stdout_log": "read-003-progressive.stdout.log"
+      }
+    ],
+    "reconstruct": [
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+          "reconstruct",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.004,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 5700168,
+            "checksum": "814062698caec8d6",
+            "decoded_estimate_bytes": 5700168,
+            "format_version": "v5",
+            "full_ms": 22.69,
+            "load_ms": 17.854,
+            "max_block_estimate_bytes": 458592,
+            "mode": "reconstruct",
+            "oct_bytes": 1341889,
+            "open_ms": 0.315,
+            "points": 111768,
+            "rep": 1,
+            "verify_ms": 4.5
+          }
+        ],
+        "mode": "reconstruct",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-001.oct",
+        "repetition": 1,
+        "stderr_log": "read-001-reconstruct.stderr.log",
+        "stdout_log": "read-001-reconstruct.stdout.log"
+      },
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+          "reconstruct",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.004,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 5700168,
+            "checksum": "814062698caec8d6",
+            "decoded_estimate_bytes": 5700168,
+            "format_version": "v5",
+            "full_ms": 24.053,
+            "load_ms": 19.227,
+            "max_block_estimate_bytes": 458592,
+            "mode": "reconstruct",
+            "oct_bytes": 1341889,
+            "open_ms": 0.323,
+            "points": 111768,
+            "rep": 1,
+            "verify_ms": 4.484
+          }
+        ],
+        "mode": "reconstruct",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-002.oct",
+        "repetition": 2,
+        "stderr_log": "read-002-reconstruct.stderr.log",
+        "stdout_log": "read-002-reconstruct.stdout.log"
+      },
+      {
+        "command": [
+          "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+          "reconstruct",
+          "1",
+          "512"
+        ],
+        "exit_code": 0,
+        "metrics": [
+          {
+            "attach_ms": 0.004,
+            "attrs_bytes": 914965,
+            "blocks": 47,
+            "budget_basis": "point_struct_plus_raw_block_payloads",
+            "budget_bytes": 536870912,
+            "budget_estimate_bytes": 5700168,
+            "checksum": "814062698caec8d6",
+            "decoded_estimate_bytes": 5700168,
+            "format_version": "v5",
+            "full_ms": 20.947,
+            "load_ms": 16.118,
+            "max_block_estimate_bytes": 458592,
+            "mode": "reconstruct",
+            "oct_bytes": 1341889,
+            "open_ms": 0.329,
+            "points": 111768,
+            "rep": 1,
+            "verify_ms": 4.477
+          }
+        ],
+        "mode": "reconstruct",
+        "output": "/tmp/octree-storage-suite-multiblock-20261013/output-run-003.oct",
+        "repetition": 3,
+        "stderr_log": "read-003-reconstruct.stderr.log",
+        "stdout_log": "read-003-reconstruct.stdout.log"
+      }
+    ]
+  },
+  "status": "complete",
+  "summaries": {
+    "conversion": {
+      "attribute_0_raw_payload_bytes": {
+        "max": 223536,
+        "median": 223536,
+        "min": 223536,
+        "samples": 3
+      },
+      "attribute_0_stored_payload_bytes": {
+        "max": 217115,
+        "median": 217115,
+        "min": 217115,
+        "samples": 3
+      },
+      "attribute_1_raw_payload_bytes": {
+        "max": 111768,
+        "median": 111768,
+        "min": 111768,
+        "samples": 3
+      },
+      "attribute_1_stored_payload_bytes": {
+        "max": 976,
+        "median": 976,
+        "min": 976,
+        "samples": 3
+      },
+      "attribute_2_raw_payload_bytes": {
+        "max": 111768,
+        "median": 111768,
+        "min": 111768,
+        "samples": 3
+      },
+      "attribute_2_stored_payload_bytes": {
+        "max": 976,
+        "median": 976,
+        "min": 976,
+        "samples": 3
+      },
+      "attribute_3_raw_payload_bytes": {
+        "max": 111768,
+        "median": 111768,
+        "min": 111768,
+        "samples": 3
+      },
+      "attribute_3_stored_payload_bytes": {
+        "max": 976,
+        "median": 976,
+        "min": 976,
+        "samples": 3
+      },
+      "attribute_4_raw_payload_bytes": {
+        "max": 447072,
+        "median": 447072,
+        "min": 447072,
+        "samples": 3
+      },
+      "attribute_4_stored_payload_bytes": {
+        "max": 2287,
+        "median": 2287,
+        "min": 2287,
+        "samples": 3
+      },
+      "attribute_5_raw_payload_bytes": {
+        "max": 111768,
+        "median": 111768,
+        "min": 111768,
+        "samples": 3
+      },
+      "attribute_5_stored_payload_bytes": {
+        "max": 976,
+        "median": 976,
+        "min": 976,
+        "samples": 3
+      },
+      "attribute_6_raw_payload_bytes": {
+        "max": 223536,
+        "median": 223536,
+        "min": 223536,
+        "samples": 3
+      },
+      "attribute_6_stored_payload_bytes": {
+        "max": 1415,
+        "median": 1415,
+        "min": 1415,
+        "samples": 3
+      },
+      "attribute_7_raw_payload_bytes": {
+        "max": 894144,
+        "median": 894144,
+        "min": 894144,
+        "samples": 3
+      },
+      "attribute_7_stored_payload_bytes": {
+        "max": 624554,
+        "median": 624554,
+        "min": 624554,
+        "samples": 3
+      },
+      "attribute_file_bytes": {
+        "max": 914965,
+        "median": 914965,
+        "min": 914965,
+        "samples": 3
+      },
+      "controlled_memory_estimate_bytes": {
+        "max": 19126528,
+        "median": 19126528,
+        "min": 19126528,
+        "samples": 3
+      },
+      "conversion_elapsed_ms": {
+        "max": 79.444,
+        "median": 69.872,
+        "min": 65.246,
+        "samples": 3
+      },
+      "conversion_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "conversion_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "conversion_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "display_rgb_raw_payload_bytes": {
+        "max": 335304,
+        "median": 335304,
+        "min": 335304,
+        "samples": 3
+      },
+      "display_rgb_stored_payload_bytes": {
+        "max": 65626,
+        "median": 65626,
+        "min": 65626,
+        "samples": 3
+      },
+      "format_overhead_bytes": {
+        "max": 26663,
+        "median": 26663,
+        "min": 26663,
+        "samples": 3
+      },
+      "geometry_file_bytes": {
+        "max": 1341889,
+        "median": 1341889,
+        "min": 1341889,
+        "samples": 3
+      },
+      "geometry_raw_payload_bytes": {
+        "max": 1341216,
+        "median": 1341216,
+        "min": 1341216,
+        "samples": 3
+      },
+      "geometry_stored_payload_bytes": {
+        "max": 1315290,
+        "median": 1315290,
+        "min": 1315290,
+        "samples": 3
+      },
+      "hypothetical_full_point_storage_bytes": {
+        "max": 1779040,
+        "median": 1779040,
+        "min": 1779040,
+        "samples": 3
+      },
+      "input_bytes": {
+        "max": 3113649,
+        "median": 3113649,
+        "min": 3113649,
+        "samples": 3
+      },
+      "internal_block_preparation_elapsed_ns": {
+        "max": 31779927,
+        "median": 21480684,
+        "min": 21464283,
+        "samples": 3
+      },
+      "internal_block_stream_elapsed_ns": {
+        "max": 33129760,
+        "median": 22407513,
+        "min": 22351307,
+        "samples": 3
+      },
+      "internal_block_stream_lod_payload_read_bytes": {
+        "max": 27166,
+        "median": 27166,
+        "min": 27166,
+        "samples": 3
+      },
+      "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": {
+        "max": 215808,
+        "median": 215808,
+        "min": 215808,
+        "samples": 3
+      },
+      "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": {
+        "max": 215808,
+        "median": 215808,
+        "min": 215808,
+        "samples": 3
+      },
+      "internal_block_stream_source_payload_read_bytes": {
+        "max": 3891650,
+        "median": 3891650,
+        "min": 3891650,
+        "samples": 3
+      },
+      "internal_finalize_and_sync_elapsed_ns": {
+        "max": 1603689,
+        "median": 1067623,
+        "min": 1049049,
+        "samples": 3
+      },
+      "internal_ordered_write_and_release_elapsed_ns": {
+        "max": 1328158,
+        "median": 923394,
+        "min": 857602,
+        "samples": 3
+      },
+      "internal_output_validation_elapsed_ns": {
+        "max": 18652066,
+        "median": 18495513,
+        "min": 18296348,
+        "samples": 3
+      },
+      "internal_spatial_phase_lod_sample_write_elapsed_ns": {
+        "max": 159649,
+        "median": 150972,
+        "min": 125296,
+        "samples": 3
+      },
+      "internal_spatial_phase_root_las_fill_elapsed_ns": {
+        "max": 557244,
+        "median": 530816,
+        "min": 391223,
+        "samples": 3
+      },
+      "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": {
+        "max": 23695456,
+        "median": 22257732,
+        "min": 20098757,
+        "samples": 3
+      },
+      "internal_spatial_phase_spool_scan_read_elapsed_ns": {
+        "max": 1695252,
+        "median": 1658734,
+        "min": 1516712,
+        "samples": 3
+      },
+      "internal_spatial_planning_elapsed_ns": {
+        "max": 27455654,
+        "median": 25901969,
+        "min": 23300158,
+        "samples": 3
+      },
+      "internal_spatial_spool_child_payload_scanned_bytes": {
+        "max": 9861005,
+        "median": 9861005,
+        "min": 9861005,
+        "samples": 3
+      },
+      "internal_spatial_spool_child_payload_written_bytes": {
+        "max": 13752655,
+        "median": 13752655,
+        "min": 13752655,
+        "samples": 3
+      },
+      "internal_spatial_spool_lod_payload_written_bytes": {
+        "max": 27166,
+        "median": 27166,
+        "min": 27166,
+        "samples": 3
+      },
+      "internal_spatial_spool_source_payload_scanned_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "internal_spatial_spool_source_payload_written_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "internal_validation_worker_0_max_decoded_block_estimated_bytes": {
+        "max": 324383,
+        "median": 324383,
+        "min": 324383,
+        "samples": 3
+      },
+      "internal_validation_worker_0_read_elapsed_ns": {
+        "max": 18009559,
+        "median": 17817994,
+        "min": 17748991,
+        "samples": 3
+      },
+      "largest_block_point_storage_bytes": {
+        "max": 143872,
+        "median": 143872,
+        "min": 143872,
+        "samples": 3
+      },
+      "largest_raw_block_bytes": {
+        "max": 314720,
+        "median": 314720,
+        "min": 314720,
+        "samples": 3
+      },
+      "largest_stored_block_bytes": {
+        "max": 179768,
+        "median": 179768,
+        "min": 179768,
+        "samples": 3
+      },
+      "output_bytes": {
+        "max": 2256854,
+        "median": 2256854,
+        "min": 2256854,
+        "samples": 3
+      },
+      "output_size_bytes": {
+        "max": 2256854,
+        "median": 2256854,
+        "min": 2256854,
+        "samples": 3
+      },
+      "phase_0_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_0_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_0_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_0_ms": {
+        "max": 0.081,
+        "median": 0.078,
+        "min": 0.059,
+        "samples": 3
+      },
+      "phase_1_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_1_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_1_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_1_ms": {
+        "max": 0.083,
+        "median": 0.062,
+        "min": 0.051,
+        "samples": 3
+      },
+      "phase_2_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_2_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_2_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_2_ms": {
+        "max": 1.179,
+        "median": 1.131,
+        "min": 0.759,
+        "samples": 3
+      },
+      "phase_3_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_3_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_3_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_3_ms": {
+        "max": 8.724,
+        "median": 7.492,
+        "min": 6.042,
+        "samples": 3
+      },
+      "phase_4_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_4_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_4_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_4_ms": {
+        "max": 17.639,
+        "median": 17.357,
+        "min": 16.563,
+        "samples": 3
+      },
+      "phase_5_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_5_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_5_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_5_ms": {
+        "max": 34.992,
+        "median": 23.618,
+        "min": 23.588,
+        "samples": 3
+      },
+      "phase_6_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_6_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_6_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_6_ms": {
+        "max": 18.488,
+        "median": 18.243,
+        "min": 18.131,
+        "samples": 3
+      },
+      "phase_7_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_7_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_7_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_7_ms": {
+        "max": 0.04,
+        "median": 0.023,
+        "min": 0.022,
+        "samples": 3
+      },
+      "phase_8_io_cancelled_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_8_io_read_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_8_io_write_bytes": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "phase_8_ms": {
+        "max": 0.035,
+        "median": 0.022,
+        "min": 0.02,
+        "samples": 3
+      },
+      "preparation_estimated_bytes_per_worker": {
+        "max": 2775040,
+        "median": 2775040,
+        "min": 2775040,
+        "samples": 3
+      },
+      "raw_payload_bytes": {
+        "max": 3911880,
+        "median": 3911880,
+        "min": 3911880,
+        "samples": 3
+      },
+      "rust_point_size_bytes": {
+        "max": 16,
+        "median": 16,
+        "min": 16,
+        "samples": 3
+      },
+      "serialized_index_bytes": {
+        "max": 26535,
+        "median": 26535,
+        "min": 26535,
+        "samples": 3
+      },
+      "stage_BeforeFirstProgress_ms": {
+        "max": 0.081,
+        "median": 0.078,
+        "min": 0.059,
+        "samples": 3
+      },
+      "stage_BuildingSpatialHierarchy_ms": {
+        "max": 17.639,
+        "median": 17.357,
+        "min": 16.563,
+        "samples": 3
+      },
+      "stage_Complete_ms": {
+        "max": 0.035,
+        "median": 0.022,
+        "min": 0.02,
+        "samples": 3
+      },
+      "stage_InspectingInput_ms": {
+        "max": 0.083,
+        "median": 0.062,
+        "min": 0.051,
+        "samples": 3
+      },
+      "stage_PlanningMetadata_ms": {
+        "max": 1.179,
+        "median": 1.131,
+        "min": 0.759,
+        "samples": 3
+      },
+      "stage_PlanningSpatialIndex_ms": {
+        "max": 8.724,
+        "median": 7.492,
+        "min": 6.042,
+        "samples": 3
+      },
+      "stage_PublishingOutput_ms": {
+        "max": 0.04,
+        "median": 0.023,
+        "min": 0.022,
+        "samples": 3
+      },
+      "stage_ReadingAndWritingBlocks_ms": {
+        "max": 34.992,
+        "median": 23.618,
+        "min": 23.588,
+        "samples": 3
+      },
+      "stage_ValidatingOutput_ms": {
+        "max": 18.488,
+        "median": 18.243,
+        "min": 18.131,
+        "samples": 3
+      },
+      "stored_payload_bytes": {
+        "max": 2230191,
+        "median": 2230191,
+        "min": 2230191,
+        "samples": 3
+      },
+      "validation_estimated_bytes_per_worker": {
+        "max": 2307456,
+        "median": 2307456,
+        "min": 2307456,
+        "samples": 3
+      }
+    },
+    "hierarchy": {
+      "attach_ms": {
+        "max": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "samples": 3
+      },
+      "attrs_bytes": {
+        "max": 914965,
+        "median": 914965,
+        "min": 914965,
+        "samples": 3
+      },
+      "budget_bytes": {
+        "max": 536870912,
+        "median": 536870912,
+        "min": 536870912,
+        "samples": 3
+      },
+      "budget_estimate_bytes": {
+        "max": 5700168,
+        "median": 5700168,
+        "min": 5700168,
+        "samples": 3
+      },
+      "decoded_estimate_bytes": {
+        "max": 5700168,
+        "median": 5700168,
+        "min": 5700168,
+        "samples": 3
+      },
+      "full_ms": {
+        "max": 0.361,
+        "median": 0.243,
+        "min": 0.225,
+        "samples": 3
+      },
+      "load_ms": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": 3
+      },
+      "max_block_estimate_bytes": {
+        "max": 458592,
+        "median": 458592,
+        "min": 458592,
+        "samples": 3
+      },
+      "oct_bytes": {
+        "max": 1341889,
+        "median": 1341889,
+        "min": 1341889,
+        "samples": 3
+      },
+      "open_ms": {
+        "max": 0.349,
+        "median": 0.233,
+        "min": 0.213,
+        "samples": 3
+      }
+    },
+    "progressive": {
+      "attach_ms": {
+        "max": 0.004,
+        "median": 0.004,
+        "min": 0.004,
+        "samples": 3
+      },
+      "attrs_bytes": {
+        "max": 914965,
+        "median": 914965,
+        "min": 914965,
+        "samples": 3
+      },
+      "budget_bytes": {
+        "max": 536870912,
+        "median": 536870912,
+        "min": 536870912,
+        "samples": 3
+      },
+      "budget_estimate_bytes": {
+        "max": 458592,
+        "median": 458592,
+        "min": 458592,
+        "samples": 3
+      },
+      "decoded_estimate_bytes": {
+        "max": 5700168,
+        "median": 5700168,
+        "min": 5700168,
+        "samples": 3
+      },
+      "first_root_ms": {
+        "max": 0.013,
+        "median": 0.012,
+        "min": 0.012,
+        "samples": 3
+      },
+      "full_ms": {
+        "max": 25.276,
+        "median": 21.192,
+        "min": 19.377,
+        "samples": 3
+      },
+      "load_ms": {
+        "max": 18.195,
+        "median": 15.123,
+        "min": 14.136,
+        "samples": 3
+      },
+      "max_block_estimate_bytes": {
+        "max": 458592,
+        "median": 458592,
+        "min": 458592,
+        "samples": 3
+      },
+      "oct_bytes": {
+        "max": 1341889,
+        "median": 1341889,
+        "min": 1341889,
+        "samples": 3
+      },
+      "open_ms": {
+        "max": 0.299,
+        "median": 0.294,
+        "min": 0.286,
+        "samples": 3
+      },
+      "verify_ms": {
+        "max": 6.68,
+        "median": 5.645,
+        "min": 4.842,
+        "samples": 3
+      }
+    },
+    "reconstruct": {
+      "attach_ms": {
+        "max": 0.004,
+        "median": 0.004,
+        "min": 0.004,
+        "samples": 3
+      },
+      "attrs_bytes": {
+        "max": 914965,
+        "median": 914965,
+        "min": 914965,
+        "samples": 3
+      },
+      "budget_bytes": {
+        "max": 536870912,
+        "median": 536870912,
+        "min": 536870912,
+        "samples": 3
+      },
+      "budget_estimate_bytes": {
+        "max": 5700168,
+        "median": 5700168,
+        "min": 5700168,
+        "samples": 3
+      },
+      "decoded_estimate_bytes": {
+        "max": 5700168,
+        "median": 5700168,
+        "min": 5700168,
+        "samples": 3
+      },
+      "full_ms": {
+        "max": 24.053,
+        "median": 22.69,
+        "min": 20.947,
+        "samples": 3
+      },
+      "load_ms": {
+        "max": 19.227,
+        "median": 17.854,
+        "min": 16.118,
+        "samples": 3
+      },
+      "max_block_estimate_bytes": {
+        "max": 458592,
+        "median": 458592,
+        "min": 458592,
+        "samples": 3
+      },
+      "oct_bytes": {
+        "max": 1341889,
+        "median": 1341889,
+        "min": 1341889,
+        "samples": 3
+      },
+      "open_ms": {
+        "max": 0.329,
+        "median": 0.323,
+        "min": 0.315,
+        "samples": 3
+      },
+      "verify_ms": {
+        "max": 4.5,
+        "median": 4.484,
+        "min": 4.477,
+        "samples": 3
+      }
+    }
+  }
+}

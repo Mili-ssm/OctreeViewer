@@ -14,6 +14,8 @@ pub struct ConversionDiagnostics {
     pub block_preparation_elapsed_ns: Option<u128>,
     /// Ordered writes, spool release, and progress reporting across batches.
     pub ordered_write_and_release_elapsed_ns: Option<u128>,
+    /// Index/footer finalization and sync_all of both candidate files, before validation/publication.
+    pub finalize_and_sync_elapsed_ns: Option<u128>,
     /// Validation setup and worker execution/join; does not attribute RSS to readers.
     pub output_validation: Option<DiagnosticWindow>,
     /// Per-worker read aggregates. The block memory estimate excludes transient decoder buffers.

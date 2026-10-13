@@ -111,6 +111,10 @@ mod tests {
     }
 
     impl OctreeReader for MemoryReader {
+        fn format_version(&self) -> viewer_format::FormatVersion {
+            viewer_format::FormatVersion::V5
+        }
+
         fn has_attributes(&self) -> bool {
             self.attributes_available
         }

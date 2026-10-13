@@ -1,5 +1,9 @@
 # Selección LOD: base de frontera — 11-10-2026
 
+Este documento conserva la evolución fechada de la selección LOD. Las tareas abiertas en secciones
+históricas no son una cola paralela; consultar el [README del proyecto](../README.md) para el estado
+y los criterios de cierre vigentes.
+
 Benchmark específico de `SpatialHierarchy::select_lod` sobre `279ec98`, sin cambios del algoritmo.
 `visibility_bench` mide consulta de vóxeles y no cubre esta ruta. Esta base separa el coste de
 seleccionar metadatos de lectura, voxelización, subida GPU y presentación en navegador.

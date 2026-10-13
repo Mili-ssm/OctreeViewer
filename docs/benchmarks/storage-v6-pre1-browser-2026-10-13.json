@@ -1,0 +1,77 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "origin": "http://127.0.0.1:8768",
+  "opfsV6": {
+    "points": "111190",
+    "octBytes": 1074834,
+    "attrsBytes": 908746,
+    "primary": {
+      "magic": "OCTVFRM1",
+      "major": 6,
+      "revision": 1
+    },
+    "attributes": {
+      "magic": "OCTVFRM1",
+      "major": 6,
+      "revision": 1
+    },
+    "timings": {
+      "planningMs": 61,
+      "writingMs": 112,
+      "totalMs": 202
+    }
+  },
+  "storageV6": {
+    "type": "probeResult",
+    "passed": true,
+    "geometryHasAttributes": false,
+    "fullHasAttributes": true,
+    "sourcePointCount": "111190",
+    "nodeCount": 9,
+    "formatVersion": "v6.1-pre",
+    "schemaColumns": 8,
+    "wrongSidecarRejected": true,
+    "errors": [
+      "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+      "format version v6.2-pre is recognized but has no supported decoder"
+    ]
+  },
+  "defaultV5": {
+    "points": "111190",
+    "octBytes": 1319961,
+    "attrsBytes": 908746,
+    "major": 5,
+    "revision": 0
+  },
+  "adapterAvailable": false,
+  "nativeInterop": {
+    "blocks": 37,
+    "decodedPointsIncludingLod": 111993,
+    "checksum": "9f17732d9dcbe040",
+    "v5AndV6Match": true
+  },
+  "limitation": "Blob/header/OPFS and native decoding checks; no WebGPU presentation certification.",
+  "runtime_sha256": {
+    "pkg/viewer_wasm.js": "f9fd0f1eb4685d8cd01e1e7eba8a08f1c8754acb7150543803a95b60ff20c7be",
+    "pkg/viewer_wasm_bg.wasm": "55147320f46d743c4db2b743a9a457cb718ea1169b1d915bafaf00f503523d49",
+    "examples/web-host/converter-worker.js": "b2ba0dd7f755cc47ad7087769e784adbb1b6c2b28d2b63cf0a02d89a87481ca0"
+  },
+  "downloaded_pairs": {
+    "/tmp/browser-v5.oct": {
+      "bytes": 1319961,
+      "sha256": "e9f223da8b99f3a053f96d504515d5d972c6c5ff9583ad5a9dc9702ca8c3ec0d"
+    },
+    "/tmp/browser-v5.octattrs": {
+      "bytes": 908746,
+      "sha256": "d04e0243de1067ee02e8f7a111f468f9746303513f1300065d34d57f92be2f2e"
+    },
+    "/tmp/browser-v6.oct": {
+      "bytes": 1074834,
+      "sha256": "0eda84322c0da60f612f762294f1b5ec19098c2f855e1d9834d71969b324cbc2"
+    },
+    "/tmp/browser-v6.octattrs": {
+      "bytes": 908746,
+      "sha256": "3f9a1b2938850a7e250ec44ab1ba204cc39969dc42d5e8d8197dc1f80a042062"
+    }
+  }
+}

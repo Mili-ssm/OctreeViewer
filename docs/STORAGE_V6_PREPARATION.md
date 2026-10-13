@@ -1,0 +1,190 @@
+# Almacenamiento v5 definitivo y preparación de v6
+
+Estado: 13-10-2026. La ruptura de v5 provisional fue autorizada antes de desarrollar v6.
+Están implementados v5 definitivo y la primera revisión experimental `v6.1-pre`. Esta última
+comprime los mismos enteros cuantizados mediante deltas/fallback, sin nueva pérdida. Su contrato
+completo está en [v6.1-pre](../crates/viewer_format/FORMAT_V6_PRE1.md); una representación lógica
+de vóxeles por ocupación sigue pendiente.
+
+## Capas y versiones
+
+Hay tres contratos distintos que no deben llamarse todos «versión v6»:
+
+| Capa | Qué define | Identificación vigente / futura |
+| --- | --- | --- |
+| **Formato de almacenamiento** | Bytes de `.oct`/`.octattrs`, codecs, índices, checksums y cómo se reconstruyen sus registros. | El campo de cabecera identifica hoy v5 (`5/0`) o v6.1-pre (`6/1`). Cada cambio incompatible de bytes requiere otra revisión exacta. |
+| **Representación lógica de octree/vóxeles** | Significado de nodos/celdas, grilla, ramificación, orden de hijos y cómo se derivan sus coordenadas. | El formato actual almacena puntos, jerarquía y bloques; aún no define el modelo de vóxel ocupado propuesto. Si su contrato evoluciona de forma independiente habrá que versionarlo explícitamente en datos o metadatos. |
+| **Render** | Cómo se proyectan y dibujan datos: buffers, caras, instancing, culling, cortes y transiciones LOD. | Lo determina la implementación del renderer/WASM/worker. Esas técnicas no son una capacidad ni una versión del octree almacenado, salvo que el archivo empiece a guardar datos específicos del render. |
+
+La cabecera `FormatVersion` actual sólo versiona el formato de archivo. No existe aún un campo
+`OctreeRepresentationVersion` ni un `RendererVersion` serializado. No se debe subir o cambiar la
+versión del `.oct` por cambiar un shader o una transición visual que consume los mismos datos.
+
+## Propuesta de representación por ocupación (pendiente)
+
+La propuesta para futuras revisiones es almacenar cada nivel como arrays densos y deterministas de
+celdas ocupadas. El registro de cada padre tendría: (1) un byte como matriz/máscara de posiciones
+ocupadas, (2) un byte de conteo de hijos, posiblemente con flags de compresión todavía por definir,
+y (3) el índice/dirección de su primer hijo en el array siguiente. El conteo y la dirección permiten
+extraer el slice contiguo de hijos; la máscara dice a qué posiciones posibles corresponden, porque
+esos hijos se escriben en el mismo orden determinista que las posiciones, por ejemplo Morton. Dada
+la coordenada del padre y la grilla, cada coordenada hija se deriva de su ordinal local: no se
+almacena por separado. Esta derivación topológica de coordenadas es distinta del codec delta-varint
+de `v6.1-pre`, que sí almacena las coordenadas cuantizadas de cada punto y sólo codifica sus
+diferencias.
+
+En un octree 2×2×2 bastaría una máscara de 8 bits por padre, con una convención fija para mapear
+bits a `(x,y,z)` o a ordinales Morton. El slice es `children[first_child .. first_child + child_count]`.
+Para buscar el hijo de una posición concreta, `rank(mask, bit)` cuenta los bits ocupados anteriores;
+el hijo correspondiente está en `first_child + rank`. El conteo se puede contrastar con
+`popcount(mask)` al validar. Guardarlo evita recalcularlo y permite tomar el slice directamente,
+pero es información redundante si la máscara está disponible; el byte también podría reservar bits
+para flags si se define su semántica. Por ejemplo, podrían indicar que todos los hijos son iguales,
+que se repiten en pares u otro patrón compacto. Falta definir qué significa "iguales" (mismos valores,
+misma ocupación, subárboles equivalentes, etc.) y cómo se expande ese patrón al reconstruir. Para
+2³, el conteo 0–8 cabe en cuatro bits y deja como máximo cuatro bits de flags dentro del byte; si se
+permiten ramificaciones mayores habrá que revisar ese empaquetado junto con el ancho del conteo.
+
+Para que ese slice sea válido, los hijos de cada padre deben ser contiguos y estar en el orden que
+declara la máscara. El campo `first_child` debe definirse como índice/offset dentro del array
+correspondiente, no como una dirección de memoria del proceso. El ancho del conteo depende de la
+ramificación: un byte alcanza para los 0–8 hijos de 2³ y para 4³, pero no para los 512 hijos posibles
+de 8³. La máscara misma necesita 8, 64 o 512 bits para ramificaciones 2³, 4³ u 8³, o una
+codificación dispersa equivalente. El diseño debe decidir si todas las capas son octrees 2³ o si
+admiten esas subdivisiones mayores.
+
+Si un flag comprime hijos repetidos, el conteo debe aclarar si mide hijos lógicos (`popcount(mask)`)
+o registros físicos guardados en el slice. Si algunos hijos lógicos comparten una sola entrada
+física, `first_child + logical_count` ya no delimita ese slice; hará falta un conteo físico o una
+tabla de expansión definida. La interpretación debe permitir reconstruir sin ambigüedad la máscara
+completa de hijos y su relación con las entradas físicas.
+
+La representación también debe fijar el orden global de padres, los límites de cada array de nivel,
+la coordenada/escala de la raíz, el ancho/unidad del offset y la relación entre celdas ocupadas,
+hojas y payloads de puntos. El modelo actual de `SpatialHierarchy`/`PointBlock` no implica por sí
+solo que sus bloques correspondan a celdas voxel uniformes.
+
+Potencial esperado, aún no medido: quitar coordenadas repetidas de hijos y reducir bytes/metadatos
+del índice; enumerar hijos ocupados mediante máscara; reconstruir cada coordenada recorriendo desde
+la raíz. No elimina automáticamente los payloads de los puntos, RGB o atributos, ni acelera el
+render por sí mismo. El tamaño neto debe incluir máscaras, offsets/rangos, raíces, índices y codecs;
+la CPU de reconstrucción, memoria de apertura, consultas selectivas y exactitud espacial se miden
+frente a v5 y `v6.1-pre`.
+
+Las caras expuestas o agrupadas son geometría de presentación/render, no nodos del octree. Las
+transiciones entre cortes LOD son lógica de selección/presentación del viewer; tampoco describen
+cómo se serializan los hijos. Deben diseñarse y medirse en el renderer independientemente de la
+revisión del formato y de la representación lógica, salvo que se decida almacenar una malla derivada.
+
+## Identidad y compatibilidad
+
+La envoltura definitiva conserva 24 bytes, con magic común **`OCTVFRM1`** (envelope 1):
+
+| Offset | Campo | v5 definitivo | v6 |
+| ---: | --- | --- | --- |
+| 8 | Versión mayor `u16` LE | 5 | 6 |
+| 10 | Longitud `u16` LE | 24 | 24 |
+| 12 | Rol `u32` LE | 0 monolítico / 1 primario separado / 2 acompañante | mismos roles |
+| 16 | Revisión de desarrollo `u32` LE | 0 obligatorio | 1, 2… desarrollo; 0 final |
+| 20 | CRC32 `u32` LE | bytes 0–19 | bytes 0–19, incluida revisión |
+
+`FileRole::{Monolithic, SplitPrimary, Attributes}` sustituye flags sueltos en la API.
+`FormatIdentity::to_header_bytes` y su parser son compartidos por lector y escritor.
+`FormatVersion::{V5, V6Pre(NonZeroU32), V6, Unknown { major, revision }}` distingue `v5`,
+`v6.1-pre`, `v6.2-pre` y `v6`. Cada cambio incompatible durante desarrollo exige una revisión
+nueva; final v5 permanece con mayor 5/revisión 0. La revisión no identifica el crate ni el commit.
+No se infiere compatibilidad por orden de versión: cada backend debe admitir identidades exactas.
+
+Los archivos provisionales con `OCTVWFRM` reciben `ProvisionalFormat`, con indicación de regenerar
+LAS/LAZ/EPT. No hay lector legacy ni actualización automática de cabecera. Se han regenerado las
+parejas versionadas de Outer Banks y la muestra web; los datasets locales provisionales y sus
+checkpoints anteriores deben regenerarse. El paquete web local también debe reconstruirse.
+
+`probe_format(&mut Read + Seek)` valida cabecera/CRC sin leer índice ni payload y restaura la
+posición incluso si falla el análisis. No certifica el archivo completo. `FormatReader` selecciona
+el backend por esa identidad y entrega la cabecera ya validada al backend indexado compartido; no la vuelve a leer.
+La selección admite exactamente v5 y `v6.1-pre`. V6 final, otras revisiones y las identidades
+desconocidas fallan antes de cargar un índice.
+
+Un hash no sustituye al campo de compatibilidad. El CRC detecta corrupción accidental; SHA-256
+de fuente/binarios/salidas identifica las ejecuciones de benchmark. `v6.1-pre` usa sus
+propios marcadores de índice/footer y valida identidad exacta de ambos archivos, además de su
+asociación al dataset. No se admitirán parejas v5/v6 ni revisiones de desarrollo distintas.
+
+## Interfaces implementadas y puntos de extensión
+
+| Contrato / consumidor | Estado implementado | Pendiente para v6 |
+| --- | --- | --- |
+| `DatasetSource` (`viewer_core`) | Metadata y `PointBlock` independientes del layout; error asociado. | Preservar coordenadas locales, esquema y orden de filas. |
+| `OctreeReader` | Acceso selectivo XYZ/RGB/columna/fila/rangos, identidad exacta y uso mediante `dyn`. | Conformidad v5/v6.1-pre ya probada; extender al corpus grande y futuras revisiones. |
+| `FormatReader<R>` | Fachada de transporte en `storage_reader.rs`, con backend privado `IndexedReader` con `StorageLayout::{V5,V6Pre1}`; conserva attach, forks, metadata y estadísticas. | Añadir backend y ampliar despacho interno; los consumidores conservan la fachada pública. |
+| `OctreeWriter` / `PreparedOctreeWriter` | Ingesta y cierre; bloque preparado asociado a cada escritor. | Ya escribe ambas versiones y verifica identidad del preparado; ampliar perfiles futuros. |
+| `BlockEncoder` / `FormatBlockEncoder` | Encoder inmutable `Sync`, bloque asociado `Send`; preparación y capacidad retenida separadas de los sinks. | Ya selecciona v5/v6.1-pre; futuras transformaciones requieren perfiles nuevos. |
+| Conversor nativo | `stream_blocks<W,E>` consume `E::PreparedBlock`; no llama `prepare_point_block` ni fija `PreparedPointBlock`. Mantiene append ordenado y liberación de spool. | Medir picos de conversión a escala y costes de candidatos simultáneos. |
+| Salida LAS/LAZ, EPT y navegador | Fábricas `new_for_version` / `new_split_for_version`; rechazan versiones sin escritor antes de tocar sinks. `ConvertOptions::with_format_version` y CLI `--format-version` seleccionan explícitamente. | Hoy se escribe v5 o v6.1-pre; otras identidades siguen rechazadas. |
+| WASM (`bindings.rs`, `LodSession`) | Conserva `FormatReader<BrowserBlobReader>`, que ahora es la fachada; carga selectiva por `OctreeReader`. Browser converter usa v5 por defecto y `createForVersion` permite v6.1-pre. | Blob/OPFS v6 comprobados; falta refinamiento/presentación WebGPU. |
+| Checkpoints | Manifiesto V5 persiste mayor, revisión y envelope desde las opciones; rechaza identidades distintas y manifiestos V1–V4. | Reutilizar la validación exacta al habilitar nuevas identidades. |
+| `SpatialHierarchy` | Jerarquía lógica común y `child_ids` público para recorrido estructural independiente del orden físico. | Preservar Replacement/Additive, conteos y grilla común. |
+
+Lectura y escritura seleccionan ahora el perfil exacto del layout. Los perfiles comparten el
+pipeline de índices, jerarquía, atributos, CRC y transportes; no duplican el parser v5. Los bloques
+preparados registran su perfil, y un escritor de otro formato los rechaza antes de I/O. No se exige
+`Sync` al escritor: los workers comparten sólo el encoder inmutable y escriben después en orden.
+
+La intercambiabilidad es lógica, no mezcla de bytes ni de acompañantes. Si v6 introduce topología
+voxelizada sin puntos equivalentes, primero debe resolverse su representación en el contrato común;
+un enum de versiones no resuelve esa diferencia de datos.
+
+## Validación y cierre pendiente
+
+Las pruebas cubren cabecera/roles/CRC, provisional y versiones sin backend, roundtrip monolítico y
+split, selección real de I/O, forks, acompañantes incorrectos, preparación serial/paralela y
+checkpoints incompatibles. La suite formal incluye comparación alternada v5/v6.1-pre en tres muestras reales; véase
+[el protocolo y evidencia](STORAGE_BENCH.md).
+
+Playwright MCP comprobó Blob con/sin acompañante, rechazo de provisional y `v6.2-pre`,
+acompañante incorrecto y conversión OPFS seleccionando v6.1-pre. La pareja OPFS v6 se descargó
+y reconstruyó con el lector nativo, con el mismo checksum lógico que la conversión web v5. Su navegador no
+ofreció adaptador WebGPU: estas comprobaciones no certifican presentación ni refinamiento GPU.
+
+Un piloto nativo en Belvedere (81.682.329 puntos fuente, 1.343 bloques) comprobó compatibilidad
+de salida y lectura BFS en ambas versiones. La pareja completa sólo bajó 86.350 B (0,0054 %) con
+v6.1-pre; las medianas de carga progresiva caliente fueron 6.706 ms (v5) y 6.719 ms (v6), con el
+mismo checksum. Es una conversión por versión y tres lecturas por pareja, no una comparación formal
+repetida de conversiones ni una medición de cámara/GPU. El informe y hashes están en
+[`storage-v6-pre1-belvedere-pilot-2026-10-13.json`](benchmarks/storage-v6-pre1-belvedere-pilot-2026-10-13.json).
+
+### Decisiones abiertas de grilla común
+
+El formato actual cuantiza por bloque y guarda marco local por dataset; no se debe interpretar como
+una grilla común entre archivos. Antes de añadir ocupación/topología al formato hay que fijar:
+
+- Si una escena elige una celda diádica común al abrirla o cada dataset guarda su celda y transforma
+  coordenadas al marco de escena.
+- Qué CRS, unidades y orden de ejes son comparables; CRS desconocido o distintos deben rechazarse
+  explícitamente hasta existir una transformación definida.
+- Cómo se serializan ancla, origen negativo, escala y límites con enteros firmados, y qué error se
+  permite al convertir coordenadas LAS/EPT y reconstruirlas en el renderer.
+- Si las celdas ocupadas representan puntos de origen, centros cuantizados o volumen cubierto; cómo
+  se relacionan esos registros con `PointBlock`, Replacement/Additive y los representantes LOD.
+
+El contrato candidato debe probar nubes convertidas por separado, en orden de carga invertido,
+incluyendo límites de celda, negativos, escalas diferentes y CRS/unidades incompatibles. Hasta
+resolverlo no se serializa una `GridDefinition` ni se asigna una revisión nueva.
+
+Para cerrar v6 faltan:
+
+- Definir e implementar la representación lógica de vóxeles ocupados: máscara, byte de conteo/flags,
+  dirección al primer hijo, arrays densos por nivel y orden Morton (u otro determinista); medir tamaño
+  total, CPU, RAM, lectura selectiva y equivalencia espacial antes de fijar una revisión de
+  almacenamiento.
+- Evaluar deduplicación de valores o streams de atributos como compresión del almacenamiento, con
+  acceso selectivo y asociaciones de filas conservadas.
+- Evaluar caras expuestas/agrupadas y transiciones entre cortes LOD como características separadas
+  del renderer; sólo versionar el archivo si se decide persistir una representación de malla derivada.
+- Extender la conformidad actual a cambios nuevos y al corpus grande; medir límites/picos
+  simultáneos de conversión, caché, acumulador e instancias.
+- Completar la comparación formal en Belvedere (conversiones alternadas, al menos tres por formato)
+  y extender a Majadas/Albuera, con calidad y atributos equivalentes; tamaño, escritura,
+  reconstrucción, hijos y memoria. El piloto no muestra ahorro material en Belvedere.
+- Validación de caché/frontera LOD y presentación en navegadores con WebGPU operativo.

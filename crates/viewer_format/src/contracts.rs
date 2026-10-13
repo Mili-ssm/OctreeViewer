@@ -2,7 +2,9 @@ use std::io::{Read, Seek, Write};
 
 use viewer_core::{AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetSource, PointBatch};
 
-use crate::{FormatError, FormatReader, FormatWriter, PreparedPointBlock, SourcePointBlock};
+use crate::{
+    FormatError, FormatWriter, PreparedPointBlock, SourcePointBlock, reader::IndexedReader,
+};
 
 /// Selective access to an immutable octree dataset, independent of its I/O transport.
 ///
@@ -11,6 +13,9 @@ use crate::{FormatError, FormatReader, FormatWriter, PreparedPointBlock, SourceP
 /// selective reads by loading the complete block or unrelated payloads.
 /// Opening streams, attaching companions and forking cursors remain implementation details.
 pub trait OctreeReader: DatasetSource {
+    /// Exact binary identity of this reader; does not describe producer builds.
+    fn format_version(&self) -> crate::FormatVersion;
+
     /// Whether color and attribute payloads are available, including a companion if required.
     fn has_attributes(&self) -> bool;
 
@@ -48,6 +53,9 @@ pub trait OctreeWriter {
     type Error;
     type Output;
 
+    /// Exact binary identity written to all output streams.
+    fn format_version(&self) -> crate::FormatVersion;
+
     fn write_block(&mut self, block: SourcePointBlock) -> Result<(), Self::Error>;
 
     /// Consumes the writer. Mutable ingestion also supports trait objects; closing
@@ -65,25 +73,40 @@ pub trait PreparedOctreeWriter: OctreeWriter {
     fn write_prepared_block(&mut self, block: Self::PreparedBlock) -> Result<(), Self::Error>;
 }
 
-impl<R: Read + Seek> OctreeReader for FormatReader<R> {
+/// Immutable block preparation, usable by parallel workers without sharing output sinks.
+/// The prepared type binds an encoder to a compatible incremental writer.
+pub trait BlockEncoder: Sync {
+    type PreparedBlock: Send;
+
+    fn prepare(&self, block: SourcePointBlock) -> Result<Self::PreparedBlock, FormatError>;
+
+    /// Retained encoded payload capacity, excluding metadata and allocator overhead.
+    fn encoded_payload_capacity_bytes(&self, block: &Self::PreparedBlock) -> usize;
+}
+
+impl<R: Read + Seek> OctreeReader for IndexedReader<R> {
+    fn format_version(&self) -> crate::FormatVersion {
+        IndexedReader::format_version(self)
+    }
+
     fn has_attributes(&self) -> bool {
-        FormatReader::has_attributes(self)
+        IndexedReader::has_attributes(self)
     }
 
     fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, Self::Error> {
-        FormatReader::read_positions(self, id)
+        IndexedReader::read_positions(self, id)
     }
 
     fn read_geometry(&mut self, id: BlockId) -> Result<PointBatch, Self::Error> {
-        FormatReader::read_geometry(self, id)
+        IndexedReader::read_geometry(self, id)
     }
 
     fn read_display_colors(&mut self, id: BlockId) -> Result<Vec<ColorRgb>, Self::Error> {
-        FormatReader::read_display_colors(self, id)
+        IndexedReader::read_display_colors(self, id)
     }
 
     fn read_attribute(&mut self, id: BlockId, index: u32) -> Result<AttributeColumn, Self::Error> {
-        FormatReader::read_attribute(self, id, index)
+        IndexedReader::read_attribute(self, id, index)
     }
 
     fn read_attribute_row(
@@ -92,17 +115,21 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
         row: u64,
         index: u32,
     ) -> Result<AttributeValues, Self::Error> {
-        FormatReader::read_attribute_row(self, id, row, index)
+        IndexedReader::read_attribute_row(self, id, row, index)
     }
 
     fn attribute_range(&self, index: u32, component: u32) -> Result<Option<[f64; 2]>, Self::Error> {
-        FormatReader::attribute_range(self, index, component)
+        IndexedReader::attribute_range(self, index, component)
     }
 }
 
 impl<W: Write + Seek> OctreeWriter for FormatWriter<W> {
     type Error = FormatError;
     type Output = (W, Option<W>);
+
+    fn format_version(&self) -> crate::FormatVersion {
+        FormatWriter::format_version(self)
+    }
 
     fn write_block(&mut self, block: SourcePointBlock) -> Result<(), Self::Error> {
         FormatWriter::write_block(self, block)

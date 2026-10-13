@@ -1,5 +1,10 @@
 # Benchmark con un escaneo real de gran tamaño
 
+**Archivo de resultados históricos, principalmente de formatos v1–v4.** Las fases, cifras y
+pendientes de esta secuencia no representan automáticamente el conversor v5. Para conversiones
+v5 repetidas y lectura selectiva, usar [memoria y lectura v5](V5_MEMORY_BENCH.md); las tareas
+vigentes están en el [README del proyecto](../README.md).
+
 ## Dataset y comandos
 
 Se usa una nube fotogramétrica UAV del glaciar Belvedere de 2009: 81.682.329 puntos, RGB, EPSG:7791

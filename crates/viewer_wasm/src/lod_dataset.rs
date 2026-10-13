@@ -1376,6 +1376,71 @@ mod tests {
         assert!(scene.instances()[0].size < 0.125);
     }
     #[test]
+    fn replacement_parent_keeps_cell_extent_until_children_are_available() {
+        let make = |id, parent: Option<u64>, level, side, block| {
+            SpatialNode::new(
+                NodeId::new(id),
+                parent.map(NodeId::new),
+                level,
+                SpatialBounds::new([0.0; 3], [side; 3]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(block)],
+            )
+            .unwrap()
+        };
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![make(1, None, 0, 8.0, 10), make(2, Some(1), 1, 4.0, 11)],
+            vec![],
+            None,
+            HierarchySemantics::Replacement,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        cache.insert(PointBlock::new(
+            BlockId::new(10),
+            PointBatch::new(vec![Point::new([0.5; 3], ColorRgb::new(1, 2, 3))]),
+            vec![],
+        ));
+        let project = |bounds| bounds_side(bounds) * 32.0;
+        for target in [16.0, 4.0, 1.0] {
+            let parent = build_voxel_scene(
+                &hierarchy,
+                &[NodeId::new(1)],
+                &cache,
+                [0.0; 3],
+                target,
+                &project,
+            );
+            assert!((parent.scene.instances()[0].size - 1.0).abs() < 1e-5);
+        }
+        cache.insert(PointBlock::new(
+            BlockId::new(11),
+            PointBatch::new(vec![
+                Point::new([0.25; 3], ColorRgb::new(1, 2, 3)),
+                Point::new([0.75; 3], ColorRgb::new(1, 2, 3)),
+            ]),
+            vec![],
+        ));
+        let children = build_voxel_scene(
+            &hierarchy,
+            &[NodeId::new(2)],
+            &cache,
+            [0.0; 3],
+            16.0,
+            &project,
+        );
+        assert_eq!(children.scene.instance_count(), 2);
+        assert!(
+            children
+                .scene
+                .instances()
+                .iter()
+                .all(|cell| (cell.size - 0.5).abs() < 1e-5)
+        );
+    }
+
+    #[test]
     fn source_leaf_depth_does_not_determine_voxel_size_or_limit_granularity() {
         let make = |id, parent: Option<u64>, level, min, max, blocks: Vec<u64>| {
             SpatialNode::new(

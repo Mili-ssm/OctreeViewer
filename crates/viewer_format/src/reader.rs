@@ -10,11 +10,13 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
+use crate::geometry::{GeometryDecoder, GeometryEncoding};
 use crate::layout::{
-    FOOTER_MAGIC, FOOTER_SIZE, FORMAT_VERSION, HEADER_MAGIC, HEADER_SIZE, INDEX_MAGIC,
-    PayloadDirectoryEntry, attribute_payload_size, block_payload_size,
+    FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout, attribute_payload_size,
+    block_payload_size,
 };
 use crate::metadata::validate_metadata;
+use crate::version::FileRole;
 use crate::{BlockCodec, FormatError, FormatMetadata, NodeAttributeRange, crc32, decompress_block};
 
 const MAX_ATTRIBUTES_DEFAULT: u32 = 256;
@@ -102,6 +104,7 @@ struct BlockDirectoryEntry {
     quantization_error: f64,
     origin: [f64; 3],
     scale: [f64; 3],
+    geometry_encoding: GeometryEncoding,
     payloads: Vec<PayloadDirectoryEntry>,
 }
 
@@ -112,7 +115,9 @@ type ParsedIndex = (
 );
 
 /// Aggregate sizes for an entire block, excluding the file index.
-/// V5 totals geometry and all attribute payloads; use `block_payload_storage_stats`
+/// `logical_bytes` is the canonical geometry and attribute size; `raw_bytes` is the
+/// sum of the independently decoded payloads and can differ for encoded geometry.
+/// Use `block_payload_storage_stats`
 /// to inspect their independent codecs and sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BlockStorageStats {
@@ -120,6 +125,8 @@ pub struct BlockStorageStats {
     pub point_count: u64,
     pub stored_bytes: u64,
     pub raw_bytes: u64,
+    pub logical_bytes: u64,
+    pub geometry_encoding: GeometryEncoding,
 }
 
 /// Identity of an independently encoded payload in a block.
@@ -142,10 +149,11 @@ pub struct BlockPayloadStorageStats {
 }
 
 /// Seekable reader that loads metadata at open and verifies only requested block payloads.
-pub struct FormatReader<R> {
+pub(crate) struct IndexedReader<R> {
     reader: R,
     attributes: Option<R>,
     split: bool,
+    layout: StorageLayout,
     index_identity: (u64, u64, u32),
     attribute_file_length: u64,
     metadata: Arc<FormatMetadata>,
@@ -155,32 +163,42 @@ pub struct FormatReader<R> {
     limits: FormatReaderLimits,
 }
 
-impl<R: Read + Seek> FormatReader<R> {
+impl<R: Read + Seek> IndexedReader<R> {
+    #[cfg(test)]
     pub fn new(reader: R) -> Result<Self, FormatError> {
         Self::with_limits(reader, FormatReaderLimits::default())
     }
 
+    #[cfg(test)]
     pub fn with_limits(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
+        reader.seek(SeekFrom::Start(0))?;
+        let mut header = [0; HEADER_SIZE as usize];
+        reader.read_exact(&mut header)?;
+        let identity = crate::version::parse_identity(&header)?;
+        Self::with_identity(reader, limits, identity)
+    }
+
+    pub(crate) fn with_identity(
+        mut reader: R,
+        limits: FormatReaderLimits,
+        identity: crate::FormatIdentity,
+    ) -> Result<Self, FormatError> {
+        let layout = validate_supported_primary(identity)?;
         let file_length = reader.seek(SeekFrom::End(0))?;
         if file_length < HEADER_SIZE + FOOTER_SIZE {
             return Err(FormatError::FileTooShort);
         }
-
-        reader.seek(SeekFrom::Start(0))?;
-        let mut header = [0; HEADER_SIZE as usize];
-        reader.read_exact(&mut header)?;
-        let flags = validate_header(&header)?;
-        if flags == crate::layout::ATTRIBUTE_FILE {
+        if identity.role == FileRole::Attributes {
             return Err(FormatError::InvalidHeader);
         }
-        let split = flags == crate::layout::SPLIT_ATTRIBUTES;
+        let split = identity.role == FileRole::SplitPrimary;
 
         let footer_offset = file_length - FOOTER_SIZE;
         reader.seek(SeekFrom::Start(footer_offset))?;
         let mut footer = [0; FOOTER_SIZE as usize];
         reader.read_exact(&mut footer)?;
         let (index_offset, index_length, declared_file_length, index_checksum) =
-            parse_footer(&footer)?;
+            parse_footer(&footer, layout.footer_magic())?;
         if index_length > limits.max_index_bytes {
             return Err(FormatError::IndexExceedsLimit {
                 requested: index_length,
@@ -206,7 +224,8 @@ impl<R: Read + Seek> FormatReader<R> {
             return Err(FormatError::InvalidChecksum("index"));
         }
 
-        let (metadata, blocks, block_bounds) = parse_index(&index, &limits, index_offset, split)?;
+        let (metadata, blocks, block_bounds) =
+            parse_index(&index, &limits, index_offset, split, layout)?;
         let attribute_file_length = if split {
             blocks
                 .values()
@@ -226,6 +245,7 @@ impl<R: Read + Seek> FormatReader<R> {
             reader,
             attributes: None,
             split,
+            layout,
             index_identity: (index_offset, index_length, index_checksum),
             attribute_file_length,
             metadata: Arc::new(metadata),
@@ -251,13 +271,17 @@ impl<R: Read + Seek> FormatReader<R> {
         attributes.seek(SeekFrom::Start(0))?;
         let mut header = [0; HEADER_SIZE as usize];
         attributes.read_exact(&mut header)?;
-        if validate_header(&header)? != crate::layout::ATTRIBUTE_FILE {
+        let attribute_identity = crate::version::parse_identity(&header)?;
+        if attribute_identity.version != self.layout.version()
+            || attribute_identity.role != FileRole::Attributes
+        {
             return Err(FormatError::InvalidHeader);
         }
         attributes.seek(SeekFrom::Start(length - FOOTER_SIZE))?;
         let mut footer = [0; FOOTER_SIZE as usize];
         attributes.read_exact(&mut footer)?;
-        let (offset, index_length, declared_length, checksum) = parse_footer(&footer)?;
+        let (offset, index_length, declared_length, checksum) =
+            parse_footer(&footer, self.layout.footer_magic())?;
         if declared_length != length || (offset, index_length, checksum) != self.index_identity {
             return Err(FormatError::InvalidMetadata(
                 "attribute companion does not match primary index",
@@ -357,11 +381,16 @@ impl<R: Read + Seek> FormatReader<R> {
                         .iter()
                         .map(|payload| payload.stored_length)
                         .sum(),
-                    raw_bytes: block_payload_size(
+                    raw_bytes: entry.payloads.iter().try_fold(0_u64, |sum, payload| {
+                        sum.checked_add(payload.raw_length)
+                            .ok_or(FormatError::BlockSizeOverflow)
+                    })?,
+                    logical_bytes: block_payload_size(
                         usize::try_from(entry.point_count)
                             .map_err(|_| FormatError::PointCountOutOfRange)?,
                         self.metadata.dataset().hierarchy().attributes(),
                     )?,
+                    geometry_encoding: entry.geometry_encoding,
                 })
             })
             .collect()
@@ -406,13 +435,18 @@ impl<R: Read + Seek> FormatReader<R> {
         self.reader
     }
 
+    pub fn format_version(&self) -> crate::FormatVersion {
+        self.layout.version()
+    }
+
     /// Creates a reader over an independent cursor while sharing the validated immutable index.
     /// The supplied stream must refer to the same unchanged file snapshot as this reader.
-    pub fn fork_reader<S: Read + Seek>(&self, reader: S) -> FormatReader<S> {
-        FormatReader {
+    pub fn fork_reader<S: Read + Seek>(&self, reader: S) -> IndexedReader<S> {
+        IndexedReader {
             reader,
             attributes: None,
             split: self.split,
+            layout: self.layout,
             index_identity: self.index_identity,
             attribute_file_length: self.attribute_file_length,
             metadata: Arc::clone(&self.metadata),
@@ -430,16 +464,14 @@ impl<R: Read + Seek> FormatReader<R> {
         entry: &BlockDirectoryEntry,
         point_count: usize,
     ) -> Result<PointBatch, FormatError> {
-        let point_capacity = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
+        let point_bytes = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
         let mut points = Vec::new();
-        points.try_reserve_exact(point_capacity).map_err(|_| {
-            FormatError::AllocationFailed(point_capacity * std::mem::size_of::<Point>())
-        })?;
+        points
+            .try_reserve_exact(point_count)
+            .map_err(|_| FormatError::AllocationFailed(point_bytes))?;
+        let mut decoder = GeometryDecoder::new(entry.geometry_encoding, cursor.remaining_slice());
         for _ in 0..point_count {
-            let mut quantized = [0_u32; 3];
-            for value in &mut quantized {
-                *value = cursor.u32()?;
-            }
+            let quantized = decoder.next_coordinate()?;
             let position = std::array::from_fn(|axis| {
                 (entry.origin[axis] + f64::from(quantized[axis]) * entry.scale[axis]) as f32
             });
@@ -463,6 +495,7 @@ impl<R: Read + Seek> FormatReader<R> {
             }
             points.push(Point::new(position, ColorRgb::new(160, 160, 160)));
         }
+        decoder.finish()?;
 
         Ok(PointBatch::new(points))
     }
@@ -503,14 +536,11 @@ impl<R: Read + Seek> FormatReader<R> {
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
         let points = self.decode_geometry(&mut cursor, id, entry, count)?;
-        if cursor.remaining() != 0 {
-            return Err(FormatError::MalformedBlock("trailing geometry bytes"));
-        }
         Ok(points)
     }
 
     /// Loads one complete attribute column by its index in the shared dataset schema.
-    /// In v5 this reads no geometry or other attribute payloads.
+    /// This reads no geometry or other attribute payloads.
     pub fn read_attribute(
         &mut self,
         id: BlockId,
@@ -618,7 +648,7 @@ impl<R: Read + Seek> FormatReader<R> {
         }
     }
 
-    fn read_point_block(&mut self, id: BlockId) -> Result<PointBlock, FormatError> {
+    pub(crate) fn read_point_block(&mut self, id: BlockId) -> Result<PointBlock, FormatError> {
         let points = self.read_geometry(id)?;
         let schema_count = if self.has_attributes() {
             self.metadata.dataset().hierarchy().attributes().len()
@@ -636,7 +666,7 @@ impl<R: Read + Seek> FormatReader<R> {
     }
 }
 
-impl<R: Read + Seek> DatasetSource for FormatReader<R> {
+impl<R: Read + Seek> DatasetSource for IndexedReader<R> {
     type Error = FormatError;
 
     fn metadata(&self) -> &DatasetMetadata {
@@ -648,32 +678,24 @@ impl<R: Read + Seek> DatasetSource for FormatReader<R> {
     }
 }
 
-fn validate_header(header: &[u8; HEADER_SIZE as usize]) -> Result<u32, FormatError> {
-    if &header[..8] != HEADER_MAGIC {
+fn validate_supported_primary(
+    identity: crate::FormatIdentity,
+) -> Result<StorageLayout, FormatError> {
+    if !matches!(identity.version.major(), 5 | 6) {
+        return Err(FormatError::UnsupportedVersion(identity.version.major()));
+    }
+    let layout = StorageLayout::from_version(identity.version)?;
+    if identity.role == FileRole::Attributes {
         return Err(FormatError::InvalidHeader);
     }
-    let version = u16::from_le_bytes(header[8..10].try_into().expect("fixed width"));
-    if version != FORMAT_VERSION {
-        return Err(FormatError::UnsupportedVersion(version));
-    }
-    let flags = u32::from_le_bytes(header[12..16].try_into().expect("fixed width"));
-    let header_length = u16::from_le_bytes(header[10..12].try_into().expect("fixed width"));
-    if u64::from(header_length) != HEADER_SIZE
-        || !matches!(
-            flags,
-            0 | crate::layout::SPLIT_ATTRIBUTES | crate::layout::ATTRIBUTE_FILE
-        )
-        || u32::from_le_bytes(header[16..20].try_into().expect("fixed width")) != 0
-        || u32::from_le_bytes(header[20..24].try_into().expect("fixed width"))
-            != crc32(&header[..20])
-    {
-        return Err(FormatError::InvalidHeader);
-    }
-    Ok(flags)
+    Ok(layout)
 }
 
-fn parse_footer(footer: &[u8; FOOTER_SIZE as usize]) -> Result<(u64, u64, u64, u32), FormatError> {
-    if &footer[..8] != FOOTER_MAGIC
+fn parse_footer(
+    footer: &[u8; FOOTER_SIZE as usize],
+    magic: &[u8; 8],
+) -> Result<(u64, u64, u64, u32), FormatError> {
+    if &footer[..8] != magic
         || u32::from_le_bytes(footer[36..40].try_into().expect("fixed width"))
             != crc32(&footer[..36])
     {
@@ -692,9 +714,10 @@ fn parse_index(
     limits: &FormatReaderLimits,
     index_offset: u64,
     split: bool,
+    layout: StorageLayout,
 ) -> Result<ParsedIndex, FormatError> {
     let mut cursor = SliceCursor::new(bytes);
-    if cursor.take(8)? != INDEX_MAGIC {
+    if cursor.take(8)? != layout.index_magic() {
         return Err(FormatError::MalformedIndex("invalid index magic"));
     }
     let dataset_origin = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
@@ -881,6 +904,11 @@ fn parse_index(
         let offset = cursor.u64()?;
         let payload_length = cursor.u64()?;
         let point_count = cursor.u64()?;
+        let geometry_encoding = if layout == StorageLayout::V6Pre1 {
+            GeometryEncoding::try_from(cursor.u8()?)?
+        } else {
+            GeometryEncoding::RawU32
+        };
         let quantization_error = cursor.f64()?;
         let block_origin = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
         let scale = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
@@ -904,10 +932,10 @@ fn parse_index(
         }
         let point_count_usize =
             usize::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-        let expected_length = block_payload_size(point_count_usize, &schema)?;
-        if expected_length > limits.max_block_bytes {
+        let logical_size = block_payload_size(point_count_usize, &schema)?;
+        if logical_size > limits.max_block_bytes {
             return Err(FormatError::BlockExceedsLimit {
-                requested: expected_length,
+                requested: logical_size,
                 limit: limits.max_block_bytes,
             });
         }
@@ -961,12 +989,16 @@ fn parse_index(
                 }
             }
             if column.offset != expected_offset
-                || column.raw_length != expected_raw_length
+                || (payload_index != 0 && column.raw_length != expected_raw_length)
+                || (payload_index == 0
+                    && geometry_encoding
+                        .validate_raw_length(point_count, column.raw_length)
+                        .is_err())
                 || (column.codec == BlockCodec::None && column.stored_length != column.raw_length)
                 || (column.codec == BlockCodec::Lz4 && column.stored_length >= column.raw_length)
             {
                 return Err(FormatError::MalformedIndex(
-                    "invalid v5 column range or length",
+                    "invalid payload range or length",
                 ));
             }
             expected_offset = expected_offset
@@ -978,6 +1010,16 @@ fn parse_index(
                 ));
             }
             payloads.push(column);
+        }
+        let total_raw_length = payloads.iter().try_fold(0_u64, |sum, payload| {
+            sum.checked_add(payload.raw_length)
+                .ok_or(FormatError::BlockSizeOverflow)
+        })?;
+        if total_raw_length > limits.max_block_bytes {
+            return Err(FormatError::BlockExceedsLimit {
+                requested: total_raw_length,
+                limit: limits.max_block_bytes,
+            });
         }
         if (!split && expected_offset != payload_length)
             || (split && payloads[0].stored_length != payload_length)
@@ -995,6 +1037,7 @@ fn parse_index(
                 quantization_error,
                 origin: block_origin,
                 scale,
+                geometry_encoding,
                 payloads,
             },
         );
@@ -1214,6 +1257,10 @@ impl<'a> SliceCursor<'a> {
 
     fn remaining(&self) -> usize {
         self.bytes.len() - self.position
+    }
+
+    fn remaining_slice(&self) -> &'a [u8] {
+        &self.bytes[self.position..]
     }
 
     fn u8(&mut self) -> Result<u8, FormatError> {

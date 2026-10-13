@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -88,6 +89,14 @@ def terminate_child(process: subprocess.Popen[bytes]) -> int:
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any]:
@@ -316,7 +325,8 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
 
 
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,
-            interval_ms: int) -> int:
+            interval_ms: int, points_per_block: int = 262144,
+            format_version: str = "v5") -> int:
     if not input_path.is_file():
         raise ValueError(f"input is not a regular file: {input_path}")
     if run_dir.exists():
@@ -324,10 +334,22 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
     run_dir.mkdir(parents=True)
     output_path = run_dir / "output.oct"
     command = [str(binary.resolve()), "convert-profile", str(input_path), str(output_path),
-               str(workers), str(divisions)]
+               str(workers), str(divisions), str(points_per_block), format_version]
+    input_metadata = {
+        "path": str(input_path.resolve()),
+        "bytes": input_path.stat().st_size,
+        "sha256": sha256_file(input_path),
+    }
     started = time.monotonic()
     report: dict[str, Any] = {
         "command": command,
+        "input": input_metadata,
+        "options": {
+            "workers": workers,
+            "divisions": divisions,
+            "points_per_block": points_per_block,
+            "format_version": format_version,
+        },
         "exit_code": None,
         "status": "incomplete",
         "elapsed_seconds": None,
@@ -452,9 +474,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--divisions", type=int, default=2)
     parser.add_argument("--interval-ms", type=int, default=100)
+    parser.add_argument("--points-per-block", type=int, default=262144)
+    parser.add_argument("--format-version", choices=("v5", "v6.1-pre"), default="v5")
     args = parser.parse_args(argv)
-    if args.workers < 1 or args.divisions not in (2, 4, 8) or args.interval_ms < 1:
-        parser.error("workers and interval-ms must be positive; divisions must be 2, 4, or 8")
+    if (args.workers < 1 or args.divisions not in (2, 4, 8) or args.interval_ms < 1
+            or not 1 <= args.points_per_block <= 1_000_000):
+        parser.error(
+            "workers, interval-ms and points-per-block must be positive; "
+            "divisions must be 2, 4, or 8"
+        )
     return args
 
 
@@ -462,7 +490,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         return profile(args.input, args.run_dir, args.binary, args.workers,
-                       args.divisions, args.interval_ms)
+                       args.divisions, args.interval_ms, args.points_per_block,
+                       args.format_version)
     except (ValueError, FileExistsError, OSError) as error:
         print(error, file=sys.stderr)
         return 2

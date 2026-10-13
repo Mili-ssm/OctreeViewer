@@ -1,5 +1,9 @@
 # Web viewer performance benchmark
 
+Registro cronológico de pruebas del navegador. Los seguimientos «pendientes» dentro de resultados
+fechados describen el siguiente paso de aquella ronda; la lista activa y priorizada está en el
+[README del proyecto](../README.md).
+
 This protocol measures the browser path (`viewer_wasm` + worker + WebGPU), separately from native
 Rust render timings. The host's **Run 15 s FPS benchmark** and **Export run JSON** buttons record a
 selected `.oct` file, viewport, voxel target, load milestones, scene/cache size, browser details, and

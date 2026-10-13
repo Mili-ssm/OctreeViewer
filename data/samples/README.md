@@ -1,8 +1,9 @@
 # Muestras de nubes de puntos
 
 Datasets pequeños para probar importación, conversión LAS/LAZ y el formato `.oct`. Los `.oct`
-versionados de Outer Banks y sus `.octattrs` se regeneraron en formato v5 y se validaron al finalizar la conversión. El lector actual
-solo admite v5; vuelve a convertir los archivos locales de versiones anteriores desde sus LAS.
+versionados de Outer Banks y sus `.octattrs` se regeneraron en formato v5 definitivo (`OCTVFRM1`, revisión 0) y se validaron al finalizar la conversión. El lector actual
+solo admite v5 definitivo; vuelve a convertir también los archivos locales v5 provisionales
+(`OCTVWFRM`) desde sus LAS. El Bunny local no versionado puede requerir esa regeneración.
 
 | Archivo | Contenido | Puntos | Fuente |
 | --- | --- | ---: | --- |

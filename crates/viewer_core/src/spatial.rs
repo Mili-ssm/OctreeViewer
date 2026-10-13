@@ -656,7 +656,16 @@ impl SpatialHierarchy {
         self.block_ids.binary_search(&block_id).is_ok()
     }
 
-    pub(crate) fn child_ids(&self, id: NodeId) -> &[NodeId] {
+    /// Whether an existing node has no structural children.
+    pub fn is_leaf(&self, id: NodeId) -> bool {
+        self.nodes
+            .get(&id)
+            .is_some_and(|node| node.children.is_empty())
+    }
+
+    /// Structural children in stable NodeId order; empty for leaves or unknown IDs.
+    /// Traversal is independent of storage block ordering and hierarchy semantics.
+    pub fn child_ids(&self, id: NodeId) -> &[NodeId] {
         self.nodes
             .get(&id)
             .map_or(&[], |indexed| indexed.children.as_slice())

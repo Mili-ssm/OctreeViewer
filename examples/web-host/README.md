@@ -12,7 +12,9 @@ cd crates/viewer_wasm
 wasm-pack build --target web --out-dir ../../pkg
 ```
 
-The repository includes `sample.oct` and `sample.octattrs`, a deterministic 4,096-point dataset. Regenerate it from the
+The repository includes `sample.oct` and `sample.octattrs`, a deterministic 4,096-point dataset
+regenerated with final v5 headers (`OCTVFRM1`, revision 0). Provisional v5 files are rejected;
+reconvert local datasets and rebuild/repackage old embedded demos. Regenerate it from the
 workspace root with:
 
 ```bash
@@ -476,3 +478,23 @@ La API `getStats()` y los eventos de estadísticas/progreso incluyen
 última muestra del worker en `memory.latestViewerWorkerSnapshot` y registra por separado
 `memory.mainThreadJsHeapUsedBytes`; el campo legado `environment.jsHeapUsedBytes` tiene
 el mismo alcance del hilo principal. No son memoria viva ni un pico RSS/PSS/GPU conjunto.
+
+### Final v5 storage contract probe
+
+With fresh bindings, run `tests/storage-format.browser.mjs` as a module Worker and wait for
+`type === "probeResult"`, ignoring read-progress messages. It checks Blob opening with/without
+the companion and explicit rejection of provisional files, unsupported v6 revisions and an
+incorrect companion. It needs no GPU adapter. Recorded native/OPFS/browser evidence and the
+remaining presentation limitation are in [storage benchmarks](../../docs/STORAGE_BENCH.md).
+
+### Experimental v6.1-pre conversion
+
+Normal conversion stays on final v5. Programmatic callers may use
+`WasmLasOctConverter.createForVersion(file, primaryHandle, attributesHandle, "v6.1-pre")`, or send
+`{ type: "convert", file, formatVersion: "v6.1-pre" }` to the converter worker. Opening a Blob
+automatically selects v5 or v6.1-pre; paired files must have the exact same identity.
+
+For the storage probe, pass `expectedVersion: "v6.1-pre"` with the converted Blobs and check the
+returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache
+busting query on the worker/probe URL avoids a stale development module). Results are recorded
+in [storage comparisons](../../docs/STORAGE_BENCH.md); GPU presentation remains separate.

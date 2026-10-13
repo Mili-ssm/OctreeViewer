@@ -1,12 +1,18 @@
-# Native `.oct` format, version 5
+# Native `.oct` format, version 5 (final)
 
-This document specifies the complete version 5 file format. V5 is the only format version accepted or written by this project. Older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
+This document specifies the complete version 5 file format. V5 is the default stable format. The project also supports the separately specified experimental [v6.1-pre](FORMAT_V6_PRE1.md). Provisional v5 files (magic `OCTVWFRM`) and older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
 
 V5 stores one shared dataset frame, hierarchy, schema and metadata index in the primary `.oct` file. Each block has independent XYZ, display RGB and schema attribute payloads. Native and browser converters emit a separate `.octattrs` companion for RGB and columns. The stream API also supports monolithic storage using the same payload layout. A split primary opens without its companion and supplies neutral RGB `(160,160,160)`.
 
 The primary contains structural metadata, including attribute descriptors and finite ranges, but no attribute values in split mode. Only the companion contains those values. Block ID and row index identify the same point across both files.
 
 All integer fields and floating-point bit patterns are little endian. Offsets and lengths are unsigned 64-bit byte counts. Strings are UTF-8 preceded by a `u32` byte length, without a terminator. A zero length represents an absent optional string. All CRCs use reflected IEEE CRC-32 (polynomial `0xEDB88320`, initial value and final XOR `0xFFFFFFFF`); CRC detects accidental corruption, not malicious modification.
+
+The common header probe recognizes exact version identities; the reader also implements v6.1-pre,
+while final v6 and other revisions remain unsupported.
+See [v6 preparation](../../docs/STORAGE_V6_PREPARATION.md). The finalized envelope deliberately
+rejects provisional v5; regenerate both files together. The incompatible envelope change was
+authorized before v6 development. Subsequent incompatible payload changes require a new identity.
 
 ## File structure
 
@@ -18,14 +24,15 @@ All integer fields and floating-point bit patterns are little endian. Offsets an
 
 | Offset | Field | Type | Required value |
 | ---: | --- | --- | --- |
-| 0 | Magic | 8 bytes | ASCII `OCTVWFRM` |
+| 0 | Magic | 8 bytes | ASCII `OCTVFRM1` (common envelope 1) |
 | 8 | Version | `u16` | `5` |
 | 10 | Header length | `u16` | `24` |
-| 12 | Flags | `u32` | `0` monolithic primary, `1` split primary, `2` attribute companion |
-| 16 | Reserved | `u32` | `0` |
+| 12 | Role | `u32` | `0` monolithic primary, `1` split primary, `2` attribute companion |
+| 16 | Development revision | `u32` | `0` for final v5 |
 | 20 | Header CRC | `u32` | CRC of bytes 0–19 |
 
-Any other version, magic, header length, flags, reserved value or checksum is rejected. Flags are disjoint role bits; combinations such as `3` are invalid. A companion cannot be opened as a primary.
+Any other version, magic, header length, role, revision or checksum is rejected. Role tags are
+encoded by `FileRole::{Monolithic, SplitPrimary, Attributes}`; combinations such as `3` are invalid. A companion cannot be opened as a primary.
 
 ### Footer (40 bytes)
 
@@ -147,6 +154,20 @@ decoded_local = block_origin + q * block_scale
 The block origin is the finite per-axis minimum. A constant axis has scale zero and quantized value zero; otherwise scale is the finite span divided by `u32::MAX`. Minimum and maximum positions map to `0` and `u32::MAX` respectively. Coordinates are never clamped. Non-finite inputs, unrepresentable spans or decoded coordinates, and values outside `u32` are rejected.
 
 The recorded block quantization error bounds the maximum Euclidean distance from each input local `f64` position to the decoded local `f32` position returned by the reader, including an arithmetic margin. The writer rejects a block if this bound exceeds its configured maximum. The value contributes to the node's geometric-error validation. Decoded render positions are local `f32`; world coordinates are reconstructed by adding the dataset frame origin in `f64` for bounds checks.
+
+## Public storage interfaces
+
+`FormatReader<R>` is a facade that probes the common identity and dispatches to the private indexed
+backend with the selected layout profile. The validated header is passed to that backend without another header read. The facade
+implements `DatasetSource` and `OctreeReader`, and retains companion attachment, cursor forks,
+metadata and directory statistics. Selective consumers need only `OctreeReader`.
+
+`FormatWriter::{new_for_version,new_split_for_version}` select an output version explicitly;
+unsupported identities fail before either sink is touched. The default constructors select final
+v5. `BlockEncoder` prepares blocks independently of sinks; `FormatBlockEncoder` selects
+v5 or v6.1-pre. The converter streams `E::PreparedBlock` to a compatible `PreparedOctreeWriter`; it does
+not call a v5 encoding function or impose `Sync` on the writer. The shared layout dispatch now supports v6.1-pre without changing the v5 byte layout; later
+revisions must extend that dispatch explicitly.
 
 ## Reading, validation and resource limits
 

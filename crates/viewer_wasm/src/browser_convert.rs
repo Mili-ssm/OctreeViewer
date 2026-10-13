@@ -29,6 +29,7 @@ pub struct WasmLasOctConverter {
     attributes_handle: JsValue,
     buffer: las::PointData,
     writer: Option<FormatWriter<OpfsWriter>>,
+    format_version: viewer_format::FormatVersion,
     processed_points: u64,
     total_points: u64,
     spatial_bounds: SpatialBounds,
@@ -98,6 +99,7 @@ impl WasmLasOctConverter {
             attributes_handle,
             buffer,
             writer: None,
+            format_version: viewer_format::FormatVersion::V5,
             processed_points: 0,
             total_points,
             spatial_bounds,
@@ -112,6 +114,23 @@ impl WasmLasOctConverter {
             writing_full_resolution: false,
             failed: false,
         })
+    }
+
+    /// Selects an implemented storage revision without changing the default v5 constructor.
+    #[wasm_bindgen(js_name = createForVersion)]
+    pub fn create_for_version(
+        input: Blob,
+        output_handle: JsValue,
+        attributes_handle: JsValue,
+        version: String,
+    ) -> Result<Self, JsValue> {
+        let version: viewer_format::FormatVersion = version.parse().map_err(JsValue::from_str)?;
+        version
+            .ensure_writable()
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let mut converter = Self::new(input, output_handle, attributes_handle)?;
+        converter.format_version = version;
+        Ok(converter)
     }
 
     /// Converts at most one bounded block. Call again until `done` is true.
@@ -485,7 +504,8 @@ impl WasmLasOctConverter {
         let options =
             FormatWriterOptions::new(0.01, 8 * 1024 * 1024).map_err(|error| error.to_string())?;
         self.writer = Some(
-            FormatWriter::new_split(
+            FormatWriter::new_split_for_version(
+                self.format_version,
                 OpfsWriter::new(self.output_handle.clone())
                     .map_err(|error| format!("output file: {error:?}"))?,
                 OpfsWriter::new(self.attributes_handle.clone())

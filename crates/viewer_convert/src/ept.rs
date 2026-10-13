@@ -347,7 +347,8 @@ pub(super) fn convert(
         .file
         .take()
         .expect("temporary companion file exists");
-    let mut writer = FormatWriter::new_split(
+    let mut writer = FormatWriter::new_split_for_version(
+        options.format_version(),
         file,
         attributes_file,
         metadata,
@@ -757,7 +758,7 @@ mod tests {
 
     use las::{Builder, Point, Writer, point::Format};
     use viewer_core::{DatasetSource, HierarchySemantics, NodeId};
-    use viewer_format::FormatReader;
+    use viewer_format::{FormatReader, OctreeReader};
 
     use super::*;
 
@@ -836,12 +837,14 @@ mod tests {
 
         let output = root.join("result.oct");
         let mut progress = Vec::new();
-        let report =
-            crate::convert_file_with_progress(&root, &output, ConvertOptions::default(), |event| {
-                progress.push(event);
-                true
-            })
+        let options = ConvertOptions::default()
+            .with_format_version(viewer_format::FormatVersion::V6_PRE1)
             .unwrap();
+        let report = crate::convert_file_with_progress(&root, &output, options, |event| {
+            progress.push(event);
+            true
+        })
+        .unwrap();
         assert_eq!(report.point_count, 3);
         assert_eq!(report.block_preparation, None);
         assert!(report.output_validation.worker_limit > 0);
@@ -852,7 +855,14 @@ mod tests {
         );
         assert_eq!(progress.last().unwrap().stage, ConversionStage::Complete);
 
-        let mut reader = FormatReader::new(File::open(output).unwrap()).unwrap();
+        let mut reader = FormatReader::new(File::open(&output).unwrap()).unwrap();
+        assert_eq!(
+            reader.format_version(),
+            viewer_format::FormatVersion::V6_PRE1
+        );
+        reader
+            .attach_attributes(File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
         let hierarchy = reader.metadata().hierarchy();
         assert_eq!(reader.format_metadata().visual_scale(), 12.5);
         assert_eq!(hierarchy.semantics(), HierarchySemantics::Additive);
@@ -861,10 +871,17 @@ mod tests {
         assert_eq!(hierarchy.node(NodeId::new(0)).unwrap().point_count(), 1);
         assert_eq!(hierarchy.node(NodeId::new(1)).unwrap().point_count(), 1);
         assert_eq!(hierarchy.node(NodeId::new(2)).unwrap().point_count(), 1);
-        assert_eq!(
-            reader.read_block(BlockId::new(2)).unwrap().points().len(),
-            1
-        );
+        let block = reader.read_block(BlockId::new(2)).unwrap();
+        assert_eq!(block.points().len(), 1);
+        let viewer_core::AttributeValues::U16(intensity) = block.attributes()[0].values() else {
+            panic!("EPT intensity must remain u16");
+        };
+        assert_eq!(intensity, &[0xAB00]);
+        let viewer_core::AttributeValues::U8(classification) = block.attributes()[1].values()
+        else {
+            panic!("EPT classification must remain u8");
+        };
+        assert_eq!(classification, &[2]);
     }
 
     #[test]

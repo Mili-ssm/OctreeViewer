@@ -13,8 +13,17 @@ pub enum FormatError {
     FileTooShort,
     #[error("format header is malformed or has an invalid checksum")]
     InvalidHeader,
+    #[error("provisional format is no longer supported; regenerate from LAS/LAZ/EPT")]
+    ProvisionalFormat,
     #[error("format version {0} is not supported")]
     UnsupportedVersion(u16),
+    #[error("format version {0} is recognized but has no supported decoder")]
+    UnsupportedFormatVersion(crate::FormatVersion),
+    #[error("prepared block version {block} does not match writer version {writer}")]
+    PreparedVersionMismatch {
+        writer: crate::FormatVersion,
+        block: crate::FormatVersion,
+    },
     #[error("format footer is malformed, truncated or inconsistent")]
     InvalidFooter,
     #[error("{0} checksum does not match")]

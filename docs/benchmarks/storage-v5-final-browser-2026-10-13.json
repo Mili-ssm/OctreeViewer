@@ -1,0 +1,49 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "origin": "http://127.0.0.1:8768",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "storageSample": {
+    "type": "probeResult",
+    "passed": true,
+    "geometryHasAttributes": false,
+    "fullHasAttributes": true,
+    "sourcePointCount": "4096",
+    "nodeCount": 1,
+    "schemaColumns": 2,
+    "wrongSidecarRejected": true,
+    "errors": [
+      "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+      "format version v6.2-pre is recognized but has no supported decoder"
+    ]
+  },
+  "opfsConversion": {
+    "points": "111190",
+    "octBytes": 1319961,
+    "attrsBytes": 908746,
+    "primaryMagic": "OCTVFRM1",
+    "attributesMagic": "OCTVFRM1",
+    "timings": {
+      "planningMs": 74,
+      "writingMs": 103,
+      "totalMs": 212
+    }
+  },
+  "convertedPair": {
+    "type": "probeResult",
+    "passed": true,
+    "geometryHasAttributes": false,
+    "fullHasAttributes": true,
+    "sourcePointCount": "111190",
+    "nodeCount": 9,
+    "schemaColumns": 8,
+    "wrongSidecarRejected": true,
+    "errors": [
+      "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+      "format version v6.2-pre is recognized but has no supported decoder"
+    ]
+  },
+  "limitation": "WebGPU surface adapter unavailable in MCP; metadata/Blob/OPFS checks do not certify rendering."
+}

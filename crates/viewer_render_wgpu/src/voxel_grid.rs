@@ -4,7 +4,7 @@ use viewer_core::{NodeId, PointBlock, ResidentBlockSource, SpatialBounds, Spatia
 
 use crate::{InstanceRaw, RenderScene, attributes::ScalarAttribute};
 
-/// A global dyadic cell identity; storage nodes never determine rendered cell size.
+/// A global dyadic cell identity; source representatives can bound its finest resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct VoxelKey {
     depth: u8,
@@ -48,6 +48,7 @@ struct AdaptiveVoxelGrid {
     origin: [f64; 3],
     side: f64,
     target_pixels: f64,
+    max_depth: u8,
     projected_edge_cache_limit: usize,
     projected_edges: BTreeMap<VoxelKey, f64>,
     projected_edge_order: VecDeque<VoxelKey>,
@@ -121,7 +122,7 @@ impl AdaptiveVoxelGrid {
                 return Ok(None);
             }
             // Beyond 24 levels f32 cannot reliably distinguish adjacent local cell faces.
-            if edge <= self.target_pixels || key.depth >= 24 {
+            if edge <= self.target_pixels || key.depth >= self.max_depth {
                 self.last_resolved_cell = Some((key, true));
                 return Ok(Some(key));
             }
@@ -267,6 +268,7 @@ impl VoxelSceneBuilder {
                 origin: std::array::from_fn(|axis| root.min()[axis] - coordinate_origin[axis]),
                 side: bounds_side(root).max(1.0e-5),
                 target_pixels,
+                max_depth: 24,
                 projected_edge_cache_limit: cache_limit,
                 projected_edges: BTreeMap::new(),
                 projected_edge_order: VecDeque::new(),
@@ -463,6 +465,24 @@ pub fn build_voxel_scene_with_limits(
         target_pixels,
         limits,
     );
+    // Replacement parents contain one representative per 8x8x8 cell, not dense
+    // geometry. Keep a common dyadic floor until their children replace them;
+    // a common floor also prevents overlaps at boundaries of mixed source cuts.
+    if hierarchy.semantics() == viewer_core::HierarchySemantics::Replacement {
+        for node_id in node_ids {
+            if let Some(node) = hierarchy.node(*node_id)
+                && !hierarchy.is_leaf(*node_id)
+                && !node.blocks().is_empty()
+            {
+                let source_edge = bounds_side(node.bounds()) / 8.0;
+                let depth = (builder.grid.side / source_edge)
+                    .log2()
+                    .floor()
+                    .clamp(0.0, 24.0) as u8;
+                builder.grid.max_depth = builder.grid.max_depth.min(depth);
+            }
+        }
+    }
     for node_id in node_ids {
         let Some(node) = hierarchy.node(*node_id) else {
             continue;
@@ -637,6 +657,7 @@ mod tests {
             origin: [0.0; 3],
             side: 1.0,
             target_pixels: 4.0,
+            max_depth: 24,
             projected_edge_cache_limit: 0,
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
@@ -655,6 +676,7 @@ mod tests {
             origin: [0.0; 3],
             side: 1.0,
             target_pixels: 4.0,
+            max_depth: 24,
             projected_edge_cache_limit: MAX_PROJECTED_EDGE_CACHE_ENTRIES,
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
@@ -682,6 +704,7 @@ mod tests {
             origin: [0.0; 3],
             side: 1.0,
             target_pixels: 4.0,
+            max_depth: 24,
             projected_edge_cache_limit: 0,
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),

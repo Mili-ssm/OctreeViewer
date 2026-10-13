@@ -22,6 +22,7 @@ pub struct OrbitCamera {
     yaw: f64,
     pitch: f64,
     radius: f64,
+    scene_center: DVec3,
     fitted: bool,
 }
 
@@ -33,6 +34,7 @@ impl Default for OrbitCamera {
             yaw: 0.0,
             pitch: 0.45,
             radius: 1.0,
+            scene_center: DVec3::ZERO,
             fitted: false,
         }
     }
@@ -241,6 +243,7 @@ impl OrbitCamera {
 
         self.target = target;
         self.radius = radius;
+        self.scene_center = target;
         self.distance = distance;
         self.yaw = yaw;
         self.pitch = pitch;
@@ -311,10 +314,7 @@ impl OrbitCamera {
             self.yaw.cos() * self.pitch.cos(),
             self.pitch.sin(),
         ) * self.distance;
-        let near = (self.distance - self.radius * 1.2)
-            .max(self.radius * 0.001)
-            .max(0.001);
-        let far = (self.distance + self.radius * 2.0).max(near * 2.0);
+        let (near, far) = self.clip_distances();
         let view = DMat4::look_at_rh(offset, DVec3::ZERO, DVec3::Z);
         let projection = DMat4::perspective_rh(VERTICAL_FOV, aspect, near, far);
         let matrix = (projection * view).as_mat4().to_cols_array_2d();
@@ -447,10 +447,13 @@ impl OrbitCamera {
     }
 
     fn clip_distances(&self) -> (f64, f64) {
-        let near = (self.distance - self.radius * 1.2)
+        // Panning/recentering moves the orbit pivot, not the dataset bounds.
+        let (position, forward, _, _) = self.basis();
+        let center_depth = (self.scene_center - position).dot(forward);
+        let near = (center_depth - self.radius * 1.2)
             .max(self.radius * 0.001)
             .max(0.001);
-        let far = (self.distance + self.radius * 2.0).max(near * 2.0);
+        let far = (center_depth + self.radius * 2.0).max(near * 2.0);
         (near, far)
     }
 
@@ -516,6 +519,30 @@ mod tests {
 
     use super::OrbitCamera;
     use crate::SceneBounds;
+
+    #[test]
+    fn clipping_tracks_dataset_after_translation_rotation_and_bird_view() {
+        let mut camera = OrbitCamera::default();
+        let viewport = [800, 600];
+        assert!(camera.fit(bounds(), viewport));
+        assert!(camera.translate([0.0, 0.0, 100.0]));
+        for bird in [false, true] {
+            if bird {
+                camera.set_bird_view();
+            } else {
+                camera.orbit(0.25, 0.1);
+            }
+            let frame = camera.frame(viewport).unwrap();
+            let matrix = Mat4::from_cols_array_2d(&frame.view_projection);
+            let center = (camera.scene_center - camera.target).as_vec3();
+            let clip = matrix * center.extend(1.0);
+            assert!(clip.w > 0.0);
+            assert!(
+                clip.z >= 0.0 && clip.z <= clip.w,
+                "dataset clipped: {clip:?}"
+            );
+        }
+    }
 
     #[test]
     fn camera_pose_round_trips_and_rejects_invalid_values_without_mutation() {

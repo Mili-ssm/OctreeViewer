@@ -1,5 +1,9 @@
 # Voxel cell reuse benchmark
 
+Registro cronológico de contratos y mediciones. Las menciones a trabajo «pendiente» son el estado
+en la fecha de esa sección, no una lista adicional de tareas. El estado activo y los criterios de
+cierre actuales se mantienen en el [README del proyecto](../README.md).
+
 ## Scope and reproduction
 
 The builder keeps one fixed-size hint: the most recently resolved terminal cell and its

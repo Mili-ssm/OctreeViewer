@@ -1,9 +1,11 @@
 # Registro técnico anterior a v5
 
 Snapshot del README antes de separar coordenadas y atributos (10-10-2026). Conserva las
-mediciones, decisiones y contraejemplos históricos. Sus estados y tareas pueden estar superados;
-el seguimiento vigente está únicamente en el [README](../README.md). Las cifras de formatos
-anteriores no describen automáticamente v5 y los archivos v1–v4 requieren reconversión.
+mediciones, decisiones y contraejemplos históricos. Los estados, casillas `[ ]` y tareas describen
+ese snapshot; no son tareas activas. El seguimiento vigente está únicamente en el
+[README](../README.md). Las cifras de formatos anteriores no describen automáticamente v5 y los
+archivos v1–v4 requieren reconversión. Algunos artefactos generados a los que se enlazaba no forman
+parte del repositorio y pueden no existir en el checkout actual.
 
 # Octree Viewer
 
@@ -182,13 +184,13 @@ fuente, voxeles, rango proyectado, píxeles con contenido y adapter.
 
 | Nube | Objetivo | Arista proyectada (px) | Puntos fuente cargados | Voxeles | Píxeles con contenido | Captura |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Albuera UAV | 2 px | 1,00–2,00 | 17.219.840 | 58.398 | 39.312 | [PNG](../artifacts/sensoforest/albuera-640/voxel-2px.png) · [JSON](../artifacts/sensoforest/albuera-640/voxel-2px.json) |
-| Albuera UAV | 4 px | 1,99–3,98 | 2.764.934 | 13.936 | 40.204 | [PNG](../artifacts/sensoforest/albuera-640/voxel-4px.png) · [JSON](../artifacts/sensoforest/albuera-640/voxel-4px.json) |
-| Albuera UAV | 8 px | 3,97–7,93 | 259.717 | 2.953 | 42.132 | [PNG](../artifacts/sensoforest/albuera-640/voxel-8px.png) · [JSON](../artifacts/sensoforest/albuera-640/voxel-8px.json) |
-| Albuera UAV | 16 px | 7,85–15,71 | 94.917 | 621 | 45.994 | [PNG](../artifacts/sensoforest/albuera-640/voxel-16px.png) · [JSON](../artifacts/sensoforest/albuera-640/voxel-16px.json) |
-| Majadas TLS | 4 px | 1,99–3,98 | 2.889.518 | 6.387 | 20.490 | [PNG](../artifacts/sensoforest/majadas-640/voxel-4px.png) · [JSON](../artifacts/sensoforest/majadas-640/voxel-4px.json) |
-| Majadas TLS | 8 px | 3,96–7,93 | 1.197.878 | 3.206 | 30.633 | [PNG](../artifacts/sensoforest/majadas-640/voxel-8px.png) · [JSON](../artifacts/sensoforest/majadas-640/voxel-8px.json) |
-| Majadas TLS | 16 px | 7,85–15,71 | 28.075 | 1.505 | 42.967 | [PNG](../artifacts/sensoforest/majadas-640/voxel-16px.png) · [JSON](../artifacts/sensoforest/majadas-640/voxel-16px.json) |
+| Albuera UAV | 2 px | 1,00–2,00 | 17.219.840 | 58.398 | 39.312 | `artifacts/sensoforest/albuera-640/voxel-2px.png` · `artifacts/sensoforest/albuera-640/voxel-2px.json` |
+| Albuera UAV | 4 px | 1,99–3,98 | 2.764.934 | 13.936 | 40.204 | `artifacts/sensoforest/albuera-640/voxel-4px.png` · `artifacts/sensoforest/albuera-640/voxel-4px.json` |
+| Albuera UAV | 8 px | 3,97–7,93 | 259.717 | 2.953 | 42.132 | `artifacts/sensoforest/albuera-640/voxel-8px.png` · `artifacts/sensoforest/albuera-640/voxel-8px.json` |
+| Albuera UAV | 16 px | 7,85–15,71 | 94.917 | 621 | 45.994 | `artifacts/sensoforest/albuera-640/voxel-16px.png` · `artifacts/sensoforest/albuera-640/voxel-16px.json` |
+| Majadas TLS | 4 px | 1,99–3,98 | 2.889.518 | 6.387 | 20.490 | `artifacts/sensoforest/majadas-640/voxel-4px.png` · `artifacts/sensoforest/majadas-640/voxel-4px.json` |
+| Majadas TLS | 8 px | 3,96–7,93 | 1.197.878 | 3.206 | 30.633 | `artifacts/sensoforest/majadas-640/voxel-8px.png` · `artifacts/sensoforest/majadas-640/voxel-8px.json` |
+| Majadas TLS | 16 px | 7,85–15,71 | 28.075 | 1.505 | 42.967 | `artifacts/sensoforest/majadas-640/voxel-16px.png` · `artifacts/sensoforest/majadas-640/voxel-16px.json` |
 
 Las siete imágenes tienen contenido y ninguna arista supera el objetivo. Los renders anteriores de
 4 px a 1280×960 superaban el antiguo límite de cuatro millones de puntos fuente. Ese límite se ha
@@ -216,10 +218,10 @@ separado. Los JSON guardan conteos, encuadre y adapter:
 
 | Objetivo | Puntos fuente | Bloques | Voxeles resultantes | RSS pico | Tiempo | Captura |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 4 px | 2.764.934 | 184 | 13.936 | 249,8 MiB* | 1,2 s | [PNG](../artifacts/sensoforest/albuera-streaming-640/voxel-4px.png) · [JSON](../artifacts/sensoforest/albuera-streaming-640/voxel-4px.json) |
-| 2 px | 17.219.840 | 654 | 58.398 | 249,8 MiB* | 6,7 s | [PNG](../artifacts/sensoforest/albuera-streaming-640/voxel-2px.png) · [JSON](../artifacts/sensoforest/albuera-streaming-640/voxel-2px.json) |
-| 1 px | 251.364.831 | 2.904 | 248.005 | 256,8 MiB | 181,2 s | [PNG](../artifacts/sensoforest/albuera-streaming-640/voxel-1px.png) · [JSON](../artifacts/sensoforest/albuera-streaming-640/voxel-1px.json) |
-| 0,5 px | 508.231.935 | 6.950 | 1.076.247 | 406,7 MiB | 252,8 s | [PNG](../artifacts/sensoforest/albuera-streaming-640/voxel-0.5px.png) · [JSON](../artifacts/sensoforest/albuera-streaming-640/voxel-0.5px.json) |
+| 4 px | 2.764.934 | 184 | 13.936 | 249,8 MiB* | 1,2 s | `artifacts/sensoforest/albuera-streaming-640/voxel-4px.png` · `artifacts/sensoforest/albuera-streaming-640/voxel-4px.json` |
+| 2 px | 17.219.840 | 654 | 58.398 | 249,8 MiB* | 6,7 s | `artifacts/sensoforest/albuera-streaming-640/voxel-2px.png` · `artifacts/sensoforest/albuera-streaming-640/voxel-2px.json` |
+| 1 px | 251.364.831 | 2.904 | 248.005 | 256,8 MiB | 181,2 s | `artifacts/sensoforest/albuera-streaming-640/voxel-1px.png` · `artifacts/sensoforest/albuera-streaming-640/voxel-1px.json` |
+| 0,5 px | 508.231.935 | 6.950 | 1.076.247 | 406,7 MiB | 252,8 s | `artifacts/sensoforest/albuera-streaming-640/voxel-0.5px.png` · `artifacts/sensoforest/albuera-streaming-640/voxel-0.5px.json` |
 
 *El proceso conjunto de 4/2 px alcanzó 255.780 KiB. Las cuatro imágenes se generaron y leyeron de
 GPU; ninguna superó su tamaño objetivo. El mayor RSS medido, 416.452 KiB (≈0,40 GiB), está muy por
@@ -1015,15 +1017,15 @@ La escala proyectada y la ausencia de solapamiento aún necesitan más validaci�
 
    | Objetivo | Aristas proyectadas (px) | Puntos del corte | Voxeles dibujados | Fuera del objetivo | Captura |
    | ---: | ---: | ---: | ---: | ---: | --- |
-   | 1 px | 0,52–0,84 | 40.256 | 40.256 | 0 | [captura](../artifacts/voxel-lod-previews/bunny-fixed-1px.png) |
-   | 2 px | 1,04–1,68 | 40.256 | 40.256 | 0 | [captura](../artifacts/voxel-lod-previews/bunny-fixed-2px.png) |
-   | 4 px | 2,08–3,36 | 40.256 | 36.357 | 0 | [captura](../artifacts/voxel-lod-previews/bunny-fixed-4px.png) |
-   | 8 px | 4,16–6,73 | 22.161 | 16.182 | 0 | [captura](../artifacts/voxel-lod-previews/bunny-fixed-8px.png) |
-   | 16 px | 8,35–13,52 | 8.258 | 5.073 | 0 | [captura](../artifacts/voxel-lod-previews/bunny-fixed-16px.png) |
+   | 1 px | 0,52–0,84 | 40.256 | 40.256 | 0 | `artifacts/voxel-lod-previews/bunny-fixed-1px.png` |
+   | 2 px | 1,04–1,68 | 40.256 | 40.256 | 0 | `artifacts/voxel-lod-previews/bunny-fixed-2px.png` |
+   | 4 px | 2,08–3,36 | 40.256 | 36.357 | 0 | `artifacts/voxel-lod-previews/bunny-fixed-4px.png` |
+   | 8 px | 4,16–6,73 | 22.161 | 16.182 | 0 | `artifacts/voxel-lod-previews/bunny-fixed-8px.png` |
+   | 16 px | 8,35–13,52 | 8.258 | 5.073 | 0 | `artifacts/voxel-lod-previews/bunny-fixed-16px.png` |
 
    Se repitió 4 px con el `.oct` original de un único nodo: los mismos 36.357 voxeles,
    sin reconversión. Zoom y resize mantuvieron el máximo en 4,00 y 3,99 px respectivamente
-   ([diagnósticos](../artifacts/voxel-lod-previews/bunny-fixed-navigation-stats.jsonl)).
+   (`artifacts/voxel-lod-previews/bunny-fixed-navigation-stats.jsonl`).
 
    Pruebas de regresión: hojas de profundidades distintas con el mismo tamaño proyectado, granularidad
    más fina que nodo/8, celdas mayores lejos, ausencia de intersecciones de interiores, deduplicación
@@ -1247,11 +1249,11 @@ del fondo en más de un nivel de 8 bits, no un conteo de voxeles visibles.
 
 | Objetivo | Aristas proyectadas (px) | Voxeles | Píxeles con contenido | Imagen |
 | ---: | ---: | ---: | ---: | --- |
-| 1 px | 0,52–0,75 | 40.256 | 23.979 | [PNG](../artifacts/voxel-lod-previews/headless/voxel-1px.png) |
-| 2 px | 1,04–1,49 | 40.256 | 82.339 | [PNG](../artifacts/voxel-lod-previews/headless/voxel-2px.png) |
-| 4 px | 2,09–2,99 | 36.357 | 185.299 | [PNG](../artifacts/voxel-lod-previews/headless/voxel-4px.png) |
-| 8 px | 4,18–5,99 | 16.182 | 217.909 | [PNG](../artifacts/voxel-lod-previews/headless/voxel-8px.png) |
-| 16 px | 8,37–12,08 | 5.073 | 236.206 | [PNG](../artifacts/voxel-lod-previews/headless/voxel-16px.png) |
+| 1 px | 0,52–0,75 | 40.256 | 23.979 | `artifacts/voxel-lod-previews/headless/voxel-1px.png` |
+| 2 px | 1,04–1,49 | 40.256 | 82.339 | `artifacts/voxel-lod-previews/headless/voxel-2px.png` |
+| 4 px | 2,09–2,99 | 36.357 | 185.299 | `artifacts/voxel-lod-previews/headless/voxel-4px.png` |
+| 8 px | 4,18–5,99 | 16.182 | 217.909 | `artifacts/voxel-lod-previews/headless/voxel-8px.png` |
+| 16 px | 8,37–12,08 | 5.073 | 236.206 | `artifacts/voxel-lod-previews/headless/voxel-16px.png` |
 
 Las cinco imágenes tienen contenido y cero voxeles sobre el objetivo. Revisadas visualmente a
 1, 4 y 16 px. Las divisiones 2×2×2 producen escalones de tamaño: el objetivo es un máximo de arista,
