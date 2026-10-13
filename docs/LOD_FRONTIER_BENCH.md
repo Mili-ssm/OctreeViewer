@@ -199,3 +199,18 @@ cargo run --profile perf -p viewer_render_wgpu --example lod_selection_bench --o
 
 Artefactos locales excluidos: `artifacts/lod-priority/`, binarios congelados `before-*`/`after-*`,
 `run_pairs.py`, logs de tres pares y `summary.json`; `first-trial/` conserva la regresión inicial.
+
+### Adopción en WASM
+
+Las dos selecciones de cámara en `LodDataset` usan el proyector estable y 4 MiB de prioridades.
+La cámara/viewport son inmutables durante la llamada síncrona; los consumidores con callbacks
+arbitrarios conservan `select_lod`. El fallback del selector mantiene la funcionalidad al agotar
+la memoria de prioridades. Se repitieron 264 tests (tres ignorados), Clippy nativo/WASM y build
+release WASM; paquete local regenerado.
+
+Playwright MCP, Chrome 155.0.8059.39 con SwiftShader: pasan `lod-budget-fallback`, `lod-session`,
+`lod-attributes`, `lod-reuse`, sin errores JS no capturados. El probe de atributos también pasa
+con `artifacts/dispatch-refactor/after-run-1/bunny.oct` y su sidecar, en RGB/intensidad/clasificación/
+`attribute:0:0`: cobertura completa de 35 bloques, 40.256 puntos fuente, 21.969 vóxeles, cero
+sobredimensionados, geometría conservada. Estas pruebas funcionales no resuelven la presentación
+visual pendiente en Chrome ni demuestran mejoras de FPS o memoria total.

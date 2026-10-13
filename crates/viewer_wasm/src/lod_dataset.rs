@@ -2,8 +2,9 @@ use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 use viewer_core::{
     BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
-    DatasetMetadata, DecodedBlockCache, LodSelectionConfig, LodSelectionError, LodTransitionPlan,
-    LodTransitionPlanner, NodeId, PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
+    DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelectionConfig,
+    LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId, PointBlock, SpatialBounds,
+    SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{
     GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
@@ -312,13 +313,15 @@ impl LodDataset {
         let selection = self
             .metadata
             .hierarchy()
-            .select_lod(&frustum, config, |node| {
+            .select_lod_stable_projector(&frustum, config, DEFAULT_LOD_PRIORITY_BYTES, |node| {
+                // Camera and viewport remain immutable throughout this synchronous selection.
                 renderer.projected_error_pixels(
                     node.bounds(),
                     bounds_side(node.bounds()) / 8.0,
                     self.metadata.coordinate_frame().origin(),
                 )
-            });
+            })
+            .map(|(selection, _priority_stats)| selection);
         self.refinement_work.selection_ms += selection_started.elapsed_ms();
         let target = match selection {
             Ok(target) => target,
@@ -518,13 +521,15 @@ impl LodDataset {
         let selection = self
             .metadata
             .hierarchy()
-            .select_lod(&frustum, config, |node| {
+            .select_lod_stable_projector(&frustum, config, DEFAULT_LOD_PRIORITY_BYTES, |node| {
+                // Camera and viewport remain immutable throughout this synchronous selection.
                 renderer.projected_error_pixels(
                     node.bounds(),
                     bounds_side(node.bounds()) / 8.0,
                     self.metadata.coordinate_frame().origin(),
                 )
-            });
+            })
+            .map(|(selection, _priority_stats)| selection);
         self.refinement_work.selection_ms += selection_started.elapsed_ms();
         let target = selection?;
         if !target.budget_limited().is_empty() {

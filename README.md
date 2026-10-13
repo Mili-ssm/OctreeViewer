@@ -982,8 +982,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     ejecutaron/registraron: la tabla es exclusivamente nativa. Se reutiliza la suite anterior,
     porque este diagnóstico no cambia lógica de producción.
 
-13. [ ] **Prioridad incremental LOD para proyectores estables.** Núcleo implementado y medido;
-    integración en cámara/navegador pendiente. [Evidencia](docs/LOD_FRONTIER_BENCH.md#prioridad-incremental-opt-in--13-10-2026).
+13. [x] **Prioridad incremental LOD para proyectores estables.** Núcleo implementado, medido
+    e integrado en las dos selecciones de cámara WASM con límite de prioridades de 4 MiB. [Evidencia](docs/LOD_FRONTIER_BENCH.md#prioridad-incremental-opt-in--13-10-2026).
     264 tests pasan, tres ignorados; fmt, Clippy nativo/WASM y check-web pasan.
      Conservar `select_lod` y sus
     callbacks con estado sin cambios. Añadir `select_lod_stable_projector` como opt-in: error estable
@@ -997,7 +997,12 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     Cierre: resultados completos/errores equivalentes con presupuestos, frusta, empates e infinito,
     casos de liberación y errores anticipados; matriz de 86 casos + cámara real, tres pares alternados
     y capacidad de prioridades registrada. Adoptar en la cámara solo tras medir y validar estabilidad,
-    repetir navegador, README y commits. Los splices/búsquedas y ciertos reintentos siguen siendo
+    repetir navegador, README y commits (completado). Playwright MCP Chrome 155/SwiftShader pasa
+    sesiones, atributos, reutilización y fallback real por presupuesto. Dataset Bunny ramificado:
+    35 bloques, 40.256 puntos fuente y 21.969 vóxeles, cobertura completa, sin sobredimensionados,
+    geometría conservada en RGB/intensidad/clasificación/columna. Sin errores JS no capturados;
+    son pruebas funcionales, no evidencia de presentación visual ni FPS.
+    Los splices/búsquedas y ciertos reintentos siguen siendo
     lineales: no prometer complejidad global logarítmica ni mejoras de FPS.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
