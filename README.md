@@ -449,6 +449,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   test GPU verifica argumentos completos. Capturas Chrome/SwiftShader muestran canvas blanco:
   validación visual Chrome pendiente. 85 tests renderer/WASM, formato y Clippy pasan.
   [Causa y validación](docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
+- [x] Añadir diagnóstico independiente de presentación y picking: lectura GPU roja, muestra RGB,
+  frames directo/indirecto, hit central en coordenadas del dataset, miss fuera del viewport y
+  recentrado. Firefox muestra ambos canvas; Chrome/AMD lee y selecciona correctamente pero
+  tampoco presenta el clear WebGPU sin Rust. Mantener la salida visual Chrome pendiente;
+  no atribuirla a HZB. [Evidencia](docs/WEB_PERFORMANCE_BENCH.md#independent-presentation-and-picking-diagnostic--13-10-2026).
 - [x] Repetir observación acotada a 1 GiB con export fresco y auditar el contrato incremental:
   cámara confirma 219 cargas nuevas en 600 s; quedan 207 pendientes, sin evicciones ni pausa.
   Medición de prefijos en Majadas/Albuera; ampliar corpus y medir pico conjunto siguen pendientes;
@@ -627,9 +632,11 @@ El seguimiento activo se mantiene en este README; no se crean Issues/PRs por def
 
 - [ ] **Navegador:** apertura gris, pareja y componentes comprobados en Firefox; paquete `file://`
   y teclado del selector también. Chrome 155 con SwiftShader pasa muestra, clasificación, cámara
-  y viewport móvil a nivel funcional. Falta salida visual Chrome, matriz grande/GPU física,
+  y viewport móvil a nivel funcional. Picking WASM pequeño pasa en Chrome/Firefox; interacción
+  CSS/API y recuperación de GPU siguen pendientes. Clear WebGPU sin Rust también queda invisible
+  en Chrome/AMD pese a readback rojo: falta salida visual Chrome, matriz grande/GPU física,
   resto de teclado, corrupción de payloads,
-  OPFS/cuota, cancelación durante lectura, picking y pérdida real de GPU. Los tests Rust/JS y renders nativos no sustituyen esa interacción.
+  OPFS/cuota, cancelación durante lectura, interacción/latencia de picking y recuperación tras pérdida de GPU. Los tests Rust/JS y renders nativos no sustituyen esa interacción.
 - [ ] **Escala:** medir hasta una fuente mayor de 500 GB decimales, con índice, spools, RSS, recursos
   GPU, bytes leídos, primera vista y navegación separados. Fijar mínimos oficiales RAM/GPU/SO.
 - [ ] **Conversión:** matriz de fuentes <10 GB con al menos tres repeticiones y caché declarada;

@@ -969,3 +969,44 @@ sample with HZB active, zero pending blocks and zero console errors. Its final c
 shows the gray voxel grid (`target/cache-pressure-probe/sample-hzb-after/final.png`), unlike
 the unresolved Chrome captures. Current post-fix WASM SHA-256:
 `04dd3438249a76f7071822ccbae843b4823ab9928255e508e41a9d86203057f3`.
+
+
+### Independent presentation and picking diagnostic — 13-10-2026
+
+New served fixture: `examples/web-host/tests/presentation.html`, backed by two dedicated workers
+in `presentation.browser.mjs`. It separates an independent raw WebGPU red clear and one-pixel
+readback from the WASM RGB sample. The latter completes 4 px, renders direct/indirect frames,
+checks a center pick against known dataset coordinates, rejects an out-of-viewport pick and
+renders after recentering. A 30-second deadline records stalled workers. The clear worker records
+uncaptured errors and device loss. These are diagnostic events, not a test of host recovery.
+
+Playwright MCP, Chrome 155, viewport 1280×900, launch arguments:
+`--enable-gpu --enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan --disable-vulkan-surface`.
+The raw adapter reports AMD `rdna-3`; red RGBA readback is `[255,0,0,255]`. The WASM sample reports
+4,096 voxels and center hit index 2,080, voxel center `[31.75390625,31.75390625,1.79296875]`, size
+0.507811963558197. The out-of-bounds miss and recentered frame pass. Both canvas regions remain
+at the CSS gray background in `target/presentation-chrome.png`, despite zero page errors.
+An earlier SwiftShader launch exposed `device.lost`, reason `unknown`, message
+`A valid external Instance reference no longer exists.` via a temporary request-device hook.
+The hooks were diagnostic only and are not added to production code. A headed launch could not
+start because the Playwright service has no X server. These failures do not establish a visor
+shader/HZB bug: an independent clear with no Rust fails presentation too.
+
+Firefox 157.0.1, fresh WebGPU-enabled profile, same fixture and viewport, driven by BiDi:
+BGRA red readback `[0,0,255,255]`, same 4,096 voxels and exact center hit. Screenshot
+`target/presentation-firefox/final.png` visibly contains the red clear and colored voxel scene.
+The fixture validates direct WASM picking/readback and recentering on this small sample;
+CSS-to-framebuffer interaction, host API/event handling, large-cloud latency and GPU recovery
+remain pending. Chrome visual validation stays open; no render fallback or shader changes were
+introduced based on the environment-specific symptom.
+
+Chromium documents `--enable-gpu` for headless hardware use and notes Linux backend/display
+constraints: [headless GPU guidance](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/gpu/using-gpu-hardware-in-headless-chrome.md).
+The launch options follow [Chrome's WebGPU headless guidance](https://developer.chrome.com/blog/supercharge-web-ai-testing).
+Those options are not a guarantee that worker canvases present in this environment.
+
+Validation: both diagnostic result branches pass again after adding exact center-coordinate
+assertions. Chrome reports HZB active before picking; the recentered frame rebuilds the view.
+Playwright also checks the fixture at 390×844 with no horizontal overflow. There are zero page
+errors in the fixture. All 26 existing Node tests pass, worker syntax and local Markdown targets
+check successfully. No Rust production code changed, so the prior Rust evidence was not rerun.

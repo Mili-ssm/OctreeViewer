@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebGPU presentation diagnostic</title>
+<style>
+body { color: #eee; background: #17212b; font: 16px system-ui; margin: 24px; }
+main { display: flex; flex-wrap: wrap; gap: 24px; }
+section { width: min(480px, 100%); }
+canvas { display: block; width: 100%; aspect-ratio: 4 / 3; background: #555; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>WebGPU presentation diagnostic</h1>
+<p>The left canvas must be solid red; the right must show colored voxels. GPU readback and
+presented-frame counters do not establish that these images are visible. Inspect both canvases.</p>
+<main>
+<section><h2>Independent WebGPU clear</h2><canvas id="clear" width="480" height="360"></canvas><pre id="clear-result">Running…</pre></section>
+<section><h2>WASM sample and picking</h2><canvas id="viewer" width="480" height="360"></canvas><pre id="viewer-result">Running…</pre></section>
+</main>
+<script type="module">
+window.presentationResults = {};
+for (const mode of ["clear", "viewer"]) {
+    const canvas = document.getElementById(mode);
+    const worker = new Worker(new URL("./presentation.browser.mjs", import.meta.url), { type: "module" });
+    const events = [];
+    const output = document.getElementById(`${mode}-result`);
+    const record = data => {
+        events.push(data);
+        window.presentationResults[mode] = events;
+        output.textContent = JSON.stringify(events, null, 2);
+    };
+    const timer = setTimeout(() => {
+        record({ type: "timeout", message: "No result within 30 seconds" });
+        worker.terminate();
+    }, 30_000);
+    worker.onmessage = ({ data }) => {
+        record(data);
+        if (data.type === "result" || data.type === "failure") clearTimeout(timer);
+    };
+    worker.onerror = event => {
+        clearTimeout(timer);
+        record({ type: "failure", message: event.message });
+    };
+    const offscreen = canvas.transferControlToOffscreen();
+    worker.postMessage({ mode, canvas: offscreen }, [offscreen]);
+}
+</script>
+</html>

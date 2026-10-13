@@ -105,6 +105,15 @@ The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has cu
 XYZ/RGB/typed-attribute and visual evidence. Chrome 155 passes the small functional flows;
 current headless captures still require investigation. Older Bunny/Outer Banks Chrome captures
 do not certify the current build. See [web measurements](../../docs/WEB_PERFORMANCE_BENCH.md).
+For a small independent presentation/picking diagnostic, serve the repository and open
+[`tests/presentation.html`](tests/presentation.html). The left canvas must be red and the right
+must show the RGB sample. `window.presentationResults` records a one-pixel GPU readback,
+direct/indirect frames, a center pick in dataset coordinates, an out-of-bounds miss and recentering.
+Readback/counters alone do not certify presentation: inspect or capture both canvases. The clear
+worker records device-loss/uncaptured errors; this does not test the host's device-loss recovery.
+Both workers time out after 30 seconds if they produce no result. See the
+[observed Chrome/Firefox split](../../docs/WEB_PERFORMANCE_BENCH.md#independent-presentation-and-picking-diagnostic--13-10-2026).
+
 The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
 `WasmVoxelViewer.createOffscreen`. Select a project-format v5 file to call `openFormatDataset` and
@@ -154,7 +163,9 @@ the file does not provide one. The canvas is transferred to a worker and cannot 
 Fatal frame errors, worker errors and message decoding failures reject outstanding API requests and
 terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
 replace the transferred canvas and create a new viewer; automatic device recreation is not available.
-The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run.
+The small direct-WASM pick/recenter path passes in Chrome and Firefox via the presentation
+diagnostic above. Browser pick latency, CSS/API interaction and the host device-loss path still
+need validation.
 Chrome 155 is now available and the small software-WebGPU flows pass, but pick/device loss remain
 unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
