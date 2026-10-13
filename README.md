@@ -784,7 +784,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
      antes de encajonar variantes grandes de `ViewerData` o estados del converter. Un enum ocupa
      espacio suficiente para su mayor variante; añadir variantes no reduce memoria automáticamente.
      `Box<[BlockId]>` ya es adecuado para IDs finalizados. No encajonar payloads GPU ni puntos
-     individuales: la indirección y las asignaciones perjudicarían su localidad.
+     individuales: la indirección y las asignaciones perjudicarían su localidad. Avance fase 12:
+     diagnóstico nativo reproducible para cinco tipos públicos; encajonar el objeto entero añade
+     8 B al modelo objeto+handle en x86_64. No extrapolar a variantes/colecciones ni a WASM.
    - [ ] **`Rc` frente a `Arc`.** Mantener `Arc` en metadatos y lectores compartidos por workers
      nativos. Evaluar `Rc<RefCell<BrowserReadStats>>` solo para contadores confinados al worker WASM,
      con medición de instrumentación y comprobación de préstamos/reentrancia; no sustituir todos
@@ -955,6 +957,30 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     check-web, sintaxis del probe y diff correctos. WASM/bindings y paquete local regenerados.
     No se midieron FPS/RSS ni se validó GPU física/Firefox o fallos de subida GPU/memoria estimada.
     [Método y reproducción](docs/WEB_PERFORMANCE_BENCH.md#resident-construction-budget-fallback--13-10-2026).
+
+12. [x] **Diagnóstico de layouts públicos antes de añadir `Box`.**
+    [`layout_report`](crates/viewer_wasm/examples/layout_report.rs) mide tamaños/alineación de tipos
+    reales, handle `Box<T>` y suma handle+objeto. Reproducir:
+    `cargo run -p viewer_wasm --profile fast --offline --example layout_report`.
+    rustc 1.99.0 (b940084d7), x86_64 de 64 bits:
+
+    | Tipo | Inline (B) | Alineación (B) | Handle Box (B) | Objeto + handle (B) |
+    | --- | ---: | ---: | ---: | ---: |
+    | `ViewerController` | 144 | 8 | 8 | 152 |
+    | `LodDataset` | 752 | 8 | 8 | 760 |
+    | `FormatReader<Cursor<Vec<u8>>>` | 184 | 8 | 8 | 192 |
+    | `RenderScene` | 48 | 8 | 8 | 56 |
+    | `InstanceRaw` | 40 | 4 | 8 | 48 |
+
+    La suma es un modelo inline+payload, excluye buffers propios y overhead/padding del allocator;
+    el ejemplo no asigna cajas ni mide RSS, accesos o throughput. No demuestra un beneficio para
+    encajonar objetos enteros, y no se altera su propiedad. Encajonar solo variantes grandes en
+    arrays o estructuras con otra distribución sigue requiriendo medir el consumidor concreto.
+    El layout Rust de estos tipos no constituye una ABI garantizada; `InstanceRaw` conserva su
+    layout GPU explícito. Validación: ejecución nativa, fmt, Clippy de `viewer_wasm --all-targets`,
+    check del ejemplo para WASM y diff pasan. El ejemplo WASM compila, pero sus tamaños no se
+    ejecutaron/registraron: la tabla es exclusivamente nativa. Se reutiliza la suite anterior,
+    porque este diagnóstico no cambia lógica de producción.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
