@@ -638,14 +638,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    GPU solicitados estables en **15.051.868 B**. Comparación indicativa, sin FPS ni memoria
    residente. La carga inicial prueba el camino progresivo sin residencia. Una regresión con
    planes Replacement/Additive verifica elegibilidad multibloque, bloques pendientes y omisiones
-   de presupuesto; falta forzar el error real de construcción para comprobar el fallback completo.
+   de presupuesto; el fallo real por máximo de vóxeles y su fallback ya están comprobados en la fase 11.
    [Contrato, resultados y límites](docs/WEB_PERFORMANCE_BENCH.md#resident-target-cut-on-camera-invalidation--13-10-2026).
    Majadas multibloque (415,5 M puntos): con 239 bloques/112,3 MB en caché, un arrastre de cámara
    conserva cobertura 4 px de 202 bloques y 6.397 vóxeles, sin nuevas lecturas ni evicciones;
    builds **98→100**. Una ronda funcional, no benchmark FPS. El probe BiDi mantiene render activo
    hasta exportar estadísticas worker actuales.
    [Evidencia y alcance](docs/WEB_PERFORMANCE_BENCH.md#resident-target-cut-on-camera-invalidation--13-10-2026).
-   Siguiente: forzar el fallback por límite de construcción en un renderer real, repetir cámara
+   Fallback por máximo de vóxeles cerrado con renderer real (fase 11). Siguiente: repetir cámara
    multibloque con comparador controlado, separar memoria JS/WASM y ampliar corpus Additive real
    antes de diseñar reutilización persistente.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
@@ -931,6 +931,30 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     [medición por unidades de compilación (Cargo Book)](https://doc.rust-lang.org/cargo/reference/timings.html).
     La vtable añade indirección y puede limitar inline; la monomorfización puede duplicar código.
     El compilador/LTO puede transformar ambos: ni tamaño ni velocidad quedan garantizados.
+
+11. [x] **Cerrar fallback LOD por presupuesto de construcción.** Pendiente seleccionado tras
+    revisar el estado actual: un corte residente no garantiza que su grilla fina quepa en CPU/GPU.
+    Añadir `createOffscreenWithVoxelLimits(canvas, voxelSize, maxVoxels, maxEstimatedBytes)` como
+    constructor adicional para fijar los límites CPU existentes del renderer, sin modificar el
+    constructor/worker predeterminados ni introducir límites mutables sobre escenas reutilizadas.
+    Ambos límites son enteros `u32` positivos, bytes estimados independientes de RSS/VRAM; el límite
+    efectivo de vóxeles conserva también el máximo GPU. Reutilizar una inicialización privada.
+    Cierre: fixture pequeña residente que cabe a 16 px y excede el presupuesto al refinar; verificar
+    intento fino + fallback grueso en renderer WebGPU, escena válida conservada ante posteriores
+    fallos, error propagado y ausencia de cargas adicionales. Comparar con renderer sin restricción;
+    tests/sintaxis, checks nativo/WASM, Playwright, paquete actualizado y commit. Sin afirmaciones
+    de rendimiento y sin exponer controles nuevos en el host web.
+    Resultado: Chrome 155.0.8059.39 + SwiftShader/Vulkan, canvas 320×240 e invalidación a 321×240.
+    Ocho puntos residentes: referencia fina 8 vóxeles; límite 1 vóxel/64 MiB CPU estimados;
+    dos intentos de build en la llamada (fino fallido + grueso válido), un vóxel visible y cero
+    cargas adicionales. El error de refinamiento explícito se propaga; `renderFrame` sigue
+    presentando la escena anterior y volver a 16 px recupera la ejecución. Es una sesión externa:
+    el caller conduce el refinamiento, sin afirmar error automático en el panel.
+    También pasan límites cero rechazados, sesión, atributos y reutilización LOD. Validación:
+    255 tests Rust pasan (3 opcionales ignorados), 27 JS y 11 Python; fmt, Clippy nativo/WASM,
+    check-web, sintaxis del probe y diff correctos. WASM/bindings y paquete local regenerados.
+    No se midieron FPS/RSS ni se validó GPU física/Firefox o fallos de subida GPU/memoria estimada.
+    [Método y reproducción](docs/WEB_PERFORMANCE_BENCH.md#resident-construction-budget-fallback--13-10-2026).
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).

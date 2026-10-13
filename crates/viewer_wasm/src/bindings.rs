@@ -13,7 +13,7 @@ use crate::{
     lod_session::LodSession,
 };
 use viewer_format::FormatReader;
-use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer};
+use viewer_render_wgpu::{ColorMode, RendererConfig, SurfaceRenderer, VoxelBuildLimits};
 
 const WASM_POINT_BATCH_POINTS: usize = 16_384;
 const MAX_WASM_TRANSFER_INSTANCES: usize = 16_384;
@@ -91,22 +91,31 @@ impl WasmVoxelViewer {
         canvas: web_sys::OffscreenCanvas,
         voxel_size: f32,
     ) -> Result<WasmVoxelViewer, JsValue> {
-        let mut viewer = Self::new(voxel_size)?;
-        let instance = wgpu::Instance::default();
-        let surface = instance
-            .create_surface(wgpu::SurfaceTarget::OffscreenCanvas(canvas.clone()))
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        let renderer = SurfaceRenderer::new(
-            &instance,
-            surface,
-            RendererConfig::default(),
-            canvas.width(),
-            canvas.height(),
-        )
-        .await
-        .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        viewer.gpu_renderer = Some(renderer);
-        Ok(viewer)
+        Self::create_offscreen_with_config(canvas, voxel_size, RendererConfig::default()).await
+    }
+
+    /// Creates a worker renderer with explicit CPU voxel-construction limits.
+    /// The limits bound estimated construction memory and voxel count, not process RSS or VRAM.
+    #[wasm_bindgen(js_name = createOffscreenWithVoxelLimits)]
+    pub async fn create_offscreen_with_voxel_limits(
+        canvas: web_sys::OffscreenCanvas,
+        voxel_size: f32,
+        max_voxels: u32,
+        max_estimated_bytes: u32,
+    ) -> Result<WasmVoxelViewer, JsValue> {
+        if max_voxels == 0 || max_estimated_bytes == 0 {
+            return Err(JsValue::from_str(
+                "voxel construction limits must be positive",
+            ));
+        }
+        let config = RendererConfig {
+            voxel_build_limits: VoxelBuildLimits {
+                max_voxels: max_voxels as usize,
+                max_estimated_bytes: u64::from(max_estimated_bytes),
+            },
+            ..RendererConfig::default()
+        };
+        Self::create_offscreen_with_config(canvas, voxel_size, config).await
     }
 
     #[wasm_bindgen(js_name = resize)]
@@ -897,6 +906,24 @@ impl WasmVoxelViewer {
 }
 
 impl WasmVoxelViewer {
+    async fn create_offscreen_with_config(
+        canvas: web_sys::OffscreenCanvas,
+        voxel_size: f32,
+        config: RendererConfig,
+    ) -> Result<WasmVoxelViewer, JsValue> {
+        let mut viewer = Self::new(voxel_size)?;
+        let instance = wgpu::Instance::default();
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::OffscreenCanvas(canvas.clone()))
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let renderer =
+            SurfaceRenderer::new(&instance, surface, config, canvas.width(), canvas.height())
+                .await
+                .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        viewer.gpu_renderer = Some(renderer);
+        Ok(viewer)
+    }
+
     fn camera_changed(&mut self, changed: bool) {
         if changed && self.lod_session.is_some() {
             self.lod_stage_pixels = None;

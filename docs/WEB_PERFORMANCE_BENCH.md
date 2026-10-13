@@ -1421,9 +1421,49 @@ uncovered region. Further cases reject selection-limited cuts and planner plans 
 because cached payload point counts exceed the target budget. These tests validate the gate's
 inputs, not GPU scene publication or failure recovery.
 
-A real fine-cut CPU/GPU build failure still needs injection to verify that the old scene remains
-active and the coarser attempt succeeds. A browser-level partially resident multiblock camera
+The voxel-count construction failure is now covered by the regression below. Estimated-memory
+and GPU-upload failure recovery remain separate unverified cases. A browser-level partially resident multiblock camera
 run should also verify cache protection and publication.
+
+### Resident construction budget fallback — 13-10-2026
+
+`WasmVoxelViewer.createOffscreenWithVoxelLimits(canvas, voxelSize, maxVoxels, maxEstimatedBytes)`
+adds immutable CPU construction limits at creation. Both limits are positive `u32` values; bytes
+are estimated construction memory, not RSS or GPU allocation. `createOffscreen` and host defaults
+remain unchanged. Initialization is shared, and the effective voxel limit is still capped by the
+renderer GPU instance budget. No live budget mutation or build-context invalidation was added.
+
+The persistent worker probe is `examples/web-host/tests/lod-budget-fallback.browser.mjs`.
+It creates a one-block external dataset with eight points in `[0,1]^3`:
+`[0.51 + i * 0.004, 0.51, 0.51]`, `i=0..7`. Both viewers use a 320×240 OffscreenCanvas,
+`voxelSize=0.6`, and fitted camera. The default viewer builds eight voxels at 0.5 px. A second
+viewer has a one-voxel limit and 64 MiB estimated construction budget; its 16 px scene fits.
+A resize to 321×240 invalidates the previous build context so fallback must construct a new
+coarse scene rather than reuse the old one. Requesting 0.5 px then returns 16 px with two added
+scene-build attempts: fine construction fails and coarse construction succeeds. Coverage remains
+complete, all eight source points stay resident, and one voxel remains visible.
+
+Further explicit refinement reaches `voxelized scene exceeds the 1-voxel instance limit`;
+rendering still presents the previous cut. Requesting 16 px recovers. The cache has exactly one
+insertion and no automatic block loads. Zero constructor limits are rejected before creating a
+GPU surface. This external session intentionally requires caller-driven refinement; the probe
+verifies the synchronous error, not automatic `lodError` reporting for a file-backed session.
+
+Rebuild release WASM, regenerate `pkg` with wasm-bindgen and run the root HTTP server as documented
+in `examples/web-host/README.md`. From a browser page on that origin, create a module Worker for
+`/examples/web-host/tests/lod-budget-fallback.browser.mjs`, post `{}`, and await `probeResult`.
+Playwright MCP ran the worker with Chrome 155.0.8059.39 and flags `--enable-unsafe-webgpu`,
+`--use-angle=swiftshader`, `--enable-features=Vulkan`, `--disable-vulkan-surface`, and
+`--disable-gpu-sandbox`. The probe passed with `fineVoxels=8`, `coarseVoxels=1`, `fallbackBuilds=2`.
+Session, attribute selection and reuse probes also passed; no uncaught JavaScript errors.
+An earlier Chrome launch without explicit Vulkan flags could not create a surface-compatible
+adapter and is not counted as a pass.
+
+This closes the resident fine-build fallback check for a real voxel-count error. It does not
+validate physical GPU behavior, Firefox, estimated-memory or upload failure recovery, frame
+latency, RSS or large partially resident multiblock cuts. Native/WASM Clippy and checks, format,
+255 Rust tests (3 optional ignored), 27 Node tests, 11 Python tests and regenerated local package
+passed. There are no performance claims from this functional probe.
 
 ### Majadas multiblock resident-camera observation — 13-10-2026
 
