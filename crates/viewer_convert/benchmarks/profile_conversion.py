@@ -270,11 +270,31 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
         "source_payload_read_bytes", "lod_payload_read_bytes"
     }:
         raise ValueError("incomplete block stream payload diagnostics")
+    prepared_batch: dict[str, int] = {}
+    batch_fields = {
+        "max_prepared_blocks", "max_encoded_payload_capacity_per_block_bytes",
+        "max_encoded_payload_capacity_per_batch_bytes",
+    }
+    batch_pattern = re.compile(r"internal_block_stream_(.+)=(\d+)\n?")
+    with stdout_path.open(encoding="utf-8") as output:
+        for line in output:
+            match = batch_pattern.fullmatch(line)
+            if match is None:
+                continue
+            key, value = match.groups()
+            if key not in batch_fields:
+                continue
+            if key in prepared_batch:
+                raise ValueError(f"duplicate prepared batch diagnostic: {key}")
+            prepared_batch[key] = int(value)
+    if prepared_batch and set(prepared_batch) != batch_fields:
+        raise ValueError("incomplete prepared batch diagnostics")
     return {"available": True, "phases": phases, "unassigned_sample_count": unassigned,
             "validation_workers": [dict(worker_index=index, **workers[index])
                                    for index in sorted(workers)],
             "spatial_spools": spools or None,
-            "block_stream_payload_reads": block_stream or None}
+            "block_stream_payload_reads": block_stream or None,
+            "prepared_batch": prepared_batch or None}
 
 
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,

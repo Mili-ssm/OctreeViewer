@@ -516,8 +516,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    La planificación ahora expone bytes lógicos escritos en spools source, child y LOD, más bytes
    de registros leídos en escaneos recursivos source/child. El stream cuenta aparte el payload
    lógico leído de bloques fuente y LOD; no mide lectura anticipada, syscalls ni I/O físico. Queda
-   medir la retención máxima de buffers/preparados por lote y afinar tiempos de ingestión,
-   clasificación y escritura LOD.
+   El perfilador mide ahora el máximo de bloques preparados retenidos por lote y la capacidad de
+   sus buffers de payload comprimido, individual y conjunta. No incluye vectores de metadatos,
+   bloques de entrada ni buffers raw temporales de compresión; quedan pendientes el pico completo
+   del lote y tiempos separados de ingestión, clasificación y escritura LOD.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida

@@ -24,6 +24,12 @@ pub struct ConversionDiagnostics {
     pub block_stream_source_payload_read_bytes: Option<u64>,
     /// Payload bytes decoded from LOD sample ranges during block preparation.
     pub block_stream_lod_payload_read_bytes: Option<u64>,
+    /// Largest number of prepared blocks retained by one completed batch.
+    pub block_stream_max_prepared_blocks: Option<u64>,
+    /// Largest retained compressed payload buffer capacity for one prepared block.
+    pub block_stream_max_encoded_payload_capacity_per_block_bytes: Option<u64>,
+    /// Sum of retained compressed payload buffer capacities at the completed-batch boundary.
+    pub block_stream_max_encoded_payload_capacity_per_batch_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

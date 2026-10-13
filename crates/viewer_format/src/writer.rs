@@ -58,6 +58,13 @@ pub struct PreparedPointBlock {
     ranges: Vec<crate::NodeAttributeRange>,
 }
 
+impl PreparedPointBlock {
+    /// Capacity of the retained compressed payload buffer, excluding metadata and allocator overhead.
+    pub fn encoded_payload_capacity_bytes(&self) -> usize {
+        self.bytes.capacity()
+    }
+}
+
 /// Writes independently encoded blocks and a canonical index to a fresh seekable stream.
 /// A footer is emitted only after every payload and the complete index have been written.
 pub struct FormatWriter<W> {

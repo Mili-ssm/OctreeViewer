@@ -816,6 +816,9 @@ where
     if let Some(diagnostics) = diagnostics.as_deref_mut() {
         diagnostics.block_stream_source_payload_read_bytes = Some(0);
         diagnostics.block_stream_lod_payload_read_bytes = Some(0);
+        diagnostics.block_stream_max_prepared_blocks = Some(0);
+        diagnostics.block_stream_max_encoded_payload_capacity_per_block_bytes = Some(0);
+        diagnostics.block_stream_max_encoded_payload_capacity_per_batch_bytes = Some(0);
     }
     let mut block_preparation_ns = 0_u128;
     let mut ordered_write_ns = 0_u128;
@@ -857,6 +860,31 @@ where
             .collect::<Result<Vec<_>, _>>()?;
         let batch_preparation_ns = prepare_started.elapsed().as_nanos();
         if let Some(diagnostics) = diagnostics.as_deref_mut() {
+            let batch_capacity = prepared.iter().try_fold(0_u64, |total, block| {
+                let capacity = u64::try_from(block.encoded_payload_capacity_bytes())
+                    .map_err(|_| ConvertError::SizeOverflow)?;
+                diagnostics.block_stream_max_encoded_payload_capacity_per_block_bytes = Some(
+                    diagnostics
+                        .block_stream_max_encoded_payload_capacity_per_block_bytes
+                        .unwrap_or(0)
+                        .max(capacity),
+                );
+                total
+                    .checked_add(capacity)
+                    .ok_or(ConvertError::SizeOverflow)
+            })?;
+            diagnostics.block_stream_max_prepared_blocks = Some(
+                diagnostics
+                    .block_stream_max_prepared_blocks
+                    .unwrap_or(0)
+                    .max(u64::try_from(prepared.len()).unwrap_or(u64::MAX)),
+            );
+            diagnostics.block_stream_max_encoded_payload_capacity_per_batch_bytes = Some(
+                diagnostics
+                    .block_stream_max_encoded_payload_capacity_per_batch_bytes
+                    .unwrap_or(0)
+                    .max(batch_capacity),
+            );
             for block in batch {
                 let counter = if block.is_source_points {
                     &mut diagnostics.block_stream_source_payload_read_bytes
@@ -1497,6 +1525,16 @@ mod tests {
             Some(24 * 33)
         );
         assert_eq!(diagnostics.block_stream_lod_payload_read_bytes, Some(0));
+        assert_eq!(diagnostics.block_stream_max_prepared_blocks, Some(1));
+        assert!(
+            diagnostics
+                .block_stream_max_encoded_payload_capacity_per_block_bytes
+                .is_some_and(|bytes| bytes > 0)
+        );
+        assert_eq!(
+            diagnostics.block_stream_max_encoded_payload_capacity_per_batch_bytes,
+            diagnostics.block_stream_max_encoded_payload_capacity_per_block_bytes
+        );
         let validation_workers = diagnostics
             .validation_workers
             .expect("profiled validation reports worker aggregates");
@@ -1560,6 +1598,16 @@ mod tests {
         assert_eq!(
             serial_diagnostics.block_stream_lod_payload_read_bytes,
             parallel_diagnostics.block_stream_lod_payload_read_bytes
+        );
+        assert!(
+            serial_diagnostics
+                .block_stream_max_encoded_payload_capacity_per_batch_bytes
+                .is_some_and(|bytes| bytes > 0)
+        );
+        assert!(
+            parallel_diagnostics
+                .block_stream_max_prepared_blocks
+                .is_some_and(|blocks| blocks <= 2)
         );
         assert_eq!(spools.source_payload_written_bytes, 0);
         assert!(spools.child_payload_written_bytes >= 200 * 27);

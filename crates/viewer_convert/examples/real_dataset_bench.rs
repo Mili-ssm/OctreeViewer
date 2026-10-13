@@ -193,6 +193,15 @@ fn convert(
         if let Some(bytes) = diagnostics.block_stream_lod_payload_read_bytes {
             println!("internal_block_stream_lod_payload_read_bytes={bytes}");
         }
+        if let Some(blocks) = diagnostics.block_stream_max_prepared_blocks {
+            println!("internal_block_stream_max_prepared_blocks={blocks}");
+        }
+        if let Some(bytes) = diagnostics.block_stream_max_encoded_payload_capacity_per_block_bytes {
+            println!("internal_block_stream_max_encoded_payload_capacity_per_block_bytes={bytes}");
+        }
+        if let Some(bytes) = diagnostics.block_stream_max_encoded_payload_capacity_per_batch_bytes {
+            println!("internal_block_stream_max_encoded_payload_capacity_per_batch_bytes={bytes}");
+        }
         if let Some(workers) = diagnostics.validation_workers.as_ref() {
             for worker in workers {
                 println!(

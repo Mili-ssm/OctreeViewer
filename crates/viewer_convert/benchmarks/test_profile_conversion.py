@@ -41,6 +41,9 @@ class ProfileConversionTests(unittest.TestCase):
                 "internal_spatial_spool_lod_payload_written_bytes=0\n"
                 "internal_block_stream_source_payload_read_bytes=648\n"
                 "internal_block_stream_lod_payload_read_bytes=0\n"
+                "internal_block_stream_max_prepared_blocks=2\n"
+                "internal_block_stream_max_encoded_payload_capacity_per_block_bytes=128\n"
+                "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes=240\n"
             )
             samples.write_text("".join(json.dumps({
                 "start_unix_ns": start, "end_unix_ns": end,
@@ -72,6 +75,11 @@ class ProfileConversionTests(unittest.TestCase):
             self.assertEqual(result["block_stream_payload_reads"], {
                 "source_payload_read_bytes": 648,
                 "lod_payload_read_bytes": 0,
+            })
+            self.assertEqual(result["prepared_batch"], {
+                "max_prepared_blocks": 2,
+                "max_encoded_payload_capacity_per_block_bytes": 128,
+                "max_encoded_payload_capacity_per_batch_bytes": 240,
             })
 
     def test_internal_phase_attribution_rejects_missing_and_overlapping_windows(self) -> None:

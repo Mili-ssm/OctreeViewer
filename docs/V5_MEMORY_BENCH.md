@@ -1081,3 +1081,16 @@ Smoke final del 13-10-2026 sobre `fs_e430_n4008_18.las` (111.190 puntos): el per
 reportó 3.891.650 B escritos y leídos como payload source, cero payload child/LOD y cero escaneos
 recursivos. Coincide con el caso de una sola hoja; no ejercita las categorías child/LOD, cubiertas
 por el fixture sintético recursivo y serial/paralelo.
+
+### Capacidad retenida de buffers preparados
+
+Tras completar cada `collect` del lote, el perfilador registra el máximo de bloques preparados, la
+mayor capacidad individual de su buffer de payload comprimido y la suma de esas capacidades en el
+lote. Esto observa la retención del `Vec<u8>` comprimido en ese límite. Excluye el `PreparedPointBlock`
+completo (directorios/rangos y overhead del asignador), los `SourcePointBlock` de entrada y los
+buffers `raw` temporales usados durante la compresión; no es el pico total de memoria del lote ni
+incluye el máximo concurrente de temporales de compresión.
+
+En el smoke de 111.190 puntos se retuvo un bloque; su buffer comprimido tuvo 2.668.560 B de
+capacidad, igual a la suma del lote de un bloque. No es una comparación de rendimiento ni una
+estimación de RSS. Medir el ciclo completo de compresión y los buffers temporales sigue pendiente.
