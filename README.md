@@ -672,7 +672,20 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Compilación optimizada, Clippy del ejemplo, fmt y diff pasan; 60 tests renderer pasan,
    dos opcionales ignorados.
    [Reproducción y alcance](docs/VOXEL_BUILD_BENCH.md#optional-native-rss-sampling--13-10-2026).
-   - [ ] Continuar después con atribución JS/WASM y corpus Additive real. El RSS de proceso incluye
+   Plan siguiente — capacidad WASM del worker y export de benchmark:
+   - [x] Conservar los exports de `init()` y consultar `memory.buffer.byteLength` al emitir
+     stats, progreso y `getStats`; releer el buffer tras crecimientos, sin almacenar vistas antiguas.
+   - [x] Exportar la última muestra del worker por separado del heap JS del hilo principal.
+     Heap JS del worker: desconocido (`null`); no restar WASM a PSS ni sumar métricas solapadas.
+   - [x] Verificar crecimiento de memoria con un `WebAssembly.Memory` real en tests JS,
+     validar worker real/API/export en Playwright MCP y regenerar el paquete local.
+   Resultado: Chrome 155/SwiftShader, 1280×720 y 390×844: export con 2.818.048 B de
+   capacidad WASM, 4.096 vóxeles y cobertura completa; API independiente: 1.310.720 B.
+   Heap JS del worker desconocido; no es atribución completa ni pico conjunto del navegador.
+   28 tests JS y 11 Python pasan; paquete local regenerado y comprobado por `file://`
+   con carga, benchmark y export. Sin cambios Rust/bindings.
+   [Contrato y reproducción](docs/WEB_PERFORMANCE_BENCH.md#worker-wasm-linear-memory-snapshots--13-10-2026).
+   - [ ] Continuar después con atribución de asignaciones JS/WASM y corpus Additive real. El RSS de proceso incluye
      reader, índice y allocator; no atribuye bytes al builder, no mide GPU ni garantiza capturar
      picos menores al intervalo. Las duraciones con muestreo no son comparables con las anteriores.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios

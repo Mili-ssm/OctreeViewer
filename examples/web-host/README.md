@@ -469,3 +469,10 @@ For Playwright MCP with Chrome software WebGPU, launch channel `chrome` with
 HZB-buffer regression are recorded in
 [the web measurements](../../docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
 Software-adapter checks do not establish hardware performance.
+
+La API `getStats()` y los eventos de estadísticas/progreso incluyen
+`memory.wasmLinearMemoryBytes`: capacidad de memoria lineal de la instancia del worker.
+`memory.workerJsHeapUsedBytes` es `null` (no medido). El export de benchmark conserva la
+última muestra del worker en `memory.latestViewerWorkerSnapshot` y registra por separado
+`memory.mainThreadJsHeapUsedBytes`; el campo legado `environment.jsHeapUsedBytes` tiene
+el mismo alcance del hilo principal. No son memoria viva ni un pico RSS/PSS/GPU conjunto.

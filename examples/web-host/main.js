@@ -175,6 +175,10 @@ function exportBenchmarkRun() {
             projectionCachePeakEntries: lod.projectionCachePeakEntries,
             hzbActive: lod.hzbActive ?? gpu?.hzbActive ?? false,
         } : null,
+        memory: {
+            latestViewerWorkerSnapshot: benchmarkRun.latestMemoryStats,
+            mainThreadJsHeapUsedBytes: performance.memory?.usedJSHeapSize ?? null,
+        },
         environment: {
             userAgent: navigator.userAgent,
             hardwareConcurrency: navigator.hardwareConcurrency ?? null,
@@ -184,6 +188,8 @@ function exportBenchmarkRun() {
             gpuStats: gpu,
         },
         notes: [
+            "memory.latestViewerWorkerSnapshot is the latest stats/progress snapshot, not an export-time measurement or a peak. WASM linear capacity is not live allocations, JS heap, RSS/PSS or GPU memory.",
+            "workerJsHeapUsedBytes is unknown (null). mainThreadJsHeapUsedBytes and legacy environment.jsHeapUsedBytes use nonstandard performance.memory on the main thread only; they do not measure the viewer worker. Do not sum these overlapping metrics.",
             "FPS counts worker frame replies (submitted frames), not GPU completion or display scanout.",
             "load timing describes initial RGB opening; refinement describes the latest dataset/color/detail request. Legacy workerRenderCallDuringLoadMs describes the active refinement.",
             "refinementWork accumulates synchronous LOD work since open or attribute-cache reset; uploadMs measures CPU preparation/enqueue, not GPU completion.",
@@ -434,6 +440,7 @@ function handleWorkerMessage(event) {
         if (benchmarkRun) {
             benchmarkRun.refinement = data.refinement;
             benchmarkRun.latestGpuStats = data.gpu;
+            benchmarkRun.latestMemoryStats = data.memory ?? null;
             if (data.refinement.trigger === "dataset") {
                 benchmarkRun.firstCoarseFrameMs = data.firstCoarseMs;
                 benchmarkRun.targetLodMs = data.targetLodMs;
@@ -469,6 +476,7 @@ function handleWorkerMessage(event) {
         latestLodStats = data.lod ?? latestLodStats;
         if (benchmarkRun) {
             benchmarkRun.latestGpuStats = data.gpu;
+            benchmarkRun.latestMemoryStats = data.memory ?? null;
             benchmarkRun.frameRenderMs = data.frameRenderMs;
         }
         updateProgressiveLoadState(latestLodStats);
@@ -779,6 +787,7 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
         uniqueBytesRead: "0",
         frameRenderMs: null,
         latestGpuStats: null,
+        latestMemoryStats: null,
         cameraChanged: false,
         viewportChanged: false,
         settingsChanged: false,

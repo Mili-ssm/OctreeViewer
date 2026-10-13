@@ -57,7 +57,12 @@ def main() -> None:
         "",
         "WASM import",
     )
-    worker_js = require_replace(worker_js, "await init();", "await __wbg_init(__VIEWER_WASM_BYTES__);", "WASM init")
+    worker_js = require_replace(
+        worker_js,
+        "wasmExports = await init();",
+        "wasmExports = await __wbg_init(__VIEWER_WASM_BYTES__);",
+        "WASM init",
+    )
 
     wasm_js = wasm_js.replace("export class ", "class ")
     wasm_js = require_replace(

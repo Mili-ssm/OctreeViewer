@@ -1,6 +1,7 @@
 import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 
 let viewer = null;
+let wasmExports = null;
 let targetVoxelPixels = 4;
 let renderedFrames = 0;
 let datasetOpenedAt = 0;
@@ -81,6 +82,15 @@ function frameRenderPercentiles() {
     };
 }
 
+// Capacity of this worker's WASM instance, not live allocations or process RSS.
+// Always re-read buffer: memory.grow can replace/detach its previous buffer.
+function memoryStats() {
+    return {
+        wasmLinearMemoryBytes: wasmExports?.memory?.buffer.byteLength ?? null,
+        workerJsHeapUsedBytes: null,
+    };
+}
+
 function postStats(frameStatus = null) {
     self.postMessage({
         type: "stats",
@@ -89,6 +99,7 @@ function postStats(frameStatus = null) {
         gpu: viewer.gpuStats(),
         lod: viewer.lodStats(),
         viewer: viewer.stats(),
+        memory: memoryStats(),
     });
 }
 
@@ -129,6 +140,7 @@ function postLodProgress(lod, afterRenderFrame = false) {
         lod,
         gpu: viewer.gpuStats(),
         viewer: viewer.stats(),
+        memory: memoryStats(),
         frameRenderMs: frameRenderPercentiles(),
         firstCoarseMs,
         targetLodMs,
@@ -145,7 +157,7 @@ async function handleMessage({ data }) {
     try {
         switch (data.type) {
             case "init": {
-                await init();
+                wasmExports = await init();
                 viewer = await WasmVoxelViewer.createOffscreen(data.canvas, 0.6);
                 viewer.resize(data.width, data.height);
                 viewer.setColorMode(data.colorMode);
@@ -198,7 +210,7 @@ async function handleMessage({ data }) {
                         value = currentMetadata;
                         break;
                     case "getStats":
-                        value = { lod: viewer.lodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats() };
+                        value = { lod: viewer.lodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
                         break;
                     case "moveCamera":
                         sceneGeneration += 1;

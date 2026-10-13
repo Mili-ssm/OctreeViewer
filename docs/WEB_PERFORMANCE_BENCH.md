@@ -1489,3 +1489,53 @@ Raw valid capture: ignored `target/resident-camera-majadas/sustained/`. This lea
 open: induce a fine scene build failure under a controlled renderer budget, confirm the previous
 scene remains visible, then confirm the coarse retry succeeds. Repeatable before/after camera
 counts on this multiblock dataset also remain open.
+
+### Worker WASM linear-memory snapshots — 13-10-2026
+
+Assessment: `environment.jsHeapUsedBytes` in exported runs was sampled on the **main thread**
+using nonstandard `performance.memory`; it never represented the viewer worker. The native
+RSS diagnostic cannot supply browser heap attribution. Add a separate worker snapshot without
+changing renderer ownership, allocation limits or Rust bindings.
+
+Implemented contract:
+
+- Worker `stats`, `lodProgress` and API `getStats()` carry `memory` with
+  `wasmLinearMemoryBytes` and `workerJsHeapUsedBytes`.
+- The first value reads the instance returned by wasm-bindgen `init()` and its current
+  `memory.buffer.byteLength` after the viewer stats calls. It is linear-memory **capacity**,
+  including unused/free allocator space, stack and static data; it is not live Rust allocations.
+  The worker reads the current buffer each time, so growth cannot leave a detached cached view.
+- `workerJsHeapUsedBytes` is explicitly `null`: this change does not measure worker JS heap.
+  See the [WebAssembly JS interface specification](https://webassembly.github.io/spec/js-api/#dom-memory-buffer)
+  for the memory buffer contract and [MDN's performance.memory limitations](https://developer.mozilla.org/en-US/docs/Web/API/Performance/memory)
+  for why a main-thread reading does not cover workers.
+- Run JSON adds `memory.latestViewerWorkerSnapshot` and `memory.mainThreadJsHeapUsedBytes`.
+  The snapshot is the latest accepted progress/periodic stats message, potentially older than
+  export time, with no history retained. The legacy `environment.jsHeapUsedBytes` stays compatible
+  and describes the same main-thread scope. None of these metrics may be added to PSS/RSS or GPU
+  estimates to calculate a total; no continuous peak or allocator attribution is claimed.
+
+Validation: Node tests grow a real `WebAssembly.Memory` from one to three then four pages and
+verify API, progress and periodic stats report current capacity. All 28 JS tests and 11 Python
+packaging/probe tests pass. Local package regenerated with the same retained init exports.
+
+Playwright MCP: serve the repo with `python3 -m http.server 8000 --bind 127.0.0.1`, open
+`/examples/web-host/`, open the built-in sample, run the 15 s benchmark, and export JSON.
+Chrome 155.0.8059.39 with `--enable-unsafe-webgpu --enable-unsafe-swiftshader
+--use-angle=swiftshader --enable-features=Vulkan --use-vulkan=swiftshader` passes:
+
+- Desktop 1280×720: 4,096 voxels, complete coverage, worker WASM capacity 2,818,048 B.
+- Main-thread heap at export 3,844,047 B, recorded separately; this is a nonstandard observation,
+  not a stable memory baseline.
+- A separate embeddable `createViewer` worker returns 1,310,720 B through `getStats()`.
+- Resizing to 390×844 and exporting preserves the memory contract, with worker capacity
+  2,818,048 B and main-thread heap 2,603,405 B. No uncaught page errors.
+
+The regenerated offline `file://` package also completes sample load, the 15 s benchmark and
+JSON export: 4,096 voxels, complete coverage and 2,818,048 B worker WASM capacity, with no
+uncaught page errors. Its embedded WASM/base64 JS footprint is separate from the modular host.
+
+The default MCP browser could not create a compatible GPU adapter; the explicit software
+adapter run supplies functional evidence. These are contract checks, not evidence of visual
+presentation, FPS gains, GPU memory or browser-wide peak. Remaining: live allocation attribution
+and a real Additive dataset before considering accumulator persistence.
