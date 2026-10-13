@@ -111,7 +111,7 @@ pub(super) fn convert(
     input_path: &Path,
     output_path: &Path,
     options: ConvertOptions,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
 ) -> Result<ConversionReport, ConvertError> {
     if output_path.exists() {
         return Err(ConvertError::OutputExists(output_path.to_owned()));

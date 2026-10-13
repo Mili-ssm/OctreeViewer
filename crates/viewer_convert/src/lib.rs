@@ -394,7 +394,7 @@ fn convert_file_inner(
     output_path: &Path,
     options: ConvertOptions,
     checkpoint_mode: Option<CheckpointMode>,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
     if output_path == output_attributes_path(output_path) {
@@ -795,22 +795,21 @@ impl ConversionPlan {
     }
 }
 
-struct StreamBlockOptions<'a, F> {
+struct StreamBlockOptions<'a> {
     temporary_path: &'a Path,
     writer_options: FormatWriterOptions,
     requested_workers: usize,
     memory_budget_bytes: u64,
-    on_progress: &'a mut F,
+    on_progress: &'a mut dyn FnMut(ConversionProgress) -> bool,
     diagnostics: Option<&'a mut ConversionDiagnostics>,
 }
 
-fn stream_blocks<F, W>(
+fn stream_blocks<W>(
     writer: &mut W,
     plan: &ConversionPlan,
-    options: StreamBlockOptions<'_, F>,
+    options: StreamBlockOptions<'_>,
 ) -> Result<ConversionWorkerStats, ConvertError>
 where
-    F: FnMut(ConversionProgress) -> bool,
     W: PreparedOctreeWriter<Error = viewer_format::FormatError, PreparedBlock = PreparedPointBlock>
         + ?Sized,
 {
@@ -1050,7 +1049,7 @@ fn validate_output_pair(
     path: &Path,
     attributes_path: &Path,
     validation: &OutputValidation<'_>,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionWorkerStats, ConvertError> {
     let collect_diagnostics = diagnostics.is_some();
@@ -1246,7 +1245,7 @@ fn publish_output_pair(
     attributes_temporary_path: &Path,
     output_path: &Path,
     validation: OutputValidation<'_>,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<(u64, ConversionWorkerStats), ConvertError> {
     let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());

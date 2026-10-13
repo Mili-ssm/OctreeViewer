@@ -3,16 +3,13 @@ use viewer_format::OctreeReader;
 use viewer_render_wgpu::ColorMode;
 
 /// Loads only the payloads required by the current presentation mode.
-pub(crate) fn load_render_block<R: OctreeReader + ?Sized>(
-    reader: &mut R,
+pub(crate) fn load_render_block<E: std::fmt::Display>(
+    reader: &mut dyn OctreeReader<Error = E>,
     id: BlockId,
     mode: Option<ColorMode>,
     selected_attribute: Option<(u32, u32)>,
     selected_range: Option<[f64; 2]>,
-) -> Result<PointBlock, String>
-where
-    R::Error: std::fmt::Display,
-{
+) -> Result<PointBlock, String> {
     let mut geometry = if selected_attribute.is_none() && mode == Some(ColorMode::Rgb) {
         reader.read_geometry(id)
     } else {

@@ -857,6 +857,64 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    atributos, reutilización del buffer, límites, cancelación y reapertura/checkpoints. No convertir
    todo a `Point` f32 ni prometer mejoras de LAZ por añadir un trait.
 
+10. [ ] **Despejar genéricos en fronteras de coste grueso (tercera fase, 13-10-2026).**
+    Revisar cada llamada por su frecuencia, no por la presencia de un `for`: una consulta por bloque
+    seguida de decodificación/voxelización tiene un coste distinto de un callback por punto.
+
+    | Contrato/ruta | Decisión |
+    | --- | --- |
+    | Progreso del conversor | Mantener wrappers públicos genéricos compatibles; `&mut dyn FnMut` en las funciones internas grandes, EPT y planificación espacial. Sin asignar `Box` ni añadir sincronización. |
+    | `OctreeReader` en carga de render | `&mut dyn OctreeReader<Error = E>`; conservar genérico solo el error `E: Display`, no cada backend. Llamadas por payload/bloque, no por punto. |
+    | `ResidentBlockSource` en grilla/sync GPU | `&dyn ResidentBlockSource` en consumidores por bloque; la iteración por puntos continúa concreta. |
+    | `ResidentBlockSource` en resolución LOD | Conservar genéricos: `contains/peek` se invocan repetidamente en recorridos y son consultas pequeñas; comparar antes de borrar ese tipo. |
+    | `OctreeWriter` / `PreparedOctreeWriter` | Finalización por valor concreta; `stream_blocks` conserva `W`: borrar el backend exigiría fijar `Output` o parametrizarlo y seguiría monomorfizando por salida. Hoy solo existe `FormatWriter<W>` en producción. No añadir un parámetro sustituto sin beneficio concreto. |
+    | `Read + Seek` / `Write + Seek`, visitantes por punto, selección LOD | Conservar genéricos en E/S de payloads y callbacks finos. Los proyectores de la grilla ya son `&dyn Fn`; su comparación pendiente sigue abierta. |
+
+    - [x] Aplicar las fronteras anteriores y conservar pruebas de fuentes alternativas y errores.
+    - [x] Comparar reconstrucción nativa y tamaño con baseline `ac7569a`, registrar método y límites;
+      no inferir menos assembly, compilación o más FPS únicamente por usar `dyn`.
+    - [ ] Continuar pendiente 8: sesión LOD con enum `External(dataset)` / `Format { dataset, reader }`
+      dentro de `Option`. Expresar los tres estados válidos (ninguno/externo/archivo), impedir reader
+      huérfano y reunir destrucción/reemplazo. Construir respuesta de apertura antes del reemplazo.
+      Preservar selección, gris, carga manual, fallos de apertura y reinicio del renderer.
+    - [ ] Validación nativa/WASM, regresión navegador de transiciones y atributos; README y commits
+      por cambio coherente antes de avanzar. No implementar simultáneamente parser, compresión,
+      nuevo renderer o tipos de propiedad sin un consumidor/experimento definido.
+
+    Evidencia local del despacho, antes del cambio de sesión: baseline `ac7569a`, rustc 1.99.0,
+    perfil `fast`, `CARGO_INCREMENTAL=0`, dependencias calientes, tres reconstrucciones forzadas
+    de `viewer_convert` tocando solo `src/lib.rs`; grupos antes/después secuenciales, no alternados.
+    Mediana/rango: antes 1,101 s [0,998–1,408], después 1,323 s [1,247–1,399]. **No demuestra
+    mejora de compilación** ni mide un build limpio del workspace. Release nativo: 1.610.656 →
+    1.606.600 B; WASM release: 2.573.845 → 2.573.281 B. Son bytes de archivo, no recuentos de
+    instrucciones, RSS o beneficio de caché demostrado.
+    Bunny caliente, `--points-per-block 4096 --spatial-workers 1`, tres pares alternando orden:
+    antes 55,3 ms [36,2–63,3], después 58,3 ms [53,7–59,3]. Ruido/entrada pequeña: no acredita
+    aceleración. Las seis parejas `.oct/.octattrs` tienen hashes idénticos entre versiones:
+    `.oct` SHA-256 `636fac86998d04f48bd8bafc594229a3d6f682d061d2809fe75bb4eb635e02ae`;
+    `.octattrs` SHA-256 `c18c24a5affa1dc3e6d3a90f48846d66e6185addcddf16257d66595e4e1e39a3`.
+    Entrada SHA-256 `6b89d660f4893613f3605ce3a3d22f6354def6defe02d61d0c2b2bb3c02beafb`.
+    Comandos: `CARGO_INCREMENTAL=0 cargo build --profile fast --offline -p viewer_convert`,
+    `cargo build --release --offline -p viewer_convert` y build release de `viewer_wasm` para
+    `wasm32-unknown-unknown`. Logs/JSON/binarios locales: `artifacts/dispatch-refactor/`.
+    Despacho validado: 254 tests pasan, 3 opcionales ignorados; fmt, Clippy nativo/WASM,
+    check-web y diff correctos.
+    Se conserva el cambio por fronteras explícitas y menor duplicación potencial; no por una
+    mejora de tiempo medida. Las llamadas normales siguen siendo compatibles; los consumidores
+    render ya no aceptan turbofish sobre el tipo de fuente, mientras `prepare` LOD sigue genérico.
+
+    Investigación adicional: el estado de dataset es una alternativa cerrada y encaja en un enum.
+    Un trait de parser sigue necesitando fuente real/reapertura (pendiente 9); un trait de renderer
+    o política de caché completa requiere segundo consumidor y semántica de mutación/presupuesto.
+    `Rc` para métricas y caché de rangos por lector permanecen experimentos condicionados a perfil.
+    Son candidatos, no compromisos ni ahorros demostrados.
+
+    Fuentes: [trait objects y vtables (Rust Reference)](https://doc.rust-lang.org/reference/types/trait-object.html),
+    [despacho estático/dinámico (Rust Book)](https://doc.rust-lang.org/book/ch18-02-trait-objects.html) y
+    [medición por unidades de compilación (Cargo Book)](https://doc.rust-lang.org/cargo/reference/timings.html).
+    La vtable añade indirección y puede limitar inline; la monomorfización puede duplicar código.
+    El compilador/LTO puede transformar ambos: ni tamaño ni velocidad quedan garantizados.
+
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
 Morton y máscaras son candidatos sobre coordenadas enteras; no reutilizar mantisas, NaN, bits de

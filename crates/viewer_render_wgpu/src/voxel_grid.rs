@@ -401,10 +401,10 @@ impl VoxelSceneBuilder {
 }
 
 /// Builds a voxel scene with the legacy CPU-only limit and no estimated-memory limit.
-pub fn build_voxel_scene<S: ResidentBlockSource + ?Sized>(
+pub fn build_voxel_scene(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
-    cache: &S,
+    cache: &dyn ResidentBlockSource,
     coordinate_origin: [f64; 3],
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,
@@ -422,10 +422,10 @@ pub fn build_voxel_scene<S: ResidentBlockSource + ?Sized>(
 }
 
 /// Builds with a voxel-count limit and no estimated-memory limit.
-pub fn build_voxel_scene_with_limit<S: ResidentBlockSource + ?Sized>(
+pub fn build_voxel_scene_with_limit(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
-    cache: &S,
+    cache: &dyn ResidentBlockSource,
     coordinate_origin: [f64; 3],
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,
@@ -448,10 +448,10 @@ pub fn build_voxel_scene_with_limit<S: ResidentBlockSource + ?Sized>(
 /// Builds with voxel-count and conservative estimated-memory limits.
 ///
 /// `project` must return stable results for equal bounds throughout scene construction.
-pub fn build_voxel_scene_with_limits<S: ResidentBlockSource + ?Sized>(
+pub fn build_voxel_scene_with_limits(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
-    cache: &S,
+    cache: &dyn ResidentBlockSource,
     coordinate_origin: [f64; 3],
     target_pixels: f64,
     project: &dyn Fn(SpatialBounds) -> f64,

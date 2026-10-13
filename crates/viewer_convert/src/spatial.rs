@@ -351,7 +351,7 @@ pub(crate) fn build_spatial_plan(
     options: ConvertOptions,
     workspace: &Workspace,
     source_path: &Path,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
     source_spool_bytes_written: u64,
 ) -> Result<SpatialPlan, ConvertError> {
@@ -372,7 +372,7 @@ pub(crate) fn build_spatial_plan_from_reader(
     source: &SourceInfo,
     options: ConvertOptions,
     workspace: &Workspace,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
 ) -> Result<SpatialPlan, ConvertError> {
     build_spatial_plan_inner(
@@ -399,7 +399,7 @@ fn build_spatial_plan_inner(
     options: ConvertOptions,
     workspace: &Workspace,
     input: SpatialInput<'_>,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
     source_spool_bytes_written: u64,
 ) -> Result<SpatialPlan, ConvertError> {

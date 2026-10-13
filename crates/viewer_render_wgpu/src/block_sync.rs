@@ -29,10 +29,10 @@ pub(crate) struct BlockSyncPlan {
     pub visible_elevation_range: Option<[f32; 2]>,
 }
 
-pub(crate) fn plan_block_sync<S: ResidentBlockSource + ?Sized>(
+pub(crate) fn plan_block_sync(
     resident: &[ResidentBlockInfo],
     requested_ids: &[BlockId],
-    cache: &S,
+    cache: &dyn ResidentBlockSource,
     max_buffer_size: u64,
     budget: GpuBudget,
     other_buffer_bytes: u64,

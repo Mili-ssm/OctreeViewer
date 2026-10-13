@@ -522,10 +522,10 @@ impl<'window> SurfaceRenderer<'window> {
     /// Synchronizes GPU residency to a deduplicated renderable block cut.
     /// IDs are dataset-local; call `clear_dataset` before using IDs from another dataset.
     /// The previous cut remains active if validation fails.
-    pub fn sync_visible_blocks<S: ResidentBlockSource + ?Sized>(
+    pub fn sync_visible_blocks(
         &mut self,
         block_ids: &[BlockId],
-        cache: &S,
+        cache: &dyn ResidentBlockSource,
     ) -> Result<BlockUploadStats, GpuRendererError> {
         let resident: Vec<_> = self
             .block_buffers
