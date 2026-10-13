@@ -10,6 +10,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>
 <h1>WebGPU surface memory diagnostic</h1>
 <p>Clear mode shows red without WASM or a dataset; viewer mode shows the fixed RGB WASM sample.
+Orbit mode moves that sample camera and completes the target before every frame.
 Both submit a bounded frame sequence and wait for browser queue completion.
 The device and canvas stay alive after completion for external process-memory sampling.</p>
 <canvas id="surface" aria-label="WebGPU diagnostic surface"></canvas>
@@ -34,9 +35,9 @@ const fail = message => {
     worker?.terminate();
     update({ state: "failed", message });
 };
-if (!["clear", "viewer"].includes(mode) || ![width, height, frames].every(Number.isInteger) || width < 1 || height < 1
+if (!["clear", "viewer", "orbit"].includes(mode) || ![width, height, frames].every(Number.isInteger) || width < 1 || height < 1
     || width > 2048 || height > 2048 || frames < 1 || frames > 600) {
-    fail("Expected mode clear/viewer, integer dimensions 1–2048 and frame count 1–600");
+    fail("Expected mode clear/viewer/orbit, integer dimensions 1–2048 and frame count 1–600");
 } else {
     canvas.width = width;
     canvas.height = height;
@@ -50,7 +51,7 @@ if (!["clear", "viewer"].includes(mode) || ![width, height, frames].every(Number
             if (data.submitted < frames) requestFrame();
             else worker.postMessage({ type: "finish" });
         }
-        if (data.type === "idle") update({ state: "idle", submitted: data.submitted, gpu: data.gpu });
+        if (data.type === "idle") update({ state: "idle", submitted: data.submitted, gpu: data.gpu, lod: data.lod, orbitCalls: data.orbitCalls, renderedVoxels: data.renderedVoxels });
     };
     worker.onerror = event => fail(event.message);
     worker.onmessageerror = () => fail("Worker message error");

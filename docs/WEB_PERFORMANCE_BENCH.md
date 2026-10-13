@@ -1251,7 +1251,9 @@ captures, rather than full-lifetime maxima, are the controlled phase comparisons
 
 Raw driver, launcher protocol, JSONL, phase markers/captures, summaries, profiles and screenshots
 are under ignored `target/surface-memory-probe/`; no browser sampling code is added to product
-flows. Reproduce manually: serve the root on 8767, start a fresh WebGPU-enabled Firefox profile,
+flows. The original six-run series requested its screenshot before the separate mapping reader
+finished, so its nominal idle maps may overlap screenshot activity; treat those phase values as
+observations, not a strictly ordered comparison. Reproduce manually: serve the root on 8767, start a fresh WebGPU-enabled Firefox profile,
 attach the process sampler, and open
 `/examples/web-host/tests/surface-memory.html?width=1280&height=720&frames=300` (then 640/360 in
 another fresh profile). Capture parent mappings at `window.surfaceMemoryResults.state ===
@@ -1306,6 +1308,12 @@ large-data/progressive workload; it does not identify an owner or justify a rend
 Full-lifetime process peaks include final screenshot activity; phase mapping captures remain
 the controlled comparison. No memory or timing improvement ratio is inferred.
 
+The initial six-run driver also requested screenshots before the mapping reader had finished,
+so the reported post-idle phase could overlap screenshot activity. Those values remain useful
+observations but are not a strictly ordered phase comparison. The orbit series below uses a
+single driver that waits for each identity-checked map capture to finish before sleeping or
+requesting the screenshot.
+
 Raw driver/profiles/markers/JSONL/maps/summaries/screenshots: ignored `target/surface-wasm-memory/`.
 Reproduce with the existing URL/protocol plus `&mode=viewer`. Validation: all six real Firefox
 GPU runs, final three-frame smoke of both modes after sharing error listeners, **27 Node /
@@ -1314,3 +1322,53 @@ desktop/mobile with zero console/page errors; that check does not validate Chrom
 Product WASM binary, renderer and offline package remain unchanged.
 Next: keep the small input but move camera between fixed submissions to isolate scene-update
 churn from large-data loading, using fresh profiles and the same phase captures.
+
+### Small WASM camera-orbit surface memory matrix — 13-10-2026
+
+The surface probe adds `mode=orbit`: with the same 4,096-point RGB sample, each of 300 submitted
+frames first rotates the camera by 0.01 radians and rebuilds the completed 4 px target cut, then
+renders. This deliberately measures repeated camera/scene updates. All six fresh Firefox 157.0.1
+profiles (three per drawing size) complete 300 orbit calls and frames, 903 LOD build/scene-build
+calls, 902 unchanged-cut builds, one loaded block, zero additional reads, and a complete 4 px cut
+with 4,096 rendered voxels. This is a diagnostic CPU-work count, not evidence of a speedup or a
+browser FPS result.
+
+The reproducible `examples/web-host/probe-surface-memory.mjs` driver owns a dedicated Firefox
+BiDi session on port 9222 and requires the repository server on port 8767, Node 22+, Python 3,
+and the committed sampler. It captures parent maps synchronously after queue completion, sleeps
+20 seconds, captures them again, then takes the screenshot. Each new output directory is
+exclusive; logs, session/root identity, both raw maps and capture metadata, screenshot timing,
+console errors, and screenshots are retained. All sampler runs end after Firefox exits. The six
+profiles have empty browser error logs. A final 320×180 three-frame smoke of the final driver
+also passes with ordered captures and an empty error log.
+
+| Drawing size / round | Parent PSS after submissions (B) | Parent PSS after 20 s idle (B) | Exact image-size unnamed maps | Target-cut voxel build CPU time (ms) | Tree PSS sampled peak (B) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1280×720 / 1 | 412,524,544 | 471,827,456 | 5 | 21,065 | 830,565,376 |
+| 1280×720 / 2 | 413,454,336 | 466,115,584 | 5 | 20,617 | 894,105,600 |
+| 1280×720 / 3 | 397,196,288 | 466,043,904 | 5 | 19,822 | 897,498,112 |
+| 640×360 / 1 | 396,147,712 | 497,147,904 | 0 | 13,668 | 903,543,808 |
+| 640×360 / 2 | 397,204,480 | 518,950,912 | 0 | 12,754 | 804,446,208 |
+| 640×360 / 3 | 398,015,488 | 505,359,360 | 0 | 13,127 | 863,605,760 |
+
+Large exact-size maps contribute 18,432,000 B PSS at both phase captures. The small-image
+filter finds no 921,600-B mappings; this does not imply the surface has no memory. In every run,
+parent PSS is higher after the idle interval than immediately after queue completion, even
+though capture order is explicit. The cause is unknown. Full-lifetime tree peaks include later
+screenshot activity and are not the phase comparison. No run reproduces Albuera's 161 exact-size
+maps or the multi-GB event. Requested GPU bytes, CPU PSS, WASM linear memory, and physical VRAM
+remain distinct or unavailable measurements.
+
+Raw six-run series: ignored `target/surface-orbit-serial-memory/`. Earlier orbit runs under
+`target/surface-orbit-memory/` are preliminary because their map read and screenshot could
+overlap. An attempted stdin-handshake series is incomplete and excluded. The permanent driver
+avoids that race/deadlock by performing each map read synchronously before its next action.
+Playwright MCP exercises the orbit parameter with a deterministic worker at desktop and mobile
+viewports; actual Firefox runs exercise WebGPU. Validation: **27 Node tests, 11 Python tests**,
+JavaScript syntax, CLI rejection/overwrite checks, six complete Firefox runs and the final smoke
+pass; `git diff --check` passes. Chrome GPU remains unvalidated.
+
+Next: prototype a one-shot selection of the actual target cut from resident blocks during camera
+invalidation, publishing it only if coverage and all budgets are complete; otherwise preserve
+the existing progressive coarse-to-fine fallback. Measure paired camera runs before claiming
+reduced construction or memory.

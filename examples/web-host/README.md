@@ -384,6 +384,20 @@ queue reference only inside the diagnostic; no product API is changed. Read the
 This is a diagnostic submission sequence, not an FPS benchmark or VRAM measurement.
 See the [six-run observations](../../docs/WEB_PERFORMANCE_BENCH.md#independent-clear-only-surface-memory-matrix--13-10-2026).
 
+For ordered Linux parent-map captures, serve the repository on port 8767 and start a dedicated
+WebGPU-enabled Firefox BiDi instance on port 9222. Then run, from the repository root:
+
+```bash
+node examples/web-host/probe-surface-memory.mjs target/surface-orbit-run-1 1280 720 orbit 300
+```
+
+The command owns and closes its Firefox session. It requires Node 22+ and Python 3, refuses an
+existing output directory, records parent maps synchronously after queue completion and 20 s
+later, then requests a screenshot. Modes are `clear`, `viewer`, and `orbit`; dimensions are
+1–2048 and frame count is 1–600. Output includes the browser session/root identity, capture
+metadata and raw maps, console errors, screenshot timing and screenshot. The browser-memory
+diagnostic and its CPU build counters do not report physical VRAM.
+
 ### Capture a transient parent-process mapping event
 
 For an intermittent parent-process PSS increase, the sampler can make one raw mapping capture:

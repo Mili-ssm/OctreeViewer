@@ -2,6 +2,8 @@
 let device;
 let context;
 let viewer;
+let orbit = false;
+let orbitCalls = 0;
 let submitted = 0;
 function watchDevice() {
     device.lost.then(info => self.postMessage({ type: "failure", message: `device lost: ${info.message}` }));
@@ -12,7 +14,8 @@ function watchDevice() {
 self.onmessage = async ({ data }) => {
     try {
         if (data.type === "init") {
-            if (data.mode === "viewer") {
+            if (data.mode === "viewer" || data.mode === "orbit") {
+                orbit = data.mode === "orbit";
                 const { default: init, WasmVoxelViewer } = await import("../../../pkg/viewer_wasm.js");
                 await init();
                 // wgpu 24 web queue completion is unimplemented. Capture the actual browser
@@ -53,6 +56,18 @@ self.onmessage = async ({ data }) => {
             self.postMessage({ type: "ready" });
         } else if (data.type === "frame") {
             if (viewer) {
+                if (orbit) {
+                    if (!viewer.orbit(0.01, 0)) throw new Error("Camera orbit did not change");
+                    orbitCalls += 1;
+                    let lod;
+                    for (let attempt = 0; attempt < 20; attempt++) {
+                        lod = viewer.updateLod(4);
+                        if (lod.coverageComplete && lod.pendingBlockIds.length === 0 && lod.lodStagePixels <= 4) break;
+                    }
+                    if (!lod.coverageComplete || lod.pendingBlockIds.length || lod.lodStagePixels > 4) {
+                        throw new Error("Camera sample target incomplete");
+                    }
+                }
                 const status = viewer.renderFrame();
                 if (status !== "presented") throw new Error(`WASM frame did not present: ${status}`);
                 self.postMessage({ type: "frame", submitted: ++submitted });
@@ -69,7 +84,9 @@ self.onmessage = async ({ data }) => {
             self.postMessage({ type: "frame", submitted: ++submitted });
         } else if (data.type === "finish") {
             await device.queue.onSubmittedWorkDone();
-            self.postMessage({ type: "idle", submitted, gpu: viewer?.gpuStats() ?? null });
+            const lod = viewer?.lodStats() ?? null;
+            self.postMessage({ type: "idle", submitted, orbitCalls, lod,
+                renderedVoxels: lod?.renderedVoxels ?? null, gpu: viewer?.gpuStats() ?? null });
         } else {
             throw new Error(`Unknown diagnostic command ${data.type}`);
         }

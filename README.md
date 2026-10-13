@@ -606,8 +606,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    de PSS padre sin mapas de la clase exacta: tamaño de imagen no explica el total. 27 tests Node,
    11 Python y smoke de ambos modos pasan; MCP comprueba modo inválido en escritorio/móvil.
    [Matriz y límites](docs/WEB_PERFORMANCE_BENCH.md#fixed-small-wasm-sample-surface-matrix--13-10-2026).
-   Siguiente: mover cámara con muestra pequeña para aislar reconstrucciones de escena de carga
-   grande, separar memoria JS/WASM y ampliar corpus Additive real antes de diseñar reutilización.
+   Órbita con muestra pequeña medida en seis perfiles: 300 giros producen **903 builds** y
+   cero lecturas adicionales; las capturas de mapas se serializan antes de la pantalla. No aparece
+   la clase de 161 mapas de Albuera y la PSS sube durante el reposo por causas no atribuidas.
+   Driver reproducible añadido. Siguiente: medir si publicar directamente el corte objetivo ya
+   residente evita builds intermedios, preservando fallback y presupuestos; separar memoria JS/WASM
+   y ampliar corpus Additive real antes de diseñar reutilización persistente.
+   [Matriz y límites](docs/WEB_PERFORMANCE_BENCH.md#small-wasm-camera-orbit-surface-memory-matrix--13-10-2026).
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
