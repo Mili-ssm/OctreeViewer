@@ -466,6 +466,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Ampliar prefijos a Albuera XYZ en tres rondas: 3/233 reconstrucciones, 24–33 ms
   candidatos de 75.280–78.387 ms totales; cámara sin prefijos nuevos. Seis fases completan
   objetivo, 17.085 vóxeles y cero errores. No justifica acumulador persistente en estos casos.
+- [x] Ampliar prefijos a Belvedere XYZ, tres rondas a 256 MiB: 4/156 reconstrucciones
+  elegibles, 18–21 ms candidatos; ningún prefijo nuevo tras el giro. Las seis fases pausan
+  con 782/780 bloques pendientes: no cierra 4 px ni justifica acumulador persistente.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
@@ -558,7 +561,8 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Exports frescos y actividad nueva confirmados; el panel puede ir atrasado. Hubo checks/Chrome
    simultáneos: no es comparación de tiempos ni cierre de capacidad.
    [Observación acotada](docs/WEB_PERFORMANCE_BENCH.md#fresh-1-gib-camera-observation-after-lookup-change--13-10-2026).
-   Siguiente: ampliar medición de prefijos a Belvedere y casos Additive; el cierre del objetivo
+   Siguiente: ampliar medición de prefijos a casos Additive; Belvedere medido en tres rondas
+   con 4/156 prefijos y menos de 0,03% de trabajo candidato. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
    Auditoría local incremental cerrada: comparar secuencia real de bloques, conservar orden de
    clasificación/sumas y descartar en reemplazos o cambios de contexto; la invalidación de payload

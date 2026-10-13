@@ -297,3 +297,30 @@ work remains below 0.05% of full-build time. The slower third terminal observati
 these are structural opportunity measurements, not paired speedup evidence. Neither measured
 cloud supports introducing a persistent append-only accumulator yet. Belvedere and Additive
 cases, combined peak memory and Chrome visual validation remain pending.
+
+### Belvedere at the default cache budget
+
+Three fresh Firefox 157.0.1 profiles repeat the coordinate-only probe at 1280×720,
+4 px and a 256 MiB cache, using the same instrumented WASM hash above. Raw exports:
+ignored `target/prefix-opportunity-belvedere/run-{1,2,3}/`; provenance accompanies them.
+OS caches were not flushed. Native fixture compilation/checks overlapped parts of the first
+two rounds; these observations measure structural opportunities, not comparable speedups.
+All six phases paused under cache pressure with zero browser console errors. Initial/camera
+exports retain coverage of the visible cut, with 782/780 requested blocks still pending;
+this does not complete the requested 4 px target.
+
+| Initial phase | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: |
+| Full builds / reused updates | 156 / 350 | 156 / 350 | 156 / 350 |
+| Strict-prefix builds | 4 | 4 | 4 |
+| Retained / added source points | 5,650 / 134,576 | 5,650 / 134,576 | 5,650 / 134,576 |
+| Candidate full-build time (ms) | 21 | 19 | 18 |
+| All full-build time (ms) | 100,140 | 97,786 | 95,049 |
+
+Every initial observation loads 507 blocks and processes 548,864,502 source points across
+full rebuilds. Camera phases add 179 loads, 74 full builds and 104 reused updates, but zero
+prefix opportunities; final visible voxels change from 20,977 to 20,707. Prefix candidates
+account for less than 0.03% of initial full-build time. A persistent append-only accumulator
+is not justified by this bounded trajectory either. This result does not cover a fully
+resident final cut or the unfinished 1 GiB target; cache pressure and the full rebuild cost
+remain separate problems. Combined peak memory and Additive workloads still need evidence.
