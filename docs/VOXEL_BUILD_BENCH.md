@@ -498,3 +498,95 @@ an error bound of 0.010973157088371032 source units. The default 0.01 correctly 
 `--max-error 0.02` succeeds. Two conversions pass deep validation and produce byte-identical
 coordinate and attribute files. This does not claim the default bound was met or that all
 source dimensions/CRS are preserved: the CLI reports the existing omitted dimensions contract.
+
+### Reproducible preparation and conversion
+
+```sh
+python3 crates/viewer_convert/benchmarks/prepare_real_additive_fixture.py target/additive-real-ept
+cargo run --release --offline -p viewer_convert -- target/additive-real-ept target/additive-real-v5.oct --max-error 0.02
+cargo run --release --offline -p viewer_convert -- target/additive-real-ept target/additive-real-v5-repeat.oct --max-error 0.02
+sha256sum target/additive-real-v5*.oct target/additive-real-v5*.octattrs
+```
+
+The preparation tool downloads exactly two metadata JSON files and three original LAZ payloads,
+with a 1 MiB per-file read limit and 30 s network timeout. It verifies selected counts and pinned
+LAZ SHA-256, refuses an existing output, and publishes the directory only after verification.
+Failures clean the staging directory. It saves unmodified source metadata and their hashes,
+a filtered hierarchy with every ancestor present, a manifest with selected `points`, and
+`provenance.json` explicitly marked `partial_subset`. The schema/bounds remain unchanged;
+metadata hashes record the observed source revision rather than claiming all future metadata
+will be identical. The converter independently verifies LAS header counts, compatible formats
+and output integrity. No binary point-cloud files are committed.
+
+| Source node | Points | LAZ bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| `0-0-0-0` | 6,518 | 82,652 | `a7d60b640ca060c98e5b579d491f6c17781e13791d3dbc99ea998cf3ca84072c` |
+| `1-0-0-0` | 1,822 | 26,872 | `201729aa4d47b3fd3680dcb2560423635498f0e8ce3b187f46f6d75ffd7fb4e2` |
+| `2-0-1-1` | 544 | 9,072 | `b31c5602258ca106a3108f76e228238645efe51f914875528d7464a615714f7f` |
+
+Observed source manifest SHA-256: `e9ab69d97e410e0d843013108e1849de2e7f51ad1d725ec91a2283dd76790e66`;
+root hierarchy: `328226e3179ff5805791d391f2b63fde6b83f4a38cd6e769875fe8c81d9b7e19`.
+Both converted pairs contain three blocks; coordinates 109,473 B and attributes 139,642 B:
+
+- `.oct`: `df8e93c564252c5daf3b12a489f189cb1924d5e1b15031cfbcb1411122975d23`
+- `.octattrs`: `0929046fb3c5ab6dde00ced985ee1934d1de8dfa91186ec7b8e61abe0ec7cf23`
+
+### Browser observations
+
+Serve the repo root on port 8000. From a page at `/examples/web-host/`, call:
+
+```js
+const { probeRealAdditive } = await import('./probe-real-additive.mjs');
+const result = await probeRealAdditive();
+```
+
+Run three fresh pages/workers in the same Chrome process. The probe creates an 800×600 CSS canvas
+(actual framebuffer 798×598 with the host border), loads coordinates only, asserts Additive
+metadata/three nodes/8,884 source points, waits for complete 4 px coverage, records stats, translates
+camera position and target +1000 source units on X, verifies the translation, records stats again
+and disposes the worker. It tests the geometry-only gray path; attributes were validated by native
+conversion, not selected in these browser rounds. This is not the earlier Firefox host-drag fixture
+or a timing comparison against those runs.
+
+Playwright MCP Chrome 155.0.8059.39, SwiftShader/Vulkan, same explicit software flags as the worker
+memory diagnostic. WASM SHA-256: `830c92fc1c3b7ceb1e0269cd0b3ee7ac5b881b1cf22d98d539e7ad68e5c660e7`.
+All rounds: 5,843 voxels, three loaded blocks, zero oversized voxels, no uncovered/omitted nodes,
+no pending blocks and no uncaught page errors. Initial scene builds: five; strict-prefix candidates:
+two. Camera translation adds one full build and no loads, evictions or additional prefix candidates.
+
+| Observation | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: |
+| Initial voxel build total (ms) | 37.3 | 51.2 | 32.1 |
+| Whole builds eligible as prefixes (ms) | 4.2 | 8.6 | 4.4 |
+| Additional camera build (ms) | 18.1 | 30.0 | 20.2 |
+| WASM linear capacity, before/after camera (B) | 3,014,656 | 3,014,656 | 3,014,656 |
+
+The candidate durations are full rebuild time, **not time saved**; no retained accumulator exists.
+The source is real but the filtered hierarchy has only one branch. It changes the evidence from
+synthetic-only Additive to a bounded real sample, without establishing representative frequency
+or a net benefit under large decoded caches. Linear capacity is not live JS/Rust allocations.
+Raw observations in this checkout: ignored `target/additive-real-final-browser-results.json`;
+original files and provenance: `target/additive-real-ept/`.
+
+### Native process observation and remaining work
+
+```sh
+target/perf/examples/voxel_build_bench target/additive-real-v5.oct 3 256 4 1
+```
+
+At its separate fitted 1280×720 viewport, the native fixture produces 5,872 voxels,
+checksum `c26eda29cfb82d42`. Sampled process RSS maxima: 5,046,272 / 5,427,200 / 5,431,296 B
+(10 / 8 / 8 samples). Combined model after retaining the first scene: 35,059,016 B, including
+142,312 B decoded accounting and 234,880 B previous scene capacity. These values have different
+scopes; they are not comparable to browser WASM capacity and do not measure a combined browser peak.
+Native executable SHA-256: `400da2e7949fd0b656ac21cd8b16d41e47f65b8372fdccdb351f1dcfea24ee3e`.
+Raw native output: ignored `target/additive-real-native-rss.json`.
+
+Validation: 13 Python benchmark tests (including three new preparation tests) pass, covering
+metadata/payload preservation, existing output refusal, changed hash/count cleanup, and oversized
+reads. Ruff check/format, probe syntax, Rust formatting, converter Clippy and WASM check pass;
+41 converter tests and two live deeply validated conversions pass. Browser probe executed through
+Playwright MCP. No rendering/layout changes or performance gain claims.
+
+Next: a larger branching real Additive sample, independent browser process rounds, JS/WASM live
+allocation attribution and a controlled cost/memory comparison before any persistent accumulator.

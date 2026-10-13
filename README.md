@@ -685,7 +685,7 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    28 tests JS y 11 Python pasan; paquete local regenerado y comprobado por `file://`
    con carga, benchmark y export. Sin cambios Rust/bindings.
    [Contrato y reproducción](docs/WEB_PERFORMANCE_BENCH.md#worker-wasm-linear-memory-snapshots--13-10-2026).
-   - [ ] Continuar después con atribución de asignaciones JS/WASM y corpus Additive real. El RSS de proceso incluye
+   - [ ] Continuar después con atribución de asignaciones JS/WASM y corpus Additive real ramificado de mayor tamaño. El RSS de proceso incluye
      reader, índice y allocator; no atribuye bytes al builder, no mide GPU ni garantiza capturar
      picos menores al intervalo. Las duraciones con muestreo no son comparables con las anteriores.
    - [x] Corregir importación EPT real: aceptar `float` (nombre oficial) conservando el alias
@@ -693,12 +693,20 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
      41 tests del conversor y Clippy pasan. USGS convierte sin modificar el schema original.
      El bounds extenso requiere `--max-error 0.02` (cota calculada 0,0109732; default 0,01 rechaza).
    Plan — corpus Additive real acotado (`viewer_convert` + navegador):
-   - [ ] Preparar tres nodos USGS NC Hurricane Florence con padre presente, LAZ originales
+   - [x] Preparar tres nodos USGS NC Hurricane Florence con padre presente, LAZ originales
      fijados por SHA-256 y procedencia; conservar bounds/schema, ajustar solo `points` y jerarquía
      a los 8.884 puntos seleccionados. Rechazar directorios existentes y descargas excesivas.
-   - [ ] Convertir y validar v5 dos veces; comprobar hashes y semántica Additive preservada.
-   - [ ] Medir tres rondas de carga/cámara, prefijos candidatos, trabajo completo y capacidad WASM;
+   - [x] Convertir y validar v5 dos veces; comprobar hashes y semántica Additive preservada.
+   - [x] Medir tres rondas de carga/cámara, prefijos candidatos, trabajo completo y capacidad WASM;
      dejar la muestra marcada como parcial, sin inferir cobertura del dataset original ni ahorros.
+   Resultado: script reproducible con hashes y publicación tras verificar todos los LAZ;
+   dos conversiones idénticas, 3 bloques y 249.115 B entre `.oct`/`.octattrs`. Tres workers
+   Chrome/SwiftShader completan el subset a 4 px: 5.843 vóxeles, 5 builds iniciales y 2 prefijos;
+   trabajo candidato 4,2 / 8,6 / 4,4 ms (builds completos, no ahorro). Tras trasladar cámara:
+   un build extra, cero cargas/evicciones/prefijos nuevos; capacidad WASM 3.014.656 B constante.
+   Tests de preparación/conversión, Ruff, check-web y Playwright MCP pasan. La cadena de tres
+   nodos no representa todo USGS ni el comportamiento de ramas/cachés grandes.
+   [Preparación, reproducción y límites](docs/VOXEL_BUILD_BENCH.md#real-additive-ept-sample--13-10-2026).
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
