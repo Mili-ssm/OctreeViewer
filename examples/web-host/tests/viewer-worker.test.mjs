@@ -48,8 +48,11 @@ async function runWorker() {
             }
             return "rendered";
         },
-        gpuStats: () => ({}),
-        stats: () => ({}),
+        gpuStats: () => ({
+            visibleInstances: Number(lod.visiblePoints),
+            requestedResources: { totalBytes: String(lod.lodStagePixels) },
+        }),
+        stats: () => ({ point_count: Number(lod.visiblePoints) }),
         viewportSize: () => [1, 1],
     };
     class WasmVoxelViewer {
@@ -155,4 +158,22 @@ test("worker starts scoped refinement timers after successful color changes", as
         firstFrameMs: 10,
         targetLodMs: 10,
     });
+});
+
+
+test("LOD progress carries current GPU and viewer statistics without a periodic stats frame", async () => {
+    const worker = await runWorker();
+    await worker.send("openFile", {
+        file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    let progress = latestProgress(worker.messages);
+    assert.equal(progress.gpu?.requestedResources.totalBytes, "4");
+    assert.equal(progress.viewer?.point_count, Number(progress.lod.visiblePoints));
+    await worker.send("refine", {
+        trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1,
+    });
+    progress = latestProgress(worker.messages);
+    assert.equal(progress.lod.lodStagePixels, 8);
+    assert.equal(progress.gpu?.requestedResources.totalBytes, "8");
+    assert.equal(worker.messages.filter(message => message.type === "stats").length, 0);
 });

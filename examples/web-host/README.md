@@ -358,6 +358,16 @@ fail the command; a recorded cache pause or observation cap is a diagnostic outc
 successful target or valid steady-state FPS benchmark. This probe does not measure GPU memory,
 heap JS or a paired performance improvement. Compare equivalent runs separately.
 
+### Progress statistics regression
+
+LOD progress messages carry GPU/viewer counters from the same worker state; the host refreshes
+both the panel and benchmark GPU snapshot without waiting for every-thirtieth-frame statistics.
+Progress messages do not count as frame replies. Serve the repository on port 8767 and run
+`tests/progress.browser.mjs` via Playwright MCP `browser_run_code_unsafe`'s `filename` argument.
+It exercises the real host DOM/export with a deterministic Worker in desktop/mobile viewports,
+with HTTP caching disabled. It does not exercise WebGPU rendering. Actual Firefox load/camera
+validation and prior stale-panel captures are recorded in the web benchmark document.
+
 ### Requested GPU resource sizes
 
 `gpuStats().requestedResources` reports decimal byte strings for `instanceBufferBytes`,

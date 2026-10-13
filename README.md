@@ -582,7 +582,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    capacidad de instancias. 86 tests Rust, 26 Node y 9 Python pasan; Clippy nativo/WASM y rebuild
    release/paquete pasan. Playwright MCP Chrome falla también en clear independiente por pérdida
    de dispositivo: no se valida Chrome ni VRAM física. [Contrato y evidencia](docs/WEB_PERFORMANCE_BENCH.md#requested-gpu-resources-and-resize-accounting--13-10-2026).
-   Siguiente: medir estos recursos durante refinamiento grande, separar memoria JS/WASM,
+   Corregido panel/export GPU atrasados al parar: progreso LOD incluye las estadísticas actuales
+   del mismo worker y actualiza ambos consumidores sin contar progreso como frames. Regresión
+   Node roja/verde y Playwright MCP del host con worker determinista pasan en escritorio/móvil;
+   Firefox Majadas real completa tres cargas/cámaras con seis paneles/export coincidentes.
+   Recursos GPU solicitados finales **15.153.112 / 15.153.108 B** antes/después de cámara;
+   PSS pico de proceso **967,5 / 1.028,7 / 1.889,1 MB**. 27 tests Node y 9 Python pasan;
+   paquete regenerado. [Reproducción y límites](docs/WEB_PERFORMANCE_BENCH.md#progress-only-panel-and-gpu-export-synchronization--13-10-2026).
+   Siguiente: ampliar capturas de recursos GPU a cortes mayores, separar memoria JS/WASM,
    capturar picos transitorios y ampliar corpus Additive real antes de diseñar reutilización.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo

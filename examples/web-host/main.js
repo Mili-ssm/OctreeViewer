@@ -430,8 +430,10 @@ function handleWorkerMessage(event) {
         if (data.refinement?.id !== requestedRefinementId) return;
         observedRefinementId = data.refinement.id;
         latestLodStats = data.lod;
+        updateStats(data);
         if (benchmarkRun) {
             benchmarkRun.refinement = data.refinement;
+            benchmarkRun.latestGpuStats = data.gpu;
             if (data.refinement.trigger === "dataset") {
                 benchmarkRun.firstCoarseFrameMs = data.firstCoarseMs;
                 benchmarkRun.targetLodMs = data.targetLodMs;

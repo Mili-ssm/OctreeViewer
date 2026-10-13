@@ -1102,3 +1102,55 @@ Raw Firefox JSON/screenshot and Chrome screenshot: ignored `target/gpu-resource-
 Next: collect these counters through progressive large-dataset loads and explicitly keep
 resident CPU PSS, requested GPU bytes and unobservable physical VRAM separate. No combined
 physical-memory total is inferred by adding them.
+
+### Progress-only panel and GPU export synchronization — 13-10-2026
+
+Reproducer: the preceding three Majadas loads/camera phases had complete fresh exports but
+`domMatchesExport=false` in all six terminal captures. `lodProgress` updated `latestLodStats`
+and benchmark refinement counters, while the panel and `latestGpuStats` waited for periodic
+`stats` messages (once every 30 rendered frames). Stopping at target could leave those values
+behind indefinitely. Fresh Blob capture alone did not synchronize the contained GPU counters.
+
+The worker now includes its current `gpuStats()` and `stats()` with each emitted LOD progress
+message. The host uses that same message to refresh the panel and stored benchmark GPU stats.
+Progress notifications are not acknowledged/counted as frame replies; real frames retain their
+existing accounting. Existing refinement-ID filtering still rejects stale refinement messages.
+The worker progress key and periodic frame-stat cadence are unchanged.
+
+A new worker regression fails before the change (`undefined !== '4'` for resource bytes), then
+passes for opening and color refinement without a periodic stats frame. Playwright MCP tests
+the real host DOM/export with a deterministic Worker at **1280×900** and **390×844**: a terminal
+progress message replaces stale pending/upload/resource counters, export agrees, and progress
+does not create FPS frame replies. HTTP cache is disabled for this test. A first persistent-
+context attempt used old cached host code and failed; the uncached run passes with zero
+console/page errors. This mock covers host synchronization, not Chrome GPU presentation.
+The committed callable Playwright snippet is `examples/web-host/tests/progress.browser.mjs`;
+run it through MCP `browser_run_code_unsafe` with that filename while serving on port 8767.
+
+Three fresh Firefox profiles then repeat actual Majadas XYZ load and `ArrowRight` at 1280×720,
+4 px, 256 MiB decoded cache, gray fallback, release WASM, HTTP caches disabled and OS cache not
+flushed. Linux tree memory uses 0.5 s requested sampler sleeps. All six final exports now have
+`domMatchesExport=true`, complete coverage, zero pending blocks, and zero console errors.
+Initial/camera scenes remain **6,397 / 6,396** voxels; no additional camera block loads.
+
+| Round | PSS sampled peak (B) | RSS sum sampled peak (B) | Readable / total samples |
+| --- | ---: | ---: | ---: |
+| 1 | 967,474,176 | 1,786,269,696 | 82 / 84 |
+| 2 | 1,028,718,592 | 1,849,253,888 | 83 / 85 |
+| 3 | 1,889,075,200 | 2,704,953,344 | 63 / 65 |
+
+At every final initial export, requested GPU resources are **15,153,112 B**: instances
+255,880; fixed buffers 376; HZB buffers/readback 25,644; depth 3,686,400; mip pyramid
+11,184,812. Camera exports request **15,153,108 B**, with one fewer visible index. The maximum
+among the 10-second export snapshots is 15,153,112 B in each round; this cadence cannot measure
+transient replacement peaks. Round 3's process PSS peak at 31.24 s includes 1,491,428,352 B
+in the Firefox parent. CPU PSS and requested GPU bytes are distinct scopes and times; do not add
+them into a physical-memory peak. No sampled/unsampled or before/after performance ratio is
+claimed, and the Chrome mock ran around this diagnostic series rather than under a controlled
+benchmark-isolation protocol.
+
+Raw series: ignored `target/progressive-resource-memory/majadas-{1,2,3}/`. Validation: **27 Node
+and 9 Python tests pass**, JS syntax and diff checks pass; offline package regenerated. No Rust
+changed in this correction; prior Rust/WASM validation applies to the same binding artifact.
+Next: broaden GPU resource snapshots to larger cuts and isolate transient parent memory with
+higher-frequency capture; physical VRAM/JS heap separation remains unavailable here.

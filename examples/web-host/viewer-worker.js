@@ -127,6 +127,8 @@ function postLodProgress(lod, afterRenderFrame = false) {
     self.postMessage({
         type: "lodProgress",
         lod,
+        gpu: viewer.gpuStats(),
+        viewer: viewer.stats(),
         frameRenderMs: frameRenderPercentiles(),
         firstCoarseMs,
         targetLodMs,
