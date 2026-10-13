@@ -215,7 +215,28 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
                 value = sample.get(source)
                 if value is not None:
                     phase[target] = max(phase[target] or 0, value)
-    return {"available": True, "phases": phases, "unassigned_sample_count": unassigned}
+    workers: dict[int, dict[str, int]] = {}
+    worker_pattern = re.compile(
+        r"internal_validation_worker_(\d+)_(blocks_read|points_read|read_elapsed_ns|"
+        r"max_decoded_block_estimated_bytes)=(\d+)\n?"
+    )
+    with stdout_path.open(encoding="utf-8") as stdout:
+        for line in stdout:
+            match = worker_pattern.fullmatch(line)
+            if match is None:
+                continue
+            index, key, value = match.groups()
+            worker = workers.setdefault(int(index), {})
+            if key in worker:
+                raise ValueError(f"duplicate validation worker {index} field {key}")
+            worker[key] = int(value)
+    required = {"blocks_read", "points_read", "read_elapsed_ns",
+                "max_decoded_block_estimated_bytes"}
+    if any(set(worker) != required for worker in workers.values()):
+        raise ValueError("incomplete validation worker diagnostics")
+    return {"available": True, "phases": phases, "unassigned_sample_count": unassigned,
+            "validation_workers": [dict(worker_index=index, **workers[index])
+                                   for index in sorted(workers)]}
 
 
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,

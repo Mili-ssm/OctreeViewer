@@ -510,6 +510,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    El benchmark ya informa lote efectivo de preparación, límite de threads Rayon, workers de
    validación y estimaciones por worker; contraste 1/2 completado en Belvedere, Majadas y
    Albuera. La matriz web continúa parcial; queda validar más navegadores y medir memoria GPU/heap JS.
+   Diagnóstico interno añadido: cada worker de validación agrega bloques y puntos leídos, tiempo
+   acumulado dentro de `read_block` y máxima estimación de memoria del bloque decodificado. No son
+   RSS ni incluyen buffers transitorios; al no activar `convert-profile` no se calcula la estimación.
+   La instrumentación restante debe separar ingestión/clasificación/escritura LOD y contar bytes
+   lógicos y retención por tipo de spool/lote; no presentar estos como I/O físico.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida

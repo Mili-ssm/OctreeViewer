@@ -165,6 +165,26 @@ fn convert(
         print_internal_window("spatial_planning", diagnostics.spatial_planning);
         print_internal_window("block_stream", diagnostics.block_stream);
         print_internal_window("output_validation", diagnostics.output_validation);
+        if let Some(workers) = diagnostics.validation_workers.as_ref() {
+            for worker in workers {
+                println!(
+                    "internal_validation_worker_{}_blocks_read={}",
+                    worker.worker_index, worker.blocks_read
+                );
+                println!(
+                    "internal_validation_worker_{}_points_read={}",
+                    worker.worker_index, worker.points_read
+                );
+                println!(
+                    "internal_validation_worker_{}_read_elapsed_ns={}",
+                    worker.worker_index, worker.read_elapsed_ns
+                );
+                println!(
+                    "internal_validation_worker_{}_max_decoded_block_estimated_bytes={}",
+                    worker.worker_index, worker.max_decoded_block_estimated_bytes
+                );
+            }
+        }
         if let Some(elapsed_ns) = diagnostics.block_preparation_elapsed_ns {
             println!("internal_block_preparation_elapsed_ns={elapsed_ns}");
         }

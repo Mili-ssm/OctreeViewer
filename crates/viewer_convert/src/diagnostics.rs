@@ -16,6 +16,19 @@ pub struct ConversionDiagnostics {
     pub ordered_write_and_release_elapsed_ns: Option<u128>,
     /// Validation setup and worker execution/join; does not attribute RSS to readers.
     pub output_validation: Option<DiagnosticWindow>,
+    /// Per-worker read aggregates. The block memory estimate excludes transient decoder buffers.
+    pub validation_workers: Option<Vec<ValidationWorkerDiagnostics>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationWorkerDiagnostics {
+    pub worker_index: usize,
+    pub blocks_read: u64,
+    pub points_read: u64,
+    /// Sum of time inside successful and failed `read_block` calls; worker sums can overlap.
+    pub read_elapsed_ns: u128,
+    /// Largest decoded block allocation estimate observed by this worker.
+    pub max_decoded_block_estimated_bytes: u64,
 }
 
 /// Monotonic elapsed time and best-effort wall-clock bounds for an observed phase.

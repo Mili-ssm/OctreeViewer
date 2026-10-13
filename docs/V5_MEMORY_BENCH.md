@@ -1038,3 +1038,21 @@ lógicos de spools sin llamarlos I/O físico; registrar capacidad retenida por l
 apertura/creación de readers y medidas de los bloques retornados durante validación. Los buffers
 transitorios de descompresión y RSS por función siguen sin atribución causal. Mantener los intervalos
 anteriores por callbacks para comparar con los registros históricos.
+
+### Lectura de validación por worker
+
+`convert-profile` también emite por worker el número de bloques y puntos decodificados, la suma del
+tiempo dentro de `read_block` y la mayor estimación de memoria de un `PointBlock`. La suma de tiempos
+puede exceder la ventana global porque los workers se solapan. La estimación representa el bloque
+devuelto y excluye buffers transitorios del decoder; no atribuye RSS. La ejecución normal no toma
+tiempos ni calcula `estimated_memory_bytes` para estos agregados.
+
+La prueba compara `.oct` y `.octattrs` entre llamadas con y sin diagnósticos e inspecciona métricas
+worker no vacías. Estos contadores explican el trabajo de lectura durante validación, pero no miden
+el pico retenido agregado ni desglosan creación/apertura de readers. Esos puntos, junto con bytes
+lógicos y tiempos de spools por fase, siguen pendientes.
+
+Smoke del 13-10-2026 con `fs_e430_n4008_18.las`, 111.190 puntos, solicitado con dos workers:
+terminó correctamente y la planificación de memoria limitó validación a uno. El JSON registró un
+bloque, 111.190 puntos, 17,97 ms acumulados en `read_block` y 4.003.511 B como máxima estimación de
+bloque. Es una ejecución de integración, no una medición comparativa ni un pico de memoria.

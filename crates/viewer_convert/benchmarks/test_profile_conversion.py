@@ -30,6 +30,10 @@ class ProfileConversionTests(unittest.TestCase):
                 "internal_block_stream_start_unix_ns=20\n"
                 "internal_block_stream_end_unix_ns=30\n"
                 "internal_output_validation_available=false\n"
+                "internal_validation_worker_0_blocks_read=3\n"
+                "internal_validation_worker_0_points_read=12\n"
+                "internal_validation_worker_0_read_elapsed_ns=40\n"
+                "internal_validation_worker_0_max_decoded_block_estimated_bytes=512\n"
             )
             samples.write_text("".join(json.dumps({
                 "start_unix_ns": start, "end_unix_ns": end,
@@ -47,6 +51,10 @@ class ProfileConversionTests(unittest.TestCase):
             self.assertEqual(phases[1]["rss_sampled_peak_bytes"], 30)
             self.assertEqual(phases[2]["elapsed_ns"], None)
             self.assertEqual(phases[2]["sample_count"], 0)
+            self.assertEqual(result["validation_workers"], [{
+                "worker_index": 0, "blocks_read": 3, "points_read": 12,
+                "read_elapsed_ns": 40, "max_decoded_block_estimated_bytes": 512,
+            }])
 
     def test_internal_phase_attribution_rejects_missing_and_overlapping_windows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

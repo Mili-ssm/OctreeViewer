@@ -32,7 +32,7 @@ mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
 use diagnostics::DiagnosticTimer;
-pub use diagnostics::{ConversionDiagnostics, DiagnosticWindow};
+pub use diagnostics::{ConversionDiagnostics, DiagnosticWindow, ValidationWorkerDiagnostics};
 use spatial::{
     PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
     spool_source,
@@ -499,8 +499,13 @@ fn convert_file_inner(
         let (output_bytes, output_validation) = if output_path.exists() && attributes_path.exists()
         {
             let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
-            let output_validation =
-                validate_output_pair(output_path, &attributes_path, &validation, on_progress)?;
+            let output_validation = validate_output_pair(
+                output_path,
+                &attributes_path,
+                &validation,
+                on_progress,
+                diagnostics.as_deref_mut(),
+            )?;
             if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), validation_timer)
             {
                 diagnostics.output_validation = Some(timer.finish());
@@ -965,7 +970,9 @@ fn validate_output_pair(
     attributes_path: &Path,
     validation: &OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionWorkerStats, ConvertError> {
+    let collect_diagnostics = diagnostics.is_some();
     let OutputValidation {
         total_points,
         block_ids,
@@ -1014,32 +1021,58 @@ fn validate_output_pair(
     let cancelled = AtomicBool::new(false);
     let (sender, receiver) = mpsc::sync_channel::<ValidationMessage>(worker_count * 2);
     let worker_readers = (0..worker_count)
-        .map(|_| {
+        .enumerate()
+        .map(|(worker_index, _)| {
             let mut fork = reader.fork_reader(File::open(path)?);
             fork.attach_attributes(File::open(attributes_path)?)?;
-            Ok(fork)
+            Ok((worker_index, fork))
         })
         .collect::<Result<Vec<_>, ConvertError>>()?;
     let mut validated_points = 0_u64;
     let mut first_error = None;
+    let mut validation_workers = collect_diagnostics.then(|| Vec::with_capacity(worker_count));
     thread::scope(|scope| {
-        for mut worker_reader in worker_readers {
+        for (worker_index, mut worker_reader) in worker_readers {
             let sender = sender.clone();
             let next_block = &next_block;
             let cancelled = &cancelled;
             let source_blocks = &source_blocks;
             scope.spawn(move || {
+                let mut worker_diagnostics = if collect_diagnostics {
+                    Some(ValidationWorkerDiagnostics {
+                        worker_index,
+                        blocks_read: 0,
+                        points_read: 0,
+                        read_elapsed_ns: 0,
+                        max_decoded_block_estimated_bytes: 0,
+                    })
+                } else {
+                    None
+                };
                 while !cancelled.load(Ordering::Relaxed) {
                     let index = next_block.fetch_add(1, Ordering::Relaxed);
                     let Some(block_id) = block_ids.get(index).copied() else {
                         break;
                     };
+                    let read_started = collect_diagnostics.then(Instant::now);
                     let result = worker_reader.read_block(block_id).map(|block| {
-                        (
-                            source_blocks.contains(&block_id),
-                            block.points().len() as u64,
-                        )
+                        let points = block.points().len() as u64;
+                        if let Some(worker_diagnostics) = worker_diagnostics.as_mut() {
+                            worker_diagnostics.blocks_read += 1;
+                            worker_diagnostics.points_read += points;
+                            worker_diagnostics.max_decoded_block_estimated_bytes =
+                                worker_diagnostics.max_decoded_block_estimated_bytes.max(
+                                    u64::try_from(block.estimated_memory_bytes())
+                                        .unwrap_or(u64::MAX),
+                                );
+                        }
+                        (source_blocks.contains(&block_id), points)
                     });
+                    if let Some(started) = read_started
+                        && let Some(worker_diagnostics) = worker_diagnostics.as_mut()
+                    {
+                        worker_diagnostics.read_elapsed_ns += started.elapsed().as_nanos();
+                    }
                     let failed = result.is_err();
                     if sender.send(ValidationMessage::Block(result)).is_err() {
                         return;
@@ -1049,7 +1082,7 @@ fn validate_output_pair(
                         break;
                     }
                 }
-                let _ = sender.send(ValidationMessage::Finished);
+                let _ = sender.send(ValidationMessage::Finished(worker_diagnostics));
             });
         }
         drop(sender);
@@ -1085,7 +1118,12 @@ fn validate_output_pair(
                     cancelled.store(true, Ordering::Relaxed);
                     first_error.get_or_insert(ConvertError::Format(error));
                 }
-                Ok(ValidationMessage::Finished) => finished_workers += 1,
+                Ok(ValidationMessage::Finished(worker)) => {
+                    if let (Some(workers), Some(worker)) = (&mut validation_workers, worker) {
+                        workers.push(worker);
+                    }
+                    finished_workers += 1;
+                }
                 Err(_) => {
                     cancelled.store(true, Ordering::Relaxed);
                     first_error.get_or_insert_with(|| {
@@ -1107,6 +1145,10 @@ fn validate_output_pair(
             actual: validated_points,
         });
     }
+    if let (Some(diagnostics), Some(mut workers)) = (diagnostics, validation_workers) {
+        workers.sort_by_key(|worker| worker.worker_index);
+        diagnostics.validation_workers = Some(workers);
+    }
     Ok(ConversionWorkerStats {
         worker_limit: worker_count,
         estimated_bytes_per_worker: worker_bytes,
@@ -1115,7 +1157,7 @@ fn validate_output_pair(
 
 enum ValidationMessage {
     Block(Result<(bool, u64), viewer_format::FormatError>),
-    Finished,
+    Finished(Option<ValidationWorkerDiagnostics>),
 }
 
 fn publish_output_pair(
@@ -1124,7 +1166,7 @@ fn publish_output_pair(
     output_path: &Path,
     validation: OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
-    diagnostics: Option<&mut ConversionDiagnostics>,
+    mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<(u64, ConversionWorkerStats), ConvertError> {
     let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let output_validation = validate_output_pair(
@@ -1132,6 +1174,7 @@ fn publish_output_pair(
         attributes_temporary_path,
         &validation,
         on_progress,
+        diagnostics.as_deref_mut(),
     )?;
     if let (Some(diagnostics), Some(timer)) = (diagnostics, validation_timer) {
         diagnostics.output_validation = Some(timer.finish());
@@ -1397,6 +1440,16 @@ mod tests {
         }
         assert!(diagnostics.block_preparation_elapsed_ns.is_some());
         assert!(diagnostics.ordered_write_and_release_elapsed_ns.is_some());
+        let validation_workers = diagnostics
+            .validation_workers
+            .expect("profiled validation reports worker aggregates");
+        assert!(!validation_workers.is_empty());
+        assert!(validation_workers.iter().all(|worker| {
+            worker.blocks_read > 0
+                && worker.points_read > 0
+                && worker.read_elapsed_ns > 0
+                && worker.max_decoded_block_estimated_bytes > 0
+        }));
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1677,6 +1730,7 @@ mod tests {
                 reserved_memory_bytes: 1,
             },
             &mut |_| true,
+            None,
         )
         .unwrap();
         assert_eq!(limited.worker_limit, 1);
