@@ -681,12 +681,22 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    además de mecanismos que suavicen transiciones LOD conservando vóxeles enteros sin solapamiento.
    Cierre: viabilidad documentada y comparación de tamaño neto comprimido (incluidos metadatos),
    CPU, memoria, lectura selectiva y calidad de transición; no asumir ahorro por añadir el byte.
-8. [ ] **Revisar abstracciones y propiedad en Rust.** Identificar lugares concretos donde `enum`,
-   `Box`, `dyn Trait`, genéricos, `Arc`, `Rc` o préstamos puedan mejorar rendimiento, acoplamiento
-   y mantenibilidad. Revisar despacho estático/dinámico, asignaciones, copias, propiedad compartida
-   y requisitos `Send`/`Sync` en nativo y WASM; comparar con la solución actual antes de cambiarla.
-   Cierre: propuestas localizadas con beneficio justificado, mediciones cuando se alegue rendimiento
-   y checks pertinentes; priorizar simplicidad y buenas prácticas, evitando abstracciones sin uso.
+8. [x] **Revisar abstracciones y propiedad en Rust.** Auditoría localizada completada el 13-10-2026;
+   no justifica cambios de código sin evidencia adicional. `FormatMetadata` y `LodDataset` comparten
+   el `Arc<DatasetMetadata>` inmutable para no clonar la jerarquía; `Arc<Mutex<BrowserReadStats>>`
+   comparte contadores con los lectores síncronos Blob y el viewer, aunque una alternativa
+   `Rc<RefCell<_>>` solo merecería evaluarse con una medición del coste de instrumentación.
+   `SpatialHierarchy` conserva los IDs deduplicados en `Box<[BlockId]>` y las estructuras de estado
+   usan `enum` explícitos; pasar a `Vec`, flags o `Box` en `ViewerData` no aporta un consumidor ni
+   un ahorro demostrado. Los proyectores `&dyn Fn` son prestados y no asignan en heap; genéricos
+   permitirían despacho estático, pero propagarían parámetros por la cadena del builder y no hay
+   comparación de rendimiento que justifique ese acoplamiento/código monomorfizado.
+   No se halló requisito adicional de `Send`/`Sync` para lectores del navegador; la conversión sí
+   usa workers nativos en `viewer_convert`. Reabrir solo con un perfil que identifique un coste o
+   un problema de propiedad concreto. Referencias: `viewer_format/src/metadata.rs`,
+   `viewer_wasm/src/lod_dataset.rs`, `viewer_wasm/src/browser_io.rs`,
+   `viewer_core/src/spatial.rs`, `viewer_wasm/src/controller.rs` y
+   `viewer_render_wgpu/src/voxel_grid.rs`.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
