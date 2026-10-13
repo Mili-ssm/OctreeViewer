@@ -344,8 +344,10 @@ node examples/web-host/probe-cache-camera.mjs data/datasets/belv_2009_digital-ae
 
 The optional third argument changes the host URL. The probe owns and closes that Firefox
 session; use a dedicated instance. It loads coordinates without a sidecar, fits a 1280×720
-framebuffer at the host's default detail/cache budget, then sends one `ArrowRight` after the
-initial observation. Each phase ends on a detector pause, target completion, 120 seconds
+framebuffer at the host's default detail/cache budget, then sends a trusted BiDi right-button
+drag over the canvas after the initial observation. It keeps the 15-second animation window
+active so the worker's 30-frame statistics include the camera update; this window is excluded
+from any FPS claim. Each phase ends on a detector pause, target completion, 120 seconds
 without counter changes, or a 600-second cap. An observation cap is an incomplete result.
 A paused retained cut can have complete coverage while the requested 4 px target remains pending.
 

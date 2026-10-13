@@ -1424,3 +1424,28 @@ inputs, not GPU scene publication or failure recovery.
 A real fine-cut CPU/GPU build failure still needs injection to verify that the old scene remains
 active and the coarser attempt succeeds. A browser-level partially resident multiblock camera
 run should also verify cache protection and publication.
+
+### Majadas multiblock resident-camera observation — 13-10-2026
+
+One follow-up Firefox 157.0.1 run uses Majadas coordinates only (4,214,687,109 B, 415,465,882
+source points), 1280×720 framebuffer, target 4 px and the existing 256 MiB cache. The initial
+completed cut has 239 loaded blocks, 202 visible blocks, 6,397 voxels and **112,290,672 B** of
+decoded cache. A trusted 30 CSS-pixel right drag is acknowledged; the fresh camera export has
+complete coverage, zero pending blocks, the same 202 visible blocks and 6,397 voxels, no new
+block loads/range reads, no cache evictions, and `sceneBuilds` increases **98→100**. Thus this
+cut was multiblock and smaller than the full dataset while all payloads required by the visible
+target remained resident. The one observation checks functional camera publication on a real
+dataset; it is not a before/after count comparison, memory sample or FPS benchmark.
+
+The cache/camera driver now uses a trusted BiDi pointer drag. It starts the host's 15-second
+continuous-render window before moving, because LOD progress suppresses unchanged-stage messages
+and periodic worker counters otherwise wait for every 30th frame. The window exists only to flush
+current counters; `steadyState.cameraChanged` makes its FPS unsuitable for comparison. Three
+earlier tries without the sustained frame window are excluded: their host received input, but the
+fresh export retained the initial worker counters. The final sustained run has zero browser
+console errors. The committed driver syntax-checks; **27 Node and 11 Python tests pass**.
+
+Raw valid capture: ignored `target/resident-camera-majadas/sustained/`. This leaves one key case
+open: induce a fine scene build failure under a controlled renderer budget, confirm the previous
+scene remains visible, then confirm the coarse retry succeeds. Repeatable before/after camera
+counts on this multiblock dataset also remain open.

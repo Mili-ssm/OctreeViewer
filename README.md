@@ -618,9 +618,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    planes Replacement/Additive verifica elegibilidad multibloque, bloques pendientes y omisiones
    de presupuesto; falta forzar el error real de construcción para comprobar el fallback completo.
    [Contrato, resultados y límites](docs/WEB_PERFORMANCE_BENCH.md#resident-target-cut-on-camera-invalidation--13-10-2026).
-   Siguiente: forzar el fallback por límite de construcción en un renderer real y medir cámara
-   con caché multibloque parcial, separar memoria JS/WASM y ampliar corpus Additive real antes de
-   diseñar reutilización persistente.
+   Majadas multibloque (415,5 M puntos): con 239 bloques/112,3 MB en caché, un arrastre de cámara
+   conserva cobertura 4 px de 202 bloques y 6.397 vóxeles, sin nuevas lecturas ni evicciones;
+   builds **98→100**. Una ronda funcional, no benchmark FPS. El probe BiDi mantiene render activo
+   hasta exportar estadísticas worker actuales.
+   [Evidencia y alcance](docs/WEB_PERFORMANCE_BENCH.md#resident-target-cut-on-camera-invalidation--13-10-2026).
+   Siguiente: forzar el fallback por límite de construcción en un renderer real, repetir cámara
+   multibloque con comparador controlado, separar memoria JS/WASM y ampliar corpus Additive real
+   antes de diseñar reutilización persistente.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.

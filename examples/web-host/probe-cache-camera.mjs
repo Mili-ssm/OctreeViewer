@@ -110,7 +110,17 @@ try {
     await send("input.setFiles", { context, element: { sharedId: element.sharedId }, files: [path.resolve(input)] });
     const initial = await observe("initial");
     save("initial.json", initial);
-    await evaluate('document.querySelector("canvas").focus(); document.querySelector("canvas").dispatchEvent(new KeyboardEvent("keydown", {key:"ArrowRight",bubbles:true})); true');
+    // Keep enough frames flowing for the worker's every-30-frame stats to publish
+    // scene-build counters after a camera move; this is not an FPS observation.
+    await evaluate('document.querySelector("#start-benchmark").click()');
+    await send("input.performActions", { context, actions: [{
+        type: "pointer", id: "camera-pointer", parameters: { pointerType: "mouse" }, actions: [
+            { type: "pointerMove", x: 900, y: 400 },
+            { type: "pointerDown", button: 2 },
+            { type: "pointerMove", x: 930, y: 400, duration: 200 },
+            { type: "pointerUp", button: 2 },
+        ],
+    }] });
     const camera = await observe("camera", initial);
     if (!camera.data.steadyState.cameraChanged) throw new Error("Camera input was not acknowledged");
     save("camera.json", camera);
