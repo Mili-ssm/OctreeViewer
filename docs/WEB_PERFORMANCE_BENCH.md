@@ -1372,3 +1372,45 @@ Next: prototype a one-shot selection of the actual target cut from resident bloc
 invalidation, publishing it only if coverage and all budgets are complete; otherwise preserve
 the existing progressive coarse-to-fine fallback. Measure paired camera runs before claiming
 reduced construction or memory.
+
+### Resident target cut on camera invalidation — 13-10-2026
+
+When a camera change resets the progressive stage, the binding now probes the requested target
+cut against the current decoded-block cache. It publishes that cut directly only when the plan has
+no pending blocks, uncovered nodes, selection-budget omissions or transition-budget omissions.
+The probe neither loads blocks nor builds/uploads a scene. If the target is not complete, the
+existing coarse-to-fine loader path runs. A complete resident plan still goes through the normal
+voxel builder and renderer budgets; a fine build error retries at the coarse stage. The accepted
+stage is used for subsequent progression so a successful direct target does not schedule an
+unnecessary intermediate stage. No cache, scene or format metadata was added.
+
+Three new Firefox 157.0.1 profiles repeat the fixed 4,096-point RGB sample at 1280×720 drawing
+size, 640×360 CSS size, target 4 px, 300 camera orbits/frames, and the queue-completion plus
+20-second idle protocol. The previous six-run orbit matrix supplies three same-size baseline
+rounds with the identical diagnostic. Every new run ends with 4,096 rendered voxels, complete
+coverage, no pending blocks, one initial block load, zero camera-time reads and zero console
+errors. All request **15,051,868 B** of steady renderer resources.
+
+| 1280×720 run | Baseline scene builds | Direct-target scene builds | Baseline voxel-build CPU (ms) | Direct-target voxel-build CPU (ms) | Baseline cumulative uploads (B) | Direct-target cumulative uploads (B) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 903 | 303 | 21,065 | 8,147 | 147,115,800 | 49,643,520 |
+| 2 | 903 | 303 | 20,617 | 11,543 | 147,115,800 | 49,643,520 |
+| 3 | 903 | 303 | 19,822 | 9,253 | 147,115,800 | 49,643,520 |
+
+Median measured voxel-build CPU time changes from **20,617 ms to 9,253 ms** (55.1% lower);
+scene builds fall by two thirds. The new selection/planning counters include the resident-target
+preflight. Cumulative upload traffic falls with the avoided full-scene publications; current
+requested GPU allocation stays the same. These sequential profile runs use the same browser,
+settings and input, but are not alternating paired runs and the OS cache is not flushed. They
+support the narrow construction-count and cumulative-work observation, not a general FPS,
+end-to-end latency or memory-resident improvement claim. GPU/CPU build-budget failure was not
+fault-injected; coarse fallback on a newly loaded sample is exercised in all runs.
+
+Raw before data remains under `target/surface-orbit-serial-memory/`; the three new profiles,
+identity-checked parent-map snapshots and screenshots are under ignored
+`target/surface-orbit-fastpath/`. Validation: **28 viewer_wasm tests pass, 1 ignored**;
+workspace native and `viewer_wasm` WASM-target Clippy, WASM target check, release WASM rebuild,
+bindings/package regeneration, and three actual Firefox WebGPU runs pass. Rust format and
+`git diff --check` pass. The next
+validation should force fine-cut budget failure and use a multi-block partially resident cut to
+check that fallback, cache protection and scene publication remain correct.

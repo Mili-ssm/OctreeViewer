@@ -609,10 +609,17 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Órbita con muestra pequeña medida en seis perfiles: 300 giros producen **903 builds** y
    cero lecturas adicionales; las capturas de mapas se serializan antes de la pantalla. No aparece
    la clase de 161 mapas de Albuera y la PSS sube durante el reposo por causas no atribuidas.
-   Driver reproducible añadido. Siguiente: medir si publicar directamente el corte objetivo ya
-   residente evita builds intermedios, preservando fallback y presupuestos; separar memoria JS/WASM
-   y ampliar corpus Additive real antes de diseñar reutilización persistente.
-   [Matriz y límites](docs/WEB_PERFORMANCE_BENCH.md#small-wasm-camera-orbit-surface-memory-matrix--13-10-2026).
+   Corte objetivo residente en cámara: publicar a 4 px solo si no faltan bloques ni hay regiones
+   descubiertas/omitidas; conserva el refinamiento progresivo como fallback. Tres rondas Firefox
+   de 300 giros mantienen 4.096 vóxeles completos y bajan de **903 a 303 builds**; mediana de
+   voxelización **20.617→9.253 ms**, subidas GPU acumuladas **147.115.800→49.643.520 B**, recursos
+   GPU solicitados estables en **15.051.868 B**. Comparación indicativa, sin FPS ni memoria
+   residente. La carga inicial prueba el camino progresivo sin residencia; falta forzar el fallback
+   por presupuesto de construcción y medir cortes multibloque/caché parcial.
+   [Contrato, resultados y límites](docs/WEB_PERFORMANCE_BENCH.md#resident-target-cut-on-camera-invalidation--13-10-2026).
+   Siguiente: validar fallback con presupuesto GPU/CPU limitado en datos sintéticos, medir cámara
+   sobre caché multibloque parcial, separar memoria JS/WASM y ampliar corpus Additive real antes de
+   diseñar reutilización persistente.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.

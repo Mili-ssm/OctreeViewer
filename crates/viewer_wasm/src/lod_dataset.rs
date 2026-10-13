@@ -499,6 +499,45 @@ impl LodDataset {
         Ok(stats)
     }
 
+    /// Checks whether the target cut can be published using only blocks already in the cache.
+    /// This preflight does not build a scene or change cache protection.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn target_cut_is_resident(
+        &mut self,
+        renderer: &mut SurfaceRenderer<'_>,
+        target_voxel_pixels: f64,
+    ) -> Result<bool, LodDatasetError> {
+        renderer.set_visual_scale(self.visual_scale)?;
+        let config = LodSelectionConfig::new(target_voxel_pixels, u64::MAX)?;
+        let frustum = renderer
+            .spatial_frustum(self.metadata.coordinate_frame().origin())
+            .ok_or(LodDatasetError::CameraUnavailable)?;
+        let selection_started = WorkClock::start();
+        let selection = self
+            .metadata
+            .hierarchy()
+            .select_lod(&frustum, config, |node| {
+                renderer.projected_error_pixels(
+                    node.bounds(),
+                    bounds_side(node.bounds()) / 8.0,
+                    self.metadata.coordinate_frame().origin(),
+                )
+            });
+        self.refinement_work.selection_ms += selection_started.elapsed_ms();
+        let target = selection?;
+        if !target.budget_limited().is_empty() {
+            return Ok(false);
+        }
+        let planning_started = WorkClock::start();
+        let plan = self
+            .planner
+            .prepare(self.metadata.hierarchy(), &target, &self.cache);
+        self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        Ok(plan.pending_blocks().is_empty()
+            && plan.uncovered_nodes().is_empty()
+            && plan.budget_omitted_nodes().is_empty())
+    }
+
     /// Current cache-reset-scoped work counters, including a failed scene update.
     pub fn refinement_work(&self) -> &LodWorkStats {
         &self.refinement_work

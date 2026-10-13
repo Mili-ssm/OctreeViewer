@@ -930,7 +930,41 @@ impl WasmVoxelViewer {
     }
 
     fn update_lod_view(&mut self, target_voxel_pixels: f64) -> Result<LodViewStats, JsValue> {
-        let stage_pixels = self.lod_stage_pixels.unwrap_or(16.0);
+        if self.lod_stage_pixels.is_none()
+            && target_voxel_pixels < 16.0
+            && self.target_cut_is_resident(target_voxel_pixels)?
+        {
+            match self.update_lod_view_at_stage(target_voxel_pixels, target_voxel_pixels) {
+                Ok(stats) => return Ok(stats),
+                Err(_) => {
+                    // A fine resident cut can still exceed the voxel/GPU build budget. Retry
+                    // through the normal coarse stage before reporting the failure.
+                    self.lod_stage_pixels = None;
+                }
+            }
+        }
+        self.update_lod_view_at_stage(target_voxel_pixels, self.lod_stage_pixels.unwrap_or(16.0))
+    }
+
+    fn target_cut_is_resident(&mut self, target_voxel_pixels: f64) -> Result<bool, JsValue> {
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let dataset = self
+            .lod_dataset
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        dataset
+            .target_cut_is_resident(renderer, target_voxel_pixels)
+            .map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    fn update_lod_view_at_stage(
+        &mut self,
+        target_voxel_pixels: f64,
+        stage_pixels: f64,
+    ) -> Result<LodViewStats, JsValue> {
         let selection_error_pixels = stage_pixels;
         let requested_mode = self.gpu_renderer.as_ref().map(SurfaceRenderer::color_mode);
         let requested_attribute = requested_mode.and_then(color_attribute_name);
@@ -1010,7 +1044,7 @@ impl WasmVoxelViewer {
         self.lod_range_read_stats = lod_range_read_stats;
         let stats = stats.map_err(|error| JsValue::from_str(&error.to_string()))?;
         (self.lod_stage_pixels, self.lod_dirty) = next_lod_stage(
-            self.lod_stage_pixels,
+            Some(stage_pixels),
             target_voxel_pixels,
             !stats.pending_block_ids.is_empty(),
             can_load_blocks,
