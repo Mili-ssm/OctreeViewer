@@ -16,6 +16,62 @@ SPEC.loader.exec_module(profile_conversion)
 
 
 class ProfileConversionTests(unittest.TestCase):
+    def test_internal_phase_samples_require_complete_non_overlapping_windows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stdout, samples = root / "stdout.log", root / "samples.jsonl"
+            stdout.write_text(
+                "internal_spatial_planning_available=true\n"
+                "internal_spatial_planning_elapsed_ns=100\n"
+                "internal_spatial_planning_start_unix_ns=10\n"
+                "internal_spatial_planning_end_unix_ns=20\n"
+                "internal_block_stream_available=true\n"
+                "internal_block_stream_elapsed_ns=50\n"
+                "internal_block_stream_start_unix_ns=20\n"
+                "internal_block_stream_end_unix_ns=30\n"
+                "internal_output_validation_available=false\n"
+            )
+            samples.write_text("".join(json.dumps({
+                "start_unix_ns": start, "end_unix_ns": end,
+                "rss_bytes": rss, "temporary_bytes": temporary_bytes,
+            }) + "\n" for start, end, rss, temporary_bytes in [
+                (10, 12, 40, 70), (19, 21, 999, 999), (22, 23, 30, 50),
+            ]))
+
+            result = profile_conversion.internal_phase_peaks(stdout, samples)
+
+            phases = result["phases"]
+            self.assertEqual(result["unassigned_sample_count"], 1)
+            self.assertEqual(phases[0]["rss_sampled_peak_bytes"], 40)
+            self.assertEqual(phases[0]["temporary_sampled_peak_bytes"], 70)
+            self.assertEqual(phases[1]["rss_sampled_peak_bytes"], 30)
+            self.assertEqual(phases[2]["elapsed_ns"], None)
+            self.assertEqual(phases[2]["sample_count"], 0)
+
+    def test_internal_phase_attribution_rejects_missing_and_overlapping_windows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stdout, samples = root / "stdout.log", root / "samples.jsonl"
+            samples.write_text(json.dumps({
+                "start_unix_ns": 15, "end_unix_ns": 16,
+                "rss_bytes": 1, "temporary_bytes": 1,
+            }) + "\n")
+            stdout.write_text("")
+            self.assertFalse(profile_conversion.internal_phase_peaks(stdout, samples)["available"])
+
+            lines = []
+            for name, start, end in (("spatial_planning", 10, 20), ("block_stream", 15, 25)):
+                lines.extend((
+                    f"internal_{name}_available=true",
+                    f"internal_{name}_elapsed_ns=10",
+                    f"internal_{name}_start_unix_ns={start}",
+                    f"internal_{name}_end_unix_ns={end}",
+                ))
+            lines.append("internal_output_validation_available=false")
+            stdout.write_text("\n".join(lines) + "\n")
+            with self.assertRaises(ValueError):
+                profile_conversion.internal_phase_peaks(stdout, samples)
+
     def test_phase_peaks_exclude_transitions_and_do_not_attribute_lifetime_hwm(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

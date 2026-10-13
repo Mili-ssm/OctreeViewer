@@ -12,6 +12,7 @@ use std::{
         mpsc,
     },
     thread,
+    time::Instant,
 };
 
 use las::Reader;
@@ -25,10 +26,13 @@ use viewer_format::{
 };
 
 mod checkpoint;
+mod diagnostics;
 mod ept;
 mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
+use diagnostics::DiagnosticTimer;
+pub use diagnostics::{ConversionDiagnostics, DiagnosticWindow};
 use spatial::{
     PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
     spool_source,
@@ -325,7 +329,39 @@ pub fn convert_file_with_progress<F>(
 where
     F: FnMut(ConversionProgress) -> bool,
 {
-    convert_file_inner(input_path, output_path, options, None, &mut on_progress)
+    convert_file_inner(
+        input_path,
+        output_path,
+        options,
+        None,
+        &mut on_progress,
+        None,
+    )
+}
+
+/// Converts LAS/LAZ while collecting bounded aggregate phase timings for diagnostics.
+///
+/// External RSS and temporary-file samples may be correlated with the returned windows, but
+/// remain process-wide observations. EPT conversion currently returns empty diagnostics.
+pub fn convert_file_with_diagnostics<F>(
+    input_path: &Path,
+    output_path: &Path,
+    options: ConvertOptions,
+    mut on_progress: F,
+) -> Result<(ConversionReport, ConversionDiagnostics), ConvertError>
+where
+    F: FnMut(ConversionProgress) -> bool,
+{
+    let mut diagnostics = ConversionDiagnostics::default();
+    let report = convert_file_inner(
+        input_path,
+        output_path,
+        options,
+        None,
+        &mut on_progress,
+        Some(&mut diagnostics),
+    )?;
+    Ok((report, diagnostics))
 }
 
 /// Converts a file while retaining completed phase checkpoints for explicit resume.
@@ -345,6 +381,7 @@ where
         options,
         Some(mode),
         &mut on_progress,
+        None,
     )
 }
 
@@ -354,6 +391,7 @@ fn convert_file_inner(
     options: ConvertOptions,
     checkpoint_mode: Option<CheckpointMode>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
     if output_path == output_attributes_path(output_path) {
         return Err(ConvertError::ConflictingOutputPaths);
@@ -460,8 +498,13 @@ fn convert_file_inner(
         }
         let (output_bytes, output_validation) = if output_path.exists() && attributes_path.exists()
         {
+            let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
             let output_validation =
                 validate_output_pair(output_path, &attributes_path, &validation, on_progress)?;
+            if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), validation_timer)
+            {
+                diagnostics.output_validation = Some(timer.finish());
+            }
             (
                 candidate_length
                     .checked_add(attributes_fingerprint.bytes)
@@ -475,6 +518,7 @@ fn convert_file_inner(
                 output_path,
                 validation,
                 on_progress,
+                diagnostics.as_deref_mut(),
             )?
         };
         checkpoint.complete()?;
@@ -500,6 +544,7 @@ fn convert_file_inner(
     } else {
         Workspace::create(output_path)?
     };
+    let spatial_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let spatial_plan = if let Some(checkpoint) = checkpoint.as_mut() {
         match checkpoint.stage() {
             CheckpointStage::Started => {
@@ -527,6 +572,9 @@ fn convert_file_inner(
             on_progress,
         )?
     };
+    if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), spatial_timer) {
+        diagnostics.spatial_planning = Some(timer.finish());
+    }
     let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
     let mut temporary = if checkpoint.is_none() {
         Some(create_temporary_pair(output_path)?)
@@ -584,11 +632,14 @@ fn convert_file_inner(
     let block_preparation = stream_blocks(
         &mut writer,
         &plan,
-        &temporary_path,
-        writer_options,
-        options.spatial_workers(),
-        options.max_memory_budget_bytes(),
-        on_progress,
+        StreamBlockOptions {
+            temporary_path: &temporary_path,
+            writer_options,
+            requested_workers: options.spatial_workers(),
+            memory_budget_bytes: options.max_memory_budget_bytes(),
+            on_progress,
+            diagnostics: diagnostics.as_deref_mut(),
+        },
     )?;
     let (output, attributes) = writer.finish_pair()?;
     output.sync_all()?;
@@ -633,6 +684,7 @@ fn convert_file_inner(
         output_path,
         validation,
         on_progress,
+        diagnostics,
     )?;
     drop(temporary);
     if let Some(checkpoint) = checkpoint {
@@ -704,15 +756,34 @@ impl ConversionPlan {
     }
 }
 
-fn stream_blocks(
-    writer: &mut FormatWriter<File>,
-    plan: &ConversionPlan,
-    temporary_path: &Path,
+struct StreamBlockOptions<'a, F> {
+    temporary_path: &'a Path,
     writer_options: FormatWriterOptions,
     requested_workers: usize,
     memory_budget_bytes: u64,
-    on_progress: &mut impl FnMut(ConversionProgress) -> bool,
-) -> Result<ConversionWorkerStats, ConvertError> {
+    on_progress: &'a mut F,
+    diagnostics: Option<&'a mut ConversionDiagnostics>,
+}
+
+fn stream_blocks<F>(
+    writer: &mut FormatWriter<File>,
+    plan: &ConversionPlan,
+    options: StreamBlockOptions<'_, F>,
+) -> Result<ConversionWorkerStats, ConvertError>
+where
+    F: FnMut(ConversionProgress) -> bool,
+{
+    let StreamBlockOptions {
+        temporary_path,
+        writer_options,
+        requested_workers,
+        memory_budget_bytes,
+        on_progress,
+        diagnostics,
+    } = options;
+    let stream_timer = diagnostics.as_deref().map(|_| DiagnosticTimer::start());
+    let mut block_preparation_ns = 0_u128;
+    let mut ordered_write_ns = 0_u128;
     emit_progress(
         on_progress,
         ConversionProgress {
@@ -741,6 +812,7 @@ fn stream_blocks(
         .min(memory_limited_workers)
         .min(plan.blocks.len().max(1));
     for batch in plan.blocks.chunks(worker_count) {
+        let prepare_started = Instant::now();
         let prepared = batch
             .par_iter()
             .map(|block| {
@@ -748,6 +820,9 @@ fn stream_blocks(
                     .map_err(ConvertError::Format)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        block_preparation_ns =
+            block_preparation_ns.saturating_add(prepare_started.elapsed().as_nanos());
+        let write_started = Instant::now();
         for (block, prepared) in batch.iter().zip(prepared) {
             writer.write_prepared_block(prepared)?;
             // The whole batch has finished reading before any shared spool is removed.
@@ -766,12 +841,18 @@ fn stream_blocks(
                 processed,
             )?;
         }
+        ordered_write_ns = ordered_write_ns.saturating_add(write_started.elapsed().as_nanos());
     }
     if processed != plan.point_count {
         return Err(ConvertError::PointCountMismatch {
             expected: plan.point_count,
             actual: processed,
         });
+    }
+    if let (Some(diagnostics), Some(timer)) = (diagnostics, stream_timer) {
+        diagnostics.block_stream = Some(timer.finish());
+        diagnostics.block_preparation_elapsed_ns = Some(block_preparation_ns);
+        diagnostics.ordered_write_and_release_elapsed_ns = Some(ordered_write_ns);
     }
     Ok(ConversionWorkerStats {
         worker_limit: worker_count,
@@ -1043,13 +1124,18 @@ fn publish_output_pair(
     output_path: &Path,
     validation: OutputValidation<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<(u64, ConversionWorkerStats), ConvertError> {
+    let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let output_validation = validate_output_pair(
         temporary_path,
         attributes_temporary_path,
         &validation,
         on_progress,
     )?;
+    if let (Some(diagnostics), Some(timer)) = (diagnostics, validation_timer) {
+        diagnostics.output_validation = Some(timer.finish());
+    }
     let attributes_path = output_attributes_path(output_path);
     let primary_bytes = fs::metadata(temporary_path)?.len();
     let attributes_bytes = fs::metadata(attributes_temporary_path)?.len();
@@ -1202,7 +1288,8 @@ mod tests {
     use super::{
         CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions,
         DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS, convert_file, convert_file_with_checkpoint,
-        convert_file_with_progress, verify_candidate_visual_scale, visual_scale_for_bounds,
+        convert_file_with_diagnostics, convert_file_with_progress, verify_candidate_visual_scale,
+        visual_scale_for_bounds,
     };
 
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1274,6 +1361,43 @@ mod tests {
             }
             writer.write_point(point).unwrap();
         }
+    }
+
+    #[test]
+    fn diagnostics_report_internal_windows_without_changing_output_bytes() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let baseline = dir.join("baseline.oct");
+        let profiled = dir.join("profiled.oct");
+        fixture(&input, false, true, 24);
+
+        convert_file(&input, &baseline, ConvertOptions::default()).unwrap();
+        let (_, diagnostics) =
+            convert_file_with_diagnostics(&input, &profiled, ConvertOptions::default(), |_| true)
+                .unwrap();
+
+        assert_eq!(fs::read(&baseline).unwrap(), fs::read(&profiled).unwrap());
+        assert_eq!(
+            fs::read(output_attributes_path(&baseline)).unwrap(),
+            fs::read(output_attributes_path(&profiled)).unwrap()
+        );
+        for window in [
+            diagnostics.spatial_planning,
+            diagnostics.block_stream,
+            diagnostics.output_validation,
+        ] {
+            let window = window.expect("invoked conversion phase must have a diagnostic window");
+            assert!(window.elapsed_ns > 0);
+            assert!(
+                window
+                    .start_unix_ns
+                    .zip(window.end_unix_ns)
+                    .is_some_and(|(start, end)| end >= start)
+            );
+        }
+        assert!(diagnostics.block_preparation_elapsed_ns.is_some());
+        assert!(diagnostics.ordered_write_and_release_elapsed_ns.is_some());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     fn coincident_fixture(path: &std::path::Path) {

@@ -432,6 +432,7 @@ pub(super) fn convert(
         output_path,
         validation,
         on_progress,
+        None,
     )?;
     let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,

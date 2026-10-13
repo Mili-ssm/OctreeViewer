@@ -140,6 +140,84 @@ def phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any]:
     return {"phases": phases, "phase_unassigned_sample_count": unassigned}
 
 
+def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any]:
+    """Correlate process samples only with exact internal diagnostic windows."""
+    names = ("spatial_planning", "block_stream", "output_validation")
+    fields: dict[str, dict[str, Any]] = {name: {} for name in names}
+    pattern = re.compile(
+        r"internal_(spatial_planning|block_stream|output_validation)_"
+        r"(available|elapsed_ns|start_unix_ns|end_unix_ns)=(.+)\n?"
+    )
+    with stdout_path.open(encoding="utf-8") as stdout:
+        for line in stdout:
+            match = pattern.fullmatch(line)
+            if match is None:
+                continue
+            name, key, raw_value = match.groups()
+            phase = fields[name]
+            if key in phase:
+                raise ValueError(f"duplicate internal {name} diagnostic field")
+            if key == "available":
+                if raw_value not in ("true", "false"):
+                    raise ValueError(f"invalid internal {name} availability")
+                phase[key] = raw_value == "true"
+            else:
+                phase[key] = None if raw_value == "null" else int(raw_value)
+
+    if not any(fields.values()):
+        return {"available": False, "phases": [], "unassigned_sample_count": None}
+
+    phases: list[dict[str, Any]] = []
+    for name in names:
+        phase = fields[name]
+        if not phase:
+            raise ValueError(f"missing internal {name} diagnostics")
+        available = phase.get("available")
+        if available is None:
+            raise ValueError(f"missing internal {name} availability")
+        if available and set(phase) != {
+            "available", "elapsed_ns", "start_unix_ns", "end_unix_ns"
+        }:
+            raise ValueError(f"incomplete internal {name} diagnostic window")
+        start, end = phase.get("start_unix_ns"), phase.get("end_unix_ns")
+        if available and ((start is None) != (end is None) or (start is not None and end < start)):
+            raise ValueError(f"invalid internal {name} diagnostic bounds")
+        if not available and set(phase) != {"available"}:
+            raise ValueError(f"unexpected internal {name} fields for an unavailable phase")
+        phase["name"] = name
+        phase.setdefault("elapsed_ns", None)
+        phase.setdefault("start_unix_ns", None)
+        phase.setdefault("end_unix_ns", None)
+        phase["rss_sampled_peak_bytes"] = None
+        phase["temporary_sampled_peak_bytes"] = None
+        phase["sample_count"] = 0
+        phases.append(phase)
+
+    unassigned = 0
+    with samples_path.open(encoding="utf-8") as samples:
+        for line in samples:
+            sample = json.loads(line)
+            start, end = sample["start_unix_ns"], sample["end_unix_ns"]
+            if end < start:
+                raise ValueError("invalid sample timestamp interval")
+            matches = [phase for phase in phases
+                       if phase["available"] and phase["start_unix_ns"] is not None
+                       and start >= phase["start_unix_ns"] and end <= phase["end_unix_ns"]]
+            if len(matches) != 1:
+                if matches:
+                    raise ValueError("overlapping internal diagnostic windows")
+                unassigned += 1
+                continue
+            phase = matches[0]
+            phase["sample_count"] += 1
+            for source, target in (("rss_bytes", "rss_sampled_peak_bytes"),
+                                   ("temporary_bytes", "temporary_sampled_peak_bytes")):
+                value = sample.get(source)
+                if value is not None:
+                    phase[target] = max(phase[target] or 0, value)
+    return {"available": True, "phases": phases, "unassigned_sample_count": unassigned}
+
+
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,
             interval_ms: int) -> int:
     if not input_path.is_file():
@@ -242,6 +320,12 @@ def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisio
             report.update(phase_peaks(run_dir / "stdout.log", samples_path))
         except (OSError, ValueError, KeyError, TypeError) as error:
             _record_error(errors, f"phase attribution: {error}")
+        try:
+            report["internal_diagnostics"] = internal_phase_peaks(
+                run_dir / "stdout.log", samples_path
+            )
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            _record_error(errors, f"internal phase attribution: {error}")
         if report["exit_code"] == 0 and any(
             report[key] in (None, 0) for key in ("output_oct_bytes", "output_octattrs_bytes")
         ):

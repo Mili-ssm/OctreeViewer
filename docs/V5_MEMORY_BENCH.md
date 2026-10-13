@@ -998,3 +998,43 @@ Estimaciones por worker: preparación **48.415.552 B**, validación **41.507.868
 del RSS total. Junto a Belvedere y Majadas, se han cerrado tres pares por cada fuente; los resultados
 de tiempo difieren entre datasets y dos workers elevaron el RSS en los tres casos. No se cambia el
 default. Caché fría y aislamiento interno de jerarquía, spools y validación siguen pendientes.
+
+## Ventanas internas de conversión — 13-10-2026
+
+`convert-profile` activa diagnósticos optativos sin guardarlos en checkpoints. `ConversionDiagnostics`
+emite tres ventanas con duración monotónica y límites Unix: `spatial_planning` abarca la construcción
+del plan espacial (incluido el spool de entrada cuando se usa), `block_stream` cubre el procesamiento
+por lotes y `output_validation` incluye preparación de readers, ejecución y join de workers. El
+muestreador correlaciona RSS y tamaños temporales solo si una muestra cae entera dentro de una de
+estas ventanas; son máximos observados del proceso, no memoria atribuible a readers, buffers o
+jerarquía.
+
+Dentro de `block_stream`, `block_preparation_elapsed_ns` suma tiempo de pared de cada lote paralelo
+(lectura del bloque y preparación/compresión); no suma CPU de workers. `ordered_write_and_release_elapsed_ns`
+incluye escritura en orden, liberación de spools y notificaciones de progreso. Ninguno se debe sumar
+como si fueran medidas de CPU independientes; el tiempo total de `block_stream` también contiene
+selección de lotes, métricas y otros costes del coordinador. El scope no incluye el índice/footer
+final ni `sync_all`.
+
+Reproducción de smoke, no benchmark de rendimiento:
+
+```sh
+cargo build --profile perf --offline -p viewer_convert --example real_dataset_bench
+python3 crates/viewer_convert/benchmarks/profile_conversion.py \
+  data/samples/fs_e430_n4008_18.las target/converter-internal-diagnostics-run-1 \
+  --workers 1 --divisions 2
+```
+
+En la ronda ejecutada en `target/converter-internal-diagnostics-final/`, la conversión completa
+111.190 puntos y el informe contiene las tres ventanas. Una muestra de 100 ms cae dentro de la
+ventana de validación: el informe registra 13.406.208 B RSS y 2.242.558 B de temporales en esa única
+muestra. Las ventanas de planificación y flujo no capturaron muestras internas. Una observación no
+estima el pico de validación ni atribuye esos bytes a sus readers. El test Rust compara los dos
+archivos de salida con y sin instrumentación byte por byte. Esta iteración no mide el coste de
+activar el perfilador ni sustituye tres pares comparables.
+
+Falta separar lectura LAS/LAZ, clasificación y escritura LOD dentro de la jerarquía; contar bytes
+lógicos de spools sin llamarlos I/O físico; registrar capacidad retenida por lote; y distinguir
+apertura/creación de readers y medidas de los bloques retornados durante validación. Los buffers
+transitorios de descompresión y RSS por función siguen sin atribución causal. Mantener los intervalos
+anteriores por callbacks para comparar con los registros históricos.

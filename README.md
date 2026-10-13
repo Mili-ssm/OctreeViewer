@@ -361,6 +361,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   RSS; falta varios workers. Frente a rondas históricas hay menos temporales, más RSS y mayor
   tiempo en Albuera: no es contraste emparejado ni prueba de mejora. Ambas fuentes siguen sin
   cumplir <5 min y pareja ≤3×. No rebajar la validación profunda para alcanzar esos objetivos.
+  Avance: `convert-profile` ya informa ventanas monotónicas de planificación espacial, flujo de
+  bloques y validación, con límites Unix para correlacionar muestreo externo; separa tiempo de
+  preparación por lotes y escritura ordenada/liberación de spools. Un smoke LAS de 111.190 puntos
+  completa y el test compara `.oct`/`.octattrs` byte a byte con el perfilador activado/desactivado.
+  Sigue pendiente desglosar ingestión/jerarquía/lecturas y bytes de cada spool, y medir readers/
+  buffers de validación. La RSS y el tamaño temporal continúan siendo métricas del proceso, no de
+  una estructura individual. [Contrato y límites](docs/V5_MEMORY_BENCH.md#ventanas-internas-de-conversión--13-10-2026).
 
 ### Exploración web de datasets grandes — 12-10-2026
 

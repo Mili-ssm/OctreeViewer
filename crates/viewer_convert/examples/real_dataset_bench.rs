@@ -11,7 +11,10 @@ use std::{
     time::Instant,
 };
 
-use viewer_convert::{ConvertOptions, convert_file_with_progress};
+use viewer_convert::{
+    ConversionDiagnostics, ConversionProgress, ConvertOptions, convert_file_with_diagnostics,
+    convert_file_with_progress,
+};
 use viewer_core::{DatasetSource, Point};
 use viewer_format::{
     BlockCodec, BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReader,
@@ -133,20 +136,42 @@ fn convert(
     let options = ConvertOptions::default()
         .with_spatial_workers(workers)?
         .with_spatial_divisions(divisions)?;
-    let report = convert_file_with_progress(input, output, options, |progress| {
+    let mut on_progress = |progress: ConversionProgress| {
         if let Err(error) = metrics.observe(progress.stage) {
             metrics_error = Some(error);
             return false;
         }
         true
-    });
+    };
+    let mut diagnostics: Option<ConversionDiagnostics> = None;
+    let conversion = if process_io {
+        convert_file_with_diagnostics(input, output, options, &mut on_progress).map(
+            |(report, profile)| {
+                diagnostics = Some(profile);
+                report
+            },
+        )
+    } else {
+        convert_file_with_progress(input, output, options, &mut on_progress)
+    };
     if let Some(error) = metrics_error {
         return Err(error.into());
     }
-    let report = report?;
+    let report = conversion?;
     metrics.finish()?;
     let elapsed = started.elapsed();
     println!("mode=convert");
+    if let Some(diagnostics) = diagnostics.as_ref() {
+        print_internal_window("spatial_planning", diagnostics.spatial_planning);
+        print_internal_window("block_stream", diagnostics.block_stream);
+        print_internal_window("output_validation", diagnostics.output_validation);
+        if let Some(elapsed_ns) = diagnostics.block_preparation_elapsed_ns {
+            println!("internal_block_preparation_elapsed_ns={elapsed_ns}");
+        }
+        if let Some(elapsed_ns) = diagnostics.ordered_write_and_release_elapsed_ns {
+            println!("internal_ordered_write_and_release_elapsed_ns={elapsed_ns}");
+        }
+    }
     println!("spatial_workers={workers}");
     println!("rayon_pool_threads={}", rayon::current_num_threads());
     if let Some(preparation) = report.block_preparation {
@@ -192,6 +217,27 @@ fn convert(
         println!("omitted_dimension={dimension}");
     }
     summarize_output(output, Some(input_bytes))
+}
+
+fn print_internal_window(name: &str, window: Option<viewer_convert::DiagnosticWindow>) {
+    let Some(window) = window else {
+        println!("internal_{name}_available=false");
+        return;
+    };
+    println!("internal_{name}_available=true");
+    println!("internal_{name}_elapsed_ns={}", window.elapsed_ns);
+    println!(
+        "internal_{name}_start_unix_ns={}",
+        window
+            .start_unix_ns
+            .map_or_else(|| "null".to_owned(), |value| value.to_string())
+    );
+    println!(
+        "internal_{name}_end_unix_ns={}",
+        window
+            .end_unix_ns
+            .map_or_else(|| "null".to_owned(), |value| value.to_string())
+    );
 }
 
 #[derive(Clone, Copy)]
