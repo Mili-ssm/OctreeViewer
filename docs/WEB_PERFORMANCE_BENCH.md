@@ -1154,3 +1154,58 @@ and 9 Python tests pass**, JS syntax and diff checks pass; offline package regen
 changed in this correction; prior Rust/WASM validation applies to the same binding artifact.
 Next: broaden GPU resource snapshots to larger cuts and isolate transient parent memory with
 higher-frequency capture; physical VRAM/JS heap separation remains unavailable here.
+
+### Albuera GPU snapshots and transient parent mapping capture — 13-10-2026
+
+The process sampler now accepts `--root-pss-capture-mib`: its first readable parent PSS
+sample crossing the threshold triggers one identity-checked raw `smaps` capture. The companion
+file is created exclusively; failed attempts are recorded and not retried. Capture timestamps
+are separate from the triggering tree sample. Default sampling remains unchanged, without
+mapping capture. [Command and limits](../examples/web-host/README.md#capture-a-transient-parent-process-mapping-event).
+
+Three fresh Firefox 157.0.1 headless profiles, WebGPU enabled, Albuera coordinates only
+(gray fallback), fitted 1280×720, 4 px, 256 MiB decoded cache; HTTP disk/memory cache disabled,
+OS cache not flushed. Existing release WASM and host at `1c0ef45`, plus the sampler change.
+Requested sampler sleep 0.1 s; actual median sample spacing **0.125 / 0.141 / 0.127 s**.
+Root capture threshold **1 GiB PSS**. Each round uses the existing load/camera probe; all six
+exports report target completion, zero pending blocks, matching panel/export, 17,085 voxels,
+zero cache evictions/rejections and zero console errors. The camera needs 12 additional loads
+(746→758); cache accounting rises from 203,065,440 to 207,501,472 B.
+
+| Round | Tree PSS sampled peak (B) | Tree RSS sum sampled peak (B) | Readable / total samples | Root mapping capture |
+| --- | ---: | ---: | ---: | --- |
+| 1 | 1,009,138,688 | 1,827,762,176 | 1,224 / 1,226 | No threshold crossing |
+| 2 | 3,823,155,200 | 4,648,906,752 | 884 / 886 | Captured at 6.078 s |
+| 3 | 1,005,690,880 | 1,827,336,192 | 1,127 / 1,132 | No threshold crossing |
+
+All sampler runs end with `root_exited`. Requested GPU resources at every terminal initial
+and camera export are **15,623,424 B**: instance buffer 683,440; fixed buffers 376; HZB
+buffers/readback 68,396; depth texture 3,686,400; HZB mip pyramid 11,184,812. The largest value
+among the ten-second export snapshots is also 15,623,424 B in each round. This is current
+application-requested storage, not VRAM, a per-build maximum or a synchronized CPU/GPU peak.
+The series is a diagnostic with active external sampling, not a before/after timing comparison.
+
+Round 2 crosses the parent threshold early: at 6.078 s tree PSS is 1,411,553,280 B and parent
+PSS 1,089,865,728 B. Its mapping read takes ~16.0 ms and sums **1,094,124,544 B PSS**, at a later
+time than the trigger. It contains **2,574 VMAs**, including **1,675 unnamed anonymous maps**
+with 985,608,192 B PSS. Notably **161 maps of 3,686,400 B** account for **593,510,400 B PSS**;
+that map size equals `1280 × 720 × 4`. This is evidence consistent with framebuffer-sized
+storage, not proof of allocation ownership, driver behavior or a renderer leak.
+At 120.292 s tree PSS reaches 3,823,155,200 B, parent PSS **3,307,372,544 B**. The one-shot
+capture was already consumed: it does **not** capture those later peak mappings or explain
+the earlier historical Albuera 6.58 GiB event.
+
+Local code audit: `SurfaceRenderer::render` obtains a surface texture, submits and presents
+without keeping a frame history. The actual `wgpu 24.0.5` web backend calls browser
+`get_current_texture`; its `present` and `texture_discard` are no-ops because browser presentation
+is automatic (`wgpu-24.0.5/src/backend/webgpu.rs:3718–3755` in the local Cargo registry).
+Native `wgpu-core` presentation/latency semantics do not establish what Firefox retains.
+The requested-resource counters intentionally exclude swapchain and driver resources.
+Next discriminating experiment: clear-only WebGPU with no WASM/dataset, fixed frame count at
+1280×720 and 640×360, separate fresh processes and mapping snapshots. Check whether anonymous
+map-size classes follow drawing dimensions before considering a renderer change.
+
+Raw series, source/binary hashes, mapping summaries and profiles: ignored
+`target/albuera-resource-memory/`. Validation: **11 Python tests**, Ruff check/format and
+CLI smoke (one capture, companion file, duration cap) pass. Tests cover root identity changes
+before/during reads and refusing to overwrite a mapping capture. No UI/Rust behavior changed.

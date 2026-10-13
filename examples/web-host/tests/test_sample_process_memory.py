@@ -2,6 +2,7 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
     "sample_process_memory", Path(__file__).parents[1] / "sample-process-memory.py"
@@ -53,3 +54,38 @@ class ProcessMemoryTests(unittest.TestCase):
         ):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 memory.memory_fields(text)
+
+    def test_mapping_capture_checks_identity_and_never_overwrites(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.process(root, 10, 1, 100)
+            (root / "10" / "smaps").write_text("mapping fixture")
+            output = root / "capture.txt"
+            self.assertEqual(
+                memory.capture_root_smaps(10, 999, output, root)["outcome"], "failed"
+            )
+            self.assertFalse(output.exists())
+            result = memory.capture_root_smaps(10, 100, output, root)
+            self.assertEqual(result["outcome"], "captured")
+            self.assertLessEqual(
+                result["started_wall_time_ns"], result["finished_wall_time_ns"]
+            )
+            self.assertEqual(output.read_text(), "mapping fixture")
+            (root / "10" / "smaps").write_text("different mapping")
+            self.assertEqual(
+                memory.capture_root_smaps(10, 100, output, root)["outcome"], "failed"
+            )
+            self.assertEqual(output.read_text(), "mapping fixture")
+
+    def test_reused_pid_during_capture_discards_mapping(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.process(root, 10, 1, 100)
+            (root / "10" / "smaps").write_text("mapping fixture")
+            output = root / "capture.txt"
+            with patch.object(memory, "identity", side_effect=[(1, 100), (1, 101)]):
+                self.assertEqual(
+                    memory.capture_root_smaps(10, 100, output, root)["outcome"],
+                    "failed",
+                )
+            self.assertFalse(output.exists())

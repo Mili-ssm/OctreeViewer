@@ -589,8 +589,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Recursos GPU solicitados finales **15.153.112 / 15.153.108 B** antes/después de cámara;
    PSS pico de proceso **967,5 / 1.028,7 / 1.889,1 MB**. 27 tests Node y 9 Python pasan;
    paquete regenerado. [Reproducción y límites](docs/WEB_PERFORMANCE_BENCH.md#progress-only-panel-and-gpu-export-synchronization--13-10-2026).
-   Siguiente: ampliar capturas de recursos GPU a cortes mayores, separar memoria JS/WASM,
-   capturar picos transitorios y ampliar corpus Additive real antes de diseñar reutilización.
+   Albuera XYZ: tres cargas/cámaras Firefox completan con panel/export coincidentes y 17.085
+   vóxeles; recursos GPU solicitados **15.623.424 B** en seis exports finales. PSS pico muestreado
+   **1.009,1 / 3.823,2 / 1.005,7 MB**. Captura opcional de mapas por umbral añadida y probada:
+   segunda ronda captura a 6,078 s, con **161 mapas anónimos de 1280×720×4 B**; el pico posterior
+   no está capturado. Once tests Python, Ruff y smoke CLI pasan. No atribuye propietario ni VRAM.
+   [Mapas, protocolo y límites](docs/WEB_PERFORMANCE_BENCH.md#albuera-gpu-snapshots-and-transient-parent-mapping-capture--13-10-2026).
+   Siguiente: aislar presentación WebGPU sin WASM con dos tamaños de framebuffer, separar
+   memoria JS/WASM y ampliar corpus Additive real antes de diseñar reutilización.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.

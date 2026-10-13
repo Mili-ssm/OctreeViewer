@@ -368,6 +368,28 @@ It exercises the real host DOM/export with a deterministic Worker in desktop/mob
 with HTTP caching disabled. It does not exercise WebGPU rendering. Actual Firefox load/camera
 validation and prior stale-panel captures are recorded in the web benchmark document.
 
+### Capture a transient parent-process mapping event
+
+For an intermittent parent-process PSS increase, the sampler can make one raw mapping capture:
+
+```bash
+python3 examples/web-host/sample-process-memory.py FIREFOX_PID target/firefox-event.jsonl --interval 0.1 --seconds 1300 --root-pss-capture-mib 1024
+```
+
+The first readable root PSS sample at or above the threshold triggers one attempt to save
+`target/firefox-event.root-smaps.txt`. The JSONL trigger record contains `root_smaps_capture`
+with outcome, capture start/end timestamps and threshold bytes. Root kernel starttime is checked
+before and after reading; an identity change discards the capture. Existing companion files
+are never overwritten. Failed attempts are recorded and not retried in that run. No threshold
+means no mapping capture; no crossing means no capture event or companion file.
+
+A mapping read follows its trigger sample and may already see the peak recede. It is not an
+atomic snapshot with tree counters and can perturb the process/sampling cadence. Captured VMA
+sizes/PSS can identify anonymous/file-backed mappings, but do not by themselves identify an
+allocator owner, JS/WASM object, or physical GPU allocation. A 0.1 s sleep reduces the requested
+sampling interval without guaranteeing capture of every short event. Compare actual elapsed
+sample times, and retain runs without a threshold crossing as negative results.
+
 ### Requested GPU resource sizes
 
 `gpuStats().requestedResources` reports decimal byte strings for `instanceBufferBytes`,
