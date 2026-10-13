@@ -187,6 +187,24 @@ fn convert(
                 spools.lod_payload_written_bytes
             );
         }
+        if let Some(phases) = diagnostics.spatial_phases.as_ref() {
+            println!(
+                "internal_spatial_phase_root_las_fill_elapsed_ns={}",
+                phases.root_las_fill_elapsed_ns
+            );
+            println!(
+                "internal_spatial_phase_spool_scan_read_elapsed_ns={}",
+                phases.spool_scan_read_elapsed_ns
+            );
+            println!(
+                "internal_spatial_phase_spool_partition_and_sample_elapsed_ns={}",
+                phases.spool_partition_and_sample_elapsed_ns
+            );
+            println!(
+                "internal_spatial_phase_lod_sample_write_elapsed_ns={}",
+                phases.lod_sample_write_elapsed_ns
+            );
+        }
         if let Some(bytes) = diagnostics.block_stream_source_payload_read_bytes {
             println!("internal_block_stream_source_payload_read_bytes={bytes}");
         }

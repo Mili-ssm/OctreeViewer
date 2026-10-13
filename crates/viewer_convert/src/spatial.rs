@@ -9,6 +9,7 @@ use std::{
         mpsc,
     },
     thread,
+    time::Instant,
 };
 
 use las::{PointData, PointDataBuilder, Reader};
@@ -20,7 +21,8 @@ use viewer_format::{FormatMetadata, SourcePointBlock};
 
 use super::{
     ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SourceInfo,
-    SpatialSpoolDiagnostics, descriptor, emit_progress, omitted_dimensions, source_schema,
+    SpatialPhaseDiagnostics, SpatialSpoolDiagnostics, descriptor, emit_progress,
+    omitted_dimensions, source_schema,
 };
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
@@ -271,6 +273,7 @@ pub(crate) struct SpatialPlan {
     pub estimated_peak_memory_bytes: u64,
     pub omitted_dimensions: Vec<String>,
     pub spool_diagnostics: Option<SpatialSpoolDiagnostics>,
+    pub spatial_phases: Option<SpatialPhaseDiagnostics>,
 }
 
 pub(crate) struct Workspace {
@@ -425,6 +428,7 @@ fn build_spatial_plan_inner(
             source_payload_written_bytes: source_spool_bytes_written,
             ..SpatialSpoolDiagnostics::default()
         }),
+        spatial_phases: collect_spool_diagnostics.then(SpatialPhaseDiagnostics::default),
     };
     match input {
         SpatialInput::Spool(path) => {
@@ -499,6 +503,7 @@ fn build_spatial_plan_inner(
         estimated_peak_memory_bytes,
         omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
         spool_diagnostics: builder.spool_diagnostics,
+        spatial_phases: builder.spatial_phases,
     })
 }
 
@@ -582,6 +587,7 @@ struct BranchOutput {
     output_blocks: Vec<PlannedBlock>,
     next_block_id: u64,
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
+    spatial_phases: Option<SpatialPhaseDiagnostics>,
 }
 
 enum BranchMessage {
@@ -604,9 +610,34 @@ struct SpatialBuilder<'a> {
     parallel_workers: usize,
     workers_used: usize,
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
+    spatial_phases: Option<SpatialPhaseDiagnostics>,
+}
+
+#[derive(Clone, Copy)]
+enum SpatialPhase {
+    RootLasFill,
+    SpoolScanRead,
+    SpoolPartitionAndSample,
+    LodSampleWrite,
 }
 
 impl SpatialBuilder<'_> {
+    fn record_phase_elapsed(&mut self, started: Option<Instant>, phase: SpatialPhase) {
+        let (Some(metrics), Some(started)) = (self.spatial_phases.as_mut(), started) else {
+            return;
+        };
+        let elapsed = started.elapsed().as_nanos();
+        let target = match phase {
+            SpatialPhase::RootLasFill => &mut metrics.root_las_fill_elapsed_ns,
+            SpatialPhase::SpoolScanRead => &mut metrics.spool_scan_read_elapsed_ns,
+            SpatialPhase::SpoolPartitionAndSample => {
+                &mut metrics.spool_partition_and_sample_elapsed_ns
+            }
+            SpatialPhase::LodSampleWrite => &mut metrics.lod_sample_write_elapsed_ns,
+        };
+        *target = target.saturating_add(elapsed);
+    }
+
     fn add_source_spool_bytes(&mut self, bytes: u64) -> Result<(), ConvertError> {
         if let Some(diagnostics) = self.spool_diagnostics.as_mut() {
             diagnostics.source_payload_written_bytes = diagnostics
@@ -726,13 +757,16 @@ impl SpatialBuilder<'_> {
         let mut processed = 0_u64;
         while processed < source.point_count {
             let requested = point_limit.min(source.point_count - processed);
+            let fill_started = self.spatial_phases.as_ref().map(|_| Instant::now());
             let read = reader.fill_points(requested, &mut point_data)?;
+            self.record_phase_elapsed(fill_started, SpatialPhase::RootLasFill);
             if read != requested {
                 return Err(ConvertError::PointCountMismatch {
                     expected: source.point_count,
                     actual: processed + read,
                 });
             }
+            let classify_started = self.spatial_phases.as_ref().map(|_| Instant::now());
             visit_source_points(&point_data, source, processed, |point| {
                 for (axis, axis_bounds) in source_bounds.iter_mut().enumerate() {
                     axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
@@ -753,6 +787,7 @@ impl SpatialBuilder<'_> {
                 sample.add(point, voxel_center(voxel_key, bounds));
                 Ok(())
             })?;
+            self.record_phase_elapsed(classify_started, SpatialPhase::SpoolPartitionAndSample);
             processed += read;
             emit_progress(
                 self.on_progress,
@@ -797,6 +832,7 @@ impl SpatialBuilder<'_> {
             child.finish()?;
         }
         self.record_child_spool_writes(&children)?;
+        let lod_write_started = self.spatial_phases.as_ref().map(|_| Instant::now());
         let sample_path = self.workspace.file("node-0.lod");
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
         for (key, accumulator) in samples
@@ -813,6 +849,7 @@ impl SpatialBuilder<'_> {
         sample_writer
             .into_inner()
             .map_err(|error| error.into_error())?;
+        self.record_phase_elapsed(lod_write_started, SpatialPhase::LodSampleWrite);
 
         let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
@@ -884,11 +921,14 @@ impl SpatialBuilder<'_> {
         let records_per_batch = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
         let mut record_buffer = vec![0; records_per_batch * record_bytes];
         loop {
+            let read_started = self.spatial_phases.as_ref().map(|_| Instant::now());
             let records = read_records(&mut source_reader, &mut record_buffer, self.layout)?;
+            self.record_phase_elapsed(read_started, SpatialPhase::SpoolScanRead);
             if records == 0 {
                 break;
             }
             self.add_scanned_spool_bytes(records, record_bytes, input_is_child_spool)?;
+            let classify_started = self.spatial_phases.as_ref().map(|_| Instant::now());
             for bytes in record_buffer[..records * record_bytes].chunks_exact(record_bytes) {
                 let point = decode_point(bytes, self.layout);
                 scanned += 1;
@@ -915,6 +955,7 @@ impl SpatialBuilder<'_> {
                 let sample = samples[voxel_key].get_or_insert_with(SampleAccumulator::default);
                 sample.add(point, center);
             }
+            self.record_phase_elapsed(classify_started, SpatialPhase::SpoolPartitionAndSample);
         }
         if scanned != source_count {
             return Err(ConvertError::PointCountMismatch {
@@ -938,6 +979,7 @@ impl SpatialBuilder<'_> {
             return Ok(id);
         }
 
+        let lod_write_started = self.spatial_phases.as_ref().map(|_| Instant::now());
         let sample_path = self.workspace.file(&format!("node-{}.lod", id.get()));
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
         for (key, accumulator) in samples
@@ -954,6 +996,7 @@ impl SpatialBuilder<'_> {
         sample_writer
             .into_inner()
             .map_err(|error| error.into_error())?;
+        self.record_phase_elapsed(lod_write_started, SpatialPhase::LodSampleWrite);
         let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
         fs::remove_file(&spool_path)?;
@@ -1111,6 +1154,8 @@ impl SpatialBuilder<'_> {
                                 workers_used: 1,
                                 spool_diagnostics: collect_spool_diagnostics
                                     .then(SpatialSpoolDiagnostics::default),
+                                spatial_phases: collect_spool_diagnostics
+                                    .then(SpatialPhaseDiagnostics::default),
                             };
                             builder.build_node(
                                 task.path,
@@ -1125,6 +1170,7 @@ impl SpatialBuilder<'_> {
                                 output_blocks: builder.output_blocks,
                                 next_block_id: builder.next_block_id,
                                 spool_diagnostics: builder.spool_diagnostics,
+                                spatial_phases: builder.spatial_phases,
                             })
                         })();
                         if result.is_err() {
@@ -1266,6 +1312,22 @@ impl SpatialBuilder<'_> {
                 .lod_payload_written_bytes
                 .checked_add(source.lod_payload_written_bytes)
                 .ok_or(ConvertError::SizeOverflow)?;
+        }
+        if let (Some(target), Some(source)) =
+            (self.spatial_phases.as_mut(), branch.spatial_phases.as_ref())
+        {
+            target.root_las_fill_elapsed_ns = target
+                .root_las_fill_elapsed_ns
+                .saturating_add(source.root_las_fill_elapsed_ns);
+            target.spool_scan_read_elapsed_ns = target
+                .spool_scan_read_elapsed_ns
+                .saturating_add(source.spool_scan_read_elapsed_ns);
+            target.spool_partition_and_sample_elapsed_ns = target
+                .spool_partition_and_sample_elapsed_ns
+                .saturating_add(source.spool_partition_and_sample_elapsed_ns);
+            target.lod_sample_write_elapsed_ns = target
+                .lod_sample_write_elapsed_ns
+                .saturating_add(source.lod_sample_write_elapsed_ns);
         }
         self.next_block_id = next_block_id;
         Ok(())

@@ -1094,3 +1094,18 @@ incluye el máximo concurrente de temporales de compresión.
 En el smoke de 111.190 puntos se retuvo un bloque; su buffer comprimido tuvo 2.668.560 B de
 capacidad, igual a la suma del lote de un bloque. No es una comparación de rendimiento ni una
 estimación de RSS. Medir el ciclo completo de compresión y los buffers temporales sigue pendiente.
+
+### Tiempos internos del plan espacial
+
+El perfilador también publica duraciones acumuladas de `fill_points` LAS directo, lectura de
+rangos del spool, clasificación/particionado/muestreo y escritura de muestras LOD. La clasificación
+incluye el despacho de registros a spools hijos y la acumulación de muestras. La lectura mide el
+tiempo dentro de `read_records`; no representa contadores de I/O físico. El `fill_points` medido es
+solo la ruta que lee directamente durante una subdivisión; la generación inicial del spool fuente
+y checkpoints quedan fuera. Las fases de workers paralelos se suman como tiempo de pared y pueden
+solaparse, por lo que su total puede exceder la ventana de planificación espacial.
+
+Estos contadores sirven para localizar trabajo, no separan CPU de espera ni permiten atribuir RSS
+a una estructura. El smoke LAS pequeño de perfilador confirma la presencia del esquema; el fixture
+recursivo del conversor ejercita lectura de spools, particionado y escritura LOD. No se reporta una
+mejora de rendimiento con esta instrumentación.

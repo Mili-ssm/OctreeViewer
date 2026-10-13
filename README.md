@@ -365,8 +365,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   bloques y validación, con límites Unix para correlacionar muestreo externo; separa tiempo de
   preparación por lotes y escritura ordenada/liberación de spools. Un smoke LAS de 111.190 puntos
   completa y el test compara `.oct`/`.octattrs` byte a byte con el perfilador activado/desactivado.
-  Sigue pendiente desglosar ingestión/jerarquía/lecturas y bytes de cada spool, y medir readers/
-  buffers de validación. La RSS y el tamaño temporal continúan siendo métricas del proceso, no de
+  Avance: tiempos internos agregados de fill LAS directo, lectura de rangos del spool,
+  clasificación/particionado/muestreo y escritura LOD; el perfilador los incluye cuando están
+  disponibles. Son duraciones de pared sumadas y las ramas paralelas pueden solaparse. Solo `fill`
+  directo está incluido: la creación inicial del spool fuente y checkpoints quedan fuera. No son
+  CPU exclusiva ni I/O físico. Sigue pendiente medir ingestión de spool, pico del ciclo completo de
+  compresión y memoria/RSS de readers y buffers de validación. La RSS y el tamaño temporal
+  continúan siendo métricas del proceso, no de
   una estructura individual. [Contrato y límites](docs/V5_MEMORY_BENCH.md#ventanas-internas-de-conversión--13-10-2026).
 
 ### Exploración web de datasets grandes — 12-10-2026

@@ -30,6 +30,20 @@ pub struct ConversionDiagnostics {
     pub block_stream_max_encoded_payload_capacity_per_block_bytes: Option<u64>,
     /// Sum of retained compressed payload buffer capacities at the completed-batch boundary.
     pub block_stream_max_encoded_payload_capacity_per_batch_bytes: Option<u64>,
+    /// Summed wall durations for selected spatial-planning operations; worker scopes may overlap.
+    pub spatial_phases: Option<SpatialPhaseDiagnostics>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpatialPhaseDiagnostics {
+    /// Time in root direct-LAS `fill_points`; source-spool generation and checkpoints are excluded.
+    pub root_las_fill_elapsed_ns: u128,
+    /// Time in recursive `read_records` calls for source/child spool scans.
+    pub spool_scan_read_elapsed_ns: u128,
+    /// Time decoding/classifying scanned records and partitioning into child spools/samples.
+    pub spool_partition_and_sample_elapsed_ns: u128,
+    /// Time creating and writing spatial LOD sample spools.
+    pub lod_sample_write_elapsed_ns: u128,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -39,6 +39,10 @@ class ProfileConversionTests(unittest.TestCase):
                 "internal_spatial_spool_child_payload_written_bytes=0\n"
                 "internal_spatial_spool_child_payload_scanned_bytes=0\n"
                 "internal_spatial_spool_lod_payload_written_bytes=0\n"
+                "internal_spatial_phase_root_las_fill_elapsed_ns=12\n"
+                "internal_spatial_phase_spool_scan_read_elapsed_ns=13\n"
+                "internal_spatial_phase_spool_partition_and_sample_elapsed_ns=14\n"
+                "internal_spatial_phase_lod_sample_write_elapsed_ns=15\n"
                 "internal_block_stream_source_payload_read_bytes=648\n"
                 "internal_block_stream_lod_payload_read_bytes=0\n"
                 "internal_block_stream_max_prepared_blocks=2\n"
@@ -80,6 +84,12 @@ class ProfileConversionTests(unittest.TestCase):
                 "max_prepared_blocks": 2,
                 "max_encoded_payload_capacity_per_block_bytes": 128,
                 "max_encoded_payload_capacity_per_batch_bytes": 240,
+            })
+            self.assertEqual(result["spatial_phase_timings"], {
+                "root_las_fill_elapsed_ns": 12,
+                "spool_scan_read_elapsed_ns": 13,
+                "spool_partition_and_sample_elapsed_ns": 14,
+                "lod_sample_write_elapsed_ns": 15,
             })
 
     def test_internal_phase_attribution_rejects_missing_and_overlapping_windows(self) -> None:

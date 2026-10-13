@@ -33,7 +33,8 @@ use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
 use diagnostics::DiagnosticTimer;
 pub use diagnostics::{
-    ConversionDiagnostics, DiagnosticWindow, SpatialSpoolDiagnostics, ValidationWorkerDiagnostics,
+    ConversionDiagnostics, DiagnosticWindow, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics,
+    ValidationWorkerDiagnostics,
 };
 use spatial::{
     PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
@@ -602,6 +603,12 @@ fn convert_file_inner(
         spatial_plan.spool_diagnostics.as_ref(),
     ) {
         diagnostics.spatial_spools = Some(spools.clone());
+    }
+    if let (Some(diagnostics), Some(phases)) = (
+        diagnostics.as_deref_mut(),
+        spatial_plan.spatial_phases.as_ref(),
+    ) {
+        diagnostics.spatial_phases = Some(phases.clone());
     }
     if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), spatial_timer) {
         diagnostics.spatial_planning = Some(timer.finish());
@@ -1613,6 +1620,14 @@ mod tests {
         assert!(spools.child_payload_written_bytes >= 200 * 27);
         assert!(spools.child_payload_scanned_bytes > 0);
         assert!(spools.lod_payload_written_bytes > 0);
+        let phases = serial_diagnostics
+            .spatial_phases
+            .as_ref()
+            .expect("profiled planning reports spatial phase timings");
+        assert!(phases.root_las_fill_elapsed_ns > 0);
+        assert!(phases.spool_partition_and_sample_elapsed_ns > 0);
+        assert!(phases.spool_scan_read_elapsed_ns > 0);
+        assert!(phases.lod_sample_write_elapsed_ns > 0);
         fs::remove_dir_all(dir).unwrap();
     }
 

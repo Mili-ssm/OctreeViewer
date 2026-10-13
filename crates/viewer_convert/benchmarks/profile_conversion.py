@@ -289,12 +289,30 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
             prepared_batch[key] = int(value)
     if prepared_batch and set(prepared_batch) != batch_fields:
         raise ValueError("incomplete prepared batch diagnostics")
+    spatial_phase_fields = (
+        "root_las_fill_elapsed_ns", "spool_scan_read_elapsed_ns",
+        "spool_partition_and_sample_elapsed_ns", "lod_sample_write_elapsed_ns",
+    )
+    spatial_phases: dict[str, int] = {}
+    spatial_phase_pattern = re.compile(r"internal_spatial_phase_(.+_elapsed_ns)=(\d+)\n?")
+    with stdout_path.open(encoding="utf-8") as output:
+        for line in output:
+            match = spatial_phase_pattern.fullmatch(line)
+            if match is None:
+                continue
+            key, value = match.groups()
+            if key not in spatial_phase_fields or key in spatial_phases:
+                raise ValueError(f"unexpected or duplicate spatial phase diagnostic: {key}")
+            spatial_phases[key] = int(value)
+    if spatial_phases and set(spatial_phases) != set(spatial_phase_fields):
+        raise ValueError("incomplete spatial phase diagnostics")
     return {"available": True, "phases": phases, "unassigned_sample_count": unassigned,
             "validation_workers": [dict(worker_index=index, **workers[index])
                                    for index in sorted(workers)],
             "spatial_spools": spools or None,
             "block_stream_payload_reads": block_stream or None,
-            "prepared_batch": prepared_batch or None}
+            "prepared_batch": prepared_batch or None,
+            "spatial_phase_timings": spatial_phases or None}
 
 
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,
