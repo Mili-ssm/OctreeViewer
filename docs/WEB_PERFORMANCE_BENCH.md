@@ -1063,3 +1063,42 @@ profile per round using the documented camera probe; attach the sampler before s
 probe, then exclude records with `enumerated_processes_readable=false` when computing full-tree
 sampled maxima. Validation: nine Python tests pass (three new tests exercise tree exclusion,
 PID identity, partial reads and malformed counters); Ruff check/format pass for the two new files.
+
+### Requested GPU resources and resize accounting — 13-10-2026
+
+`SurfaceRenderer::resource_stats()` and WASM `gpuStats().requestedResources` now expose current
+owned buffer sizes and logical texture bytes separately from cumulative upload traffic. This
+is application resource accounting, not measured VRAM or a transition peak. The existing GPU
+budget model is unchanged. See [scope and exclusions](../examples/web-host/README.md#requested-gpu-resource-sizes).
+
+Release WASM/bindings rebuilt offline, Firefox 157.0.1 headless, WebGPU enabled, presentation
+fixture with RGB sidecar at 480×360. Existing rendering/picking checks pass together with new
+assertions for decimal-string counts, category sum, exact depth extent, unchanged instance
+capacity on resize and restoration of the original viewport. Observed bytes:
+
+| Resource | Loaded sample, HZB active | After pick/recenter | Resize to 240×180 |
+| --- | ---: | ---: | ---: |
+| Instance buffers | 163,840 | 163,840 | 163,840 |
+| Fixed buffers | 376 | 376 | 376 |
+| HZB buffers + count readback | 16,440 | 36 | 36 |
+| Logical depth texture | 691,200 | 691,200 | 172,800 |
+| Logical HZB mip pyramid | 1,398,100 | 1,398,100 | 349,524 |
+| Total requested | 2,269,956 | 2,253,552 | 686,576 |
+
+Upload traffic is 374,680 / 421,680 / 421,680 B in those states: clearly a different quantity.
+HZB accounting reads actual optional buffer sizes, including the minimum one-index allocation
+for a zero-instance prepared scene and params retained after reset. The native HZB GPU test
+checks creation, preparation, reset and zero-instance preparation without changing budgets.
+
+Validation: renderer/WASM tests **86 passed, 3 ignored**, Node **26 passed**, Python **9 passed**,
+Clippy native all-target/WASM with warnings denied, formatting, release WASM rebuild and local
+package regeneration pass. Firefox BiDi presentation/picking/resource/resize assertions pass.
+Playwright MCP Chrome with `--enable-unsafe-webgpu --use-angle=swiftshader` instead reports
+`RuntimeError: unreachable`; independent JS clear also loses its device with
+`A valid external Instance reference no longer exists`. Chrome therefore remains unvalidated
+for these counters; that run does not isolate a cause or demonstrate a new renderer regression.
+
+Raw Firefox JSON/screenshot and Chrome screenshot: ignored `target/gpu-resource-probe/`.
+Next: collect these counters through progressive large-dataset loads and explicitly keep
+resident CPU PSS, requested GPU bytes and unobservable physical VRAM separate. No combined
+physical-memory total is inferred by adding them.

@@ -358,6 +358,22 @@ fail the command; a recorded cache pause or observation cap is a diagnostic outc
 successful target or valid steady-state FPS benchmark. This probe does not measure GPU memory,
 heap JS or a paired performance improvement. Compare equivalent runs separately.
 
+### Requested GPU resource sizes
+
+`gpuStats().requestedResources` reports decimal byte strings for `instanceBufferBytes`,
+`fixedBufferBytes` (cube vertices/indices and camera uniform), `hzbBufferBytes` (params,
+visible indices, indirect args and owned count readback), `depthTextureBytes`,
+`hzbTextureBytes` and their `totalBytes`. Buffer sizes come from the owned WebGPU buffers;
+textures report logical Depth32Float/R32Float texels across their mip levels. Texture views
+and bind-group references do not duplicate the underlying resource in this accounting.
+
+These are sizes of resources currently owned by the renderer, **not physical VRAM**, process
+RSS, or a synchronized transition peak. Swapchain, queue staging, pending external picking
+readbacks, pipelines/bind-group metadata, allocator/driver padding and resources retained by
+in-flight commands after replacement are excluded. Existing budget estimates are unchanged.
+`uploadedBytes` remains cumulative transfer traffic, not resident allocation. Benchmark JSON
+includes these counters under `environment.gpuStats.requestedResources` without adding UI.
+
 ### Sample browser process memory on Linux
 
 In a second terminal, attach to the PID of the dedicated Firefox parent launched above:

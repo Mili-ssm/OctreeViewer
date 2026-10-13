@@ -549,6 +549,22 @@ impl HzbResources {
         self.indirect_args.as_ref()
     }
 
+    pub(crate) fn requested_buffer_bytes(&self) -> u64 {
+        self.params_buffer.size()
+            + self
+                .visible_indices
+                .as_ref()
+                .map_or(0, |buffer| buffer.size())
+            + self
+                .indirect_args
+                .as_ref()
+                .map_or(0, |buffer| buffer.size())
+    }
+
+    pub(crate) fn logical_texture_bytes(&self) -> u64 {
+        pyramid_bytes(self.pyramid_size, self.mip_count)
+    }
+
     pub(crate) fn resource_bytes(&self) -> u64 {
         self.resource_bytes
     }
@@ -1103,6 +1119,12 @@ mod tests {
             .expect("HZB resource validation") else {
                 return;
             };
+            assert_eq!(
+                hzb.requested_buffer_bytes(),
+                size_of::<super::CullParams>() as u64
+            );
+            let pyramid_bytes = hzb.logical_texture_bytes();
+            assert!(pyramid_bytes > 64 * 64 * 4);
             let voxels = [0.7, 0.1].map(|depth| crate::InstanceRaw {
                 center: [0.0, 0.0, depth],
                 size: 0.1,
@@ -1122,6 +1144,13 @@ mod tests {
                 voxels.len(),
             );
 
+            assert_eq!(
+                hzb.requested_buffer_bytes(),
+                (size_of::<super::CullParams>()
+                    + 2 * size_of::<u32>()
+                    + size_of::<super::DrawIndexedIndirectArgs>()) as u64
+            );
+            assert_eq!(hzb.logical_texture_bytes(), pyramid_bytes);
             let depth_view = depth_texture.create_view(&Default::default());
             let mut clear_encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -1186,6 +1215,19 @@ mod tests {
             drop(mapped);
             readback.unmap();
             assert_eq!(visible, [CUBE_INDEX_COUNT, 1, 0, 0, 0, 1]);
+            hzb.reset_scene();
+            assert_eq!(
+                hzb.requested_buffer_bytes(),
+                size_of::<super::CullParams>() as u64
+            );
+            assert_eq!(hzb.logical_texture_bytes(), pyramid_bytes);
+            hzb.prepare_scene(&device, &source, source.size(), 0);
+            assert_eq!(
+                hzb.requested_buffer_bytes(),
+                (size_of::<super::CullParams>()
+                    + size_of::<u32>()
+                    + size_of::<super::DrawIndexedIndirectArgs>()) as u64
+            );
         });
     }
 }

@@ -34,6 +34,20 @@ async function clearProbe(canvas) {
     return { format, pixel, adapter: { vendor: adapter.info?.vendor, architecture: adapter.info?.architecture } };
 }
 
+function checkResourceStats(gpu, width, height) {
+    const memory = gpu.requestedResources;
+    assert(memory && ["instanceBufferBytes", "fixedBufferBytes", "hzbBufferBytes",
+        "depthTextureBytes", "hzbTextureBytes", "totalBytes"].every(key => /^\d+$/.test(memory[key])),
+        "requested resource bytes must be decimal strings");
+    const sum = ["instanceBufferBytes", "fixedBufferBytes", "hzbBufferBytes",
+        "depthTextureBytes", "hzbTextureBytes"].reduce((total, key) => total + BigInt(memory[key]), 0n);
+    assert(sum === BigInt(memory.totalBytes), "requested resource total mismatch");
+    assert(BigInt(memory.depthTextureBytes) === BigInt(width) * BigInt(height) * 4n,
+        "depth texture does not match framebuffer");
+    assert(BigInt(memory.instanceBufferBytes) > 0n, "loaded scene has no instance allocation");
+    return memory;
+}
+
 async function viewerProbe(canvas) {
     const { default: init, WasmVoxelViewer } = await import("../../../pkg/viewer_wasm.js");
     await init();
@@ -53,6 +67,7 @@ async function viewerProbe(canvas) {
     assert(viewer.renderFrame() === "presented", "indirect frame failed");
     const gpuBeforePick = viewer.gpuStats();
     const [width, height] = viewer.viewportSize();
+    checkResourceStats(gpuBeforePick, width, height);
     const hit = await viewer.pick(width / 2, height / 2);
     assert(hit && hit.voxelCenter.every(Number.isFinite), "center pick missed the sample");
     const expectedCenter = [31.75390625, 31.75390625, 1.79296875];
@@ -63,10 +78,21 @@ async function viewerProbe(canvas) {
     assert(await viewer.pick(-1, -1) === null, "out-of-viewport pick returned a hit");
     viewer.setOrbitTarget(new Float64Array(hit.voxelCenter));
     assert(viewer.renderFrame() === "presented", "recentered frame failed");
+    const gpuAfterRecenter = viewer.gpuStats();
+    viewer.resize(width / 2, height / 2);
+    const gpuAfterResize = viewer.gpuStats();
+    checkResourceStats(gpuAfterResize, width / 2, height / 2);
+    assert(BigInt(gpuAfterResize.requestedResources.depthTextureBytes) * 4n
+        === BigInt(gpuBeforePick.requestedResources.depthTextureBytes), "resize retained old depth extent");
+    assert(gpuAfterResize.requestedResources.instanceBufferBytes
+        === gpuBeforePick.requestedResources.instanceBufferBytes, "resize changed instance capacity");
+    viewer.resize(width, height);
+    assert(viewer.renderFrame() === "presented", "restored viewport frame failed");
+    checkResourceStats(viewer.gpuStats(), width, height);
     return {
         renderedVoxels: lod.renderedVoxels,
         hit: { ...hit, position: [...hit.position], voxelCenter: [...hit.voxelCenter] },
-        gpuBeforePick, gpuAfterRecenter: viewer.gpuStats(),
+        gpuBeforePick, gpuAfterRecenter, gpuAfterResize,
     };
 }
 

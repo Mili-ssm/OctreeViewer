@@ -189,6 +189,27 @@ pub struct BlockUploadStats {
     pub uploaded_bytes: u64,
 }
 
+/// Requested sizes of currently owned GPU resources, not physical VRAM residency.
+/// Textures use logical texel bytes; driver padding, swapchain, staging and pipelines are excluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GpuResourceStats {
+    pub instance_buffer_bytes: u64,
+    pub fixed_buffer_bytes: u64,
+    pub hzb_buffer_bytes: u64,
+    pub depth_texture_bytes: u64,
+    pub hzb_texture_bytes: u64,
+}
+
+impl GpuResourceStats {
+    pub fn total_bytes(self) -> u64 {
+        self.instance_buffer_bytes
+            + self.fixed_buffer_bytes
+            + self.hzb_buffer_bytes
+            + self.depth_texture_bytes
+            + self.hzb_texture_bytes
+    }
+}
+
 const CUBE_VERTICES: [CubeVertex; 8] = [
     CubeVertex {
         position: [-0.5, -0.5, -0.5],
@@ -1044,6 +1065,37 @@ impl<'window> SurfaceRenderer<'window> {
         };
         self.camera
             .projected_voxel_edge_pixels(bounds, [0.0; 3], self.viewport_size())
+    }
+
+    /// Snapshots resources owned now; replaced resources may still be retained by GPU work.
+    pub fn resource_stats(&self) -> GpuResourceStats {
+        let instance_buffer_bytes = self.scene_buffer.as_ref().map_or(0, |b| b.buffer.size())
+            + self
+                .block_buffers
+                .values()
+                .map(|b| b.buffer.size())
+                .sum::<u64>();
+        GpuResourceStats {
+            instance_buffer_bytes,
+            fixed_buffer_bytes: self.vertex_buffer.size()
+                + self.index_buffer.size()
+                + self.uniform_buffer.size(),
+            hzb_buffer_bytes: self
+                .hzb
+                .as_ref()
+                .map_or(0, |hzb| hzb.requested_buffer_bytes())
+                + self
+                    .hzb_count_readback
+                    .as_ref()
+                    .map_or(0, |buffer| buffer.size()),
+            depth_texture_bytes: u64::from(self.depth_texture.width())
+                * u64::from(self.depth_texture.height())
+                * 4,
+            hzb_texture_bytes: self
+                .hzb
+                .as_ref()
+                .map_or(0, |hzb| hzb.logical_texture_bytes()),
+        }
     }
 
     pub fn uploaded_bytes(&self) -> u64 {

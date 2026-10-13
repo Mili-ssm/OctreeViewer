@@ -865,6 +865,23 @@ impl WasmVoxelViewer {
             &"hzbActive".into(),
             &JsValue::from_bool(renderer.hzb_active()),
         )?;
+        let resources = renderer.resource_stats();
+        let memory = js_sys::Object::new();
+        for (name, bytes) in [
+            ("instanceBufferBytes", resources.instance_buffer_bytes),
+            ("fixedBufferBytes", resources.fixed_buffer_bytes),
+            ("hzbBufferBytes", resources.hzb_buffer_bytes),
+            ("depthTextureBytes", resources.depth_texture_bytes),
+            ("hzbTextureBytes", resources.hzb_texture_bytes),
+            ("totalBytes", resources.total_bytes()),
+        ] {
+            js_sys::Reflect::set(
+                &memory,
+                &name.into(),
+                &JsValue::from_str(&bytes.to_string()),
+            )?;
+        }
+        js_sys::Reflect::set(&stats, &"requestedResources".into(), &memory)?;
         Ok(stats.into())
     }
 

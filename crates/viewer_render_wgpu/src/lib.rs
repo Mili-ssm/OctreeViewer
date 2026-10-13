@@ -16,7 +16,7 @@ mod voxel_grid;
 
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, OrbitCamera};
-pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, SurfaceRenderer};
+pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,
     instance_buffer_layout,
