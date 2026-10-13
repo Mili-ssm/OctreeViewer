@@ -18,6 +18,29 @@ const TARGET_PIXELS: f64 = 4.0;
 const DEFAULT_MAX_DECODED_MIB: u64 = 256;
 const MAX_DECODED_MIB: u64 = 2048;
 
+// Boundary snapshots avoid a sampler thread perturbing the timed CPU fixture. Linux HWM
+// covers the process lifetime, including decode; it cannot isolate builder allocations.
+fn process_memory() -> serde_json::Value {
+    let status = std::fs::read_to_string("/proc/self/status").ok();
+    let bytes = |name: &str| -> Option<u64> {
+        let line = status
+            .as_ref()?
+            .lines()
+            .find(|line| line.starts_with(name))?;
+        let mut fields = line.split_whitespace();
+        fields.next()?;
+        let kib = fields.next()?.parse::<u64>().ok()?;
+        if fields.next()? != "kB" {
+            return None;
+        }
+        kib.checked_mul(1024)
+    };
+    serde_json::json!({
+        "rss_bytes": bytes("VmRSS:"),
+        "process_lifetime_hwm_bytes": bytes("VmHWM:"),
+    })
+}
+
 fn hash_scene(scene: &viewer_render_wgpu::RenderScene) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in bytemuck::cast_slice::<_, u8>(scene.instances()) {
@@ -95,6 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let max_decoded_bytes = max_decoded_mib * 1024 * 1024;
 
+    let memory_before_open = process_memory();
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
     let metadata_visual_scale = reader.format_metadata().visual_scale();
     let metadata = reader.format_metadata().dataset();
@@ -237,6 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         decoded_bytes = exact_next_bytes;
     }
 
+    let memory_after_decode = process_memory();
     let calls = Cell::new(0_u64);
     let project = |bounds| {
         calls.set(calls.get() + 1);
@@ -252,12 +277,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut finish_seconds = Vec::with_capacity(runs);
     let mut callback_counts = Vec::with_capacity(runs);
     let mut expected: Option<VoxelScene> = None;
+    let mut memory_samples = Vec::with_capacity(runs);
     for _ in 0..runs {
         calls.set(0);
+        let previous_scene_capacity_bytes = expected
+            .as_ref()
+            .map_or(0, |scene| scene.memory_stats.instance_capacity_bytes);
+        let memory_before_build = process_memory();
         let started = Instant::now();
         let (voxelized, accumulated, finished) =
             build(black_box(&blocks), root, origin, target_pixels, &project)?;
         sample_seconds.push(started.elapsed().as_secs_f64());
+        let memory_after_build = process_memory();
+        let combined_estimated_bytes = decoded_bytes
+            .checked_add(previous_scene_capacity_bytes)
+            .and_then(|bytes| bytes.checked_add(voxelized.memory_stats.estimated_peak_bytes))
+            .ok_or("combined estimated byte count overflow")?;
+        memory_samples.push(serde_json::json!({
+            "previous_scene_capacity_bytes": previous_scene_capacity_bytes,
+            "decoded_plus_previous_scene_plus_builder_estimated_bytes": combined_estimated_bytes,
+            "before_build": memory_before_build,
+            "after_build": memory_after_build,
+        }));
         accumulation_seconds.push(accumulated);
         finish_seconds.push(finished);
         callback_counts.push(calls.get());
@@ -314,6 +355,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "instance_capacity_bytes": scene.memory_stats.instance_capacity_bytes,
                 "projection_cache_peak_entries": scene.memory_stats.projection_cache_peak_entries,
             },
+            "process_memory": {
+                "before_open": memory_before_open,
+                "after_decode": memory_after_decode,
+                "samples": memory_samples,
+                "scope": "Linux /proc boundary RSS and process-lifetime HWM; null when unavailable; no GPU or browser memory",
+            },
+            "combined_estimate_scope": "decoded PointBlock accounting + retained first scene instance capacity + builder peak model; excludes index, reader, allocator, vector headers and GPU; not RSS or a synchronized observed peak",
             "resident_blocks_are_diagnostic_only": true,
         })
     );

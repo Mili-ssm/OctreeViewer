@@ -377,3 +377,49 @@ completion. A separate bundled Playwright Firefox attempt also timed out and is 
 among the successful system-Firefox probes. Screenshots are under ignored
 `target/additive-playwright-{desktop,mobile}.png`. Chrome presentation and current panel
 statistics need a dedicated reproduction before attributing the cause to this dataset or HZB.
+
+## Joint native construction memory diagnostic — 13-10-2026
+
+The existing fixture retains its first scene for equality checks while constructing later
+scenes. Each sample now reports that retained instance capacity and the checked sum of
+`decoded_bytes_accounted + previous_scene_capacity_bytes + estimated_peak_bytes`.
+The first sample has no previous scene; subsequent samples retain exactly the first one.
+This combines accounted payload with the builder's conservative peak model, including its
+projection-cache reservation. It is not an observed simultaneous allocation peak. It excludes
+index/reader allocations, allocator overhead, vector headers, GPU and browser state.
+No persistent accumulator or product memory budget was introduced.
+
+Linux `/proc/self/status` snapshots before opening, after decoding, and immediately before
+and after each timed build report RSS and process-lifetime HWM in bytes. Missing/unsupported
+counters are JSON null. HWM includes loading/decompression and earlier builds; boundary RSS
+can miss transient peaks. There is no sampler thread, and snapshots are outside build timing.
+This native fixture cannot establish the progressive WASM or GPU peak.
+
+Native **perf** profile, same Ryzen AI 9 365/Linux host, fitted 1280×720 camera, coordinates
+only, OS cache not flushed. Three fresh processes per case, three builds per process; no
+compilation, tests or browser probe overlap the series. Byte counts below are decimal bytes.
+
+| Case | Decoded accounted | Builder peak model | Retained instances | Combined model, builds 2–3 | Process HWM range |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Outer Banks 4 px | 1,779,096 | 34,017,120 | 96,400 | 35,892,616 | 6,098,944–6,311,936 |
+| Majadas 4 px | 112,258,496 | 34,782,624 | 255,880 | 147,297,000 | 134,864,896–135,237,632 |
+| Belvedere 8 px | 211,835,216 | 34,541,280 | 205,600 | 246,582,096 | 225,112,064–225,366,016 |
+
+All nine builds per case preserve the existing scene checksums respectively
+`ebb46abe0106a53f`, `563a1f928baa5a75`, `c057ef2774b0ca75`; within-process equality
+also checks scene bytes, edges, oversized cells and builder memory stats. The large difference
+for the small fixture illustrates why charged cache reservations cannot be labeled RSS.
+Raw snapshots and summary: ignored `target/voxel-joint-memory/`.
+
+Reproduce each case with the existing command, three times in fresh processes:
+
+```sh
+cargo build --profile perf --offline -p viewer_render_wgpu --example voxel_build_bench
+target/perf/examples/voxel_build_bench data/samples/fs_e430_n4008_18.oct 3 256 4
+target/perf/examples/voxel_build_bench data/datasets/sensoforest/majadas-tls.oct 3 256 4
+target/perf/examples/voxel_build_bench data/datasets/belv_2009_digital-aerial_pcd_copc.oct 3 256 8
+```
+
+Validation: renderer tests **58 passed / 2 ignored**, renderer all-target Clippy with
+warnings denied and formatting. Remaining: progressive browser CPU/GPU peak and Additive
+real corpus, before deciding whether retained incremental state is worthwhile.

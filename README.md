@@ -565,7 +565,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Exports frescos y actividad nueva confirmados; el panel puede ir atrasado. Hubo checks/Chrome
    simultáneos: no es comparación de tiempos ni cierre de capacidad.
    [Observación acotada](docs/WEB_PERFORMANCE_BENCH.md#fresh-1-gib-camera-observation-after-lookup-change--13-10-2026).
-   Siguiente: medir pico conjunto y ampliar corpus Additive real antes de diseñar reutilización.
+   Diagnóstico nativo conjunto añadido: payload decodificado + modelo del constructor +
+   instancias de la primera escena retenida; RSS por límites de construcción y HWM de proceso
+   Linux separados. Tres procesos × tres builds por caso conservan checksums: Majadas suma
+   estimada **147,3 MB**, HWM **134,9–135,2 MB**; Belvedere 8 px **246,6 MB** y
+   **225,1–225,4 MB**. Son bytes decimales; reservas estimadas no equivalen a RSS y el HWM
+   incluye lectura/decode. [Alcance y reproducción](docs/VOXEL_BUILD_BENCH.md#joint-native-construction-memory-diagnostic--13-10-2026).
+   Siguiente: medir pico progresivo CPU/GPU en navegador y ampliar corpus Additive real antes
+   de diseñar reutilización.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
