@@ -472,3 +472,29 @@ Validation in this checkout:
 Follow-up remains: browser JS/WASM attribution, real Additive corpus and a controlled lifetime
 comparison before considering a persistent accumulator. This diagnostic establishes an observed
 native process peak, not evidence that persistent reuse is beneficial.
+
+## Real Additive EPT sample — 13-10-2026
+
+The source investigation selected a partial, ancestor-connected three-node sample from
+[USGS NC Hurricane Florence EPT](https://s3-us-west-2.amazonaws.com/usgs-lidar-public/NC_HurricaneFlorence_1_2020/ept.json),
+listed by [NOAA InPort](https://www.fisheries.noaa.gov/inport/item/72221).
+This is not the complete source dataset. The source manifest declares 152,758,563,641 points;
+only 8,884 source points are selected for this diagnostic.
+
+### Import compatibility fix
+
+The initial conversion failed with `invalid or duplicate EPT schema field "ScanAngleRank"`.
+`validate_schema` accepted `floating` but rejected the official `float` spelling used by this
+manifest. The [EPT schema specification](https://entwine.io/en/latest/entwine-point-tile.html#schema)
+uses `float` for four/eight-byte floating fields. The localized fix accepts `float` and retains
+`floating` for compatibility. LASzip payload decoding still uses the LAS header, unchanged.
+The existing conversion regression now includes `ScanAngleRank` float32 and `GpsTime` float64;
+it failed before the fix and passes afterwards. A focused test also retains the legacy alias
+and rejects unknown types. All 41 converter library tests, Clippy of all converter targets,
+formatting and diff checks pass.
+
+The next live conversion reached quantization preflight: unchanged original bounds require
+an error bound of 0.010973157088371032 source units. The default 0.01 correctly rejects it;
+`--max-error 0.02` succeeds. Two conversions pass deep validation and produce byte-identical
+coordinate and attribute files. This does not claim the default bound was met or that all
+source dimensions/CRS are preserved: the CLI reports the existing omitted dimensions contract.

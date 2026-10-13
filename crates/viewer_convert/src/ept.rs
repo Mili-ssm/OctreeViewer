@@ -699,7 +699,7 @@ fn validate_schema(schema: &serde_json::Value) -> Result<(), ConvertError> {
                 ConvertError::InvalidEpt(format!("schema field {name:?} has no positive size"))
             })?;
         if name.is_empty()
-            || !matches!(data_type, "signed" | "unsigned" | "floating")
+            || !matches!(data_type, "signed" | "unsigned" | "float" | "floating")
             || size > 8
             || !names.insert(name)
         {
@@ -795,10 +795,23 @@ mod tests {
         fs::write(
             root.join("ept.json"),
             format!(
-                r#"{{"dataType":"{data_type}","hierarchyType":"json","points":{points},"bounds":[0,0,0,8,8,8],"schema":[{{"name":"X","type":"signed","size":4}},{{"name":"Y","type":"signed","size":4}},{{"name":"Z","type":"signed","size":4}}]}}"#
+                r#"{{"dataType":"{data_type}","hierarchyType":"json","points":{points},"bounds":[0,0,0,8,8,8],"schema":[{{"name":"X","type":"signed","size":4}},{{"name":"Y","type":"signed","size":4}},{{"name":"Z","type":"signed","size":4}},{{"name":"ScanAngleRank","type":"float","size":4}},{{"name":"GpsTime","type":"float","size":8}}]}}"#
             ),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn schema_keeps_legacy_floating_alias_and_rejects_unknown_types() {
+        for data_type in ["float", "floating", "unknown"] {
+            let schema = serde_json::json!([
+                { "name": "X", "type": "signed", "size": 4 },
+                { "name": "Y", "type": "signed", "size": 4 },
+                { "name": "Z", "type": "signed", "size": 4 },
+                { "name": "GpsTime", "type": data_type, "size": 8 }
+            ]);
+            assert_eq!(validate_schema(&schema).is_ok(), data_type != "unknown");
+        }
     }
 
     #[test]
