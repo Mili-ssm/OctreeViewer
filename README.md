@@ -681,6 +681,18 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    además de mecanismos que suavicen transiciones LOD conservando vóxeles enteros sin solapamiento.
    Cierre: viabilidad documentada y comparación de tamaño neto comprimido (incluidos metadatos),
    CPU, memoria, lectura selectiva y calidad de transición; no asumir ahorro por añadir el byte.
+   Avance 13-10-2026: el objetivo aún no está definido. V5 persiste jerarquía/bloques y el renderer
+   crea celdas dyádicas `VoxelKey` en memoria; `LodTransitionPlanner` transiciona nodos/bloques
+   residentes, no máscaras por vóxel. Una máscara completa de ocupación necesita 8/64/512 bits
+   para divisiones 2³/4³/8³; el byte propuesto no codifica las posiciones generales. «Iguales» debe
+   especificar geometría, RGB y atributos (incluidos intensidad/clasificación cuando existan).
+   No se implementa codificación ni se infiere ahorro: quedan estas subtareas antes de diseñarla:
+   (a) escoger un consumidor/coste objetivo entre archivo, memoria de construcción/escena o
+   transiciones y fijar la semántica de igualdad; (b) solo para un consumidor concreto, comparar
+   baseline, máscara completa y representación dispersa en corpus/cortes reales, incluyendo índices,
+   padding, atributos y metadatos; (c) medir CPU, memoria, lectura selectiva y transiciones, y
+   comprobar cobertura y no solapamiento. Evidencia: `viewer_render_wgpu/src/voxel_grid.rs`,
+   `viewer_core/src/lod_transition.rs` y `viewer_format/FORMAT_V5.md`.
 8. [x] **Revisar abstracciones y propiedad en Rust.** Auditoría localizada completada el 13-10-2026;
    no justifica cambios de código sin evidencia adicional. `FormatMetadata` y `LodDataset` comparten
    el `Arc<DatasetMetadata>` inmutable para no clonar la jerarquía; `Arc<Mutex<BrowserReadStats>>`
