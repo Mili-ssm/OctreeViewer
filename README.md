@@ -451,13 +451,16 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   [Causa y validación](docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
 - [x] Repetir observación acotada a 1 GiB con export fresco y auditar el contrato incremental:
   cámara confirma 219 cargas nuevas en 600 s; quedan 207 pendientes, sin evicciones ni pausa.
-  Medición de prefijos iniciada en Majadas; ampliar corpus y medir pico conjunto siguen pendientes;
+  Medición de prefijos en Majadas/Albuera; ampliar corpus y medir pico conjunto siguen pendientes;
   no se da por completado el objetivo de 4 px ni se retiene un acumulador todavía.
 - [x] Instrumentar prefijos estrictos del recorrido y medir Majadas en Firefox, tres rondas:
   3/98 reconstrucciones elegibles, 1.870 puntos retenibles y 125 añadidos; 3–4 ms de trabajo
   completo candidato frente a 11.128–12.155 ms totales. Cámara: cero oportunidades nuevas.
   86 tests renderer/WASM y Clippy nativo/WASM pasan. No justifica retener acumulador aquí.
   [Contadores y límites](docs/VOXEL_BUILD_BENCH.md#strict-prefix-opportunity-measurement--13-10-2026).
+- [x] Ampliar prefijos a Albuera XYZ en tres rondas: 3/233 reconstrucciones, 24–33 ms
+  candidatos de 75.280–78.387 ms totales; cámara sin prefijos nuevos. Seis fases completan
+  objetivo, 17.085 vóxeles y cero errores. No justifica acumulador persistente en estos casos.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
@@ -550,12 +553,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Exports frescos y actividad nueva confirmados; el panel puede ir atrasado. Hubo checks/Chrome
    simultáneos: no es comparación de tiempos ni cierre de capacidad.
    [Observación acotada](docs/WEB_PERFORMANCE_BENCH.md#fresh-1-gib-camera-observation-after-lookup-change--13-10-2026).
-   Siguiente: ampliar medición de prefijos a Albuera/Belvedere y casos Additive; el cierre del objetivo
+   Siguiente: ampliar medición de prefijos a Belvedere y casos Additive; el cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
    Auditoría local incremental cerrada: comparar secuencia real de bloques, conservar orden de
    clasificación/sumas y descartar en reemplazos o cambios de contexto; la invalidación de payload
    actual ya existe. Majadas completa tres rondas con solo 3/98 prefijos y 3–4 ms candidatos;
-   el giro no añade prefijos. Ampliar corpus y medir pico conjunto acumulador/instancias/escena
+   Albuera también completa tres rondas con 3/233 y 24–33 ms; ningún giro añade prefijos.
+   Ampliar corpus y medir pico conjunto acumulador/instancias/escena
    anterior antes de introducir estado persistente; el caso medido no justifica ese prototipo.
    [Contrato y subtareas](docs/VOXEL_BUILD_BENCH.md#progressive-accumulator-reuse-local-contract-audit--13-10-2026).
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios

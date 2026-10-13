@@ -271,3 +271,29 @@ Candidate work is less than 0.04% of initial full-build time, before accounting 
 new-point work and publication. These observations do not justify a retained append-only
 accumulator for this case. They do not rule out other datasets or a more complex removal/addition
 scheme. Such a scheme still needs equivalence and combined peak-memory evidence before design.
+
+### Albuera repetition with the same instrumented WASM
+
+Three fresh Firefox profiles repeated the same coordinate-only protocol and budgets on Albuera.
+All six phases reached `target_complete`, zero pending blocks and zero console errors. Raw
+exports: ignored `target/prefix-opportunity-albuera/run-{1,2,3}/`. The WASM hash matches the
+Majadas measurement above. The orchestration wrapper initially failed its final hash-recording
+step because it used an incorrect package path; all probes and summary files had already
+finished successfully. Hash recording was corrected to the served `pkg/viewer_wasm_bg.wasm`.
+
+| Initial phase | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: |
+| Full builds / reused updates | 233 / 513 | 233 / 513 | 233 / 513 |
+| Strict-prefix builds | 3 | 3 | 3 |
+| Retained / added source points | 140,949 / 228,274 | 140,949 / 228,274 | 140,949 / 228,274 |
+| Candidate full-build time (ms) | 33 | 32 | 24 |
+| All full-build time (ms) | 75,371 | 75,280 | 78,387 |
+| First terminal observation (s, sampled every 10 s) | 100.135 | 100.139 | 130.185 |
+
+All initial phases loaded 746 blocks, processed 503,187,945 source points across full rebuilds
+and finished with 17,085 voxels. Each camera phase added 12 loads, six full builds and eight
+reused updates, retained 17,085 voxels, and added no strict-prefix opportunity. Initial candidate
+work remains below 0.05% of full-build time. The slower third terminal observation is retained;
+these are structural opportunity measurements, not paired speedup evidence. Neither measured
+cloud supports introducing a persistent append-only accumulator yet. Belvedere and Additive
+cases, combined peak memory and Chrome visual validation remain pending.
