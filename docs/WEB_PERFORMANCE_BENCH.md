@@ -918,3 +918,54 @@ completion/counters, not correct Chrome visual output. Firefox visual captures r
 separate evidence.
 This closes the small Chrome functional case only; visual Chrome output, large datasets, physical GPU behavior,
 performance repetitions and remaining interaction matrix are pending.
+
+Further Chrome launch diagnostics tried Vulkan/SwiftShader and Vulkan with a reported
+AMD `rdna-3` adapter (`--enable-features=Vulkan --use-angle=vulkan --disable-vulkan-surface`,
+plus `--enable-unsafe-webgpu`; the software variant additionally selects SwiftShader).
+Both complete the small sample in exported counters but screenshots show no geometry,
+rather than resolving visual validation. Captures: ignored `target/chrome-hzb-vulkan.png`
+and `target/chrome-hzb-radv.png`. Cause remains unisolated; no extra renderer change is
+justified by these setup-dependent screenshots alone. Native Vulkan reports RADV Radeon
+880M and llvmpipe adapters; the focused HZB test exercises the fallback path.
+
+### Fresh 1 GiB camera observation after lookup change — 13-10-2026
+
+The same committed fresh-export probe opened Belvedere coordinates without a sidecar in
+Firefox 157.0.1, 1280×720, DPR 1, 4 px. A temporary host copy changes exactly the two
+256 MiB cache constants to 1 GiB; the product default and 256 MiB voxel-build estimate
+limit remain unchanged. Staged WASM is frozen from `21615df`, SHA-256
+`4d996a69ad6b9189bb37401b0dd9a7897c5432af6ada9fcf0ea617f0d969f294`.
+The later HZB fix did not change this running session. Fresh dedicated Firefox profile,
+OS cache warm, HTTP cache not explicitly disabled. Chrome diagnostics, a release WASM
+build and focused checks ran concurrently during parts of this observation: **no timing
+comparison or speedup is claimed**.
+
+The probe reached its **600 s cap in each phase**, rather than detector pause or completion:
+
+| Snapshot | Cumulative loaded blocks | Pending target blocks | Cache MiB | Scene builds / reused updates | Cumulative voxel CPU ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Before ArrowRight, 600 s cap | 796 | 429 | 658.08 | 215 / 581 | 529,750 |
+| After ArrowRight, another 600 s cap | 1,015 | 207 | 889.98 | 262 / 755 | 1,109,381 |
+
+Camera input is acknowledged and new worker counters progress: **219 additional loads**,
+**47 additional scene builds**, **174 reused updates**. No cache evictions or insert rejections,
+20,977 retained voxels, coverage complete for the visible cut, `targetLodMs: null` throughout.
+This establishes continued activity after camera input with fresh exports, unlike the earlier
+10-second no-progress window. It does not establish target completion, eventual cache
+sufficiency, a stable terminal state or a paired detector/lookup runtime improvement.
+Both final panels lag the exported progress counters (`domMatchesExport: false`); snapshots
+retain both rather than treating an older displayed panel as the authoritative export.
+Zero browser console errors; the final screenshot shows the retained gray cloud.
+
+Raw session, 10-second samples, final exports and screenshot:
+ignored `target/cache-pressure-probe/belvedere-entry1024-camera/`.
+Staged host: `target/web-browser-probe/site-entry1024/`.
+Next: quantify traversal-prefix opportunities and combined retained-builder memory before
+prototyping more incremental work. If repeating this capacity observation to completion,
+use a longer explicit cap and keep concurrent diagnostics/builds out of any timing series.
+
+Post-fix Firefox release-WASM check also passes both initial/camera phases on the 4,096-voxel
+sample with HZB active, zero pending blocks and zero console errors. Its final capture visibly
+shows the gray voxel grid (`target/cache-pressure-probe/sample-hzb-after/final.png`), unlike
+the unresolved Chrome captures. Current post-fix WASM SHA-256:
+`04dd3438249a76f7071822ccbae843b4823ab9928255e508e41a9d86203057f3`.

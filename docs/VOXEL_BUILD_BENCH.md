@@ -198,3 +198,38 @@ new-cell memory/instance failures, RGB and typed attributes, and nonoverlapping 
 Next: rebuild release WASM and repeat the changed-camera observation with fresh exports
 and a longer no-progress window. The 1 GiB cache still cannot hold the complete fitted 4 px
 native cut; faster lookup does not resolve that capacity constraint.
+
+## Progressive accumulator reuse: local contract audit — 13-10-2026
+
+The current whole-scene reuse is safe for an identical cut and camera/viewport/voxel-stage
+context (`viewer_wasm/src/lod_dataset.rs`, `reusable_build_match`). Successful replacement of
+a visible payload clears `last_successful_build` in `cache_block`; an unsuccessful replacement
+keeps it. Attribute changes clear the loaded blocks and scene context. There is no missing
+payload-invalidation bug established by this audit.
+
+An append-only accumulator experiment must compare the **actual traversal sequence** used by
+`build_voxel_scene_with_limits` (node order then each node's block order), not only sorted
+`plan.block_ids()`. The new sequence must extend the old one without changing previous point
+payloads, attributes or projection results. First-point classification is order-sensitive;
+floating intensity sums can also depend on order. Sorting or subtracting block aggregates
+would need a separate equivalence argument. Replacement transitions can remove fallback
+ancestors or replace active descendants, so progressive loading is not generally append-only.
+Camera, viewport, stage and payload/attribute changes must invalidate retained accumulation.
+
+`VoxelSceneBuilder::try_finish(self)` currently consumes the map. Retaining a builder would
+extend the lifetime of its accumulators/projection cache alongside output instances and the
+previous visible scene. Cloning that map for publication would add another peak. Existing
+estimated budgets cannot be assumed to cover these combined lifetimes, and poisoned builders
+must not replace the last successfully published scene on an insertion/finish error.
+
+Pending acceptance steps before introducing that state:
+
+- Measure the frequency, source points and voxel-build time of exact traversal-prefix
+  extensions with unchanged context, separately from replacements and scene reuse.
+- Bound retained accumulator + projection cache + old/new instances, and define discard/rebuild
+  behavior on context change or exhausted limits; preserve the existing payload invalidation.
+- Compare complete scene bytes against full rebuild for Replacement/Additive, classification,
+  nonfinite attributes, camera changes, budget failures and shared block references.
+- Only then prototype a single retained accumulator if eligible measured work warrants it;
+  compare native/WASM and progressive browser work with equivalent inputs. No persistent
+  incremental accumulator is implemented by this audit.

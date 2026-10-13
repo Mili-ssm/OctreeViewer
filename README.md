@@ -449,6 +449,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
   test GPU verifica argumentos completos. Capturas Chrome/SwiftShader muestran canvas blanco:
   validación visual Chrome pendiente. 85 tests renderer/WASM, formato y Clippy pasan.
   [Causa y validación](docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
+- [x] Repetir observación acotada a 1 GiB con export fresco y auditar el contrato incremental:
+  cámara confirma 219 cargas nuevas en 600 s; quedan 207 pendientes, sin evicciones ni pausa.
+  Medición de oportunidades de prefijo y pico conjunto quedan como siguientes subtareas;
+  no se da por completado el objetivo de 4 px ni se retiene un acumulador todavía.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
@@ -536,8 +540,18 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Ambos estados finales coinciden con el panel y no hay errores de consola; objetivo incompleto.
    Probe BiDi reproducible añadido, con 120 s sin progreso y cap de 600 s por fase.
    [Observación y límites](docs/WEB_PERFORMANCE_BENCH.md#fresh-export-camera-recovery-at-256-mib--13-10-2026).
-   Siguiente: repetir el caso de cámara a 1 GiB con este probe y aislar reutilización progresiva
-   del acumulador. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
+   Caso de 1 GiB repetido con dos ventanas de 600 s: 796→1.015 cargas y 429→207 pendientes
+   después del giro; 658→890 MiB residentes, sin evicciones ni pausa, objetivo incompleto.
+   Exports frescos y actividad nueva confirmados; el panel puede ir atrasado. Hubo checks/Chrome
+   simultáneos: no es comparación de tiempos ni cierre de capacidad.
+   [Observación acotada](docs/WEB_PERFORMANCE_BENCH.md#fresh-1-gib-camera-observation-after-lookup-change--13-10-2026).
+   Siguiente: medir oportunidades de reutilización progresiva del acumulador; el cierre del objetivo
+   a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
+   Auditoría local incremental cerrada: comparar secuencia real de bloques, conservar orden de
+   clasificación/sumas y descartar en reemplazos o cambios de contexto; la invalidación de payload
+   actual ya existe. Antes de retener acumuladores, medir extensiones de prefijo y pico conjunto
+   acumulador/instancias/escena anterior. No se añade estado persistente aún.
+   [Contrato y subtareas](docs/VOXEL_BUILD_BENCH.md#progressive-accumulator-reuse-local-contract-audit--13-10-2026).
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida
@@ -603,7 +617,8 @@ El seguimiento activo se mantiene en este README; no se crean Issues/PRs por def
 
 - [ ] **Navegador:** apertura gris, pareja y componentes comprobados en Firefox; paquete `file://`
   y teclado del selector también. Chrome 155 con SwiftShader pasa muestra, clasificación, cámara
-  y viewport móvil; faltan matriz grande/GPU física Chrome, resto de teclado, corrupción de payloads,
+  y viewport móvil a nivel funcional. Falta salida visual Chrome, matriz grande/GPU física,
+  resto de teclado, corrupción de payloads,
   OPFS/cuota, cancelación durante lectura, picking y pérdida real de GPU. Los tests Rust/JS y renders nativos no sustituyen esa interacción.
 - [ ] **Escala:** medir hasta una fuente mayor de 500 GB decimales, con índice, spools, RSS, recursos
   GPU, bytes leídos, primera vista y navegación separados. Fijar mínimos oficiales RAM/GPU/SO.

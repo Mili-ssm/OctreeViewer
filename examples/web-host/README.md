@@ -101,9 +101,11 @@ La nube y el archivo convertido se procesan localmente en el navegador; no se su
 La conversión requiere WebAssembly, workers y OPFS en un contexto seguro. Los límites de tamaño,
 memoria máxima y tiempo para archivos grandes aún no están validados con Albuera ni en varios navegadores.
 
-The target browsers are Chrome and Firefox builds that support WebGPU and `OffscreenCanvas`; visual
-rendering has been checked in Chrome with converted Bunny and Outer Banks datasets. Firefox still
-requires browser validation. The host transfers the canvas
+The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has current v5
+XYZ/RGB/typed-attribute and visual evidence. Chrome 155 passes the small functional flows;
+current headless captures still require investigation. Older Bunny/Outer Banks Chrome captures
+do not certify the current build. See [web measurements](../../docs/WEB_PERFORMANCE_BENCH.md).
+The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
 `WasmVoxelViewer.createOffscreen`. Select a project-format v5 file to call `openFormatDataset` and
 `updateLod`; the worker publishes a coarse visible cut first, then loads at most one missing block
@@ -152,7 +154,7 @@ the file does not provide one. The canvas is transferred to a worker and cannot 
 Fatal frame errors, worker errors and message decoding failures reject outstanding API requests and
 terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
 replace the transferred canvas and create a new viewer; automatic device recreation is not available.
-The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run; the
+The real browser/WebGPU pick latency and device-loss path still need a Chrome or Firefox run.
 Chrome 155 is now available and the small software-WebGPU flows pass, but pick/device loss remain
 unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
