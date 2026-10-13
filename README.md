@@ -658,6 +658,23 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Ampliar corpus y medir pico conjunto acumulador/instancias/escena
    anterior antes de introducir estado persistente; el caso medido no justifica ese prototipo.
    [Contrato y subtareas](docs/VOXEL_BUILD_BENCH.md#progressive-accumulator-reuse-local-contract-audit--13-10-2026).
+   Plan 13-10-2026 — diagnóstico nativo del pico conjunto (`viewer_render_wgpu`):
+   - [x] Añadir al benchmark un intervalo RSS opcional (1–1000 ms); sin muestreo por defecto.
+     Muestrear durante el build con bloques y escena anterior residentes, detener y unir el hilo
+     antes de publicar resultados. Registrar máximo RSS observado, número de muestras e intervalo.
+   - [x] Verificar ejecución con/sin muestreo, igualdad de escena y rechazo de intervalos inválidos;
+     ejecutar fmt/Clippy y documentar una medición reproducible antes del commit.
+   Resultado: fixture pequeña, 2.410 vóxeles y checksum idéntico con intervalos 0/1/1000 ms;
+   intervalos inválidos rechazados. Majadas: 202 bloques, 7.015.449 puntos, 6.397 vóxeles;
+   RSS observado a 1 ms: 135.254.016 / 135.454.720 / 135.454.720 B en tres builds,
+   con 267 / 276 / 272 muestras. Estimación combinada con escena anterior: 147.297.000 B;
+   son magnitudes distintas, sin inferir ahorro ni justificar acumulación persistente.
+   Compilación optimizada, Clippy del ejemplo, fmt y diff pasan; 60 tests renderer pasan,
+   dos opcionales ignorados.
+   [Reproducción y alcance](docs/VOXEL_BUILD_BENCH.md#optional-native-rss-sampling--13-10-2026).
+   - [ ] Continuar después con atribución JS/WASM y corpus Additive real. El RSS de proceso incluye
+     reader, índice y allocator; no atribuye bytes al builder, no mide GPU ni garantiza capturar
+     picos menores al intervalo. Las duraciones con muestreo no son comparables con las anteriores.
 3. [ ] **Picos de conversión — `viewer_convert` y `viewer_format`.** Reducir vectores intermedios
    y medir el lote de compresión completo. Comparar primero con el spool actual; solo después probar
    spool ordenado espacialmente, particiones acotadas o dos pasadas sobre LAZ. Cierre: salida

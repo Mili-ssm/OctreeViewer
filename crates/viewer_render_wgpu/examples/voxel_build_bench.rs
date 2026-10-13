@@ -4,7 +4,9 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs::File,
     hint::black_box,
-    time::Instant,
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
 };
 
 use viewer_core::{FrustumPlane, LodSelectionConfig, Point, PointBlock, SpatialFrustum};
@@ -18,7 +20,8 @@ const TARGET_PIXELS: f64 = 4.0;
 const DEFAULT_MAX_DECODED_MIB: u64 = 256;
 const MAX_DECODED_MIB: u64 = 2048;
 
-// Boundary snapshots avoid a sampler thread perturbing the timed CPU fixture. Linux HWM
+// By default, boundary snapshots avoid perturbing the timed fixture. Optional RSS sampling
+// deliberately includes thread overhead in timings. Linux HWM
 // covers the process lifetime, including decode; it cannot isolate builder allocations.
 fn process_memory() -> serde_json::Value {
     let status = std::fs::read_to_string("/proc/self/status").ok();
@@ -39,6 +42,45 @@ fn process_memory() -> serde_json::Value {
         "rss_bytes": bytes("VmRSS:"),
         "process_lifetime_hwm_bytes": bytes("VmHWM:"),
     })
+}
+
+/// Optional process-wide observation; deliberately separate from the allocation model.
+struct RssSampler {
+    stop: mpsc::Sender<()>,
+    worker: thread::JoinHandle<(Option<u64>, u64)>,
+}
+
+impl RssSampler {
+    fn start(interval_ms: u64) -> std::io::Result<Self> {
+        let (stop, receiver) = mpsc::channel();
+        let initial = process_memory()["rss_bytes"].as_u64();
+        let worker = thread::Builder::new()
+            .name("voxel-rss".into())
+            .spawn(move || {
+                let mut peak = initial;
+                let mut samples = u64::from(initial.is_some());
+                while let Err(mpsc::RecvTimeoutError::Timeout) =
+                    receiver.recv_timeout(Duration::from_millis(interval_ms))
+                {
+                    if let Some(rss) = process_memory()["rss_bytes"].as_u64() {
+                        peak = Some(peak.map_or(rss, |previous| previous.max(rss)));
+                        samples += 1;
+                    }
+                }
+                (peak, samples)
+            })?;
+        Ok(Self { stop, worker })
+    }
+
+    fn finish(self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let final_rss = process_memory()["rss_bytes"].as_u64();
+        let _ = self.stop.send(());
+        let (peak, samples) = self.worker.join().map_err(|_| "RSS sampler panicked")?;
+        Ok(serde_json::json!({
+            "peak_observed_rss_bytes": peak.into_iter().chain(final_rss).max(),
+            "successful_samples": samples + u64::from(final_rss.is_some()),
+        }))
+    }
 }
 
 fn hash_scene(scene: &viewer_render_wgpu::RenderScene) -> u64 {
@@ -84,9 +126,9 @@ fn build(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if !(1..=4).contains(&args.len()) {
+    if !(1..=5).contains(&args.len()) {
         return Err(
-            "usage: voxel_build_bench INPUT.oct [RUNS=3] [MAX_DECODED_MIB=256] [TARGET_PIXELS=4]"
+            "usage: voxel_build_bench INPUT.oct [RUNS=3] [MAX_DECODED_MIB=256] [TARGET_PIXELS=4] [RSS_SAMPLE_MS=0]"
                 .into(),
         );
     }
@@ -115,6 +157,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(TARGET_PIXELS);
     if !target_pixels.is_finite() || !(0.5..=16.0).contains(&target_pixels) {
         return Err("TARGET_PIXELS must be finite and between 0.5 and 16".into());
+    }
+    let rss_sample_ms = args
+        .get(4)
+        .map(|value| value.to_string_lossy().parse::<u64>())
+        .transpose()?
+        .unwrap_or(0);
+    if rss_sample_ms > 1000 {
+        return Err("RSS_SAMPLE_MS must be 0 (disabled) or between 1 and 1000".into());
     }
     let max_decoded_bytes = max_decoded_mib * 1024 * 1024;
 
@@ -284,10 +334,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_ref()
             .map_or(0, |scene| scene.memory_stats.instance_capacity_bytes);
         let memory_before_build = process_memory();
+        let sampler = (rss_sample_ms > 0)
+            .then(|| RssSampler::start(rss_sample_ms))
+            .transpose()?;
         let started = Instant::now();
-        let (voxelized, accumulated, finished) =
-            build(black_box(&blocks), root, origin, target_pixels, &project)?;
-        sample_seconds.push(started.elapsed().as_secs_f64());
+        let result = build(black_box(&blocks), root, origin, target_pixels, &project);
+        let elapsed = started.elapsed().as_secs_f64();
+        let sampled_rss = sampler.map(RssSampler::finish).transpose()?;
+        let (voxelized, accumulated, finished) = result?;
+        sample_seconds.push(elapsed);
         let memory_after_build = process_memory();
         let combined_estimated_bytes = decoded_bytes
             .checked_add(previous_scene_capacity_bytes)
@@ -296,6 +351,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         memory_samples.push(serde_json::json!({
             "previous_scene_capacity_bytes": previous_scene_capacity_bytes,
             "decoded_plus_previous_scene_plus_builder_estimated_bytes": combined_estimated_bytes,
+            "sampled_rss": sampled_rss,
             "before_build": memory_before_build,
             "after_build": memory_after_build,
         }));
@@ -356,10 +412,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "projection_cache_peak_entries": scene.memory_stats.projection_cache_peak_entries,
             },
             "process_memory": {
+                "rss_sample_interval_ms": rss_sample_ms,
+                "timings_include_sampler_overhead": rss_sample_ms > 0,
                 "before_open": memory_before_open,
                 "after_decode": memory_after_decode,
                 "samples": memory_samples,
-                "scope": "Linux /proc boundary RSS and process-lifetime HWM; null when unavailable; no GPU or browser memory",
+                "scope": "Linux /proc RSS boundaries, optional sampled RSS, and process-lifetime HWM; null when unavailable; no GPU or browser memory",
             },
             "combined_estimate_scope": "decoded PointBlock accounting + retained first scene instance capacity + builder peak model; excludes index, reader, allocator, vector headers and GPU; not RSS or a synchronized observed peak",
             "resident_blocks_are_diagnostic_only": true,

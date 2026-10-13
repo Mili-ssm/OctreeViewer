@@ -423,3 +423,52 @@ target/perf/examples/voxel_build_bench data/datasets/belv_2009_digital-aerial_pc
 Validation: renderer tests **58 passed / 2 ignored**, renderer all-target Clippy with
 warnings denied and formatting. Remaining: progressive browser CPU/GPU peak and Additive
 real corpus, before deciding whether retained incremental state is worthwhile.
+
+## Optional native RSS sampling — 13-10-2026
+
+Assessment: the existing combined estimate adds decoded block accounting, the retained first
+scene and the conservative builder model. Boundary RSS snapshots can miss allocations during
+accumulation/finish. An optional sampler now observes process RSS across construction without
+changing production rendering or retaining an accumulator. No sampling thread runs by default.
+
+```sh
+cargo build --profile perf --offline -p viewer_render_wgpu --example voxel_build_bench
+target/perf/examples/voxel_build_bench data/samples/fs_e430_n4008_18.oct 3 256 4 0
+target/perf/examples/voxel_build_bench data/samples/fs_e430_n4008_18.oct 3 256 4 1
+target/perf/examples/voxel_build_bench data/datasets/sensoforest/majadas-tls.oct 3 256 4 1
+```
+
+The fifth argument is `RSS_SAMPLE_MS`: 0 disables it; integers 1–1000 request a sampling interval.
+`process_memory.samples[].sampled_rss` is null when disabled; otherwise it contains
+`peak_observed_rss_bytes` and `successful_samples`. Linux `/proc/self/status` supplies RSS;
+unavailable RSS produces null peak and zero successful samples. Initial/final observations
+count as samples, even if the build completes before the first periodic observation. The
+thread stops via a channel and is joined after success or a returned build error, before the
+error is propagated. There is no wait for the full interval on shutdown.
+
+The worker observes process-wide memory while decoded blocks, builder state, and (after the
+first run) the retained first scene coexist. These objects change during construction: the
+sampler does not attribute RSS to individual components or prove their individual maxima
+coincide. It includes reader/index/allocator and sampling overhead. Short peaks may be missed;
+scheduling and `/proc` granularity make the requested interval approximate. The existing HWM
+remains process-lifetime data including decode. Neither value measures WASM/JS heap or GPU.
+`timings_include_sampler_overhead` marks perturbed runs; use disabled sampling for CPU timing
+comparisons. This bounded resident-input fixture does not simulate browser cache eviction.
+
+Validation in this checkout:
+
+- Small fixture: intervals 0, 1 and 1000 ms, three runs each, all produce 2,410 voxels and
+  checksum `ebb46abe0106a53f`; disabled output is null; enabled Linux output has at least the
+  two boundary samples. 1001, -1 and nonnumeric intervals fail.
+- Majadas at 1 ms: 202 blocks, 7,015,449 points, 6,397 voxels, checksum `563a1f928baa5a75`.
+  Three observed RSS maxima: 135,254,016 / 135,454,720 / 135,454,720 bytes;
+  267 / 276 / 272 successful samples. Decoded accounting: 112,258,496 bytes;
+  builder peak model: 34,782,624 bytes; previous scene capacity in runs 2–3: 255,880 bytes.
+  Combined model: 147,041,120 bytes initially, 147,297,000 thereafter. The model and RSS have
+  different scopes; their difference is not an allocation saving or model accuracy bound.
+- Optimized offline build, example Clippy with warnings denied, formatting and diff checks pass.
+  Renderer library tests: 60 pass, two optional tests ignored.
+
+Follow-up remains: browser JS/WASM attribution, real Additive corpus and a controlled lifetime
+comparison before considering a persistent accumulator. This diagnostic establishes an observed
+native process peak, not evidence that persistent reuse is beneficial.
