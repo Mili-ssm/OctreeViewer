@@ -1209,3 +1209,58 @@ Raw series, source/binary hashes, mapping summaries and profiles: ignored
 `target/albuera-resource-memory/`. Validation: **11 Python tests**, Ruff check/format and
 CLI smoke (one capture, companion file, duration cap) pass. Tests cover root identity changes
 before/during reads and refusing to overwrite a mapping capture. No UI/Rust behavior changed.
+
+### Independent clear-only surface memory matrix — 13-10-2026
+
+New bounded diagnostic: `examples/web-host/tests/surface-memory.html` and its worker submit
+**300 clear-only WebGPU frames**, with no WASM, dataset, readback or retained texture history.
+The host schedules one frame per animation callback after the previous worker reply, then
+waits for `queue.onSubmittedWorkDone()`. Device/context stay alive during a 20 s idle interval.
+Dimensions and frame count are explicit URL parameters, validated before creating a worker.
+The CSS canvas stays **640×360** while the drawing dimensions change.
+
+Six fresh Firefox 157.0.1 headless profiles, WebGPU enabled, HTTP disk/memory cache disabled,
+1280×900 host viewport, three runs at each drawing size. Linux process-tree sampler sleeps
+0.1 s between sequential reads. Identity-checked parent `smaps` captures are taken after
+submission completion and again after 20 s idle. `Rss`/`Pss` are resident process memory;
+frame submission counters are not display FPS. No build/conversion overlaps the series.
+All runs finish 300 submissions and remain idle without a reported device failure. First
+1280×720 screenshot inspected: visible red clear. Browser logs include shared-texture/dma-buf
+fallback warnings; adapter identity and physical GPU memory are unavailable.
+
+Bytes below are decimal. Anonymous-class counts include only unnamed VMAs whose `Size`
+exactly equals drawing width × height × 4; this is an observational filter, not ownership proof.
+
+| Drawing size / round | Parent PSS mapping sum after submissions | After 20 s idle | Exact image-size unnamed maps, both captures | Tree PSS sampled peak |
+| --- | ---: | ---: | ---: | ---: |
+| 1280×720 / 1 | 475,248,640 | 378,998,784 | 3 | 784,788,480 |
+| 1280×720 / 2 | 507,559,936 | 386,115,584 | 4 | 797,125,632 |
+| 1280×720 / 3 | 509,406,208 | 388,168,704 | 5 | 802,817,024 |
+| 640×360 / 1 | 497,801,216 | 377,666,560 | 0 | 802,546,688 |
+| 640×360 / 2 | 531,995,648 | 370,039,808 | 0 | 815,455,232 |
+| 640×360 / 3 | 481,779,712 | 379,010,048 | 0 | 775,620,608 |
+
+The large-image maps contribute **11,059,200 / 14,745,600 / 18,432,000 B PSS**, respectively,
+and remain through idle. The small-image filter searches for 921,600-B VMAs and finds none;
+allocation rounding/coalescing can change map boundaries, so this does not show that small
+surfaces allocate nothing. Total process memory does not scale linearly with framebuffer size.
+The **161** large-image maps seen during Albuera are not reproduced by this isolated clear
+protocol. It neither absolves nor implicates browser presentation under the viewer's different
+workload. A later screenshot is included in each sampled process lifetime; parent mapping
+captures, rather than full-lifetime maxima, are the controlled phase comparisons here.
+
+Raw driver, launcher protocol, JSONL, phase markers/captures, summaries, profiles and screenshots
+are under ignored `target/surface-memory-probe/`; no browser sampling code is added to product
+flows. Reproduce manually: serve the root on 8767, start a fresh WebGPU-enabled Firefox profile,
+attach the process sampler, and open
+`/examples/web-host/tests/surface-memory.html?width=1280&height=720&frames=300` (then 640/360 in
+another fresh profile). Capture parent mappings at `window.surfaceMemoryResults.state ===
+"idle"` and 20 s later using `capture_root_smaps` from the committed sampler. Keep drawing
+and reported CSS dimensions, phase timestamps and partial samples in the results.
+
+Validation: worker JS syntax and diff checks pass; Firefox executes all six real GPU sequences.
+Playwright MCP checks invalid parameters in desktop/mobile viewports with zero console/page
+errors, without creating a GPU worker. This validates the diagnostic error path, not Chrome
+GPU rendering. Product renderer/WASM source and package are unchanged.
+Next: repeat the same bounded frame protocol with the small WASM sample, separating viewer
+rendering from large-data refinement before attempting a memory fix.

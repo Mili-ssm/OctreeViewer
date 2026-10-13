@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Independent WebGPU surface memory diagnostic</title>
+<style>
+body { color: #eee; background: #17212b; font: 16px system-ui; margin: 24px; }
+canvas { display: block; width: min(640px, 100%); aspect-ratio: 16 / 9; background: #555; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>Independent WebGPU surface memory diagnostic</h1>
+<p>The canvas should show a red clear. This submits a bounded frame sequence without WASM or a dataset.
+The device and canvas stay alive after completion for external process-memory sampling.</p>
+<canvas id="surface" aria-label="WebGPU red clear"></canvas>
+<pre id="result">Starting…</pre>
+<script type="module">
+const output = document.querySelector("#result");
+const canvas = document.querySelector("#surface");
+const parameters = new URLSearchParams(location.search);
+const width = Number(parameters.get("width") ?? 1280);
+const height = Number(parameters.get("height") ?? 720);
+const frames = Number(parameters.get("frames") ?? 300);
+let worker;
+let frameRequest;
+const update = value => {
+    window.surfaceMemoryResults = { ...window.surfaceMemoryResults, ...value, width, height, frames,
+        canvasCssWidth: canvas.clientWidth, canvasCssHeight: canvas.clientHeight, wallTimeMs: Date.now() };
+    output.textContent = JSON.stringify(window.surfaceMemoryResults, null, 2);
+};
+const fail = message => {
+    cancelAnimationFrame(frameRequest);
+    worker?.terminate();
+    update({ state: "failed", message });
+};
+if (![width, height, frames].every(Number.isInteger) || width < 1 || height < 1
+    || width > 2048 || height > 2048 || frames < 1 || frames > 600) {
+    fail("Expected integer dimensions 1–2048 and frame count 1–600");
+} else {
+    canvas.width = width;
+    canvas.height = height;
+    worker = new Worker(new URL("./surface-memory.browser.mjs", import.meta.url), { type: "module" });
+    const requestFrame = () => { frameRequest = requestAnimationFrame(() => worker.postMessage({ type: "frame" })); };
+    worker.onmessage = ({ data }) => {
+        if (data.type === "failure") return fail(data.message);
+        if (data.type === "ready") { update({ state: "rendering", submitted: 0 }); requestFrame(); }
+        if (data.type === "frame") {
+            update({ state: "rendering", submitted: data.submitted });
+            if (data.submitted < frames) requestFrame();
+            else worker.postMessage({ type: "finish" });
+        }
+        if (data.type === "idle") update({ state: "idle", submitted: data.submitted });
+    };
+    worker.onerror = event => fail(event.message);
+    worker.onmessageerror = () => fail("Worker message error");
+    const offscreen = canvas.transferControlToOffscreen();
+    update({ state: "starting", submitted: 0 });
+    worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
+}
+</script>
+</html>

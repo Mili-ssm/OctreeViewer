@@ -368,6 +368,17 @@ It exercises the real host DOM/export with a deterministic Worker in desktop/mob
 with HTTP caching disabled. It does not exercise WebGPU rendering. Actual Firefox load/camera
 validation and prior stale-panel captures are recorded in the web benchmark document.
 
+### Isolate surface presentation memory
+
+Open `tests/surface-memory.html?width=1280&height=720&frames=300` over HTTP; repeat with
+640×360 in a fresh browser profile. This independent worker submits clear-only frames with
+no WASM/dataset and leaves the device/context alive afterwards. `window.surfaceMemoryResults`
+reports drawing/CSS sizes, submitted count and `idle` after queue completion. Capture parent
+maps at idle and after 20 seconds using the sampler's identity-checked helper. Drawing dimensions
+are limited to 1–2048 and frame count to 1–600. The CSS surface stays at most 640 pixels wide.
+This is a diagnostic submission sequence, not an FPS benchmark or VRAM measurement.
+See the [six-run observations](../../docs/WEB_PERFORMANCE_BENCH.md#independent-clear-only-surface-memory-matrix--13-10-2026).
+
 ### Capture a transient parent-process mapping event
 
 For an intermittent parent-process PSS increase, the sampler can make one raw mapping capture:
