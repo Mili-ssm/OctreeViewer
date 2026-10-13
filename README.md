@@ -571,8 +571,13 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    estimada **147,3 MB**, HWM **134,9–135,2 MB**; Belvedere 8 px **246,6 MB** y
    **225,1–225,4 MB**. Son bytes decimales; reservas estimadas no equivalen a RSS y el HWM
    incluye lectura/decode. [Alcance y reproducción](docs/VOXEL_BUILD_BENCH.md#joint-native-construction-memory-diagnostic--13-10-2026).
-   Siguiente: medir pico progresivo CPU/GPU en navegador y ampliar corpus Additive real antes
-   de diseñar reutilización.
+   Muestreador Linux reproducible por PID añadido; tres perfiles Firefox nuevos de Majadas XYZ
+   completan carga y cámara con cero errores. PSS pico muestreado **1.001,6 / 1.849,2 / 985,0 MB**;
+   el exceso de la segunda ronda se concentra en el padre. El panel queda atrasado en los seis
+   exports; no son ventanas FPS ni latencia independiente de cámara. Nueve tests Python y Ruff
+   pasan. [Protocolo y límites](docs/WEB_PERFORMANCE_BENCH.md#reproducible-progressive-process-tree-memory--13-10-2026).
+   Siguiente: separar memoria JS/WASM y recursos GPU, capturar picos transitorios y ampliar
+   corpus Additive real antes de diseñar reutilización.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.

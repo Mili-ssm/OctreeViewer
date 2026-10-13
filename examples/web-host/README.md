@@ -358,6 +358,31 @@ fail the command; a recorded cache pause or observation cap is a diagnostic outc
 successful target or valid steady-state FPS benchmark. This probe does not measure GPU memory,
 heap JS or a paired performance improvement. Compare equivalent runs separately.
 
+### Sample browser process memory on Linux
+
+In a second terminal, attach to the PID of the dedicated Firefox parent launched above:
+
+```bash
+python3 examples/web-host/sample-process-memory.py FIREFOX_PID target/firefox-process-memory.jsonl --interval 0.5 --seconds 1300
+```
+
+Use a fresh output path for each run. The sampler never launches or terminates the browser;
+exit the dedicated browser to end sampling, or let the duration cap stop the sampler. It pins
+PID identity using Linux starttime and writes a terminal `root_exited` or `duration_cap` record.
+The cap says nothing about viewer completion: inspect the probe's initial/camera outcomes and
+console errors separately. Start sampling before loading the dataset to include refinement.
+
+Each JSONL record includes wall-clock nanoseconds, elapsed time, per-process counters and
+`tree_bytes` sums from `smaps_rollup`. PSS apportions shared pages; summed RSS counts shared
+pages multiple times. `enumerated_processes_readable` means that every enumerated member was
+readable with unchanged identity and the parent survived the sample. Unreadable PIDs mark a
+partial sample; available partial sums must not be treated as full-tree totals. Missing optional
+counters are null. Enumeration and reads are sequential: new processes can appear between them,
+and even readable samples are not atomic snapshots. Sampling can miss short-lived processes and
+peaks between samples; the configured interval is a minimum sleep cadence, not a guaranteed rate.
+These counters do not separate JS/WASM heaps, allocator reservations or dedicated GPU memory.
+Do not compare sampled timings to unsampled timings as a performance improvement.
+
 For Playwright MCP with Chrome software WebGPU, launch channel `chrome` with
 `--enable-unsafe-webgpu --use-angle=swiftshader`. The default headless launch may expose
 `navigator.gpu` while returning no adapter. Chrome 155 functional coverage and the mapped

@@ -1010,3 +1010,56 @@ assertions. Chrome reports HZB active before picking; the recentered frame rebui
 Playwright also checks the fixture at 390×844 with no horizontal overflow. There are zero page
 errors in the fixture. All 26 existing Node tests pass, worker syntax and local Markdown targets
 check successfully. No Rust production code changed, so the prior Rust evidence was not rerun.
+
+### Reproducible progressive process-tree memory — 13-10-2026
+
+The committed `examples/web-host/sample-process-memory.py` replaces the profile-name-specific
+sampling scripts for new measurements. It attaches to an explicit Linux parent PID and pins its
+kernel starttime, samples descendants' `smaps_rollup`, records missing processes/counters, and
+stops on parent exit or its duration cap. It never controls the browser lifecycle. See the
+[CLI and limitations](../examples/web-host/README.md#sample-browser-process-memory-on-linux).
+Enumeration and counter reads are sequential, not an atomic tree snapshot; new/short-lived
+processes and between-sample peaks may be missed. `enumerated_processes_readable` describes only
+the enumerated set. Partial sums are retained but excluded from the table below.
+
+Three fresh Firefox 157.0.1 headless profiles, WebGPU enabled, HTTP disk/memory cache disabled,
+OS cache not flushed, fitted 1280×720 framebuffer, 4 px, 256 MiB decoded cache. Input is
+Majadas coordinates only (no sidecar, gray fallback; configured color selector remains `rgb`).
+The existing `probe-cache-camera.mjs` loads the dataset, observes completion, then sends
+`ArrowRight` and observes worker advancement. PSS/RSS were sampled with requested 0.5 s sleeps;
+actual cadence includes sequential `/proc` reads. No build, tests or conversion overlapped.
+An independent idle Chrome instance remained resident and is outside the measured Firefox tree.
+WASM uses the existing release binding artifact; this series measures the current build, not
+a paired before/after improvement. All byte values below are decimal bytes.
+
+| Round | Readable / total samples | Tree PSS sampled peak | Tree RSS sum sampled peak | Initial / camera final voxels |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 83 / 84 | 1,001,586,688 | 1,818,447,872 | 6,397 / 6,396 |
+| 2 | 64 / 65 | 1,849,248,768 | 2,664,980,480 | 6,397 / 6,396 |
+| 3 | 83 / 85 | 984,955,904 | 1,801,097,216 | 6,397 / 6,396 |
+
+Six phase exports report complete 4 px coverage, zero pending blocks, no cache evictions or
+rejections, and zero browser console errors. Each camera phase acknowledges input and advances
+scene builds from 98 to 101; it needs no additional block loads. The three final screenshots
+show the gray voxel cloud (third image inspected). All sampler runs end with `root_exited`;
+non-readable samples occur during shutdown and are excluded from maxima.
+
+Round 2's PSS maximum occurs at 31.20 s elapsed, with **1,451,728,896 B** in the parent and
+**1,657,601,024 B** anonymous PSS across the tree. This attributes the observed excess to a
+process/mapping category, not to JS, WASM, driver or application allocations. It does not
+reproduce or explain the earlier Albuera 6.58 GiB event. PSS apportions shared resident pages;
+RSS sums double-count shared pages. Neither is dedicated GPU memory. Exported `uploadedBytes`
+is cumulative upload traffic and must not be interpreted as live VRAM.
+
+The DOM panel is behind all six terminal exports (`domMatchesExport=false`); the camera export
+records worker advancement but its target timer retains the initial load's value. These are
+fresh incomplete-window diagnostic exports, not valid FPS samples, synchronized panel captures,
+or independent camera target-latency measurements. Progressive CPU process memory is now
+reproducibly sampled; JS/WASM heap separation, GPU allocations and sub-second peaks remain open.
+
+Raw JSONL, per-phase exports, screenshots, profiles and summary: ignored
+`target/progressive-process-memory/majadas-{1,2,3}/`. Reproduce with a fresh dedicated Firefox
+profile per round using the documented camera probe; attach the sampler before starting the
+probe, then exclude records with `enumerated_processes_readable=false` when computing full-tree
+sampled maxima. Validation: nine Python tests pass (three new tests exercise tree exclusion,
+PID identity, partial reads and malformed counters); Ruff check/format pass for the two new files.
