@@ -775,9 +775,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
      genéricos y una segunda estrategia real usando iguales entradas, cámara, checksum y límites.
      Medir tiempo, tamaño binario/WASM y compilación antes de propagar tipos por todo el builder.
      El contrato actual no asigna un callback en heap.
-   - [ ] **Estado de dataset en bindings como enum.** Evaluar agrupar lector/LOD/configuración
-     hoy opcionales cuando se definan los modos manual, descriptor externo y archivo. Cierre:
-     transiciones válidas explícitas, fallos de apertura y reemplazo atómicos, regresión navegador.
+   - [x] **Estado de dataset en bindings como enum.** Cerrado en fase 10: `Option<LodSession<R>>`
+     contiene `External(dataset)` o `Format { dataset, reader }`. El lector no puede existir sin
+     su dataset. Las aperturas construyen la respuesta antes del reemplazo; configuración de vista,
+     métricas y flags siguen fuera del enum. Regresiones de reemplazo, fallos de apertura y clear
+     comprobadas en navegador. No se atribuye ahorro de memoria al enum ni se añade `Box`.
    - [ ] **`Box` y layouts.** Medir `size_of`, alineación, número de instancias y asignaciones
      antes de encajonar variantes grandes de `ViewerData` o estados del converter. Un enum ocupa
      espacio suficiente para su mayor variante; añadir variantes no reduce memoria automáticamente.
@@ -857,7 +859,7 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    atributos, reutilización del buffer, límites, cancelación y reapertura/checkpoints. No convertir
    todo a `Point` f32 ni prometer mejoras de LAZ por añadir un trait.
 
-10. [ ] **Despejar genéricos en fronteras de coste grueso (tercera fase, 13-10-2026).**
+10. [x] **Despejar genéricos en fronteras de coste grueso (tercera fase, 13-10-2026).**
     Revisar cada llamada por su frecuencia, no por la presencia de un `for`: una consulta por bloque
     seguida de decodificación/voxelización tiene un coste distinto de un callback por punto.
 
@@ -873,11 +875,11 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     - [x] Aplicar las fronteras anteriores y conservar pruebas de fuentes alternativas y errores.
     - [x] Comparar reconstrucción nativa y tamaño con baseline `ac7569a`, registrar método y límites;
       no inferir menos assembly, compilación o más FPS únicamente por usar `dyn`.
-    - [ ] Continuar pendiente 8: sesión LOD con enum `External(dataset)` / `Format { dataset, reader }`
+    - [x] Continuar pendiente 8: sesión LOD con enum `External(dataset)` / `Format { dataset, reader }`
       dentro de `Option`. Expresar los tres estados válidos (ninguno/externo/archivo), impedir reader
       huérfano y reunir destrucción/reemplazo. Construir respuesta de apertura antes del reemplazo.
       Preservar selección, gris, carga manual, fallos de apertura y reinicio del renderer.
-    - [ ] Validación nativa/WASM, regresión navegador de transiciones y atributos; README y commits
+    - [x] Validación nativa/WASM, regresión navegador de transiciones y atributos; README y commits
       por cambio coherente antes de avanzar. No implementar simultáneamente parser, compresión,
       nuevo renderer o tipos de propiedad sin un consumidor/experimento definido.
 
@@ -902,6 +904,21 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     Se conserva el cambio por fronteras explícitas y menor duplicación potencial; no por una
     mejora de tiempo medida. Las llamadas normales siguen siendo compatibles; los consumidores
     render ya no aceptan turbofish sobre el tipo de fuente, mientras `prepare` LOD sigue genérico.
+
+    Sesión implementada en [`lod_session.rs`](crates/viewer_wasm/src/lod_session.rs); commit del
+    despacho `a189a63`. El cierre de la sesión usa un único `take` y los préstamos de dataset/reader
+    proceden de la misma variante. Prueba nativa de liberación del lector al sustituir/limpiar y de
+    inserción externa; regresión persistente
+    [`lod-session.browser.mjs`](examples/web-host/tests/lod-session.browser.mjs) para ausencia,
+    externa, pareja, fallo de coordenadas/acompañante/descriptor y fallo inyectado de respuesta JS,
+    cambio a externa, gris, clear, puntos manuales y reapertura.
+    Cierre final: 255 tests Rust pasan, 3 opcionales ignorados; 27 tests JS pasan; fmt, Clippy
+    nativo/WASM, check-web, sintaxis del probe y diff correctos. WASM/bindings y paquete local
+    regenerados. Playwright MCP, Chrome 155.0.8059.39 con SwiftShader: probes de sesión, atributos
+    (RGB/intensidad/clasificación/columna y acompañante válido incompatible) y reutilización LOD
+    (cámara, viewport, escena/payload/reapertura) pasan. Sin errores JavaScript; un primer arranque
+    informó el 404 ya conocido del favicon. Pruebas de backend con OffscreenCanvas, no una auditoría
+    visual ni un benchmark de GPU física/Firefox/latencia. No se cambia el protocolo JS ni el formato.
 
     Investigación adicional: el estado de dataset es una alternativa cerrada y encaja en un enum.
     Un trait de parser sigue necesitando fuente real/reapertura (pendiente 9); un trait de renderer

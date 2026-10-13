@@ -12,6 +12,8 @@ mod lod_metadata;
 mod lod_partition;
 #[cfg(any(target_arch = "wasm32", test))]
 mod lod_representatives;
+#[cfg(any(target_arch = "wasm32", test))]
+mod lod_session;
 
 pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
