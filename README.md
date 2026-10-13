@@ -671,6 +671,16 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    aleatoria p50/p95 sobre grillas, planos, líneas, clusters y outliers. En GPU, evaluar compactar
    `InstanceRaw` (40 B actuales) por modo conservando color/sombreado; medir buffers/draws por bloque
    en la API que los usa antes de proponer una arena. No extrapolar ese coste a toda la ruta WASM.
+   Propuesta recibida el 13-10-2026 para compresión de atributos: optimizar lecturas y LOD con una
+   representación persistida distinta de la representación expandida/de ejecución. En disco,
+   evaluar guardar cada combinación única de atributos en un diccionario del `.octattrs` y que cada
+   punto/vóxel del `.oct` refiera su entrada por índice, evitando repetir la tupla completa. Para
+   campos de texto, evaluar códigos numéricos y un índice ordenado por campo que permita regenerar
+   código→texto (conceptualmente un B-tree exterior por campo y un B-tree interior por valores).
+   Sigue siendo una propuesta, no un cambio decidido. Medir cardinalidad y duplicación real de
+   tuplas, coste de índices/códigos, tamaño total incluido padding y metadatos, lectura selectiva,
+   expansión en memoria y construcción/lectura de LOD; resolver IDs de campo estables, nulos y
+   normalización de texto. Mantener compatibilidad v5 explícita y contrastar con el layout actual.
 5. [ ] **Evolución estructural, condicionada a resultados.** Diseñar una nueva versión solo si
    hacen falta cambios persistentes: índice paginado, subchunks de atributos para consultas por fila,
    anchos de coordenadas/codec nuevos o metadatos reducidos. Compactar estructuras residentes no
