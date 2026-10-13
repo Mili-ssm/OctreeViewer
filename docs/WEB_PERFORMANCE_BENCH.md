@@ -1408,9 +1408,19 @@ fault-injected; coarse fallback on a newly loaded sample is exercised in all run
 
 Raw before data remains under `target/surface-orbit-serial-memory/`; the three new profiles,
 identity-checked parent-map snapshots and screenshots are under ignored
-`target/surface-orbit-fastpath/`. Validation: **28 viewer_wasm tests pass, 1 ignored**;
+`target/surface-orbit-fastpath/`. Validation: **29 viewer_wasm tests pass, 1 ignored**;
 workspace native and `viewer_wasm` WASM-target Clippy, WASM target check, release WASM rebuild,
 bindings/package regeneration, and three actual Firefox WebGPU runs pass. Rust format and
-`git diff --check` pass. The next
-validation should force fine-cut budget failure and use a multi-block partially resident cut to
-check that fallback, cache protection and scene publication remain correct.
+`git diff --check` pass.
+
+The resident-plan gate also has a synthetic multiblock regression using the real hierarchy
+selector and transition planner. A complete Replacement child cut is accepted even when its
+unused parent payload is absent. A Replacement cut with a cached parent fallback is rejected
+when a target child is pending; an Additive cut with the same missing child is rejected with an
+uncovered region. Further cases reject selection-limited cuts and planner plans that omit nodes
+because cached payload point counts exceed the target budget. These tests validate the gate's
+inputs, not GPU scene publication or failure recovery.
+
+A real fine-cut CPU/GPU build failure still needs injection to verify that the old scene remains
+active and the coarser attempt succeeds. A browser-level partially resident multiblock camera
+run should also verify cache protection and publication.

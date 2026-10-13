@@ -614,11 +614,12 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    de 300 giros mantienen 4.096 vóxeles completos y bajan de **903 a 303 builds**; mediana de
    voxelización **20.617→9.253 ms**, subidas GPU acumuladas **147.115.800→49.643.520 B**, recursos
    GPU solicitados estables en **15.051.868 B**. Comparación indicativa, sin FPS ni memoria
-   residente. La carga inicial prueba el camino progresivo sin residencia; falta forzar el fallback
-   por presupuesto de construcción y medir cortes multibloque/caché parcial.
+   residente. La carga inicial prueba el camino progresivo sin residencia. Una regresión con
+   planes Replacement/Additive verifica elegibilidad multibloque, bloques pendientes y omisiones
+   de presupuesto; falta forzar el error real de construcción para comprobar el fallback completo.
    [Contrato, resultados y límites](docs/WEB_PERFORMANCE_BENCH.md#resident-target-cut-on-camera-invalidation--13-10-2026).
-   Siguiente: validar fallback con presupuesto GPU/CPU limitado en datos sintéticos, medir cámara
-   sobre caché multibloque parcial, separar memoria JS/WASM y ampliar corpus Additive real antes de
+   Siguiente: forzar el fallback por límite de construcción en un renderer real y medir cámara
+   con caché multibloque parcial, separar memoria JS/WASM y ampliar corpus Additive real antes de
    diseñar reutilización persistente.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo

@@ -533,9 +533,7 @@ impl LodDataset {
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
-        Ok(plan.pending_blocks().is_empty()
-            && plan.uncovered_nodes().is_empty()
-            && plan.budget_omitted_nodes().is_empty())
+        Ok(resident_target_plan_is_complete(&target, &plan))
     }
 
     /// Current cache-reset-scoped work counters, including a failed scene update.
@@ -670,6 +668,17 @@ fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Optio
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
+fn resident_target_plan_is_complete(
+    target: &viewer_core::LodSelection,
+    plan: &LodTransitionPlan,
+) -> bool {
+    target.budget_limited().is_empty()
+        && plan.pending_blocks().is_empty()
+        && plan.uncovered_nodes().is_empty()
+        && plan.budget_omitted_nodes().is_empty()
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
 pub(crate) fn next_lod_stage(
     current_stage: Option<f64>,
     target_pixels: f64,
@@ -728,13 +737,15 @@ fn priority_precedes(candidate: (BlockId, f64), current: (BlockId, f64)) -> bool
 #[cfg(test)]
 mod tests {
     use viewer_core::{
-        BlockId, ColorRgb, DecodedBlockCache, HierarchySemantics, NodeId, Point, PointBatch,
-        PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
+        BlockId, ColorRgb, DecodedBlockCache, FrustumPlane, HierarchySemantics, LodSelectionConfig,
+        LodTransitionPlanner, NodeId, Point, PointBatch, PointBlock, SpatialBounds, SpatialFrustum,
+        SpatialHierarchy, SpatialNode,
     };
 
     use super::{
         CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
-        next_lod_stage, prefix_extension_points, priority_precedes, reusable_build_match,
+        next_lod_stage, prefix_extension_points, priority_precedes,
+        resident_target_plan_is_complete, reusable_build_match,
     };
     use viewer_render_wgpu::{OrbitCamera, RenderScene, build_voxel_scene};
 
@@ -794,6 +805,97 @@ mod tests {
             (Some(8.0), false)
         );
         assert_eq!(next_lod_stage(None, 16.0, false, true), (Some(16.0), false));
+    }
+
+    #[test]
+    fn resident_target_requires_complete_multiblock_coverage_and_all_budgets() {
+        fn plan(
+            semantics: HierarchySemantics,
+            budget: u64,
+            resident_blocks: &[u64],
+        ) -> (viewer_core::LodSelection, viewer_core::LodTransitionPlan) {
+            let hierarchy = SpatialHierarchy::new_with_semantics(
+                vec![
+                    SpatialNode::new(
+                        NodeId::new(1),
+                        None,
+                        0,
+                        SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                        1,
+                        100.0,
+                        vec![BlockId::new(10)],
+                    )
+                    .unwrap(),
+                    SpatialNode::new(
+                        NodeId::new(2),
+                        Some(NodeId::new(1)),
+                        1,
+                        SpatialBounds::new([0.0; 3], [0.5; 3]).unwrap(),
+                        1,
+                        0.0,
+                        vec![BlockId::new(11)],
+                    )
+                    .unwrap(),
+                    SpatialNode::new(
+                        NodeId::new(3),
+                        Some(NodeId::new(1)),
+                        1,
+                        SpatialBounds::new([0.5, 0.0, 0.0], [1.0, 0.5, 0.5]).unwrap(),
+                        1,
+                        0.0,
+                        vec![BlockId::new(12)],
+                    )
+                    .unwrap(),
+                ],
+                Vec::new(),
+                None,
+                semantics,
+            )
+            .unwrap();
+            let frustum =
+                SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 10.0).unwrap()])
+                    .unwrap();
+            let target = hierarchy
+                .select_lod(
+                    &frustum,
+                    LodSelectionConfig::new(4.0, budget).unwrap(),
+                    |node| if node.level() == 0 { 100.0 } else { 0.0 },
+                )
+                .unwrap();
+            let mut cache = DecodedBlockCache::new(usize::MAX);
+            for id in resident_blocks {
+                cache.insert(if *id == 11 {
+                    block_with_points(*id, 2)
+                } else {
+                    block(*id)
+                });
+            }
+            let prepared = LodTransitionPlanner::new().prepare(&hierarchy, &target, &cache);
+            (target, prepared)
+        }
+
+        let (target, prepared) = plan(HierarchySemantics::Replacement, u64::MAX, &[11, 12]);
+        assert!(resident_target_plan_is_complete(&target, &prepared));
+        assert_eq!(prepared.block_ids(), [BlockId::new(11), BlockId::new(12)]);
+
+        let (target, prepared) = plan(HierarchySemantics::Replacement, u64::MAX, &[10, 11]);
+        assert!(prepared.uncovered_nodes().is_empty()); // The visible parent still covers the gap.
+        assert_eq!(prepared.pending_blocks(), [BlockId::new(12)]);
+        assert!(!resident_target_plan_is_complete(&target, &prepared));
+
+        let (target, prepared) = plan(HierarchySemantics::Additive, u64::MAX, &[10, 11]);
+        assert_eq!(prepared.pending_blocks(), [BlockId::new(12)]);
+        assert_eq!(prepared.uncovered_nodes(), [NodeId::new(3)]);
+        assert!(!resident_target_plan_is_complete(&target, &prepared));
+
+        let (target, prepared) = plan(HierarchySemantics::Additive, 3, &[10, 11, 12]);
+        assert!(!prepared.budget_omitted_nodes().is_empty());
+        assert!(!resident_target_plan_is_complete(&target, &prepared));
+
+        let (target, prepared) = plan(HierarchySemantics::Replacement, 1, &[10]);
+        assert!(!target.budget_limited().is_empty());
+        assert!(prepared.pending_blocks().is_empty());
+        assert!(!resident_target_plan_is_complete(&target, &prepared));
     }
 
     #[test]
