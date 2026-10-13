@@ -982,6 +982,24 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
     ejecutaron/registraron: la tabla es exclusivamente nativa. Se reutiliza la suite anterior,
     porque este diagnóstico no cambia lógica de producción.
 
+13. [ ] **Prioridad incremental LOD para proyectores estables.** Núcleo implementado y medido;
+    integración en cámara/navegador pendiente. [Evidencia](docs/LOD_FRONTIER_BENCH.md#prioridad-incremental-opt-in--13-10-2026).
+    264 tests pasan, tres ignorados; fmt, Clippy nativo/WASM y check-web pasan.
+     Conservar `select_lod` y sus
+    callbacks con estado sin cambios. Añadir `select_lod_stable_projector` como opt-in: error estable
+    por nodo durante toda la llamada, sin garantía de número/orden de callbacks. Heap de candidatos
+    + lista de bloqueados, prioridad por mayor error/menor ID; conservar orden visible, estructura,
+    semánticas y reintento al liberar presupuesto Replacement. Una cota conservadora de crecimiento
+    debe detectar posibles overflows antes de elegir, preservando precedencia mediante fallback.
+    Límite explícito sobre capacidades heap/bloqueados, con reservas falibles y estadísticas aparte
+    de `LodSelection`; al agotarlo, liberar el intento y ejecutar la ruta original. No limita RSS,
+    temporales comunes ni picos internos del allocator. No añadir caché persistente a la jerarquía.
+    Cierre: resultados completos/errores equivalentes con presupuestos, frusta, empates e infinito,
+    casos de liberación y errores anticipados; matriz de 86 casos + cámara real, tres pares alternados
+    y capacidad de prioridades registrada. Adoptar en la cámara solo tras medir y validar estabilidad,
+    repetir navegador, README y commits. Los splices/búsquedas y ciertos reintentos siguen siendo
+    lineales: no prometer complejidad global logarítmica ni mejoras de FPS.
+
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).
 Morton y máscaras son candidatos sobre coordenadas enteras; no reutilizar mantisas, NaN, bits de

@@ -184,6 +184,75 @@ fn scratch_lod_matches_reference_for_generated_hierarchies_and_queries() {
 }
 
 #[test]
+fn stable_projector_lod_matches_legacy_with_bounded_priority_memory() {
+    let frusta = test_frusta();
+    let budgets = [0, 24, 96, 4096, 4 * 1024 * 1024];
+    for semantics in [
+        HierarchySemantics::Replacement,
+        HierarchySemantics::Additive,
+    ] {
+        for reverse_input in [false, true] {
+            let hierarchy = generated_hierarchy(semantics, reverse_input);
+            for frustum in &frusta {
+                for point_budget in [0, 7, 31, u64::MAX] {
+                    for tolerance in [0.0, 1.0] {
+                        let config = LodSelectionConfig::new(tolerance, point_budget).unwrap();
+                        for priority_budget in budgets {
+                            let actual = hierarchy.select_lod_stable_projector(
+                                frustum,
+                                config,
+                                priority_budget,
+                                |node| callback_value(CallbackMode::ByNodeId, node, 0),
+                            );
+                            let legacy = hierarchy.select_lod(frustum, config, |node| {
+                                callback_value(CallbackMode::ByNodeId, node, 0)
+                            });
+                            match actual {
+                                Ok((selection, stats)) => {
+                                    compare_results(Ok(selection), legacy);
+                                    if stats.fallback.is_none() {
+                                        assert!(stats.peak_priority_bytes <= priority_budget);
+                                    }
+                                    if priority_budget == 0 {
+                                        assert!(stats.fallback.is_some());
+                                    }
+                                }
+                                Err(error) => compare_results(Err(error), legacy),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn stable_projector_lod_matches_legacy_for_ties_and_infinite_priorities() {
+    let frustum = test_frusta().remove(0);
+    let hierarchy = generated_hierarchy(HierarchySemantics::Replacement, true);
+    let config = LodSelectionConfig::new(0.0, u64::MAX).unwrap();
+    for (priority_budget, projector) in [(4096, 0), (4 * 1024 * 1024, 1)] {
+        let project = |_node: &SpatialNode| match projector {
+            0 => 1.0,
+            _ => f64::INFINITY,
+        };
+        let actual =
+            hierarchy.select_lod_stable_projector(&frustum, config, priority_budget, project);
+        let legacy = hierarchy.select_lod(&frustum, config, project);
+        match actual {
+            Ok((selection, stats)) => {
+                compare_results(Ok(selection), legacy);
+                if stats.fallback.is_none() {
+                    assert!(stats.peak_priority_bytes <= priority_budget);
+                }
+            }
+            Err(error) => compare_results(Err(error), legacy),
+        }
+    }
+}
+
+#[test]
 fn scratch_lod_preserves_invalid_error_and_overflow_results() {
     let leaf_bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
     let leaf =

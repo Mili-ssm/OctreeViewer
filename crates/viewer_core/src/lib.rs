@@ -26,9 +26,10 @@ pub use scheduler::{
     ScheduledBlockRequest, SchedulerError, ViewUpdate,
 };
 pub use spatial::{
-    AttributeDataType, AttributeDescriptor, BlockId, FrustumPlane, HierarchySemantics,
-    LodSelection, LodSelectionConfig, LodSelectionError, NodeId, SpatialBounds, SpatialError,
-    SpatialFrustum, SpatialHierarchy, SpatialNode, SpatialQuery, SpatialStats, SpatialSubdivision,
+    AttributeDataType, AttributeDescriptor, BlockId, DEFAULT_LOD_PRIORITY_BYTES, FrustumPlane,
+    HierarchySemantics, LodPriorityFallback, LodPriorityStats, LodSelection, LodSelectionConfig,
+    LodSelectionError, NodeId, SpatialBounds, SpatialError, SpatialFrustum, SpatialHierarchy,
+    SpatialNode, SpatialQuery, SpatialStats, SpatialSubdivision,
 };
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{

@@ -2,8 +2,8 @@
 use std::{cell::Cell, cell::RefCell, hint::black_box, time::Instant};
 
 use viewer_core::{
-    BlockId, FrustumPlane, HierarchySemantics, LodSelectionConfig, NodeId, SpatialBounds,
-    SpatialFrustum, SpatialHierarchy, SpatialNode,
+    BlockId, DEFAULT_LOD_PRIORITY_BYTES, FrustumPlane, HierarchySemantics, LodPriorityStats,
+    LodSelectionConfig, NodeId, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 
 const SAMPLES: usize = 9;
@@ -17,6 +17,7 @@ struct Case {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let stable = std::env::args().nth(1).as_deref() == Some("--stable");
     let cases = [
         wide(64),
         wide(256),
@@ -49,9 +50,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 vec![partial_budget, full_budget]
             };
             for budget in budgets {
-                measure(&case, &hierarchy, semantics, budget, false)?;
+                measure(&case, &hierarchy, semantics, budget, false, stable)?;
                 if case.clip {
-                    measure(&case, &hierarchy, semantics, budget, true)?;
+                    measure(&case, &hierarchy, semantics, budget, true, stable)?;
                 }
             }
         }
@@ -65,6 +66,7 @@ fn measure(
     semantics: HierarchySemantics,
     budget: u64,
     clipped: bool,
+    stable: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let frustum = frustum(if clipped { 0.5 } else { 1.0 });
     // Zero tolerance intentionally asks for all available detail, unless budget-limited.
@@ -93,15 +95,39 @@ fn measure(
         ] {
             checksum = (checksum ^ value).wrapping_mul(0x100000001b3);
         }
+        let priority_stats = if stable {
+            let (selection, stats) = hierarchy.select_lod_stable_projector(
+                &frustum,
+                config,
+                DEFAULT_LOD_PRIORITY_BYTES,
+                |node| project(node, distance_model),
+            )?;
+            assert_eq!(selection, expected, "stable selection differs from legacy");
+            stats
+        } else {
+            LodPriorityStats::default()
+        };
         let mut times = Vec::with_capacity(SAMPLES);
         let mut callback_calls = None;
         for _ in 0..SAMPLES {
             let calls = Cell::new(0_u64);
             let start = Instant::now();
-            let selection = hierarchy.select_lod(black_box(&frustum), config, |node| {
+            let callback = |node: &SpatialNode| {
                 calls.set(calls.get() + 1);
                 project(black_box(node), distance_model)
-            })?;
+            };
+            let selection = if stable {
+                let (selection, stats) = hierarchy.select_lod_stable_projector(
+                    black_box(&frustum),
+                    config,
+                    DEFAULT_LOD_PRIORITY_BYTES,
+                    callback,
+                )?;
+                assert_eq!(stats, priority_stats);
+                selection
+            } else {
+                hierarchy.select_lod(black_box(&frustum), config, callback)?
+            };
             times.push(start.elapsed().as_secs_f64() * 1_000_000.0);
             assert_eq!(selection, expected, "selection changed between samples");
             if let Some(previous) = callback_calls {
@@ -112,7 +138,7 @@ fn measure(
         }
         times.sort_unstable_by(f64::total_cmp);
         println!(
-            "case={} semantics={semantics:?} view={} callback={} nodes={} budget={budget} selected_nodes={} selected_points={} budget_limited={} resolution_limited={} projected_nodes={projected_nodes} callback_calls={} selection_checksum={checksum} samples={SAMPLES} us_min={:.3} us_median={:.3} us_max={:.3}",
+            "case={} semantics={semantics:?} view={} callback={} nodes={} budget={budget} selected_nodes={} selected_points={} budget_limited={} resolution_limited={} projected_nodes={projected_nodes} callback_calls={} selection_checksum={checksum} algorithm={} priority_peak_bytes={} priority_fallback={:?} samples={SAMPLES} us_min={:.3} us_median={:.3} us_max={:.3}",
             case.name,
             if clipped { "half" } else { "all" },
             if distance_model {
@@ -126,6 +152,9 @@ fn measure(
             expected.budget_limited().len(),
             expected.resolution_limited().len(),
             callback_calls.unwrap(),
+            if stable { "stable_priority" } else { "legacy" },
+            priority_stats.peak_priority_bytes,
+            priority_stats.fallback,
             times[0],
             times[SAMPLES / 2],
             times[SAMPLES - 1]

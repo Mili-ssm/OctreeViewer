@@ -1,7 +1,10 @@
 //! Real-index LOD selection with the renderer's fitted camera; no payload reads or GPU device.
 use std::{cell::Cell, fs::File, hint::black_box, time::Instant};
 
-use viewer_core::{FrustumPlane, LodSelectionConfig, NodeId, SpatialFrustum};
+use viewer_core::{
+    DEFAULT_LOD_PRIORITY_BYTES, FrustumPlane, LodPriorityStats, LodSelectionConfig, NodeId,
+    SpatialFrustum,
+};
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{OrbitCamera, SceneBounds};
 
@@ -11,9 +14,10 @@ fn ids(values: &[NodeId]) -> Vec<u64> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 1 {
-        return Err("usage: lod_selection_bench INPUT.oct".into());
+    if args.len() != 1 && !(args.len() == 2 && args[1] == "--stable") {
+        return Err("usage: lod_selection_bench INPUT.oct [--stable]".into());
     }
+    let stable = args.len() == 2;
     let reader = FormatReader::new(File::open(&args[0])?)?;
     let metadata = reader.format_metadata().dataset();
     let hierarchy = metadata.hierarchy();
@@ -61,12 +65,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 camera.projected_error_pixels(bounds, side / 8.0, origin, viewport)
             };
             let expected = hierarchy.select_lod(&world_frustum, config, project)?;
+            let priority_stats = if stable {
+                calls.set(0);
+                let (selection, stats) = hierarchy.select_lod_stable_projector(
+                    &world_frustum,
+                    config,
+                    DEFAULT_LOD_PRIORITY_BYTES,
+                    project,
+                )?;
+                assert_eq!(selection, expected, "stable selection differs from legacy");
+                stats
+            } else {
+                LodPriorityStats::default()
+            };
             let expected_calls = calls.get();
             let mut samples = Vec::with_capacity(9);
             for _ in 0..9 {
                 calls.set(0);
                 let started = Instant::now();
-                let selection = hierarchy.select_lod(black_box(&world_frustum), config, project)?;
+                let selection = if stable {
+                    let (selection, stats) = hierarchy.select_lod_stable_projector(
+                        black_box(&world_frustum),
+                        config,
+                        DEFAULT_LOD_PRIORITY_BYTES,
+                        project,
+                    )?;
+                    assert_eq!(stats, priority_stats);
+                    selection
+                } else {
+                    hierarchy.select_lod(black_box(&world_frustum), config, project)?
+                };
                 samples.push(started.elapsed().as_secs_f64() * 1_000_000.0);
                 assert_eq!(selection, expected);
                 assert_eq!(calls.get(), expected_calls);
@@ -82,6 +110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "budget_limited": ids(expected.budget_limited()),
                     "resolution_limited": ids(expected.resolution_limited()),
                     "max_error_bits": expected.max_error_pixels().to_bits(),
+                    "algorithm": if stable { "stable_priority" } else { "legacy" },
+                    "priority_peak_bytes": priority_stats.peak_priority_bytes,
+                    "priority_fallback": format!("{:?}", priority_stats.fallback),
                     "callback_calls": expected_calls, "samples": samples.len(),
                     "us_min": samples[0], "us_median": samples[4], "us_max": samples[8],
                 })

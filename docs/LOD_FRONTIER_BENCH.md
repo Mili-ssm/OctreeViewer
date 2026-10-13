@@ -148,3 +148,54 @@ cargo check-web --offline
 
 Logs locales excluidos de Git: `target/audit-lod-scratch/{synthetic,real}-{before,after}-{0,1,2}.txt`,
 sus `.time.txt`, `summary.json` y `render/voxel-4px.png`.
+
+## Prioridad incremental opt-in — 13-10-2026
+
+`select_lod_stable_projector` exige error estable por nodo durante la llamada; no garantiza
+orden/número de callbacks. La API original conserva los callbacks con estado. Heap y lista de
+bloqueados evitan reproyectar toda la frontera; Replacement reconsidera candidatos al liberar
+presupuesto. Orden visible, empates, diagnósticos y errores siguen el selector original.
+
+El límite configurable (por defecto 4 MiB) cubre capacidades heap/bloqueados, no temporales
+comunes, RSS ni picos internos del allocator. Reservas falibles o validaciones ambiguas liberan
+el intento y reinician el selector original. `try_reserve_exact` puede reservar más de lo pedido;
+se comprueba también la capacidad obtenida. No hay caché persistente. Las búsquedas, splices y
+reintentos todavía pueden ser lineales.
+
+Comparación contra `867c62c`, perfil perf, tres pares alternados antes/después, después/antes,
+antes/después, sin checks/compilaciones concurrentes. Cada proceso calienta y toma nueve muestras.
+Los 86 casos sintéticos y nueve cortes Belvedere conservan resultados completos/checksums; los
+callbacks cambian deliberadamente. Mediana de las tres medianas, en microsegundos:
+
+| Caso | Antes | Después | Callbacks antes → después | Prioridades (bytes) |
+| --- | ---: | ---: | ---: | ---: |
+| 1.024 ramas Replacement, completo | 61.643,364 | 600,046 | 1.576.448 → 5.120 | 24.576 |
+| 1.024 ramas Replacement, presupuesto 1.536 | 41.459,222 | 400,301 | 658.176 → 3.584 | 36.864 |
+| Binario profundidad 10 Replacement, completo | 28.358,674 | 374,503 | 525.824 → 3.071 | 12.288 |
+| Cadena Replacement | 79,639 | 80,431 | 1.025 → 1.025 | 0 |
+| Belvedere 1 px, sin límite | 9.447,612 | 228,619 | 133.766 → 2.426 | 6.144 |
+| Belvedere 4 px, sin límite | 1.083,935 | 61,144 | 15.116 → 732 | 3.072 |
+| Belvedere 16 px, sin límite | 5,009 | 3,507 | 69 → 43 | 96 |
+
+Rangos Belvedere: 1 px 9.380,275–9.598,465 → 226,776–239,118 µs;
+4 px 1.076,230–1.096,558 → 60,714–64,831 µs. Las nueve cámaras y los 80 casos
+sintéticos ramificados mejoraron en esta matriz. No es garantía para otras jerarquías.
+
+La primera prueba empeoró las cadenas aproximadamente un 79 % (Replacement 79,218 →
+141,516 µs). Se conserva ese contraejemplo: ahora una jerarquía validada cuyo número de nodos
+es profundidad máxima + 1 usa directamente la ruta original. Las seis cadenas finales quedan
+por debajo de un 2 % de diferencia y sin almacenamiento de prioridades. Máximo observado de
+prioridades en toda la matriz: 36.864 bytes; no es una medición de RSS.
+
+Nueve regresiones nuevas cubren equivalencia generada, presupuesto, empates/infinito, orden de
+entrada, descendientes inválidos inactivos, overflow y fallback. Workspace: 264 tests pasan,
+tres ignorados; formato, Clippy nativo/WASM, check-web y diff pasan. Esto mide selección CPU
+de metadatos; no mide lecturas, GPU, FPS ni latencia del navegador.
+
+```sh
+cargo run --profile perf -p viewer_core --example lod_frontier_bench --offline -- --stable
+cargo run --profile perf -p viewer_render_wgpu --example lod_selection_bench --offline -- INPUT.oct --stable
+```
+
+Artefactos locales excluidos: `artifacts/lod-priority/`, binarios congelados `before-*`/`after-*`,
+`run_pairs.py`, logs de tres pares y `summary.json`; `first-trial/` conserva la regresión inicial.

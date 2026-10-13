@@ -884,3 +884,7 @@ impl<'a> Iterator for SpatialQuery<'a> {
         None
     }
 }
+
+#[path = "spatial_lod_priority.rs"]
+mod lod_priority;
+pub use lod_priority::{DEFAULT_LOD_PRIORITY_BYTES, LodPriorityFallback, LodPriorityStats};
