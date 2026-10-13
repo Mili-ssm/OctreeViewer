@@ -1070,3 +1070,14 @@ checkpoints también quedan fuera.
 Estos contadores cubren la planificación espacial. Las lecturas posteriores de rangos mediante
 `PlannedBlock::read` durante la preparación, capacidad retenida del lote y temporales del decoder
 siguen pendientes, así que no equivalen al tráfico total de spools de la conversión.
+
+El stream informa aparte el payload lógico decodificado desde rangos de hojas fuente y muestras
+LOD, contando `cantidad de puntos × longitud del registro` solo después de preparar exitosamente el
+lote. No incluye lectura anticipada del `BufReader`, llamadas al sistema ni bytes físicos. La suma
+de escrituras intermedias de partición puede ser mayor porque la misma fuente se reescribe al
+construir varios niveles; no comparar esa suma con las lecturas finales como si fueran bytes de disco.
+
+Smoke final del 13-10-2026 sobre `fs_e430_n4008_18.las` (111.190 puntos): el perfil completó y
+reportó 3.891.650 B escritos y leídos como payload source, cero payload child/LOD y cero escaneos
+recursivos. Coincide con el caso de una sola hoja; no ejercita las categorías child/LOD, cubiertas
+por el fixture sintético recursivo y serial/paralelo.

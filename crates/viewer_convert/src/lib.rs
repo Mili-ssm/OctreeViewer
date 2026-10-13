@@ -810,9 +810,13 @@ where
         requested_workers,
         memory_budget_bytes,
         on_progress,
-        diagnostics,
+        mut diagnostics,
     } = options;
     let stream_timer = diagnostics.as_deref().map(|_| DiagnosticTimer::start());
+    if let Some(diagnostics) = diagnostics.as_deref_mut() {
+        diagnostics.block_stream_source_payload_read_bytes = Some(0);
+        diagnostics.block_stream_lod_payload_read_bytes = Some(0);
+    }
     let mut block_preparation_ns = 0_u128;
     let mut ordered_write_ns = 0_u128;
     emit_progress(
@@ -851,8 +855,21 @@ where
                     .map_err(ConvertError::Format)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        block_preparation_ns =
-            block_preparation_ns.saturating_add(prepare_started.elapsed().as_nanos());
+        let batch_preparation_ns = prepare_started.elapsed().as_nanos();
+        if let Some(diagnostics) = diagnostics.as_deref_mut() {
+            for block in batch {
+                let counter = if block.is_source_points {
+                    &mut diagnostics.block_stream_source_payload_read_bytes
+                } else {
+                    &mut diagnostics.block_stream_lod_payload_read_bytes
+                };
+                let total = counter.get_or_insert(0);
+                *total = total
+                    .checked_add(block.payload_bytes()?)
+                    .ok_or(ConvertError::SizeOverflow)?;
+            }
+        }
+        block_preparation_ns = block_preparation_ns.saturating_add(batch_preparation_ns);
         let write_started = Instant::now();
         for (block, prepared) in batch.iter().zip(prepared) {
             writer.write_prepared_block(prepared)?;
@@ -1475,6 +1492,11 @@ mod tests {
         assert_eq!(spools.child_payload_written_bytes, 0);
         assert_eq!(spools.child_payload_scanned_bytes, 0);
         assert_eq!(spools.lod_payload_written_bytes, 0);
+        assert_eq!(
+            diagnostics.block_stream_source_payload_read_bytes,
+            Some(24 * 33)
+        );
+        assert_eq!(diagnostics.block_stream_lod_payload_read_bytes, Some(0));
         let validation_workers = diagnostics
             .validation_workers
             .expect("profiled validation reports worker aggregates");
@@ -1523,6 +1545,22 @@ mod tests {
         let spools = serial_diagnostics.spatial_spools.unwrap();
         let parallel_spools = parallel_diagnostics.spatial_spools.unwrap();
         assert_eq!(spools, parallel_spools);
+        assert_eq!(
+            serial_diagnostics.block_stream_source_payload_read_bytes,
+            Some(200 * 27)
+        );
+        assert_eq!(
+            serial_diagnostics.block_stream_lod_payload_read_bytes,
+            Some(spools.lod_payload_written_bytes)
+        );
+        assert_eq!(
+            serial_diagnostics.block_stream_source_payload_read_bytes,
+            parallel_diagnostics.block_stream_source_payload_read_bytes
+        );
+        assert_eq!(
+            serial_diagnostics.block_stream_lod_payload_read_bytes,
+            parallel_diagnostics.block_stream_lod_payload_read_bytes
+        );
         assert_eq!(spools.source_payload_written_bytes, 0);
         assert!(spools.child_payload_written_bytes >= 200 * 27);
         assert!(spools.child_payload_scanned_bytes > 0);

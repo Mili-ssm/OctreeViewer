@@ -514,9 +514,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    acumulado dentro de `read_block` y máxima estimación de memoria del bloque decodificado. No son
    RSS ni incluyen buffers transitorios; al no activar `convert-profile` no se calcula la estimación.
    La planificación ahora expone bytes lógicos escritos en spools source, child y LOD, más bytes
-   de registros leídos en escaneos recursivos source/child. No incluye lecturas de `PlannedBlock`
-   durante preparación, lectura anticipada ni I/O físico; quedan pendientes esas lecturas y la
-   retención de buffers por lote.
+   de registros leídos en escaneos recursivos source/child. El stream cuenta aparte el payload
+   lógico leído de bloques fuente y LOD; no mide lectura anticipada, syscalls ni I/O físico. Queda
+   medir la retención máxima de buffers/preparados por lote y afinar tiempos de ingestión,
+   clasificación y escritura LOD.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida

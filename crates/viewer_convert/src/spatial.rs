@@ -114,6 +114,13 @@ impl PlannedBlock {
         self.point_count
     }
 
+    pub fn payload_bytes(&self) -> Result<u64, ConvertError> {
+        u64::try_from(self.point_count)
+            .ok()
+            .and_then(|points| points.checked_mul(self.layout.record_bytes() as u64))
+            .ok_or(ConvertError::SizeOverflow)
+    }
+
     pub fn release_spool_after_write(&self) -> Result<(), ConvertError> {
         if self.final_block_in_spool {
             fs::remove_file(&self.path)?;

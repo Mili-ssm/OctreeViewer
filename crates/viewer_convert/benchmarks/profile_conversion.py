@@ -252,10 +252,29 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
             spools[key] = int(value)
     if spools and set(spools) != set(spool_fields):
         raise ValueError("incomplete spatial spool diagnostics")
+    block_stream: dict[str, int] = {}
+    block_pattern = re.compile(
+        r"internal_block_stream_(source|lod)_payload_read_bytes=(\d+)\n?"
+    )
+    with stdout_path.open(encoding="utf-8") as output:
+        for line in output:
+            match = block_pattern.fullmatch(line)
+            if match is None:
+                continue
+            kind, value = match.groups()
+            key = f"{kind}_payload_read_bytes"
+            if key in block_stream:
+                raise ValueError(f"duplicate block stream payload diagnostic: {key}")
+            block_stream[key] = int(value)
+    if block_stream and set(block_stream) != {
+        "source_payload_read_bytes", "lod_payload_read_bytes"
+    }:
+        raise ValueError("incomplete block stream payload diagnostics")
     return {"available": True, "phases": phases, "unassigned_sample_count": unassigned,
             "validation_workers": [dict(worker_index=index, **workers[index])
                                    for index in sorted(workers)],
-            "spatial_spools": spools or None}
+            "spatial_spools": spools or None,
+            "block_stream_payload_reads": block_stream or None}
 
 
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,

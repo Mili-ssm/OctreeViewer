@@ -20,6 +20,10 @@ pub struct ConversionDiagnostics {
     pub validation_workers: Option<Vec<ValidationWorkerDiagnostics>>,
     /// Logical spool record payloads processed during spatial planning; excludes physical I/O.
     pub spatial_spools: Option<SpatialSpoolDiagnostics>,
+    /// Payload bytes decoded from full-resolution leaf ranges during block preparation.
+    pub block_stream_source_payload_read_bytes: Option<u64>,
+    /// Payload bytes decoded from LOD sample ranges during block preparation.
+    pub block_stream_lod_payload_read_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

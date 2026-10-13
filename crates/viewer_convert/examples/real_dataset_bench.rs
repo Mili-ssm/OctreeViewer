@@ -187,6 +187,12 @@ fn convert(
                 spools.lod_payload_written_bytes
             );
         }
+        if let Some(bytes) = diagnostics.block_stream_source_payload_read_bytes {
+            println!("internal_block_stream_source_payload_read_bytes={bytes}");
+        }
+        if let Some(bytes) = diagnostics.block_stream_lod_payload_read_bytes {
+            println!("internal_block_stream_lod_payload_read_bytes={bytes}");
+        }
         if let Some(workers) = diagnostics.validation_workers.as_ref() {
             for worker in workers {
                 println!(
