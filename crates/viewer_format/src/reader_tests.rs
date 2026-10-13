@@ -727,6 +727,7 @@ fn v5_reads_only_geometry_or_one_requested_column_and_keeps_row_identity() {
             .all(|(start, length)| *start + *length as u64 <= 24 || *start >= index_offset)
     );
 
+    let reader: &mut dyn crate::OctreeReader<Error = FormatError> = &mut reader;
     reads.borrow_mut().clear();
     let geometry = reader.read_positions(BlockId::new(42)).unwrap();
     assert_eq!(geometry.points()[0].position, [0.25, 0.5, 0.0]);

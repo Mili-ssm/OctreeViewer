@@ -734,7 +734,7 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    | Área | Evaluación y decisión |
    | --- | --- |
    | `viewer_core`: geometría, atributos, jerarquía, LOD, scheduler, caché y voxel store | `DatasetSource` ya separa E/S. `AttributeValues`, `RequestState` y `HierarchySemantics` modelan alternativas cerradas. La lectura de residentes debe depender de un contrato pequeño, mientras la protección/evicción sigue perteneciendo a la caché. |
-   | `viewer_format`: reader/writer, codecs, cuantización y layout | Conservar `Read + Seek` / `Write + Seek`, enums de codec/atributos y `Arc` de metadatos/directorios compartidos por `fork_reader`. Un trait de formato nuevo sin segundo consumidor duplicaría contratos. |
+   | `viewer_format`: reader/writer, codecs, cuantización y layout | Conservar `Read + Seek` / `Write + Seek`, enums de codec/atributos y `Arc` de metadatos/directorios compartidos por `fork_reader`. La segunda fase añade contratos selectivos de reader/writer sobre estas APIs; apertura y transporte siguen concretos. |
    | `viewer_convert`: LAS/LAZ, EPT, planificación espacial, workers y checkpoints | `SpatialInput`, fases y mensajes ya usan enums. Mantener `Arc<AtomicBool>` de cancelación y callbacks prestados. No unificar spools y fuentes detrás de un trait hasta tener operaciones y errores comunes reales. |
    | `viewer_render_wgpu`: escena, grilla, atributos, cámara, buffers y HZB | Separar consulta de bloques de la política LRU en preparación de escena y sincronización GPU. Mantener layouts explícitos de GPU y enums de modos; no introducir `dyn Renderer` con un único backend. |
    | `viewer_wasm`: controller, LOD, Blob, conversión y bindings | `ViewerData` ya evita coexistencia de puntos brutos y store. Mantener metadatos compartidos; migrar consumidores del resultado de caché. Unificar el estado de dataset en bindings es candidato posterior con pruebas de sustitución/cancelación. |
@@ -761,7 +761,7 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
      `cargo run -p viewer_core --profile fast --offline --example cache_result_layout`.
      Es el tamaño inline de un resultado temporal, no de las entradas residentes: no demuestra
      reducción de RSS, rendimiento ni un layout estable en otros compiladores o targets.
-   - [x] **Validación y commit.** `cargo test-fast --offline`: 321 tests pasan, 3 ignorados
+   - [x] **Validación y commit.** `cargo test-fast --offline`: 248 tests pasan, 3 ignorados
      (benchmarks/pruebas GPU opcionales); fmt, Clippy nativo con `--all-targets -D warnings`,
      Clippy WASM con `-D warnings`, `cargo check-web --offline` y `git diff --check` pasan.
      Cuatro regresiones nuevas comprueban proveedores alternativos en LOD, grilla y planificación
@@ -801,6 +801,61 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Las sugerencias requieren experimento antes de decidir implementación; no son mejoras de
    rendimiento demostradas ni compromisos de introducir todos estos tipos. Esta fase entrega
    desacoplamiento y estados válidos; cualquier ahorro de layout/tiempo se registra por separado.
+
+9. [x] **Contratos reader/writer del octree (segunda fase, 13-10-2026).** Separar las operaciones
+   de consumo del contenedor v5 y de los streams concretos, conservando `DatasetSource` para lectura
+   completa y `ResidentBlockSource` para bloques ya decodificados. Alcance solicitado: usar los
+   contratos en rutas reales, admitir genéricos/objetos trait y preservar formato, límites y errores.
+
+   - [x] **`OctreeReader: DatasetSource`.** Lecturas selectivas de posiciones, geometría con RGB,
+     colores, columnas y filas, disponibilidad de atributos y rangos. `Error` heredado de `DatasetSource`;
+     sin `File`, Blob, `Read + Seek`, apertura/fork ni `Send`/`Sync` en el contrato. Implementar para
+     `FormatReader<R>` y extraer la carga selectiva de bloques del binding a una función genérica
+     comprobable en nativo. Cierre: RGB/intensidad/clasificación/atributo elegido y errores mantienen
+     las mismas lecturas; la ruta XYZ no accede al acompañante ni carga columnas completas.
+   - [x] **`OctreeWriter`.** Escribir `SourcePointBlock` con XYZ locales `f64`, RGB y columnas,
+     errores y salida asociados; cierre consumidor `finish_pair(self)` con `Self: Sized`, conservando
+     ambos sinks y el orden de cierre. Apertura y publicación/checkpoints pertenecen al caller.
+     Implementar para `FormatWriter<W>` y usar en conversión LAS/EPT/OPFS. Cierre: igual v5 y fallos
+     de bloque duplicado, ausente, inválido o stream fallido; no perder `.octattrs` al finalizar.
+   - [x] **`PreparedOctreeWriter: OctreeWriter`.** Capacidad opcional para aceptar un tipo asociado
+     de bloque preparado; usarla en `stream_blocks` para conservar codificación paralela y append
+     ordenado sin exigir `File` como writer. Esa ruta sigue preparando v5 explícitamente; cambiar
+     codec/formato requerirá también otra preparación compatible. No forzar esa capacidad sobre
+     todos los writers ni mover la codificación al hilo secuencial.
+   - [x] **Validar y cerrar.** Pruebas de round-trip y bytes equivalentes mediante traits, proveedor
+     alternativo y `dyn`, fallos y lecturas selectivas; workspace, fmt, Clippy nativo/WASM, check-web,
+     diff y commit. Resultado: 254 tests pasan, 3 opcionales ignorados; fmt, Clippy nativo/WASM,
+     check-web y diff correctos. Prueba de selección v5 instrumentada a través de `dyn OctreeReader`;
+     round-trip/salidas simple y split, bytes equivalentes y fallos mediante `OctreeWriter`.
+     WASM release/bindings y paquete local regenerados. Playwright MCP, Chrome 155/SwiftShader:
+     muestra con RGB/intensidad/clasificación/atributo elegido y conversión OPFS del bunny
+     (40.256 puntos), seguida de apertura de ambos archivos, pasan sin errores JavaScript.
+     La sesión MCP predeterminada no ofrecía adapter GPU: la prueba válida usa Chrome con
+     SwiftShader explícito. El host informa 404 de favicon; no se cambia interfaz/protocolo JS.
+     Firefox, GPU física y comparación de rendimiento quedan sin verificar en esta fase.
+
+   Contratos: [`contracts.rs`](crates/viewer_format/src/contracts.rs). Consumidores reales:
+   `viewer_convert::stream_blocks`, conversión EPT/OPFS y
+   [`block_loading.rs`](crates/viewer_wasm/src/block_loading.rs). Ejemplo de intercambio:
+   `fn load<R: OctreeReader + ?Sized>(reader: &mut R, id: BlockId) -> Result<PointBatch, R::Error>`
+   puede llamar `reader.read_positions(id)` tanto con una struct como con `&mut dyn OctreeReader`.
+   En writer usar `W: OctreeWriter + ?Sized` para append y `OctreeWriter::finish_pair(writer)`
+   con propiedad concreta para finalizar; el contrato no finaliza un `dyn` prestado. Las fábricas
+   de LAS/EPT/OPFS siguen construyendo `FormatWriter`: intercambiar el formato completo en la CLI
+   requeriría también fábrica, preparación y validación compatibles. No se añade selección de formato
+   ni despacho dinámico obligatorio. No hay cambio de API Rust existente ni del formato v5.
+
+   **Decisión sobre el parser:** no introducir un trait que mezcle LAS → jerarquía → archivo.
+   `las::Reader` 0.11.1 ya delega decodificación y rellena `PointData` reutilizable; el constructor
+   espacial conserva enteros/transformaciones LAS y usa spools, mientras EPT agrega múltiples LAS
+   y OPFS tiene su propio ciclo. Un wrapper `header/fill_points` sin un punto público de inyección
+   apenas permitiría experimentar. Diseño futuro acotado: fuente de lotes con esquema/marco,
+   precisión y EOF/error definidos, más una fábrica reabrible para segundas pasadas; el builder
+   produce jerarquía/bloques y el writer persiste. Antes de implementarlo, elegir una segunda fuente
+   real (decoder alternativo, COPC por chunks o fixture inyectable) y comprobar enteros exactos,
+   atributos, reutilización del buffer, límites, cancelación y reapertura/checkpoints. No convertir
+   todo a `Point` f32 ni prometer mejoras de LAZ por añadir un trait.
 
 Mantener IDs y offsets públicos `u64`; usar ordinales menores solo internamente y con límites
 validados. Una máscara de ocho hijos sirve para 2³, no para las divisiones 4³/8³ (hasta 512 hijos).

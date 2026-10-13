@@ -22,7 +22,8 @@ use viewer_core::{
     AttributeDataType, AttributeDescriptor, BlockId, CoordinateFrame, DatasetSource, SpatialBounds,
 };
 use viewer_format::{
-    FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions, prepare_point_block,
+    FormatMetadata, FormatReader, FormatWriter, FormatWriterOptions, OctreeWriter,
+    PreparedOctreeWriter, PreparedPointBlock, prepare_point_block,
 };
 
 mod checkpoint;
@@ -679,7 +680,7 @@ fn convert_file_inner(
             diagnostics: diagnostics.as_deref_mut(),
         },
     )?;
-    let (output, attributes) = writer.finish_pair()?;
+    let (output, attributes) = OctreeWriter::finish_pair(writer)?;
     output.sync_all()?;
     let attributes = attributes.expect("split writer returns its companion");
     attributes.sync_all()?;
@@ -803,13 +804,15 @@ struct StreamBlockOptions<'a, F> {
     diagnostics: Option<&'a mut ConversionDiagnostics>,
 }
 
-fn stream_blocks<F>(
-    writer: &mut FormatWriter<File>,
+fn stream_blocks<F, W>(
+    writer: &mut W,
     plan: &ConversionPlan,
     options: StreamBlockOptions<'_, F>,
 ) -> Result<ConversionWorkerStats, ConvertError>
 where
     F: FnMut(ConversionProgress) -> bool,
+    W: PreparedOctreeWriter<Error = viewer_format::FormatError, PreparedBlock = PreparedPointBlock>
+        + ?Sized,
 {
     let StreamBlockOptions {
         temporary_path,

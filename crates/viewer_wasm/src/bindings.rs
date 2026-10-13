@@ -967,7 +967,6 @@ impl WasmVoxelViewer {
     ) -> Result<LodViewStats, JsValue> {
         let selection_error_pixels = stage_pixels;
         let requested_mode = self.gpu_renderer.as_ref().map(SurfaceRenderer::color_mode);
-        let requested_attribute = requested_mode.and_then(color_attribute_name);
         let selected_attribute = self.selected_attribute;
         let selected_range = self.selected_attribute_range;
         let browser_read_stats = Arc::clone(&self.browser_read_stats);
@@ -992,48 +991,14 @@ impl WasmVoxelViewer {
                     .as_mut()
                     .map(|reader| {
                         let before = snapshot_browser_read_stats(&browser_read_stats);
-                        let loaded = (|| -> Result<Option<PointBlock>, String> {
-                            let mut geometry = if selected_attribute.is_none()
-                                && requested_mode == Some(ColorMode::Rgb)
-                            {
-                                reader.read_geometry(block_id)
-                            } else {
-                                reader.read_positions(block_id)
-                            }
-                            .map_err(|error| error.to_string())?;
-                            if let Some((index, component)) = selected_attribute {
-                                let column = reader
-                                    .read_attribute(block_id, index)
-                                    .map_err(|e| e.to_string())?;
-                                geometry = viewer_render_wgpu::colorize_attribute(
-                                    geometry,
-                                    &column,
-                                    component,
-                                    selected_range,
-                                )
-                                .map_err(str::to_owned)?;
-                            }
-                            let mut attributes = Vec::new();
-                            if reader.has_attributes()
-                                && let Some(name) = requested_attribute
-                                && let Some(schema_index) = reader
-                                    .format_metadata()
-                                    .dataset()
-                                    .hierarchy()
-                                    .attributes()
-                                    .iter()
-                                    .position(|descriptor| descriptor.name() == name)
-                            {
-                                let schema_index = u32::try_from(schema_index)
-                                    .map_err(|_| "attribute schema is too large".to_owned())?;
-                                attributes.push(
-                                    reader
-                                        .read_attribute(block_id, schema_index)
-                                        .map_err(|error| error.to_string())?,
-                                );
-                            }
-                            Ok(Some(PointBlock::new(block_id, geometry, attributes)))
-                        })();
+                        let loaded = crate::block_loading::load_render_block(
+                            *reader,
+                            block_id,
+                            requested_mode,
+                            selected_attribute,
+                            selected_range,
+                        )
+                        .map(Some);
                         let after = snapshot_browser_read_stats(&browser_read_stats);
                         accumulate_browser_read_delta(&mut lod_range_read_stats, before, after);
                         loaded
@@ -1071,14 +1036,6 @@ impl WasmVoxelViewer {
     fn reset_range_read_stats(&mut self) {
         reset_browser_read_stats(&self.browser_read_stats);
         self.lod_range_read_stats = BrowserReadStats::default();
-    }
-}
-
-const fn color_attribute_name(mode: ColorMode) -> Option<&'static str> {
-    match mode {
-        ColorMode::Intensity => Some("intensity"),
-        ColorMode::Classification => Some("classification"),
-        ColorMode::Rgb | ColorMode::Elevation => None,
     }
 }
 

@@ -4,7 +4,9 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy,
     SpatialNode, SpatialSubdivision,
 };
-use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePointBlock};
+use viewer_format::{
+    FormatMetadata, FormatWriter, FormatWriterOptions, OctreeWriter, SourcePointBlock,
+};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
@@ -178,20 +180,19 @@ impl WasmLasOctConverter {
             let block = representatives
                 .into_block(BlockId::new(representative_base + cell as u64))
                 .map_err(|error| JsValue::from_str(&format!("coarse LOD block: {error}")))?;
-            self.writer
-                .as_mut()
-                .ok_or_else(|| JsValue::from_str("conversion writer is closed"))?
-                .write_block(block)
-                .map_err(|error| {
-                    JsValue::from_str(&format!("writing coarse LOD block: {error}"))
-                })?;
+            OctreeWriter::write_block(
+                self.writer
+                    .as_mut()
+                    .ok_or_else(|| JsValue::from_str("conversion writer is closed"))?,
+                block,
+            )
+            .map_err(|error| JsValue::from_str(&format!("writing coarse LOD block: {error}")))?;
         }
         let writer = self
             .writer
             .take()
             .ok_or_else(|| JsValue::from_str("conversion is already finished"))?;
-        let (mut sink, attributes_sink) = writer
-            .finish_pair()
+        let (mut sink, attributes_sink) = OctreeWriter::finish_pair(writer)
             .map_err(|error| JsValue::from_str(&format!("finalizing .oct pair: {error}")))?;
         sink.flush()
             .map_err(|error| JsValue::from_str(&format!("flushing .oct: {error}")))?;
@@ -388,11 +389,11 @@ impl WasmLasOctConverter {
                 }
                 let block_id = self.cell_block_offsets[cell] + local_index;
                 let partition = partition.with_id(BlockId::new(block_id));
-                self.writer
-                    .as_mut()
-                    .ok_or("conversion writer is closed")?
-                    .write_block(partition)
-                    .map_err(|error| format!("writing .oct spatial block: {error}"))?;
+                OctreeWriter::write_block(
+                    self.writer.as_mut().ok_or("conversion writer is closed")?,
+                    partition,
+                )
+                .map_err(|error| format!("writing .oct spatial block: {error}"))?;
                 self.next_cell_block[cell] += 1;
             }
         } else {

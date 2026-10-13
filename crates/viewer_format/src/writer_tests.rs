@@ -5,7 +5,10 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
-use crate::{FormatMetadata, SourcePointBlock, crc32};
+use crate::{
+    FormatMetadata, OctreeWriter, PreparedOctreeWriter, SourcePointBlock, crc32,
+    prepare_point_block,
+};
 
 use super::{FormatError, FormatWriter, FormatWriterOptions};
 
@@ -38,8 +41,108 @@ fn sample_block() -> SourcePointBlock {
     )
 }
 
+type MemoryOutput = (Cursor<Vec<u8>>, Option<Cursor<Vec<u8>>>);
+
 fn options() -> FormatWriterOptions {
     FormatWriterOptions::new(0.001, 1024).unwrap()
+}
+
+fn write_sample<W: OctreeWriter<Error = FormatError> + ?Sized>(writer: &mut W) {
+    writer.write_block(sample_block()).unwrap();
+}
+
+fn write_prepared_sample<
+    W: PreparedOctreeWriter<Error = FormatError, PreparedBlock = crate::PreparedPointBlock> + ?Sized,
+>(
+    writer: &mut W,
+    block: crate::PreparedPointBlock,
+) {
+    writer.write_prepared_block(block).unwrap();
+}
+
+#[test]
+fn writer_contract_supports_dyn_ingestion_pair_finalization_and_reader_roundtrip() {
+    let mut direct =
+        FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
+    direct.write_block(sample_block()).unwrap();
+    let direct_primary = direct.finish_pair().unwrap().0.into_inner();
+
+    let mut single =
+        FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
+    write_sample(&mut single);
+    let (single_primary, single_attributes): MemoryOutput =
+        OctreeWriter::finish_pair(single).unwrap();
+    assert!(single_attributes.is_none());
+    let single_bytes = single_primary.into_inner();
+    assert_eq!(single_bytes, direct_primary);
+
+    let mut split = FormatWriter::new_split(
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        sample_metadata(),
+        options(),
+    )
+    .unwrap();
+    let mut direct_split = FormatWriter::new_split(
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        sample_metadata(),
+        options(),
+    )
+    .unwrap();
+    direct_split.write_block(sample_block()).unwrap();
+    let (expected_primary, expected_attributes) = direct_split.finish_pair().unwrap();
+    {
+        let writer: &mut dyn OctreeWriter<Error = FormatError, Output = MemoryOutput> = &mut split;
+        write_sample(writer);
+    }
+    let (primary, attributes) = OctreeWriter::finish_pair(split).unwrap();
+    let primary = primary.into_inner();
+    let attributes = attributes
+        .expect("split output includes the attribute companion")
+        .into_inner();
+
+    assert_eq!(primary, expected_primary.into_inner());
+    assert_eq!(attributes, expected_attributes.unwrap().into_inner());
+    let mut reader = crate::FormatReader::new(Cursor::new(primary)).unwrap();
+    reader.attach_attributes(Cursor::new(attributes)).unwrap();
+    let decoded = viewer_core::DatasetSource::read_block(&mut reader, BlockId::new(7)).unwrap();
+    assert_eq!(decoded.id(), BlockId::new(7));
+    assert_eq!(decoded.points().len(), 2);
+    assert!(
+        viewer_core::DatasetSource::metadata(&reader)
+            .hierarchy()
+            .node(NodeId::new(0))
+            .is_some()
+    );
+    assert!(!direct_primary.is_empty());
+}
+
+#[test]
+fn prepared_writer_contract_matches_direct_block_writing() {
+    let metadata = sample_metadata();
+    let prepared = prepare_point_block(sample_block(), &metadata, options()).unwrap();
+
+    let mut direct =
+        FormatWriter::new(Cursor::new(Vec::new()), metadata.clone(), options()).unwrap();
+    direct.write_block(sample_block()).unwrap();
+    let direct = direct.finish().unwrap().into_inner();
+
+    let mut prepared_writer =
+        FormatWriter::new(Cursor::new(Vec::new()), metadata.clone(), options()).unwrap();
+    {
+        let writer: &mut dyn PreparedOctreeWriter<
+            Error = FormatError,
+            Output = MemoryOutput,
+            PreparedBlock = crate::PreparedPointBlock,
+        > = &mut prepared_writer;
+        write_prepared_sample(writer, prepared);
+    }
+    let prepared = OctreeWriter::finish_pair(prepared_writer)
+        .unwrap()
+        .0
+        .into_inner();
+    assert_eq!(prepared, direct);
 }
 
 #[test]
@@ -148,7 +251,7 @@ fn refuses_to_finalize_when_a_referenced_block_is_missing() {
     let writer = FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
 
     assert!(matches!(
-        writer.finish(),
+        OctreeWriter::finish_pair(writer),
         Err(FormatError::MissingBlock(block)) if block.get() == 7
     ));
 }
@@ -169,9 +272,23 @@ fn validates_attribute_schema_and_point_counts_before_writing_a_block() {
         vec![wrong_column],
     );
 
+    let writer: &mut dyn OctreeWriter<Error = FormatError, Output = MemoryOutput> = &mut writer;
     assert!(matches!(
-        writer.write_block(block),
+        OctreeWriter::write_block(writer, block),
         Err(FormatError::MissingAttribute(name)) if name == "intensity"
+    ));
+}
+
+#[test]
+fn rejects_duplicate_blocks_through_writer_contract() {
+    let mut writer =
+        FormatWriter::new(Cursor::new(Vec::new()), sample_metadata(), options()).unwrap();
+    OctreeWriter::write_block(&mut writer, sample_block()).unwrap();
+
+    let writer: &mut dyn OctreeWriter<Error = FormatError, Output = MemoryOutput> = &mut writer;
+    assert!(matches!(
+        OctreeWriter::write_block(writer, sample_block()),
+        Err(FormatError::DuplicateBlock(block)) if block.get() == 7
     ));
 }
 
@@ -198,7 +315,7 @@ fn refuses_a_quantization_error_above_the_declared_limit() {
     );
 
     assert!(matches!(
-        writer.write_block(block),
+        OctreeWriter::write_block(&mut writer, block),
         Err(FormatError::Quantization(_))
     ));
 }
@@ -239,9 +356,9 @@ fn split_writer_is_poisoned_after_partial_failure_of_either_sink() {
             options(),
         )
         .unwrap();
-        assert!(writer.write_block(sample_block()).is_err());
+        assert!(OctreeWriter::write_block(&mut writer, sample_block()).is_err());
         assert!(matches!(
-            writer.finish_pair(),
+            OctreeWriter::finish_pair(writer),
             Err(FormatError::WriterPoisoned)
         ));
     }

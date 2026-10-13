@@ -11,7 +11,9 @@ use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeValues, BlockId, ColorRgb, CoordinateFrame,
     DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
-use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePointBlock};
+use viewer_format::{
+    FormatMetadata, FormatWriter, FormatWriterOptions, OctreeWriter, SourcePointBlock,
+};
 
 use super::{
     ConversionProgress, ConversionReport, ConversionStage, ConvertError, ConvertOptions,
@@ -380,7 +382,7 @@ pub(super) fn convert(
                 node.bounds,
                 node.key,
             )?;
-            writer.write_block(block)?;
+            OctreeWriter::write_block(&mut writer, block)?;
             node_processed += read;
             processed += read;
             emit_progress(
@@ -407,7 +409,7 @@ pub(super) fn convert(
             actual: processed,
         });
     }
-    let (file, attributes) = writer.finish_pair()?;
+    let (file, attributes) = OctreeWriter::finish_pair(writer)?;
     file.sync_all()?;
     let attributes = attributes.expect("split writer returns companion");
     attributes.sync_all()?;

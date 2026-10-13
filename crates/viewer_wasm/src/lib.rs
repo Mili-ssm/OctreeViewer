@@ -2,6 +2,8 @@
 //! `ViewerController` manages in-memory scenes and `LodDataset` manages streamed blocks;
 //! browser bindings adapt these contracts to workers, typed arrays and WebGPU surfaces.
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod block_loading;
 mod controller;
 mod lod_dataset;
 #[cfg(target_arch = "wasm32")]

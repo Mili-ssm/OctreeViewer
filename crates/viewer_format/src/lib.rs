@@ -3,6 +3,7 @@
 //! both share the binary layout and metadata validation without depending on each other.
 
 mod codec;
+mod contracts;
 mod crc32;
 mod error;
 mod layout;
@@ -13,6 +14,7 @@ mod reader;
 mod writer;
 
 pub use codec::{BlockCodec, CodecError, EncodedBlock, compress_block, decompress_block};
+pub use contracts::{OctreeReader, OctreeWriter, PreparedOctreeWriter};
 pub use crc32::{Crc32, crc32};
 pub use error::FormatError;
 pub use layout::FORMAT_VERSION;
