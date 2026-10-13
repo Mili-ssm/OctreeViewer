@@ -376,6 +376,11 @@ no WASM/dataset and leaves the device/context alive afterwards. `window.surfaceM
 reports drawing/CSS sizes, submitted count and `idle` after queue completion. Capture parent
 maps at idle and after 20 seconds using the sampler's identity-checked helper. Drawing dimensions
 are limited to 1–2048 and frame count to 1–600. The CSS surface stays at most 640 pixels wide.
+Add `&mode=viewer` for the fixed 4,096-point RGB WASM sample; `mode=clear` remains default.
+Both modes wait for browser queue completion. Viewer mode temporarily captures the browser
+requestDevice result during initialization, restores the prototype immediately, and uses that
+queue reference only inside the diagnostic; no product API is changed. Read the
+[WASM matrix and counterexamples](../../docs/WEB_PERFORMANCE_BENCH.md#fixed-small-wasm-sample-surface-matrix--13-10-2026).
 This is a diagnostic submission sequence, not an FPS benchmark or VRAM measurement.
 See the [six-run observations](../../docs/WEB_PERFORMANCE_BENCH.md#independent-clear-only-surface-memory-matrix--13-10-2026).
 

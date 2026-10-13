@@ -1264,3 +1264,53 @@ errors, without creating a GPU worker. This validates the diagnostic error path,
 GPU rendering. Product renderer/WASM source and package are unchanged.
 Next: repeat the same bounded frame protocol with the small WASM sample, separating viewer
 rendering from large-data refinement before attempting a memory fix.
+
+### Fixed small WASM sample surface matrix — 13-10-2026
+
+The bounded surface diagnostic adds `mode=viewer`, keeping `mode=clear` as default. Viewer
+mode loads only the committed 4,096-point sample and RGB sidecar, fits once, completes its
+4 px cut, then renders the unchanged scene for 300 frames. There is no progressive large-data
+loading or camera motion during the measured frame sequence. Both modes retain their device
+and wait for the actual browser queue's `onSubmittedWorkDone()` before reporting idle.
+
+The local `wgpu 24.0.5` web backend's `on_submitted_work_done` is unimplemented
+(`src/backend/webgpu.rs:2591–2593`), so the diagnostic temporarily wraps browser
+`GPUAdapter.prototype.requestDevice` while creating its WASM viewer, captures the returned
+device, and restores the prototype in `finally`. This changes only the diagnostic worker,
+not Rust, public viewer APIs or product behavior. Common device-loss/uncaptured-error listeners
+are installed for both modes. No per-frame readback or texture history is retained.
+
+Three fresh Firefox 157.0.1 profiles per drawing size, WebGPU enabled, HTTP caches disabled,
+1280×900 host viewport, constant **640×360 CSS**, same frame/20 s idle protocol and external
+0.1 s requested sampler sleeps as the preceding clear matrix. OS cache is not flushed; the
+series is sequential, not an alternating before/after performance benchmark. All six cases
+complete 300 `presented` frame calls, browser queue completion and idle with **4,096 voxels**.
+Third large-case screenshot inspected: visible RGB sample. All sampler runs end on root exit.
+
+| Drawing size / round | Parent PSS mapping sum after submissions (B) | After 20 s idle (B) | Exact image-size unnamed maps, both captures | Tree PSS sampled peak (B) |
+| --- | ---: | ---: | ---: | ---: |
+| 1280×720 / 1 | 503,224,320 | 400,617,472 | 5 | 809,208,832 |
+| 1280×720 / 2 | 504,192,000 | 400,592,896 | 6 | 810,493,952 |
+| 1280×720 / 3 | 522,736,640 | 398,774,272 | 6 | 827,791,360 |
+| 640×360 / 1 | 410,411,008 | 379,948,032 | 0 | 780,064,768 |
+| 640×360 / 2 | 742,398,976 | 646,740,992 | 0 | 1,008,772,096 |
+| 640×360 / 3 | 541,259,776 | 385,409,024 | 0 | 831,104,000 |
+
+Large-case exact map classes contribute 18,432,000 / 22,118,400 / 22,118,400 B PSS. As in
+clear mode, the small-size exact filter finding zero is not absence of surface memory:
+round 2 has an elevated total parent footprint without those exact maps. Requested renderer
+GPU resources are **15,051,868 B** at 1280×720 and **3,898,460 B** at 640×360, a separate scope
+from resident CPU PSS. The large-data **161-map / multi-GB** event is not reproduced by the
+fixed small scene. This narrows the next experiment to camera/scene-update churn or the
+large-data/progressive workload; it does not identify an owner or justify a renderer fix.
+Full-lifetime process peaks include final screenshot activity; phase mapping captures remain
+the controlled comparison. No memory or timing improvement ratio is inferred.
+
+Raw driver/profiles/markers/JSONL/maps/summaries/screenshots: ignored `target/surface-wasm-memory/`.
+Reproduce with the existing URL/protocol plus `&mode=viewer`. Validation: all six real Firefox
+GPU runs, final three-frame smoke of both modes after sharing error listeners, **27 Node /
+11 Python tests**, JS syntax and diff checks pass. Playwright MCP validates invalid mode in
+desktop/mobile with zero console/page errors; that check does not validate Chrome GPU rendering.
+Product WASM binary, renderer and offline package remain unchanged.
+Next: keep the small input but move camera between fixed submissions to isolate scene-update
+churn from large-data loading, using fresh profiles and the same phase captures.

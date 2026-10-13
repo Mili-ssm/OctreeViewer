@@ -600,8 +600,14 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    a 640×360 no hay mapas del tamaño exacto filtrado. No reproduce los **161** mapas de Albuera
    ni prueba quién los asigna. Firefox completa seis secuencias; Playwright MCP verifica errores
    de parámetros en escritorio/móvil, sin validar GPU Chrome. [Matriz y alcance](docs/WEB_PERFORMANCE_BENCH.md#independent-clear-only-surface-memory-matrix--13-10-2026).
-   Siguiente: repetir el protocolo fijo con muestra WASM pequeña, separar memoria JS/WASM
-   y ampliar corpus Additive real antes de diseñar reutilización.
+   Modo WASM de muestra fija añadido: seis secuencias Firefox de 300 frames + 20 s de reposo
+   con 4.096 vóxeles y cola GPU completada. A 1280×720 hay **5/6/6** mapas de tamaño de imagen;
+   no reproduce los 161 mapas/pico multi-GB de Albuera. Una ronda 640×360 conserva **646,7 MB**
+   de PSS padre sin mapas de la clase exacta: tamaño de imagen no explica el total. 27 tests Node,
+   11 Python y smoke de ambos modos pasan; MCP comprueba modo inválido en escritorio/móvil.
+   [Matriz y límites](docs/WEB_PERFORMANCE_BENCH.md#fixed-small-wasm-sample-surface-matrix--13-10-2026).
+   Siguiente: mover cámara con muestra pequeña para aislar reconstrucciones de escena de carga
+   grande, separar memoria JS/WASM y ampliar corpus Additive real antes de diseñar reutilización.
    Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
    Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
