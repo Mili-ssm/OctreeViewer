@@ -1056,3 +1056,17 @@ Smoke del 13-10-2026 con `fs_e430_n4008_18.las`, 111.190 puntos, solicitado con 
 terminó correctamente y la planificación de memoria limitó validación a uno. El JSON registró un
 bloque, 111.190 puntos, 17,97 ms acumulados en `read_block` y 4.003.511 B como máxima estimación de
 bloque. Es una ejecución de integración, no una medición comparativa ni un pico de memoria.
+
+### Payload lógico de spools en planificación
+
+`convert-profile` informa los bytes de registros source escritos, source escaneados durante la
+planificación, child escritos/escaneados y LOD escritos. El conteo child se basa en buffers que
+completaron `write_all`, por lo que un buffer descartado por el fallback de puntos coincidentes no
+se cuenta. Los escaneos cuentan registros decodificados (`cantidad × longitud del registro`), no
+lectura anticipada de `BufReader`, syscalls ni tráfico físico del disco. Los spools ya existentes de
+un checkpoint reanudado no se atribuyen a escrituras de esta invocación; hashing y enlace/copia de
+checkpoints también quedan fuera.
+
+Estos contadores cubren la planificación espacial. Las lecturas posteriores de rangos mediante
+`PlannedBlock::read` durante la preparación, capacidad retenida del lote y temporales del decoder
+siguen pendientes, así que no equivalen al tráfico total de spools de la conversión.

@@ -32,7 +32,9 @@ mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
 use diagnostics::DiagnosticTimer;
-pub use diagnostics::{ConversionDiagnostics, DiagnosticWindow, ValidationWorkerDiagnostics};
+pub use diagnostics::{
+    ConversionDiagnostics, DiagnosticWindow, SpatialSpoolDiagnostics, ValidationWorkerDiagnostics,
+};
 use spatial::{
     PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
     spool_source,
@@ -550,11 +552,20 @@ fn convert_file_inner(
         Workspace::create(output_path)?
     };
     let spatial_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
+    let mut source_spool_bytes_written = 0;
     let spatial_plan = if let Some(checkpoint) = checkpoint.as_mut() {
         match checkpoint.stage() {
             CheckpointStage::Started => {
                 let path = checkpoint.source_path();
-                spool_source(&mut reader, &source, options, &path, on_progress)?;
+                source_spool_bytes_written = spool_source(
+                    &mut reader,
+                    &source,
+                    options,
+                    &path,
+                    on_progress,
+                    diagnostics.is_some(),
+                )?
+                .unwrap_or(0);
                 checkpoint.commit_source()?;
             }
             CheckpointStage::SourceReady(_) => checkpoint.verify_source()?,
@@ -566,7 +577,15 @@ fn convert_file_inner(
         if matches!(checkpoint.stage(), CheckpointStage::SourceReady(_)) {
             link_or_copy(&checkpoint.source_path(), &path)?;
         }
-        build_spatial_plan(&source, options, &workspace, &path, on_progress)?
+        build_spatial_plan(
+            &source,
+            options,
+            &workspace,
+            &path,
+            on_progress,
+            diagnostics.is_some(),
+            source_spool_bytes_written,
+        )?
     } else {
         build_spatial_plan_from_reader(
             &mut reader,
@@ -575,8 +594,15 @@ fn convert_file_inner(
             options,
             &workspace,
             on_progress,
+            diagnostics.is_some(),
         )?
     };
+    if let (Some(diagnostics), Some(spools)) = (
+        diagnostics.as_deref_mut(),
+        spatial_plan.spool_diagnostics.as_ref(),
+    ) {
+        diagnostics.spatial_spools = Some(spools.clone());
+    }
     if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), spatial_timer) {
         diagnostics.spatial_planning = Some(timer.finish());
     }
@@ -1440,6 +1466,15 @@ mod tests {
         }
         assert!(diagnostics.block_preparation_elapsed_ns.is_some());
         assert!(diagnostics.ordered_write_and_release_elapsed_ns.is_some());
+        let spools = diagnostics
+            .spatial_spools
+            .as_ref()
+            .expect("profiled planning reports spool payload counters");
+        assert_eq!(spools.source_payload_written_bytes, 24 * 33);
+        assert_eq!(spools.source_payload_scanned_bytes, 0);
+        assert_eq!(spools.child_payload_written_bytes, 0);
+        assert_eq!(spools.child_payload_scanned_bytes, 0);
+        assert_eq!(spools.lod_payload_written_bytes, 0);
         let validation_workers = diagnostics
             .validation_workers
             .expect("profiled validation reports worker aggregates");
@@ -1450,6 +1485,48 @@ mod tests {
                 && worker.read_elapsed_ns > 0
                 && worker.max_decoded_block_estimated_bytes > 0
         }));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_count_partition_and_lod_spool_payloads() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let serial_output = dir.join("serial.oct");
+        let parallel_output = dir.join("parallel.oct");
+        fixture(&input, false, false, 200);
+        let options = ConvertOptions::new(16, 0.01)
+            .unwrap()
+            .with_spatial_workers(1)
+            .unwrap()
+            .with_spatial_divisions(2)
+            .unwrap();
+
+        let (_, serial_diagnostics) =
+            convert_file_with_diagnostics(&input, &serial_output, options, |_| true).unwrap();
+        let (_, parallel_diagnostics) = convert_file_with_diagnostics(
+            &input,
+            &parallel_output,
+            options.with_spatial_workers(2).unwrap(),
+            |_| true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(&serial_output).unwrap(),
+            fs::read(&parallel_output).unwrap()
+        );
+        assert_eq!(
+            fs::read(output_attributes_path(&serial_output)).unwrap(),
+            fs::read(output_attributes_path(&parallel_output)).unwrap()
+        );
+        let spools = serial_diagnostics.spatial_spools.unwrap();
+        let parallel_spools = parallel_diagnostics.spatial_spools.unwrap();
+        assert_eq!(spools, parallel_spools);
+        assert_eq!(spools.source_payload_written_bytes, 0);
+        assert!(spools.child_payload_written_bytes >= 200 * 27);
+        assert!(spools.child_payload_scanned_bytes > 0);
+        assert!(spools.lod_payload_written_bytes > 0);
         fs::remove_dir_all(dir).unwrap();
     }
 

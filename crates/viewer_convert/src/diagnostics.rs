@@ -18,6 +18,17 @@ pub struct ConversionDiagnostics {
     pub output_validation: Option<DiagnosticWindow>,
     /// Per-worker read aggregates. The block memory estimate excludes transient decoder buffers.
     pub validation_workers: Option<Vec<ValidationWorkerDiagnostics>>,
+    /// Logical spool record payloads processed during spatial planning; excludes physical I/O.
+    pub spatial_spools: Option<SpatialSpoolDiagnostics>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpatialSpoolDiagnostics {
+    pub source_payload_written_bytes: u64,
+    pub source_payload_scanned_bytes: u64,
+    pub child_payload_written_bytes: u64,
+    pub child_payload_scanned_bytes: u64,
+    pub lod_payload_written_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -19,8 +19,8 @@ use viewer_core::{
 use viewer_format::{FormatMetadata, SourcePointBlock};
 
 use super::{
-    ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SourceInfo, descriptor,
-    emit_progress, omitted_dimensions, source_schema,
+    ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SourceInfo,
+    SpatialSpoolDiagnostics, descriptor, emit_progress, omitted_dimensions, source_schema,
 };
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
@@ -263,6 +263,7 @@ pub(crate) struct SpatialPlan {
     pub point_count: u64,
     pub estimated_peak_memory_bytes: u64,
     pub omitted_dimensions: Vec<String>,
+    pub spool_diagnostics: Option<SpatialSpoolDiagnostics>,
 }
 
 pub(crate) struct Workspace {
@@ -341,6 +342,8 @@ pub(crate) fn build_spatial_plan(
     workspace: &Workspace,
     source_path: &Path,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    collect_spool_diagnostics: bool,
+    source_spool_bytes_written: u64,
 ) -> Result<SpatialPlan, ConvertError> {
     build_spatial_plan_inner(
         source,
@@ -348,6 +351,8 @@ pub(crate) fn build_spatial_plan(
         workspace,
         SpatialInput::Spool(source_path),
         on_progress,
+        collect_spool_diagnostics,
+        source_spool_bytes_written,
     )
 }
 
@@ -358,6 +363,7 @@ pub(crate) fn build_spatial_plan_from_reader(
     options: ConvertOptions,
     workspace: &Workspace,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    collect_spool_diagnostics: bool,
 ) -> Result<SpatialPlan, ConvertError> {
     build_spatial_plan_inner(
         source,
@@ -365,6 +371,8 @@ pub(crate) fn build_spatial_plan_from_reader(
         workspace,
         SpatialInput::Las { reader, input_path },
         on_progress,
+        collect_spool_diagnostics,
+        0,
     )
 }
 
@@ -382,6 +390,8 @@ fn build_spatial_plan_inner(
     workspace: &Workspace,
     input: SpatialInput<'_>,
     on_progress: &mut impl FnMut(ConversionProgress) -> bool,
+    collect_spool_diagnostics: bool,
+    source_spool_bytes_written: u64,
 ) -> Result<SpatialPlan, ConvertError> {
     let point_limit =
         super::input_batch_point_limit(options.points_per_block(), source.record_length);
@@ -404,10 +414,21 @@ fn build_spatial_plan_inner(
         source_point_count: source.point_count,
         parallel_workers: options.spatial_workers(),
         workers_used: 1,
+        spool_diagnostics: collect_spool_diagnostics.then(|| SpatialSpoolDiagnostics {
+            source_payload_written_bytes: source_spool_bytes_written,
+            ..SpatialSpoolDiagnostics::default()
+        }),
     };
     match input {
         SpatialInput::Spool(path) => {
-            builder.build_node(path.to_owned(), source.point_count, root_bounds, None, 0)?;
+            builder.build_node(
+                path.to_owned(),
+                source.point_count,
+                root_bounds,
+                None,
+                0,
+                false,
+            )?;
         }
         SpatialInput::Las { reader, input_path } => {
             builder.build_root_from_las(reader, input_path, source, options, root_bounds)?;
@@ -470,6 +491,7 @@ fn build_spatial_plan_inner(
         point_count: source.point_count,
         estimated_peak_memory_bytes,
         omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+        spool_diagnostics: builder.spool_diagnostics,
     })
 }
 
@@ -496,16 +518,18 @@ struct ChildSpool {
     point_count: u64,
     buffer: Vec<u8>,
     created: bool,
+    payload_written_bytes: Option<u64>,
 }
 
 impl ChildSpool {
-    fn new(path: PathBuf, layout: SpoolLayout) -> Self {
+    fn new(path: PathBuf, layout: SpoolLayout, collect_diagnostics: bool) -> Self {
         Self {
             layout,
             path,
             point_count: 0,
             buffer: Vec::with_capacity(CHILD_SPOOL_BUFFER_BYTES),
             created: false,
+            payload_written_bytes: collect_diagnostics.then_some(0),
         }
     }
 
@@ -531,6 +555,11 @@ impl ChildSpool {
         }
         let mut file = options.open(&self.path)?;
         file.write_all(&self.buffer)?;
+        if let Some(bytes_written) = self.payload_written_bytes.as_mut() {
+            *bytes_written = bytes_written
+                .checked_add(self.buffer.len() as u64)
+                .ok_or(ConvertError::SizeOverflow)?;
+        }
         self.buffer.clear();
         self.created = true;
         Ok(())
@@ -545,6 +574,7 @@ struct BranchOutput {
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
     next_block_id: u64,
+    spool_diagnostics: Option<SpatialSpoolDiagnostics>,
 }
 
 enum BranchMessage {
@@ -566,9 +596,86 @@ struct SpatialBuilder<'a> {
     source_point_count: u64,
     parallel_workers: usize,
     workers_used: usize,
+    spool_diagnostics: Option<SpatialSpoolDiagnostics>,
 }
 
 impl SpatialBuilder<'_> {
+    fn add_source_spool_bytes(&mut self, bytes: u64) -> Result<(), ConvertError> {
+        if let Some(diagnostics) = self.spool_diagnostics.as_mut() {
+            diagnostics.source_payload_written_bytes = diagnostics
+                .source_payload_written_bytes
+                .checked_add(bytes)
+                .ok_or(ConvertError::SizeOverflow)?;
+        }
+        Ok(())
+    }
+
+    fn add_scanned_spool_bytes(
+        &mut self,
+        records: usize,
+        record_bytes: usize,
+        child_spool: bool,
+    ) -> Result<(), ConvertError> {
+        let Some(diagnostics) = self.spool_diagnostics.as_mut() else {
+            return Ok(());
+        };
+        let bytes = records
+            .checked_mul(record_bytes)
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .ok_or(ConvertError::SizeOverflow)?;
+        let counter = if child_spool {
+            &mut diagnostics.child_payload_scanned_bytes
+        } else {
+            &mut diagnostics.source_payload_scanned_bytes
+        };
+        *counter = counter
+            .checked_add(bytes)
+            .ok_or(ConvertError::SizeOverflow)?;
+        Ok(())
+    }
+
+    fn record_child_spool_writes(
+        &mut self,
+        children: &[Option<ChildSpool>],
+    ) -> Result<(), ConvertError> {
+        let Some(diagnostics) = self.spool_diagnostics.as_mut() else {
+            return Ok(());
+        };
+        let bytes = children.iter().flatten().try_fold(0_u64, |total, child| {
+            total
+                .checked_add(child.payload_written_bytes.unwrap_or(0))
+                .ok_or(ConvertError::SizeOverflow)
+        })?;
+        diagnostics.child_payload_written_bytes = diagnostics
+            .child_payload_written_bytes
+            .checked_add(bytes)
+            .ok_or(ConvertError::SizeOverflow)?;
+        Ok(())
+    }
+
+    fn add_lod_spool_bytes(
+        &mut self,
+        points: usize,
+        layout: SpoolLayout,
+    ) -> Result<(), ConvertError> {
+        if self.spool_diagnostics.is_none() {
+            return Ok(());
+        }
+        let bytes = points
+            .checked_mul(layout.record_bytes())
+            .and_then(|bytes| u64::try_from(bytes).ok())
+            .ok_or(ConvertError::SizeOverflow)?;
+        let diagnostics = self
+            .spool_diagnostics
+            .as_mut()
+            .expect("diagnostics were checked above");
+        diagnostics.lod_payload_written_bytes = diagnostics
+            .lod_payload_written_bytes
+            .checked_add(bytes)
+            .ok_or(ConvertError::SizeOverflow)?;
+        Ok(())
+    }
+
     fn build_root_from_las(
         &mut self,
         reader: &mut Reader,
@@ -583,8 +690,17 @@ impl SpatialBuilder<'_> {
         let root_id = NodeId::new(0);
         if !can_split {
             let spool_path = self.workspace.file("source.spool");
-            spool_source(reader, source, options, &spool_path, self.on_progress)?;
-            self.build_node(spool_path, source.point_count, bounds, None, 0)?;
+            if let Some(bytes) = spool_source(
+                reader,
+                source,
+                options,
+                &spool_path,
+                self.on_progress,
+                self.spool_diagnostics.is_some(),
+            )? {
+                self.add_source_spool_bytes(bytes)?;
+            }
+            self.build_node(spool_path, source.point_count, bounds, None, 0, false)?;
             return Ok(());
         }
 
@@ -621,6 +737,7 @@ impl SpatialBuilder<'_> {
                         self.workspace
                             .file(&format!("node-{}-child-{child_key}.spool", root_id.get())),
                         self.layout,
+                        self.spool_diagnostics.is_some(),
                     )
                 });
                 child.write_point(&point)?;
@@ -646,6 +763,7 @@ impl SpatialBuilder<'_> {
             .iter()
             .all(|axis_bounds| axis_bounds[0] == axis_bounds[1])
         {
+            self.record_child_spool_writes(&children)?;
             for child in children.into_iter().flatten() {
                 if child.created {
                     fs::remove_file(child.path)?;
@@ -653,20 +771,25 @@ impl SpatialBuilder<'_> {
             }
             let mut source_reader = Reader::from_path(input_path)?;
             let spool_path = self.workspace.file("source.spool");
-            spool_source(
+            let bytes = spool_source(
                 &mut source_reader,
                 source,
                 options,
                 &spool_path,
                 self.on_progress,
+                self.spool_diagnostics.is_some(),
             )?;
-            self.build_node(spool_path, source.point_count, bounds, None, 0)?;
+            if let Some(bytes) = bytes {
+                self.add_source_spool_bytes(bytes)?;
+            }
+            self.build_node(spool_path, source.point_count, bounds, None, 0, false)?;
             return Ok(());
         }
 
         for child in children.iter_mut().flatten() {
             child.finish()?;
         }
+        self.record_child_spool_writes(&children)?;
         let sample_path = self.workspace.file("node-0.lod");
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
         for (key, accumulator) in samples
@@ -685,6 +808,7 @@ impl SpatialBuilder<'_> {
             .map_err(|error| error.into_error())?;
 
         let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
+        self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
         let sample_block = if sample_count > 0 {
             let block_id = self.allocate_block_id()?;
             self.output_blocks.push(PlannedBlock {
@@ -724,6 +848,7 @@ impl SpatialBuilder<'_> {
         bounds: SpatialBounds,
         parent: Option<NodeId>,
         level: u32,
+        input_is_child_spool: bool,
     ) -> Result<NodeId, ConvertError> {
         let id = NodeId::new(self.node_records.len() as u64);
         let can_split =
@@ -756,6 +881,7 @@ impl SpatialBuilder<'_> {
             if records == 0 {
                 break;
             }
+            self.add_scanned_spool_bytes(records, record_bytes, input_is_child_spool)?;
             for bytes in record_buffer[..records * record_bytes].chunks_exact(record_bytes) {
                 let point = decode_point(bytes, self.layout);
                 scanned += 1;
@@ -772,6 +898,7 @@ impl SpatialBuilder<'_> {
                         self.workspace
                             .file(&format!("node-{}-child-{child_key}.spool", id.get())),
                         self.layout,
+                        self.spool_diagnostics.is_some(),
                     )
                 });
                 child.write_point(&point)?;
@@ -791,6 +918,7 @@ impl SpatialBuilder<'_> {
         for child in children.iter_mut().flatten() {
             child.finish()?;
         }
+        self.record_child_spool_writes(&children)?;
 
         if source_bounds
             .iter()
@@ -819,9 +947,10 @@ impl SpatialBuilder<'_> {
         sample_writer
             .into_inner()
             .map_err(|error| error.into_error())?;
+        let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
+        self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
         fs::remove_file(&spool_path)?;
 
-        let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         let sample_block = if sample_count > 0 {
             let block_id = self.allocate_block_id()?;
             self.output_blocks.push(PlannedBlock {
@@ -900,6 +1029,7 @@ impl SpatialBuilder<'_> {
                     child.bounds,
                     Some(parent_id),
                     level + 1,
+                    true,
                 )?;
             }
         }
@@ -939,6 +1069,7 @@ impl SpatialBuilder<'_> {
             let layout = self.layout;
             let spatial_divisions = self.spatial_divisions;
             let source_point_count = self.source_point_count;
+            let collect_spool_diagnostics = self.spool_diagnostics.is_some();
             let mut outputs = Vec::with_capacity(batch_count);
             let mut first_error = None;
 
@@ -971,6 +1102,8 @@ impl SpatialBuilder<'_> {
                                 source_point_count,
                                 parallel_workers: 1,
                                 workers_used: 1,
+                                spool_diagnostics: collect_spool_diagnostics
+                                    .then(SpatialSpoolDiagnostics::default),
                             };
                             builder.build_node(
                                 task.path,
@@ -978,11 +1111,13 @@ impl SpatialBuilder<'_> {
                                 task.bounds,
                                 None,
                                 1,
+                                true,
                             )?;
                             Ok(BranchOutput {
                                 node_records: builder.node_records,
                                 output_blocks: builder.output_blocks,
                                 next_block_id: builder.next_block_id,
+                                spool_diagnostics: builder.spool_diagnostics,
                             })
                         })();
                         if result.is_err() {
@@ -1100,6 +1235,31 @@ impl SpatialBuilder<'_> {
         }
         self.node_records.append(&mut branch.node_records);
         self.output_blocks.append(&mut branch.output_blocks);
+        if let (Some(target), Some(source)) = (
+            self.spool_diagnostics.as_mut(),
+            branch.spool_diagnostics.as_ref(),
+        ) {
+            target.source_payload_written_bytes = target
+                .source_payload_written_bytes
+                .checked_add(source.source_payload_written_bytes)
+                .ok_or(ConvertError::SizeOverflow)?;
+            target.source_payload_scanned_bytes = target
+                .source_payload_scanned_bytes
+                .checked_add(source.source_payload_scanned_bytes)
+                .ok_or(ConvertError::SizeOverflow)?;
+            target.child_payload_written_bytes = target
+                .child_payload_written_bytes
+                .checked_add(source.child_payload_written_bytes)
+                .ok_or(ConvertError::SizeOverflow)?;
+            target.child_payload_scanned_bytes = target
+                .child_payload_scanned_bytes
+                .checked_add(source.child_payload_scanned_bytes)
+                .ok_or(ConvertError::SizeOverflow)?;
+            target.lod_payload_written_bytes = target
+                .lod_payload_written_bytes
+                .checked_add(source.lod_payload_written_bytes)
+                .ok_or(ConvertError::SizeOverflow)?;
+        }
         self.next_block_id = next_block_id;
         Ok(())
     }
@@ -1248,7 +1408,8 @@ pub(crate) fn spool_source(
     options: ConvertOptions,
     spool_path: &Path,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
-) -> Result<(), ConvertError> {
+    collect_diagnostics: bool,
+) -> Result<Option<u64>, ConvertError> {
     let point_limit =
         super::input_batch_point_limit(options.points_per_block(), source.record_length);
     let mut writer = BufWriter::new(File::create(spool_path)?);
@@ -1280,7 +1441,16 @@ pub(crate) fn spool_source(
         .into_inner()
         .map_err(|error| error.into_error())?
         .sync_all()?;
-    Ok(())
+    if collect_diagnostics {
+        Ok(Some(
+            source
+                .point_count
+                .checked_mul(SpoolLayout::source(source).record_bytes() as u64)
+                .ok_or(ConvertError::SizeOverflow)?,
+        ))
+    } else {
+        Ok(None)
+    }
 }
 
 fn write_source_points(
@@ -1864,6 +2034,24 @@ mod partition_tests {
         let mut rewritten = Vec::new();
         write_point(&mut rewritten, &decoded, layout).unwrap();
         assert_eq!(bytes, rewritten);
+    }
+
+    #[test]
+    fn child_spool_diagnostics_count_only_flushed_payload() {
+        let (source, point) = spool_fixture(3);
+        let layout = SpoolLayout::source(&source);
+        let workspace_path =
+            std::env::temp_dir().join(format!("child-spool-diagnostics-{}", std::process::id()));
+        let workspace = Workspace::create_at(&workspace_path).unwrap();
+        let mut child = ChildSpool::new(workspace.file("child.spool"), layout, true);
+
+        child.write_point(&point).unwrap();
+        assert_eq!(child.payload_written_bytes, Some(0));
+        child.flush().unwrap();
+        assert_eq!(
+            child.payload_written_bytes,
+            Some(layout.record_bytes() as u64)
+        );
     }
 
     #[test]

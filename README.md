@@ -513,8 +513,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Diagnóstico interno añadido: cada worker de validación agrega bloques y puntos leídos, tiempo
    acumulado dentro de `read_block` y máxima estimación de memoria del bloque decodificado. No son
    RSS ni incluyen buffers transitorios; al no activar `convert-profile` no se calcula la estimación.
-   La instrumentación restante debe separar ingestión/clasificación/escritura LOD y contar bytes
-   lógicos y retención por tipo de spool/lote; no presentar estos como I/O físico.
+   La planificación ahora expone bytes lógicos escritos en spools source, child y LOD, más bytes
+   de registros leídos en escaneos recursivos source/child. No incluye lecturas de `PlannedBlock`
+   durante preparación, lectura anticipada ni I/O físico; quedan pendientes esas lecturas y la
+   retención de buffers por lote.
    Base pequeña Firefox y exploración grande con intentos fallidos documentadas; los cuellos
    internos CPU/I/O siguen sin aislar. El refinamiento web ya expone selección, planificación,
    carga conjunta, lectura/copia de rangos, residual de decode/otras tareas, voxelización y subida

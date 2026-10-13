@@ -234,9 +234,28 @@ def internal_phase_peaks(stdout_path: Path, samples_path: Path) -> dict[str, Any
                 "max_decoded_block_estimated_bytes"}
     if any(set(worker) != required for worker in workers.values()):
         raise ValueError("incomplete validation worker diagnostics")
+    spool_fields = (
+        "source_payload_written_bytes", "source_payload_scanned_bytes",
+        "child_payload_written_bytes", "child_payload_scanned_bytes",
+        "lod_payload_written_bytes",
+    )
+    spools: dict[str, int] = {}
+    spool_pattern = re.compile(r"internal_spatial_spool_(.+)=(\d+)\n?")
+    with stdout_path.open(encoding="utf-8") as output:
+        for line in output:
+            match = spool_pattern.fullmatch(line)
+            if match is None:
+                continue
+            key, value = match.groups()
+            if key not in spool_fields or key in spools:
+                raise ValueError(f"unexpected or duplicate spatial spool diagnostic: {key}")
+            spools[key] = int(value)
+    if spools and set(spools) != set(spool_fields):
+        raise ValueError("incomplete spatial spool diagnostics")
     return {"available": True, "phases": phases, "unassigned_sample_count": unassigned,
             "validation_workers": [dict(worker_index=index, **workers[index])
-                                   for index in sorted(workers)]}
+                                   for index in sorted(workers)],
+            "spatial_spools": spools or None}
 
 
 def profile(input_path: Path, run_dir: Path, binary: Path, workers: int, divisions: int,

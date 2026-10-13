@@ -34,6 +34,11 @@ class ProfileConversionTests(unittest.TestCase):
                 "internal_validation_worker_0_points_read=12\n"
                 "internal_validation_worker_0_read_elapsed_ns=40\n"
                 "internal_validation_worker_0_max_decoded_block_estimated_bytes=512\n"
+                "internal_spatial_spool_source_payload_written_bytes=648\n"
+                "internal_spatial_spool_source_payload_scanned_bytes=0\n"
+                "internal_spatial_spool_child_payload_written_bytes=0\n"
+                "internal_spatial_spool_child_payload_scanned_bytes=0\n"
+                "internal_spatial_spool_lod_payload_written_bytes=0\n"
             )
             samples.write_text("".join(json.dumps({
                 "start_unix_ns": start, "end_unix_ns": end,
@@ -55,6 +60,13 @@ class ProfileConversionTests(unittest.TestCase):
                 "worker_index": 0, "blocks_read": 3, "points_read": 12,
                 "read_elapsed_ns": 40, "max_decoded_block_estimated_bytes": 512,
             }])
+            self.assertEqual(result["spatial_spools"], {
+                "source_payload_written_bytes": 648,
+                "source_payload_scanned_bytes": 0,
+                "child_payload_written_bytes": 0,
+                "child_payload_scanned_bytes": 0,
+                "lod_payload_written_bytes": 0,
+            })
 
     def test_internal_phase_attribution_rejects_missing_and_overlapping_windows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

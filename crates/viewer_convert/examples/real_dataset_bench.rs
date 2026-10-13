@@ -165,6 +165,28 @@ fn convert(
         print_internal_window("spatial_planning", diagnostics.spatial_planning);
         print_internal_window("block_stream", diagnostics.block_stream);
         print_internal_window("output_validation", diagnostics.output_validation);
+        if let Some(spools) = diagnostics.spatial_spools.as_ref() {
+            println!(
+                "internal_spatial_spool_source_payload_written_bytes={}",
+                spools.source_payload_written_bytes
+            );
+            println!(
+                "internal_spatial_spool_source_payload_scanned_bytes={}",
+                spools.source_payload_scanned_bytes
+            );
+            println!(
+                "internal_spatial_spool_child_payload_written_bytes={}",
+                spools.child_payload_written_bytes
+            );
+            println!(
+                "internal_spatial_spool_child_payload_scanned_bytes={}",
+                spools.child_payload_scanned_bytes
+            );
+            println!(
+                "internal_spatial_spool_lod_payload_written_bytes={}",
+                spools.lod_payload_written_bytes
+            );
+        }
         if let Some(workers) = diagnostics.validation_workers.as_ref() {
             for worker in workers {
                 println!(
