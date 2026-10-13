@@ -469,6 +469,10 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
 - [x] Ampliar prefijos a Belvedere XYZ, tres rondas a 256 MiB: 4/156 reconstrucciones
   elegibles, 18–21 ms candidatos; ningún prefijo nuevo tras el giro. Las seis fases pausan
   con 782/780 bloques pendientes: no cierra 4 px ni justifica acumulador persistente.
+- [x] Añadir corpus EPT `Additive` determinista: 73 nodos, 37.376 puntos; dos generaciones
+  idénticas y tres rondas Firefox con cobertura completa. Solo 2/75 prefijos, menos del 0,8%
+  de trabajo candidato; cámara sin oportunidades nuevas. Playwright MCP Chrome parcial:
+  canvas blanco y panel atrasado; no se da por validada su presentación.
 - [ ] Evaluar reutilización incremental adicional solo después de medir el trabajo restante;
   conservar equivalencia, límites y ausencia de solapamientos.
   Albuera RGB pasa 3/3 en Firefox; Belvedere RGB pasa 3/3 a 8 px, pero 4 px sigue detenido por
@@ -561,8 +565,9 @@ LOD o FPS; [método y dispersión](docs/V5_MEMORY_BENCH.md#consultas-repetidas-d
    Exports frescos y actividad nueva confirmados; el panel puede ir atrasado. Hubo checks/Chrome
    simultáneos: no es comparación de tiempos ni cierre de capacidad.
    [Observación acotada](docs/WEB_PERFORMANCE_BENCH.md#fresh-1-gib-camera-observation-after-lookup-change--13-10-2026).
-   Siguiente: ampliar medición de prefijos a casos Additive; Belvedere medido en tres rondas
-   con 4/156 prefijos y menos de 0,03% de trabajo candidato. El cierre del objetivo
+   Siguiente: medir pico conjunto y ampliar corpus Additive real antes de diseñar reutilización.
+   Belvedere: tres rondas, 4/156 prefijos y menos de 0,03% de trabajo candidato; corpus
+   Additive sintético: tres rondas, 2/75 y menos del 0,8%. El cierre del objetivo
    a 1 GiB sigue pendiente. Falta medir el efecto WASM/end-to-end del detector con pares comparables.
    Auditoría local incremental cerrada: comparar secuencia real de bloques, conservar orden de
    clasificación/sumas y descartar en reemplazos o cambios de contexto; la invalidación de payload

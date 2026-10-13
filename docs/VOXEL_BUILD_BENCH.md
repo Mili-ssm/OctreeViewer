@@ -324,3 +324,56 @@ account for less than 0.03% of initial full-build time. A persistent append-only
 is not justified by this bounded trajectory either. This result does not cover a fully
 resident final cut or the unfinished 1 GiB target; cache pressure and the full rebuild cost
 remain separate problems. Combined peak memory and Additive workloads still need evidence.
+
+### Deterministic Additive corpus
+
+Generate a local EPT source with 73 nodes (complete depths 0–2) and 512 points per node,
+37,376 points total. Each payload is LASzip format 0; grids stay inside their node cells and
+use a different offset at each depth. This synthetic corpus exercises retained ancestor
+payloads and progressive descendant loading; its timings do not represent real LiDAR.
+Existing output directories are rejected. Two generated trees were byte-identical (75 files).
+
+```bash
+cargo run --offline -p viewer_convert --example generate_additive_fixture -- target/additive-prefix-ept
+cargo run --release --offline -p viewer_convert -- target/additive-prefix-ept target/additive-prefix-v5.oct
+node examples/web-host/probe-cache-camera.mjs target/additive-prefix-v5.oct target/additive-prefix-run
+```
+
+Use a fresh dedicated Firefox profile per probe, with the root HTTP server and WebGPU settings
+from the host README. Conversion validates all 37,376 output points. Coordinate-only browser
+measurement uses the same default 4 px target, 256 MiB cache and 1280×720 framebuffer.
+
+Three fresh system Firefox 157.0.1 profiles completed all six phases with zero pending blocks,
+full coverage, 37,376 final voxels and zero console errors. The served WASM hash matches the
+preceding prefix runs. Raw exports: ignored `target/prefix-opportunity-additive-v5/run-{1,2,3}/`.
+
+| Initial phase | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: |
+| Full builds / reused updates | 75 / 0 | 75 / 0 | 75 / 0 |
+| Strict-prefix builds | 2 | 2 | 2 |
+| Retained / added source points | 5,120 / 1,024 | 5,120 / 1,024 | 5,120 / 1,024 |
+| Candidate full-build time (ms) | 35 | 35 | 33 |
+| All full-build time (ms) | 5,524 | 6,247 | 4,594 |
+
+Initial phases load all 73 blocks and process 1,457,664 source points across rebuilds. Camera
+adds three full builds and 112,128 processed points, with no new prefix candidates or loads.
+Candidate work is below 0.8% of initial rebuild time. Additive semantics alone do not imply a
+strict append-only traversal. This corpus does not justify persistent accumulation; broader
+Additive sources and combined peak memory remain open. These are structural opportunity
+measurements, not paired performance evidence; Chrome checks overlapped parts of the runs.
+
+An initial failed attempt used a stale prebuilt converter and produced v3, rejected by the v5
+browser. The probe then failed while reading the absent scene. Rebuilding the release converter
+and writing a distinct v5 output resolved the input problem; the failed attempt is retained
+under `target/prefix-opportunity-additive/run-1/` and is excluded from the three valid rounds.
+Always invoke `cargo run` as above when reproducing with the current checkout.
+
+Playwright MCP also exercised Chrome 155/SwiftShader file opening, camera input and desktop/mobile
+viewports (1688×768 and 390×844), without application console errors. The status reports target
+completion, but the visible statistics remain at an earlier 16 px cut and the screenshots have
+a white canvas, matching the unresolved Chrome presentation limitation. A DOM-completion wait
+therefore timed out; this is partial functional evidence, not a visual pass or camera/resize
+completion. A separate bundled Playwright Firefox attempt also timed out and is not counted
+among the successful system-Firefox probes. Screenshots are under ignored
+`target/additive-playwright-{desktop,mobile}.png`. Chrome presentation and current panel
+statistics need a dedicated reproduction before attributing the cause to this dataset or HZB.
