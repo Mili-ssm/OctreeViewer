@@ -1190,6 +1190,14 @@ fn lod_view_stats_to_js(
         ),
         ("sceneBuilds", stats.refinement_work.scene_builds as f64),
         (
+            "prefixRebuilds",
+            stats.refinement_work.prefix_rebuilds as f64,
+        ),
+        (
+            "prefixVoxelBuildMs",
+            stats.refinement_work.prefix_voxel_build_ms,
+        ),
+        (
             "reusedSceneUpdates",
             stats.refinement_work.reused_scene_updates as f64,
         ),
@@ -1249,6 +1257,18 @@ fn lod_view_stats_to_js(
         &"reusedSourcePoints".into(),
         &JsValue::from_str(&stats.refinement_work.reused_source_points.to_string()),
     )?;
+    for (name, points) in [
+        (
+            "prefixRetainedSourcePoints",
+            stats.refinement_work.prefix_retained_source_points,
+        ),
+        (
+            "prefixAddedSourcePoints",
+            stats.refinement_work.prefix_added_source_points,
+        ),
+    ] {
+        js_sys::Reflect::set(&work, &name.into(), &JsValue::from_str(&points.to_string()))?;
+    }
     js_sys::Reflect::set(&value, &"refinementWork".into(), &work)?;
     Ok(value.into())
 }

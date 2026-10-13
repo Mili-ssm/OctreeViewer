@@ -89,6 +89,12 @@ pub struct LodWorkStats {
     pub reusable_scene_builds: u64,
     pub reusable_voxel_build_ms: f64,
     pub reusable_voxel_source_points: u64,
+    /// Rebuild attempts whose actual block traversal extends the previous traversal exactly.
+    pub prefix_rebuilds: u64,
+    pub prefix_retained_source_points: u64,
+    pub prefix_added_source_points: u64,
+    /// Full rebuild time for those attempts, not time saved by incremental accumulation.
+    pub prefix_voxel_build_ms: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -414,6 +420,14 @@ impl LodDataset {
                 if same_visible_cut {
                     self.refinement_work.unchanged_cut_builds += 1;
                 }
+                let prefix_points = prefix_extension_points(
+                    self.metadata.hierarchy(),
+                    &self.cache,
+                    self.visible_plan.as_ref().map(LodTransitionPlan::node_ids),
+                    plan.node_ids(),
+                    self.last_successful_build.as_ref(),
+                    &build_context,
+                );
                 let build_started = WorkClock::start();
                 let voxel_scene_result = build_voxel_scene_with_limits(
                     self.metadata.hierarchy(),
@@ -432,6 +446,12 @@ impl LodDataset {
                 );
                 let build_elapsed_ms = build_started.elapsed_ms();
                 self.refinement_work.voxel_build_ms += build_elapsed_ms;
+                if let Some((retained, added)) = prefix_points {
+                    self.refinement_work.prefix_rebuilds += 1;
+                    self.refinement_work.prefix_retained_source_points += retained;
+                    self.refinement_work.prefix_added_source_points += added;
+                    self.refinement_work.prefix_voxel_build_ms += build_elapsed_ms;
+                }
                 let voxel_scene = voxel_scene_result?;
                 let upload_started = WorkClock::start();
                 let upload_result = renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids());
@@ -561,6 +581,48 @@ fn reusable_build_match(
     (same_cut, same_cut && same_inputs)
 }
 
+fn prefix_extension_points(
+    hierarchy: &SpatialHierarchy,
+    cache: &DecodedBlockCache,
+    previous_nodes: Option<&[NodeId]>,
+    next_nodes: &[NodeId],
+    previous_context: Option<&SuccessfulBuildContext>,
+    next_context: &SuccessfulBuildContext,
+) -> Option<(u64, u64)> {
+    if previous_context != Some(next_context) {
+        return None;
+    }
+    // Match the builder's traversal, including shared references, not sorted unique block IDs.
+    fn blocks<'a>(
+        hierarchy: &'a SpatialHierarchy,
+        cache: &'a DecodedBlockCache,
+        nodes: &'a [NodeId],
+    ) -> impl Iterator<Item = (BlockId, u64)> + 'a {
+        nodes
+            .iter()
+            .filter_map(|id| hierarchy.node(*id))
+            .flat_map(|node| node.blocks())
+            .filter_map(|id| {
+                cache
+                    .peek(*id)
+                    .map(|block| (*id, u64::try_from(block.points().len()).unwrap_or(u64::MAX)))
+            })
+    }
+    let mut next = blocks(hierarchy, cache, next_nodes);
+    let mut previous = blocks(hierarchy, cache, previous_nodes?).peekable();
+    previous.peek()?; // No retained work to save for an empty old scene.
+    let mut retained = 0_u64;
+    for (id, points) in previous {
+        if next.next().map(|(next_id, _)| next_id) != Some(id) {
+            return None;
+        }
+        retained = retained.saturating_add(points);
+    }
+    let (_, first_added) = next.next()?; // Identical scenes already have a separate reuse path.
+    let added = next.fold(first_added, |sum, (_, points)| sum.saturating_add(points));
+    Some((retained, added))
+}
+
 fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
     node_ids
         .iter()
@@ -633,7 +695,7 @@ mod tests {
 
     use super::{
         CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
-        next_lod_stage, priority_precedes, reusable_build_match,
+        next_lod_stage, prefix_extension_points, priority_precedes, reusable_build_match,
     };
     use viewer_render_wgpu::{OrbitCamera, RenderScene, build_voxel_scene};
 
@@ -807,6 +869,71 @@ mod tests {
                 ),
                 (true, false)
             );
+        }
+    }
+
+    #[test]
+    fn prefix_measurement_preserves_traversal_order_and_context_invalidation() {
+        let make = |id, parent: Option<u64>, level, ids: Vec<u64>| {
+            SpatialNode::new(
+                NodeId::new(id),
+                parent.map(NodeId::new),
+                level,
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                ids.len() as u64,
+                0.0,
+                ids.into_iter().map(BlockId::new).collect(),
+            )
+            .unwrap()
+        };
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                make(1, None, 0, vec![13]),
+                make(2, Some(1), 1, vec![11, 10]),
+                make(3, Some(1), 1, vec![12]),
+                make(4, Some(1), 1, vec![10]),
+            ],
+            vec![],
+            None,
+            HierarchySemantics::Additive,
+        )
+        .unwrap();
+        let mut cache = DecodedBlockCache::new(4096);
+        for id in 10..=13 {
+            assert!(cache.insert(block(id)).cached);
+        }
+        let baseline = build_context(1.0, [800, 600], 4.0);
+        let measure = |old: &[u64], new: &[u64], context: Option<&SuccessfulBuildContext>| {
+            prefix_extension_points(
+                &hierarchy,
+                &cache,
+                Some(&old.iter().copied().map(NodeId::new).collect::<Vec<_>>()),
+                &new.iter().copied().map(NodeId::new).collect::<Vec<_>>(),
+                context,
+                &baseline,
+            )
+        };
+        assert_eq!(measure(&[2], &[2, 3], Some(&baseline)), Some((2, 1)));
+        // Shared references count exactly as the builder visits them.
+        assert_eq!(measure(&[2], &[2, 4], Some(&baseline)), Some((2, 1)));
+        for (old, new) in [
+            (&[2][..], &[2][..]),
+            (&[2, 3], &[2]),
+            (&[1], &[2, 3]),
+            (&[2, 3], &[3, 2]),
+            (&[4], &[2]),
+            (&[], &[2]),
+        ] {
+            assert_eq!(measure(old, new, Some(&baseline)), None);
+        }
+        // Absent context also models payload/attribute invalidation.
+        assert_eq!(measure(&[2], &[2, 3], None), None);
+        for changed in [
+            build_context(2.0, [800, 600], 4.0),
+            build_context(1.0, [1024, 600], 4.0),
+            build_context(1.0, [800, 600], 8.0),
+        ] {
+            assert_eq!(measure(&[2], &[2, 3], Some(&changed)), None);
         }
     }
 

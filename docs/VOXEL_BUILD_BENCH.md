@@ -224,8 +224,8 @@ must not replace the last successfully published scene on an insertion/finish er
 
 Pending acceptance steps before introducing that state:
 
-- Measure the frequency, source points and voxel-build time of exact traversal-prefix
-  extensions with unchanged context, separately from replacements and scene reuse.
+- Extend the strict-prefix measurements below beyond Majadas to Albuera/Belvedere and
+  Additive datasets, separately from replacements and scene reuse.
 - Bound retained accumulator + projection cache + old/new instances, and define discard/rebuild
   behavior on context change or exhausted limits; preserve the existing payload invalidation.
 - Compare complete scene bytes against full rebuild for Replacement/Additive, classification,
@@ -233,3 +233,41 @@ Pending acceptance steps before introducing that state:
 - Only then prototype a single retained accumulator if eligible measured work warrants it;
   compare native/WASM and progressive browser work with equivalent inputs. No persistent
   incremental accumulator is implemented by this audit.
+
+## Strict-prefix opportunity measurement — 13-10-2026
+
+The WASM work export now records `prefixRebuilds`, `prefixRetainedSourcePoints`,
+`prefixAddedSourcePoints` and `prefixVoxelBuildMs`. Eligibility requires an unchanged successful
+build context and a strict extension of the actual ordered node/block traversal. Empty previous
+scenes and identical sequences are excluded. Shared block references count each traversal;
+source-point totals are decimal strings to preserve integer precision. Payload/attribute
+invalidation uses the existing successful-build context. These counters describe full rebuild
+attempts, including failed attempts, and do not implement persistent accumulation.
+
+The allocation-free block scan runs before the build timer; its overhead has not been measured
+against a baseline. `prefixVoxelBuildMs` is the entire candidate rebuild time, **not time saved**.
+Regression coverage checks strict extension, shared references, replacement/removal/reordering,
+empty previous scenes and context invalidation. Native renderer/WASM tests: 86 passed, three
+ignored; formatting and scoped native/WASM Clippy with warnings denied pass.
+
+Three fresh Firefox profiles ran `probe-cache-camera.mjs` on Majadas coordinates only, at
+1280×720, 4 px and the default 256 MiB cache. Each phase reached `target_complete` with zero
+pending blocks and no console errors. Raw exports are under ignored
+`target/prefix-opportunity-bench/run-{1,2,3}/`; release WASM SHA-256:
+`b40f391e76b401dab40e0baca3f95e27823e1bdc2808d879f5a8db9b6018a764`.
+
+| Initial phase | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: |
+| Full builds / reused updates | 98 / 141 | 98 / 141 | 98 / 141 |
+| Strict-prefix builds | 3 | 3 | 3 |
+| Retained / added source points | 1,870 / 125 | 1,870 / 125 | 1,870 / 125 |
+| Candidate full-build time (ms) | 3 | 4 | 4 |
+| All full-build time (ms) | 12,071 | 12,155 | 11,128 |
+
+All rounds loaded 239 blocks, processed 166,721,822 source points across full rebuilds and
+finished with 6,397 voxels. The camera phase added three full builds and 11,102,845 source
+points, produced 6,396 voxels, and added **zero** strict-prefix opportunities in every round.
+Candidate work is less than 0.04% of initial full-build time, before accounting for unavoidable
+new-point work and publication. These observations do not justify a retained append-only
+accumulator for this case. They do not rule out other datasets or a more complex removal/addition
+scheme. Such a scheme still needs equivalence and combined peak-memory evidence before design.
