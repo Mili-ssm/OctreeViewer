@@ -1,0 +1,629 @@
+{
+  "status": "complete",
+  "profile": "perf",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "cache": "local NVMe Btrfs, no purge, alternating order, sequential runs",
+  "source": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+    "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+  },
+  "binary_sha256": "a25f62e43bdc6e864d8a1b92c2f5f4cc026b73e1d564abd319f6c9fecfa14553",
+  "runs": [
+    {
+      "case": "baseline-512",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.68081137000263,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.05649302700476255
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          9.998218799002643
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          19.680853397003375
+        ],
+        [
+          "ValidatingOutput",
+          40.20523989800131
+        ],
+        [
+          "PublishingOutput",
+          42.658156477002194
+        ],
+        [
+          "Complete",
+          42.6630194620011
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-1.log",
+      "time_elapsed_seconds": 42.67,
+      "peak_rss_kib": 270292,
+      "user_seconds": 89.25,
+      "system_seconds": 13.03,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "pipeline-512",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-512-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.74537239899655,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.04918455900042318
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          11.050881211995147
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          21.758518479000486
+        ],
+        [
+          "ValidatingOutput",
+          40.32062584999949
+        ],
+        [
+          "PublishingOutput",
+          42.72249341599672
+        ],
+        [
+          "Complete",
+          42.727799391999724
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-512-1.log",
+      "time_elapsed_seconds": 42.74,
+      "peak_rss_kib": 288524,
+      "user_seconds": 91.16,
+      "system_seconds": 12.56,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "pipeline-1024",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-1024-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "1024",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 41.02685082300013,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.05735013399680611
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.979348424996715
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          19.848083231998316
+        ],
+        [
+          "ValidatingOutput",
+          38.6046351469995
+        ],
+        [
+          "PublishingOutput",
+          41.00427891500294
+        ],
+        [
+          "Complete",
+          41.01066004599852
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-1024-1.log",
+      "time_elapsed_seconds": 41.02,
+      "peak_rss_kib": 256696,
+      "user_seconds": 90.82,
+      "system_seconds": 13.03,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "pipeline-1024",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-1024-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "1024",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.21322506599972,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.04202327600069111
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.889428465001401
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          21.308040751995577
+        ],
+        [
+          "ValidatingOutput",
+          39.78722612999991
+        ],
+        [
+          "PublishingOutput",
+          42.19309655799589
+        ],
+        [
+          "Complete",
+          42.19857097899512
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-1024-2.log",
+      "time_elapsed_seconds": 42.21,
+      "peak_rss_kib": 245080,
+      "user_seconds": 90.69,
+      "system_seconds": 12.75,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "pipeline-512",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-512-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 41.95891395200306,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.053465522003534716
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.714036401004705
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          20.989813067004434
+        ],
+        [
+          "ValidatingOutput",
+          39.532137498004886
+        ],
+        [
+          "PublishingOutput",
+          41.908934213002794
+        ],
+        [
+          "Complete",
+          41.94068452400097
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-512-2.log",
+      "time_elapsed_seconds": 41.95,
+      "peak_rss_kib": 278368,
+      "user_seconds": 89.34,
+      "system_seconds": 12.65,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "baseline-512",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.82335375199909,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.04025717500189785
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.952346705002128
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          21.10567824699683
+        ],
+        [
+          "ValidatingOutput",
+          40.38678662700113
+        ],
+        [
+          "PublishingOutput",
+          42.80078490100277
+        ],
+        [
+          "Complete",
+          42.80621972699737
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-2.log",
+      "time_elapsed_seconds": 42.82,
+      "peak_rss_kib": 237884,
+      "user_seconds": 89.34,
+      "system_seconds": 12.55,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "baseline-512",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512"
+      ],
+      "returncode": 0,
+      "wall_seconds": 40.959988570997666,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.04292538699519355
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.695709510997403
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          19.231782347000262
+        ],
+        [
+          "ValidatingOutput",
+          38.55108294299862
+        ],
+        [
+          "PublishingOutput",
+          40.93791140099347
+        ],
+        [
+          "Complete",
+          40.94309693999821
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-3.log",
+      "time_elapsed_seconds": 40.95,
+      "peak_rss_kib": 248652,
+      "user_seconds": 89.21,
+      "system_seconds": 12.5,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "pipeline-512",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-512-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 40.0962263399997,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.043955948000075296
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.726358427004016
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          19.06816901100683
+        ],
+        [
+          "ValidatingOutput",
+          37.69248070300091
+        ],
+        [
+          "PublishingOutput",
+          40.07084583800315
+        ],
+        [
+          "Complete",
+          40.07707894100167
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-512-3.log",
+      "time_elapsed_seconds": 40.09,
+      "peak_rss_kib": 254364,
+      "user_seconds": 89.25,
+      "system_seconds": 12.37,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "case": "pipeline-1024",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-1024-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "1024",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.263357420997636,
+      "stages_observed_seconds": [
+        [
+          "PlanningSpatialIndex",
+          0.04566183499991894
+        ],
+        [
+          "BuildingSpatialHierarchy",
+          10.92186910899909
+        ],
+        [
+          "ReadingAndWritingBlocks",
+          21.373229447002814
+        ],
+        [
+          "ValidatingOutput",
+          39.8355199180005
+        ],
+        [
+          "PublishingOutput",
+          42.216910303002805
+        ],
+        [
+          "Complete",
+          42.249505416999455
+        ]
+      ],
+      "log": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/pipeline-1024-3.log",
+      "time_elapsed_seconds": 42.26,
+      "peak_rss_kib": 243116,
+      "user_seconds": 90.15,
+      "system_seconds": 12.38,
+      "outputs": [
+        {
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    }
+  ],
+  "summaries": {
+    "baseline-512": {
+      "wall_seconds": {
+        "median": 42.68081137000263,
+        "min": 40.959988570997666,
+        "max": 42.82335375199909
+      },
+      "peak_rss_kib": {
+        "median": 248652,
+        "min": 237884,
+        "max": 270292
+      },
+      "user_seconds": {
+        "median": 89.25,
+        "min": 89.21,
+        "max": 89.34
+      },
+      "system_seconds": {
+        "median": 12.55,
+        "min": 12.5,
+        "max": 13.03
+      },
+      "stream_finalize_sync_seconds": {
+        "median": 19.319300595998357,
+        "min": 19.281108380004298,
+        "max": 20.524386500997934
+      }
+    },
+    "pipeline-512": {
+      "wall_seconds": {
+        "median": 41.95891395200306,
+        "min": 40.0962263399997,
+        "max": 42.74537239899655
+      },
+      "peak_rss_kib": {
+        "median": 278368,
+        "min": 254364,
+        "max": 288524
+      },
+      "user_seconds": {
+        "median": 89.34,
+        "min": 89.25,
+        "max": 91.16
+      },
+      "system_seconds": {
+        "median": 12.56,
+        "min": 12.37,
+        "max": 12.65
+      },
+      "stream_finalize_sync_seconds": {
+        "median": 18.562107370999,
+        "min": 18.542324431000452,
+        "max": 18.62431169199408
+      }
+    },
+    "pipeline-1024": {
+      "wall_seconds": {
+        "median": 42.21322506599972,
+        "min": 41.02685082300013,
+        "max": 42.263357420997636
+      },
+      "peak_rss_kib": {
+        "median": 245080,
+        "min": 243116,
+        "max": 256696
+      },
+      "user_seconds": {
+        "median": 90.69,
+        "min": 90.15,
+        "max": 90.82
+      },
+      "system_seconds": {
+        "median": 12.75,
+        "min": 12.38,
+        "max": 13.03
+      },
+      "stream_finalize_sync_seconds": {
+        "median": 18.47918537800433,
+        "min": 18.462290470997686,
+        "max": 18.756551915001182
+      }
+    }
+  },
+  "measurement_limits": [
+    "Stage intervals observed from CLI stderr include stream, finalization and sync; they are not internal encoder timings.",
+    "Cache and other host processes uncontrolled; brief compilation/tests overlapped some conversion runs.",
+    "Larger budget does not raise the requested 4-worker ceiling; both budgets permit 4 workers per batch for this corpus."
+  ]
+}

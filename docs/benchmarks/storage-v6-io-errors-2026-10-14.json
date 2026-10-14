@@ -1,0 +1,42 @@
+[
+  {
+    "command": [
+      "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+      "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-error-check/corrupt.oct",
+      "progressive",
+      "1",
+      "256",
+      "--workers",
+      "4"
+    ],
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "Error: InvalidBlockChecksum(BlockId(0))\n"
+  },
+  {
+    "command": [
+      "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+      "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-1.oct",
+      "progressive",
+      "1",
+      "1",
+      "--workers",
+      "4"
+    ],
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "Error: \"decoded estimate 52204724 exceeds budget 1048576; no payload read\"\n"
+  },
+  {
+    "command": [
+      "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+      "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-io-20261014/baseline-512-1.oct",
+      "progressive",
+      "--workers",
+      "0"
+    ],
+    "returncode": 1,
+    "stdout": "",
+    "stderr": "Error: \"repetitions and decoded budget must be positive; --workers must be from 1 to 8 and applies only to progressive mode\"\n"
+  }
+]

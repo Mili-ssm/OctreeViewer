@@ -12,6 +12,7 @@ pub struct ConversionDiagnostics {
     pub block_stream: Option<DiagnosticWindow>,
     /// Sum of wall time spent preparing each parallel batch; not summed worker CPU time.
     pub block_preparation_elapsed_ns: Option<u128>,
+    /// With pipelining, preparation and write intervals overlap; do not sum them.
     /// Ordered writes, spool release, and progress reporting across batches.
     pub ordered_write_and_release_elapsed_ns: Option<u128>,
     /// Index/footer finalization and sync_all of both candidate files, before validation/publication.

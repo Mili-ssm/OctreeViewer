@@ -12,6 +12,8 @@ use viewer_format::{FormatReader, OctreeReader};
 
 const DEFAULT_REPETITIONS: usize = 3;
 const DEFAULT_BUDGET_MIB: u64 = 512;
+const DEFAULT_WORKERS: usize = 1;
+const MAX_WORKERS: usize = 8;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -23,7 +25,7 @@ enum Mode {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let input = PathBuf::from(args.next().ok_or(
-        "usage: storage_bench INPUT.oct hierarchy|reconstruct|progressive [REPETITIONS [MAX_DECODED_MIB]]",
+        "usage: storage_bench INPUT.oct hierarchy|reconstruct|progressive [REPETITIONS [MAX_DECODED_MIB]] [--workers N]",
     )?);
     let mode = match args.next().as_deref() {
         Some("hierarchy") => Mode::Hierarchy,
@@ -31,19 +33,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("progressive") => Mode::Progressive,
         _ => return Err("mode must be hierarchy, reconstruct, or progressive".into()),
     };
-    let repetitions = args
-        .next()
+    let mut positional = Vec::new();
+    let mut workers = DEFAULT_WORKERS;
+    let mut workers_was_set = false;
+    while let Some(argument) = args.next() {
+        if argument == "--workers" {
+            if workers_was_set {
+                return Err("--workers may be specified only once".into());
+            }
+            workers_was_set = true;
+            workers = args
+                .next()
+                .ok_or("--workers requires a positive integer from 1 to 8")?
+                .parse()?;
+        } else {
+            positional.push(argument);
+        }
+    }
+    let repetitions = positional
+        .first()
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(DEFAULT_REPETITIONS);
-    let budget_mib = args
-        .next()
+    let budget_mib = positional
+        .get(1)
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(DEFAULT_BUDGET_MIB);
-    if args.next().is_some() || repetitions == 0 || budget_mib == 0 {
+    if positional.len() > 2
+        || repetitions == 0
+        || budget_mib == 0
+        || !(1..=MAX_WORKERS).contains(&workers)
+        || (mode != Mode::Progressive && workers_was_set)
+    {
         return Err(
-            "repetitions and decoded budget must be positive; no extra arguments allowed".into(),
+            "repetitions and decoded budget must be positive; --workers must be from 1 to 8 and applies only to progressive mode".into(),
         );
     }
 
@@ -86,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let budget_bytes = budget_mib
             .checked_mul(1024 * 1024)
             .ok_or("budget overflow")?;
-        let checked_estimate = budget_estimate(mode, decoded_estimate, max_block_estimate);
+        let checked_estimate = budget_estimate(mode, decoded_estimate, max_block_estimate, workers);
         if mode != Mode::Hierarchy && checked_estimate > budget_bytes {
             return Err(format!(
                 "decoded estimate {checked_estimate} exceeds budget {budget_bytes}; no payload read"
@@ -125,20 +149,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Mode::Progressive => {
                 let hierarchy = reader.metadata().hierarchy();
                 let traversal = make_traversal(hierarchy);
-                let result = progressive(&mut reader, &traversal, &block_estimates)?;
+                let result = if workers == 1 {
+                    progressive(&mut reader, &traversal, &block_estimates)?
+                } else {
+                    progressive_parallel(
+                        &reader,
+                        &input,
+                        &attrs_path,
+                        &traversal,
+                        &block_estimates,
+                        workers,
+                    )?
+                };
                 println!(
-                    "{base} load_ms={:.3} verify_ms={:.3} full_ms={:.3} blocks={} points={} checksum={:016x} first_root_ms={:.3}",
-                    result.load_ms,
+                    "{base} workers_limit={workers} worker_threads={} read_ms={:.3} progressive_wall_ms={:.3} verify_ms={:.3} full_ms={:.3} blocks={} points={} checksum={:016x} first_root_read_ms={:.3}",
+                    result.worker_threads,
+                    result.read_ms,
+                    result.progressive_wall_ms,
                     result.verify_ms,
                     millis(full_start.elapsed()),
                     result.blocks,
                     result.points,
                     result.checksum,
-                    result.root_ms
+                    result.root_read_ms
                 );
                 for level in result.levels {
                     println!(
-                        "rep={repetition} level={} nodes={} blocks={} points={} node_p50_ms={:.3} node_p95_ms={:.3}",
+                        "rep={repetition} level={} nodes={} blocks={} points={} node_read_latency_p50_ms={:.3} node_read_latency_p95_ms={:.3}",
                         level.level,
                         level.nodes,
                         level.blocks,
@@ -187,9 +224,9 @@ fn estimate_block_bytes(
     Ok(estimates)
 }
 
-fn budget_estimate(mode: Mode, total: u64, max_block: u64) -> u64 {
+fn budget_estimate(mode: Mode, total: u64, max_block: u64, workers: usize) -> u64 {
     if mode == Mode::Progressive {
-        max_block
+        max_block.saturating_mul(workers as u64)
     } else {
         total
     }
@@ -229,9 +266,11 @@ struct ProgressiveStats {
     blocks: usize,
     points: u64,
     checksum: u64,
-    root_ms: f64,
-    load_ms: f64,
+    root_read_ms: f64,
+    progressive_wall_ms: f64,
+    read_ms: f64,
     verify_ms: f64,
+    worker_threads: usize,
 }
 
 #[derive(Clone)]
@@ -279,7 +318,8 @@ where
     let mut checksum = Checksum::default();
     let mut total_blocks = 0;
     let mut total_points = 0;
-    let mut root_ms = 0.0;
+    let mut root_read_ms = 0.0;
+    let progressive_start = Instant::now();
     let mut load_duration = Duration::ZERO;
     let mut verify_duration = Duration::ZERO;
     let mut samples: Vec<(u32, Duration)> = Vec::new();
@@ -315,7 +355,7 @@ where
             .into());
         }
         if node_index == 0 {
-            root_ms = millis(node_read_duration);
+            root_read_ms = millis(node_read_duration);
         }
         total_points += node_points;
         let level = node.level;
@@ -344,16 +384,216 @@ where
             .collect::<Vec<_>>();
         (entry.p50, entry.p95) = percentiles(&mut durations);
     }
-    let load_ms = millis(load_duration);
     Ok(ProgressiveStats {
         levels,
         blocks: total_blocks,
         points: total_points,
         checksum: checksum.finish(),
-        root_ms,
-        load_ms,
+        root_read_ms,
+        progressive_wall_ms: millis(progressive_start.elapsed()),
+        read_ms: millis(load_duration),
         verify_ms: millis(verify_duration),
+        worker_threads: 0,
     })
+}
+
+fn progressive_parallel(
+    reader: &FormatReader<File>,
+    input: &Path,
+    attrs_path: &Path,
+    traversal: &[TraversalNode],
+    block_estimates: &BTreeMap<BlockId, u64>,
+    workers: usize,
+) -> Result<ProgressiveStats, Box<dyn std::error::Error>> {
+    let mut levels: Vec<LevelStats> = Vec::new();
+    let mut samples: Vec<(u32, Duration)> = Vec::new();
+    let mut checksum = Checksum::default();
+    let mut total_blocks = 0;
+    let mut total_points = 0;
+    let mut read_duration = Duration::ZERO;
+    let mut verify_duration = Duration::ZERO;
+    let mut root_read = Duration::ZERO;
+    let worker_threads = workers;
+    let progressive_start = Instant::now();
+    let jobs = traversal
+        .iter()
+        .enumerate()
+        .flat_map(|(node_index, node)| {
+            node.blocks
+                .iter()
+                .map(move |block_id| (node_index, *block_id))
+        })
+        .collect::<Vec<_>>();
+    let mut node_index = 0;
+    let mut node_blocks = 0;
+    let mut node_points = 0_u64;
+    let mut node_read = Duration::ZERO;
+    let mut forks = Vec::with_capacity(workers);
+    for _ in 0..workers {
+        let mut fork = reader.fork_reader(File::open(input)?);
+        fork.attach_attributes(File::open(attrs_path)?)?;
+        forks.push(fork);
+    }
+    std::thread::scope(|scope| -> Result<(), Box<dyn std::error::Error>> {
+        use std::sync::mpsc::sync_channel;
+
+        let mut job_senders = Vec::with_capacity(workers);
+        let mut result_receivers = Vec::with_capacity(workers);
+        let mut handles = Vec::with_capacity(workers);
+        for mut fork in forks {
+            let (job_tx, job_rx) = sync_channel::<BlockId>(0);
+            let (result_tx, result_rx) =
+                sync_channel::<Result<(Duration, PointBlock), viewer_format::FormatError>>(0);
+            job_senders.push(job_tx);
+            result_receivers.push(result_rx);
+            handles.push(scope.spawn(move || {
+                while let Ok(block_id) = job_rx.recv() {
+                    let start = Instant::now();
+                    let result = fork
+                        .read_block(block_id)
+                        .map(|block| (start.elapsed(), block));
+                    if result_tx.send(result).is_err() {
+                        break;
+                    }
+                }
+            }));
+        }
+        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+            for batch in jobs.chunks(workers) {
+                for (worker_index, (_, block_id)) in batch.iter().enumerate() {
+                    job_senders[worker_index]
+                        .send(*block_id)
+                        .map_err(|_| "progressive worker job channel closed")?;
+                }
+                for ((job_node_index, block_id), result_receiver) in
+                    batch.iter().zip(&result_receivers)
+                {
+                    let (read_elapsed, block) = result_receiver
+                        .recv()
+                        .map_err(|_| "progressive worker result channel closed")??;
+                    while node_index < *job_node_index {
+                        finish_parallel_node(
+                            node_index,
+                            node_blocks,
+                            node_points,
+                            node_read,
+                            traversal,
+                            &mut levels,
+                            &mut samples,
+                        )?;
+                        if node_index == 0 {
+                            root_read = node_read;
+                        }
+                        total_points += node_points;
+                        node_index += 1;
+                        node_blocks = 0;
+                        node_points = 0;
+                        node_read = Duration::ZERO;
+                    }
+                    if block.id() != *block_id {
+                        return Err(format!("block {} ID mismatch", block_id.get()).into());
+                    }
+                    let _one_live_block_budget = block_estimates
+                        .get(block_id)
+                        .ok_or("missing block estimate")?;
+                    read_duration += read_elapsed;
+                    node_read += read_elapsed;
+                    node_points += block.points().len() as u64;
+                    let verify_start = Instant::now();
+                    hash_block(&mut checksum, &block);
+                    verify_duration += verify_start.elapsed();
+                    node_blocks += 1;
+                    total_blocks += 1;
+                }
+            }
+            Ok(())
+        })();
+        // Closing coordinator endpoints lets workers leave recv/send before joining,
+        // including when dispatch or aggregation returns an error.
+        drop(job_senders);
+        drop(result_receivers);
+        for handle in handles {
+            handle
+                .join()
+                .map_err(|_| "progressive reader worker panicked")?;
+        }
+        result
+    })?;
+    while node_index < traversal.len() {
+        finish_parallel_node(
+            node_index,
+            node_blocks,
+            node_points,
+            node_read,
+            traversal,
+            &mut levels,
+            &mut samples,
+        )?;
+        if node_index == 0 {
+            root_read = node_read;
+        }
+        total_points += node_points;
+        node_index += 1;
+        node_blocks = 0;
+        node_points = 0;
+        node_read = Duration::ZERO;
+    }
+    for entry in &mut levels {
+        let mut durations = samples
+            .iter()
+            .filter(|(level, _)| *level == entry.level)
+            .map(|(_, duration)| *duration)
+            .collect::<Vec<_>>();
+        (entry.p50, entry.p95) = percentiles(&mut durations);
+    }
+    Ok(ProgressiveStats {
+        levels,
+        blocks: total_blocks,
+        points: total_points,
+        checksum: checksum.finish(),
+        root_read_ms: millis(root_read),
+        progressive_wall_ms: millis(progressive_start.elapsed()),
+        read_ms: millis(read_duration),
+        verify_ms: millis(verify_duration),
+        worker_threads,
+    })
+}
+
+fn finish_parallel_node(
+    node_index: usize,
+    blocks: usize,
+    points: u64,
+    read: Duration,
+    traversal: &[TraversalNode],
+    levels: &mut Vec<LevelStats>,
+    samples: &mut Vec<(u32, Duration)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let node = &traversal[node_index];
+    if points != node.point_count {
+        return Err(format!(
+            "node {} point count mismatch: metadata {}, read {points}",
+            node.id.get(),
+            node.point_count
+        )
+        .into());
+    }
+    samples.push((node.level, read));
+    match levels.last_mut() {
+        Some(entry) if entry.level == node.level => {
+            entry.nodes += 1;
+            entry.blocks += blocks;
+            entry.points += points;
+        }
+        _ => levels.push(LevelStats {
+            level: node.level,
+            nodes: 1,
+            blocks,
+            points,
+            p50: read,
+            p95: read,
+        }),
+    }
+    Ok(())
 }
 
 struct Checksum(u64);
@@ -464,8 +704,9 @@ mod tests {
 
     #[test]
     fn progressive_budget_uses_largest_live_block() {
-        assert_eq!(budget_estimate(Mode::Progressive, 900, 300), 300);
-        assert_eq!(budget_estimate(Mode::Reconstruct, 900, 300), 900);
+        assert_eq!(budget_estimate(Mode::Progressive, 900, 300, 1), 300);
+        assert_eq!(budget_estimate(Mode::Progressive, 900, 300, 4), 1200);
+        assert_eq!(budget_estimate(Mode::Reconstruct, 900, 300, 4), 900);
     }
 
     #[test]

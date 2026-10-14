@@ -89,6 +89,7 @@ pub struct ConvertOptions {
     max_memory_bytes: u64,
     spatial_workers: usize,
     spatial_workers_explicit: bool,
+    pipelined_writes: bool,
     spatial_divisions: u8,
     format_version: FormatVersion,
 }
@@ -134,6 +135,7 @@ impl ConvertOptions {
             max_memory_bytes,
             spatial_workers: default_spatial_workers(),
             spatial_workers_explicit: false,
+            pipelined_writes: false,
             spatial_divisions: 2,
             format_version: FormatVersion::V5,
         })
@@ -158,6 +160,17 @@ impl ConvertOptions {
         self.spatial_workers = workers;
         self.spatial_workers_explicit = true;
         Ok(self)
+    }
+
+    /// Overlap ordered output with preparation of one following batch.
+    /// The planner reserves two batches; this is an estimate, not an RSS limit.
+    pub fn with_pipelined_writes(mut self, enabled: bool) -> Self {
+        self.pipelined_writes = enabled;
+        self
+    }
+
+    pub const fn pipelined_writes(self) -> bool {
+        self.pipelined_writes
     }
 
     pub const fn spatial_workers(self) -> usize {
@@ -189,6 +202,7 @@ impl Default for ConvertOptions {
             max_memory_bytes: DEFAULT_MEMORY_BUDGET_BYTES,
             spatial_workers: default_spatial_workers(),
             spatial_workers_explicit: false,
+            pipelined_writes: false,
             spatial_divisions: 2,
             format_version: FormatVersion::V5,
         }
@@ -692,6 +706,7 @@ fn convert_file_inner(
         StreamBlockOptions {
             temporary_path: &temporary_path,
             requested_workers: options.spatial_workers(),
+            pipelined_writes: options.pipelined_writes(),
             memory_budget_bytes: options.max_memory_budget_bytes(),
             on_progress,
             diagnostics: diagnostics.as_deref_mut(),
@@ -819,6 +834,7 @@ impl ConversionPlan {
 struct StreamBlockOptions<'a> {
     temporary_path: &'a Path,
     requested_workers: usize,
+    pipelined_writes: bool,
     memory_budget_bytes: u64,
     on_progress: &'a mut dyn FnMut(ConversionProgress) -> bool,
     diagnostics: Option<&'a mut ConversionDiagnostics>,
@@ -838,6 +854,7 @@ where
     let StreamBlockOptions {
         temporary_path,
         requested_workers,
+        pipelined_writes,
         memory_budget_bytes,
         on_progress,
         mut diagnostics,
@@ -876,11 +893,15 @@ where
     let available_memory = memory_budget_bytes.saturating_sub(plan.estimated_peak_memory_bytes);
     let memory_limited_workers = 1_usize
         .saturating_add(usize::try_from(available_memory / bytes_per_worker).unwrap_or(usize::MAX));
+    // A rendezvous hand-off retains at most the batch being written and one
+    // being prepared. Disable overlap when the budget only admits one block.
+    let pipeline = pipelined_writes && memory_limited_workers >= 2;
+    let batch_slots = if pipeline { 2 } else { 1 };
     let worker_count = requested_workers
-        .min(memory_limited_workers)
+        .min((memory_limited_workers / batch_slots).max(1))
         .min(plan.blocks.len().max(1));
-    for batch in plan.blocks.chunks(worker_count) {
-        let prepare_started = Instant::now();
+    let prepare = |batch: &[PlannedBlock]| {
+        let started = Instant::now();
         let prepared = batch
             .par_iter()
             .map(|block| {
@@ -889,67 +910,76 @@ where
                     .map_err(ConvertError::Format)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let batch_preparation_ns = prepare_started.elapsed().as_nanos();
-        if let Some(diagnostics) = diagnostics.as_deref_mut() {
-            let batch_capacity = prepared.iter().try_fold(0_u64, |total, block| {
-                let capacity = u64::try_from(encoder.encoded_payload_capacity_bytes(block))
-                    .map_err(|_| ConvertError::SizeOverflow)?;
-                diagnostics.block_stream_max_encoded_payload_capacity_per_block_bytes = Some(
+        Ok((prepared, started.elapsed().as_nanos()))
+    };
+    process_batches(
+        &plan.blocks,
+        worker_count,
+        pipeline,
+        prepare,
+        |batch, (prepared, batch_preparation_ns)| {
+            if let Some(diagnostics) = diagnostics.as_deref_mut() {
+                let batch_capacity = prepared.iter().try_fold(0_u64, |total, block| {
+                    let capacity = u64::try_from(encoder.encoded_payload_capacity_bytes(block))
+                        .map_err(|_| ConvertError::SizeOverflow)?;
+                    diagnostics.block_stream_max_encoded_payload_capacity_per_block_bytes = Some(
+                        diagnostics
+                            .block_stream_max_encoded_payload_capacity_per_block_bytes
+                            .unwrap_or(0)
+                            .max(capacity),
+                    );
+                    total
+                        .checked_add(capacity)
+                        .ok_or(ConvertError::SizeOverflow)
+                })?;
+                diagnostics.block_stream_max_prepared_blocks = Some(
                     diagnostics
-                        .block_stream_max_encoded_payload_capacity_per_block_bytes
+                        .block_stream_max_prepared_blocks
                         .unwrap_or(0)
-                        .max(capacity),
+                        .max(u64::try_from(prepared.len()).unwrap_or(u64::MAX)),
                 );
-                total
-                    .checked_add(capacity)
-                    .ok_or(ConvertError::SizeOverflow)
-            })?;
-            diagnostics.block_stream_max_prepared_blocks = Some(
-                diagnostics
-                    .block_stream_max_prepared_blocks
-                    .unwrap_or(0)
-                    .max(u64::try_from(prepared.len()).unwrap_or(u64::MAX)),
-            );
-            diagnostics.block_stream_max_encoded_payload_capacity_per_batch_bytes = Some(
-                diagnostics
-                    .block_stream_max_encoded_payload_capacity_per_batch_bytes
-                    .unwrap_or(0)
-                    .max(batch_capacity),
-            );
-            for block in batch {
-                let counter = if block.is_source_points {
-                    &mut diagnostics.block_stream_source_payload_read_bytes
-                } else {
-                    &mut diagnostics.block_stream_lod_payload_read_bytes
-                };
-                let total = counter.get_or_insert(0);
-                *total = total
-                    .checked_add(block.payload_bytes()?)
-                    .ok_or(ConvertError::SizeOverflow)?;
+                diagnostics.block_stream_max_encoded_payload_capacity_per_batch_bytes = Some(
+                    diagnostics
+                        .block_stream_max_encoded_payload_capacity_per_batch_bytes
+                        .unwrap_or(0)
+                        .max(batch_capacity),
+                );
+                for block in batch {
+                    let counter = if block.is_source_points {
+                        &mut diagnostics.block_stream_source_payload_read_bytes
+                    } else {
+                        &mut diagnostics.block_stream_lod_payload_read_bytes
+                    };
+                    let total = counter.get_or_insert(0);
+                    *total = total
+                        .checked_add(block.payload_bytes()?)
+                        .ok_or(ConvertError::SizeOverflow)?;
+                }
             }
-        }
-        block_preparation_ns = block_preparation_ns.saturating_add(batch_preparation_ns);
-        let write_started = Instant::now();
-        for (block, prepared) in batch.iter().zip(prepared) {
-            writer.write_prepared_block(prepared)?;
-            // The whole batch has finished reading before any shared spool is removed.
-            block.release_spool_after_write()?;
-            if block.is_source_points {
-                processed += block.point_count() as u64;
+            block_preparation_ns = block_preparation_ns.saturating_add(batch_preparation_ns);
+            let write_started = Instant::now();
+            for (block, prepared) in batch.iter().zip(prepared) {
+                writer.write_prepared_block(prepared)?;
+                // The whole batch has finished reading before any shared spool is removed.
+                block.release_spool_after_write()?;
+                if block.is_source_points {
+                    processed += block.point_count() as u64;
+                }
+                emit_progress(
+                    on_progress,
+                    ConversionProgress {
+                        stage: ConversionStage::ReadingAndWritingBlocks,
+                        points_processed: processed,
+                        total_points: plan.point_count,
+                        bytes_written: fs::metadata(temporary_path)?.len(),
+                    },
+                    processed,
+                )?;
             }
-            emit_progress(
-                on_progress,
-                ConversionProgress {
-                    stage: ConversionStage::ReadingAndWritingBlocks,
-                    points_processed: processed,
-                    total_points: plan.point_count,
-                    bytes_written: fs::metadata(temporary_path)?.len(),
-                },
-                processed,
-            )?;
-        }
-        ordered_write_ns = ordered_write_ns.saturating_add(write_started.elapsed().as_nanos());
-    }
+            ordered_write_ns = ordered_write_ns.saturating_add(write_started.elapsed().as_nanos());
+            Ok(())
+        },
+    )?;
     if processed != plan.point_count {
         return Err(ConvertError::PointCountMismatch {
             expected: plan.point_count,
@@ -964,6 +994,40 @@ where
     Ok(ConversionWorkerStats {
         worker_limit: worker_count,
         estimated_bytes_per_worker: bytes_per_worker,
+    })
+}
+
+/// A zero-capacity channel bounds overlap to two batches. Dropping the receiver
+/// on cancellation/error wakes the producer before the scoped thread is joined.
+fn process_batches<T: Sync, P: Send>(
+    items: &[T],
+    width: usize,
+    pipeline: bool,
+    prepare: impl Fn(&[T]) -> Result<P, ConvertError> + Sync,
+    mut consume: impl FnMut(&[T], P) -> Result<(), ConvertError>,
+) -> Result<(), ConvertError> {
+    if !pipeline {
+        for batch in items.chunks(width) {
+            consume(batch, prepare(batch)?)?;
+        }
+        return Ok(());
+    }
+    thread::scope(|scope| {
+        let (sender, receiver) = mpsc::sync_channel(0);
+        let prepare = &prepare;
+        scope.spawn(move || {
+            for batch in items.chunks(width) {
+                let result = prepare(batch);
+                let failed = result.is_err();
+                if sender.send(result).is_err() || failed {
+                    break;
+                }
+            }
+        });
+        for (batch, prepared) in items.chunks(width).zip(receiver) {
+            consume(batch, prepared?)?;
+        }
+        Ok(())
     })
 }
 
@@ -1961,6 +2025,115 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_prepares_next_batch_while_consuming_in_order() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut written = Vec::new();
+        super::process_batches(
+            &[0, 1, 2, 3],
+            1,
+            true,
+            |batch| {
+                if batch[0] == 1 {
+                    sender.send(()).unwrap();
+                }
+                Ok(batch[0])
+            },
+            |batch, prepared| {
+                if batch[0] == 0 {
+                    receiver
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                }
+                assert_eq!(batch[0], prepared);
+                written.push(prepared);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(written, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn pipeline_propagates_preparation_and_consumer_errors_without_deadlock() {
+        for fail_preparation in [false, true] {
+            let result = super::process_batches(
+                &[0, 1, 2, 3],
+                1,
+                true,
+                |batch| {
+                    if fail_preparation && batch[0] == 1 {
+                        Err(ConvertError::InvalidMemoryBudget)
+                    } else {
+                        Ok(batch[0])
+                    }
+                },
+                |_, _| {
+                    if fail_preparation {
+                        Ok(())
+                    } else {
+                        Err(ConvertError::InvalidMemoryBudget)
+                    }
+                },
+            );
+            assert!(matches!(result, Err(ConvertError::InvalidMemoryBudget)));
+        }
+    }
+
+    #[test]
+    fn pipeline_with_no_memory_margin_preserves_serial_output() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let serial_output = dir.join("serial.oct");
+        let output = dir.join("tight.oct");
+        fixture(&input, false, true, 100);
+        let options = ConvertOptions::new(8, 0.01)
+            .unwrap()
+            .with_spatial_workers(1)
+            .unwrap()
+            .with_format_version(viewer_format::FormatVersion::V6_PRE4)
+            .unwrap();
+        let serial = convert_file(&input, &serial_output, options).unwrap();
+        let tight = ConvertOptions::with_memory_budget(8, 0.01, serial.estimated_peak_memory_bytes)
+            .unwrap()
+            .with_spatial_workers(1)
+            .unwrap()
+            .with_format_version(viewer_format::FormatVersion::V6_PRE4)
+            .unwrap()
+            .with_pipelined_writes(true);
+        let report = convert_file(&input, &output, tight).unwrap();
+        assert_eq!(report.block_preparation.unwrap().worker_limit, 1);
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            fs::read(&serial_output).unwrap()
+        );
+        assert_eq!(
+            fs::read(output_attributes_path(&output)).unwrap(),
+            fs::read(output_attributes_path(&serial_output)).unwrap()
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cancelling_pipelined_conversion_does_not_publish_outputs() {
+        let dir = test_dir();
+        let input = dir.join("source.las");
+        let output = dir.join("pipelined.oct");
+        fixture(&input, false, true, 100);
+        let options = ConvertOptions::new(8, 0.01)
+            .unwrap()
+            .with_format_version(viewer_format::FormatVersion::V6_PRE4)
+            .unwrap()
+            .with_pipelined_writes(true);
+        let result = convert_file_with_progress(&input, &output, options, |event| {
+            event.stage != ConversionStage::ReadingAndWritingBlocks || event.points_processed == 0
+        });
+        assert!(matches!(result, Err(ConvertError::Cancelled { .. })));
+        assert!(!output.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
         for version in [
             viewer_format::FormatVersion::V6_PRE1,
@@ -1981,7 +2154,10 @@ mod tests {
                 .unwrap()
                 .with_spatial_divisions(4)
                 .unwrap();
-            let parallel_options = serial_options.with_spatial_workers(2).unwrap();
+            let parallel_options = serial_options
+                .with_spatial_workers(2)
+                .unwrap()
+                .with_pipelined_writes(true);
 
             let serial = convert_file(&input, &serial_output, serial_options).unwrap();
             let parallel = convert_file(&input, &parallel_output, parallel_options).unwrap();

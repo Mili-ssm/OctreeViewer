@@ -415,3 +415,22 @@ candidatos pre3 y el reemplazo solo cuando reduce bytes almacenados.
 Majadas: pareja −13,62 %, BFS 40,948 → 38,684 s; Albuera: −19,15 %, BFS 68,628 → 59,790 s
 (medianas de tres lecturas). Conversión observada +2,32 % / +4,81 %, N=1; NVMe con caché
 sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
+
+
+## Entrega: concurrencia de I/O para V6 — 14-10-2026
+
+- [x] Añadir `--pipeline-writes` optativo para LAS/LAZ: preparar el siguiente lote mientras
+  se escribe el actual, dos lotes como máximo y anchura ajustada al presupuesto estimado.
+  Mantiene append ordenado, revisión física y validación antes de publicar.
+- [x] Verificar bytes idénticos pre1–pre4, orden/solapamiento, errores y cancelación.
+- [x] Comparar tres rondas alternadas de conversión pre4 con 4 workers, pipeline apagado/
+  encendido a 512 MiB y encendido a 1.024 MiB; hashes idénticos, tiempos y RSS reales.
+  Belvedere: total mediano 42,681 → 41,959 s (−1,7 %, rangos solapados); la opción sigue
+  apagada por defecto. Más presupuesto no aumentó concurrencia con 4 workers solicitados.
+- [x] Medir lectura BFS en `storage_bench --workers 1|2|4`, con lectores persistentes y
+  presupuesto simultáneo: Belvedere 11,131 → 6,918 s (−37,8 %), RSS 20,5 → 46,2 MiB;
+  tres rondas por caso y checksum idéntico. Es el ejemplo nativo, no la carga del viewer.
+- [ ] Medir acceso selectivo/HDD/remoto y definir contrato de lotes/cancelación antes de
+  incorporar lectura paralela al viewer. La validación del conversor ya lee en paralelo.
+- [ ] Retomar selector de codecs más barato y grupos RGB exactos solo tras perfiles por
+  payload; criterios y contraejemplos en [el informe de I/O](docs/STORAGE_V6_IO.md).

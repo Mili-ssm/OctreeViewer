@@ -38,12 +38,18 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut max_error = ConvertOptions::default().max_quantization_error();
     let mut max_memory_bytes = ConvertOptions::default().max_memory_budget_bytes();
     let mut spatial_workers = None;
+    let mut pipelined_writes = false;
     let mut spatial_divisions = ConvertOptions::default().spatial_divisions();
     let mut checkpoint_mode = None;
     let mut format_version = ConvertOptions::default().format_version();
     let mut index = 2;
     while index < arguments.len() {
         let flag = arguments[index].to_string_lossy();
+        if flag == "--pipeline-writes" {
+            pipelined_writes = true;
+            index += 1;
+            continue;
+        }
         if flag == "--checkpoint" || flag == "--resume" {
             if checkpoint_mode.is_some() {
                 return Err("--checkpoint and --resume cannot be combined".into());
@@ -79,6 +85,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
             .with_spatial_divisions(spatial_divisions)?
             .with_format_version(format_version)?;
+    options = options.with_pipelined_writes(pipelined_writes);
     if let Some(workers) = spatial_workers {
         options = options.with_spatial_workers(workers)?;
     }
@@ -157,11 +164,12 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 
 fn print_help() {
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--checkpoint|--resume]\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume]\n\
          Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
          Defaults: 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
+         --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Checkpoint/resume and spatial repartition options apply only to LAS/LAZ inputs.\n\
          The converter preserves intensity and RGB16, and reports omitted LAS dimensions."
