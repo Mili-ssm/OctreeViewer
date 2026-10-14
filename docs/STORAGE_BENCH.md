@@ -451,3 +451,12 @@ Reproducir con el runner existente y `--format-version v6.2-pre`; conservar las 
 opciones y condiciones para v5/pre1. El JSON guarda comandos, hashes binarios/fuentes/salidas,
 código medido y resultados crudos. La fuente sintética se genera con el script conservado en
 el informe de navegador; las demás fuentes se usan localmente sin redistribuirlas.
+
+## Diccionarios de atributos — 14-10-2026
+
+El [experimento independiente](ATTRIBUTE_DICTIONARY_BENCH.md) compara streams materializados
+raw/LZ4, diccionario por columna adaptativo y combinaciones completas de atributos + RGB. En
+Belvedere completo los payloads vigentes ocupan 610.586.795 B; los streams experimentales con
+cabeceras ocupan 439.593.178 / 341.724.528 B. No son archivos `.octattrs` compatibles. El
+diccionario conjunto aumenta tamaño en Outer Banks y la sintética y acopla consultas selectivas.
+El informe conserva CPU, cardinalidad, hashes, limitaciones y siguientes candidatos físicos.

@@ -1,0 +1,841 @@
+{
+  "created_utc": "2026-10-14T09:19:04.907033+00:00",
+  "git_head": "ed1ab960d90fd5dfc424e4d305dfb6d48544dfc2",
+  "binary_sha256": "626e69233d8943d8da2f8f01141149376e64d5fc457b3a366be9a7606685169e",
+  "example_sha256": "ac7257e1adddf723acaec384b801955183e1170e553b1a08e508d8227a59a402",
+  "runner_sha256": "875ee005c61bebb21d3540f5a3a0a066fe86b276b42e60057df4aa918f432323",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "cpu": "AMD Ryzen AI 9 365 w/ Radeon 880M",
+  "cache": "uncontrolled OS cache; persisted streams reread immediately; CPU timing excludes file I/O",
+  "timing": "per-block mean of repeated CPU operations, then sum; fixed mode order; not end-to-end conversion/read time",
+  "samples": [
+    {
+      "name": "Outer-Banks",
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/attribute_dictionary_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Outer-Banks-e430/1-v6.2-pre/output-run-001.oct",
+        "target/attribute-dictionary-20261014/Outer-Banks",
+        "4294967295",
+        "3"
+      ],
+      "inputs": {
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Outer-Banks-e430/1-v6.2-pre/output-run-001.oct": {
+          "bytes": 1107463,
+          "sha256": "ed52b9e2942b8bf9f6ad031e1f181b9afd7f72ea2231c6075f3c09f4dc6cddf9"
+        },
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Outer-Banks-e430/1-v6.2-pre/output-run-001.octattrs": {
+          "bytes": 914965,
+          "sha256": "972de1e4a461e43731720c7339714c3ba874a53f5d2bef704d696a33b84a54c2"
+        }
+      },
+      "artifacts": {
+        "target/attribute-dictionary-20261014/Outer-Banks/baseline.bin": {
+          "bytes": 928437,
+          "sha256": "2623b4abb0347046b19459aa1df2870076a612b16c928902f9b3ecd5f08276d1"
+        },
+        "target/attribute-dictionary-20261014/Outer-Banks/column_adaptive.bin": {
+          "bytes": 810533,
+          "sha256": "39eda44bee6d77f07bb10342e210c9ac3ab3adc992954c93d0d5e7e55c367976"
+        },
+        "target/attribute-dictionary-20261014/Outer-Banks/tuple_dictionary.bin": {
+          "bytes": 1172562,
+          "sha256": "bd620475361d8e312f2a1c1f585cbbb497e6ddbcfcaa9bec440ade9fc704e0a8"
+        }
+      },
+      "summaries": [
+        {
+          "summary": true,
+          "mode": "baseline",
+          "blocks": 47,
+          "rows": 111768,
+          "repetitions": 3,
+          "original_payload_bytes": 914901,
+          "container_bytes": 928437,
+          "encode_ms": 2.289123,
+          "decode_ms": 0.847974
+        },
+        {
+          "summary": true,
+          "mode": "column_adaptive",
+          "blocks": 47,
+          "rows": 111768,
+          "repetitions": 3,
+          "original_payload_bytes": 914901,
+          "container_bytes": 810533,
+          "encode_ms": 24.167322,
+          "decode_ms": 3.480585
+        },
+        {
+          "summary": true,
+          "mode": "tuple_dictionary",
+          "blocks": 47,
+          "rows": 111768,
+          "repetitions": 3,
+          "original_payload_bytes": 914901,
+          "container_bytes": 1172562,
+          "encode_ms": 10.783498,
+          "decode_ms": 1.996727
+        }
+      ],
+      "columns": {
+        "0": {
+          "baseline": {
+            "bytes": 67130,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 3
+          },
+          "column_adaptive": {
+            "bytes": 23972,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 127,
+            "width": 3
+          }
+        },
+        "1": {
+          "baseline": {
+            "bytes": 218619,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 151009,
+            "selected_dictionary_blocks": 33,
+            "sum_local_cardinality_when_selected": 11596,
+            "width": 2
+          }
+        },
+        "2": {
+          "baseline": {
+            "bytes": 2480,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 1551,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 47,
+            "width": 1
+          }
+        },
+        "3": {
+          "baseline": {
+            "bytes": 2480,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 1551,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 47,
+            "width": 1
+          }
+        },
+        "4": {
+          "baseline": {
+            "bytes": 2480,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 1551,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 47,
+            "width": 1
+          }
+        },
+        "5": {
+          "baseline": {
+            "bytes": 3791,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 4
+          },
+          "column_adaptive": {
+            "bytes": 1692,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 47,
+            "width": 4
+          }
+        },
+        "6": {
+          "baseline": {
+            "bytes": 2480,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 1551,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 47,
+            "width": 1
+          }
+        },
+        "7": {
+          "baseline": {
+            "bytes": 2919,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 1598,
+            "selected_dictionary_blocks": 47,
+            "sum_local_cardinality_when_selected": 47,
+            "width": 2
+          }
+        },
+        "8": {
+          "baseline": {
+            "bytes": 626058,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 8
+          },
+          "column_adaptive": {
+            "bytes": 626058,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 8
+          }
+        }
+      },
+      "tuple_totals": {
+        "sum_local_cardinality": 111768,
+        "transpose_ms": 2.3721599999999996
+      },
+      "raw_log": {
+        "path": "target/attribute-dictionary-20261014/Outer-Banks.stdout.jsonl",
+        "sha256": "21461e8f77247f49a5959d8c7bb8dcf8a26600e2935212e39bcf29bb34812f07",
+        "records": 896
+      }
+    },
+    {
+      "name": "Bunny",
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/attribute_dictionary_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Bunny-parcial/1-v6.2-pre/output-run-001.oct",
+        "target/attribute-dictionary-20261014/Bunny",
+        "4294967295",
+        "3"
+      ],
+      "inputs": {
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Bunny-parcial/1-v6.2-pre/output-run-001.oct": {
+          "bytes": 206971,
+          "sha256": "0c3b1b5f78173c74930e90c9a4a671fe34502aea3ee8a4d5a179994a37bc1e0a"
+        },
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Bunny-parcial/1-v6.2-pre/output-run-001.octattrs": {
+          "bytes": 4214,
+          "sha256": "203c6b72226ed46f21fa7291538839d959e7fcdb17731ddf83fc262d944e7773"
+        }
+      },
+      "artifacts": {
+        "target/attribute-dictionary-20261014/Bunny/baseline.bin": {
+          "bytes": 9014,
+          "sha256": "373f5fc59c7f13d1a6bd589a631f9e14b95559ce9dff5a77e5e1da1f0b20a04f"
+        },
+        "target/attribute-dictionary-20261014/Bunny/column_adaptive.bin": {
+          "bytes": 5149,
+          "sha256": "6e110f93ef9f5fbadcee5b87f43add2e76264ae8123023ba756146f06379088b"
+        },
+        "target/attribute-dictionary-20261014/Bunny/tuple_dictionary.bin": {
+          "bytes": 893,
+          "sha256": "abd9659262631ee1ee5edd1df98e8b70f67b171cd4d29fb65eb86b47ddc3fc6e"
+        }
+      },
+      "summaries": [
+        {
+          "summary": true,
+          "mode": "baseline",
+          "blocks": 19,
+          "rows": 40577,
+          "repetitions": 3,
+          "original_payload_bytes": 4150,
+          "container_bytes": 9014,
+          "encode_ms": 0.114076,
+          "decode_ms": 0.098865
+        },
+        {
+          "summary": true,
+          "mode": "column_adaptive",
+          "blocks": 19,
+          "rows": 40577,
+          "repetitions": 3,
+          "original_payload_bytes": 4150,
+          "container_bytes": 5149,
+          "encode_ms": 4.523748,
+          "decode_ms": 0.687468
+        },
+        {
+          "summary": true,
+          "mode": "tuple_dictionary",
+          "blocks": 19,
+          "rows": 40577,
+          "repetitions": 3,
+          "original_payload_bytes": 4150,
+          "container_bytes": 893,
+          "encode_ms": 0.642858,
+          "decode_ms": 0.090331
+        }
+      ],
+      "columns": {
+        "0": {
+          "baseline": {
+            "bytes": 1303,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 3
+          },
+          "column_adaptive": {
+            "bytes": 665,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 3
+          }
+        },
+        "1": {
+          "baseline": {
+            "bytes": 1163,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 646,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 2
+          }
+        },
+        "2": {
+          "baseline": {
+            "bytes": 986,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 627,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 1
+          }
+        },
+        "3": {
+          "baseline": {
+            "bytes": 986,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 627,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 1
+          }
+        },
+        "4": {
+          "baseline": {
+            "bytes": 986,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 627,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 1
+          }
+        },
+        "5": {
+          "baseline": {
+            "bytes": 1460,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 4
+          },
+          "column_adaptive": {
+            "bytes": 684,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 4
+          }
+        },
+        "6": {
+          "baseline": {
+            "bytes": 986,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 627,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 1
+          }
+        },
+        "7": {
+          "baseline": {
+            "bytes": 1144,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 646,
+            "selected_dictionary_blocks": 19,
+            "sum_local_cardinality_when_selected": 19,
+            "width": 2
+          }
+        }
+      },
+      "tuple_totals": {
+        "sum_local_cardinality": 19,
+        "transpose_ms": 0.7433350000000001
+      },
+      "raw_log": {
+        "path": "target/attribute-dictionary-20261014/Bunny.stdout.jsonl",
+        "sha256": "28c6ad76cba9a700b17c2fc9c1a857b1ba698a473ec10b9f638cc97248193239",
+        "records": 326
+      }
+    },
+    {
+      "name": "Sintetica",
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/attribute_dictionary_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Sintetica-agrupada/1-v6.2-pre/output-run-001.oct",
+        "target/attribute-dictionary-20261014/Sintetica",
+        "4294967295",
+        "3"
+      ],
+      "inputs": {
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Sintetica-agrupada/1-v6.2-pre/output-run-001.oct": {
+          "bytes": 43293,
+          "sha256": "547e007c87d29351bb347dc87ddcb06f28d8a9b764b98c78e63b011abdafeef3"
+        },
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Sintetica-agrupada/1-v6.2-pre/output-run-001.octattrs": {
+          "bytes": 41244,
+          "sha256": "6cae432abd174bd0046fdf2c59d156e363b3ed97097cbbf3e5ed38252d6c26ea"
+        }
+      },
+      "artifacts": {
+        "target/attribute-dictionary-20261014/Sintetica/baseline.bin": {
+          "bytes": 41468,
+          "sha256": "d7975d3fcb750314393d03f39776032f1708a0e32685c8f9f2b55e5b3f256277"
+        },
+        "target/attribute-dictionary-20261014/Sintetica/column_adaptive.bin": {
+          "bytes": 41250,
+          "sha256": "6b6a5e2638f7e5b20675a5f314fee0452627932ec8a597a8e77470b89d418d33"
+        },
+        "target/attribute-dictionary-20261014/Sintetica/tuple_dictionary.bin": {
+          "bytes": 59422,
+          "sha256": "ca981155ecb078a101ea831faac86cc80f6120aaf84450e06ea9f40130d4b9ba"
+        }
+      },
+      "summaries": [
+        {
+          "summary": true,
+          "mode": "baseline",
+          "blocks": 1,
+          "rows": 4096,
+          "repetitions": 3,
+          "original_payload_bytes": 41180,
+          "container_bytes": 41468,
+          "encode_ms": 0.078934,
+          "decode_ms": 0.032584
+        },
+        {
+          "summary": true,
+          "mode": "column_adaptive",
+          "blocks": 1,
+          "rows": 4096,
+          "repetitions": 3,
+          "original_payload_bytes": 41180,
+          "container_bytes": 41250,
+          "encode_ms": 1.898972,
+          "decode_ms": 0.100779
+        },
+        {
+          "summary": true,
+          "mode": "tuple_dictionary",
+          "blocks": 1,
+          "rows": 4096,
+          "repetitions": 3,
+          "original_payload_bytes": 41180,
+          "container_bytes": 59422,
+          "encode_ms": 0.583921,
+          "decode_ms": 0.105976
+        }
+      ],
+      "columns": {
+        "0": {
+          "baseline": {
+            "bytes": 12320,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 3
+          },
+          "column_adaptive": {
+            "bytes": 12320,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 3
+          }
+        },
+        "1": {
+          "baseline": {
+            "bytes": 8224,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 8224,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          }
+        },
+        "2": {
+          "baseline": {
+            "bytes": 59,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 33,
+            "selected_dictionary_blocks": 1,
+            "sum_local_cardinality_when_selected": 1,
+            "width": 1
+          }
+        },
+        "3": {
+          "baseline": {
+            "bytes": 59,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 33,
+            "selected_dictionary_blocks": 1,
+            "sum_local_cardinality_when_selected": 1,
+            "width": 1
+          }
+        },
+        "4": {
+          "baseline": {
+            "bytes": 59,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 33,
+            "selected_dictionary_blocks": 1,
+            "sum_local_cardinality_when_selected": 1,
+            "width": 1
+          }
+        },
+        "5": {
+          "baseline": {
+            "bytes": 108,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 4
+          },
+          "column_adaptive": {
+            "bytes": 36,
+            "selected_dictionary_blocks": 1,
+            "sum_local_cardinality_when_selected": 1,
+            "width": 4
+          }
+        },
+        "6": {
+          "baseline": {
+            "bytes": 59,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 33,
+            "selected_dictionary_blocks": 1,
+            "sum_local_cardinality_when_selected": 1,
+            "width": 1
+          }
+        },
+        "7": {
+          "baseline": {
+            "bytes": 76,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 34,
+            "selected_dictionary_blocks": 1,
+            "sum_local_cardinality_when_selected": 1,
+            "width": 2
+          }
+        },
+        "8": {
+          "baseline": {
+            "bytes": 20504,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 6
+          },
+          "column_adaptive": {
+            "bytes": 20504,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 6
+          }
+        }
+      },
+      "tuple_totals": {
+        "sum_local_cardinality": 4096,
+        "transpose_ms": 0.120305
+      },
+      "raw_log": {
+        "path": "target/attribute-dictionary-20261014/Sintetica.stdout.jsonl",
+        "sha256": "045aeb96ca4c920393ad380df12ea4cca1c106e446a0548a19b97713fa282a2c",
+        "records": 22
+      }
+    },
+    {
+      "name": "Belvedere",
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/attribute_dictionary_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Belvedere/1-v6.2-pre/output-run-001.oct",
+        "target/attribute-dictionary-20261014/Belvedere",
+        "4294967295",
+        "3"
+      ],
+      "inputs": {
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Belvedere/1-v6.2-pre/output-run-001.oct": {
+          "bytes": 980174240,
+          "sha256": "1dcb51759a680d5b8abb712c10675d2faa22076db24ab37077be56a40b7c1724"
+        },
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre2-20261014-81srusim/Belvedere/1-v6.2-pre/output-run-001.octattrs": {
+          "bytes": 610586859,
+          "sha256": "ee59574d094d33274c1a81f923dd6a5f790d84c33acb23fd2c7a46465ac23a3c"
+        }
+      },
+      "artifacts": {
+        "target/attribute-dictionary-20261014/Belvedere/baseline.bin": {
+          "bytes": 611016555,
+          "sha256": "95425b0a402a31736a601bdfe34bdd92099e90c7ef43b63958a7a102699ab47a"
+        },
+        "target/attribute-dictionary-20261014/Belvedere/column_adaptive.bin": {
+          "bytes": 439593178,
+          "sha256": "2ddd06eb2c59f0a5b5effeda691d02ac5c00e057253e2af6451d894b566fa6ab"
+        },
+        "target/attribute-dictionary-20261014/Belvedere/tuple_dictionary.bin": {
+          "bytes": 341724528,
+          "sha256": "5839b9de4ad1e8788928c4087b2a39e8915bc1d8e745e76d9286de5d11e1a66c"
+        }
+      },
+      "summaries": [
+        {
+          "summary": true,
+          "mode": "baseline",
+          "blocks": 1343,
+          "rows": 81706211,
+          "repetitions": 3,
+          "original_payload_bytes": 610586795,
+          "container_bytes": 611016555,
+          "encode_ms": 1101.731075,
+          "decode_ms": 143.639648
+        },
+        {
+          "summary": true,
+          "mode": "column_adaptive",
+          "blocks": 1343,
+          "rows": 81706211,
+          "repetitions": 3,
+          "original_payload_bytes": 610586795,
+          "container_bytes": 439593178,
+          "encode_ms": 12438.962316,
+          "decode_ms": 2737.357833
+        },
+        {
+          "summary": true,
+          "mode": "tuple_dictionary",
+          "blocks": 1343,
+          "rows": 81706211,
+          "repetitions": 3,
+          "original_payload_bytes": 610586795,
+          "container_bytes": 341724528,
+          "encode_ms": 3185.018148,
+          "decode_ms": 943.55965
+        }
+      ],
+      "columns": {
+        "0": {
+          "baseline": {
+            "bytes": 243992258,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 3
+          },
+          "column_adaptive": {
+            "bytes": 200935014,
+            "selected_dictionary_blocks": 855,
+            "sum_local_cardinality_when_selected": 14763159,
+            "width": 3
+          }
+        },
+        "1": {
+          "baseline": {
+            "bytes": 699085,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 45662,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 2
+          }
+        },
+        "2": {
+          "baseline": {
+            "bytes": 378733,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 44319,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 1
+          }
+        },
+        "3": {
+          "baseline": {
+            "bytes": 378733,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 44319,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 1
+          }
+        },
+        "4": {
+          "baseline": {
+            "bytes": 378733,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 44319,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 1
+          }
+        },
+        "5": {
+          "baseline": {
+            "bytes": 1339966,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 4
+          },
+          "column_adaptive": {
+            "bytes": 48348,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 4
+          }
+        },
+        "6": {
+          "baseline": {
+            "bytes": 378733,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 1
+          },
+          "column_adaptive": {
+            "bytes": 44319,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 1
+          }
+        },
+        "7": {
+          "baseline": {
+            "bytes": 699085,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 2
+          },
+          "column_adaptive": {
+            "bytes": 45662,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 2
+          }
+        },
+        "8": {
+          "baseline": {
+            "bytes": 2621627,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 8
+          },
+          "column_adaptive": {
+            "bytes": 53720,
+            "selected_dictionary_blocks": 1343,
+            "sum_local_cardinality_when_selected": 1343,
+            "width": 8
+          }
+        },
+        "9": {
+          "baseline": {
+            "bytes": 360149602,
+            "selected_dictionary_blocks": 0,
+            "sum_local_cardinality_when_selected": 0,
+            "width": 6
+          },
+          "column_adaptive": {
+            "bytes": 238287496,
+            "selected_dictionary_blocks": 981,
+            "sum_local_cardinality_when_selected": 17154184,
+            "width": 6
+          }
+        }
+      },
+      "tuple_totals": {
+        "sum_local_cardinality": 17578926,
+        "transpose_ms": 1487.7677040000003
+      },
+      "raw_log": {
+        "path": "target/attribute-dictionary-20261014/Belvedere.stdout.jsonl",
+        "sha256": "01fba0001a6139ee31904d26065107924e77211652a88de55cc532b5fded1e70",
+        "records": 28206
+      }
+    }
+  ],
+  "full_report": {
+    "path": "target/attribute-dictionary-20261014/report.json",
+    "sha256": "c89522693ab1ec312b5d005680a15b5dd15a2db7044c56a858ae859437a72875"
+  }
+}

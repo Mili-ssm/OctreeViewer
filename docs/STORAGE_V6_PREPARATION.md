@@ -291,8 +291,13 @@ Para cerrar v6 faltan:
   y byte conteo/octante definido. Evaluar topología global conservando paginación; medir tamaño
   total, CPU, RAM, lectura selectiva y equivalencia espacial antes de fijar una revisión de
   almacenamiento.
-- Evaluar deduplicación de valores o streams de atributos como compresión del almacenamiento, con
-  acceso selectivo y asociaciones de filas conservadas.
+- Integrar, tras cerrar contrato y validación, codecs de atributos independientes por columna:
+  el [experimento de diccionarios](ATTRIBUTE_DICTIONARY_BENCH.md) ya materializa streams exactos
+  y mide Belvedere completo (28,00 % menos por columna; 44,03 % por tuplas con pérdida de
+  independencia de lectura). Probar constantes/bitpacking y paleta RGB compartida; no adoptar
+  diccionario conjunto global por defecto, pues aumenta tamaño en dos muestras.
+- Probar prefijos `first_child` reconstruidos y registros hoja implícitos en la topología pre2;
+  los bytes brutos eliminados no equivalen a ahorro tras LZ4. Mantener filas/residuales exactos.
 - Evaluar caras expuestas/agrupadas y transiciones entre cortes LOD como características separadas
   del renderer; sólo versionar el archivo si se decide persistir una representación de malla derivada.
 - Extender la conformidad actual a cambios nuevos y al corpus grande; medir límites/picos

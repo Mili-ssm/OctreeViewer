@@ -78,6 +78,10 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    [Especificación pre2](crates/viewer_format/FORMAT_V6_PRE2.md). El piloto Belvedere pre2 ocupa
    1.590.761.099 B, 802.736 B menos que pre1 (0,0504 %), con 80 bloques de ocupación. Es una
    conversión por formato y tres lecturas BFS; faltan conversiones pre2 alternadas y más corpus.
+   El experimento de [diccionarios de atributos](docs/ATTRIBUTE_DICTIONARY_BENCH.md) reduce los
+   streams de Belvedere un 28,00 % por columna y un 44,03 % por combinación completa, contando
+   cabeceras. Esta última acopla las lecturas y aumenta tamaño en dos muestras: priorizar codecs
+   independientes y medir paletas RGB compartidas antes de integrar otra revisión.
    Su contrato local no resuelve grilla física ni CRS entre nubes; ver las tareas siguientes.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
@@ -314,3 +318,18 @@ Pendientes de almacenamiento: ampliar perfiles/orden de streams, repetir convers
 Belvedere alternada y extender a Majadas/Albuera, compactar el índice exterior y estudiar un único
 array global por profundidad con paginación y grilla/raíces explícitas. Medir siempre bytes finales
 con metadata/atributos y lecturas equivalentes; la memoria nativa queda como optimización separada.
+
+## Diccionarios de atributos: experimento cerrado — 14-10-2026
+
+- [x] Confirmar que `.octattrs` no tenía diccionario; implementar benchmark de diccionarios
+  por columna y por combinación completa, incluyendo RGB y conservando bits/filas.
+- [x] Escribir/releer streams en tres muestras reales y una sintética, incluido Belvedere
+  completo; medir tablas, IDs empaquetados, cabeceras, cardinalidad y CPU con tres repeticiones.
+- [x] Documentar resultados, contraejemplos, coste de acceso selectivo y límites en el
+  [informe](docs/ATTRIBUTE_DICTIONARY_BENCH.md). No cambia el formato publicado ni habilita pre3.
+- [ ] Probar modo constante, bitpacking y diccionario por columna con metadata mínima y fallback;
+  comparar paleta conjunta RGB8+RGB16 conservando independientes los atributos numéricos.
+- [ ] Ensayar en `.oct` prefijos `first_child` reconstruibles y hojas implícitas; comparar bytes
+  finales tras LZ4, CPU y exactitud frente a pre2, por separado y juntos.
+- [ ] Integrar sólo candidatos medidos en una revisión explícita, con CRC/límites, lectura
+  selectiva, checkpoints, WASM, CPU/RSS y más corpus. Los tamaños proyectados no son archivos válidos.
