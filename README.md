@@ -5,7 +5,7 @@ jerarquía espacial persistente y carga los bloques necesarios para la vista. El
 plazo es explorar fuentes mayores de **500 GB decimales** con memoria acotada. La escala completa
 y cualquier superioridad frente a Potree siguen sin demostrarse.
 
-## Estado actual — 13-10-2026
+## Estado actual — 14-10-2026
 
 - El formato de trabajo vigente es **v5 definitivo** (`OCTVFRM1`, revisión 0), separado en `.oct` (coordenadas y jerarquía) y
   `.octattrs` (RGB y atributos numéricos). Se lee y escribe v5; hay que regenerar archivos v1–v4 y v5 provisionales (`OCTVWFRM`) desde sus fuentes.
@@ -66,12 +66,11 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    Un piloto completo de Belvedere ya convirtió ambas versiones, reconstruyó el árbol y leyó hijos
    tres veces: la pareja v6 sólo bajó 86 KB (0,005 %) y los tiempos fueron equivalentes. Esto
    descarta asumir que delta-varint ahorra en nubes de alta entropía. Falta repetir conversiones
-   alternando el orden y extender a Majadas/Albuera. El siguiente diseño lógico estudiará arrays de
-   vóxeles ocupados por nivel; cada padre tendría un byte de máscara de posiciones, un byte de
-   conteo/flags y un índice al primer hijo. Los hijos contiguos se ordenarían de forma determinista
-   (p. ej. Morton): máscara + ordinal localizan el hijo en el slice, y padre + grilla permiten
-   derivar su coordenada sin guardarla. No está implementado en v6.1-pre; requiere fijar grilla,
-   ramificación, orden, ancho/significado del conteo/flags e índices antes de serializarlo.
+   alternando el orden y extender a Majadas/Albuera. Ya existe un prototipo lógico aislado
+   `OccupiedOctree` en `viewer_core`: arrays de celdas ocupadas por nivel, máscara e índice
+   al primer hijo, conteo derivado y coordenadas reconstruidas desde una raíz entera explícita.
+   No está integrado en conversión/render ni serializado en v6.1-pre. Su contrato local no
+   resuelve grilla física ni CRS entre nubes; ver la entrega y tareas siguientes más abajo.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
    trabajo del renderer; deduplicar valores o streams es una optimización del almacenamiento.
@@ -174,3 +173,31 @@ Las pruebas GPU ignoradas requieren un adaptador compatible o Vulkan por softwar
 el host web, además de las suites anteriores, comprobar con Playwright los flujos afectados, la
 consola y escritorio/móvil cuando corresponda. No considerar tests nativos ni lecturas GPU como
 evidencia de presentación visual en todos los navegadores.
+
+## Entrega 14-10-2026: topología lógica candidata para v6
+
+Assessment: `v6.1-pre` conserva puntos y atributos, pero delta-varint no aporta ahorro
+material en el piloto Belvedere. Eliminar coordenadas de celdas hijas requiere una topología
+explícita; `SpatialHierarchy` no garantiza que cada bloque sea una celda uniforme.
+
+Plan y criterios de cierre de esta entrega:
+
+- [x] Implementar en `viewer_core` un octree ocupado experimental, independiente del formato,
+  con raíz explícita en coordenadas enteras, profundidad 0–32 y celdas hoja unitarias.
+- [x] Guardar arrays por nivel, hijos contiguos en orden de octante `x<<2 | y<<1 | z`, máscara
+  de ocho bits e índice al primer hijo. Derivar el conteo con popcount, sin flags indefinidos
+  ni coordenadas por nodo. Mantener privados los registros para preservar invariantes.
+- [x] Construir de forma determinista, colapsar entradas duplicadas, rechazar celdas fuera de
+  raíz y raíces desbordadas. Permitir consulta de ocupación y reconstrucción exacta de hojas.
+- [x] Probar vacío, profundidad cero, ocho octantes, negativos, límites i32, orden de entrada,
+  duplicados y equivalencia con un conjunto de celdas. Pasan `cargo test-fast --offline`,
+  `cargo fmt --all -- --check`, Clippy workspace/all-targets y Clippy WASM con `-D warnings`.
+- [x] Actualizar contratos/documentación y revisar el diff para el commit de esta entrega.
+
+Pendiente después de esta entrega: integrar payloads/atributos y semánticas Replacement/Additive;
+definir grilla física, CRS/unidades y compatibilidad entre nubes; decidir conteo/flags y ancho de
+índices en disco; medir tamaño total, construcción/apertura, consultas y pico de memoria frente
+a v5/pre1 con datasets reales. Sólo entonces considerar otra revisión de almacenamiento.
+Sugerencia: evaluar primero el conteo derivado y posponer flags de deduplicación hasta disponer
+de patrones medidos. Este prototipo no cambia conversión, renderer ni compatibilidad en disco,
+y no demuestra ahorro, velocidad o menor RSS.

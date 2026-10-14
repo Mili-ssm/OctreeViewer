@@ -5,6 +5,7 @@ mod block_cache;
 mod dataset;
 mod geometry;
 mod lod_transition;
+mod occupied_octree;
 mod scheduler;
 mod spatial;
 mod visibility;
@@ -34,4 +35,8 @@ pub use spatial::{
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{
     SparseVoxelStore, Voxel, VoxelStoreStats, VoxelizationConfig, VoxelizationError,
+};
+
+pub use occupied_octree::{
+    OccupiedOctree, OccupiedOctreeError, OccupiedOctreeNode, OccupiedOctreeRoot,
 };

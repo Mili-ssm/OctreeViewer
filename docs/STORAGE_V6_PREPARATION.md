@@ -1,10 +1,11 @@
 # Almacenamiento v5 definitivo y preparación de v6
 
-Estado: 13-10-2026. La ruptura de v5 provisional fue autorizada antes de desarrollar v6.
+Estado: 14-10-2026. La ruptura de v5 provisional fue autorizada antes de desarrollar v6.
 Están implementados v5 definitivo y la primera revisión experimental `v6.1-pre`. Esta última
 comprime los mismos enteros cuantizados mediante deltas/fallback, sin nueva pérdida. Su contrato
 completo está en [v6.1-pre](../crates/viewer_format/FORMAT_V6_PRE1.md); una representación lógica
-de vóxeles por ocupación sigue pendiente.
+de vóxeles por ocupación tiene ahora un prototipo lógico aislado en memoria; su integración
+y serialización siguen pendientes.
 
 ## Capas y versiones
 
@@ -20,7 +21,34 @@ La cabecera `FormatVersion` actual sólo versiona el formato de archivo. No exis
 `OctreeRepresentationVersion` ni un `RendererVersion` serializado. No se debe subir o cambiar la
 versión del `.oct` por cambiar un shader o una transición visual que consume los mismos datos.
 
-## Propuesta de representación por ocupación (pendiente)
+## Prototipo lógico de ocupación (implementado en memoria)
+
+`viewer_core::OccupiedOctree` recibe celdas `VoxelCoord` y una `OccupiedOctreeRoot`
+explícita: origen i32 y profundidad 0–32, cubo semiabierto de lado `2^depth` en unidades
+abstractas de hoja. La raíz completa debe caber en el dominio i32; los cálculos intermedios
+usan i64. No convierte puntos físicos, no infiere CRS y no alinea archivos independientes.
+
+Cada nivel contiene nodos ocupados, con hijos contiguos ordenados por `(x<<2)|(y<<1)|z`,
+la misma convención que `SpatialSubdivision`. Un nodo guarda máscara u8 e índice usize al
+primer hijo del siguiente nivel; el conteo se deriva con popcount. Las hojas tienen máscara
+e índice cero. No hay flags, payloads ni coordenadas persistentes por nodo. Los registros
+son privados y sólo se exponen vistas inmutables y getters. El árbol vacío conserva
+`depth+1` niveles vacíos; profundidad cero admite una única celda.
+
+La construcción valida límites, ordena claves de camino u128 (hasta 96 bits) y elimina
+duplicados. Agrupa prefijos por nivel en O(N × profundidad) después de ordenar, con O(N)
+temporales más la salida; esos temporales se liberan al terminar. La consulta usa rank de
+máscara y la enumeración reconstruye hojas con estado O(profundidad). Las asignaciones de
+memoria siguen la política normal de Rust, sin recuperación de OOM. Duplicados colapsados
+significan ocupación, no conteo de puntos ni agregación de atributos.
+
+Pruebas: reconstrucción/consulta contra un conjunto independiente, máscaras y rangos por
+nivel, octantes completos, negativos, entrada invertida, duplicados, vacío, profundidad cero,
+profundidad 32, extremos i32 y errores de límites. Este contrato todavía no se consume desde
+conversión ni renderer. `usize` y el padding Rust no son una especificación binaria ni una
+medición de RSS; no se atribuye ahorro de almacenamiento o velocidad al prototipo.
+
+## Propuesta de almacenamiento por ocupación (pendiente)
 
 La propuesta para futuras revisiones es almacenar cada nivel como arrays densos y deterministas de
 celdas ocupadas. El registro de cada padre tendría: (1) un byte como matriz/máscara de posiciones
@@ -174,8 +202,8 @@ resolverlo no se serializa una `GridDefinition` ni se asigna una revisión nueva
 
 Para cerrar v6 faltan:
 
-- Definir e implementar la representación lógica de vóxeles ocupados: máscara, byte de conteo/flags,
-  dirección al primer hijo, arrays densos por nivel y orden Morton (u otro determinista); medir tamaño
+- Integrar el prototipo lógico de vóxeles ocupados con payloads y consumidores; definir para disco
+  el byte de conteo/flags e índices de ancho fijo, manteniendo arrays por nivel y orden; medir tamaño
   total, CPU, RAM, lectura selectiva y equivalencia espacial antes de fijar una revisión de
   almacenamiento.
 - Evaluar deduplicación de valores o streams de atributos como compresión del almacenamiento, con
