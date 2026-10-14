@@ -462,5 +462,8 @@ sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
   anchas. Paleta/IDs aislados más de 10×; conversión final de Albuera 2,193 → 2,176 s (rangos
   solapados, sin mejora global demostrada). Belvedere es control negativo por columnas
   constantes; doce conversiones finales con parejas idénticas dentro de cada corpus. [Evidencia y prototipo descartado](docs/STORAGE_V6_CPU.md).
-- [ ] Cerrar experimento column/row/tile256 de planos de 3/6/8/16 bytes y dos tamaños antes
-  de integrar cambios de localidad; exigir mejora completa y bits/tamaño/selectividad exactos.
+- [x] Cerrar experimento column/row/tile256, 432 transformaciones verificadas: tiling empeora
+  los bloques habituales de 262.144 filas. Se conserva el codec actual; el único caso favorable
+  (16 bytes, 1.048.576 filas) supera el límite del conversor. [Informe](docs/STORAGE_V6_BYTE_PLANES.md).
+- [ ] Ampliar benchmark de lectura selectiva paralela XYZ/RGB/columna y medir transporte antes
+  de integrar concurrencia/prefetch en consumidores. Retomar tiles solo con un caso real medido.
