@@ -778,7 +778,10 @@ impl WasmVoxelViewer {
                 });
         });
         wasm_bindgen_futures::JsFuture::from(promise).await?;
-        let mapped = buffer.slice(..).get_mapped_range();
+        let mapped = buffer.slice(..).get_mapped_range().map_err(|error| {
+            buffer.unmap();
+            JsValue::from_str(&error.to_string())
+        })?;
         let hit = self
             .gpu_renderer
             .as_ref()

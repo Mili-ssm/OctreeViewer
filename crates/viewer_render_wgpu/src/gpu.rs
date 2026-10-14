@@ -43,6 +43,7 @@ pub enum GpuRendererError {
     InvalidBlockData(BlockId),
     MissingBlockPayload(BlockId),
     PipelineValidation(String),
+    SurfaceAcquisition(String),
 }
 
 impl std::fmt::Display for GpuRendererError {
@@ -93,6 +94,7 @@ impl std::fmt::Display for GpuRendererError {
                 write!(f, "block {id:?} is not resident in the CPU cache")
             }
             Self::PipelineValidation(error) => write!(f, "GPU pipeline is invalid: {error}"),
+            Self::SurfaceAcquisition(error) => write!(f, "GPU surface acquisition failed: {error}"),
         }
     }
 }
@@ -312,21 +314,20 @@ impl<'window> SurfaceRenderer<'window> {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
-            .ok_or(GpuRendererError::NoCompatibleAdapter)?;
+            .map_err(|_| GpuRendererError::NoCompatibleAdapter)?;
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("octree-viewer-device"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::downlevel_defaults()
-                        .using_resolution(adapter.limits()),
-                    memory_hints: wgpu::MemoryHints::MemoryUsage,
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("octree-viewer-device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_defaults()
+                    .using_resolution(adapter.limits()),
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+                ..Default::default()
+            })
             .await
             .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
 
@@ -700,9 +701,9 @@ impl<'window> SurfaceRenderer<'window> {
             Ok(Ok(())) => {
                 self.hzb_count_receiver = None;
                 if let Some(buffer) = &self.hzb_count_readback {
-                    let view = buffer.slice(..).get_mapped_range();
-                    self.visible_instance_count = *bytemuck::from_bytes::<u32>(&view) as usize;
-                    drop(view);
+                    if let Ok(view) = buffer.slice(..).get_mapped_range() {
+                        self.visible_instance_count = *bytemuck::from_bytes::<u32>(&view) as usize;
+                    }
                     buffer.unmap();
                 }
             }
@@ -1209,7 +1210,7 @@ impl<'window> SurfaceRenderer<'window> {
     }
 
     /// Presents a frame with the current camera.
-    pub fn render(&mut self) -> Result<FrameStatus, wgpu::SurfaceError> {
+    pub fn render(&mut self) -> Result<FrameStatus, GpuRendererError> {
         self.update_hzb_visible_count();
         if self.suspended {
             return Ok(FrameStatus::Suspended);
@@ -1236,10 +1237,12 @@ impl<'window> SurfaceRenderer<'window> {
                 .as_ref()
                 .map_or(0, |buffer| buffer.instance_count as usize);
         }
-        let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Timeout) => return Ok(FrameStatus::SkippedTimeout),
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+        let (frame, suboptimal) = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => (frame, false),
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => (frame, true),
+            wgpu::CurrentSurfaceTexture::Timeout => return Ok(FrameStatus::SkippedTimeout),
+            wgpu::CurrentSurfaceTexture::Occluded => return Ok(FrameStatus::Suspended),
+            wgpu::CurrentSurfaceTexture::Outdated => {
                 self.surface.configure(&self.device, &self.surface_config);
                 self.depth_texture = create_depth_texture(
                     &self.device,
@@ -1249,7 +1252,16 @@ impl<'window> SurfaceRenderer<'window> {
                 self.refresh_hzb_targets();
                 return Ok(FrameStatus::Reconfigured);
             }
-            Err(error) => return Err(error),
+            wgpu::CurrentSurfaceTexture::Lost => {
+                return Err(GpuRendererError::SurfaceAcquisition(
+                    "surface lost; recreate the renderer and surface".into(),
+                ));
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err(GpuRendererError::SurfaceAcquisition(
+                    "surface validation failed".into(),
+                ));
+            }
         };
         self.queue.write_buffer(
             &self.uniform_buffer,
@@ -1286,6 +1298,7 @@ impl<'window> SurfaceRenderer<'window> {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
+                    depth_slice: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(self.clear_color),
                         store: wgpu::StoreOp::Store,
@@ -1301,6 +1314,7 @@ impl<'window> SurfaceRenderer<'window> {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -1380,8 +1394,7 @@ impl<'window> SurfaceRenderer<'window> {
         } else {
             None
         };
-        let suboptimal = frame.suboptimal;
-        frame.present();
+        self.queue.present(frame);
         if suboptimal {
             self.surface.configure(&self.device, &self.surface_config);
             self.depth_texture =
@@ -1674,7 +1687,7 @@ pub(crate) async fn create_pipeline_resources(
     device: &wgpu::Device,
     pipeline_format: wgpu::TextureFormat,
 ) -> Result<PipelineResources, GpuRendererError> {
-    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("octree-viewer-voxel-shader"),
         source: wgpu::ShaderSource::Wgsl(VOXEL_SHADER_WGSL.into()),
@@ -1708,8 +1721,8 @@ pub(crate) async fn create_pipeline_resources(
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("octree-viewer-pipeline-layout"),
-        bind_group_layouts: &[&uniform_layout],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&uniform_layout)],
+        immediate_size: 0,
     });
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("octree-viewer-pipeline"),
@@ -1719,12 +1732,12 @@ pub(crate) async fn create_pipeline_resources(
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
             buffers: &[
-                wgpu::VertexBufferLayout {
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<CubeVertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
-                },
-                instance_buffer_layout(),
+                }),
+                Some(instance_buffer_layout()),
             ],
         },
         primitive: wgpu::PrimitiveState {
@@ -1734,8 +1747,8 @@ pub(crate) async fn create_pipeline_resources(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: Default::default(),
             bias: Default::default(),
         }),
@@ -1750,10 +1763,10 @@ pub(crate) async fn create_pipeline_resources(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
-    if let Some(error) = device.pop_error_scope().await {
+    if let Some(error) = validation_scope.pop().await {
         return Err(GpuRendererError::PipelineValidation(error.to_string()));
     }
 

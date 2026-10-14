@@ -4,8 +4,8 @@ Revisión documental del código, manifests, pruebas e informes presentes en est
 La única hoja de ruta activa es [Prioridades pendientes del README](../README.md#prioridades-pendientes).
 «Implementado» indica una ruta de código existente; «medido» remite a una ejecución fechada;
 «experimental» no implica integración en el visor. Esta revisión no ejecuta benchmarks ni
-certifica el checkout mediante tests. Hay cambios de dependencias previos a esta revisión
-que requieren su propia validación antes de atribuirles resultados históricos.
+certifica el checkout mediante tests. La actualización posterior completa la [migración de dependencias del renderer](RENDERER_DEPENDENCIES.md),
+con sus propios checks y limitaciones de navegador; no actualiza los benchmarks históricos.
 
 ## Objetivo y flujo
 
@@ -96,6 +96,6 @@ ejecuta `node --test .../*.test.mjs`. Los comandos habituales están en el
 
 No hay cambios de interfaz ni de implementación en este inventario. Se verifican enlaces locales,
 coherencia de identidades con el despacho del código y diff documental. Las entregas archivadas
-conservan sus checks originales, sin atribuirlos a la actualización actual de dependencias.
+conservan sus checks originales, sin atribuirlos a revisiones posteriores de dependencias. Los checks de la migración se registran aparte.
 Al cerrar trabajo: actualizar la prioridad del README, conservar evidencia en el informe temático
 y evitar reintroducir casillas históricas como pendientes activos.

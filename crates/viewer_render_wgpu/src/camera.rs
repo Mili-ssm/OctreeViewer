@@ -1,4 +1,4 @@
-use glam::{DMat4, DVec3};
+use glam::{DVec3, dcamera};
 use viewer_core::{FrustumPlane, SpatialBounds, SpatialFrustum};
 
 use crate::SceneBounds;
@@ -315,8 +315,9 @@ impl OrbitCamera {
             self.pitch.sin(),
         ) * self.distance;
         let (near, far) = self.clip_distances();
-        let view = DMat4::look_at_rh(offset, DVec3::ZERO, DVec3::Z);
-        let projection = DMat4::perspective_rh(VERTICAL_FOV, aspect, near, far);
+        let view = dcamera::rh::view::look_at_mat4(offset, DVec3::ZERO, DVec3::Z);
+        // WebGPU uses Y-up and depth [0, 1], unlike the Vulkan projection helper.
+        let projection = dcamera::rh::proj::directx::perspective(VERTICAL_FOV, aspect, near, far);
         let matrix = (projection * view).as_mat4().to_cols_array_2d();
         let origin = self.target.as_vec3().to_array();
         if matrix.iter().flatten().any(|value| !value.is_finite())
@@ -519,6 +520,30 @@ mod tests {
 
     use super::OrbitCamera;
     use crate::SceneBounds;
+
+    #[test]
+    fn frame_preserves_webgpu_depth_range_and_screen_orientation() {
+        let mut camera = OrbitCamera::default();
+        let viewport = [800, 600];
+        assert!(camera.fit(bounds(), viewport));
+        let matrix = Mat4::from_cols_array_2d(&camera.frame(viewport).unwrap().view_projection);
+        let (eye, forward, _, _) = camera.basis();
+        let right = forward.cross(DVec3::Z).normalize();
+        let up = right.cross(forward);
+        let (near, far) = camera.clip_distances();
+        let project = |point: DVec3| {
+            let clip = matrix * (point - camera.target).as_vec3().extend(1.0);
+            clip.truncate() / clip.w
+        };
+        for (distance, expected_depth) in [(near, 0.0), (far, 1.0)] {
+            let ndc = project(eye + forward * distance);
+            assert!(ndc.x.abs() < 1e-5 && ndc.y.abs() < 1e-5);
+            assert!((ndc.z - expected_depth).abs() < 1e-5);
+        }
+        let center = eye + forward * ((near + far) * 0.5);
+        assert!(project(center + up).y > 0.0);
+        assert!(project(center + right).x > 0.0);
+    }
 
     #[test]
     fn clipping_tracks_dataset_after_translation_rotation_and_bird_view() {

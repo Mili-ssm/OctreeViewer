@@ -97,7 +97,7 @@ impl HzbResources {
             return Ok(None);
         }
         let mip_count = pyramid_size[0].max(pyramid_size[1]).ilog2() + 1;
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("octree-viewer-hzb-camera-layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -156,14 +156,14 @@ impl HzbResources {
             "octree-viewer-hzb-depth-pipeline",
             HZB_SHADER,
             "copy_depth",
-            &[&depth_layout],
+            &[Some(&depth_layout)],
         );
         let reduce_pipeline = compute_pipeline(
             device,
             "octree-viewer-hzb-reduce-pipeline",
             HZB_SHADER,
             "reduce_depth",
-            &[&reduce_layout],
+            &[Some(&reduce_layout)],
         );
         let depth_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("octree-viewer-hzb-depth-bind-group"),
@@ -219,12 +219,12 @@ impl HzbResources {
             "octree-viewer-hzb-cull-pipeline",
             CULL_SHADER,
             "cull_instances",
-            &[&uniform_layout, &cull_layout],
+            &[Some(&uniform_layout), Some(&cull_layout)],
         );
         let indexed_layout = create_indexed_layout(device);
         let indexed_pipeline =
             create_indexed_pipeline(device, color_format, &uniform_layout, &indexed_layout);
-        let validation_error = device.pop_error_scope().await;
+        let validation_error = error_scope.pop().await;
         if let Some(error) = validation_error {
             return Err(GpuRendererError::PipelineValidation(error.to_string()));
         }
@@ -260,8 +260,8 @@ impl HzbResources {
         available_bytes: u64,
     ) -> bool {
         let index_bytes = (instance_count as u64).saturating_mul(size_of::<u32>() as u64);
-        source_bytes <= u64::from(device.limits().max_storage_buffer_binding_size)
-            && index_bytes <= u64::from(device.limits().max_storage_buffer_binding_size)
+        source_bytes <= device.limits().max_storage_buffer_binding_size
+            && index_bytes <= device.limits().max_storage_buffer_binding_size
             && index_bytes <= device.limits().max_buffer_size
             && self
                 .resource_bytes
@@ -694,7 +694,7 @@ fn compute_pipeline(
     label: &'static str,
     source: &'static str,
     entry_point: &'static str,
-    layouts: &[&wgpu::BindGroupLayout],
+    layouts: &[Option<&wgpu::BindGroupLayout>],
 ) -> wgpu::ComputePipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(label),
@@ -703,7 +703,7 @@ fn compute_pipeline(
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(label),
         bind_group_layouts: layouts,
-        push_constant_ranges: &[],
+        immediate_size: 0,
     });
     device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
@@ -727,8 +727,8 @@ fn create_indexed_pipeline(
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("octree-viewer-hzb-indexed-pipeline-layout"),
-        bind_group_layouts: &[uniform_layout, indexed_layout],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(uniform_layout), Some(indexed_layout)],
+        immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("octree-viewer-hzb-indexed-pipeline"),
@@ -737,11 +737,11 @@ fn create_indexed_pipeline(
             module: &shader,
             entry_point: Some("vs_indexed"),
             compilation_options: Default::default(),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: 24,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
-            }],
+            })],
         },
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
@@ -750,8 +750,8 @@ fn create_indexed_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
             stencil: Default::default(),
             bias: Default::default(),
         }),
@@ -766,7 +766,7 @@ fn create_indexed_pipeline(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -984,27 +984,26 @@ mod tests {
     fn hzb_gpu_pipelines_validate_when_adapter_is_available() {
         pollster::block_on(async {
             let instance = wgpu::Instance::default();
-            let Some(adapter) = instance
+            let Ok(adapter) = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::LowPower,
                     compatible_surface: None,
                     force_fallback_adapter: true,
+                    ..Default::default()
                 })
                 .await
             else {
                 return;
             };
             let Ok((device, _queue)) = adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        label: Some("octree-viewer-hzb-test-device"),
-                        required_features: wgpu::Features::empty(),
-                        required_limits: wgpu::Limits::downlevel_defaults()
-                            .using_resolution(adapter.limits()),
-                        memory_hints: wgpu::MemoryHints::MemoryUsage,
-                    },
-                    None,
-                )
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: Some("octree-viewer-hzb-test-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_defaults()
+                        .using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
+                    ..Default::default()
+                })
                 .await
             else {
                 return;
@@ -1051,27 +1050,26 @@ mod tests {
             use wgpu::util::DeviceExt;
 
             let instance = wgpu::Instance::default();
-            let Some(adapter) = instance
+            let Ok(adapter) = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::LowPower,
                     compatible_surface: None,
                     force_fallback_adapter: true,
+                    ..Default::default()
                 })
                 .await
             else {
                 return;
             };
             let Ok((device, queue)) = adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        label: Some("octree-viewer-hzb-cull-test-device"),
-                        required_features: wgpu::Features::empty(),
-                        required_limits: wgpu::Limits::downlevel_defaults()
-                            .using_resolution(adapter.limits()),
-                        memory_hints: wgpu::MemoryHints::MemoryUsage,
-                    },
-                    None,
-                )
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: Some("octree-viewer-hzb-cull-test-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_defaults()
+                        .using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
+                    ..Default::default()
+                })
                 .await
             else {
                 return;
@@ -1168,6 +1166,7 @@ mod tests {
                     }),
                     occlusion_query_set: None,
                     timestamp_writes: None,
+                    multiview_mask: None,
                 });
             }
             queue.submit([clear_encoder.finish()]);
@@ -1205,12 +1204,17 @@ mod tests {
                 .map_async(wgpu::MapMode::Read, move |result| {
                     let _ = sender.send(result);
                 });
-            device.poll(wgpu::Maintain::Wait);
+            device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("GPU poll");
             receiver
                 .recv()
                 .expect("GPU mapping callback")
                 .expect("GPU readback mapping");
-            let mapped = readback.slice(..).get_mapped_range();
+            let mapped = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("GPU mapped range");
             let visible = *bytemuck::from_bytes::<[u32; 6]>(&mapped);
             drop(mapped);
             readback.unmap();

@@ -42,21 +42,19 @@ pub async fn render_offscreen(
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: None,
             force_fallback_adapter: false,
+            ..Default::default()
         })
         .await
-        .ok_or(GpuRendererError::NoCompatibleAdapter)?;
+        .map_err(|_| GpuRendererError::NoCompatibleAdapter)?;
     let adapter_info = adapter.get_info();
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("octree-offscreen"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults()
-                    .using_resolution(adapter.limits()),
-                memory_hints: wgpu::MemoryHints::MemoryUsage,
-            },
-            None,
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("octree-offscreen"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            ..Default::default()
+        })
         .await
         .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
     super::gpu::scene_upload_metadata(
@@ -132,6 +130,7 @@ pub async fn render_offscreen(
             label: Some("octree-offscreen-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &color_view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(config.clear_color),
@@ -148,6 +147,7 @@ pub async fn render_offscreen(
             }),
             occlusion_query_set: None,
             timestamp_writes: None,
+            multiview_mask: None,
         });
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_bind_group(0, &pipeline.uniform_bind_group, &[]);
@@ -185,12 +185,17 @@ pub async fn render_offscreen(
             let _ = sender.send(result);
         });
     // A completed map is the readiness signal; there are no sleeps or presentation races.
-    device.poll(wgpu::Maintain::Wait);
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .map_err(|error| GpuRendererError::Offscreen(error.to_string()))?;
     receiver
         .recv()
         .map_err(|error| GpuRendererError::Offscreen(error.to_string()))?
         .map_err(|error| GpuRendererError::Offscreen(error.to_string()))?;
-    let mapped = readback.slice(..).get_mapped_range();
+    let mapped = readback
+        .slice(..)
+        .get_mapped_range()
+        .map_err(|error| GpuRendererError::Offscreen(error.to_string()))?;
     let rgba = unpack_rows(&mapped, row_bytes as usize, padded_row as usize);
     drop(mapped);
     readback.unmap();

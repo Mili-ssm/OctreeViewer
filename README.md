@@ -21,6 +21,10 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
   objetivo en píxeles guía la selección; no cambia arbitrariamente el tamaño físico de las celdas.
   Los huecos de la fuente no se rellenan. Este invariante todavía necesita cobertura en todos los
   consumidores de bloques.
+- La migración pendiente a **wgpu/naga 30 y glam 0.34** ya compila en nativo/WASM y pasa
+  los checks nativos y readback por software. La validación de navegador sigue parcial por
+  pérdida de dispositivo también reproducida con un clear independiente.
+  [Cambios de contrato, checks y límites](docs/RENDERER_DEPENDENCIES.md).
 - Las métricas de conversión, memoria, LOD y navegador son resultados de ejecuciones concretas,
   con límites de interpretación. No equivalen a límites garantizados ni a objetivos ya cumplidos.
 
@@ -117,6 +121,7 @@ Incluye mapa de código, herramientas, cobertura disponible y propuestas de mejo
 | [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
 | [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
 | [Benchmark de construcción de vóxeles](docs/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta, acumuladores y experimentos de reutilización. |
+| [Dependencias del renderer](docs/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, contratos de superficie/readback y validación parcial de navegador. |
 | [Benchmark web](docs/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos, resultados y limitaciones visuales. |
 | [Selección LOD](docs/LOD_FRONTIER_BENCH.md) | Contratos y mediciones de selección de frontera y prioridad incremental. |
 | [Datos reales](docs/REAL_DATASET_BENCH.md) | Protocolo y resultados históricos; revisar fecha/versión antes de comparar con v5. |
@@ -150,5 +155,6 @@ evidencia de presentación visual en todos los navegadores.
 
 Para compilar WASM y generar bindings/paquete local, seguir el
 [host web](examples/web-host/README.md). Los perfiles `fast`, `perf` y `release` tienen objetivos
-distintos; registrar el perfil al comparar medidas. El inventario documental del 14-10-2026 no
-reejecuta estas suites ni los benchmarks: sus resultados pertenecen a las revisiones indicadas.
+distintos; registrar el perfil al comparar medidas. El inventario inicial no reejecutó
+suites ni benchmarks; la [migración posterior](docs/RENDERER_DEPENDENCIES.md) registra los checks
+actuales y sus límites. Las mediciones de rendimiento anteriores pertenecen a sus revisiones.
