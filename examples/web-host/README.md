@@ -506,3 +506,11 @@ Physical contracts and later Blob/OPFS checks: [format preparation](../../docs/S
 [pre3](../../docs/STORAGE_V6_PRE3_BENCH.md) and [pre4](../../docs/STORAGE_V6_PRE4_BENCH.md).
 These storage checks do not certify WebGPU presentation. For the current cross-component
 inventory and pending work, use the [project README](../../README.md#prioridades-pendientes).
+
+### Regional Replacement regression
+
+With fresh bindings, run `tests/lod-regions.browser.mjs` as a module worker and wait for
+`type === "probeResult"`. It requires WebGPU enabled and a usable adapter. It checks a resident
+parent fallback with an independently detailed sibling, resize rebuilding and child replacement.
+The [regional LOD report](../../docs/REGIONAL_VOXEL_LOD.md) records the software adapter, native
+comparison and outstanding visual validation; a `presented` status alone is not screenshot proof.

@@ -1,0 +1,1087 @@
+{
+  "date": "2026-10-14",
+  "scope": "native fixed-cut gray geometry CPU; no GPU, RSS, or browser performance",
+  "profile": "perf",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "source": "target/v6-u8-20261014/final-full/before-1.oct",
+  "source_sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68",
+  "before_base_revision": "d190121",
+  "runner_sha256": "c75971371bdac3dc32a45d160fe171bccb80b9449aab64610470645f375782e9",
+  "binaries": {
+    "before": "d862d263b09159d83c16008cf23c3cf2826591677feb041f10a42a04764b7ded",
+    "after": "dc402b88c6c43cdd2669867b7f7cffb32cca6147c147469cc41f06255db88f69"
+  },
+  "timing_scope": "scene build only, excluding input open/decode and output checksum; three correlated samples per process, three processes per mode/version; no other task checks/compilation scheduled during this final series; host load/cache not isolated",
+  "runs": [
+    {
+      "round": 1,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "held",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 4,
+        "cache_bytes": 5424,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "1623410fa92167a3",
+          "estimated_peak_bytes": 33569952,
+          "instance_capacity_bytes": 3240,
+          "max_size": 757.941650390625,
+          "min_size": 757.94140625,
+          "oversized_voxels": 81,
+          "projection_cache_peak_entries": 105,
+          "rendered_voxels": 81
+        },
+        "mode": "held",
+        "node_ids": [
+          1,
+          502,
+          1031,
+          1219
+        ],
+        "samples_ms": [
+          0.165621,
+          0.125696,
+          0.11168
+        ],
+        "source_points": 325,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "held",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 4,
+        "cache_bytes": 5424,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "1623410fa92167a3",
+          "estimated_peak_bytes": 33570016,
+          "instance_capacity_bytes": 3240,
+          "max_size": 757.941650390625,
+          "min_size": 757.94140625,
+          "oversized_voxels": 81,
+          "projection_cache_peak_entries": 105,
+          "rendered_voxels": 81
+        },
+        "mode": "held",
+        "node_ids": [
+          1,
+          502,
+          1031,
+          1219
+        ],
+        "samples_ms": [
+          0.17602,
+          0.136376,
+          0.115737
+        ],
+        "source_points": 325,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "held",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 4,
+        "cache_bytes": 5424,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "1623410fa92167a3",
+          "estimated_peak_bytes": 33570016,
+          "instance_capacity_bytes": 3240,
+          "max_size": 757.941650390625,
+          "min_size": 757.94140625,
+          "oversized_voxels": 81,
+          "projection_cache_peak_entries": 105,
+          "rendered_voxels": 81
+        },
+        "mode": "held",
+        "node_ids": [
+          1,
+          502,
+          1031,
+          1219
+        ],
+        "samples_ms": [
+          0.169628,
+          0.13344999999999999,
+          0.114264
+        ],
+        "source_points": 325,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "held",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 4,
+        "cache_bytes": 5424,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "1623410fa92167a3",
+          "estimated_peak_bytes": 33569952,
+          "instance_capacity_bytes": 3240,
+          "max_size": 757.941650390625,
+          "min_size": 757.94140625,
+          "oversized_voxels": 81,
+          "projection_cache_peak_entries": 105,
+          "rendered_voxels": 81
+        },
+        "mode": "held",
+        "node_ids": [
+          1,
+          502,
+          1031,
+          1219
+        ],
+        "samples_ms": [
+          0.167464,
+          0.125576,
+          0.10603900000000001
+        ],
+        "source_points": 325,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "held",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 4,
+        "cache_bytes": 5424,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "1623410fa92167a3",
+          "estimated_peak_bytes": 33569952,
+          "instance_capacity_bytes": 3240,
+          "max_size": 757.941650390625,
+          "min_size": 757.94140625,
+          "oversized_voxels": 81,
+          "projection_cache_peak_entries": 105,
+          "rendered_voxels": 81
+        },
+        "mode": "held",
+        "node_ids": [
+          1,
+          502,
+          1031,
+          1219
+        ],
+        "samples_ms": [
+          0.16541,
+          0.128731,
+          0.105588
+        ],
+        "source_points": 325,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "held",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 4,
+        "cache_bytes": 5424,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "1623410fa92167a3",
+          "estimated_peak_bytes": 33570016,
+          "instance_capacity_bytes": 3240,
+          "max_size": 757.941650390625,
+          "min_size": 757.94140625,
+          "oversized_voxels": 81,
+          "projection_cache_peak_entries": 105,
+          "rendered_voxels": 81
+        },
+        "mode": "held",
+        "node_ids": [
+          1,
+          502,
+          1031,
+          1219
+        ],
+        "samples_ms": [
+          0.08881700000000001,
+          0.06254799999999999,
+          0.053831
+        ],
+        "source_points": 325,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "mixed",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 13,
+        "cache_bytes": 631352,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "eca90879a1a40e30",
+          "estimated_peak_bytes": 33616800,
+          "instance_capacity_bytes": 13000,
+          "max_size": 378.9708251953125,
+          "min_size": 378.970458984375,
+          "oversized_voxels": 325,
+          "projection_cache_peak_entries": 430,
+          "rendered_voxels": 325
+        },
+        "mode": "mixed",
+        "node_ids": [
+          1,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          3.028074,
+          2.492078,
+          1.442017
+        ],
+        "source_points": 39414,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "mixed",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 13,
+        "cache_bytes": 631352,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "37ea64bec4787572",
+          "estimated_peak_bytes": 33645216,
+          "instance_capacity_bytes": 18880,
+          "max_size": 378.9708251953125,
+          "min_size": 47.37115478515625,
+          "oversized_voxels": 457,
+          "projection_cache_peak_entries": 634,
+          "rendered_voxels": 472
+        },
+        "mode": "mixed",
+        "node_ids": [
+          1,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          8.843551,
+          6.616600999999999,
+          5.806961
+        ],
+        "source_points": 39414,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "mixed",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 13,
+        "cache_bytes": 631352,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "37ea64bec4787572",
+          "estimated_peak_bytes": 33645216,
+          "instance_capacity_bytes": 18880,
+          "max_size": 378.9708251953125,
+          "min_size": 47.37115478515625,
+          "oversized_voxels": 457,
+          "projection_cache_peak_entries": 634,
+          "rendered_voxels": 472
+        },
+        "mode": "mixed",
+        "node_ids": [
+          1,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          5.719176,
+          5.735506,
+          5.742640000000001
+        ],
+        "source_points": 39414,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "mixed",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 13,
+        "cache_bytes": 631352,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "eca90879a1a40e30",
+          "estimated_peak_bytes": 33616800,
+          "instance_capacity_bytes": 13000,
+          "max_size": 378.9708251953125,
+          "min_size": 378.970458984375,
+          "oversized_voxels": 325,
+          "projection_cache_peak_entries": 430,
+          "rendered_voxels": 325
+        },
+        "mode": "mixed",
+        "node_ids": [
+          1,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          3.023606,
+          2.989081,
+          2.948755
+        ],
+        "source_points": 39414,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "mixed",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 13,
+        "cache_bytes": 631352,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "eca90879a1a40e30",
+          "estimated_peak_bytes": 33616800,
+          "instance_capacity_bytes": 13000,
+          "max_size": 378.9708251953125,
+          "min_size": 378.970458984375,
+          "oversized_voxels": 325,
+          "projection_cache_peak_entries": 430,
+          "rendered_voxels": 325
+        },
+        "mode": "mixed",
+        "node_ids": [
+          1,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          3.010932,
+          3.3688350000000002,
+          1.509133
+        ],
+        "source_points": 39414,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "mixed",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 13,
+        "cache_bytes": 631352,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "37ea64bec4787572",
+          "estimated_peak_bytes": 33645216,
+          "instance_capacity_bytes": 18880,
+          "max_size": 378.9708251953125,
+          "min_size": 47.37115478515625,
+          "oversized_voxels": 457,
+          "projection_cache_peak_entries": 634,
+          "rendered_voxels": 472
+        },
+        "mode": "mixed",
+        "node_ids": [
+          1,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          9.563864,
+          5.763258,
+          5.823882
+        ],
+        "source_points": 39414,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 1,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "refined",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 19,
+        "cache_bytes": 637384,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "eca90879a1a40e30",
+          "estimated_peak_bytes": 33616800,
+          "instance_capacity_bytes": 13000,
+          "max_size": 378.9708251953125,
+          "min_size": 378.970458984375,
+          "oversized_voxels": 325,
+          "projection_cache_peak_entries": 430,
+          "rendered_voxels": 325
+        },
+        "mode": "refined",
+        "node_ids": [
+          2,
+          67,
+          145,
+          270,
+          275,
+          383,
+          394,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          1.5088320000000002,
+          1.468907,
+          1.454761
+        ],
+        "source_points": 39770,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 1,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "refined",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 19,
+        "cache_bytes": 637384,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "24f5190724d9cb92",
+          "estimated_peak_bytes": 33713664,
+          "instance_capacity_bytes": 33120,
+          "max_size": 378.9708251953125,
+          "min_size": 47.37115478515625,
+          "oversized_voxels": 813,
+          "projection_cache_peak_entries": 1106,
+          "rendered_voxels": 828
+        },
+        "mode": "refined",
+        "node_ids": [
+          2,
+          67,
+          145,
+          270,
+          275,
+          383,
+          394,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          6.753718,
+          7.782108,
+          6.407597999999999
+        ],
+        "source_points": 39770,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "refined",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 19,
+        "cache_bytes": 637384,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "24f5190724d9cb92",
+          "estimated_peak_bytes": 33713664,
+          "instance_capacity_bytes": 33120,
+          "max_size": 378.9708251953125,
+          "min_size": 47.37115478515625,
+          "oversized_voxels": 813,
+          "projection_cache_peak_entries": 1106,
+          "rendered_voxels": 828
+        },
+        "mode": "refined",
+        "node_ids": [
+          2,
+          67,
+          145,
+          270,
+          275,
+          383,
+          394,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          6.443175,
+          6.348516999999999,
+          6.314053
+        ],
+        "source_points": 39770,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 2,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "refined",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 19,
+        "cache_bytes": 637384,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "eca90879a1a40e30",
+          "estimated_peak_bytes": 33616800,
+          "instance_capacity_bytes": 13000,
+          "max_size": 378.9708251953125,
+          "min_size": 378.970458984375,
+          "oversized_voxels": 325,
+          "projection_cache_peak_entries": 430,
+          "rendered_voxels": 325
+        },
+        "mode": "refined",
+        "node_ids": [
+          2,
+          67,
+          145,
+          270,
+          275,
+          383,
+          394,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          1.500016,
+          1.4806489999999999,
+          1.478605
+        ],
+        "source_points": 39770,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "version": "before",
+      "command": [
+        "target/regional-voxel-20261014/before",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "refined",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 19,
+        "cache_bytes": 637384,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "eca90879a1a40e30",
+          "estimated_peak_bytes": 33616800,
+          "instance_capacity_bytes": 13000,
+          "max_size": 378.9708251953125,
+          "min_size": 378.970458984375,
+          "oversized_voxels": 325,
+          "projection_cache_peak_entries": 430,
+          "rendered_voxels": 325
+        },
+        "mode": "refined",
+        "node_ids": [
+          2,
+          67,
+          145,
+          270,
+          275,
+          383,
+          394,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          2.0023589999999998,
+          1.510766,
+          1.477193
+        ],
+        "source_points": 39770,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    },
+    {
+      "round": 3,
+      "version": "after",
+      "command": [
+        "target/regional-voxel-20261014/after",
+        "target/v6-u8-20261014/final-full/before-1.oct",
+        "refined",
+        "3"
+      ],
+      "exit_code": 0,
+      "result": {
+        "blocks": 19,
+        "cache_bytes": 637384,
+        "gray_geometry_only": true,
+        "input": "target/v6-u8-20261014/final-full/before-1.oct",
+        "metrics": {
+          "checksum": "24f5190724d9cb92",
+          "estimated_peak_bytes": 33713664,
+          "instance_capacity_bytes": 33120,
+          "max_size": 378.9708251953125,
+          "min_size": 47.37115478515625,
+          "oversized_voxels": 813,
+          "projection_cache_peak_entries": 1106,
+          "rendered_voxels": 828
+        },
+        "mode": "refined",
+        "node_ids": [
+          2,
+          67,
+          145,
+          270,
+          275,
+          383,
+          394,
+          503,
+          631,
+          642,
+          713,
+          789,
+          907,
+          1032,
+          1103,
+          1128,
+          1218,
+          1220,
+          1295
+        ],
+        "samples_ms": [
+          8.759182000000001,
+          6.325865,
+          6.321066
+        ],
+        "source_points": 39770,
+        "target_pixels": 4.0,
+        "viewport": [
+          1280,
+          720
+        ]
+      }
+    }
+  ],
+  "summary": [
+    {
+      "mode": "held",
+      "version": "before",
+      "n": 9,
+      "median_ms": 0.125696,
+      "min_ms": 0.105588,
+      "max_ms": 0.167464,
+      "metrics": {
+        "checksum": "1623410fa92167a3",
+        "estimated_peak_bytes": 33569952,
+        "instance_capacity_bytes": 3240,
+        "max_size": 757.941650390625,
+        "min_size": 757.94140625,
+        "oversized_voxels": 81,
+        "projection_cache_peak_entries": 105,
+        "rendered_voxels": 81
+      }
+    },
+    {
+      "mode": "held",
+      "version": "after",
+      "n": 9,
+      "median_ms": 0.115737,
+      "min_ms": 0.053831,
+      "max_ms": 0.17602,
+      "metrics": {
+        "checksum": "1623410fa92167a3",
+        "estimated_peak_bytes": 33570016,
+        "instance_capacity_bytes": 3240,
+        "max_size": 757.941650390625,
+        "min_size": 757.94140625,
+        "oversized_voxels": 81,
+        "projection_cache_peak_entries": 105,
+        "rendered_voxels": 81
+      }
+    },
+    {
+      "mode": "mixed",
+      "version": "before",
+      "n": 9,
+      "median_ms": 2.989081,
+      "min_ms": 1.442017,
+      "max_ms": 3.3688350000000002,
+      "metrics": {
+        "checksum": "eca90879a1a40e30",
+        "estimated_peak_bytes": 33616800,
+        "instance_capacity_bytes": 13000,
+        "max_size": 378.9708251953125,
+        "min_size": 378.970458984375,
+        "oversized_voxels": 325,
+        "projection_cache_peak_entries": 430,
+        "rendered_voxels": 325
+      }
+    },
+    {
+      "mode": "mixed",
+      "version": "after",
+      "n": 9,
+      "median_ms": 5.806961,
+      "min_ms": 5.719176,
+      "max_ms": 9.563864,
+      "metrics": {
+        "checksum": "37ea64bec4787572",
+        "estimated_peak_bytes": 33645216,
+        "instance_capacity_bytes": 18880,
+        "max_size": 378.9708251953125,
+        "min_size": 47.37115478515625,
+        "oversized_voxels": 457,
+        "projection_cache_peak_entries": 634,
+        "rendered_voxels": 472
+      }
+    },
+    {
+      "mode": "refined",
+      "version": "before",
+      "n": 9,
+      "median_ms": 1.4806489999999999,
+      "min_ms": 1.454761,
+      "max_ms": 2.0023589999999998,
+      "metrics": {
+        "checksum": "eca90879a1a40e30",
+        "estimated_peak_bytes": 33616800,
+        "instance_capacity_bytes": 13000,
+        "max_size": 378.9708251953125,
+        "min_size": 378.970458984375,
+        "oversized_voxels": 325,
+        "projection_cache_peak_entries": 430,
+        "rendered_voxels": 325
+      }
+    },
+    {
+      "mode": "refined",
+      "version": "after",
+      "n": 9,
+      "median_ms": 6.407597999999999,
+      "min_ms": 6.314053,
+      "max_ms": 8.759182000000001,
+      "metrics": {
+        "checksum": "24f5190724d9cb92",
+        "estimated_peak_bytes": 33713664,
+        "instance_capacity_bytes": 33120,
+        "max_size": 378.9708251953125,
+        "min_size": 47.37115478515625,
+        "oversized_voxels": 813,
+        "projection_cache_peak_entries": 1106,
+        "rendered_voxels": 828
+      }
+    }
+  ],
+  "hardware": {
+    "cpu_models": [
+      "AMD Ryzen AI 9 365 w/ Radeon 880M"
+    ],
+    "mem_total_kib": "31885112"
+  }
+}

@@ -36,7 +36,7 @@ detalla capacidades, límites y propuestas; las entregas cerradas y sus checks s
 
 | Orden | Trabajo abierto y componentes | Siguiente paso / criterio de cierre |
 | --- | --- | --- |
-| 1 | **Corrección visual y transición LOD** — core, render, WASM. | Retener por región la representación anterior hasta disponer de hijos, sin añadir huecos ni solapamientos. Probar cortes mixtos Replacement/Additive con carga lenta/fallida, zoom y movimiento en un dataset real multibloque. Revisar también la ruta genérica `sync_visible_blocks`. |
+| 1 | **Corrección visual y transición LOD** — core, render, WASM. | Retener por región la representación anterior hasta disponer de hijos, sin añadir huecos ni solapamientos. Ya hay [resolución regional para representantes Replacement](docs/REGIONAL_VOXEL_LOD.md): una rama gruesa permite detalle fuera de sus regiones ocupadas; fallback global acotado para payloads dispersos. Falta conservar representación entre generaciones por región y probar cortes mixtos Replacement/Additive con carga lenta/fallida, zoom y movimiento en un dataset real multibloque. Revisar también `sync_visible_blocks`. |
 | 2 | **Validación de navegador** — WASM y host. | Repetir presentación en Chrome/AMD y Firefox, cámara/picking/atributos, escritorio/móvil y recuperación de errores. Confirmar modo pájaro con teclado físico. Readback/picking no cierran la presentación; Chrome/AMD sigue sin presentar incluso un clear independiente en las rondas documentadas. |
 | 3 | **Pico conjunto de memoria** — core, render, WASM. | Correlacionar caché decodificada, builder/proyección, instancias, escena anterior, capacidad WASM, RSS/PSS y recursos GPU durante carga y cámara. Incluir Additive real antes de decidir si retener un acumulador; los prefijos medidos no lo justifican por sí solos. |
 | 4 | **Conversión y escala de extremo a extremo** — convert y host. | Completar matriz de primera vista/refinamiento con Belvedere, Majadas y Albuera; Belvedere a 4 px no cierra bajo el caché probado. Separar conversión, apertura, I/O, temporales y memoria. Más de 500 GB y comparación con Potree requieren hardware, calidad y tareas equivalentes. |
@@ -121,6 +121,7 @@ Incluye mapa de código, herramientas, cobertura disponible y propuestas de mejo
 | [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
 | [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
 | [Benchmark de construcción de vóxeles](docs/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta, acumuladores y experimentos de reutilización. |
+| [Resolución regional LOD](docs/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback, regresiones, probe WebGPU y comparación nativa de cortes Belvedere. |
 | [Dependencias del renderer](docs/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, contratos de superficie/readback y validación parcial de navegador. |
 | [Benchmark web](docs/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos, resultados y limitaciones visuales. |
 | [Selección LOD](docs/LOD_FRONTIER_BENCH.md) | Contratos y mediciones de selección de frontera y prioridad incremental. |

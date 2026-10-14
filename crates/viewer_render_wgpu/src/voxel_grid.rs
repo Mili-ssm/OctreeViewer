@@ -19,7 +19,7 @@ const VOXEL_INSTANCE_SIZE: u64 = std::mem::size_of::<InstanceRaw>() as u64;
 pub struct VoxelBuildLimits {
     /// Maximum number of distinct renderable voxels retained by the builder.
     pub max_voxels: usize,
-    /// Maximum estimated bytes for accumulation, projection-cache reservation, and instances.
+    /// Maximum estimated bytes for accumulation, projection/region reservation, and instances.
     /// This conservative model is not an RSS limit or a guarantee about allocator overhead.
     pub max_estimated_bytes: u64,
 }
@@ -36,7 +36,7 @@ impl Default for VoxelBuildLimits {
 /// Conservative builder memory estimates; these values do not measure process RSS.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct VoxelBuildMemoryStats {
-    /// Peak from estimated accumulator charges plus the larger of cache reservation or instances.
+    /// Peak from accumulator charges plus the larger of working reservation or instances.
     pub estimated_peak_bytes: u64,
     /// Allocated instance-vector capacity at finish, in bytes.
     pub instance_capacity_bytes: u64,
@@ -49,6 +49,8 @@ struct AdaptiveVoxelGrid {
     side: f64,
     target_pixels: f64,
     max_depth: u8,
+    // Sorted source regions whose 8^3 representative cells must not be refined.
+    representative_regions: Vec<VoxelKey>,
     projected_edge_cache_limit: usize,
     projected_edges: BTreeMap<VoxelKey, f64>,
     projected_edge_order: VecDeque<VoxelKey>,
@@ -122,7 +124,16 @@ impl AdaptiveVoxelGrid {
                 return Ok(None);
             }
             // Beyond 24 levels f32 cannot reliably distinguish adjacent local cell faces.
-            if edge <= self.target_pixels || key.depth >= self.max_depth {
+            let representative_cell = key.depth >= 3
+                && !self.representative_regions.is_empty()
+                && self
+                    .representative_regions
+                    .binary_search(&VoxelKey {
+                        depth: key.depth - 3,
+                        coord: key.coord.map(|coord| coord >> 3),
+                    })
+                    .is_ok();
+            if edge <= self.target_pixels || key.depth >= self.max_depth || representative_cell {
                 self.last_resolved_cell = Some((key, true));
                 return Ok(Some(key));
             }
@@ -216,7 +227,7 @@ pub struct VoxelSceneBuilder {
     grid: AdaptiveVoxelGrid,
     voxels: BTreeMap<VoxelKey, VoxelAccumulator>,
     limits: VoxelBuildLimits,
-    cache_reservation_bytes: u64,
+    working_reservation_bytes: u64,
     accumulator_charge_bytes: u64,
     error: Option<VoxelSceneBuildError>,
 }
@@ -258,7 +269,7 @@ impl VoxelSceneBuilder {
                 .min(MAX_PROJECTED_EDGE_CACHE_ENTRIES as u64),
         )
         .expect("projected cache limit is bounded by its entry cap");
-        let cache_reservation_bytes = u64::try_from(cache_limit)
+        let working_reservation_bytes = u64::try_from(cache_limit)
             .expect("projected cache limit fits in u64")
             .checked_mul(projection_charge)
             .expect("bounded projected cache charge fits in u64");
@@ -269,6 +280,7 @@ impl VoxelSceneBuilder {
                 side: bounds_side(root).max(1.0e-5),
                 target_pixels,
                 max_depth: 24,
+                representative_regions: Vec::new(),
                 projected_edge_cache_limit: cache_limit,
                 projected_edges: BTreeMap::new(),
                 projected_edge_order: VecDeque::new(),
@@ -277,7 +289,7 @@ impl VoxelSceneBuilder {
             },
             voxels: BTreeMap::new(),
             limits,
-            cache_reservation_bytes,
+            working_reservation_bytes,
             accumulator_charge_bytes,
             error: None,
         }
@@ -296,7 +308,7 @@ impl VoxelSceneBuilder {
             &mut self.grid,
             &mut self.voxels,
             self.limits,
-            self.cache_reservation_bytes,
+            self.working_reservation_bytes,
             self.accumulator_charge_bytes,
             project,
         );
@@ -328,7 +340,7 @@ impl VoxelSceneBuilder {
             mut grid,
             voxels,
             limits,
-            cache_reservation_bytes,
+            working_reservation_bytes,
             accumulator_charge_bytes,
             error: _,
         } = self;
@@ -336,12 +348,13 @@ impl VoxelSceneBuilder {
         let projection_cache_peak_entries = grid.projected_edge_peak_entries;
         grid.projected_edges = BTreeMap::new();
         grid.projected_edge_order = VecDeque::new();
+        grid.representative_regions = Vec::new();
 
         let count = voxels.len();
         let requested_instance_bytes = instance_allocation_bytes(count)?;
         let accumulator_bytes = checked_charge(count, accumulator_charge_bytes)?;
         let requested_peak_bytes = accumulator_bytes
-            .checked_add(cache_reservation_bytes.max(requested_instance_bytes))
+            .checked_add(working_reservation_bytes.max(requested_instance_bytes))
             .ok_or(VoxelSceneBuildError::SizeOverflow)?;
         check_memory_limit(requested_peak_bytes, limits.max_estimated_bytes)?;
         let mut instances = reserve_instances(count)?;
@@ -354,7 +367,7 @@ impl VoxelSceneBuilder {
             .ok_or(VoxelSceneBuildError::SizeOverflow)?
             .max(
                 accumulator_bytes
-                    .checked_add(cache_reservation_bytes)
+                    .checked_add(working_reservation_bytes)
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?,
             );
         check_memory_limit(estimated_peak_bytes, limits.max_estimated_bytes)?;
@@ -449,6 +462,8 @@ pub fn build_voxel_scene_with_limit(
 
 /// Builds with voxel-count and conservative estimated-memory limits.
 ///
+/// Replacement representatives cap their occupied regions at their source resolution; all
+/// blocks follow the same terminal rule. Unusually dispersed external payloads use a global cap.
 /// `project` must return stable results for equal bounds throughout scene construction.
 pub fn build_voxel_scene_with_limits(
     hierarchy: &SpatialHierarchy,
@@ -465,24 +480,7 @@ pub fn build_voxel_scene_with_limits(
         target_pixels,
         limits,
     );
-    // Replacement parents contain one representative per 8x8x8 cell, not dense
-    // geometry. Keep a common dyadic floor until their children replace them;
-    // a common floor also prevents overlaps at boundaries of mixed source cuts.
-    if hierarchy.semantics() == viewer_core::HierarchySemantics::Replacement {
-        for node_id in node_ids {
-            if let Some(node) = hierarchy.node(*node_id)
-                && !hierarchy.is_leaf(*node_id)
-                && !node.blocks().is_empty()
-            {
-                let source_edge = bounds_side(node.bounds()) / 8.0;
-                let depth = (builder.grid.side / source_edge)
-                    .log2()
-                    .floor()
-                    .clamp(0.0, 24.0) as u8;
-                builder.grid.max_depth = builder.grid.max_depth.min(depth);
-            }
-        }
-    }
+    configure_representative_regions(&mut builder, hierarchy, node_ids, cache)?;
     for node_id in node_ids {
         let Some(node) = hierarchy.node(*node_id) else {
             continue;
@@ -497,12 +495,125 @@ pub fn build_voxel_scene_with_limits(
     builder.try_finish(project)
 }
 
+/// Configure one immutable terminal rule for all points, using occupied coarse regions only.
+/// A region may also conservatively limit a neighbor; it never generates new occupied cells.
+fn configure_representative_regions(
+    builder: &mut VoxelSceneBuilder,
+    hierarchy: &SpatialHierarchy,
+    node_ids: &[NodeId],
+    cache: &dyn ResidentBlockSource,
+) -> Result<(), VoxelSceneBuildError> {
+    if hierarchy.semantics() != viewer_core::HierarchySemantics::Replacement {
+        return Ok(());
+    }
+    let coarse_nodes = || {
+        node_ids
+            .iter()
+            .filter_map(|id| hierarchy.node(*id))
+            .filter(|node| !hierarchy.is_leaf(node.id()) && !node.blocks().is_empty())
+    };
+    let mut global_depth = 24;
+    let mut regional = true;
+    let mut count = 0_usize;
+    for node in coarse_nodes() {
+        global_depth = global_depth.min(representative_depth(&builder.grid, node.bounds()));
+        if regional {
+            if let Some((_, length)) = representative_regions(&builder.grid, node, cache) {
+                count = count
+                    .checked_add(length)
+                    .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+            } else {
+                regional = false;
+            }
+        }
+    }
+    if !regional {
+        builder.grid.max_depth = global_depth;
+        return Ok(());
+    }
+    let requested_bytes = checked_charge(count, std::mem::size_of::<VoxelKey>() as u64)?;
+    check_memory_limit(
+        builder
+            .working_reservation_bytes
+            .checked_add(requested_bytes)
+            .ok_or(VoxelSceneBuildError::SizeOverflow)?,
+        builder.limits.max_estimated_bytes,
+    )?;
+    let mut regions = Vec::new();
+    regions
+        .try_reserve_exact(count)
+        .map_err(|_| VoxelSceneBuildError::AllocationFailed { requested_bytes })?;
+    for node in coarse_nodes() {
+        let (keys, length) = representative_regions(&builder.grid, node, cache)
+            .expect("coarse regions were validated before allocation");
+        regions.extend_from_slice(&keys[..length]);
+    }
+    regions.sort_unstable();
+    regions.dedup();
+    // The region vector and projection cache are freed before instance allocation at finish.
+    builder.working_reservation_bytes = builder
+        .working_reservation_bytes
+        .checked_add(checked_charge(
+            regions.capacity(),
+            std::mem::size_of::<VoxelKey>() as u64,
+        )?)
+        .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+    check_memory_limit(
+        builder.working_reservation_bytes,
+        builder.limits.max_estimated_bytes,
+    )?;
+    builder.grid.representative_regions = regions;
+    Ok(())
+}
+
+fn representative_depth(grid: &AdaptiveVoxelGrid, bounds: SpatialBounds) -> u8 {
+    (grid.side / (bounds_side(bounds) / 8.0))
+        .log2()
+        .floor()
+        .clamp(0.0, 24.0) as u8
+}
+
+/// Up to eight occupied regions per source node bound setup work and retained metadata.
+/// Arbitrarily dispersed external payloads exceeding that cap use the old global floor.
+fn representative_regions(
+    grid: &AdaptiveVoxelGrid,
+    node: &viewer_core::SpatialNode,
+    cache: &dyn ResidentBlockSource,
+) -> Option<([VoxelKey; 8], usize)> {
+    let depth = representative_depth(grid, node.bounds());
+    let mut keys = [VoxelKey {
+        depth: 0,
+        coord: [0; 3],
+    }; 8];
+    let mut length = 0;
+    if depth == 24 {
+        return Some((keys, length));
+    }
+    let region_depth = depth.checked_sub(3)?;
+    for block in node.blocks().iter().filter_map(|id| cache.peek(*id)) {
+        for point in block.points().points() {
+            if point.position.iter().any(|v| !v.is_finite()) {
+                continue;
+            }
+            let key = grid.key_at_depth(point.position.map(f64::from), region_depth);
+            if !keys[..length].contains(&key) {
+                if length == keys.len() {
+                    return None;
+                }
+                keys[length] = key;
+                length += 1;
+            }
+        }
+    }
+    Some((keys, length))
+}
+
 fn accumulate_block(
     block: &PointBlock,
     grid: &mut AdaptiveVoxelGrid,
     voxels: &mut BTreeMap<VoxelKey, VoxelAccumulator>,
     limits: VoxelBuildLimits,
-    cache_reservation_bytes: u64,
+    working_reservation_bytes: u64,
     accumulator_charge_bytes: u64,
     project: &dyn Fn(SpatialBounds) -> f64,
 ) -> Result<(), VoxelSceneBuildError> {
@@ -538,7 +649,7 @@ fn accumulate_block(
                     .and_then(|bytes| u64::try_from(bytes).ok())
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?;
                 let required_bytes = accumulator_bytes
-                    .checked_add(cache_reservation_bytes.max(instance_bytes))
+                    .checked_add(working_reservation_bytes.max(instance_bytes))
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?;
                 check_memory_limit(required_bytes, limits.max_estimated_bytes)?;
                 entry.insert(VoxelAccumulator::default())
@@ -658,6 +769,7 @@ mod tests {
             side: 1.0,
             target_pixels: 4.0,
             max_depth: 24,
+            representative_regions: Vec::new(),
             projected_edge_cache_limit: 0,
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
@@ -677,6 +789,7 @@ mod tests {
             side: 1.0,
             target_pixels: 4.0,
             max_depth: 24,
+            representative_regions: Vec::new(),
             projected_edge_cache_limit: MAX_PROJECTED_EDGE_CACHE_ENTRIES,
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),
@@ -705,6 +818,7 @@ mod tests {
             side: 1.0,
             target_pixels: 4.0,
             max_depth: 24,
+            representative_regions: Vec::new(),
             projected_edge_cache_limit: 0,
             projected_edges: Default::default(),
             projected_edge_order: Default::default(),

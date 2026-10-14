@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-14",
+  "scope": "Playwright MCP functional worker probes; software GPU, no visual or performance certification",
+  "launch_args": [
+    "--enable-unsafe-webgpu",
+    "--use-webgpu-adapter=swiftshader",
+    "--enable-unsafe-swiftshader",
+    "--use-angle=swiftshader"
+  ],
+  "url": "http://127.0.0.1:8000/",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "webgpu": true,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader"
+  },
+  "results": [
+    {
+      "name": "lod-regions",
+      "passed": true,
+      "checks": [
+        "resident parent fallback",
+        "independent sibling detail",
+        "resize rebuild",
+        "child replacement"
+      ],
+      "mixedVoxels": 3,
+      "refinedVoxels": 4
+    },
+    {
+      "name": "lod-attributes",
+      "passed": true,
+      "renderedVoxels": 4096
+    }
+  ],
+  "independent_clear": [
+    {
+      "type": "deviceLost",
+      "reason": "unknown",
+      "message": "A valid external Instance reference no longer exists."
+    },
+    {
+      "type": "failure",
+      "message": "AbortError: Failed to execute 'mapAsync' on 'GPUBuffer': A valid external Instance reference no longer exists."
+    }
+  ],
+  "budget_fallback": {
+    "passed": false,
+    "error": "no GPU adapter supports this surface"
+  },
+  "page_console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (File not found)"
+  ]
+}
