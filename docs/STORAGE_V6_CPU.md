@@ -99,7 +99,10 @@ que conservan ambas parejas. Los checks de WASM acreditan compilación; rendimie
 en navegador no se midieron. No se modifica interfaz web ni se valida la migración del renderer.
 Ruff no está instalado; Python se comprueba mediante sintaxis/CLI y la suite unittest disponible.
 
-Siguientes candidatos acotados, pendientes de medición antes de integrar:
+Candidatos al cerrar la primera ronda (estado actualizado al final de este documento):
+la tabla u8 ya está integrada y el [experimento de tiles](STORAGE_V6_BYTE_PLANES.md) está cerrado
+sin cambio del codec. La lectura selectiva paralela sigue pendiente en el
+[README](../README.md#prioridades-pendientes).
 
 - Tabla directa de 256 entradas para diccionarios de columnas `u8`, conservando orden de
   primera aparición. Comparar CPU y bytes exactos frente a HashMap; no omitir candidatos.

@@ -126,7 +126,7 @@ the coarse frontier. The worker can process camera commands between block reads;
 `FileReaderSync` read is still synchronous, so a slow block can delay input until that read completes.
 The host reports time to the first coarse frame and target LOD frame, plus p50/p95/p99 worker
 `renderFrame()` times over a bounded window of up to 4,096 frames. Real-browser latency and frame-time
-validation remain pending in the [project roadmap](../../README.md#próximos-criterios-de-cierre).
+validation remain pending in the [project roadmap](../../README.md#prioridades-pendientes).
 The camera fits dataset bounds and supports observer and bird navigation. Observer mode uses a voxel
 click to set the orbit center, left drag to pan it, right drag to orbit, and the wheel to change radius. Bird mode uses
 left drag to pan, right drag to orbit, WASD/QE to move, and the wheel to change movement speed. The
@@ -487,14 +487,22 @@ the companion and explicit rejection of provisional files, unsupported v6 revisi
 incorrect companion. It needs no GPU adapter. Recorded native/OPFS/browser evidence and the
 remaining presentation limitation are in [storage benchmarks](../../docs/STORAGE_BENCH.md).
 
-### Experimental v6.1-pre conversion
+### Experimental v6 conversion
 
 Normal conversion stays on final v5. Programmatic callers may use
 `WasmLasOctConverter.createForVersion(file, primaryHandle, attributesHandle, "v6.1-pre")`, or send
 `{ type: "convert", file, formatVersion: "v6.1-pre" }` to the converter worker. Opening a Blob
-automatically selects v5 or v6.1-pre; paired files must have the exact same identity.
+automatically selects final v5 or an implemented experimental identity: `v6.1-pre`,
+`v6.2-pre`, `v6.3-pre`, `v6.4-pre`. Both programmatic entry points accept these exact strings;
+paired files must have the exact same identity. Final `v6` and other revisions remain unsupported.
+The demo defaults to v5; this programmatic selection does not add a format selector to its UI.
 
 For the storage probe, pass `expectedVersion: "v6.1-pre"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache
 busting query on the worker/probe URL avoids a stale development module). Results are recorded
 in [storage comparisons](../../docs/STORAGE_BENCH.md); GPU presentation remains separate.
+
+Physical contracts and later Blob/OPFS checks: [format preparation](../../docs/STORAGE_V6_PREPARATION.md),
+[pre3](../../docs/STORAGE_V6_PRE3_BENCH.md) and [pre4](../../docs/STORAGE_V6_PRE4_BENCH.md).
+These storage checks do not certify WebGPU presentation. For the current cross-component
+inventory and pending work, use the [project README](../../README.md#prioridades-pendientes).
