@@ -66,6 +66,20 @@ impl PackedIds<'_> {
     }
 }
 
+/// Fill an empty byte palette in first-occurrence order; capacity is reserved by the caller.
+fn append_byte_dictionary(raw: &[u8], table: &mut Vec<u8>, ids: &mut Vec<u32>) {
+    debug_assert!(table.is_empty() && ids.is_empty());
+    let mut lookup = [u16::MAX; 256];
+    for &value in raw {
+        let id = &mut lookup[usize::from(value)];
+        if *id == u16::MAX {
+            *id = table.len() as u16; // At most 256 distinct byte values.
+            table.push(value);
+        }
+        ids.push(u32::from(*id));
+    }
+}
+
 pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     if width == 0 || !raw.len().is_multiple_of(width) {
         return Err(malformed());
@@ -82,21 +96,28 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
         });
     }
     let mut lookup = HashMap::<&[u8], u32>::new();
-    lookup
-        .try_reserve(rows)
-        .map_err(|_| FormatError::AllocationFailed(rows))?;
-    let mut table = allocate(raw.len())?;
+    if width != 1 {
+        lookup
+            .try_reserve(rows)
+            .map_err(|_| FormatError::AllocationFailed(rows))?;
+    }
+    let mut table = allocate(if width == 1 { rows.min(256) } else { raw.len() })?;
     let mut ids = Vec::new();
     ids.try_reserve_exact(rows)
         .map_err(|_| FormatError::AllocationFailed(rows))?;
-    for row in raw.chunks_exact(width) {
-        let next = lookup.len() as u32;
-        ids.push(*lookup.entry(row).or_insert_with(|| {
-            table.extend_from_slice(row);
-            next
-        }));
+    if width == 1 {
+        append_byte_dictionary(raw, &mut table, &mut ids);
+    } else {
+        // Keep allocation order and lookup lifetime of the existing wider-column path.
+        for row in raw.chunks_exact(width) {
+            let next = lookup.len() as u32;
+            ids.push(*lookup.entry(row).or_insert_with(|| {
+                table.extend_from_slice(row);
+                next
+            }));
+        }
     }
-    let unique = lookup.len();
+    let unique = table.len() / width;
     let bits = id_bits(unique);
     let packed = pack_ids(&ids, bits)?;
     drop(ids);
@@ -248,6 +269,91 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "isolated dictionary construction benchmark; run with --profile perf"]
+    fn byte_dictionary_lookup_benchmark() {
+        use std::{hint::black_box, time::Instant};
+        let rows = 262_144;
+        for unique in [2, 3, 256] {
+            let raw: Vec<_> = (0..rows)
+                .map(|row| (unique - 1 - row % unique) as u8)
+                .collect();
+            for repetition in 0..9 {
+                for direct in if repetition % 2 == 0 {
+                    [false, true]
+                } else {
+                    [true, false]
+                } {
+                    let input = black_box(&raw);
+                    let started = Instant::now();
+                    let mut lookup = HashMap::<&[u8], u32>::new();
+                    if !direct {
+                        lookup.try_reserve(rows).unwrap();
+                    }
+                    let mut table = allocate(if direct { 256 } else { rows }).unwrap();
+                    let mut ids = Vec::with_capacity(rows);
+                    if direct {
+                        append_byte_dictionary(input, &mut table, &mut ids);
+                    } else {
+                        for row in input.chunks_exact(black_box(input.len() / rows)) {
+                            let next = lookup.len() as u32;
+                            ids.push(*lookup.entry(row).or_insert_with(|| {
+                                table.extend_from_slice(row);
+                                next
+                            }));
+                        }
+                    }
+                    black_box((&table, &ids));
+                    let elapsed = started.elapsed().as_secs_f64();
+                    assert_eq!(table.len(), unique);
+                    for (row, &id) in ids.iter().enumerate() {
+                        assert_eq!(table[id as usize], raw[row]);
+                    }
+                    println!(
+                        "unique={unique} rows={rows} rep={} direct={direct} elapsed_ms={:.6}",
+                        repetition + 1,
+                        elapsed * 1000.0
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn byte_dictionary_matches_hashmap_palette_order_for_all_cardinalities() {
+        for unique in 1..=256 {
+            for rows in [0, 1, 7, 257, 4096] {
+                // Reverse first occurrences so value order cannot substitute for ID order.
+                let raw: Vec<_> = (0..rows)
+                    .map(|row| (unique - 1 - row % unique) as u8)
+                    .collect();
+                let mut lookup = HashMap::new();
+                let mut expected_table = Vec::new();
+                let expected_ids: Vec<_> = raw
+                    .iter()
+                    .map(|&value| {
+                        let next = lookup.len() as u32;
+                        *lookup.entry(value).or_insert_with(|| {
+                            expected_table.push(value);
+                            next
+                        })
+                    })
+                    .collect();
+                let mut table = allocate(raw.len().min(256)).unwrap();
+                let mut ids = Vec::with_capacity(rows);
+                append_byte_dictionary(&raw, &mut table, &mut ids);
+                assert_eq!(table, expected_table);
+                assert_eq!(ids, expected_ids);
+                assert!(table.capacity() <= 256);
+                let encoded = encode_pre4(&raw, 1).unwrap();
+                assert_eq!(
+                    decode(encoded.codec(), encoded.bytes(), raw.len(), 1, raw.len()).unwrap(),
+                    raw
+                );
+            }
+        }
+    }
+
     #[test]
     fn packed_ids_match_independent_bit_oracle_at_every_width() {
         for bits in 0_usize..=32 {

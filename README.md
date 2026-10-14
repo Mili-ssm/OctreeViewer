@@ -452,3 +452,15 @@ sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
   porcentajes de ambas series. CRC aislado 4,44× no equivale al speedup del formato.
 - [ ] Evaluar tabla directa para columnas u8 y transposición por tiles; ampliar lectura
   selectiva paralela. Mantener comparación de bytes, CPU/RSS y corpus de alta entropía.
+
+
+## Entrega: diccionarios de un byte — 14-10-2026
+
+- [x] Tabla directa de 256 entradas, preservando primera aparición, bytes y candidatos.
+  Comparar todas las cardinalidades con HashMap, roundtrip, límites y corrupción.
+- [x] Cerrar tres rondas por corpus tras conservar asignaciones/vida del HashMap en columnas
+  anchas. Paleta/IDs aislados más de 10×; conversión final de Albuera 2,193 → 2,176 s (rangos
+  solapados, sin mejora global demostrada). Belvedere es control negativo por columnas
+  constantes; doce conversiones finales con parejas idénticas dentro de cada corpus. [Evidencia y prototipo descartado](docs/STORAGE_V6_CPU.md).
+- [ ] Cerrar experimento column/row/tile256 de planos de 3/6/8/16 bytes y dos tamaños antes
+  de integrar cambios de localidad; exigir mejora completa y bits/tamaño/selectividad exactos.

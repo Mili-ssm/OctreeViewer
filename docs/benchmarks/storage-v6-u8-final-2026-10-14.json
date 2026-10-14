@@ -1,0 +1,314 @@
+{
+  "status": "complete",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "profile": "perf",
+  "cache": "no purge; alternating builds; operations sequential",
+  "source": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+    "bytes": 618390994,
+    "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+  },
+  "runner": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/compare_io_binaries.py",
+    "bytes": 6098,
+    "sha256": "47cf73a90e8769ae6c99881efcc14d004ffef48a6095d4363afcfb770c485223"
+  },
+  "binaries": {
+    "before": [
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/before-convert",
+        "bytes": 2465080,
+        "sha256": "bb0c2aa3279a75f14db2f8f7f6954be358b55dacba814f8761a60b6eba293978"
+      },
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/before-read",
+        "bytes": 976664,
+        "sha256": "2595e2f7214f9b95b00cecdc1be8dd39f3c993459c9d9e36be0ffb7728b3a6ba"
+      }
+    ],
+    "after": [
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "bytes": 2465664,
+        "sha256": "d3dedf0e144e5bc2a34d8aa9dafa68d15bbf5175ac24c29ed6061e5f8d1511e9"
+      },
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "bytes": 976656,
+        "sha256": "533fe65524fb4294493b4c97523d85df4ed8dd5681a390fed0fa9cc6ce000109"
+      }
+    ]
+  },
+  "runs": [
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 41.83555487000558,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16414716/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65380904/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-1.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-1.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 41.83,
+      "peak_rss_kib": 264304,
+      "user_seconds": 85.09,
+      "system_seconds": 14.0,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-1.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-1.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 41.42419373199664,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8256286/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-1.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-1.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 41.42,
+      "peak_rss_kib": 229560,
+      "user_seconds": 86.58,
+      "system_seconds": 14.43,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-1.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-1.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 41.75720003199967,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57205375/81682329 points (1339 MiB written; 70%)\n  65380904/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-2.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-2.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 41.75,
+      "peak_rss_kib": 255428,
+      "user_seconds": 85.71,
+      "system_seconds": 13.85,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-2.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-2.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 44.51645629199629,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8276568/81682329 points (1339 MiB written; 10%)\n  16453384/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57205375/81682329 points (1339 MiB written; 70%)\n  65380904/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-2.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-2.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 44.51,
+      "peak_rss_kib": 252752,
+      "user_seconds": 84.86,
+      "system_seconds": 14.25,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-2.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-2.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 45.69916118699621,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16414716/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57205375/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-3.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-3.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 45.69,
+      "peak_rss_kib": 253124,
+      "user_seconds": 83.84,
+      "system_seconds": 13.32,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-3.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/before-3.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 40.742739576999156,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16414716/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40859878/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-3.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-3.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 40.74,
+      "peak_rss_kib": 240336,
+      "user_seconds": 84.78,
+      "system_seconds": 14.04,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-3.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-u8-20261014/final-full/after-3.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    }
+  ],
+  "summaries": {
+    "convert": {
+      "before": {
+        "wall_seconds": {
+          "median": 44.51645629199629,
+          "min": 41.83555487000558,
+          "max": 45.69916118699621
+        },
+        "peak_rss_kib": {
+          "median": 253124,
+          "min": 252752,
+          "max": 264304
+        },
+        "user_seconds": {
+          "median": 84.86,
+          "min": 83.84,
+          "max": 85.09
+        },
+        "system_seconds": {
+          "median": 14.0,
+          "min": 13.32,
+          "max": 14.25
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 41.42419373199664,
+          "min": 40.742739576999156,
+          "max": 41.75720003199967
+        },
+        "peak_rss_kib": {
+          "median": 240336,
+          "min": 229560,
+          "max": 255428
+        },
+        "user_seconds": {
+          "median": 85.71,
+          "min": 84.78,
+          "max": 86.58
+        },
+        "system_seconds": {
+          "median": 14.04,
+          "min": 13.85,
+          "max": 14.43
+        }
+      }
+    }
+  }
+}

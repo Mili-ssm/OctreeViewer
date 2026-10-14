@@ -29,6 +29,8 @@ def main():
     parser.add_argument('--before-read', type=Path, required=True)
     parser.add_argument('--after-read', type=Path, required=True)
     parser.add_argument('--rounds', type=int, default=3)
+    parser.add_argument('--skip-reads', action='store_true',
+                        help='encoder-only comparison; conversion still validates all output blocks')
     parser.add_argument('--workers', type=int, default=4)
     args = parser.parse_args()
     if args.rounds <= 0 or not 1 <= args.workers <= 8:
@@ -90,7 +92,7 @@ def main():
                     path.unlink()
     source = (args.output / 'before-1.oct').resolve()
     signatures = set()
-    for workers in [1, 4]:
+    for workers in ([] if args.skip_reads else [1, 4]):
         for repetition in range(1, args.rounds + 1):
             for build in (['before', 'after'] if repetition % 2 else ['after', 'before']):
                 run = execute(f'read-{workers}', build, repetition,
@@ -105,7 +107,7 @@ def main():
                     save()
                     raise RuntimeError('read checksums differ')
     report['summaries'] = {}
-    for kind in ['convert', 'read-1', 'read-4']:
+    for kind in (['convert'] if args.skip_reads else ['convert', 'read-1', 'read-4']):
         report['summaries'][kind] = {}
         for build in builds:
             runs = [r for r in report['runs'] if r['kind'] == kind and r['build'] == build]
