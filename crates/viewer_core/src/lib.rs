@@ -6,6 +6,7 @@ mod dataset;
 mod geometry;
 mod lod_transition;
 mod occupied_octree;
+mod occupied_point_block;
 mod scheduler;
 mod spatial;
 mod visibility;
@@ -22,6 +23,10 @@ pub use geometry::{
     Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,
 };
 pub use lod_transition::{LodTransitionPlan, LodTransitionPlanner};
+pub use occupied_octree::{
+    OccupiedOctree, OccupiedOctreeError, OccupiedOctreeNode, OccupiedOctreeRoot,
+};
+pub use occupied_point_block::{OccupiedPointBlock, OccupiedPointBlockError};
 pub use scheduler::{
     BlockRequestScheduler, RequestCompletion, RequestState, RequestTicket, RequestUpdate,
     ScheduledBlockRequest, SchedulerError, ViewUpdate,
@@ -35,8 +40,4 @@ pub use spatial::{
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{
     SparseVoxelStore, Voxel, VoxelStoreStats, VoxelizationConfig, VoxelizationError,
-};
-
-pub use occupied_octree::{
-    OccupiedOctree, OccupiedOctreeError, OccupiedOctreeNode, OccupiedOctreeRoot,
 };

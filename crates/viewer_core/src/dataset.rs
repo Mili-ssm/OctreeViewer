@@ -228,20 +228,26 @@ impl AttributeColumn {
                 actual: values.data_type(),
             });
         }
+        let column = Self { descriptor, values };
+        column.validate_row_count(point_count)?;
+        Ok(column)
+    }
+
+    pub(crate) fn validate_row_count(&self, point_count: usize) -> Result<(), DatasetError> {
         let expected_len = point_count
-            .checked_mul(descriptor.component_count() as usize)
+            .checked_mul(self.descriptor.component_count() as usize)
             .ok_or_else(|| DatasetError::AttributeLengthOverflow {
-                name: descriptor.name().to_owned(),
+                name: self.descriptor.name().to_owned(),
             })?;
-        let actual_len = values.len();
+        let actual_len = self.values.len();
         if actual_len != expected_len {
             return Err(DatasetError::InvalidAttributeLength {
-                name: descriptor.name().to_owned(),
+                name: self.descriptor.name().to_owned(),
                 expected: expected_len,
                 actual: actual_len,
             });
         }
-        Ok(Self { descriptor, values })
+        Ok(())
     }
 
     pub fn descriptor(&self) -> &AttributeDescriptor {

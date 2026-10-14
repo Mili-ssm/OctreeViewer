@@ -4,8 +4,8 @@ Estado: 14-10-2026. La ruptura de v5 provisional fue autorizada antes de desarro
 Están implementados v5 definitivo y la primera revisión experimental `v6.1-pre`. Esta última
 comprime los mismos enteros cuantizados mediante deltas/fallback, sin nueva pérdida. Su contrato
 completo está en [v6.1-pre](../crates/viewer_format/FORMAT_V6_PRE1.md); una representación lógica
-de vóxeles por ocupación tiene ahora un prototipo lógico aislado en memoria; su integración
-y serialización siguen pendientes.
+de vóxeles por ocupación tiene un prototipo lógico y asociación a filas de `PointBlock` en
+memoria. Su integración en conversión/render y serialización siguen pendientes.
 
 ## Capas y versiones
 
@@ -38,7 +38,8 @@ son privados y sólo se exponen vistas inmutables y getters. El árbol vacío co
 La construcción valida límites, ordena claves de camino u128 (hasta 96 bits) y elimina
 duplicados. Agrupa prefijos por nivel en O(N × profundidad) después de ordenar, con O(N)
 temporales más la salida; esos temporales se liberan al terminar. La consulta usa rank de
-máscara y la enumeración reconstruye hojas con estado O(profundidad). Las asignaciones de
+máscara; `leaf_index` devuelve el índice en el último nivel, en el orden de `cells()`.
+La enumeración reconstruye hojas con estado O(profundidad). Las asignaciones de
 memoria siguen la política normal de Rust, sin recuperación de OOM. Duplicados colapsados
 significan ocupación, no conteo de puntos ni agregación de atributos.
 
@@ -47,6 +48,46 @@ nivel, octantes completos, negativos, entrada invertida, duplicados, vacío, pro
 profundidad 32, extremos i32 y errores de límites. Este contrato todavía no se consume desde
 conversión ni renderer. `usize` y el padding Rust no son una especificación binaria ni una
 medición de RSS; no se atribuye ahorro de almacenamiento o velocidad al prototipo.
+
+## Asociación de hojas y payloads (implementada en memoria)
+
+`OccupiedPointBlock::new(root, source, cells)` recibe una celda explícita por fila del
+`PointBlock` original. Mueve el payload sin clonarlo ni reordenarlo y valida tanto la cantidad
+de celdas como la longitud de **cada** columna (`filas × componentes`, con comprobación de
+desbordamiento). `PointBlock::new` por sí solo no impone esa alineación. Celdas fuera de raíz
+y payloads desalineados devuelven errores tipados antes de construir la topología.
+
+Los pares `(clave de camino, fila original)` se ordenan una sola vez. La construcción emite
+claves únicas, `row_ids` y `leaf_offsets`: para N filas y L hojas, los offsets tienen longitud
+L+1, parten de cero y terminan en N; cada slice ocupado es no vacío y todos los IDs forman
+una permutación de `0..N`. Dentro de cada hoja, las filas están en orden original ascendente.
+El vacío tiene offsets `[0]` y cero filas. Las hojas coinciden con el último nivel del octree.
+El buffer temporal de pares se libera antes de construir la topología con claves ya ordenadas.
+Los IDs se asignan en un vector propio para evitar retener capacidad de los pares más anchos.
+Esto describe la vida de los buffers, no una medición de pico RSS.
+
+`source()` y `topology()` son vistas inmutables; `into_source()` recupera el bloque original.
+`rows_for_cell` y `rows_for_leaf` prestan slices de IDs sin copiar payloads. `select_cell`
+copia sólo las filas seleccionadas y sus columnas mediante `AttributeValues::select_rows`,
+conservando XYZ/RGB, descriptores, componentes y bits de valores tipados. Una celda ausente o
+fuera de raíz devuelve `Ok(None)`. El bloque seleccionado mantiene el ID de origen como
+procedencia: es un subconjunto y no debe sustituir al bloque completo en jerarquía/caché.
+
+La asociación es estructural y local a ese bloque. El caller suministra las celdas; no se
+comprueba que el XYZ físico esté dentro de ellas porque aún no hay contrato de grilla física.
+No se deduplican puntos ni se promedian valores. Conservar el `PointBlock` no equivale a
+conservar LAS original sin pérdida: el lector ya aplica su cuantización/proyección. Tampoco
+permite quitar XYZ del payload: faltan residuales exactos y su codificación.
+
+Pruebas nuevas: agrupado independiente de 300 filas, cobertura de cada fila una sola vez,
+multiplicidad, límites y errores, RGB distintos dentro de una celda, atributos multicomponente,
+enteros i64/u64 extremos y superiores a 2^53, NaN con payload y cero negativo comparados por
+bits. La integración lee parejas v5 y v6.1-pre con/sin acompañante y comprueba selección por
+celda. Son fixtures sintéticas, no evidencia de escala ni rendimiento en datasets reales.
+
+Siguiente contrato pendiente: grilla física/CRS, residuales XYZ, identidad de filas entre
+bloques, payloads Replacement/Additive y anchos de IDs/offsets serializados. Antes de otra
+revisión pre, medir bytes totales, CPU y picos conjuntos con payload e índice simultáneos.
 
 ## Propuesta de almacenamiento por ocupación (pendiente)
 
@@ -202,7 +243,7 @@ resolverlo no se serializa una `GridDefinition` ni se asigna una revisión nueva
 
 Para cerrar v6 faltan:
 
-- Integrar el prototipo lógico de vóxeles ocupados con payloads y consumidores; definir para disco
+- Integrar la asociación en memoria de ocupación/filas con conversión y consumidores; definir para disco
   el byte de conteo/flags e índices de ancho fijo, manteniendo arrays por nivel y orden; medir tamaño
   total, CPU, RAM, lectura selectiva y equivalencia espacial antes de fijar una revisión de
   almacenamiento.

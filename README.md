@@ -69,8 +69,9 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    alternando el orden y extender a Majadas/Albuera. Ya existe un prototipo lógico aislado
    `OccupiedOctree` en `viewer_core`: arrays de celdas ocupadas por nivel, máscara e índice
    al primer hijo, conteo derivado y coordenadas reconstruidas desde una raíz entera explícita.
-   No está integrado en conversión/render ni serializado en v6.1-pre. Su contrato local no
-   resuelve grilla física ni CRS entre nubes; ver la entrega y tareas siguientes más abajo.
+   `OccupiedPointBlock` ya asocia hojas con todas las filas y atributos de un bloque y permite
+   seleccionarlos por celda. No está integrado en conversión/render ni serializado en v6.1-pre.
+   Su contrato local no resuelve grilla física ni CRS entre nubes; ver las tareas siguientes.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
    trabajo del renderer; deduplicar valores o streams es una optimización del almacenamiento.
@@ -194,10 +195,46 @@ Plan y criterios de cierre de esta entrega:
   `cargo fmt --all -- --check`, Clippy workspace/all-targets y Clippy WASM con `-D warnings`.
 - [x] Actualizar contratos/documentación y revisar el diff para el commit de esta entrega.
 
-Pendiente después de esta entrega: integrar payloads/atributos y semánticas Replacement/Additive;
-definir grilla física, CRS/unidades y compatibilidad entre nubes; decidir conteo/flags y ancho de
+La asociación de payloads/atributos en memoria se cierra en la entrega siguiente. Pendiente:
+integración con conversión/render y semánticas Replacement/Additive; definir grilla física, CRS/unidades y compatibilidad entre nubes; decidir conteo/flags y ancho de
 índices en disco; medir tamaño total, construcción/apertura, consultas y pico de memoria frente
 a v5/pre1 con datasets reales. Sólo entonces considerar otra revisión de almacenamiento.
 Sugerencia: evaluar primero el conteo derivado y posponer flags de deduplicación hasta disponer
 de patrones medidos. Este prototipo no cambia conversión, renderer ni compatibilidad en disco,
 y no demuestra ahorro, velocidad o menor RSS.
+
+## Entrega 14-10-2026: asociar ocupación y filas de puntos
+
+Assessment: la topología ya reconstruye celdas, pero colapsar celdas duplicadas no puede
+colapsar filas de puntos ni sus atributos. Una máscara no sustituye XYZ dentro de la celda.
+Esta entrega enlaza hojas con filas originales y mantiene el payload íntegro en memoria.
+
+- [x] Añadir consulta de índice de hoja al octree y reutilizar un único constructor de
+  topología desde claves ordenadas, sin duplicar el algoritmo ni ordenar dos veces.
+- [x] Asociar cada celda hoja con un slice contiguo de índices de filas, conservando todos
+  los duplicados como filas diferentes y el orden original dentro de cada celda.
+- [x] Vincular el índice a un `PointBlock` inmutable; validar una celda por punto y la
+  alineación de las columnas. Permitir seleccionar una celda con XYZ/RGB/atributos completos.
+- [x] Probar selección por celda contra un agrupado independiente, vacíos, límites,
+  multiplicidad y conservación de bits (NaN, cero negativo y enteros de 64 bits). Comprobar
+  también bloques leídos desde parejas v5/v6.1-pre. Pasan tests del workspace, fmt y
+  Clippy nativo/WASM con `-D warnings`; las pruebas GPU ignoradas no certifican presentación.
+- [x] Actualizar documentación y revisar el diff para el commit de esta entrega.
+
+Pendiente: grilla física, residuales XYZ para comprimir sin pérdida, asociación de payloads en
+disco, consultas selectivas, Replacement/Additive y mediciones de tamaño/CPU/pico conjunto.
+No se habilita una revisión nueva de archivo ni se cambia el renderer en esta entrega.
+
+Próximos cierres de v6, en orden de dependencia:
+
+- [ ] Definir y probar la grilla física candidata (ancla/escala diádica, raíz y límites),
+  con negativos y nubes independientes. Explicitar CRS/unidades incompatibles y comprobar
+  que el resultado no dependa del orden de puntos ni de carga de las nubes.
+- [ ] Diseñar residuales XYZ sobre coordenadas cuantizadas originales, evitando pasar por f32
+  para evaluar exactitud. Cierre: reconstruir cada fila con la misma precisión que v5/pre1,
+  incluidos puntos distintos dentro de una celda, RGB y todos sus atributos.
+- [ ] Medir ocupación + IDs/offsets + payload completo en corpus real y comparar con v5/pre1:
+  tamaño total, construcción, selección por celda, CPU y pico simultáneo. Conservar como
+  contraejemplo el ahorro insignificante de delta-varint en Belvedere.
+- [ ] Fijar la revisión de disco sólo con esos contratos y evidencia: anchos/límites, checksums,
+  identidad de representación, lectura selectiva y compatibilidad exacta de la pareja.

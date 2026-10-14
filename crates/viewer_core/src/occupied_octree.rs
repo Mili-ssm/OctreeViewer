@@ -38,7 +38,7 @@ impl OccupiedOctreeRoot {
         self.depth
     }
 
-    fn key(self, coord: VoxelCoord) -> Option<u128> {
+    pub(crate) fn key(self, coord: VoxelCoord) -> Option<u128> {
         let values = [coord.x, coord.y, coord.z];
         let relative: [i64; 3] =
             std::array::from_fn(|i| i64::from(values[i]) - i64::from(self.origin[i]));
@@ -111,6 +111,11 @@ impl OccupiedOctree {
             .collect::<Result<Vec<_>, _>>()?;
         keys.sort_unstable();
         keys.dedup();
+        Ok(Self::from_sorted_unique_keys(root, &keys))
+    }
+
+    /// Internal keys must be valid for this root, strictly increasing and unique.
+    pub(crate) fn from_sorted_unique_keys(root: OccupiedOctreeRoot, keys: &[u128]) -> Self {
         let mut ranges = Vec::new();
         if !keys.is_empty() {
             ranges.push(0..keys.len());
@@ -144,7 +149,7 @@ impl OccupiedOctree {
             levels.push(nodes);
             ranges = next;
         }
-        Ok(Self { root, levels })
+        Self { root, levels }
     }
 
     pub fn root(&self) -> OccupiedOctreeRoot {
@@ -157,23 +162,23 @@ impl OccupiedOctree {
     }
 
     pub fn contains(&self, coord: VoxelCoord) -> bool {
-        let Some(key) = self.root.key(coord) else {
-            return false;
-        };
+        self.leaf_index(coord).is_some()
+    }
+
+    /// Index in the final level, in the same order as [`Self::cells`].
+    /// Returns `None` for an unoccupied cell or a coordinate outside the root.
+    pub fn leaf_index(&self, coord: VoxelCoord) -> Option<usize> {
+        let key = self.root.key(coord)?;
         if self.levels[0].is_empty() {
-            return false;
+            return None;
         }
         let mut index = 0;
         for level in 0..self.root.depth {
             let shift = 3 * u32::from(self.root.depth - level - 1);
-            let Some(child) =
-                self.levels[usize::from(level)][index].child_index(((key >> shift) & 7) as u8)
-            else {
-                return false;
-            };
-            index = child;
+            index =
+                self.levels[usize::from(level)][index].child_index(((key >> shift) & 7) as u8)?;
         }
-        true
+        Some(index)
     }
 
     /// Reconstructs leaf cells in path order with O(depth) traversal state.

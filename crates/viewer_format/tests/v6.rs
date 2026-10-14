@@ -2,7 +2,8 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
+    CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, OccupiedOctreeRoot,
+    OccupiedPointBlock, SpatialBounds, SpatialHierarchy, SpatialNode, VoxelCoord,
 };
 use viewer_format::{
     FileRole, FormatBlockEncoder, FormatError, FormatIdentity, FormatMetadata, FormatReader,
@@ -495,5 +496,66 @@ fn unsupported_v6_final_and_pre2_are_rejected_by_writer_encoder_and_reader() {
             FormatReader::new(Cursor::new(header)),
             Err(FormatError::UnsupportedFormatVersion(actual)) if actual == version
         ));
+    }
+}
+
+#[test]
+fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
+    let a = VoxelCoord::new(-1, 0, 0);
+    let b = VoxelCoord::new(0, -1, 0);
+    let cells = [a, b, a, b];
+    for version in [FormatVersion::V5, FormatVersion::V6_PRE1] {
+        for attach in [false, true] {
+            let (primary, attributes) = write_split(
+                version,
+                fixture_block(),
+                metadata(POINTS.len() as u64, descriptors()),
+            );
+            let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+            if attach {
+                reader.attach_attributes(Cursor::new(attributes)).unwrap();
+            }
+            let source = reader.read_block(BLOCK_ID).unwrap();
+            let occupied = OccupiedPointBlock::new(
+                OccupiedOctreeRoot::new([-2; 3], 2).unwrap(),
+                source,
+                &cells,
+            )
+            .unwrap();
+            let mut all_rows = Vec::new();
+            for (cell, rows) in [(a, [0, 2]), (b, [1, 3])] {
+                assert_eq!(occupied.rows_for_cell(cell), Some(rows.as_slice()));
+                let selected = occupied.select_cell(cell).unwrap().unwrap();
+                assert_eq!(selected.id(), BLOCK_ID);
+                assert_eq!(selected.points().len(), rows.len());
+                for (point, row) in selected.points().points().iter().zip(rows) {
+                    let expected = occupied.source().points().points()[row];
+                    assert_eq!(
+                        point.position.map(f32::to_bits),
+                        expected.position.map(f32::to_bits)
+                    );
+                    assert_eq!(point.color, expected.color);
+                }
+                assert_eq!(
+                    selected.attributes().len(),
+                    occupied.source().attributes().len()
+                );
+                for (column, original) in selected
+                    .attributes()
+                    .iter()
+                    .zip(occupied.source().attributes())
+                {
+                    assert_eq!(column.descriptor(), original.descriptor());
+                    assert_values_bits_eq(
+                        column.values(),
+                        &original.values().select_rows(&rows, 1).unwrap(),
+                    );
+                }
+                all_rows.extend(rows);
+            }
+            all_rows.sort_unstable();
+            assert_eq!(all_rows, vec![0, 1, 2, 3]);
+            assert_eq!(reader.format_version(), version);
+        }
     }
 }
