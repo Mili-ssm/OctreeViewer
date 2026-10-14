@@ -460,34 +460,54 @@ pub(crate) fn prepare_point_block_for_version(
     .map_err(|_| FormatError::BlockSizeOverflow)?;
     let raw_geometry = encode_geometry(&quantized, geometry_length)?;
     let raw_geometry_length = raw_geometry.len();
-    let (geometry_encoding, encoded_geometry, geometry_raw_length) = if layout == StorageLayout::V5
-    {
-        (
-            GeometryEncoding::RawU32,
-            compress_block(&raw_geometry),
-            raw_geometry_length,
-        )
-    } else {
-        let delta = encode_delta(quantized.coordinates())?;
-        let delta_length = delta.len();
-        let other_raw_size = uncompressed_size
-            .checked_sub(geometry_length as u64)
-            .ok_or(FormatError::BlockSizeOverflow)?;
-        let delta_total = other_raw_size
-            .checked_add(delta.len() as u64)
-            .ok_or(FormatError::BlockSizeOverflow)?;
-        let raw_encoded = compress_block(&raw_geometry);
-        if delta_total <= options.max_uncompressed_block_bytes {
-            let delta_encoded = compress_block(&delta);
-            if delta_encoded.bytes().len() < raw_encoded.bytes().len() {
-                (GeometryEncoding::DeltaVarint, delta_encoded, delta_length)
+    let (mut geometry_encoding, mut encoded_geometry, mut geometry_raw_length) =
+        if layout == StorageLayout::V5 {
+            (
+                GeometryEncoding::RawU32,
+                compress_block(&raw_geometry),
+                raw_geometry_length,
+            )
+        } else {
+            let delta = encode_delta(quantized.coordinates())?;
+            let delta_length = delta.len();
+            let other_raw_size = uncompressed_size
+                .checked_sub(geometry_length as u64)
+                .ok_or(FormatError::BlockSizeOverflow)?;
+            let delta_total = other_raw_size
+                .checked_add(delta.len() as u64)
+                .ok_or(FormatError::BlockSizeOverflow)?;
+            let raw_encoded = compress_block(&raw_geometry);
+            if delta_total <= options.max_uncompressed_block_bytes {
+                let delta_encoded = compress_block(&delta);
+                if delta_encoded.bytes().len() < raw_encoded.bytes().len() {
+                    (GeometryEncoding::DeltaVarint, delta_encoded, delta_length)
+                } else {
+                    (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
+                }
             } else {
                 (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
             }
-        } else {
-            (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
+        };
+    if layout == StorageLayout::V6Pre2 && point_count != 0 && u32::try_from(point_count).is_ok() {
+        let max_geometry_bytes =
+            options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
+        for bits in [24, 28] {
+            let candidate = crate::QuantizedOccupancy::new(&quantized, bits)
+                .map_err(|_| FormatError::BlockSizeOverflow)?;
+            for own_octant in [false, true] {
+                if let Some(raw) =
+                    crate::occupancy_codec::encode(&candidate, own_octant, max_geometry_bytes)?
+                {
+                    let encoded = compress_block(&raw);
+                    if encoded.bytes().len() < encoded_geometry.bytes().len() {
+                        geometry_encoding = GeometryEncoding::Occupied;
+                        geometry_raw_length = raw.len();
+                        encoded_geometry = encoded;
+                    }
+                }
+            }
         }
-    };
+    }
     // The u32 coordinates have been encoded; retain only their scalar transform/error
     // while compressing payloads, rather than another 12 bytes per point.
     drop(quantized);

@@ -1,6 +1,6 @@
 # Benchmarks formales de almacenamiento
 
-Protocolo añadido el 13-10-2026 para preparar comparaciones v5/v6. Están soportados v5 definitivo y el experimental v6.1-pre (`OCTVFRM1`, envelope 1); las series provisionales
+Protocolo añadido el 13-10-2026 para preparar comparaciones v5/v6. Están soportados v5 definitivo y los experimentales v6.1-pre/v6.2-pre (`OCTVFRM1`, envelope 1); las series provisionales
 se conservan separadas y no certifican el formato final.
 Última serie: [comparación repetida del 14-10-2026](benchmarks/storage-v5-v6-pre1-comparison-2026-10-14.json),
 con Belvedere completo y dos muestras multibloque en NVMe local.
@@ -355,3 +355,99 @@ locales están bajo `source_report_root` en el JSON; no se redistribuyen los dat
 Reproducción: usar el runner `storage_suite.py` descrito arriba con una repetición por invocación y
 directorios nuevos, alternar los formatos en tres rondas y conservar las mismas opciones. El informe
 contiene los 18 comandos exactos y cada reporte original completo.
+
+## Representación física v6.2-pre — 14-10-2026
+
+Objetivo: menos bytes e I/O, aceptando CPU para reconstrucción. La representación en memoria
+del prototipo anterior no decide el formato. [Contrato binario](../crates/viewer_format/FORMAT_V6_PRE2.md):
+arrays por profundidad dentro de cada bloque direccionable, registros de seis bytes
+(máscara u8, conteo/octante u8, índice u32), filas en varints y residuales empaquetados.
+El índice exterior de LOD/atributos se conserva; no es todavía un único octree global por nube.
+
+### Byte de conteo: inferir o almacenar octante
+
+[Streams materializados y muestras](benchmarks/storage-v6-pre2-octants-2026-10-14.json).
+Prefijos en orden fuente de 32768 puntos de cuatro LAS/LAZ, sin pasar por f32. Tres procesos
+por fuente, cinco iteraciones por proceso, dos anchos residuales y dos variantes de octante:
+15 muestras por combinación y 240 decodificaciones exactas. Orden invertido en iteraciones
+pares. Compilación/tests y navegador terminaron antes de medir. Perfil perf, Ryzen AI 9 365.
+
+Los cuatro bits bajos representan 0–8 hijos. Los tres siguientes pueden almacenar el octante
+propio y el último queda reservado a cero. Ambas variantes tienen la misma longitud antes
+de LZ4. El octante explícito puede reducir CPU en algunos casos, pero añade redundancia y
+cambia la compresibilidad. En los ocho casos de esta serie **inferir siempre comprimió mejor**.
+Por prioridad de I/O se favorece inferencia; el escritor evalúa también la variante explícita
+y sólo la elige si sus bytes finales son estrictamente menores. No se garantiza acelerar CPU.
+
+| Fuente | Bits residuales | Bytes inferidos | Bytes con octante | Decode inferido / explícito (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Outer Banks e430 | 24 | 516668 | 602299 | 1.400 / 1.906 |
+| Outer Banks e430 | 28 | 368434 | 368980 | 0.484 / 0.414 |
+| Belvedere | 24 | 352376 | 355507 | 0.454 / 0.456 |
+| Belvedere | 28 | 369678 | 369754 | 0.352 / 0.346 |
+| Majadas | 24 | 301631 | 301752 | 0.648 / 0.561 |
+| Majadas | 28 | 345342 | 345357 | 0.670 / 0.582 |
+| Albuera | 24 | 521939 | 605663 | 2.214 / 2.934 |
+| Albuera | 28 | 385764 | 386715 | 0.817 / 0.724 |
+
+Tiempos = medianas; rangos y muestras están en el JSON. `decode_ms` incluye validación y
+reconstrucción del stream **ya descomprimido**, no I/O, LZ4 ni proyección f32. `encode_ms`
+incluye serializar y comprimir, pero no construir el candidato común. Estos bytes son sólo
+geometría materializada; no compararlos con parejas completas sin sumar metadata/atributos.
+
+### Parejas completas y lecturas
+
+[Informe de archivos](benchmarks/storage-v6-pre2-comparison-2026-10-14.json).
+Perfil perf, un worker, división 2; 10000 puntos/bloque en las muestras y 262144 en Belvedere.
+NVMe local `/dev/nvme0n1p3`, Btrfs `compress=zstd:1`; bytes lógicos de archivo, no ocupación
+física Btrfs. Lecturas calientes tras conversión/validación/hashing. Tamaños incluyen `.oct`,
+`.octattrs`, índices y CRC. Los tres casos pequeños tienen tres conversiones por formato en
+orden cíclico v5/pre1/pre2. Belvedere es **un piloto con una conversión por formato**, orden
+fijo v5→pre1→pre2, una reconstrucción residente y tres lecturas BFS por pareja. No confundir
+estos tiempos de conversión con una comparación formal alternada de tres conversiones.
+
+| Fuente | Pareja v5 (B) | Pareja pre1 (B) | Pareja pre2 (B) | Bloques ocupación pre2 |
+| --- | ---: | ---: | ---: | ---: |
+| Outer Banks e430 | 2256854 | 2022428 | 2022428 | 0 |
+| Bunny parcial | 414107 | 211185 | 211185 | 0 |
+| Sintetica agrupada | 91115 | 91116 | 84537 | 1 |
+| Belvedere | 1591650185 | 1591563835 | 1590761099 | 80 |
+
+| Fuente | Conversión v5 / pre1 / pre2 (ms) | Carga residente (ms) | BFS (ms) |
+| --- | ---: | ---: | ---: |
+| Outer Banks e430 | 72.645 / 89.574 / 124.072 | 12.504 / 17.883 / 13.922 | 9.483 / 16.927 / 12.032 |
+| Bunny parcial | 27.059 / 34.886 / 33.848 | 5.419 / 5.169 / 5.126 | 4.944 / 4.818 / 3.563 |
+| Sintetica agrupada | 12.844 / 13.876 / 13.075 | 0.801 / 0.805 / 0.768 | 0.805 / 0.803 / 0.768 |
+| Belvedere | 43835.841 / 48494.321 / 59758.121 | 7471.094 / 7644.937 / 7407.468 | 6816.276 / 6670.188 / 6564.843 |
+
+En las muestras, tiempos = medianas de tres procesos. En Belvedere, conversión/residente
+son observaciones únicas y BFS es mediana de tres. Preparación, escritura ordenada y sync
+están separados en las métricas crudas. Coinciden conteos y checksums entre los tres formatos
+en cada modo; las salidas por formato son deterministas en los casos repetidos.
+
+El caso sintético agrupado conserva todos los puntos/atributos y reduce la pareja frente a
+pre1 en 6579 B (7,22 %). Outer Banks y Bunny eligen fallback y mantienen el tamaño pre1.
+Belvedere elige ocupación en 80 de 1343 bloques y ahorra **802736 B frente a pre1 (0,0504 %)**
+o 889086 B frente a v5 (0,0559 %). Es una mejora física real pero pequeña en ese dataset;
+no implica una reducción grande general. En este piloto convertir pre2 tarda más, y las
+lecturas no permiten afirmar una mejora general de velocidad.
+
+### Navegador y pendientes
+
+[Playwright MCP / OPFS](benchmarks/storage-v6-pre2-browser-2026-10-14.json) convirtió una LAS
+sintética agrupada a v5/pre2, abrió Blob con/sin acompañante y rechazó provisional, pre3 y
+acompañante incorrecto. Ocho bloques de la salida web pre2 usan ocupación. Al reconstruir
+ambas parejas con el lector nativo resultaron 4160 filas incluidos LOD y checksum residente
+`70f71011fabdb3bf`. El único error de consola fue favicon.ico 404; no hubo adaptador WebGPU.
+Esto no certifica presentación, FPS o refinamiento GPU.
+
+Pendiente: repetir conversiones pre2 alternadas en Belvedere y extender archivos completos
+a Majadas/Albuera; estudiar más perfiles/orden de streams y compactación del índice exterior.
+Un único array global por profundidad necesita su propio contrato de grilla/raíces/índices y
+lecturas paginadas. Medir esa representación física completa, preservando precisión y filas.
+Las optimizaciones de memoria/CPU pueden hacerse tras los traits sin redefinir estos bytes.
+
+Reproducir con el runner existente y `--format-version v6.2-pre`; conservar las mismas fuentes,
+opciones y condiciones para v5/pre1. El JSON guarda comandos, hashes binarios/fuentes/salidas,
+código medido y resultados crudos. La fuente sintética se genera con el script conservado en
+el informe de navegador; las demás fuentes se usan localmente sin redistribuirlas.

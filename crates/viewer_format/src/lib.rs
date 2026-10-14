@@ -10,6 +10,7 @@ mod error;
 mod geometry;
 mod layout;
 mod metadata;
+mod occupancy_codec;
 mod quantization;
 mod quantized_occupancy;
 mod ranges;

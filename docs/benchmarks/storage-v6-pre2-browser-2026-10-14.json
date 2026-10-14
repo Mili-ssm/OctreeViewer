@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-14",
+  "tool": "Playwright MCP",
+  "scope": "Blob metadata with/without companion; OPFS conversion v5/pre2; native reader reconstruction of both browser pairs",
+  "source": {
+    "path": "target/pre2-browser-check/clustered.las",
+    "sha256": "693f4eb8c7640adbc16c5e7dc3da97d397557709b43d1fb1dbf0c2dc88026044",
+    "generator": "import struct\nfrom pathlib import Path\nn=4096\nstate=0x12345678\npositions=[]\nfor i in range(n):\n p=[]\n for axis in range(3):\n  state=(state*1664525+1013904223)&0xffffffff\n  cell=(state>>28)%4\n  state=(state*1664525+1013904223)&0xffffffff\n  p.append(round((cell+state/0xffffffff*0.01)/4*1000000))\n positions.append(p)\nh=bytearray(227);h[:4]=b'LASF';h[24:26]=bytes([1,2]);struct.pack_into('<H',h,94,227);struct.pack_into('<I',h,96,227);h[104]=2;struct.pack_into('<H',h,105,26);struct.pack_into('<I',h,107,n);struct.pack_into('<I',h,111,n);struct.pack_into('<3d',h,131,*([1e-6]*3))\nfor axis in range(3):struct.pack_into('<2d',h,179+axis*16,max(p[axis] for p in positions)*1e-6,min(p[axis] for p in positions)*1e-6)\nwith Path('target/pre2-browser-check/clustered.las').open('wb') as f:\n f.write(h)\n for i,p in enumerate(positions):f.write(struct.pack('<3iHBBbBH3H',*p,i%65536,9,1,0,0,0,(i&255)*257,((i>>8)&255)*257,23*257))\n"
+  },
+  "pairs": {
+    "v5": {
+      "oct": {
+        "path": "target/pre2-browser-check/web-v5.oct",
+        "bytes": 57785,
+        "sha256": "7cab732d212ffe366dc7e64a82c81ca31d69ce7d5a2f534f3e03317fa0e65d0e"
+      },
+      "octattrs": {
+        "path": "target/pre2-browser-check/web-v5.octattrs",
+        "bytes": 42946,
+        "sha256": "94fd1f0c09f1f83c814df2a1017ddb3196dde8680292a3228504382695fa6ac5"
+      },
+      "native_read": {
+        "rep": "1",
+        "mode": "reconstruct",
+        "format_version": "v5",
+        "header_envelope": "1",
+        "oct_bytes": "57785",
+        "attrs_bytes": "42946",
+        "open_ms": "0.141",
+        "attach_ms": "0.006",
+        "decoded_estimate_bytes": "203840",
+        "max_block_estimate_bytes": "27440",
+        "budget_estimate_bytes": "203840",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "536870912",
+        "load_ms": "0.883",
+        "verify_ms": "0.244",
+        "full_ms": "1.288",
+        "blocks": "16",
+        "points": "4160",
+        "checksum": "70f71011fabdb3bf"
+      }
+    },
+    "v6.2-pre": {
+      "oct": {
+        "path": "target/pre2-browser-check/web-pre2.oct",
+        "bytes": 55715,
+        "sha256": "7ab08f783f098f6d41671e88bec674bea6f01f2c7a42b4aa927546cfc16da13f"
+      },
+      "octattrs": {
+        "path": "target/pre2-browser-check/web-pre2.octattrs",
+        "bytes": 42946,
+        "sha256": "9f1375233d8cf1ed1a39a4205255530c6dac23017c88985d67e8e41bd1817140"
+      },
+      "native_read": {
+        "rep": "1",
+        "mode": "reconstruct",
+        "format_version": "v6.2-pre",
+        "header_envelope": "1",
+        "oct_bytes": "55715",
+        "attrs_bytes": "42946",
+        "open_ms": "0.186",
+        "attach_ms": "0.008",
+        "decoded_estimate_bytes": "212304",
+        "max_block_estimate_bytes": "28525",
+        "budget_estimate_bytes": "212304",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "536870912",
+        "load_ms": "1.000",
+        "verify_ms": "0.242",
+        "full_ms": "1.450",
+        "blocks": "16",
+        "points": "4160",
+        "checksum": "70f71011fabdb3bf"
+      }
+    }
+  },
+  "blob_probe": {
+    "passed": true,
+    "formatVersion": "v6.2-pre",
+    "sourcePointCount": "4096",
+    "nodeCount": 9,
+    "schemaColumns": 8,
+    "wrongSidecarRejected": true,
+    "rejected": [
+      "provisional",
+      "v6.3-pre"
+    ]
+  },
+  "console_errors": [
+    "favicon.ico HTTP 404"
+  ],
+  "gpu_presentation_verified": false,
+  "wasm_sha256": "121fbc7e8a493857a70ede53e75daae29a2b29a539426df75dad6854078cd990",
+  "pre2_geometry_modes": {
+    "geometry_delta_block_count": 8,
+    "geometry_occupied_block_count": 8,
+    "geometry_raw_block_count": 0
+  },
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "webgpu_adapter_available": false
+}

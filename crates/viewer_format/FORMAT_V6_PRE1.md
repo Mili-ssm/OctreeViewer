@@ -1,7 +1,8 @@
 # Native `.oct` format, v6.1-pre
 
 First implemented experimental v6 revision. Its exact identity is major **6**, revision **1**;
-final v6 and other development revisions remain unsupported. Default output remains final v5.
+[v6.2-pre](FORMAT_V6_PRE2.md) is implemented separately; final v6 and later revisions remain
+unsupported. Default output remains final v5.
 This revision changes geometry encoding without adding loss beyond the existing v5 quantization.
 It is not yet a voxel-occupancy or mesh format.
 
@@ -113,8 +114,8 @@ transitions does not require a new storage identity while it consumes the same s
 file that persists renderer-derived meshes would need an explicit storage contract for those meshes.
 
 `v6.1-pre` implements only direct-u32 versus delta-varint encoding of quantized point coordinates.
-It does not implement occupancy masks or infer child voxel coordinates. Those are a separate pending
-logical representation. The current proposal gives each parent an occupancy-position byte, a
+It does not implement occupancy masks or infer child voxel coordinates. Pre2 implements that
+encoding within geometry blocks; a global physical-voxel representation remains pending. The current proposal gives each parent an occupancy-position byte, a
 child-count/flags byte, and an index/offset to its first child in the next level's array. The
 `count` and `first_child` define a contiguous slice; the mask plus a deterministic child order (for
 example Morton) maps each occupied slot to its entry in that slice. Given the parent's coordinate

@@ -817,71 +817,74 @@ mod tests {
 
     #[test]
     fn converts_local_laszip_ept_pages_as_additive_hierarchy() {
-        let root = dir();
-        fs::create_dir_all(root.join("ept-data")).unwrap();
-        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
-        write_manifest(&root, "laszip", 3);
-        fs::write(
-            root.join("ept-hierarchy/0-0-0-0.json"),
-            r#"{"0-0-0-0":1,"1-0-0-0":-1}"#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("ept-hierarchy/1-0-0-0.json"),
-            r#"{"1-0-0-0":1,"2-0-0-0":1}"#,
-        )
-        .unwrap();
-        write_laz(&root.join("ept-data/0-0-0-0.laz"), [7.0, 7.0, 7.0]);
-        write_laz(&root.join("ept-data/1-0-0-0.laz"), [3.0, 3.0, 3.0]);
-        write_laz(&root.join("ept-data/2-0-0-0.laz"), [1.0, 1.0, 1.0]);
-
-        let output = root.join("result.oct");
-        let mut progress = Vec::new();
-        let options = ConvertOptions::default()
-            .with_format_version(viewer_format::FormatVersion::V6_PRE1)
+        for version in [
+            viewer_format::FormatVersion::V6_PRE1,
+            viewer_format::FormatVersion::V6_PRE2,
+        ] {
+            let root = dir();
+            fs::create_dir_all(root.join("ept-data")).unwrap();
+            fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+            write_manifest(&root, "laszip", 3);
+            fs::write(
+                root.join("ept-hierarchy/0-0-0-0.json"),
+                r#"{"0-0-0-0":1,"1-0-0-0":-1}"#,
+            )
             .unwrap();
-        let report = crate::convert_file_with_progress(&root, &output, options, |event| {
-            progress.push(event);
-            true
-        })
-        .unwrap();
-        assert_eq!(report.point_count, 3);
-        assert_eq!(report.block_preparation, None);
-        assert!(report.output_validation.worker_limit > 0);
-        assert_eq!(report.block_count, 3);
-        assert_eq!(
-            progress.first().unwrap().stage,
-            ConversionStage::InspectingInput
-        );
-        assert_eq!(progress.last().unwrap().stage, ConversionStage::Complete);
-
-        let mut reader = FormatReader::new(File::open(&output).unwrap()).unwrap();
-        assert_eq!(
-            reader.format_version(),
-            viewer_format::FormatVersion::V6_PRE1
-        );
-        reader
-            .attach_attributes(File::open(output_attributes_path(&output)).unwrap())
+            fs::write(
+                root.join("ept-hierarchy/1-0-0-0.json"),
+                r#"{"1-0-0-0":1,"2-0-0-0":1}"#,
+            )
             .unwrap();
-        let hierarchy = reader.metadata().hierarchy();
-        assert_eq!(reader.format_metadata().visual_scale(), 12.5);
-        assert_eq!(hierarchy.semantics(), HierarchySemantics::Additive);
-        assert_eq!(hierarchy.stats().node_count, 3);
-        assert_eq!(hierarchy.stats().source_point_count, Some(3));
-        assert_eq!(hierarchy.node(NodeId::new(0)).unwrap().point_count(), 1);
-        assert_eq!(hierarchy.node(NodeId::new(1)).unwrap().point_count(), 1);
-        assert_eq!(hierarchy.node(NodeId::new(2)).unwrap().point_count(), 1);
-        let block = reader.read_block(BlockId::new(2)).unwrap();
-        assert_eq!(block.points().len(), 1);
-        let viewer_core::AttributeValues::U16(intensity) = block.attributes()[0].values() else {
-            panic!("EPT intensity must remain u16");
-        };
-        assert_eq!(intensity, &[0xAB00]);
-        let viewer_core::AttributeValues::U8(classification) = block.attributes()[1].values()
-        else {
-            panic!("EPT classification must remain u8");
-        };
-        assert_eq!(classification, &[2]);
+            write_laz(&root.join("ept-data/0-0-0-0.laz"), [7.0, 7.0, 7.0]);
+            write_laz(&root.join("ept-data/1-0-0-0.laz"), [3.0, 3.0, 3.0]);
+            write_laz(&root.join("ept-data/2-0-0-0.laz"), [1.0, 1.0, 1.0]);
+
+            let output = root.join("result.oct");
+            let mut progress = Vec::new();
+            let options = ConvertOptions::default()
+                .with_format_version(version)
+                .unwrap();
+            let report = crate::convert_file_with_progress(&root, &output, options, |event| {
+                progress.push(event);
+                true
+            })
+            .unwrap();
+            assert_eq!(report.point_count, 3);
+            assert_eq!(report.block_preparation, None);
+            assert!(report.output_validation.worker_limit > 0);
+            assert_eq!(report.block_count, 3);
+            assert_eq!(
+                progress.first().unwrap().stage,
+                ConversionStage::InspectingInput
+            );
+            assert_eq!(progress.last().unwrap().stage, ConversionStage::Complete);
+
+            let mut reader = FormatReader::new(File::open(&output).unwrap()).unwrap();
+            assert_eq!(reader.format_version(), version);
+            reader
+                .attach_attributes(File::open(output_attributes_path(&output)).unwrap())
+                .unwrap();
+            let hierarchy = reader.metadata().hierarchy();
+            assert_eq!(reader.format_metadata().visual_scale(), 12.5);
+            assert_eq!(hierarchy.semantics(), HierarchySemantics::Additive);
+            assert_eq!(hierarchy.stats().node_count, 3);
+            assert_eq!(hierarchy.stats().source_point_count, Some(3));
+            assert_eq!(hierarchy.node(NodeId::new(0)).unwrap().point_count(), 1);
+            assert_eq!(hierarchy.node(NodeId::new(1)).unwrap().point_count(), 1);
+            assert_eq!(hierarchy.node(NodeId::new(2)).unwrap().point_count(), 1);
+            let block = reader.read_block(BlockId::new(2)).unwrap();
+            assert_eq!(block.points().len(), 1);
+            let viewer_core::AttributeValues::U16(intensity) = block.attributes()[0].values()
+            else {
+                panic!("EPT intensity must remain u16");
+            };
+            assert_eq!(intensity, &[0xAB00]);
+            let viewer_core::AttributeValues::U8(classification) = block.attributes()[1].values()
+            else {
+                panic!("EPT classification must remain u8");
+            };
+            assert_eq!(classification, &[2]);
+        }
     }
 
     #[test]

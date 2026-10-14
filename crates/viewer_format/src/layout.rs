@@ -19,6 +19,7 @@ pub(crate) const FOOTER_MAGIC: &[u8; 8] = b"OCTVEND5";
 pub(crate) enum StorageLayout {
     V5,
     V6Pre1,
+    V6Pre2,
 }
 
 impl StorageLayout {
@@ -26,6 +27,7 @@ impl StorageLayout {
         match version {
             crate::FormatVersion::V5 => Ok(Self::V5),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 1 => Ok(Self::V6Pre1),
+            crate::FormatVersion::V6Pre(revision) if revision.get() == 2 => Ok(Self::V6Pre2),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -34,6 +36,7 @@ impl StorageLayout {
         match self {
             Self::V5 => crate::FormatVersion::V5,
             Self::V6Pre1 => crate::FormatVersion::V6_PRE1,
+            Self::V6Pre2 => crate::FormatVersion::V6_PRE2,
         }
     }
 
@@ -41,6 +44,7 @@ impl StorageLayout {
         match self {
             Self::V5 => INDEX_MAGIC,
             Self::V6Pre1 => b"OCTVI61P",
+            Self::V6Pre2 => b"OCTVI62P",
         }
     }
 
@@ -48,6 +52,7 @@ impl StorageLayout {
         match self {
             Self::V5 => FOOTER_MAGIC,
             Self::V6Pre1 => b"OCTVE61P",
+            Self::V6Pre2 => b"OCTVE62P",
         }
     }
 }

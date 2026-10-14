@@ -9,9 +9,10 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 
 - El formato de trabajo vigente es **v5 definitivo** (`OCTVFRM1`, revisión 0), separado en `.oct` (coordenadas y jerarquía) y
   `.octattrs` (RGB y atributos numéricos). Se lee y escribe v5; hay que regenerar archivos v1–v4 y v5 provisionales (`OCTVWFRM`) desde sus fuentes.
-- Está implementado **`v6.1-pre` optativo**: coordenadas delta con fallback directo, sin pérdida
-  adicional frente a v5, con lectores/escritores intercambiables por identidad exacta. V5 sigue
-  siendo la salida predeterminada; `v6` final y otras revisiones se rechazan.
+- Están implementados **`v6.1-pre` y `v6.2-pre` optativos**. Pre1 añade deltas; pre2 serializa
+  ocupación en arrays por profundidad dentro de cada bloque, con registros de 6 bytes y residuales
+  exactos. Se elige el menor payload tras LZ4, con fallback raw/delta. V5 sigue predeterminado;
+  v6 final y pre3 permanecen rechazados.
 - La conversión admite LAS/LAZ y EPT local. La demo web admite carga progresiva por bloques,
   color por RGB o componente numérico, cámara orbital y modo pájaro.
 - La ruta LOD voxelizada usa celdas diádicas enteras sin solapamiento entre generaciones. El
@@ -72,8 +73,11 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    al primer hijo, conteo derivado y coordenadas reconstruidas desde una raíz entera explícita.
    `OccupiedPointBlock` ya asocia hojas con todas las filas y atributos de un bloque y permite
    seleccionarlos por celda. `QuantizedOccupancy` reconstruye los u32 con residuales empaquetados,
-   pero su índice todavía amplifica memoria en los prefijos probados. Estos candidatos no están
-   integrados en conversión/render ni serializados en v6.1-pre.
+   y ahora se serializa mediante el codec físico `v6.2-pre`, sin reconstruir ese índice nativo al
+   leer. La memoria del prototipo no decide el layout: se priorizan bytes/I/O y CPU de reconstrucción.
+   [Especificación pre2](crates/viewer_format/FORMAT_V6_PRE2.md). El piloto Belvedere pre2 ocupa
+   1.590.761.099 B, 802.736 B menos que pre1 (0,0504 %), con 80 bloques de ocupación. Es una
+   conversión por formato y tres lecturas BFS; faltan conversiones pre2 alternadas y más corpus.
    Su contrato local no resuelve grilla física ni CRS entre nubes; ver las tareas siguientes.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
@@ -100,16 +104,16 @@ cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-vers
 ```
 
 La conversión produce una pareja v5 definitiva. Las muestras versionadas se han regenerado;
-los datasets locales provisionales deben reconvertirse. Para ensayar la revisión experimental,
-añadir `--format-version v6.1-pre` en lugar de `v5`. Se rechazan las versiones sin backend antes
+los datasets locales provisionales deben reconvertirse. Para ensayar las revisiones experimentales,
+usar `--format-version v6.1-pre` o `--format-version v6.2-pre` en lugar de `v5`. Se rechazan las versiones sin backend antes
 de escribir y los manifiestos de checkpoint anteriores a V5. `v6.N-pre` identifica revisiones
-exactas de desarrollo; por ahora sólo está implementada `v6.1-pre`, no `v6` final.
+exactas de desarrollo; se implementan pre1/pre2, no `v6` final.
 
 La pareja contiene:
 
 | Archivo | Contenido | Uso |
 | --- | --- | --- |
-| `OUTPUT.oct` | XYZ cuantizado a `u32` (directo en v5; delta/fallback en v6.1-pre), marco local, jerarquía e índice común. | Se puede abrir sin atributos; se visualiza en gris. |
+| `OUTPUT.oct` | XYZ cuantizado a `u32` (v5 directo; pre1 delta/fallback; pre2 también ocupación/residuales), marco local, jerarquía e índice común. | Se puede abrir sin atributos; se visualiza en gris. |
 | `OUTPUT.octattrs` | RGB de presentación y columnas numéricas tipadas, alineadas por bloque/fila. | Opcional; habilita RGB, intensidad, clasificación y selección de componentes numéricos. |
 
 En la demo, abrir `.oct` y seleccionar después su `.octattrs`, o asociar el acompañante antes de
@@ -130,7 +134,7 @@ archivos no es atómica; el conversor valida candidatos y publica atributos ante
 | Área | Responsabilidad | Límite relevante |
 | --- | --- | --- |
 | `viewer_core` | Geometría, jerarquía, LOD, caché y contratos compartidos. | El índice residente y la memoria estimada no equivalen a RSS. |
-| `viewer_format` | V5 y v6.1-pre, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
+| `viewer_format` | V5 y v6 pre1/pre2, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
 | `viewer_convert` | Conversión LAS/LAZ con spools/checkpoints y EPT local. | EPT remoto, binary/zstandard y checkpoints EPT no están soportados. |
 | `viewer_render_wgpu` | Cámara, voxelización, buffers GPU, HZB y presentación. | Los presupuestos propios no representan toda la VRAM; la GPU puede reservar recursos fuera del control del renderer. |
 | `viewer_wasm` | Worker, carga LOD y conversión web en dos pasadas. | Lecturas por bloque síncronas; convertir fuentes de cientos de GB en navegador no es requisito. |
@@ -145,7 +149,7 @@ render reconstruye posiciones locales `f32`.
 
 | Documento | Contenido vigente |
 | --- | --- |
-| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [v6.1-pre](crates/viewer_format/FORMAT_V6_PRE1.md) | Traits, formato experimental, compatibilidad y criterios pendientes. |
+| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
 | [Benchmarks de almacenamiento](docs/STORAGE_BENCH.md) | Suite repetida: tamaños, escritura, reconstrucción y carga secuencial de hijos. |
 | [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
 | [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
@@ -236,13 +240,13 @@ Próximos cierres de v6, en orden de dependencia:
   con negativos y nubes independientes. Explicitar CRS/unidades incompatibles y comprobar
   que el resultado no dependa del orden de puntos ni de carga de las nubes.
 - [x] Probar residuales XYZ sobre los u32 originales: candidato exacto con 0–32 bits residuales,
-  proyección/error conservados y asociación de RGB/atributos por fila. Su codec completo y
-  serialización siguen pendientes; véase la entrega siguiente.
+  proyección/error conservados y asociación de RGB/atributos por fila. La serialización por
+  bloque queda implementada en pre2; véase la entrega siguiente.
 - [ ] Medir ocupación + IDs/offsets + payload completo en corpus real y comparar con v5/pre1:
   tamaño total, construcción, selección por celda, CPU y pico simultáneo. Conservar como
   contraejemplo el ahorro insignificante de delta-varint en Belvedere.
-- [ ] Fijar la revisión de disco sólo con esos contratos y evidencia: anchos/límites, checksums,
-  identidad de representación, lectura selectiva y compatibilidad exacta de la pareja.
+- [x] Fijar pre2 con registros de 6 bytes, límites, checksums, identidad exacta y lectura selectiva
+  por bloque/columna. El índice exterior y un único array global por profundidad siguen pendientes.
 
 ## Entrega 14-10-2026: ocupación y residuales exactos de coordenadas cuantizadas
 
@@ -274,9 +278,39 @@ Albuera, con reconstrucción exacta en todos los casos. La mejor partición medi
 1,42–1,59× el vector cuantizado original; la topología profunda llega a ~36×. Son capacidades
 estimadas de estructuras nativas, no tamaños de archivo ni RSS. [Contrato y evidencia](docs/QUANTIZED_OCCUPANCY_BENCH.md).
 
-- [ ] Medir una representación compacta de máscaras por nivel, evitando `usize`/registro por
-  cada hijo y derivando índices/offsets cuando sea útil. Evaluar también IDs de fila comprimidos
-  o rangos implícitos, manteniendo orden/multiplicidad y acceso selectivo.
-- [ ] Materializar y validar un stream candidato completo (topología + filas + residuales +
-  metadatos), compararlo con raw/delta+LZ4 sobre los mismos enteros y medir CPU/memoria antes
-  de conectarlo al escritor. El prototipo actual no justifica aún otra revisión de disco.
+- [x] Serializar máscaras/conteo u8 e índices u32 por nivel en pre2, con filas en varints.
+  Las estructuras en memoria se podrán optimizar por rendimiento independientemente del disco.
+- [x] Materializar y validar topología + filas + residuales + metadata y compararlos tras LZ4
+  con raw/delta. Integrado en pre2; el criterio es tamaño físico y coste de lectura/conversión.
+
+## Entrega 14-10-2026: representación física v6.2-pre
+
+Objetivo corregido: reducir bytes almacenados/I/O, aceptando CPU de reconstrucción. La memoria
+nativa del prototipo no decide la viabilidad del codec. Se conserva precisión y asociación de filas.
+
+- [x] Serializar arrays por profundidad dentro de cada bloque direccionable: máscara u8,
+  conteo u8 e índice u32 al primer hijo (6 bytes por registro, sin padding Rust).
+- [x] Comparar conteo solo frente a conteo en 4 bits + octante propio en 3 bits. Mantener el
+  octante sólo cuando la variante resulte útil para compresión/lectura; documentar su señalización.
+- [x] Completar el stream con filas y residuales exactos; validar niveles, índices, máscaras,
+  conteos, filas únicas, varints, padding y límites antes de reconstruir.
+- [x] Habilitar lectura/escritura `v6.2-pre`, conservando v5/pre1. Comparar bytes finales tras
+  raw/LZ4 y mantener fallback si ocupación no reduce tamaño. Probar selección por bloque/columna.
+- [x] Medir parejas reales y tiempos de escritura/lectura; actualizar README y preparar el commit.
+
+Los arrays se segmentan por bloque para mantener I/O selectivo; no se obliga a cargar un único
+array de toda la nube. La topología codifica los u32 cuantizados, no una nueva grilla física común.
+
+
+Resultado del byte de conteo: inferir el octante comprime mejor en los ocho prefijos/perfiles
+medidos; guardarlo mejora algunas muestras de CPU, sin ventaja general. La variante explícita
+se admite pero sólo gana si reduce bytes. El caso sintético reduce pareja un 7,22 % frente a
+pre1; Outer Banks/Bunny mantienen fallback. Belvedere mejora un 0,0504 % frente a pre1, con
+mayor conversión observada: no hay ahorro grande ni aceleración general demostrados.
+[Streams, archivos y límites](docs/STORAGE_BENCH.md). Pasan 315 tests nativos (3 GPU ignorados),
+fmt/Clippy nativo/WASM, suites del host/runner y Blob/OPFS con Playwright MCP. Sin presentación GPU.
+
+Pendientes de almacenamiento: ampliar perfiles/orden de streams, repetir conversión pre2 en
+Belvedere alternada y extender a Majadas/Albuera, compactar el índice exterior y estudiar un único
+array global por profundidad con paginación y grilla/raíces explícitas. Medir siempre bytes finales
+con metadata/atributos y lecturas equivalentes; la memoria nativa queda como optimización separada.

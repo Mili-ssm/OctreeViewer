@@ -237,7 +237,11 @@ fn v5_and_v6_pre1_preserve_geometry_colors_order_and_typed_attribute_bits() {
     let meta = metadata(POINTS.len() as u64, schema.clone());
     let expected_attributes = fixture_attributes();
 
-    for version in [FormatVersion::V5, FormatVersion::V6_PRE1] {
+    for version in [
+        FormatVersion::V5,
+        FormatVersion::V6_PRE1,
+        FormatVersion::V6_PRE2,
+    ] {
         let (primary, attributes) = write_split(version, fixture_block(), meta.clone());
         let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
         assert_eq!(reader.format_version(), version);
@@ -319,7 +323,11 @@ impl Seek for CountingReader {
 fn split_payload_reads_are_selective_for_geometry_and_one_attribute_column() {
     let schema = descriptors();
     let meta = metadata(POINTS.len() as u64, schema);
-    for version in [FormatVersion::V5, FormatVersion::V6_PRE1] {
+    for version in [
+        FormatVersion::V5,
+        FormatVersion::V6_PRE1,
+        FormatVersion::V6_PRE2,
+    ] {
         let (primary, attributes) = write_split(version, fixture_block(), meta.clone());
         let primary = CountingReader::new(primary);
         let attribute_file = CountingReader::new(attributes);
@@ -475,7 +483,7 @@ fn unsupported_v6_final_and_pre2_are_rejected_by_writer_encoder_and_reader() {
     let options = options();
     let versions = [
         FormatVersion::V6,
-        FormatVersion::V6Pre(std::num::NonZeroU32::new(2).unwrap()),
+        FormatVersion::V6Pre(std::num::NonZeroU32::new(3).unwrap()),
     ];
     for version in versions {
         assert!(matches!(
@@ -504,7 +512,11 @@ fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
     let a = VoxelCoord::new(-1, 0, 0);
     let b = VoxelCoord::new(0, -1, 0);
     let cells = [a, b, a, b];
-    for version in [FormatVersion::V5, FormatVersion::V6_PRE1] {
+    for version in [
+        FormatVersion::V5,
+        FormatVersion::V6_PRE1,
+        FormatVersion::V6_PRE2,
+    ] {
         for attach in [false, true] {
             let (primary, attributes) = write_split(
                 version,
@@ -624,4 +636,146 @@ fn quantized_occupancy_preserves_row_identity_for_geometry_rgb_and_all_attribute
         seen.sort_unstable();
         assert_eq!(seen, vec![0, 1, 2, 3]);
     }
+}
+
+#[test]
+fn pre2_physically_selects_occupied_arrays_and_preserves_every_payload_row() {
+    let count = 4096;
+    let mut state = 0x1234_5678_u32;
+    let positions: Vec<_> = (0..count)
+        .map(|_| {
+            std::array::from_fn(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let cell = (state >> 28) % 4;
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (f64::from(cell) + f64::from(state) / f64::from(u32::MAX) * 0.01) / 4.0
+            })
+        })
+        .collect();
+    let colors: Vec<_> = (0..count)
+        .map(|i| ColorRgb::new(i as u8, (i >> 8) as u8, 23))
+        .collect();
+    let descriptor = AttributeDescriptor::new("row64", AttributeDataType::U64, 1).unwrap();
+    let values = AttributeValues::U64(
+        (0..count)
+            .map(|i| 9_007_199_254_740_993 + i as u64)
+            .collect(),
+    );
+    let column = AttributeColumn::new(descriptor.clone(), values.clone(), count).unwrap();
+    let expected = quantize_local_positions(&positions, 0.001)
+        .unwrap()
+        .decode_local()
+        .unwrap();
+    for split in [false, true] {
+        let meta = metadata(count as u64, vec![descriptor.clone()]);
+        let block = SourcePointBlock::new(
+            BLOCK_ID,
+            positions.clone(),
+            colors.clone(),
+            vec![column.clone()],
+        );
+        let mut reader = if split {
+            let (primary, attrs) = write_split(FormatVersion::V6_PRE2, block, meta);
+            let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+            reader.attach_attributes(Cursor::new(attrs)).unwrap();
+            reader
+        } else {
+            let mut writer = FormatWriter::new_for_version(
+                FormatVersion::V6_PRE2,
+                Cursor::new(Vec::new()),
+                meta,
+                options(),
+            )
+            .unwrap();
+            writer.write_block(block).unwrap();
+            FormatReader::new(writer.finish().unwrap()).unwrap()
+        };
+        assert_eq!(
+            reader.block_storage_stats().unwrap()[0].geometry_encoding,
+            GeometryEncoding::Occupied
+        );
+        let block = reader.read_block(BLOCK_ID).unwrap();
+        assert_eq!(
+            block
+                .points()
+                .points()
+                .iter()
+                .map(|p| p.position.map(f32::to_bits))
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|p| p.map(f32::to_bits))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            block
+                .points()
+                .points()
+                .iter()
+                .map(|p| p.color)
+                .collect::<Vec<_>>(),
+            colors
+        );
+        assert_eq!(block.attributes()[0].values(), &values);
+    }
+}
+
+#[test]
+fn pre1_rejects_occupied_tag_even_with_repaired_checksums() {
+    let block = SourcePointBlock::new(BLOCK_ID, POINTS.to_vec(), COLORS.to_vec(), vec![]);
+    let (mut primary, _) = write_split(FormatVersion::V6_PRE1, block, metadata(4, vec![]));
+    let footer = primary.len() - 40;
+    let offset = u64::from_le_bytes(primary[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    let length = u64::from_le_bytes(primary[footer + 16..footer + 24].try_into().unwrap()) as usize;
+    // One 94-byte directory prefix followed by two 29-byte payload entries.
+    primary[offset + length - 94 - 58 + 32] = 2;
+    let crc = viewer_format::crc32(&primary[offset..offset + length]);
+    primary[footer + 32..footer + 36].copy_from_slice(&crc.to_le_bytes());
+    let crc = viewer_format::crc32(&primary[footer..footer + 36]);
+    primary[footer + 36..].copy_from_slice(&crc.to_le_bytes());
+    assert!(matches!(
+        FormatReader::new(Cursor::new(primary)),
+        Err(FormatError::MalformedIndex(_))
+    ));
+}
+
+#[test]
+fn pre2_sidecars_prepared_blocks_and_forks_keep_exact_revision_identity() {
+    let meta = metadata(POINTS.len() as u64, descriptors());
+    let (pre1, attrs1) = write_split(FormatVersion::V6_PRE1, fixture_block(), meta.clone());
+    let (pre2, attrs2) = write_split(FormatVersion::V6_PRE2, fixture_block(), meta.clone());
+    let mut reader1 = FormatReader::new(Cursor::new(pre1)).unwrap();
+    assert!(
+        reader1
+            .attach_attributes(Cursor::new(attrs2.clone()))
+            .is_err()
+    );
+    let mut reader2 = FormatReader::new(Cursor::new(pre2.clone())).unwrap();
+    assert!(reader2.attach_attributes(Cursor::new(attrs1)).is_err());
+    let mut fork = reader2.fork_reader(Cursor::new(pre2));
+    assert_eq!(fork.format_version(), FormatVersion::V6_PRE2);
+    fork.attach_attributes(Cursor::new(attrs2)).unwrap();
+    assert_eq!(
+        fork.read_block(BLOCK_ID).unwrap().points().len(),
+        POINTS.len()
+    );
+    let encoder = FormatBlockEncoder::new(FormatVersion::V6_PRE1, &meta, options()).unwrap();
+    let prepared = viewer_format::BlockEncoder::prepare(&encoder, fixture_block()).unwrap();
+    let mut writer = FormatWriter::new_for_version(
+        FormatVersion::V6_PRE2,
+        Cursor::new(Vec::new()),
+        meta,
+        options(),
+    )
+    .unwrap();
+    assert!(matches!(
+        writer.write_prepared_block(prepared),
+        Err(FormatError::PreparedVersionMismatch { .. })
+    ));
+    writer.write_block(fixture_block()).unwrap();
+    let mut reader = FormatReader::new(writer.finish().unwrap()).unwrap();
+    assert_eq!(
+        reader.read_block(BLOCK_ID).unwrap().points().len(),
+        POINTS.len()
+    );
 }

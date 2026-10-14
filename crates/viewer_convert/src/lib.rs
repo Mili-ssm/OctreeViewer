@@ -1962,65 +1962,69 @@ mod tests {
 
     #[test]
     fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
-        let dir = test_dir();
-        let input = dir.join("source.las");
-        let serial_output = dir.join("serial-v6.oct");
-        let parallel_output = dir.join("parallel-v6.oct");
-        fixture(&input, false, true, 24);
-        let serial_options = ConvertOptions::new(8, 0.01)
-            .unwrap()
-            .with_format_version(viewer_format::FormatVersion::V6_PRE1)
-            .unwrap()
-            .with_spatial_workers(1)
-            .unwrap()
-            .with_spatial_divisions(4)
-            .unwrap();
-        let parallel_options = serial_options.with_spatial_workers(2).unwrap();
+        for version in [
+            viewer_format::FormatVersion::V6_PRE1,
+            viewer_format::FormatVersion::V6_PRE2,
+        ] {
+            let dir = test_dir();
+            let input = dir.join("source.las");
+            let serial_output = dir.join("serial-v6.oct");
+            let parallel_output = dir.join("parallel-v6.oct");
+            fixture(&input, false, true, 24);
+            let serial_options = ConvertOptions::new(8, 0.01)
+                .unwrap()
+                .with_format_version(version)
+                .unwrap()
+                .with_spatial_workers(1)
+                .unwrap()
+                .with_spatial_divisions(4)
+                .unwrap();
+            let parallel_options = serial_options.with_spatial_workers(2).unwrap();
 
-        let serial = convert_file(&input, &serial_output, serial_options).unwrap();
-        let parallel = convert_file(&input, &parallel_output, parallel_options).unwrap();
-        assert_eq!(
-            fs::read(&serial_output).unwrap(),
-            fs::read(&parallel_output).unwrap()
-        );
-        assert_eq!(
-            fs::read(output_attributes_path(&serial_output)).unwrap(),
-            fs::read(output_attributes_path(&parallel_output)).unwrap()
-        );
-
-        let mut reader = FormatReader::new(fs::File::open(&parallel_output).unwrap()).unwrap();
-        assert_eq!(
-            reader.format_version(),
-            viewer_format::FormatVersion::V6_PRE1
-        );
-        reader
-            .attach_attributes(fs::File::open(output_attributes_path(&parallel_output)).unwrap())
-            .unwrap();
-        assert_eq!(
-            reader.metadata().hierarchy().stats().source_point_count,
-            Some(24)
-        );
-        for entry in reader.block_storage_stats().unwrap() {
-            let block = reader.read_block(entry.id).unwrap();
-            assert_eq!(block.attributes().len(), 8);
-            let AttributeValues::U16(intensity) = block.attributes()[0].values() else {
-                panic!("intensity must remain u16");
-            };
-            assert_eq!(intensity.len(), block.points().len());
-            let AttributeValues::U16(rgb) = block.attributes()[7].values() else {
-                panic!("RGB must remain u16");
-            };
-            let (colors, remainder) = rgb.as_chunks::<3>();
-            assert!(remainder.is_empty());
-            assert!(
-                colors
-                    .iter()
-                    .all(|color| color == &[0x1200, 0xAB00, 0xFF00])
+            let serial = convert_file(&input, &serial_output, serial_options).unwrap();
+            let parallel = convert_file(&input, &parallel_output, parallel_options).unwrap();
+            assert_eq!(
+                fs::read(&serial_output).unwrap(),
+                fs::read(&parallel_output).unwrap()
             );
+            assert_eq!(
+                fs::read(output_attributes_path(&serial_output)).unwrap(),
+                fs::read(output_attributes_path(&parallel_output)).unwrap()
+            );
+
+            let mut reader = FormatReader::new(fs::File::open(&parallel_output).unwrap()).unwrap();
+            assert_eq!(reader.format_version(), version);
+            reader
+                .attach_attributes(
+                    fs::File::open(output_attributes_path(&parallel_output)).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(
+                reader.metadata().hierarchy().stats().source_point_count,
+                Some(24)
+            );
+            for entry in reader.block_storage_stats().unwrap() {
+                let block = reader.read_block(entry.id).unwrap();
+                assert_eq!(block.attributes().len(), 8);
+                let AttributeValues::U16(intensity) = block.attributes()[0].values() else {
+                    panic!("intensity must remain u16");
+                };
+                assert_eq!(intensity.len(), block.points().len());
+                let AttributeValues::U16(rgb) = block.attributes()[7].values() else {
+                    panic!("RGB must remain u16");
+                };
+                let (colors, remainder) = rgb.as_chunks::<3>();
+                assert!(remainder.is_empty());
+                assert!(
+                    colors
+                        .iter()
+                        .all(|color| color == &[0x1200, 0xAB00, 0xFF00])
+                );
+            }
+            assert_eq!(serial.point_count, parallel.point_count);
+            assert_eq!(serial.block_count, parallel.block_count);
+            fs::remove_dir_all(dir).unwrap();
         }
-        assert_eq!(serial.point_count, parallel.point_count);
-        assert_eq!(serial.block_count, parallel.block_count);
-        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -2451,84 +2455,93 @@ mod tests {
 
     #[test]
     fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_run() {
-        let dir = test_dir();
-        let input = dir.join("source.las");
-        let output = dir.join("result.oct");
-        let expected = dir.join("expected.oct");
-        let mut checkpoint_dir = output.as_os_str().to_owned();
-        checkpoint_dir.push(".checkpoint");
-        let checkpoint_dir = PathBuf::from(checkpoint_dir);
-        fixture(&input, false, false, 5);
-        let options = ConvertOptions::new(2, 0.01)
-            .unwrap()
-            .with_format_version(viewer_format::FormatVersion::V6_PRE1)
-            .unwrap();
+        for version in [
+            viewer_format::FormatVersion::V6_PRE1,
+            viewer_format::FormatVersion::V6_PRE2,
+        ] {
+            let dir = test_dir();
+            let input = dir.join("source.las");
+            let output = dir.join("result.oct");
+            let expected = dir.join("expected.oct");
+            let mut checkpoint_dir = output.as_os_str().to_owned();
+            checkpoint_dir.push(".checkpoint");
+            let checkpoint_dir = PathBuf::from(checkpoint_dir);
+            fixture(&input, false, false, 5);
+            let options = ConvertOptions::new(2, 0.01)
+                .unwrap()
+                .with_format_version(version)
+                .unwrap();
 
-        let cancelled = convert_file_with_checkpoint(
-            &input,
-            &output,
-            options,
-            CheckpointMode::Create,
-            |event| event.stage != ConversionStage::ValidatingOutput,
-        );
-        assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
-        let candidate = checkpoint_dir.join("candidate.oct");
-        assert!(candidate.is_file());
-        let candidate_bytes = fs::read(&candidate).unwrap();
-        assert!(matches!(
-            convert_file_with_checkpoint(
+            let cancelled = convert_file_with_checkpoint(
                 &input,
                 &output,
-                ConvertOptions::new(2, 0.01).unwrap(),
+                options,
+                CheckpointMode::Create,
+                |event| event.stage != ConversionStage::ValidatingOutput,
+            );
+            assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+            let candidate = checkpoint_dir.join("candidate.oct");
+            assert!(candidate.is_file());
+            let candidate_bytes = fs::read(&candidate).unwrap();
+            assert!(matches!(
+                convert_file_with_checkpoint(
+                    &input,
+                    &output,
+                    ConvertOptions::new(2, 0.01).unwrap(),
+                    CheckpointMode::Resume,
+                    |_| true
+                ),
+                Err(ConvertError::Checkpoint(CheckpointError::Invalid(reason)))
+                    if reason == "unsupported output major version"
+            ));
+            assert!(!output.exists());
+            assert!(candidate.is_file());
+            let mut corrupted = candidate_bytes.clone();
+            *corrupted.last_mut().unwrap() ^= 1;
+            fs::write(&candidate, corrupted).unwrap();
+            assert!(matches!(
+                convert_file_with_checkpoint(
+                    &input,
+                    &output,
+                    options,
+                    CheckpointMode::Resume,
+                    |_| { true }
+                ),
+                Err(ConvertError::Checkpoint(CheckpointError::Invalid(_)))
+            ));
+            assert!(candidate.exists());
+            fs::write(&candidate, candidate_bytes).unwrap();
+            fs::hard_link(&candidate, &output).unwrap();
+
+            let report = convert_file_with_checkpoint(
+                &input,
+                &output,
+                options,
                 CheckpointMode::Resume,
-                |_| true
-            ),
-            Err(ConvertError::Checkpoint(CheckpointError::Invalid(reason)))
-                if reason == "unsupported output major version"
-        ));
-        assert!(!output.exists());
-        assert!(candidate.is_file());
-        let mut corrupted = candidate_bytes.clone();
-        *corrupted.last_mut().unwrap() ^= 1;
-        fs::write(&candidate, corrupted).unwrap();
-        assert!(matches!(
-            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
-                true
-            }),
-            Err(ConvertError::Checkpoint(CheckpointError::Invalid(_)))
-        ));
-        assert!(candidate.exists());
-        fs::write(&candidate, candidate_bytes).unwrap();
-        fs::hard_link(&candidate, &output).unwrap();
-
-        let report =
-            convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Resume, |_| {
-                true
-            })
+                |_| true,
+            )
             .unwrap();
-        assert_eq!(report.point_count, 5);
-        assert_eq!(report.block_preparation, None);
-        assert!(report.output_validation.worker_limit > 0);
-        assert!(!checkpoint_dir.exists());
+            assert_eq!(report.point_count, 5);
+            assert_eq!(report.block_preparation, None);
+            assert!(report.output_validation.worker_limit > 0);
+            assert!(!checkpoint_dir.exists());
 
-        let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-        assert_eq!(
-            reader.format_version(),
-            viewer_format::FormatVersion::V6_PRE1
-        );
-        reader
-            .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
-            .unwrap();
-        assert_eq!(
-            reader.metadata().hierarchy().stats().source_point_count,
-            Some(5)
-        );
-        let block_id = reader.block_storage_stats().unwrap()[0].id;
-        assert!(!reader.read_block(block_id).unwrap().attributes().is_empty());
+            let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+            assert_eq!(reader.format_version(), version);
+            reader
+                .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
+                .unwrap();
+            assert_eq!(
+                reader.metadata().hierarchy().stats().source_point_count,
+                Some(5)
+            );
+            let block_id = reader.block_storage_stats().unwrap()[0].id;
+            assert!(!reader.read_block(block_id).unwrap().attributes().is_empty());
 
-        convert_file(&input, &expected, options).unwrap();
-        assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
-        fs::remove_dir_all(dir).unwrap();
+            convert_file(&input, &expected, options).unwrap();
+            assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
+            fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]

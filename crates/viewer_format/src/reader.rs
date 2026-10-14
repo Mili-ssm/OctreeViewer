@@ -464,12 +464,16 @@ impl<R: Read + Seek> IndexedReader<R> {
         entry: &BlockDirectoryEntry,
         point_count: usize,
     ) -> Result<PointBatch, FormatError> {
+        let mut decoder = GeometryDecoder::with_count(
+            entry.geometry_encoding,
+            cursor.remaining_slice(),
+            point_count,
+        )?;
         let point_bytes = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
         let mut points = Vec::new();
         points
             .try_reserve_exact(point_count)
             .map_err(|_| FormatError::AllocationFailed(point_bytes))?;
-        let mut decoder = GeometryDecoder::new(entry.geometry_encoding, cursor.remaining_slice());
         for _ in 0..point_count {
             let quantized = decoder.next_coordinate()?;
             let position = std::array::from_fn(|axis| {
@@ -904,11 +908,16 @@ fn parse_index(
         let offset = cursor.u64()?;
         let payload_length = cursor.u64()?;
         let point_count = cursor.u64()?;
-        let geometry_encoding = if layout == StorageLayout::V6Pre1 {
+        let geometry_encoding = if layout != StorageLayout::V5 {
             GeometryEncoding::try_from(cursor.u8()?)?
         } else {
             GeometryEncoding::RawU32
         };
+        if geometry_encoding == GeometryEncoding::Occupied && layout != StorageLayout::V6Pre2 {
+            return Err(FormatError::MalformedIndex(
+                "geometry encoding not supported in this revision",
+            ));
+        }
         let quantization_error = cursor.f64()?;
         let block_origin = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
         let scale = [cursor.f64()?, cursor.f64()?, cursor.f64()?];

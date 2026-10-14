@@ -1,8 +1,13 @@
-//! Bounded experiment on a source prefix, before f32 projection; not a .oct storage benchmark.
+//! Bounded source-prefix experiment, including v6.2-pre physical geometry stream variants.
 use std::{error::Error, time::Instant};
 
 use serde_json::json;
-use viewer_format::{Crc32, QuantizedOccupancy, quantize_local_positions};
+use viewer_format::{
+    Crc32, FormatError, QuantizedOccupancy, compress_block, quantize_local_positions,
+};
+
+#[path = "../../viewer_format/src/occupancy_codec.rs"]
+mod occupancy_codec;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
@@ -69,6 +74,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             if reconstructed != source {
                 return Err("integer/transform/error roundtrip mismatch".into());
             }
+            let mut physical = Vec::new();
+            for own_octant in if repetition % 2 == 0 {
+                [true, false]
+            } else {
+                [false, true]
+            } {
+                let start = Instant::now();
+                let raw = occupancy_codec::encode(&candidate, own_octant, 64 << 20)?
+                    .ok_or("candidate too large")?;
+                let encoded = compress_block(&raw);
+                let encode_ms = start.elapsed().as_secs_f64() * 1000.0;
+                let start = Instant::now();
+                let decoded = occupancy_codec::decode(&raw, source.coordinates().len())?;
+                let decode_ms = start.elapsed().as_secs_f64() * 1000.0;
+                if decoded != source.coordinates() {
+                    return Err("physical stream roundtrip mismatch".into());
+                }
+                physical.push(json!({"own_octant":own_octant,"raw_bytes":raw.len(),"stored_bytes":encoded.bytes().len(),"encode_ms":encode_ms,"decode_ms":decode_ms}));
+            }
             let topology = candidate.index().topology();
             println!(
                 "{}",
@@ -83,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     "source_retained_estimate_bytes": source.estimated_memory_bytes(),
                     "candidate_retained_estimate_bytes": candidate.estimated_memory_bytes(),
                     "memory_basis": "inline_and_vector_capacities_excludes_allocator_source_build_peak_and_rss",
-                    "roundtrip_exact": true, "storage_revision": "none_experimental_in_memory",
+                    "roundtrip_exact": true, "storage_revision": "v6.2-pre_geometry_stream", "physical":physical,
                 })
             );
         }

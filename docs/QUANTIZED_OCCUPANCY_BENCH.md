@@ -1,7 +1,9 @@
 # Ocupación cuantizada y residuales: experimento acotado
 
 Estado: 14-10-2026. Candidato **en memoria**, independiente de la revisión de almacenamiento.
-No se cambian v5 ni v6.1-pre y no se habilita v6.2-pre. Se valida una partición exacta de los
+Esta serie anterior a pre2 no cambió v5/pre1. La [entrega física pre2](STORAGE_BENCH.md) posterior
+sí serializa el codec y evalúa bytes comprimidos; la memoria de este informe no decide el disco.
+Aquí se valida una partición exacta de los
 u32 originales y se mide su coste antes de decidir un codec completo.
 
 ## Protocolo

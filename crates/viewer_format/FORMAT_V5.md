@@ -1,6 +1,6 @@
 # Native `.oct` format, version 5 (final)
 
-This document specifies the complete version 5 file format. V5 is the default stable format. The project also supports the separately specified experimental [v6.1-pre](FORMAT_V6_PRE1.md). Provisional v5 files (magic `OCTVWFRM`) and older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
+This document specifies the complete version 5 file format. V5 is the default stable format. The project also supports the separately specified experimental [v6.1-pre](FORMAT_V6_PRE1.md) and [v6.2-pre](FORMAT_V6_PRE2.md). Provisional v5 files (magic `OCTVWFRM`) and older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
 
 V5 stores one shared dataset frame, hierarchy, schema and metadata index in the primary `.oct` file. Each block has independent XYZ, display RGB and schema attribute payloads. Native and browser converters emit a separate `.octattrs` companion for RGB and columns. The stream API also supports monolithic storage using the same payload layout. A split primary opens without its companion and supplies neutral RGB `(160,160,160)`.
 
@@ -8,8 +8,8 @@ The primary contains structural metadata, including attribute descriptors and fi
 
 All integer fields and floating-point bit patterns are little endian. Offsets and lengths are unsigned 64-bit byte counts. Strings are UTF-8 preceded by a `u32` byte length, without a terminator. A zero length represents an absent optional string. All CRCs use reflected IEEE CRC-32 (polynomial `0xEDB88320`, initial value and final XOR `0xFFFFFFFF`); CRC detects accidental corruption, not malicious modification.
 
-The common header probe recognizes exact version identities; the reader also implements v6.1-pre,
-while final v6 and other revisions remain unsupported.
+The common header probe recognizes exact version identities; the reader also implements v6 pre1/pre2,
+while final v6 and later revisions remain unsupported.
 See [v6 preparation](../../docs/STORAGE_V6_PREPARATION.md). The finalized envelope deliberately
 rejects provisional v5; regenerate both files together. The incompatible envelope change was
 authorized before v6 development. Subsequent incompatible payload changes require a new identity.
@@ -165,7 +165,7 @@ metadata and directory statistics. Selective consumers need only `OctreeReader`.
 `FormatWriter::{new_for_version,new_split_for_version}` select an output version explicitly;
 unsupported identities fail before either sink is touched. The default constructors select final
 v5. `BlockEncoder` prepares blocks independently of sinks; `FormatBlockEncoder` selects
-v5 or v6.1-pre. The converter streams `E::PreparedBlock` to a compatible `PreparedOctreeWriter`; it does
+v5, v6.1-pre or v6.2-pre. The converter streams `E::PreparedBlock` to a compatible `PreparedOctreeWriter`; it does
 not call a v5 encoding function or impose `Sync` on the writer. The shared layout dispatch now supports v6.1-pre without changing the v5 byte layout; later
 revisions must extend that dispatch explicitly.
 
@@ -181,7 +181,8 @@ Payload CRC and decompression checks occur when that payload is requested. Corru
 
 ## Support and evidence
 
-Only version 5 is supported. Files marked version 1, 2, 3, 4, or any other version are rejected; there is no legacy combined-payload fallback. Regenerate such files from their source LAS/LAZ data or reconvert their EPT source.
+This specification describes v5; the reader also supports the separately specified v6 pre1/pre2.
+Files marked version 1, 2, 3, 4, or other unimplemented identities are rejected; there is no legacy combined-payload fallback. Regenerate such files from their source LAS/LAZ data or reconvert their EPT source.
 
 The crate's current tests exercise V5 writing and reading, all ten attribute types and floating-point bits, additive and replacement semantics, visual scale, selective payload reads, independent checksums, malformed payload directories, configured limits and empty blocks. These format tests describe local codec behavior; they make no browser rendering or large-dataset performance claim.
 

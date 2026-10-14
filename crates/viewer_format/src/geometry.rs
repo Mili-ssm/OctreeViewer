@@ -5,6 +5,7 @@ use crate::FormatError;
 pub enum GeometryEncoding {
     RawU32 = 0,
     DeltaVarint = 1,
+    Occupied = 2,
 }
 
 impl TryFrom<u8> for GeometryEncoding {
@@ -14,6 +15,7 @@ impl TryFrom<u8> for GeometryEncoding {
         match tag {
             0 => Ok(Self::RawU32),
             1 => Ok(Self::DeltaVarint),
+            2 => Ok(Self::Occupied),
             tag => Err(FormatError::InvalidTag {
                 field: "geometry encoding",
                 tag,
@@ -38,6 +40,20 @@ impl GeometryEncoding {
                 (exact, exact)
             }
             Self::DeltaVarint => (min, max),
+            Self::Occupied => {
+                if point_count == 0 {
+                    return Err(FormatError::MalformedBlock("empty occupied geometry"));
+                }
+                (
+                    point_count
+                        .checked_add(12)
+                        .ok_or(FormatError::BlockSizeOverflow)?,
+                    point_count
+                        .checked_mul(220)
+                        .and_then(|n| n.checked_add(133))
+                        .ok_or(FormatError::BlockSizeOverflow)?,
+                )
+            }
         };
         if raw_length < lower || raw_length > upper {
             return Err(FormatError::MalformedBlock("invalid geometry raw length"));
@@ -79,6 +95,7 @@ pub(crate) struct GeometryDecoder<'a> {
     bytes: &'a [u8],
     offset: usize,
     previous: [u32; 3],
+    occupied: Option<std::vec::IntoIter<[u32; 3]>>,
 }
 
 impl<'a> GeometryDecoder<'a> {
@@ -88,13 +105,35 @@ impl<'a> GeometryDecoder<'a> {
             bytes,
             offset: 0,
             previous: [0; 3],
+            occupied: None,
         }
     }
 
+    pub(crate) fn with_count(
+        encoding: GeometryEncoding,
+        bytes: &'a [u8],
+        points: usize,
+    ) -> Result<Self, FormatError> {
+        let mut decoder = Self::new(encoding, bytes);
+        if encoding == GeometryEncoding::Occupied {
+            decoder.occupied = Some(crate::occupancy_codec::decode(bytes, points)?.into_iter());
+            decoder.offset = bytes.len();
+        }
+        Ok(decoder)
+    }
+
     pub(crate) fn next_coordinate(&mut self) -> Result<[u32; 3], FormatError> {
+        if self.encoding == GeometryEncoding::Occupied {
+            return self
+                .occupied
+                .as_mut()
+                .and_then(Iterator::next)
+                .ok_or(FormatError::MalformedBlock("occupied geometry exhausted"));
+        }
         let mut coordinate = [0u32; 3];
         for (axis, component) in coordinate.iter_mut().enumerate() {
             *component = match self.encoding {
+                GeometryEncoding::Occupied => unreachable!("occupied decoded above"),
                 GeometryEncoding::RawU32 => {
                     let end = self
                         .offset
@@ -125,7 +164,9 @@ impl<'a> GeometryDecoder<'a> {
     }
 
     pub(crate) fn finish(self) -> Result<(), FormatError> {
-        if self.offset != self.bytes.len() {
+        if self.offset != self.bytes.len()
+            || self.occupied.as_ref().is_some_and(|rows| rows.len() != 0)
+        {
             return Err(FormatError::MalformedBlock("trailing geometry bytes"));
         }
         Ok(())
@@ -216,7 +257,7 @@ mod tests {
                 .validate_raw_length(2, 30)
                 .is_ok()
         );
-        assert!(GeometryEncoding::try_from(2).is_err());
+        assert!(GeometryEncoding::try_from(3).is_err());
         for (encoding, count, length) in [
             (GeometryEncoding::RawU32, 2, 23),
             (GeometryEncoding::DeltaVarint, 2, 5),
