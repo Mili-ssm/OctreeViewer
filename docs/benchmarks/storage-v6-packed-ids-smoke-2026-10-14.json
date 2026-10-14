@@ -1,0 +1,454 @@
+{
+  "status": "complete",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "profile": "perf",
+  "cache": "no purge; alternating builds; operations sequential",
+  "source": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+    "bytes": 3113649,
+    "sha256": "a4900d81f9eed572e8f3dd9f60ddcd9e995a1dd455b4270069d6403b19087456"
+  },
+  "runner": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/compare_io_binaries.py",
+    "bytes": 5868,
+    "sha256": "7e0dc8618128ac6a89f2b967cef470860686a8d63dbdd9585d9ede1436e5f435"
+  },
+  "binaries": {
+    "before": [
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-convert",
+        "bytes": 2457736,
+        "sha256": "a25f62e43bdc6e864d8a1b92c2f5f4cc026b73e1d564abd319f6c9fecfa14553"
+      },
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "bytes": 969552,
+        "sha256": "a02401ba4fea2fc4bb8c053d517e2abfe352ceea9046d07e67c4562f946bd0c4"
+      }
+    ],
+    "after": [
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids-convert",
+        "bytes": 2458072,
+        "sha256": "16f414016cb9c5fe5c5f52a96b105c97cb44e9835efa403db2bd6dd4fc8e2d27"
+      },
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids-read",
+        "bytes": 969616,
+        "sha256": "4ba7ec20180595b9e2367cc76f5a25967328ad30dd1feff517b3563c22a63d17"
+      }
+    ]
+  },
+  "runs": [
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.1525328800053103,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  111190/111190 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/111190 points (0 MiB written; 0%)\n  111190/111190 points (1 MiB written; 100%)\nValidatingOutput\n  0/111190 points (1 MiB written; 0%)\n  111190/111190 points (1 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 111190 points in 1 blocks (1484610 bytes; estimated controlled memory 65 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 0.15,
+      "peak_rss_kib": 23044,
+      "user_seconds": 0.11,
+      "system_seconds": 0.02,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct",
+          "bytes": 1064624,
+          "sha256": "8b0a183a8b161bb195ff3e43bf4d6abde88e136f58edd853ce3a0a836a1a7330"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.octattrs",
+          "bytes": 419986,
+          "sha256": "ded38b6027c63566afe443e31643ac8a4539d21e3bd14353a577be13681f791f"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/samples/fs_e430_n4008_18.las",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/after-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.1460718710004585,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  111190/111190 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/111190 points (0 MiB written; 0%)\n  111190/111190 points (1 MiB written; 100%)\nValidatingOutput\n  0/111190 points (1 MiB written; 0%)\n  111190/111190 points (1 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 111190 points in 1 blocks (1484610 bytes; estimated controlled memory 65 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/after-1.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/after-1.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 0.14,
+      "peak_rss_kib": 23004,
+      "user_seconds": 0.11,
+      "system_seconds": 0.02,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/after-1.oct",
+          "bytes": 1064624,
+          "sha256": "8b0a183a8b161bb195ff3e43bf4d6abde88e136f58edd853ce3a0a836a1a7330"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/after-1.octattrs",
+          "bytes": 419986,
+          "sha256": "ded38b6027c63566afe443e31643ac8a4539d21e3bd14353a577be13681f791f"
+        }
+      ]
+    },
+    {
+      "kind": "read-1",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.023240328002430033,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=1064624 attrs_bytes=419986 open_ms=0.076 attach_ms=0.006 decoded_estimate_bytes=5674553 max_block_estimate_bytes=5674553 budget_estimate_bytes=5674553 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=6 dictionary_payloads=2 workers_limit=1 worker_threads=0 read_ms=16.313 progressive_wall_ms=20.875 verify_ms=4.447 full_ms=20.972 blocks=1 points=111190 checksum=01a9f543912d51bd first_root_read_ms=16.313\nrep=1 level=0 nodes=1 blocks=1 points=111190 node_read_latency_p50_ms=16.313 node_read_latency_p95_ms=16.313\n",
+      "stderr": "",
+      "time_elapsed_seconds": 0.02,
+      "peak_rss_kib": 7464,
+      "user_seconds": 0.01,
+      "system_seconds": 0.0,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "1064624",
+        "attrs_bytes": "419986",
+        "open_ms": "0.076",
+        "attach_ms": "0.006",
+        "decoded_estimate_bytes": "5674553",
+        "max_block_estimate_bytes": "5674553",
+        "budget_estimate_bytes": "5674553",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "6",
+        "dictionary_payloads": "2",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "16.313",
+        "progressive_wall_ms": "20.875",
+        "verify_ms": "4.447",
+        "full_ms": "20.972",
+        "blocks": "1",
+        "points": "111190",
+        "checksum": "01a9f543912d51bd",
+        "first_root_read_ms": "16.313"
+      }
+    },
+    {
+      "kind": "read-1",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.03214920400205301,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=1064624 attrs_bytes=419986 open_ms=0.059 attach_ms=0.005 decoded_estimate_bytes=5674553 max_block_estimate_bytes=5674553 budget_estimate_bytes=5674553 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=6 dictionary_payloads=2 workers_limit=1 worker_threads=0 read_ms=22.836 progressive_wall_ms=29.738 verify_ms=6.611 full_ms=29.816 blocks=1 points=111190 checksum=01a9f543912d51bd first_root_read_ms=22.836\nrep=1 level=0 nodes=1 blocks=1 points=111190 node_read_latency_p50_ms=22.836 node_read_latency_p95_ms=22.836\n",
+      "stderr": "",
+      "time_elapsed_seconds": 0.03,
+      "peak_rss_kib": 7516,
+      "user_seconds": 0.02,
+      "system_seconds": 0.0,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "1064624",
+        "attrs_bytes": "419986",
+        "open_ms": "0.059",
+        "attach_ms": "0.005",
+        "decoded_estimate_bytes": "5674553",
+        "max_block_estimate_bytes": "5674553",
+        "budget_estimate_bytes": "5674553",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "6",
+        "dictionary_payloads": "2",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "22.836",
+        "progressive_wall_ms": "29.738",
+        "verify_ms": "6.611",
+        "full_ms": "29.816",
+        "blocks": "1",
+        "points": "111190",
+        "checksum": "01a9f543912d51bd",
+        "first_root_read_ms": "22.836"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.0339646479988005,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=1064624 attrs_bytes=419986 open_ms=0.062 attach_ms=0.004 decoded_estimate_bytes=5674553 max_block_estimate_bytes=5674553 budget_estimate_bytes=22698212 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=6 dictionary_payloads=2 workers_limit=4 worker_threads=4 read_ms=24.142 progressive_wall_ms=31.585 verify_ms=6.928 full_ms=31.665 blocks=1 points=111190 checksum=01a9f543912d51bd first_root_read_ms=24.142\nrep=1 level=0 nodes=1 blocks=1 points=111190 node_read_latency_p50_ms=24.142 node_read_latency_p95_ms=24.142\n",
+      "stderr": "",
+      "time_elapsed_seconds": 0.03,
+      "peak_rss_kib": 7532,
+      "user_seconds": 0.03,
+      "system_seconds": 0.0,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "1064624",
+        "attrs_bytes": "419986",
+        "open_ms": "0.062",
+        "attach_ms": "0.004",
+        "decoded_estimate_bytes": "5674553",
+        "max_block_estimate_bytes": "5674553",
+        "budget_estimate_bytes": "22698212",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "6",
+        "dictionary_payloads": "2",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "24.142",
+        "progressive_wall_ms": "31.585",
+        "verify_ms": "6.928",
+        "full_ms": "31.665",
+        "blocks": "1",
+        "points": "111190",
+        "checksum": "01a9f543912d51bd",
+        "first_root_read_ms": "24.142"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/runner-smoke/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 0.03328398199664662,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=1064624 attrs_bytes=419986 open_ms=0.088 attach_ms=0.007 decoded_estimate_bytes=5674553 max_block_estimate_bytes=5674553 budget_estimate_bytes=22698212 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=6 dictionary_payloads=2 workers_limit=4 worker_threads=4 read_ms=23.125 progressive_wall_ms=30.606 verify_ms=7.009 full_ms=30.719 blocks=1 points=111190 checksum=01a9f543912d51bd first_root_read_ms=23.125\nrep=1 level=0 nodes=1 blocks=1 points=111190 node_read_latency_p50_ms=23.125 node_read_latency_p95_ms=23.125\n",
+      "stderr": "",
+      "time_elapsed_seconds": 0.03,
+      "peak_rss_kib": 7736,
+      "user_seconds": 0.02,
+      "system_seconds": 0.0,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "1064624",
+        "attrs_bytes": "419986",
+        "open_ms": "0.088",
+        "attach_ms": "0.007",
+        "decoded_estimate_bytes": "5674553",
+        "max_block_estimate_bytes": "5674553",
+        "budget_estimate_bytes": "22698212",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "6",
+        "dictionary_payloads": "2",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "23.125",
+        "progressive_wall_ms": "30.606",
+        "verify_ms": "7.009",
+        "full_ms": "30.719",
+        "blocks": "1",
+        "points": "111190",
+        "checksum": "01a9f543912d51bd",
+        "first_root_read_ms": "23.125"
+      }
+    }
+  ],
+  "summaries": {
+    "convert": {
+      "before": {
+        "wall_seconds": {
+          "median": 0.1525328800053103,
+          "min": 0.1525328800053103,
+          "max": 0.1525328800053103
+        },
+        "peak_rss_kib": {
+          "median": 23044,
+          "min": 23044,
+          "max": 23044
+        },
+        "user_seconds": {
+          "median": 0.11,
+          "min": 0.11,
+          "max": 0.11
+        },
+        "system_seconds": {
+          "median": 0.02,
+          "min": 0.02,
+          "max": 0.02
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 0.1460718710004585,
+          "min": 0.1460718710004585,
+          "max": 0.1460718710004585
+        },
+        "peak_rss_kib": {
+          "median": 23004,
+          "min": 23004,
+          "max": 23004
+        },
+        "user_seconds": {
+          "median": 0.11,
+          "min": 0.11,
+          "max": 0.11
+        },
+        "system_seconds": {
+          "median": 0.02,
+          "min": 0.02,
+          "max": 0.02
+        }
+      }
+    },
+    "read-1": {
+      "before": {
+        "wall_seconds": {
+          "median": 0.023240328002430033,
+          "min": 0.023240328002430033,
+          "max": 0.023240328002430033
+        },
+        "peak_rss_kib": {
+          "median": 7464,
+          "min": 7464,
+          "max": 7464
+        },
+        "user_seconds": {
+          "median": 0.01,
+          "min": 0.01,
+          "max": 0.01
+        },
+        "system_seconds": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 0.03214920400205301,
+          "min": 0.03214920400205301,
+          "max": 0.03214920400205301
+        },
+        "peak_rss_kib": {
+          "median": 7516,
+          "min": 7516,
+          "max": 7516
+        },
+        "user_seconds": {
+          "median": 0.02,
+          "min": 0.02,
+          "max": 0.02
+        },
+        "system_seconds": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        }
+      }
+    },
+    "read-4": {
+      "before": {
+        "wall_seconds": {
+          "median": 0.0339646479988005,
+          "min": 0.0339646479988005,
+          "max": 0.0339646479988005
+        },
+        "peak_rss_kib": {
+          "median": 7532,
+          "min": 7532,
+          "max": 7532
+        },
+        "user_seconds": {
+          "median": 0.03,
+          "min": 0.03,
+          "max": 0.03
+        },
+        "system_seconds": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 0.03328398199664662,
+          "min": 0.03328398199664662,
+          "max": 0.03328398199664662
+        },
+        "peak_rss_kib": {
+          "median": 7736,
+          "min": 7736,
+          "max": 7736
+        },
+        "user_seconds": {
+          "median": 0.02,
+          "min": 0.02,
+          "max": 0.02
+        },
+        "system_seconds": {
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        }
+      }
+    }
+  }
+}

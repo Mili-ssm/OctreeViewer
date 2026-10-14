@@ -434,3 +434,16 @@ sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
   incorporar lectura paralela al viewer. La validación del conversor ya lee en paralelo.
 - [ ] Retomar selector de codecs más barato y grupos RGB exactos solo tras perfiles por
   payload; criterios y contraejemplos en [el informe de I/O](docs/STORAGE_V6_IO.md).
+
+
+## En curso: reducir CPU de codecs y checksums — 14-10-2026
+
+- [x] Sustituir IDs de diccionario bit a bit por acumuladores de bytes, conservando el stream
+  LSB-first y las validaciones de padding/IDs/límites. Oracle independiente para 0–32 bits.
+- [x] Comparar tres rondas alternadas del binario anterior/actual en Belvedere: conversión
+  con pipeline y 4 workers; BFS con 1/4 lectores, SHA-256 de la pareja, checksum, CPU y RSS.
+  Mediana de conversión 42,822 → 40,598 s (−5,2 %, rangos solapados), BFS serial
+  11,242 → 10,545 s (−6,2 %). BFS con 4 lectores no mejora de forma clara.
+  [Evidencia, criterios y límites](docs/STORAGE_V6_CPU.md).
+- [ ] Evaluar CRC IEEE por grupos de 8 bytes: mantener polinomio, resultado incremental y
+  checksums antes de expandir. Medir aparte, sin cambiar revisión física ni dependencias.

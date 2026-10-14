@@ -1,0 +1,999 @@
+{
+  "status": "complete",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "profile": "perf",
+  "cache": "no purge; alternating builds; operations sequential",
+  "source": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+    "bytes": 618390994,
+    "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+  },
+  "runner": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/packed-ids-runner.py",
+    "bytes": 6052,
+    "sha256": "5bd3ce48477e3a7f0dd2dbe983778290919894233cf0545ca04936b50c5f6cb8"
+  },
+  "binaries": {
+    "before": [
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-convert",
+        "bytes": 2457736,
+        "sha256": "a25f62e43bdc6e864d8a1b92c2f5f4cc026b73e1d564abd319f6c9fecfa14553"
+      },
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "bytes": 969552,
+        "sha256": "a02401ba4fea2fc4bb8c053d517e2abfe352ceea9046d07e67c4562f946bd0c4"
+      }
+    ],
+    "after": [
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "bytes": 2458072,
+        "sha256": "16f414016cb9c5fe5c5f52a96b105c97cb44e9835efa403db2bd6dd4fc8e2d27"
+      },
+      {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "bytes": 969616,
+        "sha256": "4ba7ec20180595b9e2367cc76f5a25967328ad30dd1feff517b3563c22a63d17"
+      }
+    ]
+  },
+  "runs": [
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 41.819650317003834,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16453384/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 41.81,
+      "peak_rss_kib": 266116,
+      "user_seconds": 91.88,
+      "system_seconds": 12.63,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-1.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 40.59820080099598,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-1.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-1.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 40.59,
+      "peak_rss_kib": 238560,
+      "user_seconds": 90.26,
+      "system_seconds": 12.98,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-1.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-1.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 40.52448953000567,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-2.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-2.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 40.52,
+      "peak_rss_kib": 252368,
+      "user_seconds": 89.29,
+      "system_seconds": 12.62,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-2.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-2.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-2.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 43.35597874199448,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40859878/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57273486/81682329 points (1339 MiB written; 70%)\n  65380904/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-2.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-2.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 43.35,
+      "peak_rss_kib": 250340,
+      "user_seconds": 91.03,
+      "system_seconds": 13.38,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-2.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-2.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "before",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.821860655007185,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57205375/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-3.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-3.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 42.82,
+      "peak_rss_kib": 245668,
+      "user_seconds": 91.77,
+      "system_seconds": 12.58,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-3.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-3.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "convert",
+      "build": "after",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/viewer_convert",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-3.oct",
+        "--format-version",
+        "v6.4-pre",
+        "--spatial-workers",
+        "4",
+        "--max-memory-mib",
+        "512",
+        "--pipeline-writes"
+      ],
+      "returncode": 0,
+      "wall_seconds": 42.25823288199899,
+      "stdout": "",
+      "stderr": "InspectingInput\nPlanningMetadata\nPlanningSpatialIndex\n  233016/81682329 points (0 MiB written; 0%)\n  8388576/81682329 points (0 MiB written; 10%)\n  16544136/81682329 points (0 MiB written; 20%)\n  24699696/81682329 points (0 MiB written; 30%)\n  32855256/81682329 points (0 MiB written; 40%)\n  41010816/81682329 points (0 MiB written; 50%)\n  49166376/81682329 points (0 MiB written; 60%)\n  57321936/81682329 points (0 MiB written; 70%)\n  65477496/81682329 points (0 MiB written; 80%)\n  73633056/81682329 points (0 MiB written; 90%)\n  81682329/81682329 points (0 MiB written; 100%)\nBuildingSpatialHierarchy\nReadingAndWritingBlocks\n  0/81682329 points (0 MiB written; 0%)\n  8177011/81682329 points (93 MiB written; 10%)\n  16342707/81682329 points (186 MiB written; 20%)\n  24509999/81682329 points (280 MiB written; 30%)\n  32677705/81682329 points (373 MiB written; 40%)\n  40859878/81682329 points (467 MiB written; 50%)\n  49010639/81682329 points (560 MiB written; 60%)\n  57205375/81682329 points (653 MiB written; 70%)\n  65366830/81682329 points (747 MiB written; 80%)\n  73531671/81682329 points (840 MiB written; 90%)\n  81682329/81682329 points (933 MiB written; 100%)\nValidatingOutput\n  0/81682329 points (1339 MiB written; 0%)\n  8298759/81682329 points (1339 MiB written; 10%)\n  16342982/81682329 points (1339 MiB written; 20%)\n  24509999/81682329 points (1339 MiB written; 30%)\n  32679465/81682329 points (1339 MiB written; 40%)\n  40932946/81682329 points (1339 MiB written; 50%)\n  49010639/81682329 points (1339 MiB written; 60%)\n  57245999/81682329 points (1339 MiB written; 70%)\n  65366830/81682329 points (1339 MiB written; 80%)\n  73516190/81682329 points (1339 MiB written; 90%)\n  81682329/81682329 points (1339 MiB written; 100%)\nPublishingOutput\nComplete\nConverted 81682329 points in 1343 blocks (1404306523 bytes; estimated controlled memory 64 MiB) to /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-3.oct + /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-3.octattrs\nNot preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags, scanner channel, CRS/WKT metadata\n",
+      "time_elapsed_seconds": 42.25,
+      "peak_rss_kib": 269448,
+      "user_seconds": 86.89,
+      "system_seconds": 12.88,
+      "outputs": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-3.oct",
+          "bytes": 979686544,
+          "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/after-3.octattrs",
+          "bytes": 424619979,
+          "sha256": "9b3f9f5be7c7985596a57be9a1d56a2ed417d770dd8914ab98d4aaf3b0681acb"
+        }
+      ]
+    },
+    {
+      "kind": "read-1",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 11.931065707998641,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=8.517 attach_ms=0.017 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=13051181 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=1 worker_threads=0 read_ms=9139.323 progressive_wall_ms=11914.627 verify_ms=2750.150 full_ms=11924.320 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.035\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.035 node_read_latency_p95_ms=0.035\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.272 node_read_latency_p95_ms=0.326\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.242 node_read_latency_p95_ms=8.176\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.218 node_read_latency_p95_ms=14.591\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.283 node_read_latency_p95_ms=23.804\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=8.354 node_read_latency_p95_ms=15.473\n",
+      "stderr": "",
+      "time_elapsed_seconds": 11.92,
+      "peak_rss_kib": 20980,
+      "user_seconds": 10.97,
+      "system_seconds": 0.47,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "8.517",
+        "attach_ms": "0.017",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "13051181",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "9139.323",
+        "progressive_wall_ms": "11914.627",
+        "verify_ms": "2750.150",
+        "full_ms": "11924.320",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.035"
+      }
+    },
+    {
+      "kind": "read-1",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 10.699747363003553,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=8.127 attach_ms=0.034 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=13051181 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=1 worker_threads=0 read_ms=7924.545 progressive_wall_ms=10682.026 verify_ms=2737.080 full_ms=10691.396 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.029\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.029 node_read_latency_p95_ms=0.029\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.019 node_read_latency_p95_ms=0.033\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.023 node_read_latency_p95_ms=8.066\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.013 node_read_latency_p95_ms=11.900\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.018 node_read_latency_p95_ms=20.394\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=7.563 node_read_latency_p95_ms=13.694\n",
+      "stderr": "",
+      "time_elapsed_seconds": 10.69,
+      "peak_rss_kib": 20952,
+      "user_seconds": 10.36,
+      "system_seconds": 0.31,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "8.127",
+        "attach_ms": "0.034",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "13051181",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "7924.545",
+        "progressive_wall_ms": "10682.026",
+        "verify_ms": "2737.080",
+        "full_ms": "10691.396",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.029"
+      }
+    },
+    {
+      "kind": "read-1",
+      "build": "after",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 10.54464542700589,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=8.014 attach_ms=0.013 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=13051181 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=1 worker_threads=0 read_ms=7789.295 progressive_wall_ms=10530.636 verify_ms=2722.208 full_ms=10539.891 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.030\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.030 node_read_latency_p95_ms=0.030\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.019 node_read_latency_p95_ms=0.032\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.022 node_read_latency_p95_ms=8.122\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.012 node_read_latency_p95_ms=11.480\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.017 node_read_latency_p95_ms=19.343\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=7.550 node_read_latency_p95_ms=13.624\n",
+      "stderr": "",
+      "time_elapsed_seconds": 10.54,
+      "peak_rss_kib": 21112,
+      "user_seconds": 10.25,
+      "system_seconds": 0.27,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "8.014",
+        "attach_ms": "0.013",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "13051181",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "7789.295",
+        "progressive_wall_ms": "10530.636",
+        "verify_ms": "2722.208",
+        "full_ms": "10539.891",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.030"
+      }
+    },
+    {
+      "kind": "read-1",
+      "build": "before",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 11.24226123400149,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=5.277 attach_ms=0.012 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=13051181 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=1 worker_threads=0 read_ms=8483.124 progressive_wall_ms=11231.396 verify_ms=2727.579 full_ms=11237.402 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.017\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.017 node_read_latency_p95_ms=0.017\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.009 node_read_latency_p95_ms=0.016\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.011 node_read_latency_p95_ms=4.267\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.012 node_read_latency_p95_ms=12.829\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.018 node_read_latency_p95_ms=21.786\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=8.144 node_read_latency_p95_ms=14.878\n",
+      "stderr": "",
+      "time_elapsed_seconds": 11.24,
+      "peak_rss_kib": 20944,
+      "user_seconds": 10.88,
+      "system_seconds": 0.33,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "5.277",
+        "attach_ms": "0.012",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "13051181",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "8483.124",
+        "progressive_wall_ms": "11231.396",
+        "verify_ms": "2727.579",
+        "full_ms": "11237.402",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.017"
+      }
+    },
+    {
+      "kind": "read-1",
+      "build": "before",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 11.192412345997582,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=7.936 attach_ms=0.012 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=13051181 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=1 worker_threads=0 read_ms=8445.350 progressive_wall_ms=11178.917 verify_ms=2712.972 full_ms=11188.106 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.031\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.031 node_read_latency_p95_ms=0.031\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.018 node_read_latency_p95_ms=0.032\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.023 node_read_latency_p95_ms=8.644\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.013 node_read_latency_p95_ms=12.656\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.018 node_read_latency_p95_ms=21.163\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=8.157 node_read_latency_p95_ms=14.752\n",
+      "stderr": "",
+      "time_elapsed_seconds": 11.19,
+      "peak_rss_kib": 21188,
+      "user_seconds": 10.87,
+      "system_seconds": 0.3,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "7.936",
+        "attach_ms": "0.012",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "13051181",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "8445.350",
+        "progressive_wall_ms": "11178.917",
+        "verify_ms": "2712.972",
+        "full_ms": "11188.106",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.031"
+      }
+    },
+    {
+      "kind": "read-1",
+      "build": "after",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "1"
+      ],
+      "returncode": 0,
+      "wall_seconds": 10.500352591996489,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=7.973 attach_ms=0.013 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=13051181 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=1 worker_threads=0 read_ms=7754.844 progressive_wall_ms=10486.444 verify_ms=2711.753 full_ms=10495.663 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.030\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.030 node_read_latency_p95_ms=0.030\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.019 node_read_latency_p95_ms=0.035\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.022 node_read_latency_p95_ms=8.399\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.013 node_read_latency_p95_ms=11.411\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.017 node_read_latency_p95_ms=20.209\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=7.502 node_read_latency_p95_ms=13.567\n",
+      "stderr": "",
+      "time_elapsed_seconds": 10.49,
+      "peak_rss_kib": 21140,
+      "user_seconds": 10.14,
+      "system_seconds": 0.33,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "7.973",
+        "attach_ms": "0.013",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "13051181",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "1",
+        "worker_threads": "0",
+        "read_ms": "7754.844",
+        "progressive_wall_ms": "10486.444",
+        "verify_ms": "2711.753",
+        "full_ms": "10495.663",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.030"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "before",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 7.025592557001801,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=7.967 attach_ms=0.012 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=52204724 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=4 worker_threads=4 read_ms=9586.420 progressive_wall_ms=7010.844 verify_ms=2988.696 full_ms=7020.080 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.060\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.060 node_read_latency_p95_ms=0.060\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.085 node_read_latency_p95_ms=0.136\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.039 node_read_latency_p95_ms=8.785\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.052 node_read_latency_p95_ms=13.955\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.097 node_read_latency_p95_ms=26.151\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=8.887 node_read_latency_p95_ms=15.513\n",
+      "stderr": "",
+      "time_elapsed_seconds": 7.02,
+      "peak_rss_kib": 50568,
+      "user_seconds": 12.27,
+      "system_seconds": 0.31,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "7.967",
+        "attach_ms": "0.012",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "52204724",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "9586.420",
+        "progressive_wall_ms": "7010.844",
+        "verify_ms": "2988.696",
+        "full_ms": "7020.080",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.060"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "after",
+      "round": 1,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 9.433389976999024,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=8.001 attach_ms=0.015 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=52204724 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=4 worker_threads=4 read_ms=12330.783 progressive_wall_ms=9417.608 verify_ms=4395.964 full_ms=9426.912 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.059\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.059 node_read_latency_p95_ms=0.059\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.056 node_read_latency_p95_ms=0.078\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.048 node_read_latency_p95_ms=8.058\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.059 node_read_latency_p95_ms=12.707\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.094 node_read_latency_p95_ms=32.276\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=11.868 node_read_latency_p95_ms=20.431\n",
+      "stderr": "",
+      "time_elapsed_seconds": 9.43,
+      "peak_rss_kib": 45416,
+      "user_seconds": 16.31,
+      "system_seconds": 0.43,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "8.001",
+        "attach_ms": "0.015",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "52204724",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "12330.783",
+        "progressive_wall_ms": "9417.608",
+        "verify_ms": "4395.964",
+        "full_ms": "9426.912",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.059"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "after",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 6.894734250003239,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=5.637 attach_ms=0.008 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=52204724 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=4 worker_threads=4 read_ms=9099.227 progressive_wall_ms=6881.158 verify_ms=3048.238 full_ms=6887.694 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.080\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.080 node_read_latency_p95_ms=0.080\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.058 node_read_latency_p95_ms=0.082\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.039 node_read_latency_p95_ms=5.948\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.058 node_read_latency_p95_ms=15.700\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.100 node_read_latency_p95_ms=29.438\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=8.144 node_read_latency_p95_ms=14.279\n",
+      "stderr": "",
+      "time_elapsed_seconds": 6.89,
+      "peak_rss_kib": 44932,
+      "user_seconds": 11.73,
+      "system_seconds": 0.44,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "5.637",
+        "attach_ms": "0.008",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "52204724",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "9099.227",
+        "progressive_wall_ms": "6881.158",
+        "verify_ms": "3048.238",
+        "full_ms": "6887.694",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.080"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "before",
+      "round": 2,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 8.741664378001587,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=7.926 attach_ms=0.014 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=52204724 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=4 worker_threads=4 read_ms=11181.326 progressive_wall_ms=8726.161 verify_ms=3829.898 full_ms=8735.390 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.085\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.085 node_read_latency_p95_ms=0.085\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.054 node_read_latency_p95_ms=0.075\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.045 node_read_latency_p95_ms=8.653\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.051 node_read_latency_p95_ms=26.764\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.094 node_read_latency_p95_ms=31.780\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=9.546 node_read_latency_p95_ms=19.856\n",
+      "stderr": "",
+      "time_elapsed_seconds": 8.73,
+      "peak_rss_kib": 47312,
+      "user_seconds": 14.62,
+      "system_seconds": 0.41,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "7.926",
+        "attach_ms": "0.014",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "52204724",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "11181.326",
+        "progressive_wall_ms": "8726.161",
+        "verify_ms": "3829.898",
+        "full_ms": "8735.390",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.085"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "before",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/before-read",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 9.127359757003433,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=7.980 attach_ms=0.017 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=52204724 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=4 worker_threads=4 read_ms=13188.361 progressive_wall_ms=9111.578 verify_ms=3542.101 full_ms=9120.813 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.060\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.060 node_read_latency_p95_ms=0.060\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.045 node_read_latency_p95_ms=0.072\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.037 node_read_latency_p95_ms=5.498\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.055 node_read_latency_p95_ms=26.751\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.108 node_read_latency_p95_ms=33.362\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=12.509 node_read_latency_p95_ms=22.539\n",
+      "stderr": "",
+      "time_elapsed_seconds": 9.12,
+      "peak_rss_kib": 48488,
+      "user_seconds": 16.18,
+      "system_seconds": 0.61,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "7.980",
+        "attach_ms": "0.017",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "52204724",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "13188.361",
+        "progressive_wall_ms": "9111.578",
+        "verify_ms": "3542.101",
+        "full_ms": "9120.813",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.060"
+      }
+    },
+    {
+      "kind": "read-4",
+      "build": "after",
+      "round": 3,
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v6-codec-speed-20261014/ids/before-1.oct",
+        "progressive",
+        "1",
+        "256",
+        "--workers",
+        "4"
+      ],
+      "returncode": 0,
+      "wall_seconds": 8.875902159998077,
+      "stdout": "rep=1 mode=progressive format_version=v6.4-pre header_envelope=1 oct_bytes=979686544 attrs_bytes=424619979 open_ms=6.092 attach_ms=0.016 decoded_estimate_bytes=4655885969 max_block_estimate_bytes=13051181 budget_estimate_bytes=52204724 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=268435456 constant_payloads=10744 dictionary_payloads=1377 workers_limit=4 worker_threads=4 read_ms=11587.887 progressive_wall_ms=8863.439 verify_ms=4193.581 full_ms=8870.511 blocks=1343 points=81706211 checksum=0737ca650c6081b4 first_root_read_ms=0.030\nrep=1 level=0 nodes=1 blocks=1 points=81 node_read_latency_p50_ms=0.030 node_read_latency_p95_ms=0.030\nrep=1 level=1 nodes=4 blocks=4 points=325 node_read_latency_p50_ms=0.027 node_read_latency_p95_ms=0.075\nrep=1 level=2 nodes=19 blocks=19 points=39770 node_read_latency_p50_ms=0.025 node_read_latency_p95_ms=6.553\nrep=1 level=3 nodes=80 blocks=80 points=877036 node_read_latency_p50_ms=0.049 node_read_latency_p95_ms=17.771\nrep=1 level=4 nodes=308 blocks=308 points=12328113 node_read_latency_p50_ms=0.099 node_read_latency_p95_ms=26.377\nrep=1 level=5 nodes=931 blocks=931 points=68460886 node_read_latency_p50_ms=10.986 node_read_latency_p95_ms=19.810\n",
+      "stderr": "",
+      "time_elapsed_seconds": 8.87,
+      "peak_rss_kib": 47880,
+      "user_seconds": 15.41,
+      "system_seconds": 0.4,
+      "metrics": {
+        "rep": "1",
+        "mode": "progressive",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "979686544",
+        "attrs_bytes": "424619979",
+        "open_ms": "6.092",
+        "attach_ms": "0.016",
+        "decoded_estimate_bytes": "4655885969",
+        "max_block_estimate_bytes": "13051181",
+        "budget_estimate_bytes": "52204724",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "268435456",
+        "constant_payloads": "10744",
+        "dictionary_payloads": "1377",
+        "workers_limit": "4",
+        "worker_threads": "4",
+        "read_ms": "11587.887",
+        "progressive_wall_ms": "8863.439",
+        "verify_ms": "4193.581",
+        "full_ms": "8870.511",
+        "blocks": "1343",
+        "points": "81706211",
+        "checksum": "0737ca650c6081b4",
+        "first_root_read_ms": "0.030"
+      }
+    }
+  ],
+  "summaries": {
+    "convert": {
+      "before": {
+        "wall_seconds": {
+          "median": 42.821860655007185,
+          "min": 41.819650317003834,
+          "max": 43.35597874199448
+        },
+        "peak_rss_kib": {
+          "median": 250340,
+          "min": 245668,
+          "max": 266116
+        },
+        "user_seconds": {
+          "median": 91.77,
+          "min": 91.03,
+          "max": 91.88
+        },
+        "system_seconds": {
+          "median": 12.63,
+          "min": 12.58,
+          "max": 13.38
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 40.59820080099598,
+          "min": 40.52448953000567,
+          "max": 42.25823288199899
+        },
+        "peak_rss_kib": {
+          "median": 252368,
+          "min": 238560,
+          "max": 269448
+        },
+        "user_seconds": {
+          "median": 89.29,
+          "min": 86.89,
+          "max": 90.26
+        },
+        "system_seconds": {
+          "median": 12.88,
+          "min": 12.62,
+          "max": 12.98
+        }
+      }
+    },
+    "read-1": {
+      "before": {
+        "wall_seconds": {
+          "median": 11.24226123400149,
+          "min": 11.192412345997582,
+          "max": 11.931065707998641
+        },
+        "peak_rss_kib": {
+          "median": 20980,
+          "min": 20944,
+          "max": 21188
+        },
+        "user_seconds": {
+          "median": 10.88,
+          "min": 10.87,
+          "max": 10.97
+        },
+        "system_seconds": {
+          "median": 0.33,
+          "min": 0.3,
+          "max": 0.47
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 10.54464542700589,
+          "min": 10.500352591996489,
+          "max": 10.699747363003553
+        },
+        "peak_rss_kib": {
+          "median": 21112,
+          "min": 20952,
+          "max": 21140
+        },
+        "user_seconds": {
+          "median": 10.25,
+          "min": 10.14,
+          "max": 10.36
+        },
+        "system_seconds": {
+          "median": 0.31,
+          "min": 0.27,
+          "max": 0.33
+        }
+      }
+    },
+    "read-4": {
+      "before": {
+        "wall_seconds": {
+          "median": 8.741664378001587,
+          "min": 7.025592557001801,
+          "max": 9.127359757003433
+        },
+        "peak_rss_kib": {
+          "median": 48488,
+          "min": 47312,
+          "max": 50568
+        },
+        "user_seconds": {
+          "median": 14.62,
+          "min": 12.27,
+          "max": 16.18
+        },
+        "system_seconds": {
+          "median": 0.41,
+          "min": 0.31,
+          "max": 0.61
+        }
+      },
+      "after": {
+        "wall_seconds": {
+          "median": 8.875902159998077,
+          "min": 6.894734250003239,
+          "max": 9.433389976999024
+        },
+        "peak_rss_kib": {
+          "median": 45416,
+          "min": 44932,
+          "max": 47880
+        },
+        "user_seconds": {
+          "median": 15.41,
+          "min": 11.73,
+          "max": 16.31
+        },
+        "system_seconds": {
+          "median": 0.43,
+          "min": 0.4,
+          "max": 0.44
+        }
+      }
+    }
+  },
+  "measurement_limits": [
+    "Host load/cache uncontrolled; CRC tests briefly overlapped conversion phase.",
+    "After binary contains only packed ID changes, before CRC slicing-by-8.",
+    "Parallel BFS timings vary substantially; no universal speedup claim."
+  ]
+}

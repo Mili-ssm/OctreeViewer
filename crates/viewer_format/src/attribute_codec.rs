@@ -21,6 +21,51 @@ fn id_bits(unique: usize) -> usize {
     (32 - (unique as u32).saturating_sub(1).leading_zeros()) as usize
 }
 
+// IDs are LSB-first, at most 32 bits. A byte-fed u64 holds at most 39 bits.
+fn pack_ids(ids: &[u32], bits: usize) -> Result<Vec<u8>, FormatError> {
+    let size = ids
+        .len()
+        .checked_mul(bits)
+        .ok_or(FormatError::BlockSizeOverflow)?
+        .div_ceil(8);
+    let mut packed = allocate(size)?;
+    let mut buffer = 0_u64;
+    let mut buffered = 0;
+    for &id in ids {
+        buffer |= u64::from(id) << buffered;
+        buffered += bits;
+        while buffered >= 8 {
+            packed.push(buffer as u8);
+            buffer >>= 8;
+            buffered -= 8;
+        }
+    }
+    if buffered != 0 {
+        packed.push(buffer as u8);
+    }
+    Ok(packed)
+}
+
+struct PackedIds<'a> {
+    bytes: std::slice::Iter<'a, u8>,
+    bits: usize,
+    buffer: u64,
+    buffered: usize,
+}
+
+impl PackedIds<'_> {
+    fn read(&mut self) -> Result<usize, FormatError> {
+        while self.buffered < self.bits {
+            self.buffer |= u64::from(*self.bytes.next().ok_or_else(malformed)?) << self.buffered;
+            self.buffered += 8;
+        }
+        let id = self.buffer & ((1_u64 << self.bits) - 1);
+        self.buffer >>= self.bits;
+        self.buffered -= self.bits;
+        Ok(id as usize)
+    }
+}
+
 pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     if width == 0 || !raw.len().is_multiple_of(width) {
         return Err(malformed());
@@ -53,18 +98,8 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
     }
     let unique = lookup.len();
     let bits = id_bits(unique);
-    let size = rows
-        .checked_mul(bits)
-        .ok_or(FormatError::BlockSizeOverflow)?
-        .div_ceil(8);
-    let mut packed = allocate(size)?;
-    packed.resize(size, 0);
-    for (row, id) in ids.into_iter().enumerate() {
-        for bit in 0..bits {
-            let offset = row * bits + bit;
-            packed[offset / 8] |= (((id >> bit) & 1) as u8) << (offset % 8);
-        }
-    }
+    let packed = pack_ids(&ids, bits)?;
+    drop(ids);
     let table = compress_block(&table);
     let packed = compress_block(&packed);
     let length = HEADER
@@ -194,12 +229,14 @@ pub(crate) fn decode(
         return Err(malformed());
     }
     let mut output = allocate(raw_size)?;
-    for row in 0..rows {
-        let mut id = 0_usize;
-        for bit in 0..bits {
-            let offset = row * bits + bit;
-            id |= usize::from((packed[offset / 8] >> (offset % 8)) & 1) << bit;
-        }
+    let mut ids = PackedIds {
+        bytes: packed.iter(),
+        bits,
+        buffer: 0,
+        buffered: 0,
+    };
+    for _ in 0..rows {
+        let id = ids.read()?;
         if id >= unique {
             return Err(malformed());
         }
@@ -211,6 +248,44 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn packed_ids_match_independent_bit_oracle_at_every_width() {
+        for bits in 0_usize..=32 {
+            for rows in [0, 1, 7, 8, 9, 257] {
+                let mask = ((1_u64 << bits) - 1) as u32;
+                let ids: Vec<_> = (0..rows)
+                    .map(|row| (row as u32).wrapping_mul(0x9e3779b9) & mask)
+                    .collect();
+                let mut oracle = vec![0; (rows * bits).div_ceil(8)];
+                for (row, &id) in ids.iter().enumerate() {
+                    for bit in 0..bits {
+                        let offset = row * bits + bit;
+                        oracle[offset / 8] |= (((id >> bit) & 1) as u8) << (offset % 8);
+                    }
+                }
+                assert_eq!(pack_ids(&ids, bits).unwrap(), oracle);
+                let mut reader = PackedIds {
+                    bytes: oracle.iter(),
+                    bits,
+                    buffer: 0,
+                    buffered: 0,
+                };
+                for id in ids {
+                    assert_eq!(reader.read().unwrap(), id as usize);
+                }
+                if !oracle.is_empty() {
+                    let mut truncated = PackedIds {
+                        bytes: oracle[..oracle.len() - 1].iter(),
+                        bits,
+                        buffer: 0,
+                        buffered: 0,
+                    };
+                    assert!((0..rows).any(|_| truncated.read().is_err()));
+                }
+            }
+        }
+    }
+
     #[test]
     fn pre4_byte_planes_preserve_bits_and_never_exceed_pre3() {
         for width in [1, 3, 8, 16] {
