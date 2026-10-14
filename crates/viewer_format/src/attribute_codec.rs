@@ -87,6 +87,31 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
     Ok(best)
 }
 
+/// Pre4 keeps every pre3 candidate, adding a reversible independent byte-plane transform.
+pub(crate) fn encode_pre4(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+    let best = encode(raw, width)?;
+    if width <= 1 || raw.len() / width < 2 || best.codec() == BlockCodec::Constant {
+        return Ok(best);
+    }
+    let rows = raw.len() / width;
+    let mut planes = allocate(raw.len())?;
+    planes.resize(raw.len(), 0);
+    for byte in 0..width {
+        for row in 0..rows {
+            planes[byte * rows + row] = raw[row * width + byte];
+        }
+    }
+    let encoded = compress_block(&planes);
+    if encoded.codec() == BlockCodec::Lz4 && encoded.bytes().len() < best.bytes().len() {
+        Ok(EncodedBlock {
+            codec: BlockCodec::BytePlanes,
+            bytes: encoded.into_bytes(),
+        })
+    } else {
+        Ok(best)
+    }
+}
+
 pub(crate) fn decode(
     codec: BlockCodec,
     stored: &[u8],
@@ -120,6 +145,23 @@ pub(crate) fn decode(
             output.extend_from_slice(stored);
         }
         return Ok(output);
+    }
+    if codec == BlockCodec::BytePlanes {
+        if width <= 1 {
+            return Err(malformed());
+        }
+        let planes = decompress_block(BlockCodec::Lz4, stored, raw_size, limit)?;
+        let mut output = allocate(raw_size)?;
+        output.resize(raw_size, 0);
+        for byte in 0..width {
+            for row in 0..rows {
+                output[row * width + byte] = planes[byte * rows + row];
+            }
+        }
+        return Ok(output);
+    }
+    if codec != BlockCodec::Dictionary {
+        return Err(malformed());
     }
     if stored.len() < HEADER {
         return Err(malformed());
@@ -169,6 +211,56 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pre4_byte_planes_preserve_bits_and_never_exceed_pre3() {
+        for width in [1, 3, 8, 16] {
+            for rows in [0, 1, 9, 257, 4096] {
+                let raw: Vec<_> = (0..rows)
+                    .flat_map(|r| {
+                        (0..width).map(move |c| {
+                            if c % 2 == 0 {
+                                (r * 37 + c * 11) as u8
+                            } else {
+                                c as u8
+                            }
+                        })
+                    })
+                    .collect();
+                let old = encode(&raw, width).unwrap();
+                let new = encode_pre4(&raw, width).unwrap();
+                assert!(new.bytes().len() <= old.bytes().len());
+                assert_eq!(
+                    decode(new.codec(), new.bytes(), raw.len(), width, raw.len()).unwrap(),
+                    raw
+                );
+            }
+        }
+        let mut state = 1234_u32;
+        let raw: Vec<_> = (0..4096)
+            .flat_map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                (0x7ff8000000000000_u64 | u64::from(state)).to_le_bytes()
+            })
+            .collect();
+        let new = encode_pre4(&raw, 8).unwrap();
+        assert_eq!(new.codec(), BlockCodec::BytePlanes);
+        assert_eq!(
+            decode(new.codec(), new.bytes(), raw.len(), 8, raw.len()).unwrap(),
+            raw
+        );
+        assert!(decode(new.codec(), new.bytes(), raw.len(), 8, raw.len() - 1).is_err());
+        assert!(decode(new.codec(), new.bytes(), raw.len(), 1, raw.len()).is_err());
+        assert!(
+            decode(
+                new.codec(),
+                &new.bytes()[..new.bytes().len() - 1],
+                raw.len(),
+                8,
+                raw.len()
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn roundtrip_bits_components_and_fallback() {
         for width in [1, 3, 8, 16] {

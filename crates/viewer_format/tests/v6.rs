@@ -242,6 +242,7 @@ fn v5_and_v6_pre1_preserve_geometry_colors_order_and_typed_attribute_bits() {
         FormatVersion::V6_PRE1,
         FormatVersion::V6_PRE2,
         FormatVersion::V6_PRE3,
+        FormatVersion::V6_PRE4,
     ] {
         let (primary, attributes) = write_split(version, fixture_block(), meta.clone());
         let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
@@ -329,6 +330,7 @@ fn split_payload_reads_are_selective_for_geometry_and_one_attribute_column() {
         FormatVersion::V6_PRE1,
         FormatVersion::V6_PRE2,
         FormatVersion::V6_PRE3,
+        FormatVersion::V6_PRE4,
     ] {
         let (primary, attributes) = write_split(version, fixture_block(), meta.clone());
         let primary = CountingReader::new(primary);
@@ -480,12 +482,12 @@ fn prepared_v5_block_is_rejected_by_v6_writer_and_writer_remains_usable() {
 }
 
 #[test]
-fn unsupported_v6_final_and_pre4_are_rejected_by_writer_encoder_and_reader() {
+fn unsupported_v6_final_and_pre5_are_rejected_by_writer_encoder_and_reader() {
     let meta = metadata(POINTS.len() as u64, descriptors());
     let options = options();
     let versions = [
         FormatVersion::V6,
-        FormatVersion::V6Pre(std::num::NonZeroU32::new(4).unwrap()),
+        FormatVersion::V6Pre(std::num::NonZeroU32::new(5).unwrap()),
     ];
     for version in versions {
         assert!(matches!(
@@ -519,6 +521,7 @@ fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
         FormatVersion::V6_PRE1,
         FormatVersion::V6_PRE2,
         FormatVersion::V6_PRE3,
+        FormatVersion::V6_PRE4,
     ] {
         for attach in [false, true] {
             let (primary, attributes) = write_split(
@@ -669,7 +672,10 @@ fn pre2_physically_selects_occupied_arrays_and_preserves_every_payload_row() {
         .unwrap()
         .decode_local()
         .unwrap();
-    for split in [false, true] {
+    for (version, split) in [FormatVersion::V6_PRE2, FormatVersion::V6_PRE4]
+        .into_iter()
+        .flat_map(|v| [false, true].map(|s| (v, s)))
+    {
         let meta = metadata(count as u64, vec![descriptor.clone()]);
         let block = SourcePointBlock::new(
             BLOCK_ID,
@@ -678,24 +684,24 @@ fn pre2_physically_selects_occupied_arrays_and_preserves_every_payload_row() {
             vec![column.clone()],
         );
         let mut reader = if split {
-            let (primary, attrs) = write_split(FormatVersion::V6_PRE2, block, meta);
+            let (primary, attrs) = write_split(version, block, meta);
             let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
             reader.attach_attributes(Cursor::new(attrs)).unwrap();
             reader
         } else {
-            let mut writer = FormatWriter::new_for_version(
-                FormatVersion::V6_PRE2,
-                Cursor::new(Vec::new()),
-                meta,
-                options(),
-            )
-            .unwrap();
+            let mut writer =
+                FormatWriter::new_for_version(version, Cursor::new(Vec::new()), meta, options())
+                    .unwrap();
             writer.write_block(block).unwrap();
             FormatReader::new(writer.finish().unwrap()).unwrap()
         };
         assert_eq!(
             reader.block_storage_stats().unwrap()[0].geometry_encoding,
-            GeometryEncoding::Occupied
+            if version == FormatVersion::V6_PRE4 {
+                GeometryEncoding::CompactOccupied
+            } else {
+                GeometryEncoding::Occupied
+            }
         );
         let block = reader.read_block(BLOCK_ID).unwrap();
         assert_eq!(
@@ -941,5 +947,114 @@ fn pre3_checks_attribute_checksum_before_expansion() {
     assert!(matches!(
         reader.read_attribute(BLOCK_ID, 10),
         Err(FormatError::InvalidBlockChecksum(BLOCK_ID))
+    ));
+}
+
+#[test]
+fn pre4_byte_planes_are_selective_exact_and_rejected_by_older_revisions() {
+    use viewer_format::{BlockCodec, BlockPayloadKind};
+    let rows = 4096;
+    let mut state = 1234_u32;
+    let values = AttributeValues::F64(
+        (0..rows)
+            .map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                f64::from_bits(0x7ff8000000000000 | u64::from(state))
+            })
+            .collect(),
+    );
+    let descriptor = AttributeDescriptor::new("nan_payload", AttributeDataType::F64, 1).unwrap();
+    let column = AttributeColumn::new(descriptor.clone(), values.clone(), rows).unwrap();
+    let make = || {
+        SourcePointBlock::new(
+            BLOCK_ID,
+            (0..rows).map(|i| [i as f64, 0., 0.]).collect(),
+            vec![ColorRgb::new(1, 2, 3); rows],
+            vec![column.clone()],
+        )
+    };
+    let meta = metadata(rows as u64, vec![descriptor]);
+    let (old, old_attrs) = write_split(FormatVersion::V6_PRE3, make(), meta.clone());
+    let (primary, attrs) = write_split(FormatVersion::V6_PRE4, make(), meta.clone());
+    assert!(primary.len() + attrs.len() < old.len() + old_attrs.len());
+    let p = CountingReader::new(primary);
+    let a = CountingReader::new(attrs);
+    let pc = p.bytes_read.clone();
+    let ac = a.bytes_read.clone();
+    let mut reader = FormatReader::new(p).unwrap();
+    reader.attach_attributes(a).unwrap();
+    let stats = reader.block_payload_storage_stats().unwrap();
+    let payload = stats
+        .iter()
+        .find(|p| {
+            matches!(
+                p.kind,
+                BlockPayloadKind::Attribute {
+                    schema_index: 0,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    assert_eq!(payload.codec, BlockCodec::BytePlanes);
+    pc.set(0);
+    ac.set(0);
+    assert_values_bits_eq(
+        reader.read_attribute(BLOCK_ID, 0).unwrap().values(),
+        &values,
+    );
+    assert_eq!(pc.get(), 0);
+    assert_eq!(ac.get() as u64, payload.stored_bytes);
+    let mut wrong = FormatReader::new(Cursor::new(old)).unwrap();
+    let (_, attrs4) = write_split(FormatVersion::V6_PRE4, make(), meta.clone());
+    assert!(wrong.attach_attributes(Cursor::new(attrs4)).is_err());
+    let mut writer = FormatWriter::new_for_version(
+        FormatVersion::V6_PRE4,
+        Cursor::new(Vec::new()),
+        meta,
+        options(),
+    )
+    .unwrap();
+    writer.write_block(make()).unwrap();
+    let original = writer.finish().unwrap().into_inner();
+    let footer = original.len() - 40;
+    let index = u64::from_le_bytes(original[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    for version in [
+        FormatVersion::V6_PRE1,
+        FormatVersion::V6_PRE2,
+        FormatVersion::V6_PRE3,
+    ] {
+        let mut bad = original.clone();
+        bad[..24].copy_from_slice(
+            &FormatIdentity {
+                version,
+                role: FileRole::Monolithic,
+            }
+            .to_header_bytes()
+            .unwrap(),
+        );
+        let revision = version.revision();
+        bad[index..index + 8].copy_from_slice(format!("OCTVI6{revision}P").as_bytes());
+        bad[footer..footer + 8].copy_from_slice(format!("OCTVE6{revision}P").as_bytes());
+        repair_index_and_footer(&mut bad);
+        assert!(matches!(
+            FormatReader::new(Cursor::new(bad)),
+            Err(FormatError::MalformedIndex(_))
+        ));
+    }
+}
+
+#[test]
+fn pre3_rejects_compact_tag_even_with_repaired_index_crc() {
+    let block = SourcePointBlock::new(BLOCK_ID, POINTS.to_vec(), COLORS.to_vec(), vec![]);
+    let (mut primary, _) = write_split(FormatVersion::V6_PRE3, block, metadata(4, vec![]));
+    let footer = primary.len() - 40;
+    let index = u64::from_le_bytes(primary[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    let length = u64::from_le_bytes(primary[footer + 16..footer + 24].try_into().unwrap()) as usize;
+    primary[index + length - 94 - 58 + 32] = GeometryEncoding::CompactOccupied as u8;
+    repair_index_and_footer(&mut primary);
+    assert!(matches!(
+        FormatReader::new(Cursor::new(primary)),
+        Err(FormatError::MalformedIndex(_))
     ));
 }

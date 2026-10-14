@@ -6,6 +6,7 @@ pub enum GeometryEncoding {
     RawU32 = 0,
     DeltaVarint = 1,
     Occupied = 2,
+    CompactOccupied = 3,
 }
 
 impl TryFrom<u8> for GeometryEncoding {
@@ -16,6 +17,7 @@ impl TryFrom<u8> for GeometryEncoding {
             0 => Ok(Self::RawU32),
             1 => Ok(Self::DeltaVarint),
             2 => Ok(Self::Occupied),
+            3 => Ok(Self::CompactOccupied),
             tag => Err(FormatError::InvalidTag {
                 field: "geometry encoding",
                 tag,
@@ -40,16 +42,20 @@ impl GeometryEncoding {
                 (exact, exact)
             }
             Self::DeltaVarint => (min, max),
-            Self::Occupied => {
+            Self::Occupied | Self::CompactOccupied => {
                 if point_count == 0 {
                     return Err(FormatError::MalformedBlock("empty occupied geometry"));
                 }
                 (
                     point_count
-                        .checked_add(12)
+                        .checked_add(if self == Self::CompactOccupied { 6 } else { 12 })
                         .ok_or(FormatError::BlockSizeOverflow)?,
                     point_count
-                        .checked_mul(220)
+                        .checked_mul(if self == Self::CompactOccupied {
+                            54
+                        } else {
+                            220
+                        })
                         .and_then(|n| n.checked_add(133))
                         .ok_or(FormatError::BlockSizeOverflow)?,
                 )
@@ -115,15 +121,26 @@ impl<'a> GeometryDecoder<'a> {
         points: usize,
     ) -> Result<Self, FormatError> {
         let mut decoder = Self::new(encoding, bytes);
-        if encoding == GeometryEncoding::Occupied {
-            decoder.occupied = Some(crate::occupancy_codec::decode(bytes, points)?.into_iter());
+        if matches!(
+            encoding,
+            GeometryEncoding::Occupied | GeometryEncoding::CompactOccupied
+        ) {
+            let coordinates = if encoding == GeometryEncoding::CompactOccupied {
+                crate::occupancy_codec::decode_compact(bytes, points)?
+            } else {
+                crate::occupancy_codec::decode(bytes, points)?
+            };
+            decoder.occupied = Some(coordinates.into_iter());
             decoder.offset = bytes.len();
         }
         Ok(decoder)
     }
 
     pub(crate) fn next_coordinate(&mut self) -> Result<[u32; 3], FormatError> {
-        if self.encoding == GeometryEncoding::Occupied {
+        if matches!(
+            self.encoding,
+            GeometryEncoding::Occupied | GeometryEncoding::CompactOccupied
+        ) {
             return self
                 .occupied
                 .as_mut()
@@ -133,7 +150,9 @@ impl<'a> GeometryDecoder<'a> {
         let mut coordinate = [0u32; 3];
         for (axis, component) in coordinate.iter_mut().enumerate() {
             *component = match self.encoding {
-                GeometryEncoding::Occupied => unreachable!("occupied decoded above"),
+                GeometryEncoding::Occupied | GeometryEncoding::CompactOccupied => {
+                    unreachable!("occupied decoded above")
+                }
                 GeometryEncoding::RawU32 => {
                     let end = self
                         .offset
@@ -257,7 +276,7 @@ mod tests {
                 .validate_raw_length(2, 30)
                 .is_ok()
         );
-        assert!(GeometryEncoding::try_from(3).is_err());
+        assert!(GeometryEncoding::try_from(4).is_err());
         for (encoding, count, length) in [
             (GeometryEncoding::RawU32, 2, 23),
             (GeometryEncoding::DeltaVarint, 2, 5),

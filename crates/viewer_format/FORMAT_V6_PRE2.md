@@ -13,7 +13,8 @@ same exact identity. New index/footer markers are `OCTVI62P` and `OCTVE62P`.
 
 Geometry tags permitted in pre2: `0` raw XYZ u32, `1` delta-varint, **`2` occupied-level arrays**.
 Pre1 still permits only tags 0/1; it must reject tag 2 even with valid checksums. Unsupported
-revision pre4 and final v6 remain rejected; [pre3](FORMAT_V6_PRE3.md) adds attribute codecs. Prepared blocks/checkpoints retain exact identity.
+revision pre5 and final v6 remain rejected; [pre3](FORMAT_V6_PRE3.md) adds attribute codecs
+and [pre4](FORMAT_V6_PRE4.md) adds compact occupancy and byte planes. Prepared blocks/checkpoints retain exact identity.
 
 The level arrays are **per independently addressable geometry block**, not one contiguous array
 covering the whole cloud. This preserves selected-block reads through the existing traits and

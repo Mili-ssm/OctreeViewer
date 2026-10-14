@@ -1,0 +1,307 @@
+{
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+  "results": [
+    {
+      "version": "v6.3-pre",
+      "octBytes": 56376,
+      "attrsBytes": 65636,
+      "probe": {
+        "type": "probeResult",
+        "passed": true,
+        "geometryHasAttributes": false,
+        "fullHasAttributes": true,
+        "sourcePointCount": "4096",
+        "nodeCount": 9,
+        "formatVersion": "v6.3-pre",
+        "schemaColumns": 9,
+        "wrongSidecarRejected": true,
+        "errors": [
+          "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+          "format version v6.5-pre is recognized but has no supported decoder"
+        ]
+      }
+    },
+    {
+      "version": "v6.4-pre",
+      "octBytes": 54060,
+      "attrsBytes": 29261,
+      "probe": {
+        "type": "probeResult",
+        "passed": true,
+        "geometryHasAttributes": false,
+        "fullHasAttributes": true,
+        "sourcePointCount": "4096",
+        "nodeCount": 9,
+        "formatVersion": "v6.4-pre",
+        "schemaColumns": 9,
+        "wrongSidecarRejected": true,
+        "errors": [
+          "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+          "format version v6.5-pre is recognized but has no supported decoder"
+        ]
+      }
+    }
+  ],
+  "fixture": {
+    "path": "/tmp/octree-v6-pre4-20261014/target/pre4-browser-check/clustered-time.las",
+    "bytes": 139491,
+    "sha256": "f88b3aab87eee910cf5f119ea85b0f8c792d972fbf418849fa11a6b4e1f73ede"
+  },
+  "validation_root": "/tmp/octree-v6-pre4-20261014",
+  "native_checks": {
+    "v6.3-pre": {
+      "reconstruction": {
+        "rep": "1",
+        "mode": "reconstruct",
+        "format_version": "v6.3-pre",
+        "header_envelope": "1",
+        "oct_bytes": "56376",
+        "attrs_bytes": "65636",
+        "open_ms": "0.106",
+        "attach_ms": "0.003",
+        "decoded_estimate_bytes": "245584",
+        "max_block_estimate_bytes": "33005",
+        "budget_estimate_bytes": "245584",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "67108864",
+        "constant_payloads": "96",
+        "dictionary_payloads": "0",
+        "load_ms": "0.887",
+        "verify_ms": "0.210",
+        "full_ms": "1.225",
+        "blocks": "16",
+        "points": "4160",
+        "checksum": "ad776b7ebf478c7a"
+      },
+      "codecs": [
+        {
+          "group": "attribute_0/None",
+          "count": 16,
+          "raw_bytes": 8320,
+          "stored_bytes": 8320
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 16,
+          "raw_bytes": 16640,
+          "stored_bytes": 64
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 16,
+          "raw_bytes": 8320,
+          "stored_bytes": 32
+        },
+        {
+          "group": "attribute_7/Lz4",
+          "count": 16,
+          "raw_bytes": 33280,
+          "stored_bytes": 23672
+        },
+        {
+          "group": "attribute_8/Lz4",
+          "count": 8,
+          "raw_bytes": 24576,
+          "stored_bytes": 20556
+        },
+        {
+          "group": "attribute_8/None",
+          "count": 8,
+          "raw_bytes": 384,
+          "stored_bytes": 384
+        },
+        {
+          "group": "display_rgb/None",
+          "count": 16,
+          "raw_bytes": 12480,
+          "stored_bytes": 12480
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 8,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/Occupied",
+          "count": 8,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 16,
+          "raw_bytes": 58384,
+          "stored_bytes": 47458
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/tmp/octree-v6-pre4-20261014/target/pre4-browser-check/web-pre3.oct",
+          "bytes": 56376,
+          "sha256": "6b2518c566a860c150106d0c23a9a7d3a62d5eebc3736bd5357012992fbf84f6"
+        },
+        {
+          "path": "/tmp/octree-v6-pre4-20261014/target/pre4-browser-check/web-pre3.octattrs",
+          "bytes": 65636,
+          "sha256": "ac87f13934c3e904b4dbd39c7f1acce3738be65cffc78bf903289d68912a4291"
+        }
+      ]
+    },
+    "v6.4-pre": {
+      "reconstruction": {
+        "rep": "1",
+        "mode": "reconstruct",
+        "format_version": "v6.4-pre",
+        "header_envelope": "1",
+        "oct_bytes": "54060",
+        "attrs_bytes": "29261",
+        "open_ms": "0.096",
+        "attach_ms": "0.003",
+        "decoded_estimate_bytes": "232765",
+        "max_block_estimate_bytes": "31348",
+        "budget_estimate_bytes": "232765",
+        "budget_basis": "point_struct_plus_raw_block_payloads",
+        "budget_bytes": "67108864",
+        "constant_payloads": "96",
+        "dictionary_payloads": "0",
+        "load_ms": "0.770",
+        "verify_ms": "0.209",
+        "full_ms": "1.096",
+        "blocks": "16",
+        "points": "4160",
+        "checksum": "ad776b7ebf478c7a"
+      },
+      "codecs": [
+        {
+          "group": "attribute_0/BytePlanes",
+          "count": 8,
+          "raw_bytes": 8192,
+          "stored_bytes": 4851
+        },
+        {
+          "group": "attribute_0/None",
+          "count": 8,
+          "raw_bytes": 128,
+          "stored_bytes": 128
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 16,
+          "raw_bytes": 16640,
+          "stored_bytes": 64
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 16,
+          "raw_bytes": 4160,
+          "stored_bytes": 16
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 16,
+          "raw_bytes": 8320,
+          "stored_bytes": 32
+        },
+        {
+          "group": "attribute_7/BytePlanes",
+          "count": 16,
+          "raw_bytes": 33280,
+          "stored_bytes": 13124
+        },
+        {
+          "group": "attribute_8/BytePlanes",
+          "count": 16,
+          "raw_bytes": 24960,
+          "stored_bytes": 5841
+        },
+        {
+          "group": "display_rgb/BytePlanes",
+          "count": 8,
+          "raw_bytes": 12288,
+          "stored_bytes": 4901
+        },
+        {
+          "group": "display_rgb/None",
+          "count": 8,
+          "raw_bytes": 192,
+          "stored_bytes": 192
+        },
+        {
+          "group": "geometry/CompactOccupied",
+          "count": 8,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 8,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 16,
+          "raw_bytes": 45565,
+          "stored_bytes": 45142
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "/tmp/octree-v6-pre4-20261014/target/pre4-browser-check/web-pre4.oct",
+          "bytes": 54060,
+          "sha256": "096972ad31a5fcf05acd30943bede3209dce8ee5ea0bac2ada9ec7407ac77205"
+        },
+        {
+          "path": "/tmp/octree-v6-pre4-20261014/target/pre4-browser-check/web-pre4.octattrs",
+          "bytes": 29261,
+          "sha256": "02c6faaf2ee490f9a61c844f10a641acf9c2c457ceec829cdfa09cd406221093"
+        }
+      ]
+    }
+  },
+  "console": "Only favicon.ico 404 from directory listing; no converter/probe errors.",
+  "scope": "WASM encoding/OPFS and Blob metadata; complete native payload reconstruction; no GPU presentation validation or browser payload decode."
+}

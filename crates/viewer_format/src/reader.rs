@@ -929,10 +929,19 @@ fn parse_index(
             GeometryEncoding::RawU32
         };
         if geometry_encoding == GeometryEncoding::Occupied
-            && !matches!(layout, StorageLayout::V6Pre2 | StorageLayout::V6Pre3)
+            && !matches!(
+                layout,
+                StorageLayout::V6Pre2 | StorageLayout::V6Pre3 | StorageLayout::V6Pre4
+            )
         {
             return Err(FormatError::MalformedIndex(
                 "geometry encoding not supported in this revision",
+            ));
+        }
+        if geometry_encoding == GeometryEncoding::CompactOccupied && layout != StorageLayout::V6Pre4
+        {
+            return Err(FormatError::MalformedIndex(
+                "compact geometry not supported in this revision",
             ));
         }
         let quantization_error = cursor.f64()?;
@@ -1004,7 +1013,10 @@ fn parse_index(
                 codec: BlockCodec::try_from(cursor.u8()?)?,
                 checksum: cursor.u32()?,
             };
-            if matches!(column.codec, BlockCodec::Constant | BlockCodec::Dictionary) {
+            if matches!(
+                column.codec,
+                BlockCodec::Constant | BlockCodec::Dictionary | BlockCodec::BytePlanes
+            ) {
                 let width = if payload_index == 1 {
                     3
                 } else if payload_index > 1 {
@@ -1014,12 +1026,16 @@ fn parse_index(
                 } else {
                     0
                 };
-                if layout != StorageLayout::V6Pre3
+                if !matches!(layout, StorageLayout::V6Pre3 | StorageLayout::V6Pre4)
                     || payload_index == 0
                     || point_count < 2
                     || column.stored_length >= column.raw_length
                     || (column.codec == BlockCodec::Constant && column.stored_length != width)
                     || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
+                    || (column.codec == BlockCodec::BytePlanes
+                        && (layout != StorageLayout::V6Pre4
+                            || width <= 1
+                            || column.stored_length == 0))
                 {
                     return Err(FormatError::MalformedIndex(
                         "attribute codec not valid in this revision or column",

@@ -1,0 +1,772 @@
+{
+  "inspection_binary": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_payload_stats",
+    "sha256": "a9ccd9b65da05df7d2bf36b8476a19971bdea96db03081b59ab489effc34e9f2"
+  },
+  "inspection_source": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/examples/storage_payload_stats.rs",
+    "sha256": "d171904dd07f863e54fbad4d8ec2bb91157b6d8bbb478719b18972b6e95a7697"
+  },
+  "datasets": [
+    {
+      "label": "Outer Banks e430",
+      "version": "v6.3-pre",
+      "primary": {
+        "bytes": 1107463,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Outer-Banks-e430/1-v6.3-pre/output-run-001.oct",
+        "sha256": "a5e98bbb285f9ca99917eb358b26c2c72cca0973296b06cb9aaa223865f140db"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/Dictionary",
+          "count": 32,
+          "raw_bytes": 221122,
+          "stored_bytes": 147420
+        },
+        {
+          "group": "attribute_0/Lz4",
+          "count": 1,
+          "raw_bytes": 474,
+          "stored_bytes": 469
+        },
+        {
+          "group": "attribute_0/None",
+          "count": 14,
+          "raw_bytes": 1940,
+          "stored_bytes": 1940
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 47,
+          "raw_bytes": 447072,
+          "stored_bytes": 188
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 47,
+          "raw_bytes": 223536,
+          "stored_bytes": 94
+        },
+        {
+          "group": "attribute_7/Lz4",
+          "count": 47,
+          "raw_bytes": 894144,
+          "stored_bytes": 624554
+        },
+        {
+          "group": "display_rgb/Dictionary",
+          "count": 47,
+          "raw_bytes": 335304,
+          "stored_bytes": 22938
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 46,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/RawU32",
+          "count": 1,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 46,
+          "raw_bytes": 1369131,
+          "stored_bytes": 1077973
+        },
+        {
+          "group": "geometry_payload/None",
+          "count": 1,
+          "raw_bytes": 2844,
+          "stored_bytes": 2844
+        }
+      ]
+    },
+    {
+      "label": "Outer Banks e430",
+      "version": "v6.4-pre",
+      "primary": {
+        "bytes": 1107463,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Outer-Banks-e430/1-v6.4-pre/output-run-001.oct",
+        "sha256": "e5cdb562956a9f07e37308852ee1bbacd88c063a921907ddcedd84a60713864e"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/BytePlanes",
+          "count": 25,
+          "raw_bytes": 54000,
+          "stored_bytes": 36494
+        },
+        {
+          "group": "attribute_0/Dictionary",
+          "count": 20,
+          "raw_bytes": 169446,
+          "stored_bytes": 110032
+        },
+        {
+          "group": "attribute_0/None",
+          "count": 2,
+          "raw_bytes": 90,
+          "stored_bytes": 90
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 47,
+          "raw_bytes": 447072,
+          "stored_bytes": 188
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 47,
+          "raw_bytes": 111768,
+          "stored_bytes": 47
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 47,
+          "raw_bytes": 223536,
+          "stored_bytes": 94
+        },
+        {
+          "group": "attribute_7/BytePlanes",
+          "count": 47,
+          "raw_bytes": 894144,
+          "stored_bytes": 313548
+        },
+        {
+          "group": "display_rgb/Dictionary",
+          "count": 47,
+          "raw_bytes": 335304,
+          "stored_bytes": 22938
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 46,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/RawU32",
+          "count": 1,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 46,
+          "raw_bytes": 1369131,
+          "stored_bytes": 1077973
+        },
+        {
+          "group": "geometry_payload/None",
+          "count": 1,
+          "raw_bytes": 2844,
+          "stored_bytes": 2844
+        }
+      ]
+    },
+    {
+      "label": "Bunny parcial",
+      "version": "v6.3-pre",
+      "primary": {
+        "bytes": 206971,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Bunny-parcial/1-v6.3-pre/output-run-001.oct",
+        "sha256": "abcb9f5a4e0bed8c25d147307cb745bfca1491b43f91a8942ee516fa2aaa2664"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/Constant",
+          "count": 19,
+          "raw_bytes": 81154,
+          "stored_bytes": 38
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 19,
+          "raw_bytes": 162308,
+          "stored_bytes": 76
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 19,
+          "raw_bytes": 81154,
+          "stored_bytes": 38
+        },
+        {
+          "group": "display_rgb/Constant",
+          "count": 19,
+          "raw_bytes": 121731,
+          "stored_bytes": 57
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 19,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 19,
+          "raw_bytes": 441839,
+          "stored_bytes": 196869
+        }
+      ]
+    },
+    {
+      "label": "Bunny parcial",
+      "version": "v6.4-pre",
+      "primary": {
+        "bytes": 206971,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Bunny-parcial/1-v6.4-pre/output-run-001.oct",
+        "sha256": "41489fb1192dbd85ce7243a371b4aaee00b4c43486f489856b9d043e50e451e7"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/Constant",
+          "count": 19,
+          "raw_bytes": 81154,
+          "stored_bytes": 38
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 19,
+          "raw_bytes": 162308,
+          "stored_bytes": 76
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 19,
+          "raw_bytes": 40577,
+          "stored_bytes": 19
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 19,
+          "raw_bytes": 81154,
+          "stored_bytes": 38
+        },
+        {
+          "group": "display_rgb/Constant",
+          "count": 19,
+          "raw_bytes": 121731,
+          "stored_bytes": 57
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 19,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 19,
+          "raw_bytes": 441839,
+          "stored_bytes": 196869
+        }
+      ]
+    },
+    {
+      "label": "Sintetica agrupada",
+      "version": "v6.3-pre",
+      "primary": {
+        "bytes": 43293,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Sintetica-agrupada/1-v6.3-pre/output-run-001.oct",
+        "sha256": "31442902f7086cc1d0ecbcdcec6e2744ca48cb2b9c4850da814e9d1dd046e791"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/None",
+          "count": 1,
+          "raw_bytes": 8192,
+          "stored_bytes": 8192
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 1,
+          "raw_bytes": 16384,
+          "stored_bytes": 4
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 1,
+          "raw_bytes": 8192,
+          "stored_bytes": 2
+        },
+        {
+          "group": "attribute_7/Lz4",
+          "count": 1,
+          "raw_bytes": 24576,
+          "stored_bytes": 20472
+        },
+        {
+          "group": "display_rgb/None",
+          "count": 1,
+          "raw_bytes": 12288,
+          "stored_bytes": 12288
+        },
+        {
+          "group": "geometry/Occupied",
+          "count": 1,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 1,
+          "raw_bytes": 44323,
+          "stored_bytes": 42278
+        }
+      ]
+    },
+    {
+      "label": "Sintetica agrupada",
+      "version": "v6.4-pre",
+      "primary": {
+        "bytes": 42788,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Sintetica-agrupada/1-v6.4-pre/output-run-001.oct",
+        "sha256": "0aa5a6de5ed94a1f19962e24929349c984540902ae67640dcb85b57fbbd717c6"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/BytePlanes",
+          "count": 1,
+          "raw_bytes": 8192,
+          "stored_bytes": 361
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 1,
+          "raw_bytes": 16384,
+          "stored_bytes": 4
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 1,
+          "raw_bytes": 4096,
+          "stored_bytes": 1
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 1,
+          "raw_bytes": 8192,
+          "stored_bytes": 2
+        },
+        {
+          "group": "attribute_7/BytePlanes",
+          "count": 1,
+          "raw_bytes": 24576,
+          "stored_bytes": 437
+        },
+        {
+          "group": "display_rgb/BytePlanes",
+          "count": 1,
+          "raw_bytes": 12288,
+          "stored_bytes": 381
+        },
+        {
+          "group": "geometry/CompactOccupied",
+          "count": 1,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 1,
+          "raw_bytes": 41974,
+          "stored_bytes": 41773
+        }
+      ]
+    },
+    {
+      "label": "Belvedere",
+      "version": "v6.3-pre",
+      "primary": {
+        "bytes": 980174240,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Belvedere/1-v6.3-pre/output-run-001.oct",
+        "sha256": "0e68fbdb3d2d7be05d1f4b57180c156d74047820c4dc967c2f32d239a1931112"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/Constant",
+          "count": 1343,
+          "raw_bytes": 163412422,
+          "stored_bytes": 2686
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 1343,
+          "raw_bytes": 326824844,
+          "stored_bytes": 5372
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 1343,
+          "raw_bytes": 163412422,
+          "stored_bytes": 2686
+        },
+        {
+          "group": "attribute_7/Constant",
+          "count": 1343,
+          "raw_bytes": 653649688,
+          "stored_bytes": 10744
+        },
+        {
+          "group": "attribute_8/Dictionary",
+          "count": 980,
+          "raw_bytes": 486618930,
+          "stored_bytes": 235343796
+        },
+        {
+          "group": "attribute_8/Lz4",
+          "count": 102,
+          "raw_bytes": 3474834,
+          "stored_bytes": 2767030
+        },
+        {
+          "group": "attribute_8/None",
+          "count": 261,
+          "raw_bytes": 143502,
+          "stored_bytes": 143502
+        },
+        {
+          "group": "display_rgb/Dictionary",
+          "count": 853,
+          "raw_bytes": 226486176,
+          "stored_bytes": 182268125
+        },
+        {
+          "group": "display_rgb/Lz4",
+          "count": 3,
+          "raw_bytes": 8652,
+          "stored_bytes": 8644
+        },
+        {
+          "group": "display_rgb/None",
+          "count": 487,
+          "raw_bytes": 18623805,
+          "stored_bytes": 18623805
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 260,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/Occupied",
+          "count": 80,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/RawU32",
+          "count": 1003,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 368,
+          "raw_bytes": 5159880,
+          "stored_bytes": 4927253
+        },
+        {
+          "group": "geometry_payload/None",
+          "count": 975,
+          "raw_bytes": 974438022,
+          "stored_bytes": 974438022
+        }
+      ]
+    },
+    {
+      "label": "Belvedere",
+      "version": "v6.4-pre",
+      "primary": {
+        "bytes": 979686544,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre4-20261014/Belvedere/1-v6.4-pre/output-run-001.oct",
+        "sha256": "f3e268e214474244ce3ddb486b702dd97a56d4507c0fc5ca0009e99bac9b5f68"
+      },
+      "groups": [
+        {
+          "group": "attribute_0/Constant",
+          "count": 1343,
+          "raw_bytes": 163412422,
+          "stored_bytes": 2686
+        },
+        {
+          "group": "attribute_1/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_2/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_3/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_4/Constant",
+          "count": 1343,
+          "raw_bytes": 326824844,
+          "stored_bytes": 5372
+        },
+        {
+          "group": "attribute_5/Constant",
+          "count": 1343,
+          "raw_bytes": 81706211,
+          "stored_bytes": 1343
+        },
+        {
+          "group": "attribute_6/Constant",
+          "count": 1343,
+          "raw_bytes": 163412422,
+          "stored_bytes": 2686
+        },
+        {
+          "group": "attribute_7/Constant",
+          "count": 1343,
+          "raw_bytes": 653649688,
+          "stored_bytes": 10744
+        },
+        {
+          "group": "attribute_8/BytePlanes",
+          "count": 558,
+          "raw_bytes": 185798028,
+          "stored_bytes": 93686738
+        },
+        {
+          "group": "attribute_8/Dictionary",
+          "count": 524,
+          "raw_bytes": 304295922,
+          "stored_bytes": 129862429
+        },
+        {
+          "group": "attribute_8/Lz4",
+          "count": 1,
+          "raw_bytes": 24,
+          "stored_bytes": 23
+        },
+        {
+          "group": "attribute_8/None",
+          "count": 260,
+          "raw_bytes": 143292,
+          "stored_bytes": 143292
+        },
+        {
+          "group": "display_rgb/BytePlanes",
+          "count": 1,
+          "raw_bytes": 207,
+          "stored_bytes": 206
+        },
+        {
+          "group": "display_rgb/Dictionary",
+          "count": 853,
+          "raw_bytes": 226486176,
+          "stored_bytes": 182268125
+        },
+        {
+          "group": "display_rgb/Lz4",
+          "count": 3,
+          "raw_bytes": 8652,
+          "stored_bytes": 8644
+        },
+        {
+          "group": "display_rgb/None",
+          "count": 486,
+          "raw_bytes": 18623598,
+          "stored_bytes": 18623598
+        },
+        {
+          "group": "geometry/CompactOccupied",
+          "count": 212,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/DeltaVarint",
+          "count": 260,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry/RawU32",
+          "count": 871,
+          "raw_bytes": 0,
+          "stored_bytes": 0
+        },
+        {
+          "group": "geometry_payload/Lz4",
+          "count": 360,
+          "raw_bytes": 3510866,
+          "stored_bytes": 3281971
+        },
+        {
+          "group": "geometry_payload/None",
+          "count": 983,
+          "raw_bytes": 975595608,
+          "stored_bytes": 975595608
+        }
+      ]
+    }
+  ]
+}

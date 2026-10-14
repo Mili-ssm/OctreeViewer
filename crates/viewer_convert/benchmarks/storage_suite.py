@@ -94,7 +94,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("run_dir", type=Path, help="new directory for outputs, logs, and report")
     parser.add_argument("--convert-binary", type=Path, required=True)
     parser.add_argument("--read-binary", type=Path, required=True)
-    parser.add_argument("--format-version", choices=("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre"), default="v5")
+    parser.add_argument("--format-version", choices=("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre"), default="v5")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--divisions", type=int, default=2)
@@ -102,6 +102,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-decoded-mib", type=int, default=512)
     parser.add_argument("--cache-state", required=True, help="free-form cache-state description")
     parser.add_argument("--profile", default="perf", help="profile label recorded in the report (default: perf)")
+    parser.add_argument("--measure-rss", action="store_true", help="Linux process peak RSS via /usr/bin/time")
     args = parser.parse_args(argv)
     if args.repetitions <= 0:
         parser.error("--repetitions must be positive")
@@ -148,18 +149,25 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
 
 
 def run_operation(
-    command: list[str], run_dir: Path, log_stem: str, parser: Any
+    command: list[str], run_dir: Path, log_stem: str, parser: Any, measure_rss: bool = False
 ) -> dict[str, Any]:
-    result = subprocess.run(command, cwd=run_dir, check=False, capture_output=True, text=True)
+    rss_path = run_dir / f"{log_stem}.peak-rss-kib.log"
+    execution = (["/usr/bin/time", "--format=%M", f"--output={rss_path}", *command]
+                 if measure_rss else command)
+    result = subprocess.run(execution, cwd=run_dir, check=False, capture_output=True, text=True)
     (run_dir / f"{log_stem}.stdout.log").write_text(result.stdout, encoding="utf-8")
     (run_dir / f"{log_stem}.stderr.log").write_text(result.stderr, encoding="utf-8")
-    return {
+    record = {
         "command": command,
+        "execution_command": execution,
         "exit_code": result.returncode,
         "stdout_log": f"{log_stem}.stdout.log",
         "stderr_log": f"{log_stem}.stderr.log",
         "metrics": parser(result.stdout),
     }
+    if measure_rss and result.returncode == 0:
+        record["peak_rss_bytes"] = int(rss_path.read_text().strip()) * 1024
+    return record
 
 
 def run_suite(args: argparse.Namespace) -> int:
@@ -179,6 +187,8 @@ def run_suite(args: argparse.Namespace) -> int:
         raise ValueError("workers, divisions, points per block, and decoded budget must be positive")
     if args.points_per_block > 1_000_000:
         raise ValueError("points per block must not exceed 1000000")
+    if args.measure_rss and not Path("/usr/bin/time").is_file():
+        raise ValueError("--measure-rss requires /usr/bin/time")
     if run_dir.exists():
         raise ValueError(f"run directory already exists: {run_dir}")
 
@@ -208,6 +218,7 @@ def run_suite(args: argparse.Namespace) -> int:
             "max_decoded_mib": args.max_decoded_mib,
             "cache_state": args.cache_state,
             "profile": args.profile,
+            "measure_rss": args.measure_rss,
         },
         "conversions": [],
         "reads": {mode: [] for mode in MODES},
@@ -230,6 +241,7 @@ def run_suite(args: argparse.Namespace) -> int:
                 run_dir,
                 f"convert-{repetition:03d}",
                 parse_conversion_metrics,
+                args.measure_rss,
             )
             conversion.update(repetition=repetition, output=str(output_path))
             if conversion["exit_code"] == 0:
@@ -270,6 +282,7 @@ def run_suite(args: argparse.Namespace) -> int:
                     run_dir,
                     f"read-{repetition:03d}-{mode}",
                     parse_reader_metrics,
+                    args.measure_rss,
                 )
                 read.update(repetition=repetition, output=str(output_path), mode=mode)
                 report["reads"][mode].append(read)

@@ -5,7 +5,7 @@ Exact identity: major **6**, revision **3**, opt-in. V5 remains the default. Thi
 independent attribute codecs to reduce physical bytes while accepting CPU reconstruction.
 
 The common 24-byte header and 40-byte footer follow v5. Index/footer markers are `OCTVI63P`
-and `OCTVE63P`. Primary and companion must have the same exact revision; pre4 and final v6
+and `OCTVE63P`. Primary and companion must have the same exact revision; [pre4](FORMAT_V6_PRE4.md) adds its own codecs; pre5 and final v6
 remain unsupported. Both split and monolithic streams, prepared blocks and checkpoints carry
 the exact identity.
 
@@ -25,8 +25,8 @@ with payload codec 0/1 only. RGB and typed attributes allow:
 | ---: | --- | --- |
 | 0 | Raw bytes | v5, pre1, pre2, pre3 |
 | 1 | LZ4 block | v5, pre1, pre2, pre3 |
-| 2 | One complete constant tuple | pre3 attributes only |
-| 3 | Local tuple dictionary + packed row IDs | pre3 attributes only |
+| 2 | One complete constant tuple | pre3/pre4 attributes only |
+| 3 | Local tuple dictionary + packed row IDs | pre3/pre4 attributes only |
 
 Readers reject tags 2/3 in geometry or in older revisions even with repaired index checksums.
 For new tags, row count must be at least two and `stored_length < raw_length`. The CRC covers

@@ -81,7 +81,7 @@ mod tests {
         let options = FormatWriterOptions::new(0.01, 1024).unwrap();
         for version in [
             FormatVersion::V6,
-            FormatVersion::V6Pre(NonZeroU32::new(4).unwrap()),
+            FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
             FormatVersion::Unknown {
                 major: 9,
                 revision: 7,

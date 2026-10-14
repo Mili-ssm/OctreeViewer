@@ -10,6 +10,8 @@ pub enum BlockCodec {
     Constant = 2,
     /// Local attribute palette and bitpacked row IDs (pre3 only).
     Dictionary = 3,
+    /// LZ4 over independent byte planes of one attribute tuple (pre4+).
+    BytePlanes = 4,
 }
 
 impl TryFrom<u8> for BlockCodec {
@@ -21,6 +23,7 @@ impl TryFrom<u8> for BlockCodec {
             1 => Ok(Self::Lz4),
             2 => Ok(Self::Constant),
             3 => Ok(Self::Dictionary),
+            4 => Ok(Self::BytePlanes),
             _ => Err(CodecError::UnsupportedCodec(value)),
         }
     }

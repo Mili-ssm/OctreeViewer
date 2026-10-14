@@ -26,6 +26,22 @@ pub(crate) fn encode(
     own_octant: bool,
     max_bytes: u64,
 ) -> Result<Option<Vec<u8>>, FormatError> {
+    encode_impl(candidate, own_octant, max_bytes, false)
+}
+
+pub(crate) fn encode_compact(
+    candidate: &QuantizedOccupancy,
+    max_bytes: u64,
+) -> Result<Option<Vec<u8>>, FormatError> {
+    encode_impl(candidate, false, max_bytes, true)
+}
+
+fn encode_impl(
+    candidate: &QuantizedOccupancy,
+    own_octant: bool,
+    max_bytes: u64,
+    compact: bool,
+) -> Result<Option<Vec<u8>>, FormatError> {
     let index = candidate.index();
     if index.row_count() == 0 || u32::try_from(index.row_count()).is_err() {
         return Ok(None);
@@ -34,7 +50,7 @@ pub(crate) fn encode(
     let mut length = 1_usize
         .checked_add(levels.len() * 4)
         .ok_or(FormatError::BlockSizeOverflow)?;
-    for level in levels {
+    for (depth, level) in levels.iter().enumerate() {
         if u32::try_from(level.len()).is_err() {
             return Ok(None);
         }
@@ -42,7 +58,11 @@ pub(crate) fn encode(
             .checked_add(
                 level
                     .len()
-                    .checked_mul(NODE_BYTES)
+                    .checked_mul(if compact {
+                        usize::from(depth + 1 < levels.len())
+                    } else {
+                        NODE_BYTES
+                    })
                     .ok_or(FormatError::BlockSizeOverflow)?,
             )
             .ok_or(FormatError::BlockSizeOverflow)?;
@@ -81,12 +101,17 @@ pub(crate) fn encode(
         bytes.extend_from_slice(&(level.len() as u32).to_le_bytes());
     }
     let mut offsets = Vec::with_capacity(levels.len());
-    for level in levels {
+    for (depth, level) in levels.iter().enumerate() {
         offsets.push(bytes.len());
+        if compact && depth + 1 == levels.len() {
+            continue;
+        }
         for node in level {
             bytes.push(node.child_mask());
-            bytes.push(node.child_count() as u8);
-            bytes.extend_from_slice(&(node.first_child() as u32).to_le_bytes());
+            if !compact {
+                bytes.push(node.child_count() as u8);
+                bytes.extend_from_slice(&(node.first_child() as u32).to_le_bytes());
+            }
         }
     }
     if own_octant {
@@ -152,7 +177,11 @@ struct Level {
     count: usize,
 }
 
-fn node(bytes: &[u8], level: Level, index: usize) -> (u8, u8, usize) {
+fn node(bytes: &[u8], level: Level, index: usize, compact: bool, leaf: bool) -> (u8, u8, usize) {
+    if compact {
+        let mask = if leaf { 0 } else { bytes[level.start + index] };
+        return (mask, mask.count_ones() as u8, 0);
+    }
     let p = level.start + index * NODE_BYTES;
     (
         bytes[p],
@@ -162,6 +191,14 @@ fn node(bytes: &[u8], level: Level, index: usize) -> (u8, u8, usize) {
 }
 
 pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, FormatError> {
+    decode_impl(bytes, points, false)
+}
+
+pub(crate) fn decode_compact(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, FormatError> {
+    decode_impl(bytes, points, true)
+}
+
+fn decode_impl(bytes: &[u8], points: usize, compact: bool) -> Result<Vec<[u32; 3]>, FormatError> {
     if points == 0 || u32::try_from(points).is_err() {
         return Err(malformed());
     }
@@ -169,7 +206,7 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
     let config = cursor.byte()?;
     let bits = config & 63;
     let own_octant = config & OWN_OCTANT != 0;
-    if config & 128 != 0 || bits > 32 {
+    if config & 128 != 0 || bits > 32 || (compact && own_octant) {
         return Err(malformed());
     }
     let depth = usize::from(32 - bits);
@@ -183,23 +220,32 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
     if levels[0].count != 1 {
         return Err(malformed());
     }
-    for level in &mut levels[..=depth] {
+    for (d, level) in levels[..=depth].iter_mut().enumerate() {
         level.start = cursor.offset;
         cursor.offset = cursor
             .offset
-            .checked_add(level.count.checked_mul(NODE_BYTES).ok_or_else(malformed)?)
+            .checked_add(
+                level
+                    .count
+                    .checked_mul(if compact {
+                        usize::from(d < depth)
+                    } else {
+                        NODE_BYTES
+                    })
+                    .ok_or_else(malformed)?,
+            )
             .ok_or_else(malformed)?;
         if cursor.offset > bytes.len() {
             return Err(malformed());
         }
     }
-    if node(bytes, levels[0], 0).1 >> 4 != 0 {
+    if node(bytes, levels[0], 0, compact, depth == 0).1 >> 4 != 0 {
         return Err(malformed());
     }
     for d in 0..=depth {
         let mut prefix = 0;
         for i in 0..levels[d].count {
-            let (mask, meta, first) = node(bytes, levels[d], i);
+            let (mask, meta, first) = node(bytes, levels[d], i, compact, d == depth);
             let count = usize::from(meta & 15);
             if meta & 128 != 0
                 || (!own_octant && meta & 112 != 0)
@@ -212,7 +258,7 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
                     return Err(malformed());
                 }
             } else {
-                if count == 0 || first != prefix {
+                if count == 0 || (!compact && first != prefix) {
                     return Err(malformed());
                 }
                 prefix = prefix.checked_add(count).ok_or_else(malformed)?;
@@ -223,7 +269,9 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
                     let mut child = first;
                     for octant in 0..8 {
                         if mask & (1 << octant) != 0 {
-                            if node(bytes, levels[d + 1], child).1 >> 4 != octant {
+                            if node(bytes, levels[d + 1], child, false, d + 1 == depth).1 >> 4
+                                != octant
+                            {
                                 return Err(malformed());
                             }
                             child += 1;
@@ -278,9 +326,12 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
         .map_err(|_| FormatError::AllocationFailed(points.div_ceil(8)))?;
     seen.resize(points.div_ceil(8), 0_u8);
     let mut assigned = 0;
+    // DFS in increasing octant order visits each depth's path-sorted nodes monotonically.
+    // Running child prefixes reconstruct first_child with only O(depth) cursor storage.
+    let mut next_child = [0_usize; 33];
     let mut stack = vec![(0_usize, 0_usize, [0_u32; 3])];
     while let Some((d, i, coarse)) = stack.pop() {
-        let (mask, _, first) = node(bytes, levels[d], i);
+        let (mask, _, first) = node(bytes, levels[d], i, compact, d == depth);
         if d == depth {
             let count = rows.var()? as usize;
             if count == 0 || count > points - assigned {
@@ -312,6 +363,13 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
             }
             assigned += count;
         } else {
+            let first = if compact {
+                let first = next_child[d];
+                next_child[d] += mask.count_ones() as usize;
+                first
+            } else {
+                first
+            };
             let mut child = first + mask.count_ones() as usize;
             for inferred in (0..8).rev() {
                 if mask & (1 << inferred) == 0 {
@@ -319,7 +377,7 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
                 }
                 child -= 1;
                 let octant = if own_octant {
-                    node(bytes, levels[d + 1], child).1 >> 4
+                    node(bytes, levels[d + 1], child, false, d + 1 == depth).1 >> 4
                 } else {
                     inferred
                 };
@@ -331,6 +389,9 @@ pub(crate) fn decode(bytes: &[u8], points: usize) -> Result<Vec<[u32; 3]>, Forma
         }
     }
     if assigned != points || rows.offset != rows.bytes.len() {
+        return Err(malformed());
+    }
+    if compact && (0..depth).any(|d| next_child[d] != levels[d + 1].count) {
         return Err(malformed());
     }
     Ok(coordinates)
@@ -353,6 +414,19 @@ mod tests {
         let source = source();
         for bits in 0..=32 {
             let candidate = QuantizedOccupancy::new(&source, bits).unwrap();
+            let compact = encode_compact(&candidate, 1 << 24).unwrap().unwrap();
+            assert_eq!(
+                decode_compact(&compact, source.coordinates().len()).unwrap(),
+                source.coordinates()
+            );
+            assert!(
+                encode_compact(&candidate, compact.len() as u64 - 1)
+                    .unwrap()
+                    .is_none()
+            );
+            for length in [0, 1, compact.len() / 2, compact.len() - 1] {
+                assert!(decode_compact(&compact[..length], source.coordinates().len()).is_err());
+            }
             for own_octant in [false, true] {
                 let bytes = encode(&candidate, own_octant, 1 << 24).unwrap().unwrap();
                 assert_eq!(
@@ -368,6 +442,43 @@ mod tests {
                     assert!(decode(&bytes[..length], source.coordinates().len()).is_err());
                 }
                 assert!(decode(&bytes, source.coordinates().len() + 1).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn compact_rejects_bad_masks_counts_rows_flags_and_residual_padding() {
+        let source = source();
+        let candidate = QuantizedOccupancy::new(&source, 28).unwrap();
+        let good = encode_compact(&candidate, 1 << 24).unwrap().unwrap();
+        for (offset, value) in [(0, 64), (0, 128), (0, 33), (1, 2), (21, 0)] {
+            let mut bad = good.clone();
+            bad[offset] = value;
+            assert!(decode_compact(&bad, 129).is_err(), "offset={offset}");
+        }
+        let mut bad = good.clone();
+        bad[5..9].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(decode_compact(&bad, 129).is_err());
+        let unit = QuantizedOccupancy::new(&source, 32).unwrap();
+        let good = encode_compact(&unit, 1 << 24).unwrap().unwrap();
+        for offset in [5, 8] {
+            let mut bad = good.clone();
+            bad[offset] = 0;
+            assert!(decode_compact(&bad, 129).is_err());
+        }
+        let mut bad = good;
+        bad.push(0);
+        assert!(decode_compact(&bad, 129).is_err());
+        let source =
+            quantize_local_positions(&[[0.; 3], [u32::MAX as f64; 3], [0.; 3]], 2.).unwrap();
+        for bits in 0..=32 {
+            let candidate = QuantizedOccupancy::new(&source, bits).unwrap();
+            let bytes = encode_compact(&candidate, 1 << 24).unwrap().unwrap();
+            assert_eq!(decode_compact(&bytes, 3).unwrap(), source.coordinates());
+            if (9 * usize::from(bits)) % 8 != 0 {
+                let mut bad = bytes;
+                *bad.last_mut().unwrap() |= 128;
+                assert!(decode_compact(&bad, 3).is_err());
             }
         }
     }

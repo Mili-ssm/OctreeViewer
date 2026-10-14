@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import sys
 
 
 SCRIPT = Path(__file__).with_name("storage_suite.py")
@@ -15,6 +16,24 @@ SPEC.loader.exec_module(storage_suite)
 
 
 class StorageSuiteTests(unittest.TestCase):
+    @unittest.skipUnless(Path("/usr/bin/time").is_file(), "GNU time required for RSS")
+    def test_optional_rss_keeps_stdout_metrics_and_failed_operation_status(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            record = storage_suite.run_operation(
+                [sys.executable, "-c", "print('elapsed_ms=1.5')"], root, "ok",
+                storage_suite.parse_conversion_metrics, True,
+            )
+            self.assertEqual(record["metrics"], {"elapsed_ms": 1.5})
+            self.assertGreater(record["peak_rss_bytes"], 0)
+            self.assertEqual(record["execution_command"][0], "/usr/bin/time")
+            failed = storage_suite.run_operation(
+                [sys.executable, "-c", "raise SystemExit(3)"], root, "failed",
+                storage_suite.parse_conversion_metrics, True,
+            )
+            self.assertEqual(failed["exit_code"], 3)
+            self.assertNotIn("peak_rss_bytes", failed)
+
     def test_parsers_read_single_and_multiple_key_value_fields(self):
         conversion = storage_suite.parse_conversion_metrics(
             "mode=convert\noutput_bytes=123\nelapsed_ms=12.5\n"

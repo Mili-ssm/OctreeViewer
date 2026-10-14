@@ -1,7 +1,7 @@
 # Native `.oct` format, v6.1-pre
 
 First implemented experimental v6 revision. Its exact identity is major **6**, revision **1**;
-[v6.2-pre](FORMAT_V6_PRE2.md) and [v6.3-pre](FORMAT_V6_PRE3.md) are implemented separately;
+[v6.2-pre](FORMAT_V6_PRE2.md), [v6.3-pre](FORMAT_V6_PRE3.md) and [v6.4-pre](FORMAT_V6_PRE4.md) are implemented separately;
 final v6 and later revisions remain unsupported. Default output remains final v5.
 This revision changes geometry encoding without adding loss beyond the existing v5 quantization.
 It is not yet a voxel-occupancy or mesh format.

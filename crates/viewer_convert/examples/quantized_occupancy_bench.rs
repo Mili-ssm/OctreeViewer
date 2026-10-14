@@ -2,6 +2,8 @@
 use std::{error::Error, time::Instant};
 
 use serde_json::json;
+#[cfg(test)]
+use viewer_format::QuantizedCoordinates;
 use viewer_format::{
     Crc32, FormatError, QuantizedOccupancy, compress_block, quantize_local_positions,
 };
@@ -75,23 +77,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return Err("integer/transform/error roundtrip mismatch".into());
             }
             let mut physical = Vec::new();
-            for own_octant in if repetition % 2 == 0 {
-                [true, false]
+            for mode in if repetition % 2 == 0 {
+                [Some(true), Some(false), None]
             } else {
-                [false, true]
+                [None, Some(false), Some(true)]
             } {
                 let start = Instant::now();
-                let raw = occupancy_codec::encode(&candidate, own_octant, 64 << 20)?
-                    .ok_or("candidate too large")?;
+                let raw = if let Some(own_octant) = mode {
+                    occupancy_codec::encode(&candidate, own_octant, 64 << 20)?
+                } else {
+                    occupancy_codec::encode_compact(&candidate, 64 << 20)?
+                }
+                .ok_or("candidate too large")?;
                 let encoded = compress_block(&raw);
                 let encode_ms = start.elapsed().as_secs_f64() * 1000.0;
                 let start = Instant::now();
-                let decoded = occupancy_codec::decode(&raw, source.coordinates().len())?;
+                let decoded = if mode.is_some() {
+                    occupancy_codec::decode(&raw, source.coordinates().len())?
+                } else {
+                    occupancy_codec::decode_compact(&raw, source.coordinates().len())?
+                };
                 let decode_ms = start.elapsed().as_secs_f64() * 1000.0;
                 if decoded != source.coordinates() {
                     return Err("physical stream roundtrip mismatch".into());
                 }
-                physical.push(json!({"own_octant":own_octant,"raw_bytes":raw.len(),"stored_bytes":encoded.bytes().len(),"encode_ms":encode_ms,"decode_ms":decode_ms}));
+                physical.push(json!({"compact":mode.is_none(),"own_octant":mode.unwrap_or(false),"raw_bytes":raw.len(),"stored_bytes":encoded.bytes().len(),"encode_ms":encode_ms,"decode_ms":decode_ms}));
             }
             let topology = candidate.index().topology();
             println!(
@@ -107,7 +117,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     "source_retained_estimate_bytes": source.estimated_memory_bytes(),
                     "candidate_retained_estimate_bytes": candidate.estimated_memory_bytes(),
                     "memory_basis": "inline_and_vector_capacities_excludes_allocator_source_build_peak_and_rss",
-                    "roundtrip_exact": true, "storage_revision": "v6.2-pre_geometry_stream", "physical":physical,
+                    "roundtrip_exact": true, "storage_revision": "v6.2-pre_and_v6.4-pre_geometry_streams", "physical":physical,
                 })
             );
         }

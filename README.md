@@ -9,11 +9,12 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 
 - El formato de trabajo vigente es **v5 definitivo** (`OCTVFRM1`, revisión 0), separado en `.oct` (coordenadas y jerarquía) y
   `.octattrs` (RGB y atributos numéricos). Se lee y escribe v5; hay que regenerar archivos v1–v4 y v5 provisionales (`OCTVWFRM`) desde sus fuentes.
-- Están implementados **`v6.1-pre`, `v6.2-pre` y `v6.3-pre` optativos**. Pre1 añade deltas; pre2 serializa
+- Están implementados **`v6.1-pre`, `v6.2-pre`, `v6.3-pre` y `v6.4-pre` optativos**. Pre1 añade deltas; pre2 serializa
   ocupación en arrays por profundidad dentro de cada bloque, con registros de 6 bytes y residuales
   exactos. Se elige el menor payload tras LZ4, con fallback raw/delta. V5 sigue predeterminado;
-  pre3 añade constantes/diccionarios exactos por columna, con fallback y lectura selectiva.
-  V6 final y pre4 permanecen rechazados.
+  pre3 añade constantes/diccionarios exactos por columna; pre4 añade planos de bytes independientes
+  y topología de máscaras con hojas/prefijos implícitos, con fallback y lectura selectiva.
+  V6 final y pre5 permanecen rechazados.
 - La conversión admite LAS/LAZ y EPT local. La demo web admite carga progresiva por bloques,
   color por RGB o componente numérico, cámara orbital y modo pájaro.
 - La ruta LOD voxelizada usa celdas diádicas enteras sin solapamiento entre generaciones. El
@@ -86,6 +87,9 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    Ya están integrados en [pre3](docs/STORAGE_V6_PRE3_BENCH.md): la pareja Belvedere baja
    un 10,78 % con filas exactas y consultas independientes. Conversión y lectura caliente son
    más lentas; faltan caché fría/remota, RSS y más corpus.
+   [Pre4](docs/STORAGE_V6_PRE4_BENCH.md) mantiene columnas independientes y compacta máscaras:
+   Belvedere baja otros 15.049.543 B (1,06 % de la pareja), con lectura caliente mediana
+   9,602 → 9,203 s y RSS nativo medido. El beneficio varía por corpus; no acredita HDD/remoto.
    Su contrato local no resuelve grilla física ni CRS entre nubes; ver las tareas siguientes.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
@@ -113,10 +117,11 @@ cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-vers
 
 La conversión produce una pareja v5 definitiva. Las muestras versionadas se han regenerado;
 los datasets locales provisionales deben reconvertirse. Para ensayar las revisiones experimentales,
-usar `--format-version v6.1-pre`, `--format-version v6.2-pre` o `--format-version v6.3-pre`
+usar `--format-version v6.1-pre`, `--format-version v6.2-pre`, `--format-version v6.3-pre`
+o `--format-version v6.4-pre`
 en lugar de `v5`. Se rechazan las versiones sin backend antes
 de escribir y los manifiestos de checkpoint anteriores a V5. `v6.N-pre` identifica revisiones
-exactas de desarrollo; se implementan pre1/pre2/pre3, no `v6` final.
+exactas de desarrollo; se implementan pre1/pre2/pre3/pre4, no `v6` final.
 
 La pareja contiene:
 
@@ -143,7 +148,7 @@ archivos no es atómica; el conversor valida candidatos y publica atributos ante
 | Área | Responsabilidad | Límite relevante |
 | --- | --- | --- |
 | `viewer_core` | Geometría, jerarquía, LOD, caché y contratos compartidos. | El índice residente y la memoria estimada no equivalen a RSS. |
-| `viewer_format` | V5 y v6 pre1/pre2/pre3, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
+| `viewer_format` | V5 y v6 pre1/pre2/pre3/pre4, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
 | `viewer_convert` | Conversión LAS/LAZ con spools/checkpoints y EPT local. | EPT remoto, binary/zstandard y checkpoints EPT no están soportados. |
 | `viewer_render_wgpu` | Cámara, voxelización, buffers GPU, HZB y presentación. | Los presupuestos propios no representan toda la VRAM; la GPU puede reservar recursos fuera del control del renderer. |
 | `viewer_wasm` | Worker, carga LOD y conversión web en dos pasadas. | Lecturas por bloque síncronas; convertir fuentes de cientos de GB en navegador no es requisito. |
@@ -158,7 +163,7 @@ render reconstruye posiciones locales `f32`.
 
 | Documento | Contenido vigente |
 | --- | --- |
-| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) / [pre3](crates/viewer_format/FORMAT_V6_PRE3.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
+| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) / [pre3](crates/viewer_format/FORMAT_V6_PRE3.md) / [pre4](crates/viewer_format/FORMAT_V6_PRE4.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
 | [Benchmarks de almacenamiento](docs/STORAGE_BENCH.md) | Suite repetida: tamaños, escritura, reconstrucción y carga secuencial de hijos. |
 | [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
 | [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
@@ -376,3 +381,23 @@ exactas, incluidos duplicados. Las reglas se seleccionan explícitamente por atr
   explícita cuando existan en el origen; los códigos categóricos actuales son numéricos y densos.
 - [ ] Diseñar la revisión física y conectar conversión/lectura/LOD/filtros, compatibilidad,
   checkpoints y navegador. El contenedor experimental no es una pareja `.oct`/`.octattrs` válida.
+
+## Entrega: v6.4-pre, I/O independiente y topología compacta — 14-10-2026
+
+Prioridad acordada: reducir tamaño contando costes de escritura/lectura y consultas parciales;
+el layout conjunto no es un requisito. HDD/remoto son objetivos de medición, no resultados
+extrapolados desde NVMe caliente. Primera revisión: máscaras por nodo interno con hojas/prefijos
+implícitos y transposición reversible de bytes por columna antes de LZ4, manteniendo los
+candidatos pre3 y el reemplazo solo cuando reduce bytes almacenados.
+
+- [x] Validar enteros/filas exactos, 33 particiones, corrupción y límites; conservar pre3 y
+  anteriores, identidad explícita pre4 y rechazo de pre5/final v6.
+- [x] Integrar conversión, EPT, checkpoints y lectura selectiva; comprobar encoder WASM/OPFS,
+  metadata Blob y reconstrucción nativa de esas parejas. No acredita presentación GPU.
+- [x] Medir parejas válidas pre3/pre4: tres rondas alternadas en cuatro muestras, hashes y
+  checksums estables, tiempos y RSS por proceso. [Informe y límites](docs/STORAGE_V6_PRE4_BENCH.md).
+  Belvedere: `.oct` −487.696 B y `.octattrs` −14.561.847 B; pareja −1,06 %. Outer Banks −16,49 %,
+  Bunny sin ahorro. Mediana residente Belvedere 9,602 → 9,203 s, en NVMe caliente.
+- [ ] Próximo cierre: medir por separado XYZ/RGB/atributo, planos de coordenadas e índice
+  exterior; después grupos RGB exactos y selector de candidatos más barato. Incluir CPU/RSS,
+  bytes por consulta y corpus adicional antes de otra revisión. HDD/remoto siguen sin medir.

@@ -26,6 +26,7 @@ impl FormatVersion {
     pub const V6_PRE2: Self = Self::V6Pre(NonZeroU32::new(2).expect("nonzero revision"));
 
     pub const V6_PRE3: Self = Self::V6Pre(NonZeroU32::new(3).expect("nonzero revision"));
+    pub const V6_PRE4: Self = Self::V6Pre(NonZeroU32::new(4).expect("nonzero revision"));
 
     /// Reject unimplemented output formats before touching any output stream.
     pub fn ensure_writable(self) -> Result<(), FormatError> {
@@ -242,10 +243,10 @@ mod tests {
 
     #[test]
     fn detection_never_enables_an_unimplemented_decoder() {
-        let mut bytes = header(6, 4);
+        let mut bytes = header(6, 5);
         bytes.resize(64, 0);
         assert!(matches!(crate::FormatReader::new(Cursor::new(bytes)),
             Err(FormatError::UnsupportedFormatVersion(FormatVersion::V6Pre(revision)))
-                if revision.get() == 4));
+                if revision.get() == 5));
     }
 }

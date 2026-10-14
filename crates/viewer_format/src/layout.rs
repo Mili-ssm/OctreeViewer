@@ -21,6 +21,7 @@ pub(crate) enum StorageLayout {
     V6Pre1,
     V6Pre2,
     V6Pre3,
+    V6Pre4,
 }
 
 impl StorageLayout {
@@ -30,6 +31,7 @@ impl StorageLayout {
             crate::FormatVersion::V6Pre(revision) if revision.get() == 1 => Ok(Self::V6Pre1),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 2 => Ok(Self::V6Pre2),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 3 => Ok(Self::V6Pre3),
+            crate::FormatVersion::V6Pre(revision) if revision.get() == 4 => Ok(Self::V6Pre4),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -40,6 +42,7 @@ impl StorageLayout {
             Self::V6Pre1 => crate::FormatVersion::V6_PRE1,
             Self::V6Pre2 => crate::FormatVersion::V6_PRE2,
             Self::V6Pre3 => crate::FormatVersion::V6_PRE3,
+            Self::V6Pre4 => crate::FormatVersion::V6_PRE4,
         }
     }
 
@@ -49,6 +52,7 @@ impl StorageLayout {
             Self::V6Pre1 => b"OCTVI61P",
             Self::V6Pre2 => b"OCTVI62P",
             Self::V6Pre3 => b"OCTVI63P",
+            Self::V6Pre4 => b"OCTVI64P",
         }
     }
 
@@ -58,6 +62,7 @@ impl StorageLayout {
             Self::V6Pre1 => b"OCTVE61P",
             Self::V6Pre2 => b"OCTVE62P",
             Self::V6Pre3 => b"OCTVE63P",
+            Self::V6Pre4 => b"OCTVE64P",
         }
     }
 }

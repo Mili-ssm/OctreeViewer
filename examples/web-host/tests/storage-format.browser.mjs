@@ -42,10 +42,10 @@ self.onmessage = async ({ data = {} }) => {
         const prerelease = new Uint8Array(bytes.slice(0));
         const view = new DataView(prerelease.buffer);
         view.setUint16(8, 6, true);
-        view.setUint32(16, 4, true);
+        view.setUint32(16, 5, true);
         view.setUint32(20, crc32(prerelease.subarray(0, 20)), true);
         const errors = [];
-        for (const [input, expected] of [[legacy, "provisional"], [prerelease, "v6.4-pre"]]) {
+        for (const [input, expected] of [[legacy, "provisional"], [prerelease, "v6.5-pre"]]) {
             let error;
             try {
                 viewer.openFormatDataset(new Blob([input]), 64 * 1024 * 1024, attributes);

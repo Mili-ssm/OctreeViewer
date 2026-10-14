@@ -821,6 +821,7 @@ mod tests {
             viewer_format::FormatVersion::V6_PRE1,
             viewer_format::FormatVersion::V6_PRE2,
             viewer_format::FormatVersion::V6_PRE3,
+            viewer_format::FormatVersion::V6_PRE4,
         ] {
             let root = dir();
             fs::create_dir_all(root.join("ept-data")).unwrap();
