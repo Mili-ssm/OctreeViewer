@@ -1,0 +1,168 @@
+{
+  "command": [
+    "target/perf/examples/checksum_bench",
+    "64",
+    "9"
+  ],
+  "profile": "perf",
+  "binary_sha256": "0d0e0bc763035170e1d2ca5895b9abb34ec8a1fd6bb30e9bb5711664dd090889",
+  "protocol": "same 64 MiB buffer; alternating variants; independent old bytewise control; 9 repetitions",
+  "runs": [
+    {
+      "rep": "1",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "153.324",
+      "mib_per_second": "417.418",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "1",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.421",
+      "mib_per_second": "1859.311",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "2",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.492",
+      "mib_per_second": "1855.480",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "2",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "152.779",
+      "mib_per_second": "418.907",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "3",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "154.431",
+      "mib_per_second": "414.424",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "3",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.437",
+      "mib_per_second": "1858.468",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "4",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.440",
+      "mib_per_second": "1858.312",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "4",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "152.741",
+      "mib_per_second": "419.010",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "5",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "152.744",
+      "mib_per_second": "419.002",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "5",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.416",
+      "mib_per_second": "1859.573",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "6",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.458",
+      "mib_per_second": "1857.357",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "6",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "152.718",
+      "mib_per_second": "419.072",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "7",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "152.687",
+      "mib_per_second": "419.157",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "7",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.332",
+      "mib_per_second": "1864.168",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "8",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.468",
+      "mib_per_second": "1856.800",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "8",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "153.960",
+      "mib_per_second": "415.692",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "9",
+      "variant": "bytewise",
+      "bytes": "67108864",
+      "elapsed_ms": "152.774",
+      "mib_per_second": "418.919",
+      "checksum": "13b47e44"
+    },
+    {
+      "rep": "9",
+      "variant": "slicing8",
+      "bytes": "67108864",
+      "elapsed_ms": "34.445",
+      "mib_per_second": "1858.024",
+      "checksum": "13b47e44"
+    }
+  ],
+  "summaries": {
+    "bytewise": {
+      "median_ms": 152.774,
+      "min_ms": 152.687,
+      "max_ms": 154.431
+    },
+    "slicing8": {
+      "median_ms": 34.44,
+      "min_ms": 34.332,
+      "max_ms": 34.492
+    }
+  }
+}

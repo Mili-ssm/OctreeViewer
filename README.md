@@ -436,7 +436,7 @@ sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
   payload; criterios y contraejemplos en [el informe de I/O](docs/STORAGE_V6_IO.md).
 
 
-## En curso: reducir CPU de codecs y checksums — 14-10-2026
+## Entrega: reducir CPU de codecs y checksums — 14-10-2026
 
 - [x] Sustituir IDs de diccionario bit a bit por acumuladores de bytes, conservando el stream
   LSB-first y las validaciones de padding/IDs/límites. Oracle independiente para 0–32 bits.
@@ -445,5 +445,10 @@ sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
   Mediana de conversión 42,822 → 40,598 s (−5,2 %, rangos solapados), BFS serial
   11,242 → 10,545 s (−6,2 %). BFS con 4 lectores no mejora de forma clara.
   [Evidencia, criterios y límites](docs/STORAGE_V6_CPU.md).
-- [ ] Evaluar CRC IEEE por grupos de 8 bytes: mantener polinomio, resultado incremental y
-  checksums antes de expandir. Medir aparte, sin cambiar revisión física ni dependencias.
+- [x] Evaluar CRC IEEE por grupos de 8 bytes: mantener polinomio, resultado incremental y
+  checksums antes de expandir. Medido aparte, sin cambiar revisión física ni dependencias.
+  Belvedere: BFS serial 10,529 → 8,951 s (−15,0 %), conversión 41,661 → 40,399 s
+  (−3,0 %, rangos solapados). Tres rondas por caso, parejas/filas idénticas; no sumar los
+  porcentajes de ambas series. CRC aislado 4,44× no equivale al speedup del formato.
+- [ ] Evaluar tabla directa para columnas u8 y transposición por tiles; ampliar lectura
+  selectiva paralela. Mantener comparación de bytes, CPU/RSS y corpus de alta entropía.
