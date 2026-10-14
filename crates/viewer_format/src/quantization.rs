@@ -28,6 +28,19 @@ pub struct QuantizedCoordinates {
 }
 
 impl QuantizedCoordinates {
+    /// Internal reconstruction preserves validated transform/error metadata unchanged.
+    pub(crate) fn from_parts(
+        transform: QuantizationTransform,
+        coordinates: Vec<[u32; 3]>,
+        max_error: f64,
+    ) -> Self {
+        Self {
+            transform,
+            coordinates,
+            max_error,
+        }
+    }
+
     pub const fn transform(&self) -> QuantizationTransform {
         self.transform
     }
@@ -38,6 +51,15 @@ impl QuantizedCoordinates {
 
     pub const fn max_error(&self) -> f64 {
         self.max_error
+    }
+
+    /// Retained inline data and coordinate capacity; excludes allocator overhead.
+    pub fn estimated_memory_bytes(&self) -> usize {
+        std::mem::size_of::<Self>().saturating_add(
+            self.coordinates
+                .capacity()
+                .saturating_mul(std::mem::size_of::<[u32; 3]>()),
+        )
     }
 
     /// Reconstructs only this block into the local `f32` render coordinate frame.

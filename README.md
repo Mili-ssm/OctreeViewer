@@ -71,7 +71,9 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    `OccupiedOctree` en `viewer_core`: arrays de celdas ocupadas por nivel, máscara e índice
    al primer hijo, conteo derivado y coordenadas reconstruidas desde una raíz entera explícita.
    `OccupiedPointBlock` ya asocia hojas con todas las filas y atributos de un bloque y permite
-   seleccionarlos por celda. No está integrado en conversión/render ni serializado en v6.1-pre.
+   seleccionarlos por celda. `QuantizedOccupancy` reconstruye los u32 con residuales empaquetados,
+   pero su índice todavía amplifica memoria en los prefijos probados. Estos candidatos no están
+   integrados en conversión/render ni serializados en v6.1-pre.
    Su contrato local no resuelve grilla física ni CRS entre nubes; ver las tareas siguientes.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
@@ -145,6 +147,7 @@ render reconstruye posiciones locales `f32`.
 | --- | --- |
 | [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [v6.1-pre](crates/viewer_format/FORMAT_V6_PRE1.md) | Traits, formato experimental, compatibilidad y criterios pendientes. |
 | [Benchmarks de almacenamiento](docs/STORAGE_BENCH.md) | Suite repetida: tamaños, escritura, reconstrucción y carga secuencial de hijos. |
+| [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
 | [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
 | [Benchmark de construcción de vóxeles](docs/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta, acumuladores y experimentos de reutilización. |
 | [Benchmark web](docs/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos, resultados y limitaciones visuales. |
@@ -197,7 +200,8 @@ Plan y criterios de cierre de esta entrega:
 - [x] Actualizar contratos/documentación y revisar el diff para el commit de esta entrega.
 
 La asociación de payloads/atributos en memoria se cierra en la entrega siguiente. Pendiente:
-integración con conversión/render y semánticas Replacement/Additive; definir grilla física, CRS/unidades y compatibilidad entre nubes; decidir conteo/flags y ancho de
+integración con conversión/render y semánticas Replacement/Additive; definir grilla física,
+CRS/unidades y compatibilidad entre nubes; decidir conteo/flags y ancho de
 índices en disco; medir tamaño total, construcción/apertura, consultas y pico de memoria frente
 a v5/pre1 con datasets reales. Sólo entonces considerar otra revisión de almacenamiento.
 Sugerencia: evaluar primero el conteo derivado y posponer flags de deduplicación hasta disponer
@@ -231,11 +235,48 @@ Próximos cierres de v6, en orden de dependencia:
 - [ ] Definir y probar la grilla física candidata (ancla/escala diádica, raíz y límites),
   con negativos y nubes independientes. Explicitar CRS/unidades incompatibles y comprobar
   que el resultado no dependa del orden de puntos ni de carga de las nubes.
-- [ ] Diseñar residuales XYZ sobre coordenadas cuantizadas originales, evitando pasar por f32
-  para evaluar exactitud. Cierre: reconstruir cada fila con la misma precisión que v5/pre1,
-  incluidos puntos distintos dentro de una celda, RGB y todos sus atributos.
+- [x] Probar residuales XYZ sobre los u32 originales: candidato exacto con 0–32 bits residuales,
+  proyección/error conservados y asociación de RGB/atributos por fila. Su codec completo y
+  serialización siguen pendientes; véase la entrega siguiente.
 - [ ] Medir ocupación + IDs/offsets + payload completo en corpus real y comparar con v5/pre1:
   tamaño total, construcción, selección por celda, CPU y pico simultáneo. Conservar como
   contraejemplo el ahorro insignificante de delta-varint en Belvedere.
 - [ ] Fijar la revisión de disco sólo con esos contratos y evidencia: anchos/límites, checksums,
   identidad de representación, lectura selectiva y compatibilidad exacta de la pareja.
+
+## Entrega 14-10-2026: ocupación y residuales exactos de coordenadas cuantizadas
+
+Assessment: el benchmark de Belvedere no muestra ahorro material con delta-varint. La
+cuantización vigente es afín por eje/bloque, con escalas distintas o cero: una celda de sus
+enteros no equivale necesariamente a un cubo físico. El codec de esos enteros puede investigarse
+sin imponer una grilla física ni inventar compatibilidad CRS/unidades todavía ausente.
+
+- [x] Extraer un índice celda→filas compartido, ahora que tiene dos consumidores reales:
+  el `PointBlock` existente y el candidato de coordenadas cuantizadas.
+- [x] Separar cada u32 en parte alta/celda y residual bajo de 0–32 bits, empaquetado en bytes;
+  conservar transformación/error y todas las filas, sin conservar además el vector XYZ original.
+- [x] Reconstruir exactamente los u32 y reutilizar su decodificación original. Probar extremos,
+  duplicados, ejes constantes, vacío, alta entropía, orden/atributos y particiones 0/1/16/31/32.
+- [x] Añadir un benchmark acotado desde LAS/LAZ antes de f32: construcción/reconstrucción,
+  filas/hojas/nodos y bytes de capacidad retenida; registrar muestras, hashes y límites.
+- [x] Validar regresión (309 tests pasan, 3 GPU ignorados), fmt y Clippy nativo/WASM;
+  actualizar documentación y preparar el commit de esta entrega.
+
+Esta entrega no cambia el formato en disco. La raíz de este candidato representa código entero
+local al bloque, no un CRS ni grilla compartida. Medir bytes retenidos no equivale a medir un
+archivo comprimido ni RSS. Después: evaluar un codec completo con límites/lectura selectiva y
+mediciones de streams materializados antes de asignar otra revisión pre; la grilla física común
+sigue siendo una línea de integración independiente.
+
+
+Resultado: 360 muestras sobre prefijos de 32768 puntos de Outer Banks, Belvedere, Majadas y
+Albuera, con reconstrucción exacta en todos los casos. La mejor partición medida retiene
+1,42–1,59× el vector cuantizado original; la topología profunda llega a ~36×. Son capacidades
+estimadas de estructuras nativas, no tamaños de archivo ni RSS. [Contrato y evidencia](docs/QUANTIZED_OCCUPANCY_BENCH.md).
+
+- [ ] Medir una representación compacta de máscaras por nivel, evitando `usize`/registro por
+  cada hijo y derivando índices/offsets cuando sea útil. Evaluar también IDs de fila comprimidos
+  o rangos implícitos, manteniendo orden/multiplicidad y acceso selectivo.
+- [ ] Materializar y validar un stream candidato completo (topología + filas + residuales +
+  metadatos), compararlo con raw/delta+LZ4 sobre los mismos enteros y medir CPU/memoria antes
+  de conectarlo al escritor. El prototipo actual no justifica aún otra revisión de disco.

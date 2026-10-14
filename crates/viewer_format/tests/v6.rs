@@ -8,7 +8,7 @@ use viewer_core::{
 use viewer_format::{
     FileRole, FormatBlockEncoder, FormatError, FormatIdentity, FormatMetadata, FormatReader,
     FormatVersion, FormatWriter, FormatWriterOptions, GeometryEncoding, OctreeReader,
-    SourcePointBlock, prepare_point_block,
+    QuantizedOccupancy, SourcePointBlock, prepare_point_block, quantize_local_positions,
 };
 
 const BLOCK_ID: BlockId = BlockId::new(17);
@@ -557,5 +557,71 @@ fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
             assert_eq!(all_rows, vec![0, 1, 2, 3]);
             assert_eq!(reader.format_version(), version);
         }
+    }
+}
+
+#[test]
+fn quantized_occupancy_preserves_row_identity_for_geometry_rgb_and_all_attribute_types() {
+    let original = quantize_local_positions(&POINTS, 0.001).unwrap();
+    let mut attributes = fixture_attributes();
+    attributes.push(
+        AttributeColumn::new(
+            AttributeDescriptor::new("pair64", viewer_core::AttributeDataType::U64, 2).unwrap(),
+            AttributeValues::U64(vec![u64::MAX, 1, 2, 3, 4, 5, 6, 9_007_199_254_740_993]),
+            POINTS.len(),
+        )
+        .unwrap(),
+    );
+    for bits in [0, 1, 16, 24, 31, 32] {
+        let candidate = QuantizedOccupancy::new(&original, bits).unwrap();
+        let reconstructed = candidate.reconstruct();
+        assert_eq!(reconstructed.coordinates(), original.coordinates());
+        let expected = original.decode_local().unwrap();
+        let source = viewer_core::PointBlock::new(
+            BLOCK_ID,
+            reconstructed
+                .decode_local()
+                .unwrap()
+                .into_iter()
+                .zip(COLORS)
+                .map(|(position, color)| viewer_core::Point::new(position, color))
+                .collect::<Vec<_>>()
+                .into(),
+            attributes.clone(),
+        );
+        let mut cells = vec![VoxelCoord::new(0, 0, 0); POINTS.len()];
+        for (leaf, cell) in candidate.index().topology().cells().enumerate() {
+            for &row in candidate.index().rows_for_leaf(leaf).unwrap() {
+                cells[row] = cell;
+            }
+        }
+        let bound =
+            OccupiedPointBlock::new(candidate.index().topology().root(), source, &cells).unwrap();
+        let mut seen = Vec::new();
+        for cell in candidate.index().topology().cells() {
+            let rows = candidate.index().rows_for_cell(cell).unwrap();
+            assert_eq!(bound.rows_for_cell(cell), Some(rows));
+            let selected = bound.select_cell(cell).unwrap().unwrap();
+            for (point, &row) in selected.points().points().iter().zip(rows) {
+                assert_eq!(
+                    point.position.map(f32::to_bits),
+                    expected[row].map(f32::to_bits)
+                );
+                assert_eq!(point.color, COLORS[row]);
+            }
+            for (actual, original) in selected.attributes().iter().zip(&attributes) {
+                assert_eq!(actual.descriptor(), original.descriptor());
+                assert_values_bits_eq(
+                    actual.values(),
+                    &original
+                        .values()
+                        .select_rows(rows, original.descriptor().component_count() as usize)
+                        .unwrap(),
+                );
+            }
+            seen.extend_from_slice(rows);
+        }
+        seen.sort_unstable();
+        assert_eq!(seen, vec![0, 1, 2, 3]);
     }
 }

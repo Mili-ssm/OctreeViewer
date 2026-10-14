@@ -5,6 +5,7 @@ mod block_cache;
 mod dataset;
 mod geometry;
 mod lod_transition;
+mod occupied_cell_index;
 mod occupied_octree;
 mod occupied_point_block;
 mod scheduler;
@@ -23,6 +24,7 @@ pub use geometry::{
     Aabb, ColorRgb, CoordinateFrame, CoordinateFrameError, Point, PointBatch, VoxelCoord,
 };
 pub use lod_transition::{LodTransitionPlan, LodTransitionPlanner};
+pub use occupied_cell_index::OccupiedCellIndex;
 pub use occupied_octree::{
     OccupiedOctree, OccupiedOctreeError, OccupiedOctreeNode, OccupiedOctreeRoot,
 };

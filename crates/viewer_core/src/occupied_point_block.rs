@@ -2,8 +2,8 @@
 use thiserror::Error;
 
 use crate::{
-    AttributeColumn, DatasetError, OccupiedOctree, OccupiedOctreeError, OccupiedOctreeRoot,
-    PointBlock, VoxelCoord,
+    AttributeColumn, DatasetError, OccupiedCellIndex, OccupiedOctree, OccupiedOctreeError,
+    OccupiedOctreeRoot, PointBlock, VoxelCoord,
 };
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -24,9 +24,7 @@ pub enum OccupiedPointBlockError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OccupiedPointBlock {
     source: PointBlock,
-    topology: OccupiedOctree,
-    leaf_offsets: Vec<usize>,
-    row_ids: Vec<usize>,
+    index: OccupiedCellIndex,
 }
 
 impl OccupiedPointBlock {
@@ -50,38 +48,8 @@ impl OccupiedPointBlock {
         for column in source.attributes() {
             column.validate_row_count(points)?;
         }
-        let mut entries = cells
-            .iter()
-            .enumerate()
-            .map(|(row, &coord)| {
-                root.key(coord)
-                    .map(|key| (key, row))
-                    .ok_or(OccupiedOctreeError::OutsideRoot(coord))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        entries.sort_unstable();
-        let mut keys = Vec::new();
-        let mut leaf_offsets = Vec::new();
-        // Allocate compact row storage explicitly: collecting a consuming tuple iterator
-        // can reuse its wider allocation and retain excessive capacity for usize rows.
-        let mut row_ids = Vec::with_capacity(entries.len());
-        for (offset, &(key, row)) in entries.iter().enumerate() {
-            row_ids.push(row);
-            if keys.last() != Some(&key) {
-                keys.push(key);
-                leaf_offsets.push(offset);
-            }
-        }
-        // Sentinel also represents the empty mapping as [0].
-        leaf_offsets.push(entries.len());
-        drop(entries);
-        let topology = OccupiedOctree::from_sorted_unique_keys(root, &keys);
-        Ok(Self {
-            source,
-            topology,
-            leaf_offsets,
-            row_ids,
-        })
+        let index = OccupiedCellIndex::new(root, cells.iter().copied())?;
+        Ok(Self { source, index })
     }
 
     pub fn source(&self) -> &PointBlock {
@@ -93,20 +61,17 @@ impl OccupiedPointBlock {
     }
 
     pub fn topology(&self) -> &OccupiedOctree {
-        &self.topology
+        self.index.topology()
     }
 
     /// Original source row indices for a leaf in final-level order; no payload copies.
-    /// Returns `None` for an invalid leaf index, including `usize::MAX`.
     pub fn rows_for_leaf(&self, leaf: usize) -> Option<&[usize]> {
-        let start = *self.leaf_offsets.get(leaf)?;
-        let end = *self.leaf_offsets.get(leaf.checked_add(1)?)?;
-        Some(&self.row_ids[start..end])
+        self.index.rows_for_leaf(leaf)
     }
 
     /// Original source row indices, ascending within the cell; `None` if unoccupied.
     pub fn rows_for_cell(&self, coord: VoxelCoord) -> Option<&[usize]> {
-        self.rows_for_leaf(self.topology.leaf_index(coord)?)
+        self.index.rows_for_cell(coord)
     }
 
     /// Copies one cell's points, RGB and typed attributes in original source order.

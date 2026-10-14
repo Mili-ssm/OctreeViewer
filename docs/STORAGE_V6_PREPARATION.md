@@ -4,8 +4,9 @@ Estado: 14-10-2026. La ruptura de v5 provisional fue autorizada antes de desarro
 Están implementados v5 definitivo y la primera revisión experimental `v6.1-pre`. Esta última
 comprime los mismos enteros cuantizados mediante deltas/fallback, sin nueva pérdida. Su contrato
 completo está en [v6.1-pre](../crates/viewer_format/FORMAT_V6_PRE1.md); una representación lógica
-de vóxeles por ocupación tiene un prototipo lógico y asociación a filas de `PointBlock` en
-memoria. Su integración en conversión/render y serialización siguen pendientes.
+de vóxeles por ocupación tiene topología, asociación a filas y separación exacta de u32
+en celdas/residuales empaquetados en memoria. Su integración en conversión/render y
+serialización siguen pendientes.
 
 ## Capas y versiones
 
@@ -57,6 +58,7 @@ de celdas como la longitud de **cada** columna (`filas × componentes`, con comp
 desbordamiento). `PointBlock::new` por sí solo no impone esa alineación. Celdas fuera de raíz
 y payloads desalineados devuelven errores tipados antes de construir la topología.
 
+`OccupiedCellIndex` comparte el índice entre `OccupiedPointBlock` y el candidato cuantizado.
 Los pares `(clave de camino, fila original)` se ordenan una sola vez. La construcción emite
 claves únicas, `row_ids` y `leaf_offsets`: para N filas y L hojas, los offsets tienen longitud
 L+1, parten de cero y terminan en N; cada slice ocupado es no vacío y todos los IDs forman
@@ -85,9 +87,40 @@ enteros i64/u64 extremos y superiores a 2^53, NaN con payload y cero negativo co
 bits. La integración lee parejas v5 y v6.1-pre con/sin acompañante y comprueba selección por
 celda. Son fixtures sintéticas, no evidencia de escala ni rendimiento en datasets reales.
 
-Siguiente contrato pendiente: grilla física/CRS, residuales XYZ, identidad de filas entre
+Siguiente contrato pendiente: grilla física/CRS, codec completo de residuales XYZ, identidad de filas entre
 bloques, payloads Replacement/Additive y anchos de IDs/offsets serializados. Antes de otra
 revisión pre, medir bytes totales, CPU y picos conjuntos con payload e índice simultáneos.
+
+## Residuales exactos en el espacio cuantizado (implementados en memoria)
+
+`QuantizedOccupancy::new(&QuantizedCoordinates, residual_bits)` recibe los u32 originales,
+antes de cualquier proyección f32. Para `b` entre 0 y 32 divide `q` en `coarse = q >> b` y
+`residual = q & ((1<<b)-1)` mediante u64, incluidos los extremos. El residual se empaqueta
+en `ceil(filas × 3 × b / 8)` bytes, en orden original de fila/XYZ y bits menos significativos
+primero; el padding final es cero. A 32 bits el residual contiene todo XYZ y a cero no hay
+bytes residuales.
+
+La celda lógica es `i32::MIN + coarse`, con raíz `[i32::MIN;3]` y profundidad `32-b`.
+`OccupiedCellIndex` conserva las filas. `reconstruct()` combina celda y residual en u64 y
+restituye todos los u32 en su orden original, con transformación/error idénticos. La
+proyección posterior reutiliza `QuantizedCoordinates::decode_local`, sin duplicar su fórmula.
+El candidato no retiene además el vector original; el llamador puede liberarlo tras construir.
+
+Este espacio de código no tiene significado de CRS ni volumen físico: la cuantización actual
+es afín por eje/bloque y sus escalas pueden diferir o ser cero. Por eso la exactitud del codec
+entero se puede investigar sin fingir una grilla física común. La metadata CRS actual sigue
+siendo opcional y opaca; no hay contrato normalizado de unidades/ejes para alinear nubes.
+
+Pasan las 33 particiones de bits, un oráculo independiente del empaquetado, negativos de la
+transformación, vacío, duplicados, puntos distintos dentro de una celda, extremos y asociación
+de RGB/atributos tipados. El [benchmark acotado](QUANTIZED_OCCUPANCY_BENCH.md) usa originales
+LAS/LAZ antes de f32, sin requantizar lecturas del `.oct`. Los índices profundos amplifican
+memoria y aun la mejor partición probada retiene más que el vector fuente. Este resultado
+no permite habilitar un codec de disco ni atribuir ahorro de almacenamiento al candidato.
+
+Pendiente: compactar máscaras/índices y filas, materializar/validar el stream completo,
+comparar con raw/delta+LZ4 y añadir límites/lectura selectiva. La grilla física/CRS continúa
+pendiente de integración. No existe todavía backend `v6.2-pre`.
 
 ## Propuesta de almacenamiento por ocupación (pendiente)
 
@@ -250,7 +283,7 @@ resolverlo no se serializa una `GridDefinition` ni se asigna una revisión nueva
 
 Para cerrar v6 faltan:
 
-- Integrar la asociación en memoria de ocupación/filas con conversión y consumidores; definir para disco
+- Compactar y medir el candidato de ocupación/residuales antes de integrar conversión y consumidores; definir para disco
   el byte de conteo/flags e índices de ancho fijo, manteniendo arrays por nivel y orden; medir tamaño
   total, CPU, RAM, lectura selectiva y equivalencia espacial antes de fijar una revisión de
   almacenamiento.

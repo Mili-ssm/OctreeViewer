@@ -161,6 +161,24 @@ impl OccupiedOctree {
         &self.levels
     }
 
+    /// Retained inline data and vector capacities; excludes allocator overhead and build peak.
+    pub fn estimated_memory_bytes(&self) -> usize {
+        let arrays = self
+            .levels
+            .capacity()
+            .saturating_mul(std::mem::size_of::<Vec<OccupiedOctreeNode>>());
+        self.levels.iter().fold(
+            std::mem::size_of::<Self>().saturating_add(arrays),
+            |total, level| {
+                total.saturating_add(
+                    level
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<OccupiedOctreeNode>()),
+                )
+            },
+        )
+    }
+
     pub fn contains(&self, coord: VoxelCoord) -> bool {
         self.leaf_index(coord).is_some()
     }

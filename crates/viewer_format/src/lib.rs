@@ -11,6 +11,7 @@ mod geometry;
 mod layout;
 mod metadata;
 mod quantization;
+mod quantized_occupancy;
 mod ranges;
 mod reader;
 mod storage_reader;
@@ -27,6 +28,7 @@ pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePoin
 pub use quantization::{
     QuantizationError, QuantizationTransform, QuantizedCoordinates, quantize_local_positions,
 };
+pub use quantized_occupancy::{QuantizedOccupancy, QuantizedOccupancyError};
 pub use reader::{
     BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReaderLimits,
 };
