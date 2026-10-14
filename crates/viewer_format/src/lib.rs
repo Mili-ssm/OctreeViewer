@@ -8,6 +8,7 @@ mod codec;
 mod contracts;
 mod crc32;
 mod error;
+pub mod experimental_tuple_dictionary;
 mod geometry;
 mod layout;
 mod metadata;

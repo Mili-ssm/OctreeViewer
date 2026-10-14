@@ -351,3 +351,28 @@ con metadata/atributos y lecturas equivalentes; la memoria nativa queda como opt
 - [x] Comprobar OPFS/Blob con Playwright y reconstruir sus payloads nativamente, incluidos
   24 diccionarios y 96 constantes. [Informe, límites y dependencias](docs/STORAGE_V6_PRE3_BENCH.md).
 - [ ] Medir RSS y caché fría/remota; extender corpus y seguir las paletas RGB/topología pendientes.
+
+## Resúmenes por nodo y diccionario conjunto columnar — 14-10-2026
+
+Contrato acordado y primera implementación experimental en
+[resúmenes y diccionario columnar](docs/NODE_ATTRIBUTE_SUMMARIES.md): los nodos internos guardan
+medias ponderadas (intensidad **solo media**), presencia de categorías mediante máscaras de
+ancho fijo y extremos temporales en el tipo original. Las hojas mantienen todas sus filas
+exactas, incluidos duplicados. Las reglas se seleccionan explícitamente por atributo.
+
+- [x] Implementar resúmenes alineados con profundidad/índice de `OccupiedCellIndex`, sin
+  sustituir las filas originales; RGB en espacio lineal, conteos válidos por componente.
+- [x] Implementar contenedor experimental por bloque: un ID compartido de combinación completa,
+  tablas por columna, IDs empaquetados, CRC y lectura selectiva con acceso por profundidad/índice.
+- [x] Añadir pruebas focalizadas y experimento reproducible contra columnas independientes
+  raw/LZ4, separando filas originales y resúmenes internos.
+- [x] Medir Belvedere completo, Outer Banks, Bunny y dos casos sintéticos con roundtrip de
+  artefactos. Belvedere: −52,01 % en filas exactas frente al control raw/LZ4; +1,45 % en resúmenes.
+  Consultar clasificación lee 150,16 MB frente a 0,87 MB del control por los IDs compartidos;
+  este resultado no acredita una reducción equivalente de parejas válidas pre3.
+- [ ] Comparar codecs pre3 dentro de una misma envoltura, medir RSS/caché fría/WASM y ensayar
+  agrupaciones/fallback: el diccionario de todas las columnas no debe imponerse universalmente.
+- [ ] Integrar metadatos de políticas/dominios categóricos, diccionarios de strings y validez
+  explícita cuando existan en el origen; los códigos categóricos actuales son numéricos y densos.
+- [ ] Diseñar la revisión física y conectar conversión/lectura/LOD/filtros, compatibilidad,
+  checkpoints y navegador. El contenedor experimental no es una pareja `.oct`/`.octattrs` válida.

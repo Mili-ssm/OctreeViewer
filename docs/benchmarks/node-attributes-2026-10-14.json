@@ -1,0 +1,461 @@
+{
+  "experimental_only": true,
+  "profile": "perf",
+  "platform": "Linux-7.2.9-201.fc44.x86_64-x86_64-with-glibc2.43",
+  "binary": {
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/node_attribute_bench",
+    "bytes": 991816,
+    "sha256": "ce34b6dc6bbec9a0075bc36149062c2177c0cd2a5e59774b81bafc3d92d8b907"
+  },
+  "sources": [
+    {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_core/src/node_attributes.rs",
+      "bytes": 12419,
+      "sha256": "6c7957461ae69c9a794e26044ce12649b1e429bdc9ec36ce21aa1891900113be"
+    },
+    {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_core/src/categorical_attribute.rs",
+      "bytes": 3620,
+      "sha256": "f05240496da62d0b64c1a62409e0d4bb4193abc7f092f5c2f7e595ee2bf318fc"
+    },
+    {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/experimental_tuple_dictionary.rs",
+      "bytes": 13565,
+      "sha256": "09e807b16fcd49cc8cdb83f40a06ad1a9359c3a22208934e1774c9d48480c5df"
+    },
+    {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/examples/node_attribute_bench.rs",
+      "bytes": 16422,
+      "sha256": "b3ab5bef87bf1f41f6ab9e6feb8e1631106fe365dedf2844abcda21564595852"
+    },
+    {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/benchmarks/node_attribute_suite.py",
+      "bytes": 4621,
+      "sha256": "aecab7d6296594ecd0a6fd1ebb09d622607a1aede486f9d9b983c1766150ec4f"
+    }
+  ],
+  "repetitions": 3,
+  "samples": [
+    {
+      "label": "Synthetic",
+      "input": [],
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/node_attribute_bench",
+        "--synthetic",
+        "target/node-attrs-suite-20261014/Synthetic",
+        "4294967295",
+        "3",
+        ""
+      ],
+      "wall_seconds": 0.031775331000972074,
+      "summary": [
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "independent",
+          "blocks": 2,
+          "rows": 8192,
+          "unique_sum": 8192,
+          "bytes": 26518,
+          "encode_ms": 0.172753,
+          "decode_ms": 0.238707,
+          "expand_ms": 0.101891,
+          "selected_last_column_bytes": 17172,
+          "summary_build_ms": 2.105135,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "shared_tuple_columns",
+          "blocks": 2,
+          "rows": 8192,
+          "unique_sum": 4128,
+          "bytes": 32488,
+          "encode_ms": 1.132222,
+          "decode_ms": 0.551592,
+          "expand_ms": 0.434355,
+          "selected_last_column_bytes": 23313,
+          "summary_build_ms": 2.105135,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "independent",
+          "blocks": 2,
+          "rows": 1170,
+          "unique_sum": 1170,
+          "bytes": 12252,
+          "encode_ms": 0.098715,
+          "decode_ms": 0.098855,
+          "expand_ms": 0.014277,
+          "selected_last_column_bytes": 6006,
+          "summary_build_ms": 2.105135,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "shared_tuple_columns",
+          "blocks": 2,
+          "rows": 1170,
+          "unique_sum": 614,
+          "bytes": 12204,
+          "encode_ms": 0.276468,
+          "decode_ms": 0.128671,
+          "expand_ms": 0.055555,
+          "selected_last_column_bytes": 6510,
+          "summary_build_ms": 2.105135,
+          "repetitions": 3
+        }
+      ],
+      "input_source_payload_bytes": 0,
+      "category_domain_bytes": 0,
+      "categorize_ms": 0.000822,
+      "artifact_count": 8,
+      "artifact_bytes": 83462,
+      "artifact_manifest": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Synthetic.artifacts.json",
+        "bytes": 2184,
+        "sha256": "7dcd27d9679f4a0ba159b33ba0849903645efb3754900b69761665804c819262"
+      },
+      "stdout": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Synthetic.jsonl",
+        "bytes": 2908,
+        "sha256": "de7d472a9162c6dcec85da8fd352e67979fbe7975172de7a333f25774b437c0c"
+      },
+      "stderr": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Synthetic.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "label": "Outer-Banks",
+      "input": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre3-20261014-53tn995p/Outer-Banks-e430/1-v6.3-pre/output-run-001.oct",
+          "bytes": 1107463,
+          "sha256": "a5e98bbb285f9ca99917eb358b26c2c72cca0973296b06cb9aaa223865f140db"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre3-20261014-53tn995p/Outer-Banks-e430/1-v6.3-pre/output-run-001.octattrs",
+          "bytes": 797855,
+          "sha256": "18adbd5496acb005e5d17449b04f7171c365b2b49d11c17f9eee0b374a01b201"
+        }
+      ],
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/node_attribute_bench",
+        "target/storage-pre3-20261014-53tn995p/Outer-Banks-e430/1-v6.3-pre/output-run-001.oct",
+        "target/node-attrs-suite-20261014/Outer-Banks",
+        "4294967295",
+        "3",
+        "mean:0,category:1,range:7"
+      ],
+      "wall_seconds": 0.31416295999952126,
+      "summary": [
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "independent",
+          "blocks": 47,
+          "rows": 111768,
+          "unique_sum": 111768,
+          "bytes": 932103,
+          "encode_ms": 4.501697,
+          "decode_ms": 5.194715,
+          "expand_ms": 2.415312,
+          "selected_last_column_bytes": 641756,
+          "summary_build_ms": 7.465894,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "shared_tuple_columns",
+          "blocks": 47,
+          "rows": 111768,
+          "unique_sum": 111768,
+          "bytes": 1104949,
+          "encode_ms": 21.284581,
+          "decode_ms": 17.476507,
+          "expand_ms": 12.885175,
+          "selected_last_column_bytes": 814602,
+          "summary_build_ms": 7.465894,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "independent",
+          "blocks": 47,
+          "rows": 8532,
+          "unique_sum": 8532,
+          "bytes": 292966,
+          "encode_ms": 1.457326,
+          "decode_ms": 1.297956,
+          "expand_ms": 0.090585,
+          "selected_last_column_bytes": 125434,
+          "summary_build_ms": 7.465894,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "shared_tuple_columns",
+          "blocks": 47,
+          "rows": 8532,
+          "unique_sum": 8334,
+          "bytes": 298502,
+          "encode_ms": 3.06319,
+          "decode_ms": 1.615184,
+          "expand_ms": 0.309715,
+          "selected_last_column_bytes": 133107,
+          "summary_build_ms": 7.465894,
+          "repetitions": 3
+        }
+      ],
+      "input_source_payload_bytes": 797791,
+      "category_domain_bytes": 423,
+      "categorize_ms": 1.704747,
+      "artifact_count": 235,
+      "artifact_bytes": 2628943,
+      "artifact_manifest": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Outer-Banks.artifacts.json",
+        "bytes": 63790,
+        "sha256": "3b1165db6ea43f0fd4476e463be1bdeca5103701613a461ccbd04d5fb4e5aaaf"
+      },
+      "stdout": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Outer-Banks.jsonl",
+        "bytes": 50184,
+        "sha256": "eb579f18b4c9f97109e81ce846ae78537b635c222366325fcb9b70ce18f9e56e"
+      },
+      "stderr": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Outer-Banks.stderr.log",
+        "bytes": 868,
+        "sha256": "6ddeee87be6450325db758a756d747829d5abc2c879470f7c5d8907151339cab"
+      }
+    },
+    {
+      "label": "Bunny",
+      "input": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre3-20261014-53tn995p/Bunny-parcial/1-v6.3-pre/output-run-001.oct",
+          "bytes": 206971,
+          "sha256": "abcb9f5a4e0bed8c25d147307cb745bfca1491b43f91a8942ee516fa2aaa2664"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre3-20261014-53tn995p/Bunny-parcial/1-v6.3-pre/output-run-001.octattrs",
+          "bytes": 349,
+          "sha256": "868cad8902cfc56ad850a2767fdebf845b2e3399dcde8ec55ba5a631ccb6f472"
+        }
+      ],
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/node_attribute_bench",
+        "target/storage-pre3-20261014-53tn995p/Bunny-parcial/1-v6.3-pre/output-run-001.oct",
+        "target/node-attrs-suite-20261014/Bunny",
+        "4294967295",
+        "3",
+        ""
+      ],
+      "wall_seconds": 0.06394620199716883,
+      "summary": [
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "independent",
+          "blocks": 19,
+          "rows": 40577,
+          "unique_sum": 40577,
+          "bytes": 10477,
+          "encode_ms": 0.167195,
+          "decode_ms": 1.110679,
+          "expand_ms": 0.981067,
+          "selected_last_column_bytes": 6863,
+          "summary_build_ms": 4.057222,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "shared_tuple_columns",
+          "blocks": 19,
+          "rows": 40577,
+          "unique_sum": 19,
+          "bytes": 6612,
+          "encode_ms": 2.593339,
+          "decode_ms": 1.100411,
+          "expand_ms": 1.184985,
+          "selected_last_column_bytes": 6365,
+          "summary_build_ms": 4.057222,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "independent",
+          "blocks": 19,
+          "rows": 2606,
+          "unique_sum": 2606,
+          "bytes": 23588,
+          "encode_ms": 0.200665,
+          "decode_ms": 0.184044,
+          "expand_ms": 0.00978,
+          "selected_last_column_bytes": 23588,
+          "summary_build_ms": 4.057222,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "shared_tuple_columns",
+          "blocks": 19,
+          "rows": 2606,
+          "unique_sum": 1220,
+          "bytes": 19148,
+          "encode_ms": 0.480892,
+          "decode_ms": 0.167435,
+          "expand_ms": 0.028533,
+          "selected_last_column_bytes": 19148,
+          "summary_build_ms": 4.057222,
+          "repetitions": 3
+        }
+      ],
+      "input_source_payload_bytes": 285,
+      "category_domain_bytes": 0,
+      "categorize_ms": 0.0009310000000000001,
+      "artifact_count": 76,
+      "artifact_bytes": 59825,
+      "artifact_manifest": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Bunny.artifacts.json",
+        "bytes": 20354,
+        "sha256": "db8232144de116862d1aaf6ce363d978d7bcc1065009bbdedbe8eac0d1234d03"
+      },
+      "stdout": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Bunny.jsonl",
+        "bytes": 19660,
+        "sha256": "e5e1f35db5ce863214c353147f7e252d5007ae9dfaf2f127433309febd4daca2"
+      },
+      "stderr": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Bunny.stderr.log",
+        "bytes": 721,
+        "sha256": "e9b5040ace6b9e7798cefaf6fefe7525a222aa23eccddf41662f11398dc0855a"
+      }
+    },
+    {
+      "label": "Belvedere",
+      "input": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre3-20261014-53tn995p/Belvedere/1-v6.3-pre/output-run-001.oct",
+          "bytes": 980174240,
+          "sha256": "0e68fbdb3d2d7be05d1f4b57180c156d74047820c4dc967c2f32d239a1931112"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-pre3-20261014-53tn995p/Belvedere/1-v6.3-pre/output-run-001.octattrs",
+          "bytes": 439181826,
+          "sha256": "253decfae3a6c86a84fc9899689e34b65f0ccccd249979f1d7fb47ed2feab616"
+        }
+      ],
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/node_attribute_bench",
+        "target/storage-pre3-20261014-53tn995p/Belvedere/1-v6.3-pre/output-run-001.oct",
+        "target/node-attrs-suite-20261014/Belvedere",
+        "4294967295",
+        "3",
+        "mean:0,category:1,range:7"
+      ],
+      "wall_seconds": 116.9941691089989,
+      "summary": [
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "independent",
+          "blocks": 1343,
+          "rows": 81706211,
+          "unique_sum": 81706211,
+          "bytes": 611122652,
+          "encode_ms": 2078.054247,
+          "decode_ms": 1912.754948,
+          "expand_ms": 1297.078381,
+          "selected_last_column_bytes": 360642483,
+          "summary_build_ms": 4212.276124,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "source",
+          "mode": "shared_tuple_columns",
+          "blocks": 1343,
+          "rows": 81706211,
+          "unique_sum": 17578926,
+          "bytes": 293253872,
+          "encode_ms": 6840.663363,
+          "decode_ms": 8961.303179,
+          "expand_ms": 8182.895646,
+          "selected_last_column_bytes": 239015899,
+          "summary_build_ms": 4212.276124,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "independent",
+          "blocks": 1343,
+          "rows": 208726,
+          "unique_sum": 208726,
+          "bytes": 8064187,
+          "encode_ms": 26.768955,
+          "decode_ms": 24.769111,
+          "expand_ms": 1.68448,
+          "selected_last_column_bytes": 1283725,
+          "summary_build_ms": 4212.276124,
+          "repetitions": 3
+        },
+        {
+          "summary": true,
+          "group": "internal",
+          "mode": "shared_tuple_columns",
+          "blocks": 1343,
+          "rows": 208726,
+          "unique_sum": 200328,
+          "bytes": 8180715,
+          "encode_ms": 52.574478,
+          "decode_ms": 29.57271,
+          "expand_ms": 5.143885,
+          "selected_last_column_bytes": 1465439,
+          "summary_build_ms": 4212.276124,
+          "repetitions": 3
+        }
+      ],
+      "input_source_payload_bytes": 439181762,
+      "category_domain_bytes": 12087,
+      "categorize_ms": 835.839135,
+      "artifact_count": 6715,
+      "artifact_bytes": 920633513,
+      "artifact_manifest": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Belvedere.artifacts.json",
+        "bytes": 1811589,
+        "sha256": "b6e1a5c03c8c7f01adcf01290f9cf2b74c67ffa67fa551066ec25d6575811307"
+      },
+      "stdout": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Belvedere.jsonl",
+        "bytes": 1463942,
+        "sha256": "7631b34c54e325664d5f60830ab77d4f9ac1b8bce8daf863b2ff1ec1a4094504"
+      },
+      "stderr": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/node-attrs-suite-20261014/Belvedere.stderr.log",
+        "bytes": 950,
+        "sha256": "55ed5c0f598e9f98863d5d6780587b0520714bb5c4197bb917790dc52f37beaa"
+      }
+    }
+  ],
+  "limits": [
+    "warm uncontrolled OS cache",
+    "sum of per-block CPU medians",
+    "no RSS/GPU/WASM benchmark",
+    "normalized depth-4 grid, not persisted geometry",
+    "independent raw/LZ4 control; pre3 payload bytes reported separately",
+    "category-domain artifacts are common overhead outside group bytes"
+  ]
+}
