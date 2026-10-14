@@ -94,7 +94,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("run_dir", type=Path, help="new directory for outputs, logs, and report")
     parser.add_argument("--convert-binary", type=Path, required=True)
     parser.add_argument("--read-binary", type=Path, required=True)
-    parser.add_argument("--format-version", choices=("v5", "v6.1-pre", "v6.2-pre"), default="v5")
+    parser.add_argument("--format-version", choices=("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre"), default="v5")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--divisions", type=int, default=2)

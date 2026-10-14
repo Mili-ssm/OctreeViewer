@@ -241,6 +241,7 @@ fn v5_and_v6_pre1_preserve_geometry_colors_order_and_typed_attribute_bits() {
         FormatVersion::V5,
         FormatVersion::V6_PRE1,
         FormatVersion::V6_PRE2,
+        FormatVersion::V6_PRE3,
     ] {
         let (primary, attributes) = write_split(version, fixture_block(), meta.clone());
         let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
@@ -327,6 +328,7 @@ fn split_payload_reads_are_selective_for_geometry_and_one_attribute_column() {
         FormatVersion::V5,
         FormatVersion::V6_PRE1,
         FormatVersion::V6_PRE2,
+        FormatVersion::V6_PRE3,
     ] {
         let (primary, attributes) = write_split(version, fixture_block(), meta.clone());
         let primary = CountingReader::new(primary);
@@ -478,12 +480,12 @@ fn prepared_v5_block_is_rejected_by_v6_writer_and_writer_remains_usable() {
 }
 
 #[test]
-fn unsupported_v6_final_and_pre2_are_rejected_by_writer_encoder_and_reader() {
+fn unsupported_v6_final_and_pre4_are_rejected_by_writer_encoder_and_reader() {
     let meta = metadata(POINTS.len() as u64, descriptors());
     let options = options();
     let versions = [
         FormatVersion::V6,
-        FormatVersion::V6Pre(std::num::NonZeroU32::new(3).unwrap()),
+        FormatVersion::V6Pre(std::num::NonZeroU32::new(4).unwrap()),
     ];
     for version in versions {
         assert!(matches!(
@@ -516,6 +518,7 @@ fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
         FormatVersion::V5,
         FormatVersion::V6_PRE1,
         FormatVersion::V6_PRE2,
+        FormatVersion::V6_PRE3,
     ] {
         for attach in [false, true] {
             let (primary, attributes) = write_split(
@@ -778,4 +781,165 @@ fn pre2_sidecars_prepared_blocks_and_forks_keep_exact_revision_identity() {
         reader.read_block(BLOCK_ID).unwrap().points().len(),
         POINTS.len()
     );
+}
+
+fn pre3_fixture() -> (SourcePointBlock, FormatMetadata) {
+    let rows = 4096;
+    let mut state = 0x91ab032f_u32;
+    let indices: Vec<usize> = (0..rows)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state % 4) as usize
+        })
+        .collect();
+    let mut columns: Vec<AttributeColumn> = fixture_attributes()
+        .into_iter()
+        .map(|col| {
+            AttributeColumn::new(
+                col.descriptor().clone(),
+                col.values().select_rows(&indices, 1).unwrap(),
+                rows,
+            )
+            .unwrap()
+        })
+        .collect();
+    columns.push(
+        AttributeColumn::new(
+            AttributeDescriptor::new("constant_nan_vector", AttributeDataType::F64, 2).unwrap(),
+            AttributeValues::F64(
+                (0..rows)
+                    .flat_map(|_| [f64::from_bits(0x7ff8000000000042), -0.0])
+                    .collect(),
+            ),
+            rows,
+        )
+        .unwrap(),
+    );
+    let schema = columns.iter().map(|c| c.descriptor().clone()).collect();
+    (
+        SourcePointBlock::new(
+            BLOCK_ID,
+            indices.iter().map(|i| POINTS[*i]).collect(),
+            indices.iter().map(|i| COLORS[*i]).collect(),
+            columns,
+        ),
+        metadata(rows as u64, schema),
+    )
+}
+
+#[test]
+fn pre3_selects_attribute_codecs_preserves_typed_bits_and_reads_only_requested_column() {
+    use viewer_format::{BlockCodec, BlockPayloadKind};
+    let (block, meta) = pre3_fixture();
+    let expected = block.attributes().to_vec();
+    let (pre2, attrs2) = write_split(FormatVersion::V6_PRE2, block, meta.clone());
+    let (block, _) = pre3_fixture();
+    let (pre3, attrs3) = write_split(FormatVersion::V6_PRE3, block, meta);
+    assert!(pre3.len() + attrs3.len() < pre2.len() + attrs2.len());
+    let primary = CountingReader::new(pre3);
+    let attributes = CountingReader::new(attrs3);
+    let p_count = primary.bytes_read.clone();
+    let a_count = attributes.bytes_read.clone();
+    let mut reader = FormatReader::new(primary).unwrap();
+    reader.attach_attributes(attributes).unwrap();
+    let stats = reader.block_payload_storage_stats().unwrap();
+    assert!(stats.iter().any(|p| p.codec == BlockCodec::Dictionary));
+    assert_eq!(stats.last().unwrap().codec, BlockCodec::Constant);
+    assert_eq!(stats[1].codec, BlockCodec::Dictionary); // RGB is a three-component tuple.
+    for (index, column) in expected.iter().enumerate() {
+        p_count.set(0);
+        a_count.set(0);
+        let actual = reader.read_attribute(BLOCK_ID, index as u32).unwrap();
+        assert_values_bits_eq(actual.values(), column.values());
+        let payload = stats.iter().find(|p| matches!(p.kind, BlockPayloadKind::Attribute { schema_index, .. } if schema_index == index as u32)).unwrap();
+        assert_eq!(p_count.get(), 0);
+        assert_eq!(a_count.get() as u64, payload.stored_bytes);
+    }
+    assert_eq!(reader.read_display_colors(BLOCK_ID).unwrap().len(), 4096);
+    let mut wrong = FormatReader::new(Cursor::new(pre2)).unwrap();
+    // A pre2 primary cannot accept a pre3 sidecar even when its schema matches.
+    let (block, meta) = pre3_fixture();
+    let (_, attrs3) = write_split(FormatVersion::V6_PRE3, block, meta);
+    assert!(wrong.attach_attributes(Cursor::new(attrs3)).is_err());
+}
+
+fn repair_index_and_footer(bytes: &mut [u8]) {
+    let footer = bytes.len() - 40;
+    let index = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    let length = u64::from_le_bytes(bytes[footer + 16..footer + 24].try_into().unwrap()) as usize;
+    let crc = viewer_format::crc32(&bytes[index..index + length]);
+    bytes[footer + 32..footer + 36].copy_from_slice(&crc.to_le_bytes());
+    let crc = viewer_format::crc32(&bytes[footer..footer + 36]);
+    bytes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
+}
+
+#[test]
+fn pre3_rejects_invalid_dictionary_even_with_valid_crcs_and_old_revision_relabel() {
+    let (block, meta) = pre3_fixture();
+    let mut writer = FormatWriter::new_for_version(
+        FormatVersion::V6_PRE3,
+        Cursor::new(Vec::new()),
+        meta,
+        options(),
+    )
+    .unwrap();
+    writer.write_block(block).unwrap();
+    let original = writer.finish().unwrap().into_inner();
+    let reader = FormatReader::new(Cursor::new(original.clone())).unwrap();
+    let stats = reader.block_payload_storage_stats().unwrap();
+    let footer = original.len() - 40;
+    let index = u64::from_le_bytes(original[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    let length =
+        u64::from_le_bytes(original[footer + 16..footer + 24].try_into().unwrap()) as usize;
+    let mut corrupt = original.clone();
+    let start = 24 + stats[0].stored_bytes as usize; // RGB dictionary is the second payload.
+    corrupt[start..start + 4].copy_from_slice(&0_u32.to_le_bytes());
+    let crc = viewer_format::crc32(&corrupt[start..start + stats[1].stored_bytes as usize]);
+    let descriptor = index + length - stats.len() * 29 + 29;
+    corrupt[descriptor + 25..descriptor + 29].copy_from_slice(&crc.to_le_bytes());
+    repair_index_and_footer(&mut corrupt);
+    let mut reader = FormatReader::new(Cursor::new(corrupt)).unwrap();
+    assert!(matches!(
+        reader.read_display_colors(BLOCK_ID),
+        Err(FormatError::MalformedBlock(_))
+    ));
+
+    let mut old = original;
+    old[..24].copy_from_slice(
+        &FormatIdentity {
+            version: FormatVersion::V6_PRE2,
+            role: FileRole::Monolithic,
+        }
+        .to_header_bytes()
+        .unwrap(),
+    );
+    old[index..index + 8].copy_from_slice(b"OCTVI62P");
+    old[footer..footer + 8].copy_from_slice(b"OCTVE62P");
+    repair_index_and_footer(&mut old);
+    assert!(matches!(
+        FormatReader::new(Cursor::new(old)),
+        Err(FormatError::MalformedIndex(_))
+    ));
+}
+
+#[test]
+fn pre3_checks_attribute_checksum_before_expansion() {
+    let (block, meta) = pre3_fixture();
+    let (primary, mut attributes) = write_split(FormatVersion::V6_PRE3, block, meta);
+    let reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    let stats = reader.block_payload_storage_stats().unwrap();
+    let constant_start = 24
+        + stats[1..stats.len() - 1]
+            .iter()
+            .map(|p| p.stored_bytes as usize)
+            .sum::<usize>();
+    attributes[constant_start] ^= 1;
+    let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+    reader.attach_attributes(Cursor::new(attributes)).unwrap();
+    assert!(matches!(
+        reader.read_attribute(BLOCK_ID, 10),
+        Err(FormatError::InvalidBlockChecksum(BLOCK_ID))
+    ));
 }

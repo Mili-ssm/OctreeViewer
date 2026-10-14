@@ -2,6 +2,7 @@
 //! Use `FormatReader` for selective reads and `FormatWriter` for incremental output;
 //! both share the binary layout and metadata validation without depending on each other.
 
+mod attribute_codec;
 mod block_encoder;
 mod codec;
 mod contracts;

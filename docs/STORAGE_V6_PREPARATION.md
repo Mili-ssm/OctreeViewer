@@ -1,13 +1,15 @@
 # Almacenamiento v5 definitivo y preparación de v6
 
 Estado: 14-10-2026. La ruptura de v5 provisional fue autorizada antes de desarrollar v6.
-Están implementados v5 definitivo y las revisiones experimentales `v6.1-pre` y `v6.2-pre`. Pre1
+Están implementados v5 definitivo y las revisiones experimentales `v6.1-pre`, `v6.2-pre` y `v6.3-pre`. Pre1
 comprime los mismos enteros cuantizados mediante deltas/fallback, sin nueva pérdida. Su contrato
 completo está en [v6.1-pre](../crates/viewer_format/FORMAT_V6_PRE1.md); una representación lógica
 de vóxeles por ocupación tiene topología, asociación a filas y separación exacta de u32
 en celdas/residuales. Pre2 ya serializa arrays por profundidad y registros de seis bytes dentro
 de cada bloque, conservando los contratos del lector y el índice exterior. Una topología global
-y grilla física común siguen pendientes. [Contrato físico pre2](../crates/viewer_format/FORMAT_V6_PRE2.md).
+y grilla física común siguen pendientes. Pre3 añade constantes/diccionarios exactos por columna
+con fallback y lectura selectiva; [contrato pre3](../crates/viewer_format/FORMAT_V6_PRE3.md).
+[Contrato físico pre2](../crates/viewer_format/FORMAT_V6_PRE2.md).
 
 ## Capas y versiones
 
@@ -15,7 +17,7 @@ Hay tres contratos distintos que no deben llamarse todos «versión v6»:
 
 | Capa | Qué define | Identificación vigente / futura |
 | --- | --- | --- |
-| **Formato de almacenamiento** | Bytes de `.oct`/`.octattrs`, codecs, índices, checksums y cómo se reconstruyen sus registros. | El campo de cabecera identifica hoy v5 (`5/0`), pre1 (`6/1`) o pre2 (`6/2`). Cada cambio incompatible de bytes requiere otra revisión exacta. |
+| **Formato de almacenamiento** | Bytes de `.oct`/`.octattrs`, codecs, índices, checksums y cómo se reconstruyen sus registros. | El campo de cabecera identifica hoy v5 (`5/0`), pre1 (`6/1`) , pre2 (`6/2`) o pre3 (`6/3`). Cada cambio incompatible de bytes requiere otra revisión exacta. |
 | **Representación lógica de octree/vóxeles** | Significado de nodos/celdas, grilla, ramificación, orden de hijos y cómo se derivan sus coordenadas. | Pre2 codifica ocupación en el espacio entero por bloque; un octree global de vóxeles físicos sigue pendiente. Si su contrato evoluciona de forma independiente habrá que versionarlo explícitamente en datos o metadatos. |
 | **Render** | Cómo se proyectan y dibujan datos: buffers, caras, instancing, culling, cortes y transiciones LOD. | Lo determina la implementación del renderer/WASM/worker. Esas técnicas no son una capacidad ni una versión del octree almacenado, salvo que el archivo empiece a guardar datos específicos del render. |
 
@@ -197,7 +199,7 @@ La envoltura definitiva conserva 24 bytes, con magic común **`OCTVFRM1`** (enve
 `FileRole::{Monolithic, SplitPrimary, Attributes}` sustituye flags sueltos en la API.
 `FormatIdentity::to_header_bytes` y su parser son compartidos por lector y escritor.
 `FormatVersion::{V5, V6Pre(NonZeroU32), V6, Unknown { major, revision }}` distingue `v5`,
-`v6.1-pre`, `v6.2-pre` y `v6`. Cada cambio incompatible durante desarrollo exige una revisión
+`v6.1-pre`, `v6.2-pre`, `v6.3-pre` y `v6`. Cada cambio incompatible durante desarrollo exige una revisión
 nueva; final v5 permanece con mayor 5/revisión 0. La revisión no identifica el crate ni el commit.
 No se infiere compatibilidad por orden de versión: cada backend debe admitir identidades exactas.
 
@@ -209,7 +211,7 @@ checkpoints anteriores deben regenerarse. El paquete web local también debe rec
 `probe_format(&mut Read + Seek)` valida cabecera/CRC sin leer índice ni payload y restaura la
 posición incluso si falla el análisis. No certifica el archivo completo. `FormatReader` selecciona
 el backend por esa identidad y entrega la cabecera ya validada al backend indexado compartido; no la vuelve a leer.
-La selección admite exactamente v5, `v6.1-pre` y `v6.2-pre`. V6 final, otras revisiones y las identidades
+La selección admite exactamente v5, `v6.1-pre`, `v6.2-pre` y `v6.3-pre`. V6 final, otras revisiones y las identidades
 desconocidas fallan antes de cargar un índice.
 
 Un hash no sustituye al campo de compatibilidad. El CRC detecta corrupción accidental; SHA-256
@@ -222,13 +224,13 @@ asociación al dataset. No se admitirán parejas v5/v6 ni revisiones de desarrol
 | Contrato / consumidor | Estado implementado | Pendiente para v6 |
 | --- | --- | --- |
 | `DatasetSource` (`viewer_core`) | Metadata y `PointBlock` independientes del layout; error asociado. | Preservar coordenadas locales, esquema y orden de filas. |
-| `OctreeReader` | Acceso selectivo XYZ/RGB/columna/fila/rangos, identidad exacta y uso mediante `dyn`. | Conformidad v5/pre1/pre2 ya probada; extender al corpus grande y futuras revisiones. |
+| `OctreeReader` | Acceso selectivo XYZ/RGB/columna/fila/rangos, identidad exacta y uso mediante `dyn`. | Conformidad v5/pre1/pre2/pre3 ya probada; extender al corpus grande y futuras revisiones. |
 | `FormatReader<R>` | Fachada de transporte en `storage_reader.rs`, con backend privado `IndexedReader` con `StorageLayout::{V5,V6Pre1,V6Pre2}`; conserva attach, forks, metadata y estadísticas. | Añadir backend y ampliar despacho interno; los consumidores conservan la fachada pública. |
 | `OctreeWriter` / `PreparedOctreeWriter` | Ingesta y cierre; bloque preparado asociado a cada escritor. | Ya escribe las tres versiones y verifica identidad del preparado; ampliar perfiles futuros. |
-| `BlockEncoder` / `FormatBlockEncoder` | Encoder inmutable `Sync`, bloque asociado `Send`; preparación y capacidad retenida separadas de los sinks. | Ya selecciona v5/pre1/pre2; futuras transformaciones requieren perfiles nuevos. |
+| `BlockEncoder` / `FormatBlockEncoder` | Encoder inmutable `Sync`, bloque asociado `Send`; preparación y capacidad retenida separadas de los sinks. | Ya selecciona v5/pre1/pre2/pre3; futuras transformaciones requieren perfiles nuevos. |
 | Conversor nativo | `stream_blocks<W,E>` consume `E::PreparedBlock`; no llama `prepare_point_block` ni fija `PreparedPointBlock`. Mantiene append ordenado y liberación de spool. | Medir picos de conversión a escala y costes de candidatos simultáneos. |
-| Salida LAS/LAZ, EPT y navegador | Fábricas `new_for_version` / `new_split_for_version`; rechazan versiones sin escritor antes de tocar sinks. `ConvertOptions::with_format_version` y CLI `--format-version` seleccionan explícitamente. | Hoy se escribe v5, pre1 o pre2; otras identidades siguen rechazadas. |
-| WASM (`bindings.rs`, `LodSession`) | Conserva `FormatReader<BrowserBlobReader>`, que ahora es la fachada; carga selectiva por `OctreeReader`. Browser converter usa v5 por defecto y `createForVersion` permite pre1/pre2. | Blob/OPFS v6 comprobados; falta refinamiento/presentación WebGPU. |
+| Salida LAS/LAZ, EPT y navegador | Fábricas `new_for_version` / `new_split_for_version`; rechazan versiones sin escritor antes de tocar sinks. `ConvertOptions::with_format_version` y CLI `--format-version` seleccionan explícitamente. | Hoy se escribe v5, pre1, pre2 o pre3; otras identidades siguen rechazadas. |
+| WASM (`bindings.rs`, `LodSession`) | Conserva `FormatReader<BrowserBlobReader>`, que ahora es la fachada; carga selectiva por `OctreeReader`. Browser converter usa v5 por defecto y `createForVersion` permite pre1/pre2/pre3. | Blob/OPFS v6 comprobados; falta refinamiento/presentación WebGPU. |
 | Checkpoints | Manifiesto V5 persiste mayor, revisión y envelope desde las opciones; rechaza identidades distintas y manifiestos V1–V4. | Reutilizar la validación exacta al habilitar nuevas identidades. |
 | `SpatialHierarchy` | Jerarquía lógica común y `child_ids` público para recorrido estructural independiente del orden físico. | Preservar Replacement/Additive, conteos y grilla común. |
 
@@ -291,11 +293,11 @@ Para cerrar v6 faltan:
   y byte conteo/octante definido. Evaluar topología global conservando paginación; medir tamaño
   total, CPU, RAM, lectura selectiva y equivalencia espacial antes de fijar una revisión de
   almacenamiento.
-- Integrar, tras cerrar contrato y validación, codecs de atributos independientes por columna:
+- Extender los codecs constantes/diccionario por columna ya integrados en pre3:
   el [experimento de diccionarios](ATTRIBUTE_DICTIONARY_BENCH.md) ya materializa streams exactos
   y mide Belvedere completo (28,00 % menos por columna; 44,03 % por tuplas con pérdida de
-  independencia de lectura). Probar constantes/bitpacking y paleta RGB compartida; no adoptar
-  diccionario conjunto global por defecto, pues aumenta tamaño en dos muestras.
+  independencia de lectura). Pre3 integra constantes/diccionario; probar bitpacking y paleta RGB
+  compartida. No adoptar diccionario conjunto global por defecto, pues aumenta tamaño en dos muestras.
 - Probar prefijos `first_child` reconstruidos y registros hoja implícitos en la topología pre2;
   los bytes brutos eliminados no equivalen a ahorro tras LZ4. Mantener filas/residuales exactos.
 - Evaluar caras expuestas/agrupadas y transiciones entre cortes LOD como características separadas

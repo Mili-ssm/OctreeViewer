@@ -1,0 +1,156 @@
+{
+  "date": "2026-10-14",
+  "browser": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "results": [
+      {
+        "version": "v6.2-pre",
+        "octBytes": 55715,
+        "attrsBytes": 25441,
+        "probe": {
+          "type": "probeResult",
+          "passed": true,
+          "geometryHasAttributes": false,
+          "fullHasAttributes": true,
+          "sourcePointCount": "4096",
+          "nodeCount": 9,
+          "formatVersion": "v6.2-pre",
+          "schemaColumns": 8,
+          "wrongSidecarRejected": true,
+          "errors": [
+            "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+            "format version v6.4-pre is recognized but has no supported decoder"
+          ]
+        }
+      },
+      {
+        "version": "v6.3-pre",
+        "octBytes": 55715,
+        "attrsBytes": 6486,
+        "probe": {
+          "type": "probeResult",
+          "passed": true,
+          "geometryHasAttributes": false,
+          "fullHasAttributes": true,
+          "sourcePointCount": "4096",
+          "nodeCount": 9,
+          "formatVersion": "v6.3-pre",
+          "schemaColumns": 8,
+          "wrongSidecarRejected": true,
+          "errors": [
+            "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+            "format version v6.4-pre is recognized but has no supported decoder"
+          ]
+        }
+      }
+    ]
+  },
+  "probe_function": "async () => { const results=[]; const source=await (await fetch('/target/pre3-browser-check/palette.las')).blob(); const probe=(file, attributes, version)=>new Promise((resolve,reject)=>{const w=new Worker('/examples/web-host/tests/storage-format.browser.mjs',{type:'module'}); const t=setTimeout(()=>{w.terminate();reject(new Error('probe timeout'));},30000);w.onerror=e=>{clearTimeout(t);w.terminate();reject(new Error(e.message));};w.onmessage=({data})=>{if(data.type!=='probeResult')return;clearTimeout(t);w.terminate();data.passed?resolve(data):reject(new Error(data.error));};w.postMessage({coordinates:file,attributes,expectedVersion:version});}); for (const [version,label] of [['v6.2-pre','web-pre2'],['v6.3-pre','web-pre3']]) { const converted=await new Promise((resolve,reject)=>{const w=new Worker('/examples/web-host/converter-worker.js',{type:'module'}); const t=setTimeout(()=>{w.terminate();reject(new Error('convert timeout'));},30000);w.onerror=e=>{clearTimeout(t);w.terminate();reject(new Error(e.message));}; w.onmessage=({data})=>{if(data.type==='error'){clearTimeout(t);w.terminate();reject(new Error(data.message));} if(data.type==='complete'){clearTimeout(t);w.terminate();resolve(data);}};w.postMessage({type:'convert',file:new File([source],'palette.las'),formatVersion:version});}); for (const [suffix,file] of [['oct',converted.file],['octattrs',converted.attributesFile]]) {const response=await fetch('http://127.0.0.1:8767/'+label+'.'+suffix,{method:'POST',body:file});if(!response.ok)throw new Error('upload failed');} results.push({version,octBytes:converted.file.size,attrsBytes:converted.attributesFile.size,probe:await probe(converted.file,converted.attributesFile,version)}); } window.__pre3Report={userAgent:navigator.userAgent,results};return window.__pre3Report; }",
+  "scope": "Browser OPFS encoding and Blob metadata validation; full payload decoding checked natively. No visual WebGPU certification.",
+  "console": "Only favicon.ico HTTP 404 from directory listing; no converter/probe errors after filtering fileReadProgress messages.",
+  "validation_provenance": {
+    "dependency_lock_used_sha256": "aaa81d8222ddcbc1ed1a1f7430d8e037483e844662a4f8b317affa8699fb31f4",
+    "current_workspace_lock_sha256": "e1132d3c710d4101f36aa3a1b295a4cea7a6d2fe11e44ec2b226f140b7616b9b",
+    "validation": "Identical Rust feature sources in isolated worktree with HEAD manifests/lock used by benchmark; concurrent dependency updates preserved and excluded from feature commit. No validation claimed for that update.",
+    "dependency_files": {
+      "Cargo.lock": {
+        "benchmark_head_sha256": "aaa81d8222ddcbc1ed1a1f7430d8e037483e844662a4f8b317affa8699fb31f4",
+        "workspace_at_close_sha256": "949f352d1e9bb63aa1d337f82ac799eab3fd33f38bbe5584e90a12dfe86e7106"
+      },
+      "Cargo.toml": {
+        "benchmark_head_sha256": "701b54e68c3ca02f2f5b92806c4738505f263330dfaaa2159406d5d3b1924ea5",
+        "workspace_at_close_sha256": "19025e1ace01c34fd23d5615449e03866235e7bd91ccfd5819c5c5d61d15cf34"
+      },
+      "crates/viewer_render_wgpu/Cargo.toml": {
+        "benchmark_head_sha256": "bfc709fca2d789768bd35664c89f10f6d7af57a983858268f67cd1307cecb1f4",
+        "workspace_at_close_sha256": "1d657082eda08026f5904232e337f3d1f3d7fa9a9eb6235ee0e4bdb4e15f55dd"
+      }
+    }
+  },
+  "fixture_base_generator": "import struct\nfrom pathlib import Path\nn=4096\nstate=0x12345678\npositions=[]\nfor i in range(n):\n p=[]\n for axis in range(3):\n  state=(state*1664525+1013904223)&0xffffffff\n  cell=(state>>28)%4\n  state=(state*1664525+1013904223)&0xffffffff\n  p.append(round((cell+state/0xffffffff*0.01)/4*1000000))\n positions.append(p)\nh=bytearray(227);h[:4]=b'LASF';h[24:26]=bytes([1,2]);struct.pack_into('<H',h,94,227);struct.pack_into('<I',h,96,227);h[104]=2;struct.pack_into('<H',h,105,26);struct.pack_into('<I',h,107,n);struct.pack_into('<I',h,111,n);struct.pack_into('<3d',h,131,*([1e-6]*3))\nfor axis in range(3):struct.pack_into('<2d',h,179+axis*16,max(p[axis] for p in positions)*1e-6,min(p[axis] for p in positions)*1e-6)\nwith Path('target/pre2-browser-check/clustered.las').open('wb') as f:\n f.write(h)\n for i,p in enumerate(positions):f.write(struct.pack('<3iHBBbBH3H',*p,i%65536,9,1,0,0,0,(i&255)*257,((i>>8)&255)*257,23*257))\n",
+  "fixture_palette_transform": "For each of 4096 LAS format-2 rows: state=(1664525*state+1013904223)&0xffffffff starting 0x76543210; palette=(state>>24)%8; intensity:u16=palette*431 at record+12; RGB16=(palette*7123,65535-palette*7123,palette*3961) at record+20. Base generator supplies positions/header.",
+  "artifacts": {
+    "pkg/viewer_wasm_bg.wasm": {
+      "bytes": 1709975,
+      "sha256": "ec8ebc10e65c9d69b6ae2bd73a936e80b43e49d348bac1b52f655183745927b2"
+    },
+    "target/pre3-browser-check/palette.las": {
+      "bytes": 106723,
+      "sha256": "4a0ff03e449aed79ec14e58e1d46509ab7d236cdbb84d3529e2a7a1e9f0cdcbc"
+    },
+    "target/pre3-browser-check/web-pre2.oct": {
+      "bytes": 55715,
+      "sha256": "6fa7e2fb5f6431f04072bd411be1fdf6e2302f9521f3f1195c77ae3a10e48290"
+    },
+    "target/pre3-browser-check/web-pre2.octattrs": {
+      "bytes": 25441,
+      "sha256": "10d290780e804a4e2b7a5c55b6de50d06db2cd024f36b8744166cf3fed338ca5"
+    },
+    "target/pre3-browser-check/web-pre3.oct": {
+      "bytes": 55715,
+      "sha256": "2b3a270aec3236e4d8b57ee4dd2f149fe7b127c12b86979c8e37b04f2c40fac8"
+    },
+    "target/pre3-browser-check/web-pre3.octattrs": {
+      "bytes": 6486,
+      "sha256": "e210c9e1a8bcd10556fe438581bcb2fd3fc84a77b008f18ca914116e1c4d3b1e"
+    }
+  },
+  "native_read_checks": {
+    "web-pre2": {
+      "stdout": "rep=1 mode=reconstruct format_version=v6.2-pre header_envelope=1 oct_bytes=55715 attrs_bytes=25441 open_ms=0.169 attach_ms=0.005 decoded_estimate_bytes=212304 max_block_estimate_bytes=28525 budget_estimate_bytes=212304 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=536870912 constant_payloads=0 dictionary_payloads=0 load_ms=0.927 verify_ms=0.238 full_ms=1.361 blocks=16 points=4160 checksum=23f8096fa9f433c5\n",
+      "metrics": [
+        {
+          "rep": 1,
+          "mode": "reconstruct",
+          "format_version": "v6.2-pre",
+          "header_envelope": 1,
+          "oct_bytes": 55715,
+          "attrs_bytes": 25441,
+          "open_ms": 0.169,
+          "attach_ms": 0.005,
+          "decoded_estimate_bytes": 212304,
+          "max_block_estimate_bytes": 28525,
+          "budget_estimate_bytes": 212304,
+          "budget_basis": "point_struct_plus_raw_block_payloads",
+          "budget_bytes": 536870912,
+          "constant_payloads": 0,
+          "dictionary_payloads": 0,
+          "load_ms": 0.927,
+          "verify_ms": 0.238,
+          "full_ms": 1.361,
+          "blocks": 16,
+          "points": 4160,
+          "checksum": "23f8096fa9f433c5"
+        }
+      ]
+    },
+    "web-pre3": {
+      "stdout": "rep=1 mode=reconstruct format_version=v6.3-pre header_envelope=1 oct_bytes=55715 attrs_bytes=6486 open_ms=0.111 attach_ms=0.004 decoded_estimate_bytes=212304 max_block_estimate_bytes=28525 budget_estimate_bytes=212304 budget_basis=point_struct_plus_raw_block_payloads budget_bytes=536870912 constant_payloads=96 dictionary_payloads=24 load_ms=0.658 verify_ms=0.160 full_ms=0.952 blocks=16 points=4160 checksum=23f8096fa9f433c5\n",
+      "metrics": [
+        {
+          "rep": 1,
+          "mode": "reconstruct",
+          "format_version": "v6.3-pre",
+          "header_envelope": 1,
+          "oct_bytes": 55715,
+          "attrs_bytes": 6486,
+          "open_ms": 0.111,
+          "attach_ms": 0.004,
+          "decoded_estimate_bytes": 212304,
+          "max_block_estimate_bytes": 28525,
+          "budget_estimate_bytes": 212304,
+          "budget_basis": "point_struct_plus_raw_block_payloads",
+          "budget_bytes": 536870912,
+          "constant_payloads": 96,
+          "dictionary_payloads": 24,
+          "load_ms": 0.658,
+          "verify_ms": 0.16,
+          "full_ms": 0.952,
+          "blocks": 16,
+          "points": 4160,
+          "checksum": "23f8096fa9f433c5"
+        }
+      ]
+    }
+  }
+}

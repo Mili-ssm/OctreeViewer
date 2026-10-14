@@ -460,3 +460,11 @@ Belvedere completo los payloads vigentes ocupan 610.586.795 B; los streams exper
 cabeceras ocupan 439.593.178 / 341.724.528 B. No son archivos `.octattrs` compatibles. El
 diccionario conjunto aumenta tamaño en Outer Banks y la sintética y acopla consultas selectivas.
 El informe conserva CPU, cardinalidad, hashes, limitaciones y siguientes candidatos físicos.
+
+## Integración física v6.3-pre — 14-10-2026
+
+Los codecs constante/diccionario por columna ya producen parejas válidas, con fallback y
+lectura selectiva. Tres conversiones alternadas por revisión en cuatro muestras confirman
+checksums equivalentes. Belvedere baja de 1.590.761.099 a 1.419.356.066 B (10,78 %); la
+conversión y lectura caliente son más lentas. Ver [informe completo](STORAGE_V6_PRE3_BENCH.md),
+con rangos, hashes, interoperabilidad OPFS/Blob y alcance de la validación de dependencias.

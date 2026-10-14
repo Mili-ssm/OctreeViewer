@@ -6,6 +6,10 @@ use thiserror::Error;
 pub enum BlockCodec {
     None = 0,
     Lz4 = 1,
+    /// One complete attribute tuple repeated for every row (pre3 only).
+    Constant = 2,
+    /// Local attribute palette and bitpacked row IDs (pre3 only).
+    Dictionary = 3,
 }
 
 impl TryFrom<u8> for BlockCodec {
@@ -15,6 +19,8 @@ impl TryFrom<u8> for BlockCodec {
         match value {
             0 => Ok(Self::None),
             1 => Ok(Self::Lz4),
+            2 => Ok(Self::Constant),
+            3 => Ok(Self::Dictionary),
             _ => Err(CodecError::UnsupportedCodec(value)),
         }
     }
@@ -23,8 +29,8 @@ impl TryFrom<u8> for BlockCodec {
 /// One block after selecting the smaller of its raw and LZ4 representations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodedBlock {
-    codec: BlockCodec,
-    bytes: Vec<u8>,
+    pub(crate) codec: BlockCodec,
+    pub(crate) bytes: Vec<u8>,
 }
 
 impl EncodedBlock {
@@ -85,6 +91,9 @@ pub fn decompress_block(
         return Ok(output);
     }
 
+    if codec != BlockCodec::Lz4 {
+        return Err(CodecError::UnsupportedCodec(codec as u8));
+    }
     let mut output = Vec::new();
     output
         .try_reserve_exact(uncompressed_size)

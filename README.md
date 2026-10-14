@@ -9,10 +9,11 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 
 - El formato de trabajo vigente es **v5 definitivo** (`OCTVFRM1`, revisión 0), separado en `.oct` (coordenadas y jerarquía) y
   `.octattrs` (RGB y atributos numéricos). Se lee y escribe v5; hay que regenerar archivos v1–v4 y v5 provisionales (`OCTVWFRM`) desde sus fuentes.
-- Están implementados **`v6.1-pre` y `v6.2-pre` optativos**. Pre1 añade deltas; pre2 serializa
+- Están implementados **`v6.1-pre`, `v6.2-pre` y `v6.3-pre` optativos**. Pre1 añade deltas; pre2 serializa
   ocupación en arrays por profundidad dentro de cada bloque, con registros de 6 bytes y residuales
   exactos. Se elige el menor payload tras LZ4, con fallback raw/delta. V5 sigue predeterminado;
-  v6 final y pre3 permanecen rechazados.
+  pre3 añade constantes/diccionarios exactos por columna, con fallback y lectura selectiva.
+  V6 final y pre4 permanecen rechazados.
 - La conversión admite LAS/LAZ y EPT local. La demo web admite carga progresiva por bloques,
   color por RGB o componente numérico, cámara orbital y modo pájaro.
 - La ruta LOD voxelizada usa celdas diádicas enteras sin solapamiento entre generaciones. El
@@ -77,11 +78,14 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    leer. La memoria del prototipo no decide el layout: se priorizan bytes/I/O y CPU de reconstrucción.
    [Especificación pre2](crates/viewer_format/FORMAT_V6_PRE2.md). El piloto Belvedere pre2 ocupa
    1.590.761.099 B, 802.736 B menos que pre1 (0,0504 %), con 80 bloques de ocupación. Es una
-   conversión por formato y tres lecturas BFS; faltan conversiones pre2 alternadas y más corpus.
+   conversión por formato y tres lecturas BFS; la serie repetida pre2/pre3 siguiente amplía ese piloto.
    El experimento de [diccionarios de atributos](docs/ATTRIBUTE_DICTIONARY_BENCH.md) reduce los
    streams de Belvedere un 28,00 % por columna y un 44,03 % por combinación completa, contando
-   cabeceras. Esta última acopla las lecturas y aumenta tamaño en dos muestras: priorizar codecs
-   independientes y medir paletas RGB compartidas antes de integrar otra revisión.
+   cabeceras. Esta última acopla las lecturas y aumenta tamaño en dos muestras: se priorizaron
+   codecs independientes. Las paletas RGB compartidas siguen pendientes.
+   Ya están integrados en [pre3](docs/STORAGE_V6_PRE3_BENCH.md): la pareja Belvedere baja
+   un 10,78 % con filas exactas y consultas independientes. Conversión y lectura caliente son
+   más lentas; faltan caché fría/remota, RSS y más corpus.
    Su contrato local no resuelve grilla física ni CRS entre nubes; ver las tareas siguientes.
    La versión del formato en disco, la versión de esa representación lógica y la versión/algoritmos
    del renderer son contratos distintos. Caras expuestas/agrupadas y transiciones entre LOD son
@@ -109,9 +113,10 @@ cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-vers
 
 La conversión produce una pareja v5 definitiva. Las muestras versionadas se han regenerado;
 los datasets locales provisionales deben reconvertirse. Para ensayar las revisiones experimentales,
-usar `--format-version v6.1-pre` o `--format-version v6.2-pre` en lugar de `v5`. Se rechazan las versiones sin backend antes
+usar `--format-version v6.1-pre`, `--format-version v6.2-pre` o `--format-version v6.3-pre`
+en lugar de `v5`. Se rechazan las versiones sin backend antes
 de escribir y los manifiestos de checkpoint anteriores a V5. `v6.N-pre` identifica revisiones
-exactas de desarrollo; se implementan pre1/pre2, no `v6` final.
+exactas de desarrollo; se implementan pre1/pre2/pre3, no `v6` final.
 
 La pareja contiene:
 
@@ -138,7 +143,7 @@ archivos no es atómica; el conversor valida candidatos y publica atributos ante
 | Área | Responsabilidad | Límite relevante |
 | --- | --- | --- |
 | `viewer_core` | Geometría, jerarquía, LOD, caché y contratos compartidos. | El índice residente y la memoria estimada no equivalen a RSS. |
-| `viewer_format` | V5 y v6 pre1/pre2, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
+| `viewer_format` | V5 y v6 pre1/pre2/pre3, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
 | `viewer_convert` | Conversión LAS/LAZ con spools/checkpoints y EPT local. | EPT remoto, binary/zstandard y checkpoints EPT no están soportados. |
 | `viewer_render_wgpu` | Cámara, voxelización, buffers GPU, HZB y presentación. | Los presupuestos propios no representan toda la VRAM; la GPU puede reservar recursos fuera del control del renderer. |
 | `viewer_wasm` | Worker, carga LOD y conversión web en dos pasadas. | Lecturas por bloque síncronas; convertir fuentes de cientos de GB en navegador no es requisito. |
@@ -153,7 +158,7 @@ render reconstruye posiciones locales `f32`.
 
 | Documento | Contenido vigente |
 | --- | --- |
-| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
+| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) / [pre3](crates/viewer_format/FORMAT_V6_PRE3.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
 | [Benchmarks de almacenamiento](docs/STORAGE_BENCH.md) | Suite repetida: tamaños, escritura, reconstrucción y carga secuencial de hijos. |
 | [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
 | [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
@@ -314,8 +319,9 @@ mayor conversión observada: no hay ahorro grande ni aceleración general demost
 [Streams, archivos y límites](docs/STORAGE_BENCH.md). Pasan 315 tests nativos (3 GPU ignorados),
 fmt/Clippy nativo/WASM, suites del host/runner y Blob/OPFS con Playwright MCP. Sin presentación GPU.
 
-Pendientes de almacenamiento: ampliar perfiles/orden de streams, repetir conversión pre2 en
-Belvedere alternada y extender a Majadas/Albuera, compactar el índice exterior y estudiar un único
+La comparación repetida pre2/pre3 ya está en el [informe pre3](docs/STORAGE_V6_PRE3_BENCH.md).
+Pendientes de almacenamiento: ampliar perfiles/orden de streams y el corpus más allá de
+Belvedere (Majadas/Albuera), compactar el índice exterior y estudiar un único
 array global por profundidad con paginación y grilla/raíces explícitas. Medir siempre bytes finales
 con metadata/atributos y lecturas equivalentes; la memoria nativa queda como optimización separada.
 
@@ -326,10 +332,22 @@ con metadata/atributos y lecturas equivalentes; la memoria nativa queda como opt
 - [x] Escribir/releer streams en tres muestras reales y una sintética, incluido Belvedere
   completo; medir tablas, IDs empaquetados, cabeceras, cardinalidad y CPU con tres repeticiones.
 - [x] Documentar resultados, contraejemplos, coste de acceso selectivo y límites en el
-  [informe](docs/ATTRIBUTE_DICTIONARY_BENCH.md). No cambia el formato publicado ni habilita pre3.
-- [ ] Probar modo constante, bitpacking y diccionario por columna con metadata mínima y fallback;
+  [informe](docs/ATTRIBUTE_DICTIONARY_BENCH.md). El experimento aislado precede a la integración pre3.
+- [ ] Probar bitpacking de enteros por rango y selección de candidatos más barata;
   comparar paleta conjunta RGB8+RGB16 conservando independientes los atributos numéricos.
 - [ ] Ensayar en `.oct` prefijos `first_child` reconstruibles y hojas implícitas; comparar bytes
   finales tras LZ4, CPU y exactitud frente a pre2, por separado y juntos.
 - [ ] Integrar sólo candidatos medidos en una revisión explícita, con CRC/límites, lectura
   selectiva, checkpoints, WASM, CPU/RSS y más corpus. Los tamaños proyectados no son archivos válidos.
+
+## Entrega: atributos físicos v6.3-pre — 14-10-2026
+
+- [x] Añadir codecs constante/diccionario exactos por columna, con fallback raw/LZ4 según bytes
+  finales y sin acoplar columnas ni modificar v5/pre1/pre2.
+- [x] Validar corrupción, límites, tipos/componentes, lectura selectiva, conversión/checkpoints y WASM.
+- [x] Comparar parejas válidas y checksums con tres conversiones alternadas por revisión en cuatro
+  muestras. Belvedere: 1.590.761.099 → 1.419.356.066 B (−10,78 %); conversión mediana
+  62,368 → 68,923 s y lectura residente 7,640 → 9,420 s, con caché caliente.
+- [x] Comprobar OPFS/Blob con Playwright y reconstruir sus payloads nativamente, incluidos
+  24 diccionarios y 96 constantes. [Informe, límites y dependencias](docs/STORAGE_V6_PRE3_BENCH.md).
+- [ ] Medir RSS y caché fría/remota; extender corpus y seguir las paletas RGB/topología pendientes.

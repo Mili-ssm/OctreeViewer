@@ -20,6 +20,7 @@ pub(crate) enum StorageLayout {
     V5,
     V6Pre1,
     V6Pre2,
+    V6Pre3,
 }
 
 impl StorageLayout {
@@ -28,6 +29,7 @@ impl StorageLayout {
             crate::FormatVersion::V5 => Ok(Self::V5),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 1 => Ok(Self::V6Pre1),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 2 => Ok(Self::V6Pre2),
+            crate::FormatVersion::V6Pre(revision) if revision.get() == 3 => Ok(Self::V6Pre3),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -37,6 +39,7 @@ impl StorageLayout {
             Self::V5 => crate::FormatVersion::V5,
             Self::V6Pre1 => crate::FormatVersion::V6_PRE1,
             Self::V6Pre2 => crate::FormatVersion::V6_PRE2,
+            Self::V6Pre3 => crate::FormatVersion::V6_PRE3,
         }
     }
 
@@ -45,6 +48,7 @@ impl StorageLayout {
             Self::V5 => INDEX_MAGIC,
             Self::V6Pre1 => b"OCTVI61P",
             Self::V6Pre2 => b"OCTVI62P",
+            Self::V6Pre3 => b"OCTVI63P",
         }
     }
 
@@ -53,6 +57,7 @@ impl StorageLayout {
             Self::V5 => FOOTER_MAGIC,
             Self::V6Pre1 => b"OCTVE61P",
             Self::V6Pre2 => b"OCTVE62P",
+            Self::V6Pre3 => b"OCTVE63P",
         }
     }
 }
@@ -92,11 +97,19 @@ pub(crate) fn attribute_payload_size(
         .ok_or(FormatError::BlockSizeOverflow)
 }
 
-fn primitive_width(data_type: AttributeDataType) -> u64 {
+pub(crate) fn primitive_width(data_type: AttributeDataType) -> u64 {
     match data_type {
         AttributeDataType::U8 | AttributeDataType::I8 => 1,
         AttributeDataType::U16 | AttributeDataType::I16 => 2,
         AttributeDataType::U32 | AttributeDataType::I32 | AttributeDataType::F32 => 4,
         AttributeDataType::U64 | AttributeDataType::I64 | AttributeDataType::F64 => 8,
     }
+}
+
+/// One complete row of a typed column, including all components.
+pub(crate) fn attribute_tuple_width(
+    descriptor: &viewer_core::AttributeDescriptor,
+) -> Result<usize, FormatError> {
+    let width = primitive_width(descriptor.data_type()) * u64::from(descriptor.component_count());
+    usize::try_from(width).map_err(|_| FormatError::SizeOutOfRange(width))
 }

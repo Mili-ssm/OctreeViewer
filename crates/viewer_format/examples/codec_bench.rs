@@ -69,6 +69,7 @@ fn measure(name: &str, payload: &[u8]) {
             viewer_format::BlockCodec::Lz4 => {
                 lz4_flex::block::decompress(encoded.bytes(), payload.len()).unwrap()
             }
+            _ => unreachable!("compress_block emits only raw/LZ4"),
         };
         decompression_time += started.elapsed();
         assert_eq!(black_box(decoded), payload);

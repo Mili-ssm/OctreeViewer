@@ -488,7 +488,10 @@ pub(crate) fn prepare_point_block_for_version(
                 (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
             }
         };
-    if layout == StorageLayout::V6Pre2 && point_count != 0 && u32::try_from(point_count).is_ok() {
+    if matches!(layout, StorageLayout::V6Pre2 | StorageLayout::V6Pre3)
+        && point_count != 0
+        && u32::try_from(point_count).is_ok()
+    {
         let max_geometry_bytes =
             options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
         for bits in [24, 28] {
@@ -527,7 +530,7 @@ pub(crate) fn prepare_point_block_for_version(
     for color in block.colors() {
         raw.extend_from_slice(&[color.r, color.g, color.b]);
     }
-    append_payload(&raw, &mut bytes, &mut payloads)?;
+    append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
     for column in attributes {
         let length = attribute_payload_size(point_count as u64, column.descriptor())?;
         let length = usize::try_from(length).map_err(|_| FormatError::SizeOutOfRange(length))?;
@@ -535,7 +538,8 @@ pub(crate) fn prepare_point_block_for_version(
         raw.try_reserve_exact(length)
             .map_err(|_| FormatError::AllocationFailed(length))?;
         encode_values(column.values(), &mut raw);
-        append_payload(&raw, &mut bytes, &mut payloads)?;
+        let width = crate::layout::attribute_tuple_width(column.descriptor())?;
+        append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
     Ok(PreparedPointBlock {
         layout,
@@ -663,8 +667,14 @@ fn append_payload(
     raw: &[u8],
     bytes: &mut Vec<u8>,
     payloads: &mut Vec<PayloadDirectoryEntry>,
+    layout: StorageLayout,
+    width: usize,
 ) -> Result<(), FormatError> {
-    let encoded = compress_block(raw);
+    let encoded = if layout == StorageLayout::V6Pre3 {
+        crate::attribute_codec::encode(raw, width)?
+    } else {
+        compress_block(raw)
+    };
     append_encoded_payload(encoded, raw.len(), bytes, payloads)
 }
 

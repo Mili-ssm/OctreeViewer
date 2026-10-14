@@ -60,6 +60,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut reader = FormatReader::new(File::open(&input)?)?;
         let open_ms = millis(open_start.elapsed());
         let stats = reader.block_storage_stats()?;
+        let payloads = reader.block_payload_storage_stats()?;
+        let constant_payloads = payloads
+            .iter()
+            .filter(|p| p.codec == viewer_format::BlockCodec::Constant)
+            .count();
+        let dictionary_payloads = payloads
+            .iter()
+            .filter(|p| p.codec == viewer_format::BlockCodec::Dictionary)
+            .count();
         let attach_start = Instant::now();
         if mode != Mode::Hierarchy && attrs_present {
             reader.attach_attributes(File::open(&attrs_path)?)?;
@@ -85,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into());
         }
         let base = format!(
-            "rep={repetition} mode={} format_version={} header_envelope={} oct_bytes={oct_bytes} attrs_bytes={attrs_bytes} open_ms={open_ms:.3} attach_ms={attach_ms:.3} decoded_estimate_bytes={decoded_estimate} max_block_estimate_bytes={max_block_estimate} budget_estimate_bytes={checked_estimate} budget_basis=point_struct_plus_raw_block_payloads budget_bytes={budget_bytes}",
+            "rep={repetition} mode={} format_version={} header_envelope={} oct_bytes={oct_bytes} attrs_bytes={attrs_bytes} open_ms={open_ms:.3} attach_ms={attach_ms:.3} decoded_estimate_bytes={decoded_estimate} max_block_estimate_bytes={max_block_estimate} budget_estimate_bytes={checked_estimate} budget_basis=point_struct_plus_raw_block_payloads budget_bytes={budget_bytes} constant_payloads={constant_payloads} dictionary_payloads={dictionary_payloads}",
             mode_name(mode),
             reader.format_version(),
             viewer_format::HEADER_ENVELOPE_VERSION,

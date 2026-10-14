@@ -1,6 +1,6 @@
 # Native `.oct` format, version 5 (final)
 
-This document specifies the complete version 5 file format. V5 is the default stable format. The project also supports the separately specified experimental [v6.1-pre](FORMAT_V6_PRE1.md) and [v6.2-pre](FORMAT_V6_PRE2.md). Provisional v5 files (magic `OCTVWFRM`) and older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
+This document specifies the complete version 5 file format. V5 is the default stable format. The project also supports the separately specified experimental [v6.1-pre](FORMAT_V6_PRE1.md), [v6.2-pre](FORMAT_V6_PRE2.md) and [v6.3-pre](FORMAT_V6_PRE3.md). Provisional v5 files (magic `OCTVWFRM`) and older `.oct` versions are not read; regenerate them from their LAS/LAZ source or convert the EPT dataset again.
 
 V5 stores one shared dataset frame, hierarchy, schema and metadata index in the primary `.oct` file. Each block has independent XYZ, display RGB and schema attribute payloads. Native and browser converters emit a separate `.octattrs` companion for RGB and columns. The stream API also supports monolithic storage using the same payload layout. A split primary opens without its companion and supplies neutral RGB `(160,160,160)`.
 
@@ -165,7 +165,7 @@ metadata and directory statistics. Selective consumers need only `OctreeReader`.
 `FormatWriter::{new_for_version,new_split_for_version}` select an output version explicitly;
 unsupported identities fail before either sink is touched. The default constructors select final
 v5. `BlockEncoder` prepares blocks independently of sinks; `FormatBlockEncoder` selects
-v5, v6.1-pre or v6.2-pre. The converter streams `E::PreparedBlock` to a compatible `PreparedOctreeWriter`; it does
+v5, v6.1-pre, v6.2-pre or v6.3-pre. The converter streams `E::PreparedBlock` to a compatible `PreparedOctreeWriter`; it does
 not call a v5 encoding function or impose `Sync` on the writer. The shared layout dispatch now supports v6.1-pre without changing the v5 byte layout; later
 revisions must extend that dispatch explicitly.
 

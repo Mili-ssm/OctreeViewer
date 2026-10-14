@@ -5,6 +5,10 @@ cada columna tipada por separado con raw/LZ4 (`writer.rs`, `append_payload`). La
 pendiente en la preparación de v6. Este trabajo implementa un **benchmark experimental**, no
 un backend publicado ni una revisión pre3. Los archivos existentes y su lectura siguen iguales.
 
+La integración posterior de constantes/diccionarios por columna tiene su propia
+[revisión pre3 y benchmark](STORAGE_V6_PRE3_BENCH.md). Sus archivos válidos y cabeceras mínimas
+se distinguen de los contenedores experimentales medidos aquí.
+
 ## Qué se ha medido
 
 El ejemplo [attribute_dictionary_bench.rs](../crates/viewer_format/examples/attribute_dictionary_bench.rs)

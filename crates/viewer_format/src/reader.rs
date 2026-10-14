@@ -522,7 +522,7 @@ impl<R: Read + Seek> IndexedReader<R> {
     pub fn read_display_colors(&mut self, id: BlockId) -> Result<Vec<ColorRgb>, FormatError> {
         let blocks = Arc::clone(&self.blocks);
         let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
-        let raw = self.read_payload(id, entry, &entry.payloads[1], true)?;
+        let raw = self.read_payload(id, entry, &entry.payloads[1], Some(3))?;
         Ok(raw
             .as_chunks::<3>()
             .0
@@ -535,7 +535,7 @@ impl<R: Read + Seek> IndexedReader<R> {
     pub fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, FormatError> {
         let blocks = Arc::clone(&self.blocks);
         let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
-        let raw = self.read_payload(id, entry, &entry.payloads[0], false)?;
+        let raw = self.read_payload(id, entry, &entry.payloads[0], None)?;
         let mut cursor = SliceCursor::new(&raw);
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
@@ -560,7 +560,13 @@ impl<R: Read + Seek> IndexedReader<R> {
             .get(schema_index as usize)
             .ok_or(FormatError::UnknownAttribute(schema_index))?
             .clone();
-        let raw = self.read_payload(id, entry, &entry.payloads[schema_index as usize + 2], true)?;
+        let width = crate::layout::attribute_tuple_width(&descriptor)?;
+        let raw = self.read_payload(
+            id,
+            entry,
+            &entry.payloads[schema_index as usize + 2],
+            Some(width),
+        )?;
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
         let value_count = count
@@ -597,8 +603,9 @@ impl<R: Read + Seek> IndexedReader<R> {
         id: BlockId,
         block: &BlockDirectoryEntry,
         column: &PayloadDirectoryEntry,
-        is_attribute: bool,
+        attribute_width: Option<usize>,
     ) -> Result<Vec<u8>, FormatError> {
+        let is_attribute = attribute_width.is_some();
         if self.split && is_attribute && self.attributes.is_none() {
             return Err(FormatError::AttributesUnavailable);
         }
@@ -642,6 +649,14 @@ impl<R: Read + Seek> IndexedReader<R> {
             .map_err(|_| FormatError::SizeOutOfRange(column.raw_length))?;
         if column.codec == BlockCodec::None {
             Ok(stored)
+        } else if let Some(width) = attribute_width {
+            crate::attribute_codec::decode(
+                column.codec,
+                &stored,
+                raw_size,
+                width,
+                usize::try_from(self.limits.max_block_bytes).unwrap_or(usize::MAX),
+            )
         } else {
             Ok(decompress_block(
                 column.codec,
@@ -913,7 +928,9 @@ fn parse_index(
         } else {
             GeometryEncoding::RawU32
         };
-        if geometry_encoding == GeometryEncoding::Occupied && layout != StorageLayout::V6Pre2 {
+        if geometry_encoding == GeometryEncoding::Occupied
+            && !matches!(layout, StorageLayout::V6Pre2 | StorageLayout::V6Pre3)
+        {
             return Err(FormatError::MalformedIndex(
                 "geometry encoding not supported in this revision",
             ));
@@ -987,6 +1004,28 @@ fn parse_index(
                 codec: BlockCodec::try_from(cursor.u8()?)?,
                 checksum: cursor.u32()?,
             };
+            if matches!(column.codec, BlockCodec::Constant | BlockCodec::Dictionary) {
+                let width = if payload_index == 1 {
+                    3
+                } else if payload_index > 1 {
+                    let descriptor = &schema[payload_index - 2];
+                    crate::layout::primitive_width(descriptor.data_type())
+                        * u64::from(descriptor.component_count())
+                } else {
+                    0
+                };
+                if layout != StorageLayout::V6Pre3
+                    || payload_index == 0
+                    || point_count < 2
+                    || column.stored_length >= column.raw_length
+                    || (column.codec == BlockCodec::Constant && column.stored_length != width)
+                    || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
+                {
+                    return Err(FormatError::MalformedIndex(
+                        "attribute codec not valid in this revision or column",
+                    ));
+                }
+            }
             if split && payload_index > 0 {
                 if payload_index == 1 {
                     expected_offset = column.offset;
