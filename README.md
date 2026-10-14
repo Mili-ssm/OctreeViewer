@@ -401,3 +401,17 @@ candidatos pre3 y el reemplazo solo cuando reduce bytes almacenados.
 - [ ] Próximo cierre: medir por separado XYZ/RGB/atributo, planos de coordenadas e índice
   exterior; después grupos RGB exactos y selector de candidatos más barato. Incluir CPU/RSS,
   bytes por consulta y corpus adicional antes de otra revisión. HDD/remoto siguen sin medir.
+
+## Medición cerrada: Albuera y Majadas, pre3 frente a pre4 — 14-10-2026
+
+- [x] Convertir completas ambas fuentes SensOFOREST con pre3/pre4, una ejecución por caso,
+  conservando las parejas y hashes. Un worker, división 2, 262.144 puntos/bloque, perfil `perf`.
+- [x] Tres rondas de lectura alternadas por revisión: jerarquía, BFS completa en streaming,
+  solo XYZ y clasificación. Verificar filas/CRC y checksum BFS entre revisiones; medir RSS.
+- [x] Comparar tamaños lógicos y bloques asignados por Btrfs, sin equipararlos a espacio remoto.
+  La lectura residente completa se excluye para evitar presión de RAM; el estado de caché no
+  se controla. Datos y límites publicados, sin tratar una conversión como mediana.
+
+Majadas: pareja −13,62 %, BFS 40,948 → 38,684 s; Albuera: −19,15 %, BFS 68,628 → 59,790 s
+(medianas de tres lecturas). Conversión observada +2,32 % / +4,81 %, N=1; NVMe con caché
+sin controlar. [Informe y evidencia](docs/SENSOFOREST_V6_BENCH.md).
