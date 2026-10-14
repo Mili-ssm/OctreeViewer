@@ -63,10 +63,11 @@ se conservan en los documentos enlazados, no como tareas completadas en esta lis
    pequeñas reduce tamaño conjunto un 10,4 %, 9,8 % y 49,0 %, con costes de CPU/lectura variables;
    no demuestra rendimiento a escala. [Especificación](crates/viewer_format/FORMAT_V6_PRE1.md),
    [contratos y pendientes](docs/STORAGE_V6_PREPARATION.md) y [evidencia](docs/STORAGE_BENCH.md).
-   Un piloto completo de Belvedere ya convirtió ambas versiones, reconstruyó el árbol y leyó hijos
-   tres veces: la pareja v6 sólo bajó 86 KB (0,005 %) y los tiempos fueron equivalentes. Esto
-   descarta asumir que delta-varint ahorra en nubes de alta entropía. Falta repetir conversiones
-   alternando el orden y extender a Majadas/Albuera. Ya existe un prototipo lógico aislado
+   La serie alternada del 14-10-2026 cierra tres conversiones y lecturas por formato en Belvedere:
+   v5/v6 ocupan 1.591.650.185/1.591.563.835 B; conversión mediana 46,505/48,046 s y lectura
+   residente 7,413/7,388 s, con caché caliente en NVMe local. Sólo ahorra 86.350 B (0,0054 %),
+   sin mejora general de velocidad. Falta extender la comparación a Majadas/Albuera y medir
+   memoria conjunta. Ya existe un prototipo lógico aislado
    `OccupiedOctree` en `viewer_core`: arrays de celdas ocupadas por nivel, máscara e índice
    al primer hijo, conteo derivado y coordenadas reconstruidas desde una raíz entera explícita.
    `OccupiedPointBlock` ya asocia hojas con todas las filas y atributos de un bloque y permite

@@ -2,6 +2,8 @@
 
 Protocolo añadido el 13-10-2026 para preparar comparaciones v5/v6. Están soportados v5 definitivo y el experimental v6.1-pre (`OCTVFRM1`, envelope 1); las series provisionales
 se conservan separadas y no certifican el formato final.
+Última serie: [comparación repetida del 14-10-2026](benchmarks/storage-v5-v6-pre1-comparison-2026-10-14.json),
+con Belvedere completo y dos muestras multibloque en NVMe local.
 No confundir reconstrucción del índice persistido con recalcular una jerarquía desde LAS ni con
 construir vóxeles/buffers GPU. El nuevo benchmark no cambia la interfaz web.
 
@@ -205,9 +207,10 @@ pendientes refinamiento/render/picking con v6 en un navegador con GPU operativa.
 
 ## Cierre pendiente para v6
 
-Extender la revisión implementada, ejecutar esta matriz en el corpus acordado
-(Belvedere, Majadas y Albuera además de muestras pequeñas) y comparar calidad/atributos junto a
-bytes y tiempos. La muestra pequeña verifica el instrumento; no demuestra rendimiento a escala.
+Extender la revisión implementada y la matriz repetida a Majadas y Albuera; Belvedere y dos
+muestras pequeñas ya tienen tres conversiones por formato en la serie del 14-10-2026. Comparar
+calidad/atributos junto a bytes y tiempos, y completar memoria. La muestra pequeña verifica el
+instrumento; no demuestra rendimiento a escala.
 La carga progresiva de render requiere además sus pruebas de caché, presupuesto, frontera LOD y
 navegador. Ver [contratos e identificación de versiones](STORAGE_V6_PREPARATION.md).
 
@@ -249,8 +252,8 @@ ambos pueden perder picos breves.
 La pareja Belvedere preexistente fue rechazada por el lector (`ProvisionalFormat`), pese a tener
 tamaños históricos registrados. Para evitar mezclar cabeceras, el baseline se regeneró desde LAZ
 con v5 definitivo; el hash de fuente y hashes de ambos resultados están en el JSON. Esta evidencia
-resuelve un hueco de compatibilidad del corpus local, pero deja pendiente la serie alternada formal
-de tres conversiones por versión y las conversiones v6 de Majadas y Albuera.
+resuelve un hueco de compatibilidad del corpus local. La serie alternada formal de tres conversiones
+por versión se completó el 14-10-2026 (véase abajo); Majadas y Albuera siguen pendientes.
 
 El perfilador `profile_conversion.py` acepta ahora `--format-version` y `--points-per-block` y
 registra el hash de fuente y opciones efectivas en su informe. Reproducir una conversión aislada:
@@ -261,3 +264,94 @@ python3 crates/viewer_convert/benchmarks/profile_conversion.py \
   --workers 1 --divisions 2 --interval-ms 100 --points-per-block 262144 \
   --format-version v6.1-pre
 ```
+
+
+## Comparación repetida v5/v6.1-pre — 14-10-2026
+
+[Informe completo con muestras crudas](benchmarks/storage-v5-v6-pre1-comparison-2026-10-14.json). 18
+conversiones y 54 procesos de lectura completados, tres conversiones por formato y fuente. Orden por
+ronda: v5→v6, v6→v5, v5→v6; operaciones en serie, sin compilación simultánea. Perfil `perf`, un
+worker, subdivisión 2; 10000 puntos/bloque en Outer Banks y 262144 en Belvedere. Presupuesto
+estimado de reconstrucción: 512 MiB y 8192 MiB, respectivamente.
+
+Equipo: AMD Ryzen AI 9 365, 30 GiB de RAM, Linux x86_64. Las salidas están en el NVMe local
+`/dev/nvme0n1p3`, Btrfs con `compress=zstd:1`, no en tmpfs. Tamaños = bytes lógicos completos de
+archivo, incluyendo índices/cabeceras, no bloques físicos ocupados tras compresión Btrfs. Caché sin
+purgar; lecturas posteriores a conversión, validación y hashing. No son lecturas frías ni latencia
+pura del disco. Frecuencia CPU y carga externa sin aislar; el JSON registra carga media
+antes/después de cada suite, fuente/binarios/salidas SHA-256, Git, comandos y todas las muestras.
+
+El código ensayado es `1375474`; un único par de binarios selecciona ambas versiones. La preview
+serializable es **v6.1-pre** (delta-varint con fallback directo). El prototipo
+`OccupiedOctree`/`OccupiedPointBlock` no se serializa y no interviene en estos tamaños/tiempos.
+
+| Fuente | Puntos fuente | Bloques | Pareja v5 (B) | Pareja v6.1-pre (B) | Ahorro neto |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Outer Banks e430 | 111190 | 47 | 2256854 | 2022428 | 10.3873 % |
+| Outer Banks e432 | 149730 | 55 | 3054522 | 2754971 | 9.8068 % |
+| Belvedere | 81682329 | 1343 | 1591650185 | 1591563835 | 0.0054 % |
+
+### Outer Banks e430: tiempos en ms
+
+Cada celda informa **mediana (mínimo–máximo)** de tres procesos.
+
+| Medida | v5 | v6.1-pre |
+| --- | ---: | ---: |
+| Conversión completa | 84.898 (84.017–107.516) | 88.010 (87.316–114.594) |
+| Preparación de bloques/compresión | 21.788 (21.612–31.650) | 25.877 (18.918–37.974) |
+| Escritura ordenada/liberación | 1.807 (1.393–2.157) | 1.581 (1.270–2.152) |
+| Cierre/sync candidatos | 11.114 (10.190–13.955) | 11.049 (10.287–13.167) |
+| Apertura estructural | 0.320 (0.227–0.406) | 0.317 (0.317–0.323) |
+| Carga residente completa | 14.073 (13.542–14.737) | 18.404 (15.259–22.102) |
+| Reconstrucción total con verificación | 18.191 (17.541–18.768) | 23.207 (18.741–29.272) |
+| Lectura progresiva BFS | 14.066 (10.041–20.243) | 20.996 (15.399–21.260) |
+
+### Outer Banks e432: tiempos en ms
+
+Cada celda informa **mediana (mínimo–máximo)** de tres procesos.
+
+| Medida | v5 | v6.1-pre |
+| --- | ---: | ---: |
+| Conversión completa | 105.287 (84.519–113.240) | 99.908 (90.013–151.727) |
+| Preparación de bloques/compresión | 31.200 (21.980–32.158) | 27.443 (25.669–51.055) |
+| Escritura ordenada/liberación | 1.904 (1.624–2.272) | 1.770 (1.650–2.688) |
+| Cierre/sync candidatos | 13.044 (9.255–14.608) | 10.377 (9.057–17.980) |
+| Apertura estructural | 0.311 (0.273–0.364) | 0.332 (0.272–0.404) |
+| Carga residente completa | 15.868 (15.434–28.360) | 21.764 (20.067–23.868) |
+| Reconstrucción total con verificación | 20.407 (20.225–37.678) | 28.525 (24.937–28.545) |
+| Lectura progresiva BFS | 18.987 (16.476–19.882) | 16.825 (16.805–26.251) |
+
+### Belvedere: tiempos en ms
+
+Cada celda informa **mediana (mínimo–máximo)** de tres procesos.
+
+| Medida | v5 | v6.1-pre |
+| --- | ---: | ---: |
+| Conversión completa | 46505.074 (44686.522–46935.079) | 48045.772 (47792.092–49200.170) |
+| Preparación de bloques/compresión | 10487.221 (10486.670–10542.778) | 11635.899 (11634.688–11713.729) |
+| Escritura ordenada/liberación | 347.862 (327.527–373.623) | 420.305 (406.016–423.396) |
+| Cierre/sync candidatos | 616.419 (579.524–1049.614) | 698.219 (682.045–732.344) |
+| Apertura estructural | 4.589 (4.447–7.939) | 4.876 (4.362–7.864) |
+| Carga residente completa | 7412.501 (7380.167–7421.199) | 7387.826 (7348.492–7413.250) |
+| Reconstrucción total con verificación | 10089.966 (10057.764–10098.777) | 10091.456 (10021.586–10101.461) |
+| Lectura progresiva BFS | 6709.543 (6670.204–6738.910) | 6678.187 (6648.610–6711.281) |
+
+Los conteos y checksums lógicos coinciden entre formatos en las seis pasadas de cada modo por
+fuente; además cada formato produce salidas byte a byte deterministas entre sus tres conversiones.
+Reconstrucción residente y BFS usan orden distinto y sus checksums se comparan por modo. Belvedere
+reconstruye 81706211 filas incluidos LOD: `36909ff142199a4e` residente y `0737ca650c6081b4` BFS.
+
+Interpretación: el ahorro de tamaño vuelve a ser 10,39 %/9,81 % en las muestras Outer Banks, pero
+sólo **86350 B (0,0054 %)** en Belvedere. Esta serie cierra la repetición alternada de Belvedere; no
+demuestra una mejora general de velocidad. Los rangos se conservan para no confundir dispersión con
+diferencias de rendimiento. La escritura ordenada incluye liberación de spools, y el cierre incluye
+`sync_all`; ninguna de ambas métricas incluye toda la conversión. No sumar sus medianas como si
+fueran la mediana de un tiempo combinado.
+
+No se midió RSS en esta serie ni hay navegador/GPU/red; las cifras anteriores de memoria siguen
+siendo evidencia separada. Majadas y Albuera permanecen pendientes para v6. Los archivos y logs
+locales están bajo `source_report_root` en el JSON; no se redistribuyen los datasets.
+
+Reproducción: usar el runner `storage_suite.py` descrito arriba con una repetición por invocación y
+directorios nuevos, alternar los formatos en tres rondas y conservar las mismas opciones. El informe
+contiene los 18 comandos exactos y cada reporte original completo.

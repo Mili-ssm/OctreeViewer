@@ -223,6 +223,13 @@ mismo checksum. Es una conversión por versión y tres lecturas por pareja, no u
 repetida de conversiones ni una medición de cámara/GPU. El informe y hashes están en
 [`storage-v6-pre1-belvedere-pilot-2026-10-13.json`](benchmarks/storage-v6-pre1-belvedere-pilot-2026-10-13.json).
 
+La [serie repetida del 14-10-2026](benchmarks/storage-v5-v6-pre1-comparison-2026-10-14.json)
+cierra las tres conversiones alternadas por formato en Belvedere, además de dos muestras pequeñas.
+Con NVMe local y caché caliente, Belvedere conserva el ahorro de 86.350 B (0,0054 %); conversión
+mediana v5/v6 46,505/48,046 s, carga residente 7,413/7,388 s y BFS 6,710/6,678 s. Conteos y
+checksums coinciden; no hay una mejora general de velocidad. No incluye RSS ni el prototipo de
+ocupación, que todavía no se serializa. Rangos y opciones en [el informe](STORAGE_BENCH.md).
+
 ### Decisiones abiertas de grilla común
 
 El formato actual cuantiza por bloque y guarda marco local por dataset; no se debe interpretar como
@@ -253,7 +260,7 @@ Para cerrar v6 faltan:
   del renderer; sólo versionar el archivo si se decide persistir una representación de malla derivada.
 - Extender la conformidad actual a cambios nuevos y al corpus grande; medir límites/picos
   simultáneos de conversión, caché, acumulador e instancias.
-- Completar la comparación formal en Belvedere (conversiones alternadas, al menos tres por formato)
-  y extender a Majadas/Albuera, con calidad y atributos equivalentes; tamaño, escritura,
-  reconstrucción, hijos y memoria. El piloto no muestra ahorro material en Belvedere.
+- Extender a Majadas/Albuera la comparación formal ya completada en Belvedere el 14-10-2026
+  (tres conversiones por formato, orden alternado, lecturas/checksums equivalentes). Completar
+  memoria y mantener calidad/atributos equivalentes. Belvedere sigue sin ahorro material.
 - Validación de caché/frontera LOD y presentación en navegadores con WebGPU operativo.
