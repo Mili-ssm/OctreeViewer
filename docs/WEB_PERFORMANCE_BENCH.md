@@ -1637,5 +1637,35 @@ La salida está en `target/combined-memory-belvedere-4-current/` y el muestreo e
 `target/combined-memory-belvedere-4-current-process-retry.jsonl` (ignorados por Git). Reproducir
 el host con Firefox WebGPU, iniciar el sampler antes de la carga y ejecutar
 `node examples/web-host/probe-cache-camera.mjs INPUT.oct OUTPUT_DIR URL 4`; para el sampler usar
-`--interval 0.25 --seconds 600`. La matriz sigue abierta: faltan rondas actuales comparables para
-Majadas y Albuera, y Belvedere no cerró su objetivo de 4 px.
+`--interval 0.25 --seconds 600`. La matriz sigue abierta: falta una ronda actual comparable para
+Majadas y Belvedere no cerró su objetivo de 4 px. Albuera sí completó 4 px en la ejecución actual
+descrita a continuación.
+
+### Albuera v5 actual a 4 px — 24-10-2026
+
+Se usó la pareja v5 de la conversión actual documentada en [el perfil de conversión](V5_MEMORY_BENCH.md#conversión-v5-actual-de-albuera-uav--24-10-2026),
+solo coordenadas `.oct` (sin `.octattrs`), Firefox 158.0.1 headless con WebGPU habilitado,
+host local, framebuffer 1282×722, objetivo 4 px y caché configurada de 256 MiB. El perfil de
+proceso empezó antes de abrir el archivo, muestreó el árbol Firefox cada 250 ms y produjo 480
+muestras hasta la salida. El canvas mostró la nube en gris; los dos exports coincidieron con el
+panel y la consola no registró errores.
+
+| Fase | Resultado |
+| --- | --- |
+| Apertura de metadatos | 82 ms |
+| Primer frame grueso | 102 ms |
+| Objetivo 4 px | Completado en 115.379 ms; 746 bloques cargados, 0 pendientes |
+| Lectura única al completar | 276.320.912 B de 6.105.617.040 B |
+| Caché decodificada | 203.065.440 B de 268.435.456 B; 0 expulsiones y 0 rechazos |
+| Corte visible | 568 bloques, 12.673.149 puntos fuente, 17.085 vóxeles |
+| Fase de cámara | Cambio reconocido; terminó tras 10 s con 750 bloques cargados y 0 pendientes |
+
+El PSS máximo muestreado del árbol fue **4.453.557.248 B** y el RSS sumado
+**5.254.148.096 B**. El muestreo no garantiza capturar el pico exacto; RSS cuenta páginas
+compartidas varias veces y PSS las reparte. No atribuye esa memoria al runtime, WASM, driver,
+superficies o GPU. Tampoco se toma la ventana breve del probe como benchmark de FPS. Es una
+ejecución por dataset y configuración; no sustituye rondas independientes ni una comparación
+controlada con Belvedere, aunque cierra el objetivo observado de Albuera a 4 px.
+
+Salidas locales ignoradas: `target/combined-memory-albuera-4-current/` y
+`target/combined-memory-albuera-4-current-process.jsonl`.

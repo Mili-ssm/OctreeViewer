@@ -1114,3 +1114,31 @@ Estos contadores sirven para localizar trabajo, no separan CPU de espera ni perm
 a una estructura. El smoke LAS pequeño de perfilador confirma la presencia del esquema; el fixture
 recursivo del conversor ejercita lectura de spools, particionado y escritura LOD. No se reporta una
 mejora de rendimiento con esta instrumentación.
+
+## Conversión v5 actual de Albuera UAV — 24-10-2026
+
+Una conversión desde la fuente original verificada (MD5 `71ff22c046d6eb83c371791f680bea13`,
+4.305.484.789 B; SHA-256 `071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f`) con el
+código actual, perfil `perf`, un worker, divisiones 2, bloques de 262.144 puntos, formato v5 y
+error máximo predeterminado 0,01. Se reconstruyó `real_dataset_bench` desde esta revisión; SHA-256
+del ejecutable `419ef6da60417e6a77543abc4f2573daf51c66b9a3a5fbad9f571fd308d1b351`. El presupuesto
+controlado estimado informado por el conversor fue 71.020.864 B; es un modelo propio, no RSS.
+
+El proceso finalizó correctamente en **354,4 s**, con **508.809.556 puntos**. Produjo un `.oct` de
+6.105.617.040 B y un `.octattrs` de 7.561.226.723 B (13.666.843.763 B en total). SHA-256:
+`76ff300bbae2760ae321889cebec87265b868bb03173d4484a27368d6fa72e5a` y
+`1c608875cdc999af1e22a99527c0317d77125f6d6ef2082863d1a5bc8676b645`, respectivamente.
+
+| Fase | Tiempo (s) | RSS pico muestreado (MiB) | Temporales lógicos pico muestreado (B) |
+| --- | ---: | ---: | ---: |
+| Planificación espacial | 242,3 | 49,4 | 27.432.684.346 |
+| Escritura de bloques | 74,7 | 92,4 | 20.874.006.459 |
+| Validación de salida | 36,5 | 104,2 | 13.666.843.763 |
+| Proceso completo | 354,4 | 104,1 | 27.432.684.346 |
+
+Un worker validó los 8.437 bloques y 508.989.347 puntos serializados de salida. El contador de
+crecimiento lógico de temporales sumó 143.465.205.842 B; cuenta deltas positivos entre muestras,
+no bytes de disco ni I/O físico. El muestreo cada 100 ms puede omitir picos breves y algunas
+muestras quedaron fuera de los límites exactos de fase. Es una ejecución, no una nueva mediana ni
+una comparación controlada con la base de octubre. `target/albuera-current-v5/run-2/report.json`
+conserva el informe y los samples (salida local ignorada por Git).
