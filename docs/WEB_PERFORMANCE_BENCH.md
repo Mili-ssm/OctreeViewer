@@ -1606,9 +1606,61 @@ añadir `http://127.0.0.1:8767/examples/web-host/index.html 8` tras `OUTPUT_DIR`
 El benchmark nativo usa `voxel_build_bench INPUT.oct 3 256 TARGET_PIXELS 1`.
 Salidas brutas ignoradas: `target/combined-memory-additive-timed/`,
 `target/combined-memory-belvedere-8/` y `target/combined-memory-*-native.json`.
-Quedan pendientes rondas independientes, Additive ramificado representativo, atribución
-del pico y medición de asignaciones transitorias del viewer/GPU antes de cambiar la
-política de acumulación.
+Al cerrar esa primera tanda quedaban pendientes rondas independientes, Additive ramificado
+representativo, atribución del pico y medición de asignaciones transitorias del viewer/GPU.
+
+### Repeticiones y comparación del pico conjunto — 24-10-2026
+
+Se repitió la carga/cámara con perfiles Firefox 158.0.1 headless frescos, mismo `.oct`, host,
+1282×722, 256 MiB de caché decodificada y muestreo de proceso pedido cada 250 ms. Las repeticiones
+de Belvedere usaron Firefox WebGPU sin sidecar; la de control desactivó `browser.cache.disk.enable`
+y `browser.cache.memory.enable`, igual que la primera ronda. Dos ejecuciones exploratorias previas
+dejaron la caché HTTP en su valor por defecto. No hubo conversión ni compilación concurrente.
+Los SHA-256 de las entradas `.oct` son `937ce38451c71e11864a51f1fa973c264a18f6ec4b6b561f8cea718b23d9b00b`
+(Additive) y `6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac` (Belvedere).
+El A/B comparó WASM release de `14105d5`
+(`094fe817527404f92eeb622ab46f9c31795d5fe9c3a8d90b13c4a085baa6df5a`) y `3bc5e3d`
+(`0553b709a7bc34168ff8e76a03e17c8c396286b218f8f1494d23f542c83bc6ed`).
+
+Belvedere cerró 8 px, con 389 bloques cargados, 320 visibles, 13.238.581 puntos fuente y cero
+pendientes. Las tres repeticiones con el planner actual reportaron `targetLodMs` de 249.480,
+250.631 y 251.544 ms. Cada export de cámara reconoció el cambio y conservó 320 bloques; la
+captura revisada mostró la nube y no hubo errores de consola. Additive cerró 4 px en las dos
+repeticiones (3 bloques, 8.884 puntos fuente y cero pendientes). Es una comprobación de estado,
+no una comparación de rendimiento.
+
+| Caso | Fase / cortes | Caché decodificada B | Modelo builder B | Capacidad WASM B | GPU solicitado B | PSS cercano a export B | Máximo árbol observado PSS / RSS B |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Additive, repetición 1 | inicial → cámara | 142.240 | 34.540.824 → 34.539.312 | 2.949.120 | 15.130.012 → 15.129.976 | 704.998.400 → 779.696.128 | 875.324.416 / 1.669.693.440 |
+| Additive, repetición 2, caché HTTP desactivada | inicial → cámara | 142.240 | 34.540.824 → 34.539.312 | 2.949.120 | 15.130.012 → 15.129.976 | 708.431.872 → 778.717.184 | 840.981.504 / 1.637.081.088 |
+| Belvedere, planner anterior a `3bc5e3d` | inicial → cámara | 211.910.672 | 34.420.536 | 225.705.984 | 15.097.804 | 2.411.982.848 → 3.559.677.952 | 3.559.677.952 / 4.380.217.344 |
+| Belvedere, planner actual, 3 perfiles (2 caché HTTP predeterminada, 1 desactivada) | inicial → cámara | 211.910.672 | 34.420.536 | 223.608.832 | 15.097.804 | 2.351.428.608–2.382.524.416 → 3.472.961.536–3.488.402.432 | 3.472.961.536–3.488.402.432 / 4.282.552.320–4.302.405.632 |
+
+En el export final todos los cortes de Belvedere mostraron 5.140 vóxeles antes de cámara y 4.752
+después; el trabajo acumulado fue igual al del registro de una ejecución (389 bloques y
+1.134.496.852 puntos fuente de construcción). Los valores `cache`, builder, instancias y recursos
+GPU solicitados quedaron iguales. La cámara elevó el PSS próximo al export de unos 2,35–2,41 GB
+a 3,47–3,56 GB; en Additive los dos exports estuvieron alrededor de 0,70–0,78 GB.
+
+El contraste con la primera ejecución Belvedere archivada (PSS máximo 1.024.223.232 B, RSS
+1.818.705.920 B) no se reprodujo: una ejecución nueva del **planner anterior** llegó a
+3.559.677.952 B PSS, y tres del actual llegaron a 3.472.961.536–3.488.402.432 B. El A/B no
+apoya que `3bc5e3d` explique por sí solo el salto. Los resultados siguen mostrando una variación
+grande entre sesiones con el mismo corpus/configuración; su causa queda abierta.
+
+Se capturó `smaps` del proceso raíz Firefox al cruzar 2.500 MiB PSS en dos repeticiones actuales
+y en el A/B con el planner anterior. En las tres, entre 2.476.720 y 2.504.188 KiB RSS/PSS del
+proceso raíz estaban en mapeos anónimos sin nombre semántico. Esto no permite repartirlos entre
+JS, WASM, WebGPU, driver u otros componentes. El muestreador periódico puede perder picos breves y
+el `smaps` puntual introduce coste propio; no es una medición del pico exacto ni de VRAM. El heap
+JS del worker sigue sin estar disponible.
+
+Las salidas ignoradas quedan en `target/combined-memory-additive-repeat-{20261024,2-20261024}/`,
+`target/combined-memory-belvedere-8-repeat-{20261024,2-20261024,3-20261024}/` y
+`target/combined-memory-belvedere-8-ab-before-20261024/`; incluyen exports, muestras de proceso,
+capturas y, en tres casos, `process-memory.root-smaps.txt`. La medida de memoria no determina si
+conviene mantener un acumulador persistente. Siguen abiertos Additive ramificado representativo,
+atribución del PSS y instrumentación que capture asignaciones transitorias del viewer/GPU.
 
 ### Belvedere v5 a 4 px: refinamiento bajo caché — 24-10-2026
 
