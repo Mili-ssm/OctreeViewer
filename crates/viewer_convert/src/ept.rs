@@ -168,7 +168,10 @@ pub(super) fn convert(
     )
     .map_err(|_| ConvertError::InvalidEpt("bounds are invalid".to_owned()))?;
     let frame = CoordinateFrame::new(bounds.min())?;
-    let counts = read_hierarchy(root)?;
+    // Even an empty EPT incurs at least one point of staging capacity and fixed overhead
+    // in the existing estimate. Reject impossible budgets before parsing hierarchy pages.
+    check_ept_memory_budget(1, 0, 0, options.max_memory_budget_bytes())?;
+    let counts = read_hierarchy(root, options.max_memory_budget_bytes())?;
     let root_key = EptKey {
         depth: 0,
         x: 0,
@@ -200,12 +203,14 @@ pub(super) fn convert(
             manifest.points
         )));
     }
-    let mut nodes = Vec::with_capacity(counts.len());
+    // Grow these planning structures only as each node passes the memory preflight below.
+    let mut nodes = Vec::new();
     let mut expected_format: Option<las::point::Format> = None;
     let mut schema = None;
     let mut omitted = Vec::new();
     let mut next_block = 0_u64;
     let mut all_blocks = Vec::new();
+    let mut memory_estimate = 0_u64;
     for (index, (&key, &count)) in counts.iter().enumerate() {
         let node_bounds = cell_bounds(bounds, key)?;
         let file_path = root.join("ept-data").join(format!("{}.laz", key.name()));
@@ -250,9 +255,24 @@ pub(super) fn convert(
         let record_length = point_format.map_or(34, |format| usize::from(format.len()).max(1));
         let point_limit = input_batch_point_limit(options.points_per_block(), record_length);
         let block_count = count.div_ceil(point_limit);
-        if next_block + block_count > MAX_BLOCKS {
-            return Err(ConvertError::TooManyBlocks(next_block + block_count));
+        let planned_block_count = next_block
+            .checked_add(block_count)
+            .ok_or(ConvertError::SizeOverflow)?;
+        if planned_block_count > MAX_BLOCKS {
+            return Err(ConvertError::TooManyBlocks(planned_block_count));
         }
+        memory_estimate = check_ept_memory_budget(
+            input_batch_point_limit(
+                options.points_per_block(),
+                expected_format.map_or(record_length, |format| usize::from(format.len())),
+            ),
+            u64::try_from(nodes.len())
+                .map_err(|_| ConvertError::SizeOverflow)?
+                .checked_add(1)
+                .ok_or(ConvertError::SizeOverflow)?,
+            planned_block_count,
+            options.max_memory_budget_bytes(),
+        )?;
         let block_ids = (0..block_count)
             .map(|_| {
                 let id = BlockId::new(next_block);
@@ -321,21 +341,6 @@ pub(super) fn convert(
         Vec::new(),
     )?
     .with_visual_scale(super::visual_scale_for_bounds(bounds)?)?;
-    let memory_estimate = input_batch_point_limit(
-        options.points_per_block(),
-        expected_format.map_or(34, |format| usize::from(format.len())),
-    )
-    .saturating_mul(192)
-    .saturating_add((nodes.len() as u64).saturating_mul(ESTIMATED_EPT_NODE_BYTES))
-    .saturating_add((all_blocks.len() as u64).saturating_mul(ESTIMATED_EPT_BLOCK_BYTES))
-    .saturating_add(16 * 1024 * 1024);
-    if memory_estimate > options.max_memory_budget_bytes() {
-        return Err(ConvertError::MemoryBudgetExceeded {
-            requested: memory_estimate,
-            limit: options.max_memory_budget_bytes(),
-        });
-    }
-
     let mut temporary = create_temporary_pair(output_path)?;
     let file = temporary
         .geometry
@@ -591,11 +596,15 @@ fn point_data_to_block(
     Ok(SourcePointBlock::new(id, positions, colors, attributes))
 }
 
-fn read_hierarchy(root: &Path) -> Result<BTreeMap<EptKey, u64>, ConvertError> {
+fn read_hierarchy(
+    root: &Path,
+    memory_budget_bytes: u64,
+) -> Result<BTreeMap<EptKey, u64>, ConvertError> {
     let hierarchy_dir = root.join("ept-hierarchy");
     let mut counts = BTreeMap::new();
     let mut pages = BTreeSet::new();
     let mut loaded_pages = BTreeSet::new();
+    let mut positive_node_count = 0_u64;
     pages.insert(EptKey {
         depth: 0,
         x: 0,
@@ -642,7 +651,7 @@ fn read_hierarchy(root: &Path) -> Result<BTreeMap<EptKey, u64>, ConvertError> {
                 )));
             }
             if signed_count == -1 {
-                if !pages.insert(key) {
+                if loaded_pages.contains(&key) || !pages.insert(key) {
                     continue;
                 }
                 if pages.len() + loaded_pages.len() + counts.len() > MAX_EPT_NODES {
@@ -650,6 +659,13 @@ fn read_hierarchy(root: &Path) -> Result<BTreeMap<EptKey, u64>, ConvertError> {
                         "hierarchy exceeds the node limit".to_owned(),
                     ));
                 }
+                check_ept_hierarchy_memory_budget(
+                    counts.len(),
+                    pages.len(),
+                    loaded_pages.len(),
+                    positive_node_count,
+                    memory_budget_bytes,
+                )?;
                 continue;
             }
             let count = signed_count as u64;
@@ -659,16 +675,64 @@ fn read_hierarchy(root: &Path) -> Result<BTreeMap<EptKey, u64>, ConvertError> {
                         "conflicting counts for node {key_text}"
                     )));
                 }
-                _ => {}
+                Some(_) => {}
+                None if count > 0 => {
+                    positive_node_count = positive_node_count
+                        .checked_add(1)
+                        .ok_or(ConvertError::SizeOverflow)?;
+                }
+                None => {}
             }
             if counts.len() > MAX_EPT_NODES {
                 return Err(ConvertError::InvalidEpt(
                     "hierarchy exceeds the node limit".to_owned(),
                 ));
             }
+            check_ept_hierarchy_memory_budget(
+                counts.len(),
+                pages.len(),
+                loaded_pages.len(),
+                positive_node_count,
+                memory_budget_bytes,
+            )?;
         }
     }
     Ok(counts)
+}
+
+fn check_ept_memory_budget(
+    point_batch_limit: u64,
+    node_count: u64,
+    block_count: u64,
+    limit: u64,
+) -> Result<u64, ConvertError> {
+    let requested = point_batch_limit
+        .saturating_mul(192)
+        .saturating_add(node_count.saturating_mul(ESTIMATED_EPT_NODE_BYTES))
+        .saturating_add(block_count.saturating_mul(ESTIMATED_EPT_BLOCK_BYTES))
+        .saturating_add(16 * 1024 * 1024);
+    if requested > limit {
+        return Err(ConvertError::MemoryBudgetExceeded { requested, limit });
+    }
+    Ok(requested)
+}
+
+fn check_ept_hierarchy_memory_budget(
+    known_count_nodes: usize,
+    pending_page_nodes: usize,
+    loaded_page_nodes: usize,
+    positive_count_nodes: u64,
+    limit: u64,
+) -> Result<(), ConvertError> {
+    let page_node_count = u64::try_from(pending_page_nodes)
+        .map_err(|_| ConvertError::SizeOverflow)?
+        .checked_add(u64::try_from(loaded_page_nodes).map_err(|_| ConvertError::SizeOverflow)?)
+        .ok_or(ConvertError::SizeOverflow)?;
+    let known_node_count = u64::try_from(known_count_nodes)
+        .map_err(|_| ConvertError::SizeOverflow)?
+        .max(page_node_count);
+    check_ept_memory_budget(1, known_node_count, positive_count_nodes, limit)?;
+    Ok(())
 }
 
 fn validate_schema(schema: &serde_json::Value) -> Result<(), ConvertError> {
@@ -938,5 +1002,60 @@ mod tests {
             convert(&root, &root.join("result.oct"), ConvertOptions::default(), &mut |_| true),
             Err(ConvertError::InvalidEpt(message)) if message.contains("is missing")
         ));
+    }
+
+    #[test]
+    fn rejects_ept_memory_budget_before_planning_all_nodes_or_creating_output() {
+        let root = dir();
+        fs::create_dir_all(root.join("ept-data")).unwrap();
+        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+        write_manifest(&root, "laszip", 2);
+        fs::write(
+            root.join("ept-hierarchy/0-0-0-0.json"),
+            r#"{"0-0-0-0":1,"1-0-0-0":1}"#,
+        )
+        .unwrap();
+        write_laz(&root.join("ept-data/0-0-0-0.laz"), [7.0, 7.0, 7.0]);
+        let output = root.join("result.oct");
+        let options = ConvertOptions::with_memory_budget(1, 0.01, 1).unwrap();
+
+        assert!(matches!(
+            convert(&root, &output, options, &mut |_| true),
+            Err(ConvertError::MemoryBudgetExceeded { limit: 1, .. })
+        ));
+        assert!(!output.exists());
+        assert!(!output_attributes_path(&output).exists());
+    }
+
+    #[test]
+    fn rejects_ept_memory_budget_while_reading_large_hierarchy_page() {
+        let root = dir();
+        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+        write_manifest(&root, "laszip", 0);
+        let mut page = serde_json::Map::new();
+        page.insert("0-0-0-0".to_owned(), serde_json::json!(0));
+        for index in 0..1_500_u32 {
+            let x = index % 32;
+            let y = (index / 32) % 32;
+            let z = index / 1_024;
+            page.insert(format!("5-{x}-{y}-{z}"), serde_json::json!(-1));
+        }
+        fs::write(
+            root.join("ept-hierarchy/0-0-0-0.json"),
+            serde_json::to_vec(&serde_json::Value::Object(page)).unwrap(),
+        )
+        .unwrap();
+        let output = root.join("result.oct");
+        let options = ConvertOptions::with_memory_budget(1, 0.01, 17 * 1024 * 1024).unwrap();
+
+        assert!(matches!(
+            convert(&root, &output, options, &mut |_| true),
+            Err(ConvertError::MemoryBudgetExceeded {
+                limit: 17_825_792,
+                ..
+            })
+        ));
+        assert!(!output.exists());
+        assert!(!output_attributes_path(&output).exists());
     }
 }

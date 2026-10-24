@@ -7,6 +7,8 @@ const MAX_PENDING_REQUESTS = 32;
 /** Creates an embeddable viewer on a host-owned canvas. The canvas is transferred to its worker. */
 export function createViewer(canvas, options = {}) {
     if (!(canvas instanceof HTMLCanvasElement)) throw new TypeError("canvas must be an HTMLCanvasElement");
+    let mode = options.mode ?? "observer";
+    if (mode !== "observer" && mode !== "bird") throw new TypeError("mode must be 'observer' or 'bird'");
     if (!window.Worker || !canvas.transferControlToOffscreen) {
         throw new Error("Web Workers and OffscreenCanvas are required");
     }
@@ -31,7 +33,6 @@ export function createViewer(canvas, options = {}) {
     let pointerMoved = false;
     let pickPending = false;
     let movementSpeed = 1;
-    let mode = options.mode ?? "observer";
     let resolveReady;
     let rejectReady;
     const readyPromise = new Promise((resolve, reject) => {
@@ -39,8 +40,6 @@ export function createViewer(canvas, options = {}) {
         rejectReady = reject;
     });
     const deltas = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
-    if (mode !== "observer" && mode !== "bird") throw new TypeError("mode must be 'observer' or 'bird'");
-
     const emit = (type, detail) => {
         for (const callback of listeners.get(type) ?? []) {
             try {
@@ -146,18 +145,38 @@ export function createViewer(canvas, options = {}) {
         event.preventDefault?.();
         failWorker(event.message || "viewer worker failed", { operation: "worker" });
     };
-    worker.addEventListener("message", onMessage);
-    worker.addEventListener("error", onWorkerError);
-    worker.addEventListener("messageerror", onWorkerError);
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(canvas);
-    window.addEventListener("resize", resize);
-    const offscreen = canvas.transferControlToOffscreen();
-    const [width, height] = framebufferSize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
-    worker.postMessage({
-        type: "init", canvas: offscreen, width, height,
-        colorMode: options.colorMode ?? "rgb", depthShading: options.depthShading ?? true,
-    }, [offscreen]);
+    let resizeObserver = null;
+    let resizeListenerAttached = false;
+    const cleanupInitialization = () => {
+        resizeObserver?.disconnect();
+        if (resizeListenerAttached) window.removeEventListener("resize", resize);
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onWorkerError);
+        worker.removeEventListener("messageerror", onWorkerError);
+        terminateWorker();
+    };
+    try {
+        worker.addEventListener("message", onMessage);
+        worker.addEventListener("error", onWorkerError);
+        worker.addEventListener("messageerror", onWorkerError);
+        const offscreen = canvas.transferControlToOffscreen();
+        const [width, height] = framebufferSize(
+            canvas.clientWidth,
+            canvas.clientHeight,
+            window.devicePixelRatio || 1,
+        );
+        worker.postMessage({
+            type: "init", canvas: offscreen, width, height,
+            colorMode: options.colorMode ?? "rgb", depthShading: options.depthShading ?? true,
+        }, [offscreen]);
+        resizeObserver = new ResizeObserver(resize);
+        resizeObserver.observe(canvas);
+        resizeListenerAttached = true;
+        window.addEventListener("resize", resize);
+    } catch (error) {
+        cleanupInitialization();
+        throw error;
+    }
 
     function pointerDown(event) {
         if (!ready || (event.button !== 0 && event.button !== 2)) return;

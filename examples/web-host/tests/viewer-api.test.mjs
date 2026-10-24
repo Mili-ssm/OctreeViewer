@@ -9,8 +9,12 @@ class FakeCanvas {
     clientWidth = 640;
     clientHeight = 360;
     listeners = new Map();
+    transferError = null;
 
-    transferControlToOffscreen() { return {}; }
+    transferControlToOffscreen() {
+        if (this.transferError) throw this.transferError;
+        return {};
+    }
     getBoundingClientRect() { return { left: 10, top: 20, width: 640, height: 360 }; }
     addEventListener(type, callback) {
         this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]);
@@ -26,6 +30,7 @@ class FakeCanvas {
 
 class FakeWorker {
     static instance;
+    static failInitMessage = false;
     messages = [];
     listeners = new Map();
     terminated = false;
@@ -42,6 +47,9 @@ class FakeWorker {
         target.set(type, (target.get(type) ?? []).filter((item) => item !== callback));
     }
     postMessage(message) {
+        if (message.type === "init" && FakeWorker.failInitMessage) {
+            throw new Error("init postMessage failed");
+        }
         this.messages.push(message);
         if (message.type === "init") queueMicrotask(() => this.send({ type: "ready" }));
         if (message.type === "api") {
@@ -65,10 +73,101 @@ class FakeWorker {
 
 class FakeResizeObserver {
     static instance;
+    static failObserve = false;
     disconnected = false;
     constructor(callback) { this.callback = callback; FakeResizeObserver.instance = this; }
-    observe() {}
+    observe() {
+        if (FakeResizeObserver.failObserve) throw new Error("resize observer failed");
+    }
     disconnect() { this.disconnected = true; }
+}
+
+test("invalid camera mode is rejected before creating a worker", () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker };
+    FakeWorker.instance = undefined;
+    try {
+        assert.throws(() => createViewer(new FakeCanvas(), { mode: "invalid" }), /mode must be/);
+        assert.equal(FakeWorker.instance, undefined);
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+});
+
+for (const failure of [
+    {
+        name: "canvas transfer throws",
+        configure(canvas) { canvas.transferError = new Error("already transferred"); },
+    },
+    {
+        name: "worker initialization postMessage throws",
+        configure() { FakeWorker.failInitMessage = true; },
+    },
+    {
+        name: "resize observer setup throws",
+        expectsObserver: true,
+        configure() { FakeResizeObserver.failObserve = true; },
+    },
+    {
+        name: "window resize listener setup throws",
+        expectsObserver: true,
+        configure() {},
+        failResizeRegistration: true,
+    },
+]) {
+    test(`${failure.name} releases resources acquired during initialization`, () => {
+        const previous = {
+            HTMLCanvasElement: globalThis.HTMLCanvasElement,
+            Worker: globalThis.Worker,
+            ResizeObserver: globalThis.ResizeObserver,
+            window: globalThis.window,
+        };
+        globalThis.HTMLCanvasElement = FakeCanvas;
+        globalThis.Worker = FakeWorker;
+        globalThis.ResizeObserver = FakeResizeObserver;
+        const windowListeners = new Map();
+        globalThis.window = {
+            Worker: FakeWorker,
+            devicePixelRatio: 1,
+            addEventListener(type, callback) {
+                if (failure.failResizeRegistration) throw new Error("resize listener failed");
+                windowListeners.set(type, [...(windowListeners.get(type) ?? []), callback]);
+            },
+            removeEventListener(type, callback) {
+                windowListeners.set(type, (windowListeners.get(type) ?? []).filter((item) => item !== callback));
+            },
+        };
+        FakeWorker.instance = undefined;
+        FakeWorker.failInitMessage = false;
+        FakeResizeObserver.instance = undefined;
+        FakeResizeObserver.failObserve = false;
+        try {
+            const canvas = new FakeCanvas();
+            failure.configure(canvas);
+            assert.throws(
+                () => createViewer(canvas),
+                /already transferred|init postMessage failed|resize observer failed|resize listener failed/,
+            );
+            assert.equal(FakeWorker.instance.terminated, true);
+            assert.ok([...FakeWorker.instance.listeners.values()].every((callbacks) => callbacks.length === 0));
+            assert.ok([...FakeWorker.instance.events.values()].every((callbacks) => callbacks.length === 0));
+            if (failure.expectsObserver) assert.equal(FakeResizeObserver.instance.disconnected, true);
+            else assert.equal(FakeResizeObserver.instance, undefined);
+            assert.equal(windowListeners.get("resize")?.length ?? 0, 0);
+        } finally {
+            FakeWorker.failInitMessage = false;
+            FakeResizeObserver.failObserve = false;
+            Object.assign(globalThis, previous);
+        }
+    });
 }
 
 test("embeddable API converts CSS pick coordinates and disposes its worker resources", async () => {

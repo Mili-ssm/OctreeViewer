@@ -8,7 +8,7 @@ The primary contains structural metadata, including attribute descriptors and fi
 
 All integer fields and floating-point bit patterns are little endian. Offsets and lengths are unsigned 64-bit byte counts. Strings are UTF-8 preceded by a `u32` byte length, without a terminator. A zero length represents an absent optional string. All CRCs use reflected IEEE CRC-32 (polynomial `0xEDB88320`, initial value and final XOR `0xFFFFFFFF`); CRC detects accidental corruption, not malicious modification.
 
-The common header probe recognizes exact version identities; the reader also implements v6 pre1/pre2,
+The common header probe recognizes exact version identities; the reader also implements v6 pre1/pre2/pre3/pre4,
 while final v6 and later revisions remain unsupported.
 See [v6 preparation](../../docs/STORAGE_V6_PREPARATION.md). The finalized envelope deliberately
 rejects provisional v5; regenerate both files together. The incompatible envelope change was
@@ -181,7 +181,7 @@ Payload CRC and decompression checks occur when that payload is requested. Corru
 
 ## Support and evidence
 
-This specification describes v5; the reader also supports the separately specified v6 pre1/pre2.
+This specification describes v5; the reader also supports the separately specified v6 pre1/pre2/pre3/pre4.
 Files marked version 1, 2, 3, 4, or other unimplemented identities are rejected; there is no legacy combined-payload fallback. Regenerate such files from their source LAS/LAZ data or reconvert their EPT source.
 
 The crate's current tests exercise V5 writing and reading, all ten attribute types and floating-point bits, additive and replacement semantics, visual scale, selective payload reads, independent checksums, malformed payload directories, configured limits and empty blocks. These format tests describe local codec behavior; they make no browser rendering or large-dataset performance claim.

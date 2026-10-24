@@ -5,7 +5,7 @@ jerarquía espacial persistente y carga los bloques necesarios para la vista. El
 plazo es explorar fuentes mayores de **500 GB decimales** con memoria acotada. La escala completa
 y cualquier superioridad frente a Potree siguen sin demostrarse.
 
-## Estado actual — 14-10-2026
+## Estado actual — 24-10-2026
 
 - El formato de trabajo vigente es **v5 definitivo** (`OCTVFRM1`, revisión 0), separado en `.oct` (coordenadas y jerarquía) y
   `.octattrs` (RGB y atributos numéricos). Se lee y escribe v5; hay que regenerar archivos v1–v4 y v5 provisionales (`OCTVWFRM`) desde sus fuentes.
@@ -21,10 +21,13 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
   objetivo en píxeles guía la selección; no cambia arbitrariamente el tamaño físico de las celdas.
   Los huecos de la fuente no se rellenan. Este invariante todavía necesita cobertura en todos los
   consumidores de bloques.
-- La migración pendiente a **wgpu/naga 30 y glam 0.34** ya compila en nativo/WASM y pasa
+- La migración a **wgpu/naga 30 y glam 0.34** ya compila en nativo/WASM y pasa
   los checks nativos y readback por software. La validación de navegador sigue parcial por
   pérdida de dispositivo también reproducida con un clear independiente.
   [Cambios de contrato, checks y límites](docs/RENDERER_DEPENDENCIES.md).
+- `createViewer` libera el worker y los recursos registrados si falla la inicialización;
+  EPT rechaza presupuestos estimados inviables al leer la jerarquía y antes de reservar
+  bloques de planificación. Son correcciones locales; no certifican GPU ni un límite RSS.
 - Las métricas de conversión, memoria, LOD y navegador son resultados de ejecuciones concretas,
   con límites de interpretación. No equivalen a límites garantizados ni a objetivos ya cumplidos.
 
@@ -37,9 +40,9 @@ detalla capacidades, límites y propuestas; las entregas cerradas y sus checks s
 | Orden | Trabajo abierto y componentes | Siguiente paso / criterio de cierre |
 | --- | --- | --- |
 | 1 | **Corrección visual y transición LOD** — core, render, WASM. | Retener por región la representación anterior hasta disponer de hijos, sin añadir huecos ni solapamientos. Ya hay [resolución regional para representantes Replacement](docs/REGIONAL_VOXEL_LOD.md): una rama gruesa permite detalle fuera de sus regiones ocupadas; fallback global acotado para payloads dispersos. Falta conservar representación entre generaciones por región y probar cortes mixtos Replacement/Additive con carga lenta/fallida, zoom y movimiento en un dataset real multibloque. Revisar también `sync_visible_blocks`. |
-| 2 | **Validación de navegador** — WASM y host. | Repetir presentación en Chrome/AMD y Firefox, cámara/picking/atributos, escritorio/móvil y recuperación de errores. Confirmar modo pájaro con teclado físico. Readback/picking no cierran la presentación; Chrome/AMD sigue sin presentar incluso un clear independiente en las rondas documentadas. |
+| 2 | **Validación de navegador** — WASM y host. | Repetir presentación en Chrome/AMD y Firefox, cámara/picking/atributos, escritorio/móvil y recuperación de errores. Confirmar modo pájaro con teclado físico. La limpieza de `createViewer` ante fallo síncrono ya tiene regresiones Node; falta comprobar los flujos reales de GPU y recuperación ([evaluación](docs/CODE_ASSESSMENT_2026-10-24.md)). Readback/picking no cierran la presentación; Chrome/AMD sigue sin presentar incluso un clear independiente en las rondas documentadas. |
 | 3 | **Pico conjunto de memoria** — core, render, WASM. | Correlacionar caché decodificada, builder/proyección, instancias, escena anterior, capacidad WASM, RSS/PSS y recursos GPU durante carga y cámara. Incluir Additive real antes de decidir si retener un acumulador; los prefijos medidos no lo justifican por sí solos. |
-| 4 | **Conversión y escala de extremo a extremo** — convert y host. | Completar matriz de primera vista/refinamiento con Belvedere, Majadas y Albuera; Belvedere a 4 px no cierra bajo el caché probado. Separar conversión, apertura, I/O, temporales y memoria. Más de 500 GB y comparación con Potree requieren hardware, calidad y tareas equivalentes. |
+| 4 | **Conversión y escala de extremo a extremo** — convert y host. | Completar matriz de primera vista/refinamiento con Belvedere, Majadas y Albuera; Belvedere a 4 px no cierra bajo el caché probado. Separar conversión, apertura, I/O, temporales y memoria. El rechazo temprano del presupuesto estimado EPT tiene regresiones; falta medir RSS y escala real ([evaluación](docs/CODE_ASSESSMENT_2026-10-24.md)). Más de 500 GB y comparación con Potree requieren hardware, calidad y tareas equivalentes. |
 | 5 | **Requisitos de producto y soporte** — transversal. | Acordar plataformas y mínimos RAM/GPU, dimensiones LAS/LAZ (CRS, flags, Extra Bytes), licencia/compatibilidad y alcance de medición, clasificación, recorte y exportación. Documentar decisiones antes de prometer soporte. |
 | 6 | **Almacenamiento v6: lectura selectiva y transporte** — format y convert. | Extender benchmark XYZ/RGB/columna a 1/2/4 lectores con presupuesto simultáneo, bytes/rangos, CPU/RSS y corpus real. Medir caché fría/HDD/remoto antes de integrar concurrencia o prefetch en el viewer; definir lotes, cancelación y fallos parciales. |
 | 7 | **Siguientes candidatos v6** — core y format. | Perfilar selector de codecs; comparar grupos RGB exactos, bitpacking por rango y resúmenes/diccionarios con los codecs pre3/pre4 en la misma envoltura. Exigir parejas válidas, lectura selectiva, precisión, corrupción, checkpoints y WASM antes de otra revisión incompatible; mantener v6 final rechazado. |
@@ -110,6 +113,9 @@ render reconstruye posiciones locales `f32`.
 
 Punto de entrada para retomar trabajo: [inventario del proyecto](docs/PROJECT_INVENTORY.md).
 Incluye mapa de código, herramientas, cobertura disponible y propuestas de mejora.
+La [evaluación del código del 24-10-2026](docs/CODE_ASSESSMENT_2026-10-24.md) contrasta
+documentación, criterios de desarrollo, checks y próximos pasos; las prioridades activas
+siguen siendo las de este README.
 
 | Documento | Contenido vigente |
 | --- | --- |
