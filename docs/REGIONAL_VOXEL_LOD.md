@@ -205,9 +205,47 @@ Tras recompilar WASM y regenerar `pkg` con este ajuste, Playwright MCP abrió el
 Los bindings y WASM respondieron 200; la consola solo registró un 404 de `favicon.ico`.
 No se pudo repetir la interacción LOD en ese navegador.
 
+### Firefox con archivo multibloque y lectura fallida — 24-10-2026
+
+Se convirtió la muestra LAS versionada de Outer Banks a v5 con bloques de 10.000 puntos:
+149.730 puntos, 55 bloques, pareja local ignorada bajo `target/`. En Firefox 158.0.1
+headless con WebGPU habilitado, el host a 1280×800 cargó el `.oct` sin compañero de
+atributos. La captura mostró la nube gris; durante el refinamiento se observaron 34
+bloques visibles y 4 pendientes a 8 px. Tras llegar a 4 px mostró 40 bloques visibles,
+149.730 puntos y cero pendientes. Un arrastre de cámara cambió la vista capturada sin
+errores de consola. Es observación de presentación en ese entorno, no evidencia de GPU
+física ni una medida de rendimiento repetida.
+
+Para provocar una lectura fallida se copió el `.oct` y se cambió un byte del payload en
+el offset 1.500.000, anterior al índice. El lector informó checksum incorrecto del bloque
+47. El host mantuvo visible el corte previo en la captura: 20 bloques, 262 vóxeles y 20
+bloques pendientes a 8 px; mostró el error sin vaciar el canvas. Al abrir después la copia
+sana en la misma sesión, volvió a 4 px, 40 bloques visibles y cero pendientes, con la nube
+presentada. La consola no registró errores. Esta prueba cubre un archivo real con una
+corrupción inyectada, no fallos de red, pérdida de dispositivo ni todas las regiones.
+
+```sh
+cargo run --release --offline -p viewer_convert -- \
+  data/samples/fs_e432_n4002_18.las target/lod-outerbanks-multiblock.oct \
+  --format-version v5 --points-per-block 10000 --max-memory-mib 256
+python3 - <<'PY'
+from pathlib import Path
+source = Path('target/lod-outerbanks-multiblock.oct')
+data = bytearray(source.read_bytes())
+data[1_500_000] ^= 0xff
+Path('target/lod-outerbanks-corrupt.oct').write_bytes(data)
+PY
+```
+
+Se sirvió la raíz con `python3 -m http.server 8767 --bind 127.0.0.1` y se abrió
+`/examples/web-host/index.html` en un perfil Firefox nuevo con
+`dom.webgpu.enabled=true` y `dom.webgpu.service.enabled=true`. Los dos archivos se
+seleccionaron mediante el control **Open project dataset**. El Playwright MCP
+predeterminado seguía sin adapter; esta observación procede de Firefox BiDi.
+
 La prioridad 1 sigue abierta: retener la representación anterior **por región** entre generaciones,
-la secuencia hijos ocupados con color heredado/atributos propios, cargas lentas/fallidas reales,
-cámara/zoom y validación visual multibloque. La revisión de llamadas confirma que
+la secuencia hijos ocupados con color heredado/atributos propios, cargas lentas y otros
+fallos reales, zoom y validación visual en las plataformas objetivo. La revisión de llamadas confirma que
 `sync_visible_blocks` solo vacía la escena durante el reset de datos o el rechazo de la
 selección base en WASM. La publicación voxelizada usa `upload_voxel_cut`; no hay otro
 consumidor de bloques que requiera esta agregación en esa ruta. La mejora regional actual
