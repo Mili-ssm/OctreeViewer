@@ -71,8 +71,9 @@ habituales y se descartó. Sus informes contienen opciones, hashes, dispersión 
 No sumar porcentajes de series CPU distintas ni convertir readback/SwiftShader en prueba visual.
 
 La [entrega regional Replacement](REGIONAL_VOXEL_LOD.md) permite detalle independiente fuera de
-regiones gruesas y contabiliza sus metadatos. No conserva aún la representación anterior por región
-entre generaciones ni cierra la presentación de navegador.
+regiones gruesas y contabiliza sus metadatos. Esta instantánea del 14-10 no incluía retención del
+corte entre generaciones; la actualización del 24-10 la implementa, aunque la presentación de
+navegador sigue pendiente.
 
 ## Mejoras y añadidos candidatos
 

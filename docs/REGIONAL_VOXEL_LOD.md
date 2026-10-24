@@ -243,10 +243,29 @@ Se sirvió la raíz con `python3 -m http.server 8767 --bind 127.0.0.1` y se abri
 seleccionaron mediante el control **Open project dataset**. El Playwright MCP
 predeterminado seguía sin adapter; esta observación procede de Firefox BiDi.
 
-La prioridad 1 sigue abierta: retener la representación anterior **por región** entre generaciones,
-la secuencia hijos ocupados con color heredado/atributos propios, cargas lentas y otros
-fallos reales, zoom y validación visual en las plataformas objetivo. La revisión de llamadas confirma que
-`sync_visible_blocks` solo vacía la escena durante el reset de datos o el rechazo de la
-selección base en WASM. La publicación voxelizada usa `upload_voxel_cut`; no hay otro
-consumidor de bloques que requiera esta agregación en esa ruta. La mejora regional actual
-no certifica los contratos visuales pendientes.
+### Retención regional del corte anterior — 24-10-2026
+
+`LodTransitionPlanner` conserva el último corte visible con cobertura completa como base
+regional cuando el objetivo nuevo tiene bloques pendientes. El plan mezcla las regiones
+anteriores con las nuevas que ya pueden publicarse, para Replacement y Additive. Al completarse el
+objetivo, el plan deja fuera la base anterior y el commit la sustituye solo después de que el
+builder y el upload aceptan el corte. Los payloads del corte completo quedan protegidos durante
+esa transición. La caché no supera su presupuesto: si no cabe el siguiente bloque junto al
+corte retenido, la inserción se rechaza y el corte visible permanece; en ese caso el refinamiento
+se pausa hasta que otro objetivo ya residente cierre la transición o se reinicie el dataset.
+Additive conserva sus
+contribuciones anteriores; no interpreta un padre como reemplazo semántico de sus hijos.
+
+Las regresiones de `crates/viewer_core/tests/lod_transition.rs` cubren el cambio de región con
+carga pendiente, la retirada del corte anterior al completar el objetivo y el rechazo de una
+inserción que excedería el presupuesto. Pasan las 13 pruebas de esa suite, las 14 pruebas
+`voxel_regions` y 34 pruebas WASM (una microprueba queda ignorada). Clippy pasa para los tres
+crates afectados, también para WASM. Esto valida los planes y la protección de la caché, no
+una captura entre frames. La comprobación Playwright MCP con bindings recompilados abrió la demo,
+pero WebGPU informó `no GPU adapter supports this surface`; a 390 px no hubo desbordamiento
+horizontal. La consola registró el 404 preexistente de `favicon.ico`. La prioridad 1 sigue abierta
+para zoom, más cámaras/cargas, secuencia de hijos ocupados con atributos, errores reales y
+observación visual en las plataformas objetivo.
+`sync_visible_blocks` solo vacía la escena durante el reset de datos o el rechazo de la selección
+base en WASM. La publicación voxelizada completa usa `upload_voxel_cut`; no hay otra ruta de
+consumo de bloques que requiera agregación.

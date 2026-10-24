@@ -17,6 +17,7 @@ pub struct LodTransitionPlan {
     fallback_nodes: Vec<NodeId>,
     uncovered_nodes: Vec<NodeId>,
     budget_omitted_nodes: Vec<NodeId>,
+    target_complete: bool,
 }
 
 impl LodTransitionPlan {
@@ -61,16 +62,15 @@ impl LodTransitionPlan {
     }
 }
 
-/// Keeps the currently displayed cut stable while target blocks are loading.
+/// Keeps the last fully covered cut available while a newer target is loading.
 ///
-/// Create one planner per dataset and call [`Self::reset`] when replacing it. The
-/// planner protects blocks without a resident ancestor fallback. In a mixed
-/// Replacement cut, a child can be evicted while its parent remains protected;
-/// the next plan then falls back to the parent for that region. If the cache
-/// cannot hold a new block alongside the protected fallback, insertion is rejected.
+/// Create one planner per dataset and call [`Self::reset`] when replacing it.
+/// Incomplete target plans retain the prior complete cut by region and protect
+/// its resident payloads. The cache stays within its configured byte budget; if
+/// it cannot admit a new block alongside that cut, insertion is rejected.
 #[derive(Default)]
 pub struct LodTransitionPlanner {
-    active_nodes: Vec<NodeId>,
+    retained_nodes: Vec<NodeId>,
 }
 
 impl LodTransitionPlanner {
@@ -87,7 +87,7 @@ impl LodTransitionPlanner {
         cache: &S,
     ) -> LodTransitionPlan {
         let target_nodes = target.node_ids().iter().copied().collect::<HashSet<_>>();
-        let active_nodes = self.active_nodes.iter().copied().collect::<HashSet<_>>();
+        let retained_nodes = self.retained_nodes.iter().copied().collect::<HashSet<_>>();
         let mut branch_nodes = HashSet::new();
         for target_id in &target_nodes {
             let mut current = Some(*target_id);
@@ -98,6 +98,13 @@ impl LodTransitionPlanner {
                 current = hierarchy.node(id).and_then(|node| node.parent());
             }
         }
+        let retain_previous = target.node_ids().iter().any(|node_id| {
+            hierarchy.node(*node_id).is_some_and(|node| {
+                node.blocks()
+                    .iter()
+                    .any(|block_id| !cache.contains(*block_id))
+            })
+        });
 
         let mut result = if hierarchy.semantics() == HierarchySemantics::Replacement {
             resolve_replacement(
@@ -105,11 +112,18 @@ impl LodTransitionPlanner {
                 hierarchy.root_id(),
                 &target_nodes,
                 &branch_nodes,
-                &active_nodes,
+                &retained_nodes,
+                retain_previous,
                 cache,
             )
         } else {
-            resolve_additive(hierarchy, &target_nodes, cache)
+            resolve_additive(
+                hierarchy,
+                &target_nodes,
+                &retained_nodes,
+                retain_previous,
+                cache,
+            )
         };
 
         result.nodes.sort_unstable();
@@ -162,7 +176,7 @@ impl LodTransitionPlanner {
             }
         }
         let admitted_node_ids = admitted_nodes.iter().copied().collect::<HashSet<_>>();
-        let protected_block_ids = admitted_nodes
+        let mut protected_block_ids = admitted_nodes
             .iter()
             .filter_map(|id| hierarchy.node(*id))
             .filter(|node| {
@@ -177,6 +191,30 @@ impl LodTransitionPlanner {
             })
             .flat_map(|node| node.blocks().iter().copied())
             .collect::<BTreeSet<_>>();
+        let target_complete = result.pending_blocks.is_empty()
+            && uncovered_nodes.is_empty()
+            && budget_omitted_nodes.is_empty();
+        let capture_initial_cut = self.retained_nodes.is_empty()
+            && uncovered_nodes.is_empty()
+            && budget_omitted_nodes.is_empty();
+        if target_complete || capture_initial_cut {
+            for node_id in &admitted_nodes {
+                if let Some(node) = hierarchy.node(*node_id) {
+                    protected_block_ids.extend(node.blocks().iter().copied());
+                }
+            }
+        } else {
+            for node_id in &self.retained_nodes {
+                if let Some(node) = hierarchy.node(*node_id) {
+                    protected_block_ids.extend(
+                        node.blocks()
+                            .iter()
+                            .copied()
+                            .filter(|block_id| cache.contains(*block_id)),
+                    );
+                }
+            }
+        }
         result
             .fallback_nodes
             .retain(|node_id| admitted_node_ids.contains(node_id));
@@ -190,12 +228,15 @@ impl LodTransitionPlanner {
             fallback_nodes: result.fallback_nodes,
             uncovered_nodes: uncovered_nodes.into_iter().collect(),
             budget_omitted_nodes,
+            target_complete,
         }
     }
 
-    /// Activates a previously prepared cut and protects its necessary fallback payloads.
+    /// Activates a previously prepared cut and its cache protection.
     pub fn commit(&mut self, plan: &LodTransitionPlan, cache: &mut DecodedBlockCache) {
-        self.active_nodes.clone_from(&plan.node_ids);
+        if plan.target_complete || (self.retained_nodes.is_empty() && plan.coverage_complete()) {
+            self.retained_nodes.clone_from(&plan.node_ids);
+        }
         cache.set_protected_blocks(plan.protected_block_ids.iter().copied());
     }
 
@@ -212,9 +253,9 @@ impl LodTransitionPlanner {
         plan
     }
 
-    /// Clears the active cut and releases its cache protection, for dataset replacement.
+    /// Clears the retained cut and releases its cache protection for dataset replacement.
     pub fn reset(&mut self, cache: &mut DecodedBlockCache) {
-        self.active_nodes.clear();
+        self.retained_nodes.clear();
         cache.set_protected_blocks([]);
     }
 }
@@ -233,11 +274,32 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
     node_id: NodeId,
     target_nodes: &HashSet<NodeId>,
     branch_nodes: &HashSet<NodeId>,
-    active_nodes: &HashSet<NodeId>,
+    retained_nodes: &HashSet<NodeId>,
+    retain_previous: bool,
     cache: &S,
 ) -> ResolvedCut {
     if !branch_nodes.contains(&node_id) {
+        let mut retained = retained_nodes
+            .iter()
+            .copied()
+            .filter(|retained_id| {
+                *retained_id == node_id || is_descendant_of(hierarchy, *retained_id, node_id)
+            })
+            .filter(|retained_id| {
+                hierarchy.node(*retained_id).is_some_and(|retained| {
+                    retained
+                        .blocks()
+                        .iter()
+                        .all(|block_id| cache.contains(*block_id))
+                })
+            })
+            .collect::<Vec<_>>();
+        retained.sort_unstable();
+        if !retain_previous {
+            retained.clear();
+        }
         return ResolvedCut {
+            nodes: retained,
             complete: true,
             ..ResolvedCut::default()
         };
@@ -261,14 +323,14 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
             .copied()
             .filter(|block_id| !cache.contains(*block_id))
             .collect::<BTreeSet<_>>();
-        let active_descendants = active_nodes
+        let retained_descendants = retained_nodes
             .iter()
             .copied()
             .filter(|active_id| {
                 *active_id != node_id && is_descendant_of(hierarchy, *active_id, node_id)
             })
             .collect::<Vec<_>>();
-        let available_descendants = active_descendants
+        let available_descendants = retained_descendants
             .iter()
             .copied()
             .filter_map(|active_id| {
@@ -280,8 +342,8 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
                     .then_some(active_id)
             })
             .collect::<Vec<_>>();
-        let descendants_available = !active_descendants.is_empty()
-            && available_descendants.len() == active_descendants.len();
+        let descendants_available = !retained_descendants.is_empty()
+            && available_descendants.len() == retained_descendants.len();
         let mut result = ResolvedCut {
             nodes: available_descendants,
             pending_blocks: std::mem::take(&mut pending_blocks),
@@ -306,7 +368,8 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
                 child_id,
                 target_nodes,
                 branch_nodes,
-                active_nodes,
+                retained_nodes,
+                retain_previous,
                 cache,
             )
         })
@@ -378,6 +441,8 @@ fn aligned_direct_child(
 fn resolve_additive<S: ResidentBlockSource + ?Sized>(
     hierarchy: &SpatialHierarchy,
     target_nodes: &HashSet<NodeId>,
+    retained_nodes: &HashSet<NodeId>,
+    retain_previous: bool,
     cache: &S,
 ) -> ResolvedCut {
     let mut result = ResolvedCut {
@@ -400,6 +465,21 @@ fn resolve_additive<S: ResidentBlockSource + ?Sized>(
             result.complete = false;
             result.pending_blocks.extend(missing);
             result.uncovered_nodes.push(*node_id);
+        }
+    }
+    for node_id in retained_nodes.iter().filter(|_| retain_previous) {
+        if result.nodes.contains(node_id) {
+            continue;
+        }
+        let Some(node) = hierarchy.node(*node_id) else {
+            continue;
+        };
+        if node
+            .blocks()
+            .iter()
+            .all(|block_id| cache.contains(*block_id))
+        {
+            result.nodes.push(*node_id);
         }
     }
     result

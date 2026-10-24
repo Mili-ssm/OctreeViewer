@@ -88,6 +88,32 @@ fn target(
         .unwrap()
 }
 
+fn target_side(hierarchy: &SpatialHierarchy, left: bool) -> viewer_core::LodSelection {
+    let (min_x, max_x) = if left { (0.0, 4.0) } else { (6.0, 10.0) };
+    let frustum = SpatialFrustum::new(vec![
+        FrustumPlane::new([1.0, 0.0, 0.0], -min_x).unwrap(),
+        FrustumPlane::new([-1.0, 0.0, 0.0], max_x).unwrap(),
+        FrustumPlane::new([0.0, 1.0, 0.0], 0.0).unwrap(),
+        FrustumPlane::new([0.0, -1.0, 0.0], 10.0).unwrap(),
+        FrustumPlane::new([0.0, 0.0, 1.0], 0.0).unwrap(),
+        FrustumPlane::new([0.0, 0.0, -1.0], 10.0).unwrap(),
+    ])
+    .unwrap();
+    hierarchy
+        .select_lod(
+            &frustum,
+            LodSelectionConfig::new(1.0, 10).unwrap(),
+            |node| {
+                if node.id() == NodeId::new(1) {
+                    10.0
+                } else {
+                    0.0
+                }
+            },
+        )
+        .unwrap()
+}
+
 #[test]
 fn replacement_keeps_parent_and_exposes_a_resident_child_until_the_cut_is_complete() {
     let hierarchy = hierarchy(HierarchySemantics::Replacement);
@@ -286,6 +312,106 @@ fn additive_transition_keeps_available_ancestors_and_reports_missing_children() 
     assert_eq!(plan.pending_blocks(), [BlockId::new(20), BlockId::new(30)]);
     assert_eq!(plan.uncovered_nodes(), [NodeId::new(2), NodeId::new(3)]);
     assert!(!plan.coverage_complete());
+}
+
+#[test]
+fn replacement_retains_the_previous_region_until_the_new_target_is_complete() {
+    let hierarchy = hierarchy(HierarchySemantics::Replacement);
+    let left = block(20);
+    let right = block(30);
+    let mut cache =
+        DecodedBlockCache::new(left.estimated_memory_bytes() + right.estimated_memory_bytes());
+    cache.insert(left);
+    let mut planner = LodTransitionPlanner::new();
+
+    let first = planner.update(&hierarchy, &target_side(&hierarchy, true), &mut cache);
+    assert_eq!(first.node_ids(), [NodeId::new(2)]);
+
+    let waiting = planner.prepare(&hierarchy, &target_side(&hierarchy, false), &cache);
+    assert_eq!(waiting.node_ids(), [NodeId::new(2)]);
+    assert_eq!(waiting.pending_blocks(), [BlockId::new(30)]);
+    assert_eq!(waiting.uncovered_nodes(), [NodeId::new(3)]);
+    planner.commit(&waiting, &mut cache);
+    assert!(
+        cache
+            .lru_entries()
+            .any(|(id, _, protected)| { id == BlockId::new(20) && protected })
+    );
+
+    assert!(cache.insert(right).cached());
+    let complete = planner.prepare(&hierarchy, &target_side(&hierarchy, false), &cache);
+    assert_eq!(complete.node_ids(), [NodeId::new(3)]);
+    assert!(complete.pending_blocks().is_empty());
+    planner.commit(&complete, &mut cache);
+    cache.remove(BlockId::new(20));
+
+    let waiting_again = planner.prepare(&hierarchy, &target_side(&hierarchy, true), &cache);
+    assert_eq!(waiting_again.node_ids(), [NodeId::new(3)]);
+    assert_eq!(waiting_again.pending_blocks(), [BlockId::new(20)]);
+}
+
+#[test]
+fn retained_complete_cut_stays_resident_when_the_next_region_cannot_fit() {
+    let hierarchy = hierarchy(HierarchySemantics::Replacement);
+    let left = block(20);
+    let right = block(30);
+    let mut cache = DecodedBlockCache::new(left.estimated_memory_bytes());
+    cache.insert(left);
+    let mut planner = LodTransitionPlanner::new();
+
+    let first = planner.update(&hierarchy, &target_side(&hierarchy, true), &mut cache);
+    assert_eq!(first.node_ids(), [NodeId::new(2)]);
+    let waiting = planner.update(&hierarchy, &target_side(&hierarchy, false), &mut cache);
+    assert_eq!(waiting.node_ids(), [NodeId::new(2)]);
+    assert_eq!(waiting.pending_blocks(), [BlockId::new(30)]);
+
+    let rejected = cache.insert(right);
+    assert_eq!(
+        rejected.rejection(),
+        Some(viewer_core::CacheInsertRejection::ProtectedEntries)
+    );
+    assert!(cache.contains(BlockId::new(20)));
+    assert!(!cache.contains(BlockId::new(30)));
+    assert_eq!(cache.len(), 1);
+}
+
+#[test]
+fn additive_retains_the_previous_region_only_while_the_new_target_loads() {
+    let hierarchy = hierarchy(HierarchySemantics::Additive);
+    let root = block(10);
+    let left = block(20);
+    let right = block(30);
+    let mut cache = DecodedBlockCache::new(
+        root.estimated_memory_bytes()
+            + left.estimated_memory_bytes()
+            + right.estimated_memory_bytes(),
+    );
+    cache.insert(root);
+    cache.insert(left);
+    let mut planner = LodTransitionPlanner::new();
+
+    let first = planner.update(&hierarchy, &target_side(&hierarchy, true), &mut cache);
+    assert_eq!(first.node_ids(), [NodeId::new(1), NodeId::new(2)]);
+
+    let waiting = planner.prepare(&hierarchy, &target_side(&hierarchy, false), &cache);
+    assert_eq!(waiting.node_ids(), [NodeId::new(1), NodeId::new(2)]);
+    assert_eq!(waiting.pending_blocks(), [BlockId::new(30)]);
+    planner.commit(&waiting, &mut cache);
+    assert!(
+        cache
+            .lru_entries()
+            .any(|(id, _, protected)| { id == BlockId::new(20) && protected })
+    );
+
+    assert!(cache.insert(right).cached());
+    let complete = planner.prepare(&hierarchy, &target_side(&hierarchy, false), &cache);
+    assert_eq!(complete.node_ids(), [NodeId::new(1), NodeId::new(3)]);
+    assert!(complete.pending_blocks().is_empty());
+    planner.commit(&complete, &mut cache);
+    cache.remove(BlockId::new(20));
+    let waiting_again = planner.prepare(&hierarchy, &target_side(&hierarchy, true), &cache);
+    assert_eq!(waiting_again.node_ids(), [NodeId::new(1), NodeId::new(3)]);
+    assert_eq!(waiting_again.pending_blocks(), [BlockId::new(20)]);
 }
 
 #[test]
