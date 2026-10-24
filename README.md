@@ -28,6 +28,9 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 - `createViewer` libera el worker y los recursos registrados si falla la inicialización;
   EPT rechaza presupuestos estimados inviables al leer la jerarquía y antes de reservar
   bloques de planificación. Son correcciones locales; no certifican GPU ni un límite RSS.
+- El lector de formato predeterminado admite hasta 256 atributos. El escritor permite
+  esquemas mayores y su apertura requiere `FormatReader::with_limits`; hay una regresión
+  con 257 atributos. La política de compatibilidad predeterminada sigue por decidir.
 - Las métricas de conversión, memoria, LOD y navegador son resultados de ejecuciones concretas,
   con límites de interpretación. No equivalen a límites garantizados ni a objetivos ya cumplidos.
 

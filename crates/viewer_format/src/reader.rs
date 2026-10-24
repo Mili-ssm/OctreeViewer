@@ -36,6 +36,9 @@ struct CachedAttributeRange {
 }
 
 /// Resource limits checked before reader allocations.
+///
+/// The default accepts at most 256 attributes. The format and writer allow wider schemas;
+/// callers opening those files must pass suitable limits to `FormatReader::with_limits`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatReaderLimits {
     max_index_bytes: u64,
