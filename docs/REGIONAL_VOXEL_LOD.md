@@ -149,13 +149,21 @@ cámara ajustada a toda la nube produjo 81 vóxeles y el mismo checksum que `hel
 esa vista no distingue visualmente el detalle del hijo. Una sola muestra de CPU no mide
 coste relativo.
 
-El planificador **no publica** todavía cortes mixtos de forma automática. Una prueba
-existente demuestra que una caché para padre y un hijo, pero no para los dos hijos,
-quedaría bloqueada si ambos bloques visibles se protegieran al confirmar el corte
-parcial. Mantener el padre completo es la alternativa simple y segura actual; publicar
-regiones independientes exige resolver qué datos puede expulsar la caché sin perder la
-representación visible. Por eso la mejora del builder prepara la representación, pero
-no cierra la continuidad entre generaciones ni afirma un cambio visible en el host.
+El planificador publica ahora un hijo directo residente junto al padre cuando la frontera
+del hijo coincide con la grilla diádica de la raíz. Si el corte tiene padre e hijo, protege
+solo el payload del padre: una caché que admite padre y un hijo puede expulsar el hijo
+parcial para intentar cargar su hermano. La escena GPU anterior sigue activa hasta que
+el builder y el upload aceptan el siguiente corte; si el hijo ya no está residente, el
+plan siguiente vuelve al padre. La prueba del ciclo de caché comprueba la llegada alterna
+de hijos sin proteger ambos. Los descendientes profundos, desalineados o más finos que los
+representantes del padre siguen esperando el corte completo. Una regresión con bounds
+contenidos pero no canónicos para su nivel reprodujo un corte admitido por el planificador
+que rechazaba el builder; ambos aplican ahora el mismo límite de profundidad.
+
+Esto permite progreso regional para un caso concreto. Sigue faltando observación visual
+de la transición entre frames, cargas con error, movimiento y zoom en navegador sobre un
+dataset real multibloque. La GPU física y la presentación no quedan certificadas por las
+pruebas nativas.
 
 ### Comprobación adicional — 24-10-2026
 
@@ -192,7 +200,15 @@ wasm32-unknown-unknown -p viewer_wasm` y `wasm-bindgen --target web`. Playwright
 el host, pero mostró `init failed: no GPU adapter supports this surface`; no se pudo
 observar transición, cámara ni recuperación WebGPU en esta sesión.
 
+Tras recompilar WASM y regenerar `pkg` con este ajuste, Playwright MCP abrió el host el
+24-10-2026 y volvió a mostrar `init failed: no GPU adapter supports this surface`.
+Los bindings y WASM respondieron 200; la consola solo registró un 404 de `favicon.ico`.
+No se pudo repetir la interacción LOD en ese navegador.
+
 La prioridad 1 sigue abierta: retener la representación anterior **por región** entre generaciones,
 la secuencia hijos ocupados con color heredado/atributos propios, cargas lentas/fallidas reales,
-cámara/zoom y validación visual multibloque. `sync_visible_blocks` sigue siendo un consumidor
-separado de esta agregación. La mejora regional actual no certifica esos contratos pendientes.
+cámara/zoom y validación visual multibloque. La revisión de llamadas confirma que
+`sync_visible_blocks` solo vacía la escena durante el reset de datos o el rechazo de la
+selección base en WASM. La publicación voxelizada usa `upload_voxel_cut`; no hay otro
+consumidor de bloques que requiera esta agregación en esa ruta. La mejora regional actual
+no certifica los contratos visuales pendientes.

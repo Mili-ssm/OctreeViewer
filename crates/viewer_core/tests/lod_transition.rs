@@ -89,7 +89,7 @@ fn target(
 }
 
 #[test]
-fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
+fn replacement_keeps_parent_and_exposes_a_resident_child_until_the_cut_is_complete() {
     let hierarchy = hierarchy(HierarchySemantics::Replacement);
     let root = block(10);
     let child_a = block(20);
@@ -116,7 +116,8 @@ fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
 
     assert!(cache.insert(child_a).cached());
     let partial = planner.update(&hierarchy, &desired, &mut cache);
-    assert_eq!(partial.node_ids(), [NodeId::new(1)]);
+    assert_eq!(partial.node_ids(), [NodeId::new(1), NodeId::new(2)]);
+    assert_eq!(partial.fallback_nodes(), [NodeId::new(1)]);
     assert!(partial.coverage_complete());
 
     assert!(cache.insert(child_b).cached());
@@ -149,6 +150,53 @@ fn replacement_keeps_parent_until_the_complete_child_cut_is_resident() {
     assert_eq!(within_budget.node_ids(), [NodeId::new(1)]);
     assert_eq!(within_budget.point_count(), 1);
     assert!(within_budget.coverage_complete());
+}
+
+#[test]
+fn replacement_does_not_mix_a_child_finer_than_the_parent_representatives() {
+    let bounds = SpatialBounds::new([0.0; 3], [16.0; 3]).unwrap();
+    let nodes = (0..=6)
+        .map(|level| {
+            SpatialNode::new(
+                NodeId::new(level),
+                (level > 0).then(|| NodeId::new(if level == 6 { 4 } else { level - 1 })),
+                level.min(5) as u32,
+                match level {
+                    5 => SpatialBounds::new([0.0; 3], [8.0, 16.0, 16.0]).unwrap(),
+                    6 => SpatialBounds::new([8.0, 0.0, 0.0], [16.0; 3]).unwrap(),
+                    _ => bounds,
+                },
+                u64::from(level >= 4),
+                if level < 5 { 16.0 } else { 0.0 },
+                match level {
+                    4 => vec![BlockId::new(40)],
+                    5 => vec![BlockId::new(50)],
+                    6 => vec![BlockId::new(60)],
+                    _ => vec![],
+                },
+            )
+            .unwrap()
+        })
+        .collect();
+    let hierarchy =
+        SpatialHierarchy::new_with_semantics(nodes, vec![], None, HierarchySemantics::Replacement)
+            .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(block(40));
+    cache.insert(block(50));
+    let frustum =
+        SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 0.0).unwrap()]).unwrap();
+    let target = hierarchy
+        .select_lod(
+            &frustum,
+            LodSelectionConfig::new(1.0, 10).unwrap(),
+            |node| {
+                if node.level() < 5 { 16.0 } else { 0.0 }
+            },
+        )
+        .unwrap();
+    let plan = LodTransitionPlanner::new().prepare(&hierarchy, &target, &cache);
+    assert_eq!(plan.node_ids(), [NodeId::new(4)]);
 }
 
 #[test]
@@ -360,7 +408,7 @@ fn multi_block_nodes_are_admitted_as_a_whole_and_empty_cuts_fit_zero_budget() {
 }
 
 #[test]
-fn protected_fallback_and_one_child_budget_can_starve_replacement_targets() {
+fn protected_fallback_allows_partial_children_to_rotate_under_a_small_cache_budget() {
     let hierarchy = hierarchy(HierarchySemantics::Replacement);
     let root = block(10);
     let size = root.estimated_memory_bytes();
@@ -379,8 +427,14 @@ fn protected_fallback_and_one_child_budget_can_starve_replacement_targets() {
             evicted.into_iter().map(BlockId::new).collect::<Vec<_>>()
         );
         let plan = planner.update(&hierarchy, &desired, &mut cache);
-        assert_eq!(plan.node_ids(), [NodeId::new(1)]);
-        assert_eq!(plan.block_ids(), [BlockId::new(10)]);
+        assert_eq!(
+            plan.node_ids(),
+            [
+                NodeId::new(1),
+                NodeId::new(if arriving == 20 { 2 } else { 3 })
+            ]
+        );
+        assert_eq!(plan.block_ids(), [BlockId::new(10), BlockId::new(arriving)]);
         assert_eq!(plan.fallback_nodes(), [NodeId::new(1)]);
         assert_eq!(plan.pending_blocks(), [BlockId::new(pending)]);
         assert!(plan.coverage_complete());

@@ -10,6 +10,7 @@ use crate::{
 pub struct LodTransitionPlan {
     node_ids: Vec<NodeId>,
     block_ids: Vec<crate::BlockId>,
+    protected_block_ids: Vec<crate::BlockId>,
     point_count: u64,
     point_budget: u64,
     pending_blocks: Vec<crate::BlockId>,
@@ -63,9 +64,10 @@ impl LodTransitionPlan {
 /// Keeps the currently displayed cut stable while target blocks are loading.
 ///
 /// Create one planner per dataset and call [`Self::reset`] when replacing it. The
-/// planner protects its visible cache blocks from LRU eviction. If the cache cannot
-/// hold the target alongside that protected cut, insertion is rejected and the
-/// current cut remains visible until memory becomes available.
+/// planner protects blocks without a resident ancestor fallback. In a mixed
+/// Replacement cut, a child can be evicted while its parent remains protected;
+/// the next plan then falls back to the parent for that region. If the cache
+/// cannot hold a new block alongside the protected fallback, insertion is rejected.
 #[derive(Default)]
 pub struct LodTransitionPlanner {
     active_nodes: Vec<NodeId>,
@@ -160,12 +162,28 @@ impl LodTransitionPlanner {
             }
         }
         let admitted_node_ids = admitted_nodes.iter().copied().collect::<HashSet<_>>();
+        let protected_block_ids = admitted_nodes
+            .iter()
+            .filter_map(|id| hierarchy.node(*id))
+            .filter(|node| {
+                let mut parent = node.parent();
+                while let Some(id) = parent {
+                    if admitted_node_ids.contains(&id) {
+                        return false;
+                    }
+                    parent = hierarchy.node(id).and_then(|ancestor| ancestor.parent());
+                }
+                true
+            })
+            .flat_map(|node| node.blocks().iter().copied())
+            .collect::<BTreeSet<_>>();
         result
             .fallback_nodes
             .retain(|node_id| admitted_node_ids.contains(node_id));
         LodTransitionPlan {
             node_ids: admitted_nodes,
             block_ids: admitted_blocks.into_iter().collect(),
+            protected_block_ids: protected_block_ids.into_iter().collect(),
             point_count,
             point_budget: target.point_budget(),
             pending_blocks: result.pending_blocks.into_iter().collect(),
@@ -175,10 +193,10 @@ impl LodTransitionPlanner {
         }
     }
 
-    /// Activates a previously prepared cut and protects its resident payloads.
+    /// Activates a previously prepared cut and protects its necessary fallback payloads.
     pub fn commit(&mut self, plan: &LodTransitionPlan, cache: &mut DecodedBlockCache) {
         self.active_nodes.clone_from(&plan.node_ids);
-        cache.set_protected_blocks(plan.block_ids.iter().copied());
+        cache.set_protected_blocks(plan.protected_block_ids.iter().copied());
     }
 
     /// Resolves and immediately activates a cut. Prefer [`Self::prepare`] and
@@ -305,11 +323,56 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
     {
         let mut pending_blocks = std::mem::take(&mut result.pending_blocks);
         let mut replacement = resolved_node(node_id);
+        replacement
+            .nodes
+            .extend(result.nodes.into_iter().filter(|child_id| {
+                hierarchy.node(*child_id).is_some_and(|child| {
+                    child.parent() == Some(node_id) && aligned_direct_child(hierarchy, node, child)
+                })
+            }));
+        replacement.fallback_nodes.extend(result.fallback_nodes);
         replacement.pending_blocks.append(&mut pending_blocks);
         replacement.fallback_nodes.push(node_id);
         return replacement;
     }
     result
+}
+
+fn aligned_direct_child(
+    hierarchy: &SpatialHierarchy,
+    parent: &crate::SpatialNode,
+    child: &crate::SpatialNode,
+) -> bool {
+    if child.level() != parent.level().saturating_add(1) || child.level() > 24 {
+        return false;
+    }
+    let root = hierarchy.stats().root_bounds;
+    let side = (0..3)
+        .map(|axis| root.max()[axis] - root.min()[axis])
+        .fold(0.0, f64::max);
+    if !side.is_finite() || side <= 0.0 {
+        return false;
+    }
+    // The voxel builder rejects mixed cuts finer than the parent's native 8^3 representatives.
+    let parent_side = (0..3)
+        .map(|axis| parent.bounds().max()[axis] - parent.bounds().min()[axis])
+        .fold(0.0, f64::max);
+    let representative_depth = (side / (parent_side / 8.0)).log2().floor().clamp(0.0, 24.0) as u32;
+    if child.level() > representative_depth {
+        return false;
+    }
+    let scale = 2.0_f64.powi(i32::try_from(child.level()).expect("depth is at most 24")) / side;
+    (0..3).all(|axis| {
+        [child.bounds().min()[axis], child.bounds().max()[axis]]
+            .into_iter()
+            .filter(|edge| {
+                *edge > parent.bounds().min()[axis] && *edge < parent.bounds().max()[axis]
+            })
+            .all(|edge| {
+                let cell = (edge - root.min()[axis]) * scale;
+                cell.is_finite() && (cell - cell.round()).abs() <= 1.0e-6
+            })
+    })
 }
 
 fn resolve_additive<S: ResidentBlockSource + ?Sized>(

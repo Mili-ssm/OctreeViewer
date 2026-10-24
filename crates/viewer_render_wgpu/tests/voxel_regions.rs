@@ -216,28 +216,17 @@ fn slow_and_unavailable_multiblock_loads_preserve_renderable_cuts() {
                             .any(|v| v.color == ColorRgb::new(0, 255, 0).to_linear_rgba())
                     );
                 } else if cache.contains(BlockId::new(11)) {
-                    assert_eq!(plan.node_ids(), [NodeId::new(0)]);
-                    let mixed = build_voxel_scene_with_limits(
-                        &hierarchy,
-                        &[NodeId::new(0), NodeId::new(1)],
-                        &cache,
-                        [0.0; 3],
-                        1.0,
-                        &project,
-                        VoxelBuildLimits::default(),
-                    )
-                    .unwrap();
-                    assert_disjoint(&mixed.scene);
-                    assert_eq!(mixed.scene.instance_count(), 2);
+                    assert_eq!(plan.node_ids(), [NodeId::new(0), NodeId::new(1)]);
+                    assert_eq!(scene.scene.instance_count(), 2);
                     assert!(
-                        mixed
+                        scene
                             .scene
                             .instances()
                             .iter()
                             .any(|v| v.color == ColorRgb::new(0, 0, 255).to_linear_rgba())
                     );
                     assert!(
-                        mixed
+                        scene
                             .scene
                             .instances()
                             .iter()
