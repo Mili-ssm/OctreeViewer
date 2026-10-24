@@ -1637,9 +1637,8 @@ La salida está en `target/combined-memory-belvedere-4-current/` y el muestreo e
 `target/combined-memory-belvedere-4-current-process-retry.jsonl` (ignorados por Git). Reproducir
 el host con Firefox WebGPU, iniciar el sampler antes de la carga y ejecutar
 `node examples/web-host/probe-cache-camera.mjs INPUT.oct OUTPUT_DIR URL 4`; para el sampler usar
-`--interval 0.25 --seconds 600`. La matriz sigue abierta: falta una ronda actual comparable para
-Majadas y Belvedere no cerró su objetivo de 4 px. Albuera sí completó 4 px en la ejecución actual
-descrita a continuación.
+`--interval 0.25 --seconds 600`. Belvedere no cerró su objetivo de 4 px. Albuera y Majadas sí
+completaron 4 px en las ejecuciones actuales descritas a continuación.
 
 ### Albuera v5 actual a 4 px — 24-10-2026
 
@@ -1669,3 +1668,30 @@ controlada con Belvedere, aunque cierra el objetivo observado de Albuera a 4 px.
 
 Salidas locales ignoradas: `target/combined-memory-albuera-4-current/` y
 `target/combined-memory-albuera-4-current-process.jsonl`.
+
+### Majadas v5 actual a 4 px — 24-10-2026
+
+Se usó la pareja v5 actual de [la conversión medida](V5_MEMORY_BENCH.md#conversión-v5-actual-de-majadas-tls--24-10-2026),
+solo coordenadas `.oct` (sin `.octattrs`), Firefox 158.0.1 headless con WebGPU habilitado,
+host local, framebuffer 1282×722, objetivo 4 px y caché de 256 MiB. El sampler empezó antes de
+la carga y tomó 298 muestras hasta cerrar Firefox. La nube gris quedó visible en la captura; los
+exports coincidieron con el panel y la consola no registró errores.
+
+| Fase | Resultado |
+| --- | --- |
+| Apertura de metadatos | 58 ms |
+| Primer frame grueso | 71 ms |
+| Objetivo 4 px | Completado en 61.811 ms; 239 bloques cargados, 0 pendientes |
+| Lectura única al completar | 102.958.469 B de 4.214.687.109 B |
+| Caché decodificada | 112.290.672 B de 268.435.456 B; 0 expulsiones y 0 rechazos |
+| Corte visible | 202 bloques, 7.015.449 puntos fuente, 6.397 vóxeles |
+| Fase de cámara | Cambio reconocido; terminó tras 10 s sin más bloques |
+
+El PSS máximo muestreado del árbol fue **3.731.787.776 B** y el RSS sumado
+**4.535.824.384 B**. Son máximos muestreados, no picos garantizados; RSS cuenta páginas
+compartidas varias veces y PSS las reparte. No permiten atribuir memoria a JavaScript, WASM,
+driver o GPU. La ventana corta del probe no se interpreta como FPS estable. Esta es una ejecución,
+sin repetición para variabilidad ni comparación controlada de memoria con otros corpus.
+
+Salidas locales ignoradas: `target/combined-memory-majadas-4-current/` y
+`target/combined-memory-majadas-4-current-process.jsonl`.

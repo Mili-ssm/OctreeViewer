@@ -1142,3 +1142,29 @@ no bytes de disco ni I/O físico. El muestreo cada 100 ms puede omitir picos bre
 muestras quedaron fuera de los límites exactos de fase. Es una ejecución, no una nueva mediana ni
 una comparación controlada con la base de octubre. `target/albuera-current-v5/run-2/report.json`
 conserva el informe y los samples (salida local ignorada por Git).
+
+## Conversión v5 actual de Majadas TLS — 24-10-2026
+
+Una conversión desde la fuente verificada (MD5 `fd0b4433e805246f2442df037dfadb6b`,
+1.343.266.470 B; SHA-256 `7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33`) con el mismo
+código y configuración que la ronda actual de Albuera: perfil `perf`, un worker, divisiones 2,
+bloques de 262.144 puntos, formato v5 y error máximo predeterminado 0,01. Se usó el ejecutable
+`real_dataset_bench` identificado en la sección anterior.
+
+La conversión y validación finalizaron correctamente en **298,9 s**, con **415.465.882 puntos**.
+El `.oct` ocupa 4.214.687.109 B y `.octattrs` 3.319.094.608 B (7.533.781.717 B total). SHA-256:
+`742262867c844bb4e876cd4280a648e45ee677624a3cebd1a8d71bbbf6ff6f04` y
+`d45cd5fd70816d24ea29137faaf4ec1ca6cc2a4fcdc8be2dabbefc20f9a543f1`.
+
+| Fase | Tiempo (s) | RSS pico muestreado (MiB) | Temporales lógicos pico muestreado (B) |
+| --- | ---: | ---: | ---: |
+| Planificación espacial | 217,7 | 49,9 | 18.824.399.892 |
+| Escritura de bloques | 56,1 | 84,8 | 13.716.300.433 |
+| Validación de salida | 24,0 | 83,9 | 7.533.781.717 |
+| Proceso completo | 298,9 | 84,8 | 18.824.399.892 |
+
+Un worker validó los 6.259 bloques y 415.602.190 puntos serializados de salida. El crecimiento
+lógico positivo de temporales sumó 137.658.716.851 B; no equivale a I/O físico. Muestreo cada
+100 ms, con posible pérdida de picos y algunas muestras fuera de los límites exactos de fase.
+Es una ejecución, no una mediana ni una comparación de rendimiento con Albuera. El informe y los
+samples locales ignorados por Git están en `target/majadas-current-v5/run-1/report.json`.
