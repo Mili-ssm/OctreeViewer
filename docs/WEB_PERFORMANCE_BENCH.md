@@ -1609,3 +1609,33 @@ Salidas brutas ignoradas: `target/combined-memory-additive-timed/`,
 Quedan pendientes rondas independientes, Additive ramificado representativo, atribución
 del pico y medición de asignaciones transitorias del viewer/GPU antes de cambiar la
 política de acumulación.
+
+### Belvedere v5 a 4 px: refinamiento bajo caché — 24-10-2026
+
+Se repitió con `target/lod-belvedere-20261024.oct` (SHA-256
+`6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac`), Firefox 158.0.1
+headless, WebGPU habilitado, host local, framebuffer 1282×722, objetivo 4 px y caché de
+bloques de 256 MiB. Se abrió solo el `.oct`, sin compañero de atributos. El muestreador del
+árbol de Firefox corrió cada 250 ms durante 600 s y registró 2.178 muestras válidas.
+
+El primer frame grueso llegó a **28 ms** y metadatos abrieron en 18 ms. El probe alcanzó la
+etapa solicitada de 4 px, pero no completó el corte: al límite de observación aún había **783
+bloques pendientes** y 456 bloques cargados; `targetLodMs` quedó nulo. El export marcó
+`coverageComplete=true`, que describe cobertura del corte aceptado, no la terminación del
+objetivo. Se leyeron 246.273.694 B únicos de los 981.063.326 B de XYZ; las lecturas de rangos
+sumaron 328.728.576 B. Hubo 87 expulsiones de caché, sin rechazos por bloque demasiado grande
+ni por protección. El comando terminó con `observation_cap_600s`, no con éxito del objetivo.
+
+El pico muestreado del árbol Firefox fue **2.587.087.872 B PSS** y **3.387.068.416 B RSS
+sumado**. Son máximos observados con muestreo periódico, no picos garantizados; RSS suma páginas
+compartidas más de una vez. El refinamiento tampoco produjo una ventana estable de FPS. El PSS
+no puede atribuirse a JavaScript, WASM, driver, superficies u otra reserva concreta. Aunque el
+PSS supera la ronda previa a 8 px, los objetivos y la duración de carga difieren: esta ejecución
+no es una comparación controlada de memoria.
+
+La salida está en `target/combined-memory-belvedere-4-current/` y el muestreo en
+`target/combined-memory-belvedere-4-current-process-retry.jsonl` (ignorados por Git). Reproducir
+el host con Firefox WebGPU, iniciar el sampler antes de la carga y ejecutar
+`node examples/web-host/probe-cache-camera.mjs INPUT.oct OUTPUT_DIR URL 4`; para el sampler usar
+`--interval 0.25 --seconds 600`. La matriz sigue abierta: faltan rondas actuales comparables para
+Majadas y Albuera, y Belvedere no cerró su objetivo de 4 px.
