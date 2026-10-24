@@ -1543,3 +1543,69 @@ The default MCP browser could not create a compatible GPU adapter; the explicit 
 adapter run supplies functional evidence. These are contract checks, not evidence of visual
 presentation, FPS gains, GPU memory or browser-wide peak. Remaining: live allocation attribution
 and a real Additive dataset before considering accumulator persistence.
+
+### Correlación acotada de memoria en la revisión actual — 24-10-2026
+
+Se corrigió `probe-cache-camera.mjs` para aceptar exports anteriores a la primera escena,
+terminar con el error real de apertura/refinamiento, registrar el intervalo de reloj de cada
+export y admitir un objetivo de píxeles explícito. Antes, el `.oct` Additive histórico
+`target/additive-real-v5.oct` (magia provisional) provocaba un `TypeError` al leer
+`scene=null`; ahora el probe informa `openFile failed: provisional format...` y termina.
+La fuente EPT local se reconvirtió a v5 vigente: 8.884 puntos y 3 bloques. El `.oct`
+Majadas local también era provisional; se usó la pareja Belvedere vigente de 81.682.329
+puntos y 1.343 bloques, a **8 px** porque 4 px no cerró con la caché documentada.
+
+Dos perfiles nuevos Firefox 158.0.1 headless, WebGPU habilitado, caché HTTP deshabilitada,
+sin compañero de atributos, host local y framebuffer 1282×722. El sampler Linux empezó antes
+de cargar. Additive cerró a 4 px con 3 bloques y cero pendientes; Belvedere cerró a 8 px
+tras cargar 389 bloques (320 visibles, 13.238.581 puntos del corte) y la cámara completó
+sin nuevas lecturas. Ambos exports finales concordaron con el panel y las capturas mostraron
+las nubes; el registro de consola BiDi quedó vacío. Son una ejecución por corpus, no una
+distribución ni una comparación de rendimiento. Los campos de nombre/proveedor del adapter
+salieron vacíos, así que tampoco identifican una GPU física.
+
+| Corpus y fase | Caché decodificada B | Builder estimado B | Instancias capacidad B | WASM capacidad B | GPU solicitado B | PSS cercano B |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Additive inicial | 142.240 | 34.540.824 | 234.880 | 2.949.120 | 15.130.012 | 689.075.200 |
+| Additive cámara | 142.240 | 34.539.312 | 234.520 | 2.949.120 | 15.129.976 | 772.230.144 |
+| Belvedere inicial | 211.910.672 | 34.420.536 | 205.600 | 225.705.984 | 15.097.804 | 944.612.352 |
+| Belvedere cámara | 211.910.672 | 34.420.536 | 205.600 | 225.705.984 | 15.097.804 | 1.019.762.688 |
+
+Los PSS cercanos provienen de la muestra completa más próxima al export, a menos de 90 ms;
+el intervalo de export está en `captureWallTimeMs` y cada muestra lleva `wall_time_ns`.
+La tabla muestra el último corte aceptado, no un snapshot atómico de sus asignaciones
+transitorias durante el build.
+El pico PSS observado del árbol fue 781.960.192 B en Additive y 1.024.223.232 B en
+Belvedere; el RSS sumado alcanzó 1.576.886.272 y 1.818.705.920 B, respectivamente.
+En Belvedere el mayor PSS llegó **entre** los exports inicial y de cámara mientras caché,
+capacidad WASM y recursos GPU solicitados permanecían iguales en esos dos exports. No se
+puede atribuir ese aumento a JS, WASM, superficies, driver ni una reserva concreta. El
+sampler recorre procesos secuencialmente y omite picos entre lecturas. Belvedere requirió
+dos archivos de muestreo solapados porque la carga duró unos 260 s; la superposición añade
+algo de coste al proceso y no es una segunda ronda independiente.
+El RSS sumado cuenta páginas compartidas varias veces; PSS reparte ese coste.
+
+El benchmark nativo actual, con la misma pareja de entrada y tres construcciones, observó
+por separado el payload de la **escena anterior**: 234.880 B en Additive y 205.600 B en
+Belvedere. Sus modelos `decoded + previous scene + builder` fueron 35.059.016 y
+246.582.096 B tras la primera construcción; los RSS máximos muestreados del proceso
+nativo fueron 5.382.144 y 225.562.624 B. Additive produjo 5.872 vóxeles y Belvedere
+5.140, coincidiendo con los cortes iniciales del navegador; el viewport nativo es
+1280×720, por lo que no se comparan sus modelos byte a byte con los del navegador.
+El modelo es conservador y no equivale a RSS. WASM es capacidad lineal, incluye espacio libre
+y ya forma parte de PSS; GPU son bytes de recursos solicitados, no VRAM física. No se suman.
+
+Para repetir: preparar la fuente Additive como en
+[la prueba EPT](VOXEL_BUILD_BENCH.md), reconvertirla
+con `viewer_convert --format-version v5`, y usar la conversión Belvedere de
+[LOD regional](REGIONAL_VOXEL_LOD.md). Tras reconstruir
+WASM/bindings y servir la raíz en 8767, iniciar un perfil Firefox nuevo y
+`sample-process-memory.py FIREFOX_PID OUTPUT.jsonl --interval 0.25 --seconds 300` antes del
+probe. Ejecutar `probe-cache-camera.mjs INPUT.oct OUTPUT_DIR` para Additive; para Belvedere,
+añadir `http://127.0.0.1:8767/examples/web-host/index.html 8` tras `OUTPUT_DIR`.
+El benchmark nativo usa `voxel_build_bench INPUT.oct 3 256 TARGET_PIXELS 1`.
+Salidas brutas ignoradas: `target/combined-memory-additive-timed/`,
+`target/combined-memory-belvedere-8/` y `target/combined-memory-*-native.json`.
+Quedan pendientes rondas independientes, Additive ramificado representativo, atribución
+del pico y medición de asignaciones transitorias del viewer/GPU antes de cambiar la
+política de acumulación.

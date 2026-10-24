@@ -341,20 +341,24 @@ firefox --headless --no-remote --profile "$PWD/target/firefox-camera-probe" --re
 In another terminal (Node 22 or newer, built-in `WebSocket`, no npm dependencies):
 
 ```bash
-node examples/web-host/probe-cache-camera.mjs data/datasets/belv_2009_digital-aerial_pcd_copc.oct target/cache-camera-probe
+node examples/web-host/probe-cache-camera.mjs data/samples/fs_e432_n4002_18.oct target/cache-camera-probe
 ```
 
-The optional third argument changes the host URL. The probe owns and closes that Firefox
-session; use a dedicated instance. It loads coordinates without a sidecar, fits a 1280×720
-framebuffer at the host's default detail/cache budget, then sends a trusted BiDi right-button
+The optional third argument changes the host URL; the fourth selects a 0.5–16 px target
+in 0.5 px steps (default 4). Use a current-format `.oct`; older provisional files fail
+at open and the probe reports that error. The probe owns and closes that Firefox session;
+use a dedicated instance. It loads coordinates without a sidecar, fits a 1282×722
+framebuffer at the requested detail and host cache budget, then sends a trusted BiDi right-button
 drag over the canvas after the initial observation. It keeps the 15-second animation window
 active so the worker's 30-frame statistics include the camera update; this window is excluded
 from any FPS claim. Each phase ends on a detector pause, target completion, 120 seconds
 without counter changes, or a 600-second cap. An observation cap is an incomplete result.
-A paused retained cut can have complete coverage while the requested 4 px target remains pending.
+A paused retained cut can have complete coverage while the requested target remains pending.
 
 Each 10-second sample awaits the exact newly exported Blob and saves both its counters and
-the visible panel. `domMatchesExport` records whether stage/pending agree: progress can update
+the visible panel. `captureWallTimeMs` brackets that export for comparison with the process
+sampler's wall-clock timestamp; neither is an atomic joint memory snapshot.
+`domMatchesExport` records whether stage/pending agree: progress can update
 exported counters before the next rendered frame updates the panel. Camera completion/pause
 requires changed worker counters after the input, not only the host's `cameraChanged` flag.
 Outputs include session metadata, snapshots, console errors and a final screenshot. Exceptions
