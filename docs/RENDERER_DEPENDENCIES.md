@@ -108,6 +108,27 @@ Firefox BiDi cambió la imagen capturada, sin errores de consola. No equivale a 
 un teclado físico ni todas las velocidades/cámaras. Las capturas y scripts de esta
 ejecución quedan ignorados bajo `target/browser-priority-*` y `target/host-bird-*`.
 
-La validación sigue parcial: Playwright MCP predeterminado carecía de adapter en la
-sesión anterior, Chrome/AMD sigue sin presentación confirmada y faltan pérdida de
-dispositivo, recuperación, móvil físico y pruebas representativas de rendimiento.
+### Chrome local con GPU AMD — 24-10-2026
+
+Se ejecutó Chrome 156.0.8078.47 headed con Playwright local sobre X11/Vulkan y el adaptador
+físico AMD Radeon 880M Graphics (Strix, PCI `1002:150e`, driver `amdgpu`, Mesa 26.2.5).
+WebGPU informó `vendor=amd`, `architecture=rdna-3`. Los flags fueron
+`--ozone-platform=x11 --enable-gpu --enable-unsafe-webgpu --enable-features=Vulkan
+--use-angle=vulkan --disable-vulkan-surface --disable-gpu-sandbox`.
+
+En `presentation.html`, el clear independiente leyó `[255,0,0,255]` y se vio rojo; el worker
+WASM presentó 4.096 vóxeles, hizo picking central con el centro esperado, rechazó picking fuera
+del viewport, recentró la cámara y restauró el tamaño original tras resize. La demo del host
+cargó la muestra v5 de 4.096 puntos hasta 4 px (97 ms observados en una ejecución), cobertura
+completa, cero pendientes y HZB activo. En modo pájaro, `W` cambió la captura con el canvas
+enfocado. A viewport 390×844 CSS px, `scrollWidth` coincidió con `clientWidth` (375 px por
+la barra vertical); el canvas presentó al desplazarse. No hubo errores de página ni consola
+salvo el 404 de `favicon.ico`. Las capturas locales están ignoradas bajo
+`target/browser-priority-2/`.
+
+Una navegación a `chrome://gpucrash` terminó con `ERR_ABORTED`; el visor mantuvo la imagen y no
+expuso una pérdida de dispositivo. No cuenta como prueba de pérdida ni recuperación. Esta
+ejecución confirma presentación en esa combinación local, pero no un móvil físico, teclado
+físico, recuperación ante pérdida real, rendimiento representativo ni otros drivers. El
+resultado anterior de Chrome 155 por Playwright MCP sigue siendo evidencia de esa sesión remota;
+su canvas en blanco no describe este Chrome local.
