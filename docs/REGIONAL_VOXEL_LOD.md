@@ -123,6 +123,40 @@ cargo run --profile perf --offline -p viewer_render_wgpu --example regional_voxe
 
 ## Cierre pendiente
 
+### Construcción de corte mixto — 24-10-2026
+
+`build_voxel_scene_with_limits` acepta ahora un corte Replacement que contiene un padre y
+un descendiente ya residente. Solo aplica la exclusión si todos los bloques del descendiente
+están disponibles; un hijo sin payload mantiene el fallback del padre. Excluye del payload
+del padre los puntos dentro de los bounds del descendiente seleccionado, con frontera mínima
+inclusiva y máxima exclusiva salvo el
+máximo exterior de la raíz. Usa coordenadas locales `f64` respecto al origen del dataset.
+Los puntos restantes del padre mantienen su profundidad terminal de representantes; el
+hijo no hereda ese suelo. Ambos llegan al menos a la profundidad de la frontera común
+antes de terminar por proyección, de modo que una cámara lejana tampoco mezcla los colores
+en una sola celda. Las exclusiones se cargan al presupuesto estimado del builder; sigue
+siendo un modelo, no una medida RSS.
+Un corte mixto cuya frontera no coincide con la grilla de representantes, o cuyo hijo está
+más profundo que esa grilla, se rechaza con `MixedCutNotAligned` antes de construir la escena.
+
+La prueba nativa construye explícitamente el corte padre+hijo durante una secuencia de
+carga Replacement/Additive. Comprueba celdas disjuntas, color padre/hijo y el borde exacto.
+Otra prueba usa un origen de 10¹² unidades y verifica RGB e intensidad propios del hijo;
+una tercera comprueba el rechazo de una frontera desalineada. Pasan las 14 pruebas
+`voxel_regions` y las pruebas del crate renderer. El modo `partial` del
+diagnóstico nativo acepta ese corte en la pareja v5 Belvedere regenerada; a 4 px y con la
+cámara ajustada a toda la nube produjo 81 vóxeles y el mismo checksum que `held`:
+esa vista no distingue visualmente el detalle del hijo. Una sola muestra de CPU no mide
+coste relativo.
+
+El planificador **no publica** todavía cortes mixtos de forma automática. Una prueba
+existente demuestra que una caché para padre y un hijo, pero no para los dos hijos,
+quedaría bloqueada si ambos bloques visibles se protegieran al confirmar el corte
+parcial. Mantener el padre completo es la alternativa simple y segura actual; publicar
+regiones independientes exige resolver qué datos puede expulsar la caché sin perder la
+representación visible. Por eso la mejora del builder prepara la representación, pero
+no cierra la continuidad entre generaciones ni afirma un cambio visible en el host.
+
 ### Comprobación adicional — 24-10-2026
 
 Se añadió `slow_and_unavailable_multiblock_loads_preserve_renderable_cuts` a

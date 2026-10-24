@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque, btree_map::Entry};
+use std::collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry};
 
 use viewer_core::{NodeId, PointBlock, ResidentBlockSource, SpatialBounds, SpatialHierarchy};
 
@@ -11,8 +11,42 @@ struct VoxelKey {
     coord: [u32; 3],
 }
 
+#[derive(Clone, Copy)]
+struct LocalCutBounds {
+    min: [f64; 3],
+    max: [f64; 3],
+    level: u32,
+}
+
+impl LocalCutBounds {
+    fn contains(self, point: [f64; 3], root_max: [f64; 3]) -> bool {
+        (0..3).all(|axis| {
+            point[axis] >= self.min[axis]
+                && (point[axis] < self.max[axis]
+                    || (self.max[axis] == root_max[axis] && point[axis] <= self.max[axis]))
+        })
+    }
+}
+
+struct CutAccumulation<'a> {
+    excluded: &'a [LocalCutBounds],
+    root_max: [f64; 3],
+    min_depth: u8,
+    source_depth_limit: Option<u8>,
+}
+
+#[derive(Clone, Copy)]
+struct AccumulationBudget {
+    limits: VoxelBuildLimits,
+    working_reservation_bytes: u64,
+    accumulator_charge_bytes: u64,
+}
+
 const MAX_PROJECTED_EDGE_CACHE_ENTRIES: usize = 262_144;
 const VOXEL_INSTANCE_SIZE: u64 = std::mem::size_of::<InstanceRaw>() as u64;
+// Approximate tree entry, bounds vector, and allocator slack for mixed Replacement cuts.
+const CUT_EXCLUSION_CHARGE_BYTES: u64 = 128;
+const CUT_NODE_CHARGE_BYTES: u64 = 64;
 
 /// Limits for voxel accumulation and its estimated temporary memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +89,7 @@ struct AdaptiveVoxelGrid {
     projected_edges: BTreeMap<VoxelKey, f64>,
     projected_edge_order: VecDeque<VoxelKey>,
     projected_edge_peak_entries: usize,
-    last_resolved_cell: Option<(VoxelKey, bool)>,
+    last_resolved_cell: Option<(VoxelKey, bool, u8, u8)>,
 }
 
 impl AdaptiveVoxelGrid {
@@ -99,14 +133,27 @@ impl AdaptiveVoxelGrid {
         Ok(edge)
     }
 
+    #[cfg(test)]
     fn key_for_point(
         &mut self,
         point: [f64; 3],
         project: &dyn Fn(SpatialBounds) -> f64,
     ) -> Result<Option<VoxelKey>, VoxelSceneBuildError> {
+        self.key_for_point_with_depths(point, project, 0, self.max_depth)
+    }
+
+    fn key_for_point_with_depths(
+        &mut self,
+        point: [f64; 3],
+        project: &dyn Fn(SpatialBounds) -> f64,
+        min_depth: u8,
+        max_depth: u8,
+    ) -> Result<Option<VoxelKey>, VoxelSceneBuildError> {
         // Nearby source points often share a terminal cell. Match the exact integer mapping
         // used by descent, including clamping outside the root, before reusing its result.
-        if let Some((key, visible)) = self.last_resolved_cell
+        if let Some((key, visible, cached_min, cached_max)) = self.last_resolved_cell
+            && cached_min == min_depth
+            && cached_max == max_depth
             && self.key_at_depth(point, key.depth) == key
         {
             return Ok(visible.then_some(key));
@@ -120,7 +167,7 @@ impl AdaptiveVoxelGrid {
             // Cull cells as soon as their bounds cannot contribute to the view. Deferring this
             // until scene construction would retain one accumulator per off-screen voxel.
             if edge <= 0.0 {
-                self.last_resolved_cell = Some((key, false));
+                self.last_resolved_cell = Some((key, false, min_depth, max_depth));
                 return Ok(None);
             }
             // Beyond 24 levels f32 cannot reliably distinguish adjacent local cell faces.
@@ -133,8 +180,11 @@ impl AdaptiveVoxelGrid {
                         coord: key.coord.map(|coord| coord >> 3),
                     })
                     .is_ok();
-            if edge <= self.target_pixels || key.depth >= self.max_depth || representative_cell {
-                self.last_resolved_cell = Some((key, true));
+            if (edge <= self.target_pixels && key.depth >= min_depth)
+                || key.depth >= max_depth
+                || (representative_cell && key.depth >= min_depth)
+            {
+                self.last_resolved_cell = Some((key, true, min_depth, max_depth));
                 return Ok(Some(key));
             }
             key = self.key_at_depth(point, key.depth + 1);
@@ -178,6 +228,7 @@ pub enum VoxelSceneBuildError {
     EstimatedMemoryLimitExceeded { required_bytes: u64, max_bytes: u64 },
     SizeOverflow,
     AllocationFailed { requested_bytes: u64 },
+    MixedCutNotAligned,
 }
 
 impl std::fmt::Display for VoxelSceneBuildError {
@@ -200,6 +251,10 @@ impl std::fmt::Display for VoxelSceneBuildError {
             Self::AllocationFailed { requested_bytes } => write!(
                 formatter,
                 "failed to reserve {requested_bytes} bytes for voxel scene"
+            ),
+            Self::MixedCutNotAligned => write!(
+                formatter,
+                "mixed Replacement cut exceeds or does not align with the parent representative grid"
             ),
         }
     }
@@ -300,6 +355,18 @@ impl VoxelSceneBuilder {
         block: &PointBlock,
         project: &dyn Fn(SpatialBounds) -> f64,
     ) -> Result<(), VoxelSceneBuildError> {
+        self.add_block_for_cut(block, project, &[], [f64::INFINITY; 3], 0, None)
+    }
+
+    fn add_block_for_cut(
+        &mut self,
+        block: &PointBlock,
+        project: &dyn Fn(SpatialBounds) -> f64,
+        excluded: &[LocalCutBounds],
+        root_max: [f64; 3],
+        min_depth: u8,
+        source_depth_limit: Option<u8>,
+    ) -> Result<(), VoxelSceneBuildError> {
         if let Some(error) = self.error {
             return Err(error);
         }
@@ -307,10 +374,18 @@ impl VoxelSceneBuilder {
             block,
             &mut self.grid,
             &mut self.voxels,
-            self.limits,
-            self.working_reservation_bytes,
-            self.accumulator_charge_bytes,
+            AccumulationBudget {
+                limits: self.limits,
+                working_reservation_bytes: self.working_reservation_bytes,
+                accumulator_charge_bytes: self.accumulator_charge_bytes,
+            },
             project,
+            CutAccumulation {
+                excluded,
+                root_max,
+                min_depth,
+                source_depth_limit,
+            },
         );
         if let Err(error) = result {
             self.error = Some(error);
@@ -433,7 +508,7 @@ pub fn build_voxel_scene(
         project,
         usize::MAX,
     )
-    .expect("unbounded voxel scene build cannot exceed usize::MAX instances")
+    .expect("voxel scene build failed")
 }
 
 /// Builds with a voxel-count limit and no estimated-memory limit.
@@ -474,25 +549,170 @@ pub fn build_voxel_scene_with_limits(
     project: &dyn Fn(SpatialBounds) -> f64,
     limits: VoxelBuildLimits,
 ) -> Result<VoxelScene, VoxelSceneBuildError> {
+    let selected =
+        (hierarchy.semantics() == viewer_core::HierarchySemantics::Replacement).then(|| {
+            node_ids
+                .iter()
+                .copied()
+                .filter(|id| {
+                    hierarchy.node(*id).is_some_and(|node| {
+                        !node.blocks().is_empty()
+                            && node
+                                .blocks()
+                                .iter()
+                                .all(|block_id| cache.contains(*block_id))
+                    })
+                })
+                .collect::<BTreeSet<_>>()
+        });
+    let exclusions = selected.as_ref().map_or_else(BTreeMap::new, |selected| {
+        replacement_cut_exclusions(hierarchy, selected, coordinate_origin)
+    });
     let mut builder = VoxelSceneBuilder::with_limits(
         hierarchy.stats().root_bounds,
         coordinate_origin,
         target_pixels,
         limits,
     );
-    configure_representative_regions(&mut builder, hierarchy, node_ids, cache)?;
+    validate_mixed_cut(&builder.grid, hierarchy, &exclusions, coordinate_origin)?;
+    let excluded_regions = exclusions.values().try_fold(0_usize, |sum, bounds| {
+        sum.checked_add(bounds.len())
+            .ok_or(VoxelSceneBuildError::SizeOverflow)
+    })?;
+    let cut_charge = checked_charge(excluded_regions, CUT_EXCLUSION_CHARGE_BYTES)?
+        .checked_add(checked_charge(exclusions.len(), CUT_NODE_CHARGE_BYTES)?)
+        .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+    builder.working_reservation_bytes = builder
+        .working_reservation_bytes
+        .checked_add(cut_charge)
+        .ok_or(VoxelSceneBuildError::SizeOverflow)?;
+    check_memory_limit(
+        builder.working_reservation_bytes,
+        limits.max_estimated_bytes,
+    )?;
+    configure_representative_regions(&mut builder, hierarchy, node_ids, cache, &exclusions)?;
+    let root_max = std::array::from_fn(|axis| {
+        hierarchy.stats().root_bounds.max()[axis] - coordinate_origin[axis]
+    });
     for node_id in node_ids {
         let Some(node) = hierarchy.node(*node_id) else {
             continue;
         };
+        let excluded = exclusions.get(node_id).map_or(&[][..], Vec::as_slice);
+        let selected_ancestor = selected
+            .as_ref()
+            .is_some_and(|selected| has_selected_ancestor(hierarchy, *node_id, selected));
+        let min_depth = excluded
+            .iter()
+            .map(|bounds| bounds.level)
+            .max()
+            .unwrap_or(0)
+            .max(if selected_ancestor { node.level() } else { 0 })
+            .min(24) as u8;
+        if min_depth > builder.grid.max_depth {
+            return Err(VoxelSceneBuildError::MixedCutNotAligned);
+        }
+        let source_depth_limit =
+            (!excluded.is_empty()).then(|| representative_depth(&builder.grid, node.bounds()));
         for block_id in node.blocks() {
             let Some(block) = cache.peek(*block_id) else {
                 continue;
             };
-            builder.add_block(block, project)?;
+            builder.add_block_for_cut(
+                block,
+                project,
+                excluded,
+                root_max,
+                min_depth,
+                source_depth_limit,
+            )?;
         }
     }
     builder.try_finish(project)
+}
+
+fn validate_mixed_cut(
+    grid: &AdaptiveVoxelGrid,
+    hierarchy: &SpatialHierarchy,
+    exclusions: &BTreeMap<NodeId, Vec<LocalCutBounds>>,
+    coordinate_origin: [f64; 3],
+) -> Result<(), VoxelSceneBuildError> {
+    for (parent_id, children) in exclusions {
+        let Some(parent) = hierarchy.node(*parent_id) else {
+            continue;
+        };
+        let depth = representative_depth(grid, parent.bounds());
+        let parent_min: [f64; 3] =
+            std::array::from_fn(|axis| parent.bounds().min()[axis] - coordinate_origin[axis]);
+        let parent_max: [f64; 3] =
+            std::array::from_fn(|axis| parent.bounds().max()[axis] - coordinate_origin[axis]);
+        for child in children {
+            if child.level > u32::from(depth) {
+                return Err(VoxelSceneBuildError::MixedCutNotAligned);
+            }
+            let scale =
+                2.0_f64.powi(i32::try_from(child.level).expect("depth is at most 24")) / grid.side;
+            for axis in 0..3 {
+                for edge in [child.min[axis], child.max[axis]] {
+                    if edge <= parent_min[axis] || edge >= parent_max[axis] {
+                        continue;
+                    }
+                    let cell = (edge - grid.origin[axis]) * scale;
+                    if !cell.is_finite() || (cell - cell.round()).abs() > 1.0e-6 {
+                        return Err(VoxelSceneBuildError::MixedCutNotAligned);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn replacement_cut_exclusions(
+    hierarchy: &SpatialHierarchy,
+    selected: &BTreeSet<NodeId>,
+    coordinate_origin: [f64; 3],
+) -> BTreeMap<NodeId, Vec<LocalCutBounds>> {
+    let mut result = BTreeMap::<NodeId, Vec<LocalCutBounds>>::new();
+    for node_id in selected {
+        let Some(node) = hierarchy.node(*node_id) else {
+            continue;
+        };
+        let mut parent = node.parent();
+        while let Some(parent_id) = parent {
+            if selected.contains(&parent_id) {
+                result.entry(parent_id).or_default().push(LocalCutBounds {
+                    min: std::array::from_fn(|axis| {
+                        node.bounds().min()[axis] - coordinate_origin[axis]
+                    }),
+                    max: std::array::from_fn(|axis| {
+                        node.bounds().max()[axis] - coordinate_origin[axis]
+                    }),
+                    level: node.level(),
+                });
+                break;
+            }
+            parent = hierarchy
+                .node(parent_id)
+                .and_then(|ancestor| ancestor.parent());
+        }
+    }
+    result
+}
+
+fn has_selected_ancestor(
+    hierarchy: &SpatialHierarchy,
+    node_id: NodeId,
+    selected: &BTreeSet<NodeId>,
+) -> bool {
+    let mut parent = hierarchy.node(node_id).and_then(|node| node.parent());
+    while let Some(id) = parent {
+        if selected.contains(&id) {
+            return true;
+        }
+        parent = hierarchy.node(id).and_then(|node| node.parent());
+    }
+    false
 }
 
 /// Configure one immutable terminal rule for all points, using occupied coarse regions only.
@@ -502,6 +722,7 @@ fn configure_representative_regions(
     hierarchy: &SpatialHierarchy,
     node_ids: &[NodeId],
     cache: &dyn ResidentBlockSource,
+    exclusions: &BTreeMap<NodeId, Vec<LocalCutBounds>>,
 ) -> Result<(), VoxelSceneBuildError> {
     if hierarchy.semantics() != viewer_core::HierarchySemantics::Replacement {
         return Ok(());
@@ -510,7 +731,11 @@ fn configure_representative_regions(
         node_ids
             .iter()
             .filter_map(|id| hierarchy.node(*id))
-            .filter(|node| !hierarchy.is_leaf(node.id()) && !node.blocks().is_empty())
+            .filter(|node| {
+                !hierarchy.is_leaf(node.id())
+                    && !node.blocks().is_empty()
+                    && !exclusions.contains_key(&node.id())
+            })
     };
     let mut global_depth = 24;
     let mut regional = true;
@@ -612,10 +837,9 @@ fn accumulate_block(
     block: &PointBlock,
     grid: &mut AdaptiveVoxelGrid,
     voxels: &mut BTreeMap<VoxelKey, VoxelAccumulator>,
-    limits: VoxelBuildLimits,
-    working_reservation_bytes: u64,
-    accumulator_charge_bytes: u64,
+    budget: AccumulationBudget,
     project: &dyn Fn(SpatialBounds) -> f64,
+    cut: CutAccumulation<'_>,
 ) -> Result<(), VoxelSceneBuildError> {
     let points = block.points().points();
     let intensity = ScalarAttribute::find(block, "intensity");
@@ -624,7 +848,21 @@ fn accumulate_block(
         if point.position.iter().any(|value| !value.is_finite()) {
             continue;
         }
-        let Some(key) = grid.key_for_point(point.position.map(f64::from), project)? else {
+        let position = point.position.map(f64::from);
+        if cut
+            .excluded
+            .iter()
+            .any(|bounds| bounds.contains(position, cut.root_max))
+        {
+            continue;
+        }
+        let max_depth = cut
+            .source_depth_limit
+            .map_or(grid.max_depth, |depth| depth.min(grid.max_depth))
+            .max(cut.min_depth);
+        let Some(key) =
+            grid.key_for_point_with_depths(position, project, cut.min_depth, max_depth)?
+        else {
             continue;
         };
         let voxel_count = voxels.len();
@@ -638,20 +876,21 @@ fn accumulate_block(
                 let next_count = voxel_count
                     .checked_add(1)
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?;
-                if next_count > limits.max_voxels {
+                if next_count > budget.limits.max_voxels {
                     return Err(VoxelSceneBuildError::InstanceLimitExceeded {
-                        limit: limits.max_voxels,
+                        limit: budget.limits.max_voxels,
                     });
                 }
-                let accumulator_bytes = checked_charge(next_count, accumulator_charge_bytes)?;
+                let accumulator_bytes =
+                    checked_charge(next_count, budget.accumulator_charge_bytes)?;
                 let instance_bytes = next_count
                     .checked_mul(std::mem::size_of::<InstanceRaw>())
                     .and_then(|bytes| u64::try_from(bytes).ok())
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?;
                 let required_bytes = accumulator_bytes
-                    .checked_add(working_reservation_bytes.max(instance_bytes))
+                    .checked_add(budget.working_reservation_bytes.max(instance_bytes))
                     .ok_or(VoxelSceneBuildError::SizeOverflow)?;
-                check_memory_limit(required_bytes, limits.max_estimated_bytes)?;
+                check_memory_limit(required_bytes, budget.limits.max_estimated_bytes)?;
                 entry.insert(VoxelAccumulator::default())
             }
         };

@@ -9,7 +9,9 @@ use viewer_render_wgpu::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.len() < 2 || args.len() > 3 {
-        return Err("usage: regional_voxel_bench INPUT.oct held|mixed|refined [RUNS=3]".into());
+        return Err(
+            "usage: regional_voxel_bench INPUT.oct held|partial|mixed|refined [RUNS=3]".into(),
+        );
     }
     let runs = args.get(2).map_or(Ok(3), |s| s.parse::<usize>())?;
     if !(1..=20).contains(&runs) {
@@ -33,9 +35,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for id in branches {
         let refine = match args[1].as_str() {
             "held" => false,
+            "partial" => {
+                if id == held {
+                    cut.push(*id);
+                    cut.push(*h.child_ids(*id).first().ok_or("held branch has no child")?);
+                    continue;
+                }
+                false
+            }
             "mixed" => id != held,
             "refined" => true,
-            _ => return Err("mode must be held, mixed or refined".into()),
+            _ => return Err("mode must be held, partial, mixed or refined".into()),
         };
         if refine && !h.child_ids(*id).is_empty() {
             cut.extend_from_slice(h.child_ids(*id));

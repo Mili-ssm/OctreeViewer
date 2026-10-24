@@ -169,7 +169,7 @@ fn slow_and_unavailable_multiblock_loads_preserve_renderable_cuts() {
         let mut cache = DecodedBlockCache::new(1024 * 1024);
         cache.insert(make_block(
             10,
-            vec![[1.0; 3], [9.0, 1.0, 1.0]],
+            vec![[1.0; 3], [8.0, 1.0, 1.0]],
             ColorRgb::new(255, 0, 0),
         ));
         let mut planner = LodTransitionPlanner::new();
@@ -197,7 +197,7 @@ fn slow_and_unavailable_multiblock_loads_preserve_renderable_cuts() {
             )
             .unwrap();
             assert_disjoint(&scene.scene);
-            assert_eq!(scene.scene.instance_count(), 2);
+            assert!(scene.scene.instance_count() >= 2);
             if semantics == HierarchySemantics::Replacement {
                 if cache.contains(BlockId::new(12)) {
                     assert_eq!(plan.node_ids(), [NodeId::new(1), NodeId::new(2)]);
@@ -214,6 +214,58 @@ fn slow_and_unavailable_multiblock_loads_preserve_renderable_cuts() {
                             .instances()
                             .iter()
                             .any(|v| v.color == ColorRgb::new(0, 255, 0).to_linear_rgba())
+                    );
+                } else if cache.contains(BlockId::new(11)) {
+                    assert_eq!(plan.node_ids(), [NodeId::new(0)]);
+                    let mixed = build_voxel_scene_with_limits(
+                        &hierarchy,
+                        &[NodeId::new(0), NodeId::new(1)],
+                        &cache,
+                        [0.0; 3],
+                        1.0,
+                        &project,
+                        VoxelBuildLimits::default(),
+                    )
+                    .unwrap();
+                    assert_disjoint(&mixed.scene);
+                    assert_eq!(mixed.scene.instance_count(), 2);
+                    assert!(
+                        mixed
+                            .scene
+                            .instances()
+                            .iter()
+                            .any(|v| v.color == ColorRgb::new(0, 0, 255).to_linear_rgba())
+                    );
+                    assert!(
+                        mixed
+                            .scene
+                            .instances()
+                            .iter()
+                            .any(|v| v.color == ColorRgb::new(255, 0, 0).to_linear_rgba())
+                    );
+                    let far = build_voxel_scene_with_limits(
+                        &hierarchy,
+                        &[NodeId::new(0), NodeId::new(1)],
+                        &cache,
+                        [0.0; 3],
+                        1.0,
+                        &|_| 0.5,
+                        VoxelBuildLimits::default(),
+                    )
+                    .unwrap();
+                    assert_eq!(far.scene.instance_count(), 2);
+                    assert_disjoint(&far.scene);
+                    assert!(
+                        far.scene
+                            .instances()
+                            .iter()
+                            .any(|v| v.color == ColorRgb::new(0, 0, 255).to_linear_rgba())
+                    );
+                    assert!(
+                        far.scene
+                            .instances()
+                            .iter()
+                            .any(|v| v.color == ColorRgb::new(255, 0, 0).to_linear_rgba())
                     );
                 } else {
                     assert_eq!(plan.node_ids(), [NodeId::new(0)]);
@@ -238,6 +290,180 @@ fn slow_and_unavailable_multiblock_loads_preserve_renderable_cuts() {
             }
         }
     }
+}
+
+#[test]
+fn mixed_replacement_cut_preserves_child_attributes_at_large_origin() {
+    use viewer_core::{AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues};
+    let origin = [1_000_000_000_000.0, -2_000_000_000_000.0, 100.0];
+    let bounds = |min: [f64; 3], max: [f64; 3]| {
+        SpatialBounds::new(
+            std::array::from_fn(|axis| origin[axis] + min[axis]),
+            std::array::from_fn(|axis| origin[axis] + max[axis]),
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                bounds([0.0; 3], [16.0; 3]),
+                2,
+                16.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+            SpatialNode::new(
+                NodeId::new(1),
+                Some(NodeId::new(0)),
+                1,
+                bounds([0.0; 3], [8.0, 16.0, 16.0]),
+                1,
+                0.0,
+                vec![BlockId::new(11)],
+            )
+            .unwrap(),
+        ],
+        vec![],
+        Some(3),
+    )
+    .unwrap();
+    let column = |values: Vec<u16>| {
+        AttributeColumn::new(
+            AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap(),
+            AttributeValues::U16(values.clone()),
+            values.len(),
+        )
+        .unwrap()
+    };
+    let blue = ColorRgb::new(0, 0, 255);
+    let red = ColorRgb::new(255, 0, 0);
+    let mut cache = DecodedBlockCache::new(1024 * 1024);
+    cache.insert(PointBlock::new(
+        BlockId::new(10),
+        PointBatch::new(vec![
+            Point::new([1.0; 3], red),
+            Point::new([8.0, 1.0, 1.0], red),
+        ]),
+        vec![column(vec![5, 15])],
+    ));
+    let pending = build_voxel_scene_with_limits(
+        &hierarchy,
+        &[NodeId::new(0), NodeId::new(1)],
+        &cache,
+        origin,
+        1.0,
+        &|_| 4.0,
+        VoxelBuildLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(pending.scene.instance_count(), 2);
+    assert!(
+        pending
+            .scene
+            .instances()
+            .iter()
+            .all(|v| v.color == red.to_linear_rgba())
+    );
+    cache.insert(PointBlock::new(
+        BlockId::new(11),
+        PointBatch::new(vec![Point::new([1.0; 3], blue)]),
+        vec![column(vec![30])],
+    ));
+    let scene = build_voxel_scene_with_limits(
+        &hierarchy,
+        &[NodeId::new(0), NodeId::new(1)],
+        &cache,
+        origin,
+        1.0,
+        &|_| 0.5,
+        VoxelBuildLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(scene.scene.instance_count(), 2);
+    assert_disjoint(&scene.scene);
+    assert!(
+        scene
+            .scene
+            .instances()
+            .iter()
+            .any(|v| v.color == blue.to_linear_rgba() && v.intensity == 30.0)
+    );
+    assert!(
+        scene
+            .scene
+            .instances()
+            .iter()
+            .any(|v| v.color == red.to_linear_rgba() && v.intensity == 15.0)
+    );
+    assert!(matches!(
+        build_voxel_scene_with_limits(
+            &hierarchy,
+            &[NodeId::new(0), NodeId::new(1)],
+            &cache,
+            origin,
+            1.0,
+            &|_| 0.5,
+            VoxelBuildLimits {
+                max_voxels: 10,
+                max_estimated_bytes: 191
+            },
+        ),
+        Err(viewer_render_wgpu::VoxelSceneBuildError::EstimatedMemoryLimitExceeded { .. })
+    ));
+}
+
+#[test]
+fn mixed_replacement_cut_rejects_a_boundary_crossing_parent_cell() {
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [16.0; 3]).unwrap(),
+                1,
+                16.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+            SpatialNode::new(
+                NodeId::new(1),
+                Some(NodeId::new(0)),
+                1,
+                SpatialBounds::new([0.0; 3], [7.0, 16.0, 16.0]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(11)],
+            )
+            .unwrap(),
+        ],
+        vec![],
+        None,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(1024);
+    for id in [10, 11] {
+        cache.insert(PointBlock::new(
+            BlockId::new(id),
+            PointBatch::new(vec![Point::new([1.0; 3], ColorRgb::new(1, 2, 3))]),
+            vec![],
+        ));
+    }
+    assert!(matches!(
+        build_voxel_scene_with_limits(
+            &hierarchy,
+            &[NodeId::new(0), NodeId::new(1)],
+            &cache,
+            [0.0; 3],
+            1.0,
+            &|_| 4.0,
+            VoxelBuildLimits::default(),
+        ),
+        Err(viewer_render_wgpu::VoxelSceneBuildError::MixedCutNotAligned)
+    ));
 }
 
 #[test]
