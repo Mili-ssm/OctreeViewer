@@ -85,3 +85,29 @@ cobertura completa, cero bloques pendientes y HZB activo. La captura de escritor
 blanca: ese estado funcional no acredita presentación. Se observó además un 404 de recurso
 al abrir la raíz del servidor; no se atribuye a la migración ni se omite de la revisión de consola.
 No se publican FPS, ahorro de memoria ni mejoras de rendimiento por actualizar dependencias.
+
+## Comprobación Firefox posterior — 24-10-2026
+
+Con el WASM `release` y los bindings regenerados desde `f6ec9fd`, se sirvió la raíz en
+`http://127.0.0.1:8767` y se ejecutó
+[`presentation.html`](../examples/web-host/tests/presentation.html) en Firefox 158.0.1
+headless, perfil nuevo con `dom.webgpu.enabled` y `dom.webgpu.service.enabled`. A
+1280×800, el probe existente devolvió `result` en ambos workers: el clear leyó el pixel
+BGRA `[0, 0, 255, 255]`; el visor mostró 4.096 vóxeles, picking central con coordenadas
+finitas y el centro esperado, recentrado y resize. Las capturas se inspeccionaron:
+clear rojo y nube de colores visibles. El worker no reportó fallo y BiDi no registró
+errores de consola. `adapter.info` no proporcionó proveedor ni arquitectura; esta
+pasada no identifica GPU física.
+
+A 390×844, `documentElement.scrollWidth` fue 378 px y la captura tras desplazarse
+mostró el canvas de vóxeles, sin desbordamiento horizontal. Es un viewport estrecho de
+escritorio, no un dispositivo móvil. En el host normal, la muestra integrada llegó a
+4 px y 4.096 vóxeles; cambiar de RGB a intensidad reconstruyó la escena y cambió su
+captura. Seleccionar modo pájaro enfocó `#viewer-canvas`; una tecla `W` enviada mediante
+Firefox BiDi cambió la imagen capturada, sin errores de consola. No equivale a probar
+un teclado físico ni todas las velocidades/cámaras. Las capturas y scripts de esta
+ejecución quedan ignorados bajo `target/browser-priority-*` y `target/host-bird-*`.
+
+La validación sigue parcial: Playwright MCP predeterminado carecía de adapter en la
+sesión anterior, Chrome/AMD sigue sin presentación confirmada y faltan pérdida de
+dispositivo, recuperación, móvil físico y pruebas representativas de rendimiento.
