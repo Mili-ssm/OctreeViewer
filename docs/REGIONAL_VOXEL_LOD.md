@@ -123,6 +123,41 @@ cargo run --profile perf --offline -p viewer_render_wgpu --example regional_voxe
 
 ## Cierre pendiente
 
+### Comprobación adicional — 24-10-2026
+
+Se añadió `slow_and_unavailable_multiblock_loads_preserve_renderable_cuts` a
+[`voxel_regions.rs`](../crates/viewer_render_wgpu/tests/voxel_regions.rs). La prueba combina
+`LodTransitionPlanner` y el builder para una jerarquía sintética de padre y dos hijos.
+Simula ausencia de respuesta, llegada de un hijo, otro intento sin bloque y llegada del segundo.
+En Replacement, conserva los dos vóxeles rojos del padre hasta que ambos hijos están
+residentes; entonces publica los colores propios azul y verde. En Additive, admite cada
+hijo disponible. En cada paso comprueba que las instancias no se solapan. Es evidencia
+nativa de esos cortes, no una observación de presentación ni de continuidad entre frames.
+
+Los `.oct` locales antiguos de Belvedere y Majadas tienen la magia provisional `OCTVWFRM`
+y el lector vigente los rechaza con `ProvisionalFormat`. Para repetir el corte real se
+reconvirtió el LAZ Belvedere completo a v5 bajo `target/lod-belvedere-20261024.oct`:
+81.682.329 puntos, 1.343 bloques y 1.591.650.185 bytes para la pareja. Es una salida local
+no versionada; se omitieron flags LAS y CRS tal como informa el conversor. El diagnóstico
+`regional_voxel_bench` con una sola ejecución por corte dio 81/472/828 vóxeles y los
+checksums `1623410fa92167a3` / `37ea64bec4787572` / `24f5190724d9cb92` para
+`held` / `mixed` / `refined`, respectivamente. Los checksums coinciden con el registro
+anterior. Las muestras de CPU únicas no justifican una conclusión de rendimiento.
+
+```sh
+cargo run --release --offline -p viewer_convert -- \
+  data/datasets/belv_2009_digital-aerial_pcd_copc.laz \
+  target/lod-belvedere-20261024.oct --format-version v5 --max-memory-mib 512
+cargo test --offline -p viewer_render_wgpu --test voxel_regions
+cargo run --profile perf --offline -p viewer_render_wgpu --example regional_voxel_bench -- \
+  target/lod-belvedere-20261024.oct mixed 1
+```
+
+Se recompilaron los bindings WASM actuales con `cargo build --release --offline --target
+wasm32-unknown-unknown -p viewer_wasm` y `wasm-bindgen --target web`. Playwright MCP abrió
+el host, pero mostró `init failed: no GPU adapter supports this surface`; no se pudo
+observar transición, cámara ni recuperación WebGPU en esta sesión.
+
 La prioridad 1 sigue abierta: retener la representación anterior **por región** entre generaciones,
 la secuencia hijos ocupados con color heredado/atributos propios, cargas lentas/fallidas reales,
 cámara/zoom y validación visual multibloque. `sync_visible_blocks` sigue siendo un consumidor

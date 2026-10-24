@@ -1,6 +1,7 @@
 use viewer_core::{
-    BlockId, ColorRgb, DecodedBlockCache, HierarchySemantics, NodeId, Point, PointBatch,
-    PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
+    BlockId, ColorRgb, DecodedBlockCache, FrustumPlane, HierarchySemantics, LodSelectionConfig,
+    LodTransitionPlanner, NodeId, Point, PointBatch, PointBlock, SpatialBounds, SpatialFrustum,
+    SpatialHierarchy, SpatialNode,
 };
 use viewer_render_wgpu::{RenderScene, VoxelBuildLimits, build_voxel_scene_with_limits};
 
@@ -87,6 +88,154 @@ fn assert_disjoint(scene: &RenderScene) {
                 }),
                 "overlapping cells {a:?} and {b:?}"
             );
+        }
+    }
+}
+
+#[test]
+fn slow_and_unavailable_multiblock_loads_preserve_renderable_cuts() {
+    for semantics in [
+        HierarchySemantics::Replacement,
+        HierarchySemantics::Additive,
+    ] {
+        let bounds = |min, max| SpatialBounds::new(min, max).unwrap();
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(0),
+                    None,
+                    0,
+                    bounds([0.0; 3], [16.0; 3]),
+                    2,
+                    16.0,
+                    vec![BlockId::new(10)],
+                )
+                .unwrap(),
+                SpatialNode::new(
+                    NodeId::new(1),
+                    Some(NodeId::new(0)),
+                    1,
+                    bounds([0.0; 3], [8.0, 16.0, 16.0]),
+                    1,
+                    0.0,
+                    vec![BlockId::new(11)],
+                )
+                .unwrap(),
+                SpatialNode::new(
+                    NodeId::new(2),
+                    Some(NodeId::new(0)),
+                    1,
+                    bounds([8.0, 0.0, 0.0], [16.0; 3]),
+                    1,
+                    0.0,
+                    vec![BlockId::new(12)],
+                )
+                .unwrap(),
+            ],
+            vec![],
+            Some(4),
+            semantics,
+        )
+        .unwrap();
+        let frustum =
+            SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 1.0).unwrap()]).unwrap();
+        let select = |refined| {
+            hierarchy
+                .select_lod(
+                    &frustum,
+                    LodSelectionConfig::new(1.0, 10).unwrap(),
+                    |node| {
+                        if refined && node.level() == 0 {
+                            16.0
+                        } else {
+                            0.0
+                        }
+                    },
+                )
+                .unwrap()
+        };
+        let make_block = |id, positions: Vec<[f32; 3]>, color| {
+            PointBlock::new(
+                BlockId::new(id),
+                PointBatch::new(
+                    positions
+                        .into_iter()
+                        .map(|p| Point::new(p, color))
+                        .collect(),
+                ),
+                vec![],
+            )
+        };
+        let mut cache = DecodedBlockCache::new(1024 * 1024);
+        cache.insert(make_block(
+            10,
+            vec![[1.0; 3], [9.0, 1.0, 1.0]],
+            ColorRgb::new(255, 0, 0),
+        ));
+        let mut planner = LodTransitionPlanner::new();
+        let coarse = planner.update(&hierarchy, &select(false), &mut cache);
+        assert_eq!(coarse.node_ids(), [NodeId::new(0)]);
+        let refined = select(true);
+        for arrival in [None, Some(11), None, Some(12)] {
+            if let Some(id) = arrival {
+                let (position, color) = if id == 11 {
+                    ([1.0; 3], ColorRgb::new(0, 0, 255))
+                } else {
+                    ([9.0, 1.0, 1.0], ColorRgb::new(0, 255, 0))
+                };
+                cache.insert(make_block(id, vec![position], color));
+            }
+            let plan = planner.update(&hierarchy, &refined, &mut cache);
+            let scene = build_voxel_scene_with_limits(
+                &hierarchy,
+                plan.node_ids(),
+                &cache,
+                [0.0; 3],
+                1.0,
+                &project,
+                VoxelBuildLimits::default(),
+            )
+            .unwrap();
+            assert_disjoint(&scene.scene);
+            assert_eq!(scene.scene.instance_count(), 2);
+            if semantics == HierarchySemantics::Replacement {
+                if cache.contains(BlockId::new(12)) {
+                    assert_eq!(plan.node_ids(), [NodeId::new(1), NodeId::new(2)]);
+                    assert!(
+                        scene
+                            .scene
+                            .instances()
+                            .iter()
+                            .any(|v| v.color == ColorRgb::new(0, 0, 255).to_linear_rgba())
+                    );
+                    assert!(
+                        scene
+                            .scene
+                            .instances()
+                            .iter()
+                            .any(|v| v.color == ColorRgb::new(0, 255, 0).to_linear_rgba())
+                    );
+                } else {
+                    assert_eq!(plan.node_ids(), [NodeId::new(0)]);
+                    assert!(
+                        scene
+                            .scene
+                            .instances()
+                            .iter()
+                            .all(|v| v.color == ColorRgb::new(255, 0, 0).to_linear_rgba())
+                    );
+                }
+            } else {
+                assert!(plan.node_ids().contains(&NodeId::new(0)));
+                assert_eq!(
+                    plan.node_ids().contains(&NodeId::new(1)),
+                    cache.contains(BlockId::new(11))
+                );
+                assert_eq!(
+                    plan.node_ids().contains(&NodeId::new(2)),
+                    cache.contains(BlockId::new(12))
+                );
+            }
         }
     }
 }
