@@ -1,5 +1,5 @@
 // Async split-Blob reader probe; no GPU adapter or viewer renderer is required.
-import init, { WasmAsyncFormatReader } from "../../../pkg/viewer_wasm.js";
+import init, { WasmAsyncFormatReader, WasmVoxelViewer } from "../../../pkg/viewer_wasm.js";
 
 function assert(condition, message) {
     if (!condition) throw new Error(message);
@@ -28,6 +28,26 @@ self.onmessage = async ({ data = {} }) => {
         };
         try {
             const reader = await WasmAsyncFormatReader.open(primary, attributes);
+            const descriptor = reader.lodDatasetDescriptor(64 * 1024 * 1024);
+            assert(descriptor.semantics === "replacement" && descriptor.nodes.length > 0
+                && descriptor.attributeSchema[0].name === "intensity"
+                && descriptor.attributeRanges[0][0][0] === 0
+                && descriptor.visualScale === 1 && descriptor.hasAttributes,
+            "async reader did not export complete LOD metadata");
+            const metadataViewer = new WasmVoxelViewer(0.6);
+            assert(metadataViewer.openLodDataset(descriptor).status === "metadata_ready",
+                "viewer rejected async reader metadata");
+            metadataViewer.free();
+            const geometryOnlyReader = await WasmAsyncFormatReader.open(primary);
+            const geometryOnlyViewer = new WasmVoxelViewer(0.6);
+            assert(!geometryOnlyReader.lodDatasetDescriptor(64 * 1024 * 1024).hasAttributes,
+                "metadata-only reader claimed a missing companion");
+            geometryOnlyViewer.openLodDataset(
+                geometryOnlyReader.lodDatasetDescriptor(64 * 1024 * 1024),
+            );
+            geometryOnlyViewer.free();
+            geometryOnlyReader.free();
+
             const geometryPlan = reader.planRead(1n, "geometry");
             const geometryRanges = geometryPlan.ranges;
             assert(geometryRanges.length === 2, "geometry did not plan XYZ and RGB ranges");

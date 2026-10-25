@@ -6,13 +6,15 @@ import { test } from "node:test";
 const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
     .replace(/^import .*\n/, "");
 
-async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 })) {
+async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null) {
     const messages = [];
     let receive;
     let now = 0;
     let colorMode = "rgb";
     let colorFrames = 0;
     let targetVoxelPixels = 4;
+    let pendingBlockId = null;
+    const insertedBlocks = [];
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
     const viewer = {
@@ -31,10 +33,16 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 })) {
         setDepthShading() {},
         replacePoints() {},
         fitScene() {},
-        openFormatDataset() {
+        openLodDataset() {
             colorMode = "rgb";
-            return { status: "format_ready" };
+            return { status: "metadata_ready" };
         },
+        nextAsyncLodBlock: () => pendingBlockId,
+        insertAsyncLodBlock(blockId) { insertedBlocks.push(blockId); },
+        orbit() {},
+        pan() {},
+        zoom() {},
+        moveCamera() {},
         updateLod(pixels) {
             targetVoxelPixels = pixels;
             if (colorMode !== "intensity") lod = makeLod(pixels, pixels);
@@ -58,6 +66,19 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 })) {
     class WasmVoxelViewer {
         static async createOffscreen() { return viewer; }
     }
+    class DefaultAsyncFormatReader {
+        static async open() { return new DefaultAsyncFormatReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0],
+                semantics: "replacement",
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false,
+                attributeSchema: [],
+            };
+        }
+        free() {}
+    }
     vm.runInNewContext(source, {
         self: {
             addEventListener(_name, callback) { receive = callback; },
@@ -66,6 +87,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 })) {
         performance,
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
+        WasmAsyncFormatReader: AsyncFormatReader ?? DefaultAsyncFormatReader,
         Float64Array,
         setTimeout,
     });
@@ -82,6 +104,8 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 })) {
         messages,
         send,
         setNow(value) { now = value; },
+        setPendingBlock(value) { pendingBlockId = value; },
+        insertedBlocks,
     };
 }
 
@@ -109,6 +133,10 @@ test("worker starts scoped refinement timers after successful color changes", as
         cacheBytes: 1024,
         targetVoxelPixels: 4,
     });
+    const datasetOpened = worker.messages.find(message => message.type === "datasetOpened");
+    assert.equal(datasetOpened.opened.nodeCount, 1);
+    assert.equal(datasetOpened.opened.hasAttributes, false);
+    assert.deepEqual([...datasetOpened.opened.boundsMax], [1, 1, 1]);
     assert.deepEqual({ ...latestProgress(worker.messages).refinement }, {
         id: 0,
         trigger: "dataset",
@@ -197,4 +225,66 @@ test("worker memory snapshots follow WASM growth in API, progress and periodic s
     memory.grow(1);
     await worker.send("api", { operation: "getStats", requestId: 2 });
     assert.equal(worker.messages.at(-1).value.memory.wasmLinearMemoryBytes, 4 * 65536);
+});
+
+test("async Blob reads leave the message queue responsive and discard stale generations", async () => {
+    let resolveRead;
+    let readStarted = false;
+    class DelayedAsyncReader {
+        static async open() { return new DelayedAsyncReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planRead() { return { peak_bytes: "1", output_bytes: "1" }; }
+        read() {
+            readStarted = true;
+            return new Promise(resolve => { resolveRead = resolve; });
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), DelayedAsyncReader);
+    worker.setPendingBlock("7");
+    await worker.send("openFile", {
+        file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    assert.equal(readStarted, true);
+
+    await worker.send("frame", {
+        camera: { orbitX: 1, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 },
+    });
+    assert.ok(worker.messages.some(message => message.type === "frame"));
+    worker.setPendingBlock(null);
+    resolveRead({ kind: "geometry", values: new Float32Array(3), colors: new Uint8Array(3) });
+    await new Promise(setImmediate);
+    await new Promise(setImmediate);
+    assert.deepEqual(worker.insertedBlocks, []);
+});
+
+test("async worker rejects a read plan larger than the configured logical read budget", async () => {
+    let reads = 0;
+    class OversizedAsyncReader {
+        static async open() { return new OversizedAsyncReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planRead() { return { peak_bytes: "1025", output_bytes: "0" }; }
+        async read() { reads += 1; }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), OversizedAsyncReader);
+    worker.setPendingBlock("7");
+    await worker.send("openFile", {
+        file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    const failure = worker.messages.find(message => message.operation === "asyncLodRead");
+    assert.match(failure.message, /needs 1025 bytes/);
+    assert.equal(reads, 0);
 });

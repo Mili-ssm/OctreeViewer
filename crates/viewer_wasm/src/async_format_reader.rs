@@ -90,6 +90,120 @@ impl WasmAsyncFormatReader {
         })
     }
 
+    /// Returns metadata in the descriptor shape accepted by `WasmVoxelViewer.openLodDataset`.
+    #[wasm_bindgen(js_name = lodDatasetDescriptor)]
+    pub fn lod_dataset_descriptor(&self, cache_bytes: u32) -> Result<JsValue, JsValue> {
+        let metadata = self.reader.format_metadata();
+        let dataset = metadata.dataset();
+        let hierarchy = dataset.hierarchy();
+        let descriptor = js_sys::Object::new();
+        set(
+            &descriptor,
+            "coordinateOrigin",
+            &number_array(&dataset.coordinate_frame().origin()),
+        )?;
+        set(
+            &descriptor,
+            "semantics",
+            &JsValue::from_str(&format!("{:?}", hierarchy.semantics()).to_lowercase()),
+        )?;
+        set(
+            &descriptor,
+            "cacheBytes",
+            &JsValue::from_f64(f64::from(cache_bytes)),
+        )?;
+        set(
+            &descriptor,
+            "visualScale",
+            &JsValue::from_f64(metadata.visual_scale()),
+        )?;
+        set(
+            &descriptor,
+            "hasAttributes",
+            &JsValue::from_bool(self.reader.has_attributes()),
+        )?;
+        if let Some(point_count) = hierarchy.stats().source_point_count {
+            set(
+                &descriptor,
+                "sourcePointCount",
+                &JsValue::from_str(&point_count.to_string()),
+            )?;
+        }
+
+        let nodes = js_sys::Array::new();
+        let mut pending = vec![hierarchy.root_id()];
+        while let Some(node_id) = pending.pop() {
+            let node = hierarchy
+                .node(node_id)
+                .ok_or_else(|| err("hierarchy references a missing node"))?;
+            let value = js_sys::Object::new();
+            set(
+                &value,
+                "id",
+                &JsValue::from_str(&node.id().get().to_string()),
+            )?;
+            let parent = node
+                .parent()
+                .map(|id| JsValue::from_str(&id.get().to_string()))
+                .unwrap_or(JsValue::NULL);
+            set(&value, "parent", &parent)?;
+            set(&value, "level", &JsValue::from_f64(f64::from(node.level())))?;
+            set(&value, "min", &number_array(&node.bounds().min()))?;
+            set(&value, "max", &number_array(&node.bounds().max()))?;
+            set(
+                &value,
+                "pointCount",
+                &JsValue::from_str(&node.point_count().to_string()),
+            )?;
+            set(
+                &value,
+                "geometricError",
+                &JsValue::from_f64(node.geometric_error()),
+            )?;
+            let blocks = js_sys::Array::new();
+            for block_id in node.blocks() {
+                blocks.push(&JsValue::from_str(&block_id.get().to_string()));
+            }
+            set(&value, "blocks", &blocks.into())?;
+            nodes.push(&value);
+            pending.extend(hierarchy.child_ids(node.id()).iter().rev().copied());
+        }
+        set(&descriptor, "nodes", &nodes.into())?;
+
+        let schema = js_sys::Array::new();
+        let attribute_ranges = js_sys::Array::new();
+        for (schema_index, attribute) in hierarchy.attributes().iter().enumerate() {
+            let value = js_sys::Object::new();
+            set(&value, "name", &JsValue::from_str(attribute.name()))?;
+            set(
+                &value,
+                "dataType",
+                &JsValue::from_str(&format!("{:?}", attribute.data_type()).to_lowercase()),
+            )?;
+            set(
+                &value,
+                "componentCount",
+                &JsValue::from_f64(f64::from(attribute.component_count())),
+            )?;
+            schema.push(&value);
+
+            let ranges = js_sys::Array::new();
+            for component in 0..attribute.component_count() {
+                let range = self
+                    .reader
+                    .attribute_range(schema_index as u32, component)
+                    .map_err(format_error)?
+                    .map(|[min, max]| number_array(&[min, max]))
+                    .unwrap_or(JsValue::NULL);
+                ranges.push(&range);
+            }
+            attribute_ranges.push(&ranges);
+        }
+        set(&descriptor, "attributeSchema", &schema.into())?;
+        set(&descriptor, "attributeRanges", &attribute_ranges.into())?;
+        Ok(descriptor.into())
+    }
+
     /// Plans one supported selection and returns the exact ranges to fetch. The plan remains
     /// private to this reader and must be consumed by `materialize` before another plan is made.
     #[wasm_bindgen(js_name = planRead)]
@@ -314,6 +428,13 @@ fn positions(points: &PointBatch) -> Float32Array {
 }
 fn set(target: &js_sys::Object, key: &str, value: &JsValue) -> Result<(), JsValue> {
     js_sys::Reflect::set(target, &JsValue::from_str(key), value).map(|_| ())
+}
+fn number_array(values: &[f64]) -> JsValue {
+    let array = js_sys::Array::new();
+    for value in values {
+        array.push(&JsValue::from_f64(*value));
+    }
+    array.into()
 }
 fn err(message: &str) -> JsValue {
     JsValue::from_str(message)

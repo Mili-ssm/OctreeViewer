@@ -1,10 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 use viewer_core::{
-    BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
-    DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelectionConfig,
-    LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId, PointBlock, SpatialBounds,
-    SpatialFrustum, SpatialHierarchy,
+    AttributeDescriptor, BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult,
+    CoordinateFrame, DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache,
+    LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
+    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{
     GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
@@ -546,6 +546,10 @@ impl LodDataset {
     /// Current cache-reset-scoped work counters, including a failed scene update.
     pub fn refinement_work(&self) -> &LodWorkStats {
         &self.refinement_work
+    }
+
+    pub(crate) fn attribute_schema(&self) -> &[AttributeDescriptor] {
+        self.metadata.hierarchy().attributes()
     }
 
     /// Dataset-lifetime activity; clearing payloads preserves the cache's counters.

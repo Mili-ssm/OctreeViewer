@@ -189,7 +189,7 @@ sobrecoste del benchmark y no forman parte de la cuota de payloads.
 El ejecutor anterior se conserva como primitiva síncrona de bajo nivel y como instrumento de
 comparación; no es el modelo de uso elegido para integrar el reader con el viewer.
 
-**Pendiente de integración async/visor:**
+**Integración async/visor:**
 
 **Decisión confirmada por el usuario (25-10-2026):** la ruta WASM debe obtener apertura e índice
 y payloads mediante `Blob.slice(...).arrayBuffer()` u otra API Blob realmente asíncrona. No se
@@ -218,10 +218,9 @@ longitudes y CRC. Las posiciones/RGB/columnas llegan en typed arrays que conserv
 atributo. Un fixture V7.1-pre reproducible comprueba esta ruta en el navegador, incluidos rangos
 sin lectura completa del Blob, colores, columna U16 y rechazo de payload corrupto.
 
-La fachada es un paso de biblioteca WASM, todavía separado del viewer: no tiene cuota agregada de
-operaciones/bytes, retención de permisos hasta insertar en caché, scheduler, invalidación por
-generación ni publicación LOD. `read()` consume sus rangos internamente; la integración del worker
-usará el plan visible para admitir la tarea y evitará mantener préstamos WASM durante las lecturas.
+En ese incremento la fachada era un paso de biblioteca WASM separado del viewer. El quinto
+incremento, documentado al final, la conecta al worker y al ciclo LOD; siguen pendientes la cuota
+agregada de operaciones/bytes y el scheduler con más de una lectura en vuelo.
 
 **Contrato de integración WASM, contrastado con el flujo actual:** `LodDataset::update_view_progressive`
 selecciona el corte, invoca el loader para el bloque pendiente de mayor prioridad y vuelve a
@@ -467,3 +466,31 @@ Esta verificación es nativa y usa fixtures; no mide RSS, latencia/throughput co
 valida integración de aplicación/navegador. El límite es el modelo lógico planeado y no un techo
 de RAM de proceso. La lectura bloqueante/decode se ejecuta fuera del executor async en el pool
 bloqueante; la API no certifica I/O nativo no bloqueante.
+
+## Evidencia del quinto incremento
+
+El 25-10-2026 el worker pasó a abrir el reader de Blob fuera de la cola de mensajes y a pedir
+al viewer el bloque pendiente de mayor prioridad LOD. Las lecturas de geometría y atributo usan
+`planRead`/`read` con `Blob.arrayBuffer`; la inserción y publicación quedan en la cola síncrona
+WASM. Una lectura en vuelo como máximo mantiene acotada la cola. El worker compara `peak_bytes`
+y los resultados retenidos con `cacheBytes` antes de continuar una lectura; el test rechaza un
+plan sobredimensionado antes de leer. Esa cuota limita los
+buffers lógicos del trabajo, pero aún no agrega apertura, caché y resultado insertado en un solo
+presupuesto de memoria.
+La generación del dataset/cámara/objetivo invalida el resultado al completarse; `Blob.arrayBuffer`
+no es abortable aquí, por lo que la cancelación es lógica. Los fallos dejan el bloque pendiente y
+requieren una nueva refinación explícita para reintentar.
+
+El worker conserva XYZ, RGB y columna tipada; los modos intensidad/clasificación solicitan su
+columna por nombre de schema. `openLodDataset` recibe visualScale, jerarquía, semántica, esquema,
+rango y disponibilidad del companion. La lectura no retiene un préstamo de WASM durante `await`.
+Node cubre los cambios de color, estadísticas, respuesta de frame durante lectura demorada y
+descarte tras cambiar la generación. `cargo check` y Clippy WASM, formato y diff pasan. El probe
+real del navegador pasa contra `sample-v7.oct`/`.octattrs`: 25 rangos Blob, geometry, XYZ, RGB,
+U16 y rechazo CRC.
+
+No se pudo probar la integración visual del worker en este navegador: la inicialización WebGPU
+respondió `no GPU adapter supports this surface`. Tampoco se implementan aún la cuota agregada de
+apertura, caché, lecturas y resultados, concurrencia mayor que uno, deduplicación,
+reintento/cancelación física ni medición de RAM/latencia durante navegación. Por tanto la prioridad
+3 sigue abierta y esta entrega no valida rendimiento o continuidad visual GPU.

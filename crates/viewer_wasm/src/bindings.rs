@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use serde_wasm_bindgen::to_value;
-use viewer_core::{BlockId, ColorRgb, DatasetSource, Point, PointBatch, PointBlock};
+use viewer_core::{
+    AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
+    DatasetSource, Point, PointBatch, PointBlock,
+};
 use wasm_bindgen::prelude::*;
 use web_sys::{Blob, HtmlCanvasElement};
 
@@ -23,6 +26,8 @@ pub struct WasmVoxelViewer {
     gpu_renderer: Option<SurfaceRenderer<'static>>,
     gpu_scene_dirty: bool,
     lod_session: Option<LodSession<FormatReader<BrowserBlobReader>>>,
+    async_format_context: Option<AsyncFormatContext>,
+    pending_async_block: Option<BlockId>,
     browser_read_stats: Arc<Mutex<BrowserReadStats>>,
     lod_range_read_stats: BrowserReadStats,
     selected_attribute: Option<(u32, u32)>,
@@ -32,6 +37,11 @@ pub struct WasmVoxelViewer {
     lod_dirty: bool,
     last_lod_stats: Option<(LodViewStats, BrowserReadStats)>,
     last_lod_error: Option<String>,
+}
+
+struct AsyncFormatContext {
+    has_attributes: bool,
+    attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
 }
 
 #[wasm_bindgen]
@@ -49,6 +59,8 @@ impl WasmVoxelViewer {
             gpu_renderer: None,
             gpu_scene_dirty: true,
             lod_session: None,
+            async_format_context: None,
+            pending_async_block: None,
             browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
             lod_range_read_stats: BrowserReadStats::default(),
             selected_attribute: None,
@@ -201,6 +213,14 @@ impl WasmVoxelViewer {
     pub fn open_lod_dataset(&mut self, descriptor: JsValue) -> Result<JsValue, JsValue> {
         let descriptor: LodDatasetDescriptor = serde_wasm_bindgen::from_value(descriptor)
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let async_format_context =
+            descriptor
+                .attribute_ranges
+                .as_ref()
+                .map(|ranges| AsyncFormatContext {
+                    has_attributes: descriptor.has_attributes,
+                    attribute_ranges: ranges.clone(),
+                });
         let dataset = descriptor
             .build()
             .map_err(|error| JsValue::from_str(&error))?;
@@ -214,6 +234,8 @@ impl WasmVoxelViewer {
             renderer.clear_dataset();
         }
         self.lod_session = Some(LodSession::External(dataset));
+        self.async_format_context = async_format_context;
+        self.pending_async_block = None;
         self.reset_range_read_stats();
         self.selected_attribute = None;
         self.selected_attribute_range = None;
@@ -332,6 +354,8 @@ impl WasmVoxelViewer {
             renderer.set_color_mode(ColorMode::Rgb);
         }
         self.lod_session = Some(LodSession::Format { dataset, reader });
+        self.async_format_context = None;
+        self.pending_async_block = None;
         self.browser_read_stats = browser_read_stats;
         self.lod_range_read_stats = BrowserReadStats::default();
         self.selected_attribute = None;
@@ -414,6 +438,117 @@ impl WasmVoxelViewer {
         Ok(accounted_bytes)
     }
 
+    /// Inserts one block received from an async format reader, preserving an optional typed column.
+    #[wasm_bindgen(js_name = insertAsyncLodBlock)]
+    pub fn insert_async_lod_block(
+        &mut self,
+        block_id: String,
+        positions: js_sys::Float32Array,
+        colors: Option<js_sys::Uint8Array>,
+        attribute: Option<JsValue>,
+    ) -> Result<usize, JsValue> {
+        let block_id = parse_block_id(&block_id)?;
+        let position_components = positions.length() as usize;
+        if !position_components.is_multiple_of(3) {
+            return Err(JsValue::from_str(
+                "positions must contain three values per point",
+            ));
+        }
+        let point_count = position_components / 3;
+        let dataset = self
+            .lod_session
+            .as_ref()
+            .map(LodSession::dataset)
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        if !dataset.references_block(block_id) {
+            return Err(JsValue::from_str(
+                "blockId is not referenced by the dataset",
+            ));
+        }
+        let schema = dataset.attribute_schema();
+        let column = attribute
+            .as_ref()
+            .map(|value| attribute_column_from_js(schema, value, point_count))
+            .transpose()?;
+        let attribute_bytes = column
+            .as_ref()
+            .map(attribute_column_payload_bytes)
+            .transpose()?
+            .unwrap_or_default();
+        let budget_bytes = dataset.block_cache_budget_bytes();
+        let requested_bytes = point_count
+            .checked_mul(std::mem::size_of::<Point>())
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<PointBlock>()))
+            .and_then(|bytes| bytes.checked_add(attribute_bytes))
+            .ok_or_else(|| JsValue::from_str("block size exceeds the cache budget"))?;
+        if requested_bytes > budget_bytes {
+            return Err(JsValue::from_str(&format!(
+                "block needs at least {requested_bytes} bytes, cache budget is {budget_bytes}"
+            )));
+        }
+
+        let colors = colors.unwrap_or_else(|| {
+            let values = js_sys::Uint8Array::new_with_length(position_components as u32);
+            for index in 0..position_components as u32 {
+                values.set_index(index, 160);
+            }
+            values
+        });
+        let points = points_from_typed_arrays(&positions, &colors, point_count)?;
+        let mut geometry = PointBatch::new(points);
+        let mut columns = Vec::new();
+        if let Some(column) = column {
+            if let Some((schema_index, component)) = self.selected_attribute {
+                if schema
+                    .get(schema_index as usize)
+                    .map(AttributeDescriptor::name)
+                    != Some(column.descriptor().name())
+                {
+                    return Err(JsValue::from_str(
+                        "async attribute does not match the selected color column",
+                    ));
+                }
+                geometry = viewer_render_wgpu::colorize_attribute(
+                    geometry,
+                    &column,
+                    component,
+                    self.selected_attribute_range,
+                )
+                .map_err(JsValue::from_str)?;
+            } else {
+                columns.push(column);
+            }
+        } else if self.selected_attribute.is_some() {
+            return Err(JsValue::from_str("selected attribute payload is required"));
+        }
+        let block = PointBlock::new(block_id, geometry, columns);
+        if block.estimated_memory_bytes() > budget_bytes {
+            return Err(JsValue::from_str(
+                "decoded block allocation exceeds the cache budget",
+            ));
+        }
+        let dataset = self
+            .lod_session
+            .as_mut()
+            .map(LodSession::dataset_mut)
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let accounted_bytes = dataset
+            .insert_block(block)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        self.pending_async_block = None;
+        self.last_lod_error = None;
+        self.lod_dirty = self.lod_config.is_some();
+        Ok(accounted_bytes)
+    }
+
+    /// Highest-priority missing block selected by the most recent async LOD update.
+    #[wasm_bindgen(js_name = nextAsyncLodBlock)]
+    pub fn next_async_lod_block(&self) -> JsValue {
+        self.pending_async_block
+            .map(|id| JsValue::from_str(&id.get().to_string()))
+            .unwrap_or(JsValue::NULL)
+    }
+
     /// Selects a camera-aware voxel cut using the target projected voxel edge in pixels.
     #[wasm_bindgen(js_name = updateLod)]
     pub fn update_lod(&mut self, target_voxel_pixels: f64) -> Result<JsValue, JsValue> {
@@ -485,17 +620,38 @@ impl WasmVoxelViewer {
             let component = component
                 .parse::<u32>()
                 .map_err(|_| JsValue::from_str("invalid attribute component"))?;
-            let reader = self
+            let session = self
                 .lod_session
                 .as_ref()
-                .and_then(LodSession::reader)
                 .ok_or_else(|| JsValue::from_str("no format dataset open"))?;
-            if !reader.has_attributes() {
+            let descriptor = session
+                .dataset()
+                .attribute_schema()
+                .get(index as usize)
+                .ok_or_else(|| JsValue::from_str("invalid attribute index"))?;
+            if component >= descriptor.component_count() {
+                return Err(JsValue::from_str("invalid attribute component"));
+            }
+            let (has_attributes, range) = if let Some(reader) = session.reader() {
+                let range = reader
+                    .attribute_range(index, component)
+                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                (reader.has_attributes(), range)
+            } else if let Some(context) = &self.async_format_context {
+                let range = context
+                    .attribute_ranges
+                    .get(index as usize)
+                    .and_then(|components| components.get(component as usize))
+                    .copied()
+                    .flatten();
+                (context.has_attributes, range)
+            } else {
+                return Err(JsValue::from_str("no format dataset open"));
+            };
+            if !has_attributes {
                 return Err(JsValue::from_str("attach the attribute file first"));
             }
-            selected_range = reader
-                .attribute_range(index, component)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            selected_range = range;
             Some((index, component))
         } else {
             None
@@ -1002,6 +1158,8 @@ impl WasmVoxelViewer {
         let selected_range = self.selected_attribute_range;
         let browser_read_stats = Arc::clone(&self.browser_read_stats);
         let mut lod_range_read_stats = self.lod_range_read_stats;
+        let has_async_reader = self.async_format_context.is_some();
+        let mut pending_async_block = None;
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -1011,7 +1169,7 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
         let (dataset, mut format_reader) = session.parts_mut();
-        let can_load_blocks = format_reader.is_some();
+        let can_load_blocks = format_reader.is_some() || has_async_reader;
         let stats = dataset.update_view_progressive(
             renderer,
             target_voxel_pixels,
@@ -1034,11 +1192,17 @@ impl WasmVoxelViewer {
                         accumulate_browser_read_delta(&mut lod_range_read_stats, before, after);
                         loaded
                     })
-                    .unwrap_or(Ok(None))
+                    .unwrap_or_else(|| {
+                        if has_async_reader {
+                            pending_async_block = Some(block_id);
+                        }
+                        Ok(None)
+                    })
             },
         );
         self.lod_range_read_stats = lod_range_read_stats;
         let stats = stats.map_err(|error| JsValue::from_str(&error.to_string()))?;
+        self.pending_async_block = pending_async_block;
         (self.lod_stage_pixels, self.lod_dirty) = next_lod_stage(
             Some(stage_pixels),
             target_voxel_pixels,
@@ -1056,6 +1220,8 @@ impl WasmVoxelViewer {
             renderer.clear_dataset();
         }
         self.lod_config = None;
+        self.async_format_context = None;
+        self.pending_async_block = None;
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
@@ -1333,6 +1499,87 @@ fn add_runtime_gpu_stats(
 
 fn raw_scene_point_limit() -> usize {
     RendererConfig::default().gpu_budget.max_visible_instances
+}
+
+fn parse_block_id(value: &str) -> Result<BlockId, JsValue> {
+    value
+        .parse::<u64>()
+        .map(BlockId::new)
+        .map_err(|_| JsValue::from_str("blockId must be an unsigned 64-bit integer string"))
+}
+
+fn attribute_column_from_js(
+    schema: &[AttributeDescriptor],
+    value: &JsValue,
+    point_count: usize,
+) -> Result<AttributeColumn, JsValue> {
+    let name = js_sys::Reflect::get(value, &"name".into())?
+        .as_string()
+        .ok_or_else(|| JsValue::from_str("attribute result is missing its name"))?;
+    let descriptor = schema
+        .iter()
+        .find(|descriptor| descriptor.name() == name)
+        .cloned()
+        .ok_or_else(|| JsValue::from_str("attribute result is absent from the dataset schema"))?;
+    let data = js_sys::Reflect::get(value, &"values".into())?;
+    let values = match descriptor.data_type() {
+        AttributeDataType::U8 if data.is_instance_of::<js_sys::Uint8Array>() => {
+            AttributeValues::U8(js_sys::Uint8Array::new(&data).to_vec())
+        }
+        AttributeDataType::I8 if data.is_instance_of::<js_sys::Int8Array>() => {
+            AttributeValues::I8(js_sys::Int8Array::new(&data).to_vec())
+        }
+        AttributeDataType::U16 if data.is_instance_of::<js_sys::Uint16Array>() => {
+            AttributeValues::U16(js_sys::Uint16Array::new(&data).to_vec())
+        }
+        AttributeDataType::I16 if data.is_instance_of::<js_sys::Int16Array>() => {
+            AttributeValues::I16(js_sys::Int16Array::new(&data).to_vec())
+        }
+        AttributeDataType::U32 if data.is_instance_of::<js_sys::Uint32Array>() => {
+            AttributeValues::U32(js_sys::Uint32Array::new(&data).to_vec())
+        }
+        AttributeDataType::I32 if data.is_instance_of::<js_sys::Int32Array>() => {
+            AttributeValues::I32(js_sys::Int32Array::new(&data).to_vec())
+        }
+        AttributeDataType::U64 if data.is_instance_of::<js_sys::BigUint64Array>() => {
+            AttributeValues::U64(js_sys::BigUint64Array::new(&data).to_vec())
+        }
+        AttributeDataType::I64 if data.is_instance_of::<js_sys::BigInt64Array>() => {
+            AttributeValues::I64(js_sys::BigInt64Array::new(&data).to_vec())
+        }
+        AttributeDataType::F32 if data.is_instance_of::<js_sys::Float32Array>() => {
+            AttributeValues::F32(js_sys::Float32Array::new(&data).to_vec())
+        }
+        AttributeDataType::F64 if data.is_instance_of::<js_sys::Float64Array>() => {
+            AttributeValues::F64(js_sys::Float64Array::new(&data).to_vec())
+        }
+        _ => {
+            return Err(JsValue::from_str(
+                "attribute typed array does not match the dataset schema",
+            ));
+        }
+    };
+    AttributeColumn::new(descriptor, values, point_count)
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+fn attribute_column_payload_bytes(column: &AttributeColumn) -> Result<usize, JsValue> {
+    let value_bytes = match column.values() {
+        AttributeValues::U8(values) => values.len().checked_mul(std::mem::size_of::<u8>()),
+        AttributeValues::I8(values) => values.len().checked_mul(std::mem::size_of::<i8>()),
+        AttributeValues::U16(values) => values.len().checked_mul(std::mem::size_of::<u16>()),
+        AttributeValues::I16(values) => values.len().checked_mul(std::mem::size_of::<i16>()),
+        AttributeValues::U32(values) => values.len().checked_mul(std::mem::size_of::<u32>()),
+        AttributeValues::I32(values) => values.len().checked_mul(std::mem::size_of::<i32>()),
+        AttributeValues::U64(values) => values.len().checked_mul(std::mem::size_of::<u64>()),
+        AttributeValues::I64(values) => values.len().checked_mul(std::mem::size_of::<i64>()),
+        AttributeValues::F32(values) => values.len().checked_mul(std::mem::size_of::<f32>()),
+        AttributeValues::F64(values) => values.len().checked_mul(std::mem::size_of::<f64>()),
+    }
+    .ok_or_else(|| JsValue::from_str("attribute size exceeds the cache budget"))?;
+    value_bytes
+        .checked_add(column.descriptor().name().len())
+        .ok_or_else(|| JsValue::from_str("attribute size exceeds the cache budget"))
 }
 
 fn points_from_typed_arrays(

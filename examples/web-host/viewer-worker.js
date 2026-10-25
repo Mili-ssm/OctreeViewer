@@ -1,4 +1,4 @@
-import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
+import init, { WasmAsyncFormatReader, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 
 let viewer = null;
 let wasmExports = null;
@@ -12,6 +12,13 @@ let lastLodProgressKey = "";
 let refinementContext = { id: 0, trigger: "dataset", colorMode: "rgb" };
 let currentMetadata = null;
 let sceneGeneration = 0;
+let asyncFormatReader = null;
+let asyncReadInFlight = false;
+let failedAsyncBlock = null;
+let currentColorMode = "rgb";
+let asyncHasAttributes = false;
+let asyncAttributeIndices = new Map();
+let asyncReadBudgetBytes = 0n;
 const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
@@ -153,6 +160,143 @@ function postLodProgress(lod, afterRenderFrame = false) {
     });
 }
 
+function scheduleAsyncLodRead() {
+    if (!asyncFormatReader || asyncReadInFlight || !viewer) return;
+    const blockId = viewer.nextAsyncLodBlock();
+    if (blockId === null || blockId === failedAsyncBlock) return;
+
+    const generation = sceneGeneration;
+    const reader = asyncFormatReader;
+    const colorMode = currentColorMode;
+    const selectedAttribute = colorMode.startsWith("attribute:")
+        ? Number(colorMode.split(":")[1])
+        : null;
+    const requestedAttribute = selectedAttribute !== null
+        ? selectedAttribute
+        : colorMode === "intensity" ? asyncAttributeIndices.get("intensity")
+            : colorMode === "classification" ? asyncAttributeIndices.get("classification") : null;
+    const geometrySelection = colorMode === "rgb" && selectedAttribute === null
+        ? "geometry" : "positions";
+    asyncReadInFlight = true;
+
+    void (async () => {
+        let geometry;
+        let attribute = null;
+        try {
+            const geometryPlan = reader.planRead(BigInt(blockId), geometrySelection);
+            const geometryPeak = BigInt(geometryPlan.peak_bytes);
+            const geometryOutput = BigInt(geometryPlan.output_bytes);
+            if (geometryPeak > asyncReadBudgetBytes) {
+                throw new Error(`geometry read needs ${geometryPeak} bytes; async read budget is ${asyncReadBudgetBytes}`);
+            }
+            geometry = await reader.read();
+            if (requestedAttribute !== null && asyncHasAttributes) {
+                const attributePlan = reader.planRead(BigInt(blockId), "attribute", requestedAttribute);
+                const attributePeak = BigInt(attributePlan.peak_bytes);
+                if (geometryOutput + attributePeak > asyncReadBudgetBytes) {
+                    throw new Error(`geometry result and attribute read need ${geometryOutput + attributePeak} bytes; async read budget is ${asyncReadBudgetBytes}`);
+                }
+                attribute = await reader.read();
+                const retainedOutputs = geometryOutput + BigInt(attributePlan.output_bytes);
+                if (retainedOutputs > asyncReadBudgetBytes) {
+                    throw new Error(`block results need ${retainedOutputs} bytes; async read budget is ${asyncReadBudgetBytes}`);
+                }
+            }
+            if (geometry.kind !== "geometry" && geometry.kind !== "positions") {
+                throw new Error(`unexpected async geometry result: ${geometry.kind}`);
+            }
+            if (attribute && attribute.kind !== "attribute") {
+                throw new Error(`unexpected async attribute result: ${attribute.kind}`);
+            }
+            messageQueue = messageQueue.then(() => {
+                if (generation !== sceneGeneration || reader !== asyncFormatReader) return;
+                viewer.insertAsyncLodBlock(blockId, geometry.values, geometry.colors, attribute);
+                const lod = viewer.updateLod(targetVoxelPixels);
+                self.postMessage({ type: "lod", lod });
+                postLodProgress(lod);
+            }).catch((error) => {
+                failedAsyncBlock = blockId;
+                self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
+            }).finally(() => {
+                asyncReadInFlight = false;
+                scheduleAsyncLodRead();
+            });
+        } catch (error) {
+            messageQueue = messageQueue.then(() => {
+                if (generation === sceneGeneration) {
+                    failedAsyncBlock = blockId;
+                    self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
+                }
+            }).finally(() => {
+                asyncReadInFlight = false;
+                scheduleAsyncLodRead();
+            });
+        }
+    })();
+}
+
+function startAsyncDataset(data, requestId = null) {
+    sceneGeneration += 1;
+    const generation = sceneGeneration;
+    targetVoxelPixels = data.targetVoxelPixels;
+    datasetOpenedAt = performance.now();
+    currentColorMode = "rgb";
+    asyncFormatReader = null;
+    asyncHasAttributes = false;
+    asyncAttributeIndices = new Map();
+    asyncReadBudgetBytes = BigInt(data.cacheBytes);
+    failedAsyncBlock = null;
+    beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
+    const name = data.name ?? data.file.name;
+    self.postMessage({ type: "status", message: `Opening ${name}…` });
+    void WasmAsyncFormatReader.open(data.file, data.attributes).then((reader) => {
+        messageQueue = messageQueue.then(() => {
+            if (generation !== sceneGeneration) {
+                reader.free();
+                return;
+            }
+            const descriptor = reader.lodDatasetDescriptor(data.cacheBytes);
+            const root = descriptor.nodes.find(node => node.parent === null);
+            const opened = {
+                ...viewer.openLodDataset(descriptor),
+                nodeCount: descriptor.nodes.length,
+                maxLevel: descriptor.nodes.reduce((max, node) => Math.max(max, node.level), 0),
+                coordinateOrigin: new Float64Array(descriptor.coordinateOrigin),
+                boundsMin: new Float64Array(root.min),
+                boundsMax: new Float64Array(root.max),
+                semantics: descriptor.semantics,
+                attributeSchema: descriptor.attributeSchema,
+                hasAttributes: descriptor.hasAttributes,
+                sourcePointCount: descriptor.sourcePointCount ?? null,
+            };
+            asyncFormatReader = reader;
+            asyncHasAttributes = descriptor.hasAttributes;
+            asyncAttributeIndices = new Map(descriptor.attributeSchema.map(
+                (attribute, index) => [attribute.name, index],
+            ));
+            viewer.fitScene();
+            const lod = viewer.updateLod(targetVoxelPixels);
+            currentMetadata = { ...opened, name, bytes: data.file.size, hasAttributes: descriptor.hasAttributes };
+            if (requestId !== null) {
+                self.postMessage({ type: "apiResult", requestId, value: { opened, lod, name } });
+            } else {
+                self.postMessage({ type: "datasetOpened", opened, name });
+                self.postMessage({ type: "dataset", opened, lod, name });
+            }
+            postLodProgress(lod);
+            scheduleAsyncLodRead();
+        }).catch((error) => {
+            if (generation === sceneGeneration) {
+                self.postMessage({ type: "error", operation: "openFile", requestId, message: String(error) });
+            }
+        });
+    }).catch((error) => {
+        if (generation === sceneGeneration) {
+            self.postMessage({ type: "error", operation: "openFile", requestId, message: String(error) });
+        }
+    });
+}
+
 async function handleMessage({ data }) {
     try {
         switch (data.type) {
@@ -170,19 +314,11 @@ async function handleMessage({ data }) {
             }
             case "api": {
                 let value;
+                let deferredResult = false;
                 switch (data.operation) {
                     case "load": {
-                        sceneGeneration += 1;
-                        targetVoxelPixels = data.targetVoxelPixels;
-                        datasetOpenedAt = performance.now();
-                        beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
-                        const opened = viewer.openFormatDataset(data.file, data.cacheBytes, data.attributes);
-                        viewer.fitScene();
-                        const lod = viewer.updateLod(targetVoxelPixels);
-                        currentMetadata = { ...opened, name: data.name ?? data.file.name, bytes: data.file.size };
-                        value = currentMetadata;
-                        self.postMessage({ type: "dataset", opened, lod, name: data.name ?? data.file.name });
-                        postLodProgress(lod);
+                        startAsyncDataset(data, data.requestId);
+                        deferredResult = true;
                         break;
                     }
                     case "fit":
@@ -238,7 +374,7 @@ async function handleMessage({ data }) {
                     default:
                         throw new Error(`unknown viewer API operation: ${data.operation}`);
                 }
-                self.postMessage({ type: "apiResult", requestId: data.requestId, value });
+                if (!deferredResult) self.postMessage({ type: "apiResult", requestId: data.requestId, value });
                 break;
             }
             case "resize":
@@ -249,12 +385,15 @@ async function handleMessage({ data }) {
                 const startedAt = performance.now();
                 viewer.setColorMode(data.colorMode);
                 sceneGeneration += 1;
+                failedAsyncBlock = null;
+                currentColorMode = data.colorMode;
                 targetVoxelPixels = data.targetVoxelPixels;
                 beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
                 if (viewer.lodStats()) {
                     const lod = viewer.updateLod(targetVoxelPixels);
                     self.postMessage({ type: "lod", lod });
                     postLodProgress(lod);
+                    scheduleAsyncLodRead();
                 }
                 break;
             }
@@ -262,18 +401,7 @@ async function handleMessage({ data }) {
                 viewer.setDepthShading(data.value);
                 break;
             case "openFile": {
-                sceneGeneration += 1;
-                targetVoxelPixels = data.targetVoxelPixels;
-                datasetOpenedAt = performance.now();
-                beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
-                const name = data.name ?? data.file.name;
-                self.postMessage({ type: "status", message: `Opening ${name}…` });
-                const opened = viewer.openFormatDataset(data.file, data.cacheBytes, data.attributes);
-                self.postMessage({ type: "datasetOpened", opened, name });
-                viewer.fitScene();
-                const lod = viewer.updateLod(targetVoxelPixels);
-                self.postMessage({ type: "dataset", opened, lod, name });
-                postLodProgress(lod);
+                startAsyncDataset(data);
                 break;
             }
             case "fit":
@@ -315,6 +443,7 @@ async function handleMessage({ data }) {
                 const renderCallMs = performance.now() - startedAt;
                 recordFrameRenderSample(renderCallMs);
                 postLodProgress(viewer.lodStats(), true);
+                scheduleAsyncLodRead();
                 renderedFrames += 1;
                 if (renderedFrames % 30 === 0) {
                     postStats({ status: frameStatus, renderCallMs });
