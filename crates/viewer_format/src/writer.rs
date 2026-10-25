@@ -607,7 +607,7 @@ fn validate_checkpoint_record(
             .iter()
             .chain(record.scale.iter())
             .any(|v| !v.is_finite())
-        || record.scale.iter().any(|v| *v <= 0.0)
+        || record.scale.iter().any(|v| *v < 0.0)
     {
         return Err(FormatError::MalformedIndex(
             "writer checkpoint numeric metadata",
@@ -951,13 +951,17 @@ impl CheckpointInput<'_> {
             AttributeDataType::U64 => parse!(u64, 8, U64),
             AttributeDataType::I64 => parse!(i64, 8, I64),
             AttributeDataType::F32 => AttributeValues::F32(
-                raw.chunks_exact(4)
-                    .map(|c| f32::from_bits(u32::from_le_bytes(c.try_into().expect("exact chunk"))))
+                raw.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|chunk| f32::from_bits(u32::from_le_bytes(*chunk)))
                     .collect(),
             ),
             AttributeDataType::F64 => AttributeValues::F64(
-                raw.chunks_exact(8)
-                    .map(|c| f64::from_bits(u64::from_le_bytes(c.try_into().expect("exact chunk"))))
+                raw.as_chunks::<8>()
+                    .0
+                    .iter()
+                    .map(|chunk| f64::from_bits(u64::from_le_bytes(*chunk)))
                     .collect(),
             ),
         })

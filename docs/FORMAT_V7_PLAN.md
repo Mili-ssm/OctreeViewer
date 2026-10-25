@@ -296,16 +296,23 @@ topología), lectura/preparación/escritura de bloques y cierre/sync de la parej
 de spools, workers internos, validación ni memoria; esas mediciones siguen siendo externas y deben
 quedar explícitas como tales.
 
-**Contrato acordado para recuperación EPT; soporte parcial implementado:** el writer V7 ya expone
-registros binarios versionados por bloque y restaura registros validados en orden, con prueba de
-paridad byte a byte tras reanudar. `--checkpoint`/`--resume` conservará el prefijo de bloques
-confirmados. Falta que el convertidor sincronice ambos candidatos, anexe y sincronice el diario,
-y actualice atómicamente el manifest antes de anunciar progreso confirmado. Al reanudar validará
-el prefijo y truncará solo colas posteriores a sus offsets. La identidad de fuente usará rutas, tamaños y marcas de
-modificación de `ept.json`, las páginas de jerarquía alcanzables y los LAZ usados, con comprobación
-antes/después del recorrido y antes de publicar; no se hasheará el contenido. Metadatos iguales
-pueden ocultar contenido sustituido, por lo que esto no representa una instantánea inmutable.
-Implementación pendiente; este protocolo interno no cambia los bytes V7 publicados.
+**Recuperación EPT V7.1-pre implementada:** el writer aporta registros binarios versionados por
+bloque; el convertidor sincroniza ambos candidatos, anexa/sincroniza el diario y reemplaza/sincroniza
+el manifest antes de anunciar el progreso. Reanudar valida el prefijo, restaura los registros y
+trunca solo colas posteriores a sus offsets. También retoma dentro de un LAZ con `Reader::seek` y
+recupera la publicación desde `OutputReady`; los bytes V7 publicados no cambian. El inventario de
+fuentes se guarda una vez en `sources.bin`, separado del manifest que se sincroniza por bloque. El
+checkpoint liga opciones y versión del plan de conversión. La identidad de fuente compara rutas,
+tamaños y marcas de modificación de `ept.json`, páginas de jerarquía alcanzables y LAZ, con
+verificaciones antes/después de lectura y antes de publicar. No hashea el contenido: cambios que
+conserven esos metadatos pueden pasar inadvertidos y no se obtiene una instantánea inmutable. Las
+pruebas simulan interrupciones mediante cancelación entre bloques y antes de publicar; no inyectan
+pérdida de energía ni terminación forzada del proceso.
+
+Verificación ejecutada: `cargo test -p viewer_convert --offline` (59 pruebas de biblioteca y 1 de
+CLI), `cargo test -p viewer_format --offline --lib` (91 pruebas, 1 ignorada) y
+`cargo clippy -p viewer_convert --all-targets --offline -- -D warnings`. No cambia el formato V7
+en disco ni certifica disponibilidad de GPU/navegador.
 
 Medir disco simultáneo: spools fuente/hijos/LOD + candidatos `.oct`/`.octattrs` + pareja anterior
 durante sustitución + checkpoints conservados. Comparar liberación temprana del último rango

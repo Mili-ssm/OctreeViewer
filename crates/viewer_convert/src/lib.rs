@@ -29,6 +29,7 @@ use viewer_format::{
 mod checkpoint;
 mod diagnostics;
 mod ept;
+mod ept_checkpoint;
 mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
@@ -429,15 +430,11 @@ fn convert_file_inner(
         return Err(ConvertError::ConflictingOutputPaths);
     }
     if ept::is_ept_input(input_path) {
-        if checkpoint_mode.is_some() {
-            return Err(ConvertError::UnsupportedEpt(
-                "--checkpoint and --resume are not supported for EPT inputs".to_owned(),
-            ));
-        }
         return ept::convert(
             input_path,
             output_path,
             options,
+            checkpoint_mode,
             on_progress,
             diagnostics.as_deref_mut(),
         );
@@ -1352,13 +1349,30 @@ fn publish_output_pair(
     if let (Some(diagnostics), Some(timer)) = (diagnostics, validation_timer) {
         diagnostics.output_validation = Some(timer.finish());
     }
+    publish_validated_output_pair(
+        temporary_path,
+        attributes_temporary_path,
+        output_path,
+        validation.total_points,
+        output_validation,
+        on_progress,
+    )
+}
+
+pub(crate) fn publish_validated_output_pair(
+    temporary_path: &Path,
+    attributes_temporary_path: &Path,
+    output_path: &Path,
+    point_count: u64,
+    output_validation: ConversionWorkerStats,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
+) -> Result<(u64, ConversionWorkerStats), ConvertError> {
     let attributes_path = output_attributes_path(output_path);
     let primary_bytes = fs::metadata(temporary_path)?.len();
     let attributes_bytes = fs::metadata(attributes_temporary_path)?.len();
     let output_bytes = primary_bytes
         .checked_add(attributes_bytes)
         .ok_or(ConvertError::SizeOverflow)?;
-    let point_count = validation.total_points;
     emit_progress(
         on_progress,
         ConversionProgress {

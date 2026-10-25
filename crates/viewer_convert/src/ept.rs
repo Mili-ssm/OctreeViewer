@@ -1,9 +1,10 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::BufReader,
     path::{Path, PathBuf},
     sync::mpsc,
+    time::UNIX_EPOCH,
 };
 
 use las::{PointDataBuilder, Reader};
@@ -16,11 +17,12 @@ use viewer_format::{
     FormatMetadata, FormatWriter, FormatWriterOptions, OctreeWriter, SourcePointBlock,
 };
 
+use super::ept_checkpoint::{EptCheckpoint, EptCheckpointStage, EptJournalRecord, EptSourceFile};
 use super::{
-    ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage, ConvertError,
-    ConvertOptions, DiagnosticTimer, MAX_BLOCKS, create_temporary_pair, descriptor, emit_progress,
-    input_batch_point_limit, omitted_dimensions, output_attributes_path, publish_output_pair,
-    source_schema,
+    CheckpointMode, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
+    ConvertError, ConvertOptions, DiagnosticTimer, MAX_BLOCKS, create_temporary_pair, descriptor,
+    emit_progress, input_batch_point_limit, omitted_dimensions, output_attributes_path,
+    publish_output_pair, source_schema,
 };
 
 const MAX_EPT_NODES: usize = 1_000_000;
@@ -114,15 +116,26 @@ pub(super) fn convert(
     input_path: &Path,
     output_path: &Path,
     options: ConvertOptions,
+    checkpoint_mode: Option<CheckpointMode>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
-    if output_path.exists() {
+    if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
     let attributes_output_path = output_attributes_path(output_path);
-    if attributes_output_path.exists() {
+    if attributes_output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(attributes_output_path));
+    }
+    let mut checkpoint = checkpoint_mode
+        .map(|mode| super::ept_checkpoint::EptCheckpoint::open(output_path, mode, options))
+        .transpose()?;
+    if (output_path.exists() || attributes_output_path.exists())
+        && checkpoint
+            .as_ref()
+            .is_none_or(|c| c.stage() != EptCheckpointStage::OutputReady)
+    {
+        return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
     if options.spatial_divisions() != 2
         || (options.spatial_workers_explicit() && options.spatial_workers() != 1)
@@ -141,6 +154,10 @@ pub(super) fn convert(
     };
     let root = manifest_path.parent().unwrap_or(Path::new("."));
     ensure_file_size(&manifest_path, MAX_EPT_MANIFEST_BYTES, "ept.json")?;
+    let manifest_before = checkpoint
+        .as_ref()
+        .map(|_| source_file_identity(root, &manifest_path))
+        .transpose()?;
     emit_progress(
         on_progress,
         ConversionProgress {
@@ -154,6 +171,11 @@ pub(super) fn convert(
     let manifest: EptManifest =
         serde_json::from_reader(BufReader::new(File::open(&manifest_path)?))
             .map_err(|error| ConvertError::InvalidEpt(format!("cannot parse ept.json: {error}")))?;
+    let mut source_files = Vec::new();
+    if let Some(before) = manifest_before {
+        verify_source_file_identity(root, &manifest_path, &before)?;
+        source_files.push(before);
+    }
     if manifest.data_type != "laszip" {
         return Err(ConvertError::UnsupportedEpt(format!(
             "dataType {:?}; this version supports only laszip",
@@ -176,7 +198,11 @@ pub(super) fn convert(
     // Even an empty EPT incurs at least one point of staging capacity and fixed overhead
     // in the existing estimate. Reject impossible budgets before parsing hierarchy pages.
     check_ept_memory_budget(1, 0, 0, options.max_memory_budget_bytes())?;
-    let counts = read_hierarchy(root, options.max_memory_budget_bytes())?;
+    let counts = read_hierarchy(
+        root,
+        options.max_memory_budget_bytes(),
+        checkpoint.as_ref().map(|_| &mut source_files),
+    )?;
     let root_key = EptKey {
         depth: 0,
         x: 0,
@@ -228,8 +254,16 @@ pub(super) fn convert(
                     file_path.display()
                 )));
             }
+            let before = checkpoint
+                .as_ref()
+                .map(|_| source_file_identity(root, &file_path))
+                .transpose()?;
             let reader = Reader::from_path(&file_path)?;
             let header = reader.header();
+            if let Some(before) = before {
+                verify_source_file_identity(root, &file_path, &before)?;
+                source_files.push(before);
+            }
             if header.number_of_points() != count {
                 return Err(ConvertError::InvalidEpt(format!(
                     "node {} declares {count} points but its LAZ header declares {}",
@@ -347,28 +381,229 @@ pub(super) fn convert(
         Vec::new(),
     )?
     .with_visual_scale(super::visual_scale_for_bounds(bounds)?)?;
+    source_files.sort_by(|left, right| left.path.cmp(&right.path));
+    if source_files
+        .windows(2)
+        .any(|pair| pair[0].path == pair[1].path)
+    {
+        return Err(ConvertError::InvalidEpt(
+            "duplicate path in EPT source inventory".to_owned(),
+        ));
+    }
+    if let Some(checkpoint) = checkpoint.as_mut() {
+        checkpoint.bind_source_files(source_files.clone())?;
+    }
+    verify_source_inventory(root, &source_files)?;
     if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), spatial_planning_timer) {
         diagnostics.spatial_planning = Some(timer.finish());
     }
-    let mut temporary = create_temporary_pair(output_path)?;
-    let file = temporary
-        .geometry
-        .file
-        .take()
-        .expect("temporary file is present");
-    let attributes_file = temporary
-        .attributes
-        .file
-        .take()
-        .expect("temporary companion file exists");
-    let mut writer = FormatWriter::new_split_for_version(
-        options.format_version(),
-        file,
-        attributes_file,
-        metadata,
+
+    if checkpoint
+        .as_ref()
+        .is_some_and(|checkpoint| checkpoint.stage() == EptCheckpointStage::OutputReady)
+    {
+        let ept_checkpoint = checkpoint.as_ref().expect("output-ready checkpoint exists");
+        let candidate_path = ept_checkpoint.candidate_path();
+        let candidate_attributes_path = ept_checkpoint.candidate_attributes_path();
+        ept_checkpoint.verify_output_ready()?;
+        let (point_count, block_count, output_validation) = ept_checkpoint
+            .output_ready_details()
+            .expect("output-ready checkpoint has report details");
+        if point_count != manifest.points || block_count != all_blocks.len() as u64 {
+            return Err(ConvertError::Checkpoint(super::CheckpointError::Mismatch));
+        }
+        verify_source_inventory(root, &source_files)?;
+        let (output_bytes, output_validation) = super::publish_validated_output_pair(
+            &candidate_path,
+            &candidate_attributes_path,
+            output_path,
+            point_count,
+            output_validation,
+            on_progress,
+        )?;
+        checkpoint
+            .take()
+            .expect("output-ready checkpoint is present")
+            .complete()?;
+        let _ = on_progress(ConversionProgress {
+            stage: ConversionStage::Complete,
+            points_processed: point_count,
+            total_points: point_count,
+            bytes_written: output_bytes,
+        });
+        return Ok(ConversionReport {
+            point_count,
+            block_count,
+            output_bytes,
+            estimated_peak_memory_bytes: memory_estimate,
+            omitted_dimensions: omitted,
+            block_preparation: None,
+            output_validation,
+        });
+    }
+    let mut temporary = if checkpoint.is_none() {
+        Some(create_temporary_pair(output_path)?)
+    } else {
+        None
+    };
+    let primary_path = checkpoint.as_ref().map_or_else(
+        || {
+            temporary
+                .as_ref()
+                .expect("temporary pair exists")
+                .geometry
+                .path
+                .clone()
+        },
+        EptCheckpoint::candidate_path,
+    );
+    let attributes_path = checkpoint.as_ref().map_or_else(
+        || {
+            temporary
+                .as_ref()
+                .expect("temporary pair exists")
+                .attributes
+                .path
+                .clone()
+        },
+        EptCheckpoint::candidate_attributes_path,
+    );
+    let writer_options =
         FormatWriterOptions::new(options.max_quantization_error(), 64 * 1024 * 1024)
-            .map_err(ConvertError::Format)?,
-    )?;
+            .map_err(ConvertError::Format)?;
+    let mut resume_cursor = (0_usize, 0_u64);
+    let mut processed = 0_u64;
+    let mut written_blocks = 0_u64;
+    let mut writer = if let Some(checkpoint) = checkpoint.as_mut() {
+        match checkpoint.stage() {
+            EptCheckpointStage::Started => {
+                let primary = File::create(&primary_path)?;
+                let attributes = File::create(&attributes_path)?;
+                let writer = FormatWriter::new_split_for_version(
+                    options.format_version(),
+                    primary,
+                    attributes,
+                    metadata,
+                    writer_options,
+                )?;
+                checkpoint.start_writing(
+                    fs::metadata(&primary_path)?.len(),
+                    fs::metadata(&attributes_path)?.len(),
+                )?;
+                writer
+            }
+            EptCheckpointStage::Writing => {
+                let primary = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&primary_path)?;
+                let attributes = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&attributes_path)?;
+                let mut writer = FormatWriter::resume_for_version(
+                    options.format_version(),
+                    primary,
+                    Some(attributes),
+                    metadata,
+                    writer_options,
+                )?;
+                checkpoint.for_each_committed_record(|record| {
+                    let Some(expected_id) = all_blocks.get(record.ordinal as usize) else {
+                        return Err(super::CheckpointError::Invalid(
+                            "journal references an unknown EPT block".to_owned(),
+                        ));
+                    };
+                    let id = writer
+                        .restore_committed_record(&record.writer_record)
+                        .map_err(|error| super::CheckpointError::Invalid(error.to_string()))?;
+                    if id != *expected_id {
+                        return Err(super::CheckpointError::Invalid(
+                            "journal block order does not match EPT plan".to_owned(),
+                        ));
+                    }
+                    let (node_index, node) = nodes
+                        .iter()
+                        .enumerate()
+                        .find(|(_, node)| node.block_ids.contains(&id))
+                        .ok_or_else(|| {
+                            super::CheckpointError::Invalid(
+                                "journal block has no EPT node".to_owned(),
+                            )
+                        })?;
+                    let block_index = node
+                        .block_ids
+                        .iter()
+                        .position(|block_id| *block_id == id)
+                        .expect("node contains block id");
+                    let block_start = u64::try_from(block_index)
+                        .map_err(|_| {
+                            super::CheckpointError::Invalid("block index overflow".to_owned())
+                        })?
+                        .checked_mul(node.point_limit)
+                        .ok_or_else(|| {
+                            super::CheckpointError::Invalid("point offset overflow".to_owned())
+                        })?;
+                    let expected_offset = block_start
+                        .checked_add(record.processed_points)
+                        .ok_or_else(|| {
+                            super::CheckpointError::Invalid("point offset overflow".to_owned())
+                        })?;
+                    if record.node_index != node_index as u64
+                        || record.node_point_offset != expected_offset
+                        || record.processed_points
+                            != node
+                                .point_count
+                                .saturating_sub(block_start)
+                                .min(node.point_limit)
+                    {
+                        return Err(super::CheckpointError::Invalid(
+                            "journal source cursor does not match EPT plan".to_owned(),
+                        ));
+                    }
+                    processed =
+                        processed
+                            .checked_add(record.processed_points)
+                            .ok_or_else(|| {
+                                super::CheckpointError::Invalid("point count overflow".to_owned())
+                            })?;
+                    written_blocks = written_blocks.checked_add(1).ok_or_else(|| {
+                        super::CheckpointError::Invalid("block count overflow".to_owned())
+                    })?;
+                    if expected_offset == node.point_count {
+                        resume_cursor = (node_index + 1, 0);
+                    } else {
+                        resume_cursor = (node_index, expected_offset);
+                    }
+                    Ok(())
+                })?;
+                checkpoint.truncate_uncommitted_artifacts()?;
+                writer
+            }
+            EptCheckpointStage::OutputReady => {
+                unreachable!("output-ready checkpoint was handled above")
+            }
+        }
+    } else {
+        let temporary = temporary.as_mut().expect("temporary pair exists");
+        let file = temporary
+            .geometry
+            .file
+            .take()
+            .expect("temporary file exists");
+        let attributes = temporary
+            .attributes
+            .file
+            .take()
+            .expect("temporary companion file exists");
+        FormatWriter::new_split_for_version(
+            options.format_version(),
+            file,
+            attributes,
+            metadata,
+            writer_options,
+        )?
+    };
     let largest_block_points = nodes
         .iter()
         .map(|node| node.point_count.min(options.points_per_block()))
@@ -382,20 +617,33 @@ pub(super) fn convert(
             .max_memory_budget_bytes()
             .saturating_sub(memory_estimate)
             >= second_block_estimate;
-    let mut processed = 0_u64;
     let block_stream_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let produce_each = |consume: &mut dyn FnMut(
         SourcePointBlock,
         u64,
+        usize,
+        u64,
     ) -> Result<(), ConvertError>|
      -> Result<(), ConvertError> {
-        for node in &nodes {
+        for (node_index, node) in nodes.iter().enumerate().skip(resume_cursor.0) {
             let Some(path) = &node.path else { continue };
+            if checkpoint_mode.is_some() {
+                verify_source_inventory_entry(root, path, &source_files)?;
+            }
             let mut reader = Reader::from_path(path)?;
             let point_format = *reader.header().point_format();
             let mut data = PointDataBuilder::new().for_header(reader.header()).build();
-            let mut node_processed = 0_u64;
-            for block_id in &node.block_ids {
+            let mut node_processed = if node_index == resume_cursor.0 {
+                resume_cursor.1
+            } else {
+                0
+            };
+            if node_processed > 0 {
+                reader.seek(node_processed)?;
+            }
+            let first_block = usize::try_from(node_processed / node.point_limit)
+                .map_err(|_| ConvertError::SizeOverflow)?;
+            for block_id in node.block_ids.iter().skip(first_block) {
                 let wanted = (node.point_count - node_processed).min(node.point_limit);
                 let read = reader.fill_points(wanted, &mut data)?;
                 if read != wanted {
@@ -412,7 +660,10 @@ pub(super) fn convert(
                     node.bounds,
                     node.key,
                 )?;
-                consume(source, read)?;
+                let after_node_points = node_processed
+                    .checked_add(read)
+                    .ok_or(ConvertError::SizeOverflow)?;
+                consume(source, read, node_index, after_node_points)?;
                 node_processed += read;
             }
             if node_processed != node.point_count {
@@ -421,17 +672,60 @@ pub(super) fn convert(
                     actual: node_processed,
                 });
             }
+            if checkpoint_mode.is_some() {
+                verify_source_inventory_entry(root, path, &source_files)?;
+            }
         }
         Ok(())
+    };
+    let mut write_block = |block: SourcePointBlock,
+                           count: u64,
+                           node_index: usize,
+                           node_point_offset: u64|
+     -> Result<(), ConvertError> {
+        let block_id = block.id();
+        OctreeWriter::write_block(&mut writer, block)?;
+        processed = processed
+            .checked_add(count)
+            .ok_or(ConvertError::SizeOverflow)?;
+        if let Some(checkpoint) = checkpoint.as_mut() {
+            let writer_record = writer.checkpoint_record(block_id)?;
+            let primary_len = fs::metadata(&primary_path)?.len();
+            let attributes_len = fs::metadata(&attributes_path)?.len();
+            checkpoint.append_committed_block(EptJournalRecord {
+                ordinal: written_blocks,
+                node_index: node_index as u64,
+                node_point_offset,
+                processed_points: count,
+                primary_len,
+                attributes_len,
+                writer_record,
+            })?;
+        }
+        written_blocks = written_blocks
+            .checked_add(1)
+            .ok_or(ConvertError::SizeOverflow)?;
+        emit_progress(
+            on_progress,
+            ConversionProgress {
+                stage: ConversionStage::ReadingAndWritingBlocks,
+                points_processed: processed,
+                total_points: manifest.points,
+                bytes_written: fs::metadata(&primary_path)?.len(),
+            },
+            processed,
+        )
     };
     if pipeline {
         std::thread::scope(|scope| -> Result<(), ConvertError> {
             let (sender, receiver) = mpsc::sync_channel(0);
             scope.spawn(move || {
-                let result = produce_each(&mut |block, count| {
-                    sender.send(Ok((block, count))).map_err(|_| {
-                        ConvertError::InvalidEpt("pipeline consumer stopped".to_owned())
-                    })
+                let result = produce_each(&mut |block, count, node_index, node_point_offset| {
+                    sender
+                        .send(Ok((block, count, node_index, node_point_offset)))
+                        .map_err(|_| {
+                            ConvertError::InvalidEpt("pipeline consumer stopped".to_owned())
+                        })
                 });
                 if let Err(error) = result {
                     // The receiver observes preparation failures and terminates without
@@ -440,36 +734,14 @@ pub(super) fn convert(
                 }
             });
             for item in receiver {
-                let (block, count) = item?;
-                OctreeWriter::write_block(&mut writer, block)?;
-                processed += count;
-                emit_progress(
-                    on_progress,
-                    ConversionProgress {
-                        stage: ConversionStage::ReadingAndWritingBlocks,
-                        points_processed: processed,
-                        total_points: manifest.points,
-                        bytes_written: fs::metadata(&temporary.geometry.path)?.len(),
-                    },
-                    processed,
-                )?;
+                let (block, count, node_index, node_point_offset) = item?;
+                write_block(block, count, node_index, node_point_offset)?;
             }
             Ok(())
         })?;
     } else {
-        produce_each(&mut |block, count| {
-            OctreeWriter::write_block(&mut writer, block)?;
-            processed += count;
-            emit_progress(
-                on_progress,
-                ConversionProgress {
-                    stage: ConversionStage::ReadingAndWritingBlocks,
-                    points_processed: processed,
-                    total_points: manifest.points,
-                    bytes_written: fs::metadata(&temporary.geometry.path)?.len(),
-                },
-                processed,
-            )
+        produce_each(&mut |block, count, node_index, node_point_offset| {
+            write_block(block, count, node_index, node_point_offset)
         })?;
     }
     if processed != manifest.points {
@@ -477,6 +749,9 @@ pub(super) fn convert(
             expected: manifest.points,
             actual: processed,
         });
+    }
+    if checkpoint_mode.is_some() {
+        verify_source_inventory(root, &source_files)?;
     }
     if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), block_stream_timer) {
         diagnostics.block_stream = Some(timer.finish());
@@ -488,12 +763,11 @@ pub(super) fn convert(
     attributes.sync_all()?;
     drop(file);
     drop(attributes);
-    if let (Some(diagnostics), Some(timer)) = (diagnostics, finalize_timer) {
+    if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), finalize_timer) {
         diagnostics.finalize_and_sync_elapsed_ns = Some(timer.finish().elapsed_ns);
     }
-    let file_length = fs::metadata(&temporary.geometry.path)?.len();
-    let attributes_temporary_path = temporary.attributes.path.clone();
-    let attributes_length = fs::metadata(&attributes_temporary_path)?.len();
+    let file_length = fs::metadata(&primary_path)?.len();
+    let attributes_length = fs::metadata(&attributes_path)?.len();
     let validation = super::OutputValidation {
         total_points: manifest.points,
         block_ids: &all_blocks,
@@ -504,14 +778,46 @@ pub(super) fn convert(
         memory_budget_bytes: options.max_memory_budget_bytes(),
         reserved_memory_bytes: 0,
     };
-    let (output_bytes, output_validation) = publish_output_pair(
-        &temporary.geometry.path,
-        &attributes_temporary_path,
-        output_path,
-        validation,
-        on_progress,
-        None,
-    )?;
+    let (output_bytes, output_validation) = if checkpoint.is_some() {
+        let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
+        let output_validation = super::validate_output_pair(
+            &primary_path,
+            &attributes_path,
+            &validation,
+            on_progress,
+            diagnostics.as_deref_mut(),
+        )?;
+        if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), validation_timer) {
+            diagnostics.output_validation = Some(timer.finish());
+        }
+        verify_source_inventory(root, &source_files)?;
+        checkpoint
+            .as_mut()
+            .expect("checkpoint is present")
+            .mark_output_ready(manifest.points, written_blocks, output_validation)?;
+        let published = super::publish_validated_output_pair(
+            &primary_path,
+            &attributes_path,
+            output_path,
+            manifest.points,
+            output_validation,
+            on_progress,
+        )?;
+        checkpoint
+            .take()
+            .expect("output-ready checkpoint is present")
+            .complete()?;
+        published
+    } else {
+        publish_output_pair(
+            &primary_path,
+            &attributes_path,
+            output_path,
+            validation,
+            on_progress,
+            diagnostics,
+        )?
+    };
     let _ = on_progress(ConversionProgress {
         stage: ConversionStage::Complete,
         points_processed: manifest.points,
@@ -657,6 +963,7 @@ fn point_data_to_block(
 fn read_hierarchy(
     root: &Path,
     memory_budget_bytes: u64,
+    mut source_files: Option<&mut Vec<EptSourceFile>>,
 ) -> Result<BTreeMap<EptKey, u64>, ConvertError> {
     let hierarchy_dir = root.join("ept-hierarchy");
     let mut counts = BTreeMap::new();
@@ -679,6 +986,10 @@ fn read_hierarchy(
             MAX_EPT_HIERARCHY_PAGE_BYTES,
             "EPT hierarchy page",
         )?;
+        let page_before = source_files
+            .as_ref()
+            .map(|_| source_file_identity(root, &page_path))
+            .transpose()?;
         let page: BTreeMap<String, i64> =
             serde_json::from_reader(BufReader::new(File::open(&page_path)?)).map_err(|error| {
                 ConvertError::InvalidEpt(format!(
@@ -686,6 +997,13 @@ fn read_hierarchy(
                     page_path.display()
                 ))
             })?;
+        if let Some(before) = page_before {
+            verify_source_file_identity(root, &page_path, &before)?;
+            source_files
+                .as_deref_mut()
+                .expect("source inventory was requested")
+                .push(before);
+        }
         match page.get(&page_key.name()) {
             Some(count) if *count >= 0 => {}
             Some(_) => {
@@ -756,6 +1074,93 @@ fn read_hierarchy(
         }
     }
     Ok(counts)
+}
+
+fn source_file_identity(root: &Path, path: &Path) -> Result<EptSourceFile, ConvertError> {
+    let root = if root.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        root
+    };
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| ConvertError::InvalidEpt("source path escaped EPT root".to_owned()))?;
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    let metadata = fs::metadata(path)?;
+    let modified = metadata.modified()?;
+    let (mtime_secs, mtime_nanos) = match modified.duration_since(UNIX_EPOCH) {
+        Ok(duration) => (
+            i64::try_from(duration.as_secs()).map_err(|_| ConvertError::SizeOverflow)?,
+            duration.subsec_nanos(),
+        ),
+        Err(error) => {
+            let duration = error.duration();
+            let seconds =
+                i64::try_from(duration.as_secs()).map_err(|_| ConvertError::SizeOverflow)?;
+            if duration.subsec_nanos() == 0 {
+                (-seconds, 0)
+            } else {
+                (
+                    seconds
+                        .checked_neg()
+                        .and_then(|s| s.checked_sub(1))
+                        .ok_or(ConvertError::SizeOverflow)?,
+                    1_000_000_000 - duration.subsec_nanos(),
+                )
+            }
+        }
+    };
+    Ok(EptSourceFile {
+        path: relative,
+        bytes: metadata.len(),
+        mtime_secs,
+        mtime_nanos,
+    })
+}
+
+fn verify_source_file_identity(
+    root: &Path,
+    path: &Path,
+    expected: &EptSourceFile,
+) -> Result<(), ConvertError> {
+    if source_file_identity(root, path)? != *expected {
+        return Err(ConvertError::InvalidEpt(format!(
+            "source file metadata changed during conversion: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn verify_source_inventory(root: &Path, files: &[EptSourceFile]) -> Result<(), ConvertError> {
+    for expected in files {
+        verify_source_file_identity(root, &root.join(&expected.path), expected)?;
+    }
+    Ok(())
+}
+
+fn verify_source_inventory_entry(
+    root: &Path,
+    path: &Path,
+    files: &[EptSourceFile],
+) -> Result<(), ConvertError> {
+    let current = source_file_identity(root, path)?;
+    let expected = files
+        .iter()
+        .find(|file| file.path == current.path)
+        .ok_or_else(|| {
+            ConvertError::InvalidEpt(format!(
+                "source file is absent from checkpoint inventory: {}",
+                path.display()
+            ))
+        })?;
+    if current != *expected {
+        return Err(ConvertError::InvalidEpt(format!(
+            "source file metadata changed during conversion: {}",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn check_ept_memory_budget(
@@ -874,6 +1279,7 @@ fn node_diagonal(bounds: SpatialBounds) -> f64 {
 mod tests {
     use std::{
         fs,
+        io::Write,
         path::PathBuf,
         sync::atomic::{AtomicU64, Ordering},
     };
@@ -898,20 +1304,26 @@ mod tests {
     }
 
     fn write_laz(path: &Path, position: [f64; 3]) {
+        write_laz_points(path, &[position]);
+    }
+
+    fn write_laz_points(path: &Path, positions: &[[f64; 3]]) {
         let mut builder = Builder::from((1, 2));
         builder.point_format = Format::new(0).unwrap();
         builder.point_format.is_compressed = true;
         let mut writer = Writer::from_path(path, builder.into_header().unwrap()).unwrap();
-        writer
-            .write_point(Point {
-                x: position[0],
-                y: position[1],
-                z: position[2],
-                intensity: 0xAB00,
-                classification: las::point::Classification::Ground,
-                ..Point::default()
-            })
-            .unwrap();
+        for position in positions {
+            writer
+                .write_point(Point {
+                    x: position[0],
+                    y: position[1],
+                    z: position[2],
+                    intensity: 0xAB00,
+                    classification: las::point::Classification::Ground,
+                    ..Point::default()
+                })
+                .unwrap();
+        }
     }
 
     fn write_laz_with_rgb(path: &Path) {
@@ -1098,6 +1510,148 @@ mod tests {
     }
 
     #[test]
+    fn ept_checkpoint_resumes_within_laz_and_matches_clean_output() {
+        let root = dir();
+        fs::create_dir_all(root.join("ept-data")).unwrap();
+        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+        write_manifest(&root, "laszip", 2);
+        fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":2}"#).unwrap();
+        write_laz_points(
+            &root.join("ept-data/0-0-0-0.laz"),
+            &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
+        );
+        let options = ConvertOptions::new(1, 0.01)
+            .unwrap()
+            .with_format_version(viewer_format::FormatVersion::V7_PRE1)
+            .unwrap()
+            .with_pipelined_writes(true);
+        let output = root.join("resumed.oct");
+        let stopped = crate::convert_file_with_checkpoint(
+            &root,
+            &output,
+            options,
+            CheckpointMode::Create,
+            |progress| {
+                !(progress.stage == ConversionStage::ReadingAndWritingBlocks
+                    && progress.points_processed == 1)
+            },
+        );
+        assert!(matches!(
+            stopped,
+            Err(ConvertError::Cancelled {
+                points_processed: 1
+            })
+        ));
+        assert!(!output.exists());
+        crate::convert_file_with_checkpoint(
+            &root,
+            &output,
+            options,
+            CheckpointMode::Resume,
+            |_| true,
+        )
+        .unwrap();
+
+        let clean = root.join("clean.oct");
+        crate::convert_file(&root, &clean, options).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), fs::read(&clean).unwrap());
+        assert_eq!(
+            fs::read(output_attributes_path(&output)).unwrap(),
+            fs::read(output_attributes_path(&clean)).unwrap()
+        );
+        assert!(!output.with_extension("oct.checkpoint").exists());
+    }
+
+    #[test]
+    fn ept_checkpoint_recovers_after_output_validation_before_publication() {
+        let root = dir();
+        fs::create_dir_all(root.join("ept-data")).unwrap();
+        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+        write_manifest(&root, "laszip", 1);
+        fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":1}"#).unwrap();
+        write_laz(&root.join("ept-data/0-0-0-0.laz"), [1.0, 1.0, 1.0]);
+        let options = ConvertOptions::default()
+            .with_format_version(viewer_format::FormatVersion::V7_PRE1)
+            .unwrap();
+        let output = root.join("recovered.oct");
+        let stopped = crate::convert_file_with_checkpoint(
+            &root,
+            &output,
+            options,
+            CheckpointMode::Create,
+            |progress| progress.stage != ConversionStage::PublishingOutput,
+        );
+        assert!(matches!(stopped, Err(ConvertError::Cancelled { .. })));
+        assert!(!output.exists());
+        assert!(output.with_extension("oct.checkpoint").exists());
+
+        crate::convert_file_with_checkpoint(
+            &root,
+            &output,
+            options,
+            CheckpointMode::Resume,
+            |_| true,
+        )
+        .unwrap();
+        assert!(output.exists());
+        assert!(output_attributes_path(&output).exists());
+        assert!(!output.with_extension("oct.checkpoint").exists());
+    }
+
+    #[test]
+    fn ept_checkpoint_rejects_changed_source_metadata_without_touching_prefix() {
+        let root = dir();
+        fs::create_dir_all(root.join("ept-data")).unwrap();
+        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+        write_manifest(&root, "laszip", 2);
+        fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":2}"#).unwrap();
+        let source = root.join("ept-data/0-0-0-0.laz");
+        write_laz_points(&source, &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]]);
+        let options = ConvertOptions::new(1, 0.01)
+            .unwrap()
+            .with_format_version(viewer_format::FormatVersion::V7_PRE1)
+            .unwrap()
+            .with_pipelined_writes(true);
+        let output = root.join("mismatch.oct");
+        let stopped = crate::convert_file_with_checkpoint(
+            &root,
+            &output,
+            options,
+            CheckpointMode::Create,
+            |progress| {
+                !(progress.stage == ConversionStage::ReadingAndWritingBlocks
+                    && progress.points_processed == 1)
+            },
+        );
+        assert!(matches!(stopped, Err(ConvertError::Cancelled { .. })));
+        let checkpoint_root = output.with_extension("oct.checkpoint");
+        let candidate = checkpoint_root.join("candidate.oct");
+        let candidate_attributes = checkpoint_root.join("candidate.octattrs");
+        let primary_before = fs::read(&candidate).unwrap();
+        let attributes_before = fs::read(&candidate_attributes).unwrap();
+        OpenOptions::new()
+            .append(true)
+            .open(&source)
+            .unwrap()
+            .write_all(&[0])
+            .unwrap();
+
+        assert!(matches!(
+            crate::convert_file_with_checkpoint(
+                &root,
+                &output,
+                options,
+                CheckpointMode::Resume,
+                |_| true,
+            ),
+            Err(ConvertError::Checkpoint(crate::CheckpointError::Mismatch))
+        ));
+        assert_eq!(fs::read(&candidate).unwrap(), primary_before);
+        assert_eq!(fs::read(&candidate_attributes).unwrap(), attributes_before);
+        fs::remove_dir_all(checkpoint_root).unwrap();
+    }
+
+    #[test]
     fn v7_ept_rgb_conversion_preserves_display_and_typed_values() {
         let root = dir();
         fs::create_dir_all(root.join("ept-data")).unwrap();
@@ -1149,6 +1703,7 @@ mod tests {
                 &root,
                 &root.join("result.oct"),
                 ConvertOptions::default(),
+                None,
                 &mut |_| true,
                 None,
             ),
@@ -1169,11 +1724,12 @@ mod tests {
                 crate::CheckpointMode::Create,
                 |_| true,
             ),
-            Err(ConvertError::UnsupportedEpt(message)) if message.contains("checkpoint")
+            Err(ConvertError::Checkpoint(crate::CheckpointError::Invalid(message)))
+                if message.contains("v7.1-pre")
         ));
         let repartitioned = ConvertOptions::default().with_spatial_divisions(4).unwrap();
         assert!(matches!(
-            convert(&root, &output, repartitioned, &mut |_| true, None),
+            convert(&root, &output, repartitioned, None, &mut |_| true, None),
             Err(ConvertError::UnsupportedEpt(message)) if message.contains("topology")
         ));
         assert!(!output.exists());
@@ -1190,6 +1746,7 @@ mod tests {
                 &root,
                 &root.join("result.oct"),
                 ConvertOptions::default(),
+                None,
                 &mut |_| true,
                 None,
             ),
@@ -1202,6 +1759,7 @@ mod tests {
                 &root,
                 &root.join("result.oct"),
                 ConvertOptions::default(),
+                None,
                 &mut |_| true,
                 None,
             ),
@@ -1225,7 +1783,7 @@ mod tests {
         let options = ConvertOptions::with_memory_budget(1, 0.01, 1).unwrap();
 
         assert!(matches!(
-            convert(&root, &output, options, &mut |_| true, None),
+            convert(&root, &output, options, None, &mut |_| true, None),
             Err(ConvertError::MemoryBudgetExceeded { limit: 1, .. })
         ));
         assert!(!output.exists());
@@ -1254,7 +1812,7 @@ mod tests {
         let options = ConvertOptions::with_memory_budget(1, 0.01, 17 * 1024 * 1024).unwrap();
 
         assert!(matches!(
-            convert(&root, &output, options, &mut |_| true, None),
+            convert(&root, &output, options, None, &mut |_| true, None),
             Err(ConvertError::MemoryBudgetExceeded {
                 limit: 17_825_792,
                 ..
