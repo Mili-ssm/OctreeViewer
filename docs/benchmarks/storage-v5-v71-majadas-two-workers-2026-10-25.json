@@ -1,0 +1,80 @@
+{
+  "kind": "real_dataset_v5_v71_majadas_two_worker_single_run_comparison",
+  "date": "2026-10-25",
+  "conditions": "Same host, perf binary, source and conversion options; one run per format, serial order V7 then V5, OS cache not purged. This is an exploratory observation, not a repeated worker-count comparison.",
+  "source": {
+    "path": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+    "bytes": 1343266470,
+    "sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
+  },
+  "conversion_binary_sha256": "635897e127254591e4fd06785ebcf42674bd51383455b4a99a8d864a02a04395",
+  "options": {
+    "workers": 2,
+    "divisions": 2,
+    "points_per_block": 262144,
+    "checkpoint": false,
+    "pipeline_writes": false,
+    "sample_interval_ms": 100
+  },
+  "versions": {
+    "v5": {
+      "status": "complete",
+      "elapsed_seconds": 311.95370920200367,
+      "spatial_planning_seconds": 238.778189949,
+      "block_stream_seconds": 47.443924166,
+      "block_preparation_seconds": 45.721558946,
+      "ordered_write_and_release_seconds": 1.718853633,
+      "output_validation_seconds": 15.092790638,
+      "oct_bytes": 4214687109,
+      "octattrs_bytes": 3319094608,
+      "pair_bytes": 7533781717,
+      "sha256_oct": "742262867c844bb4e876cd4280a648e45ee677624a3cebd1a8d71bbbf6ff6f04",
+      "sha256_octattrs": "d45cd5fd70816d24ea29137faaf4ec1ca6cc2a4fcdc8be2dabbefc20f9a543f1",
+      "rss_sampled_peak_bytes": 219389952,
+      "temporary_sampled_peak_bytes": 19163706978,
+      "logical_checksum": "b830818c4aeddac0",
+      "blocks": 6259,
+      "points_including_lod": 415602190
+    },
+    "v7.1-pre": {
+      "status": "complete",
+      "elapsed_seconds": 414.1253636580077,
+      "spatial_planning_seconds": 248.021470452,
+      "block_stream_seconds": 150.076886,
+      "block_preparation_seconds": 147.335035834,
+      "ordered_write_and_release_seconds": 2.73584802,
+      "output_validation_seconds": 15.326819564,
+      "oct_bytes": 2197676578,
+      "octattrs_bytes": 2414967531,
+      "pair_bytes": 4612644109,
+      "sha256_oct": "0adb5c68a06627bd56e79e299cfbb506238918a9bbc8e22f3cb5be86d9b6d3aa",
+      "sha256_octattrs": "88edf01cbc10ebe233ccf40013c2d40e75ae931f502cbd22fdac85047b288864",
+      "rss_sampled_peak_bytes": 232562688,
+      "temporary_sampled_peak_bytes": 18890102325,
+      "logical_checksum": "b830818c4aeddac0",
+      "blocks": 6259,
+      "points_including_lod": 415602190
+    }
+  },
+  "v7_change_vs_v5_percent": {
+    "conversion_elapsed_seconds": 32.75218452037814,
+    "block_preparation_seconds": 222.24412122082674,
+    "output_pair_bytes": -38.773855119912014,
+    "rss_sampled_peak_bytes": 6.004256749187853,
+    "temporary_sampled_peak_bytes": -1.4277230042919142
+  },
+  "v7_workers_2_vs_workers_1_context": {
+    "v7_workers_1_three_run_median_seconds": 471.70156565999787,
+    "v7_workers_1_three_run_median_preparation_seconds": 173.767080426,
+    "v7_workers_2_single_run_seconds": 414.1253636580077,
+    "v7_workers_2_single_run_preparation_seconds": 147.335035834,
+    "v7_workers_2_single_run_rss_bytes": 232562688,
+    "caveat": "Worker 1 values are medians of three runs; worker 2 has one run. Do not treat the difference as a measured stable speedup or change defaults from this sample."
+  },
+  "verification": {
+    "v5_progressive_read": "6259 blocks, 415602190 points, checksum b830818c4aeddac0",
+    "v7_progressive_read": "6259 blocks, 415602190 points, checksum b830818c4aeddac0",
+    "same_logical_checksum": true
+  },
+  "limits": "One conversion sample per version; timing variation and disk cache conditions are not controlled. The result establishes output integrity and a descriptive resource tradeoff only."
+}

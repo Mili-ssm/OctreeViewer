@@ -396,7 +396,11 @@ de 482,63 s amplió el rango total a 460,77–689,42 s; RSS mediano subió 4,13%
 quedó prácticamente igual. Es progreso localizado, no cierre: V7 sigue con preparación ~2,98× V5
 y total mediano ~27,9% mayor. Una prueba de reutilización del buffer radix no mostró ganancia
 (181,55 s de preparación en una corrida) y se revirtió; no es evidencia concluyente de regresión.
-Los archivos V5 locales antiguos llevan `OCTVWFRM` y el reader los
+Una comparación exploratoria de una corrida con dos workers dio V7 414,13 s frente a V5
+311,95 s (+32,75%); la preparación fue 147,34 vs 45,72 s, con la misma pareja/checksum y RSS
+232,6 vs 219,4 MB. Frente al V7 de un worker mediano, bajó el tiempo, pero no tanto como para
+cerrar la brecha frente a V5. Es un dato único, no justifica cambiar defaults. Los archivos V5
+locales antiguos llevan `OCTVWFRM` y el reader los
 rechaza como `ProvisionalFormat`; las referencias válidas se regeneraron desde LAS/LAZ.
 [Repeticiones V5/V7 y fases](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json),
 [optimización radix y límites](benchmarks/storage-v7-majadas-radix-index-2026-10-25.json).
