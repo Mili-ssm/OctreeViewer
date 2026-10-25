@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     io::BufReader,
     path::{Path, PathBuf},
+    sync::mpsc,
 };
 
 use las::{PointDataBuilder, Reader};
@@ -101,6 +102,7 @@ struct EptNode {
     bounds: SpatialBounds,
     path: Option<PathBuf>,
     block_ids: Vec<BlockId>,
+    point_limit: u64,
 }
 
 pub(super) fn is_ept_input(path: &Path) -> bool {
@@ -289,6 +291,7 @@ pub(super) fn convert(
             bounds: node_bounds,
             path: (count > 0).then_some(file_path),
             block_ids,
+            point_limit,
         });
     }
     let schema = schema.unwrap_or_default();
@@ -360,37 +363,96 @@ pub(super) fn convert(
         FormatWriterOptions::new(options.max_quantization_error(), 64 * 1024 * 1024)
             .map_err(ConvertError::Format)?,
     )?;
+    let largest_block_points = nodes
+        .iter()
+        .map(|node| node.point_count.min(options.points_per_block()))
+        .max()
+        .unwrap_or(1);
+    let second_block_estimate = largest_block_points
+        .checked_mul(192)
+        .ok_or(ConvertError::SizeOverflow)?;
+    let pipeline = options.pipelined_writes()
+        && options
+            .max_memory_budget_bytes()
+            .saturating_sub(memory_estimate)
+            >= second_block_estimate;
     let mut processed = 0_u64;
-    for node in &nodes {
-        let Some(path) = &node.path else {
-            continue;
-        };
-        let mut reader = Reader::from_path(path)?;
-        let point_format = *reader.header().point_format();
-        let point_limit =
-            input_batch_point_limit(options.points_per_block(), usize::from(point_format.len()));
-        let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
-        let mut node_processed = 0_u64;
-        for block_id in &node.block_ids {
-            let wanted = (node.point_count - node_processed).min(point_limit);
-            let read = reader.fill_points(wanted, &mut point_data)?;
-            if read != wanted {
+    let produce_each = |consume: &mut dyn FnMut(
+        SourcePointBlock,
+        u64,
+    ) -> Result<(), ConvertError>|
+     -> Result<(), ConvertError> {
+        for node in &nodes {
+            let Some(path) = &node.path else { continue };
+            let mut reader = Reader::from_path(path)?;
+            let point_format = *reader.header().point_format();
+            let mut data = PointDataBuilder::new().for_header(reader.header()).build();
+            let mut node_processed = 0_u64;
+            for block_id in &node.block_ids {
+                let wanted = (node.point_count - node_processed).min(node.point_limit);
+                let read = reader.fill_points(wanted, &mut data)?;
+                if read != wanted {
+                    return Err(ConvertError::PointCountMismatch {
+                        expected: node.point_count,
+                        actual: node_processed + read,
+                    });
+                }
+                let source = point_data_to_block(
+                    *block_id,
+                    &data,
+                    frame,
+                    point_format,
+                    node.bounds,
+                    node.key,
+                )?;
+                consume(source, read)?;
+                node_processed += read;
+            }
+            if node_processed != node.point_count {
                 return Err(ConvertError::PointCountMismatch {
                     expected: node.point_count,
-                    actual: node_processed + read,
+                    actual: node_processed,
                 });
             }
-            let block = point_data_to_block(
-                *block_id,
-                &point_data,
-                frame,
-                point_format,
-                node.bounds,
-                node.key,
-            )?;
+        }
+        Ok(())
+    };
+    if pipeline {
+        std::thread::scope(|scope| -> Result<(), ConvertError> {
+            let (sender, receiver) = mpsc::sync_channel(0);
+            scope.spawn(move || {
+                let result = produce_each(&mut |block, count| {
+                    sender.send(Ok((block, count))).map_err(|_| {
+                        ConvertError::InvalidEpt("pipeline consumer stopped".to_owned())
+                    })
+                });
+                if let Err(error) = result {
+                    // The receiver observes preparation failures and terminates without
+                    // publishing the temporary output pair.
+                    let _ = sender.send(Err(error));
+                }
+            });
+            for item in receiver {
+                let (block, count) = item?;
+                OctreeWriter::write_block(&mut writer, block)?;
+                processed += count;
+                emit_progress(
+                    on_progress,
+                    ConversionProgress {
+                        stage: ConversionStage::ReadingAndWritingBlocks,
+                        points_processed: processed,
+                        total_points: manifest.points,
+                        bytes_written: fs::metadata(&temporary.geometry.path)?.len(),
+                    },
+                    processed,
+                )?;
+            }
+            Ok(())
+        })?;
+    } else {
+        produce_each(&mut |block, count| {
             OctreeWriter::write_block(&mut writer, block)?;
-            node_processed += read;
-            processed += read;
+            processed += count;
             emit_progress(
                 on_progress,
                 ConversionProgress {
@@ -400,14 +462,8 @@ pub(super) fn convert(
                     bytes_written: fs::metadata(&temporary.geometry.path)?.len(),
                 },
                 processed,
-            )?;
-        }
-        if node_processed != node.point_count {
-            return Err(ConvertError::PointCountMismatch {
-                expected: node.point_count,
-                actual: node_processed,
-            });
-        }
+            )
+        })?;
     }
     if processed != manifest.points {
         return Err(ConvertError::PointCountMismatch {
@@ -921,6 +977,52 @@ mod tests {
                 true
             })
             .unwrap();
+            let pipelined_output = root.join("pipelined.oct");
+            crate::convert_file(
+                &root,
+                &pipelined_output,
+                options.with_pipelined_writes(true),
+            )
+            .unwrap();
+            assert_eq!(
+                fs::read(&output).unwrap(),
+                fs::read(&pipelined_output).unwrap()
+            );
+            assert_eq!(
+                fs::read(output_attributes_path(&output)).unwrap(),
+                fs::read(output_attributes_path(&pipelined_output)).unwrap()
+            );
+            let constrained_options = ConvertOptions::with_memory_budget(
+                options.points_per_block(),
+                options.max_quantization_error(),
+                report.estimated_peak_memory_bytes,
+            )
+            .unwrap()
+            .with_format_version(version)
+            .unwrap()
+            .with_pipelined_writes(true);
+            let constrained_output = root.join("constrained.oct");
+            crate::convert_file(&root, &constrained_output, constrained_options).unwrap();
+            assert_eq!(
+                fs::read(&output).unwrap(),
+                fs::read(&constrained_output).unwrap()
+            );
+            assert_eq!(
+                fs::read(output_attributes_path(&output)).unwrap(),
+                fs::read(output_attributes_path(&constrained_output)).unwrap()
+            );
+            if version == viewer_format::FormatVersion::V7_PRE1 {
+                let cancelled_output = root.join("cancelled.oct");
+                let cancelled = crate::convert_file_with_progress(
+                    &root,
+                    &cancelled_output,
+                    options.with_pipelined_writes(true),
+                    |event| event.stage != ConversionStage::ReadingAndWritingBlocks,
+                );
+                assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+                assert!(!cancelled_output.exists());
+                assert!(!output_attributes_path(&cancelled_output).exists());
+            }
             assert_eq!(report.point_count, 3);
             assert_eq!(report.block_preparation, None);
             assert!(report.output_validation.worker_limit > 0);

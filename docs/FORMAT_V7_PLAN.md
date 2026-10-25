@@ -222,8 +222,17 @@ en disco y la concurrencia de EPT no cambian.
 Reutilizar preparación paralela + único escritor ordenado. Sustituir la admisión basada solo
 en cantidad de bloques por costes conservadores de entrada, candidatos, payload preparado y
 ambos lotes del pipeline. Un bloque que no cabe debe provocar rechazo explícito o subdivisión
-durante planificación; no superar cuota silenciosamente. Extender después el mismo contrato
-a EPT, cuya escritura actual es serial. La salida debe ser determinista con 1/2/4 workers.
+durante planificación; no superar cuota silenciosamente. La salida debe ser determinista con
+1/2/4 workers.
+
+**Implementado para EPT:** `--pipeline-writes` recorre cada LAZ y sus bloques en orden, prepara
+un bloque por vez en un productor y lo entrega por canal de capacidad cero al escritor del hilo
+llamante. El canal no forma una cola; como máximo se solapan el bloque que se escribe y el
+siguiente que se lee/prepara. Se activa solo si el presupuesto estimado deja margen de 192 bytes
+por punto del bloque mayor; si no, usa el recorrido serial. No añade workers de lectura/codec ni
+checkpoint EPT. Una prueba de fixture compara byte a byte `.oct` y `.octattrs` entre ambas rutas,
+también con un presupuesto que fuerza el fallback. Esto valida orden y equivalencia en el fixture,
+no un speedup ni el RSS real.
 
 Medir disco simultáneo: spools fuente/hijos/LOD + candidatos `.oct`/`.octattrs` + pareja anterior
 durante sustitución + checkpoints conservados. Comparar liberación temprana del último rango
@@ -231,11 +240,12 @@ con spools comprimidos/chunks: menos bytes puede exigir más CPU y perjudicar le
 Elegir según medidas de tráfico y pico; no cambiar checkpoints sin versionarlos.
 
 **Siguiente cierre medible:** establecer una base V7 en Belvedere, Albuera y Majadas para 1/2/4
-workers y con/sin checkpoint: repetir tiempos, RSS/PSS muestreados, bytes temporales máximos,
-hashes y capacidades retenidas de lotes. El profiler de filesystem puede perder picos breves o
-spools eliminados durante el recorrido; sus muestras no son una cota exacta de disco físico.
-Usar esa base antes de reemplazar la estimación de memoria actual por admisión ponderada por
-bytes, y aceptar el cambio solo si reduce el pico medido sin cambiar salida, orden ni recuperación.
+workers y con/sin checkpoint; incluir EPT con y sin `--pipeline-writes`: repetir tiempos, RSS/PSS
+muestreados, bytes temporales máximos, hashes y capacidades retenidas de lotes. El profiler de
+filesystem puede perder picos breves o spools eliminados durante el recorrido; sus muestras no son
+una cota exacta de disco físico. Usar esa base antes de reemplazar la estimación de memoria actual
+por admisión ponderada por bytes, y aceptar el cambio solo si reduce el pico medido sin cambiar
+salida, orden ni recuperación.
 
 **Primera línea base V7 a escala:** una ejecución `perf`, sin checkpoint, un worker, divisiones 2
 y 262.144 puntos/bloque convirtió Albuera (`SHA-256` de fuente en el JSON). La pareja V7.1-pre
