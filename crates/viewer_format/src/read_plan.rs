@@ -116,6 +116,7 @@ impl ReadMemoryEstimate {
 /// Read decision and its ranges, with conservative logical memory accounting.
 #[derive(Debug)]
 pub struct ReadPlan {
+    pub(crate) owner: std::sync::Arc<()>,
     block_id: BlockId,
     selection: ReadSelection,
     ranges: Vec<PayloadReadRange>,
@@ -124,12 +125,14 @@ pub struct ReadPlan {
 
 impl ReadPlan {
     pub(crate) fn new(
+        owner: std::sync::Arc<()>,
         block_id: BlockId,
         selection: ReadSelection,
         ranges: Vec<PayloadReadRange>,
         memory: ReadMemoryEstimate,
     ) -> Self {
         Self {
+            owner,
             block_id,
             selection,
             ranges,

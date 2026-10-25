@@ -162,6 +162,7 @@ pub(crate) struct IndexedReader<R> {
     metadata: Arc<FormatMetadata>,
     blocks: Arc<BTreeMap<BlockId, BlockDirectoryEntry>>,
     block_bounds: Arc<BTreeMap<BlockId, Vec<SpatialBounds>>>,
+    plan_owner: Arc<()>,
     attribute_range_cache: Arc<Mutex<VecDeque<CachedAttributeRange>>>,
     limits: FormatReaderLimits,
 }
@@ -254,6 +255,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             metadata: Arc::new(metadata),
             blocks: Arc::new(blocks),
             block_bounds: Arc::new(block_bounds),
+            plan_owner: Arc::new(()),
             attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
             limits,
         })
@@ -513,7 +515,109 @@ impl<R: Read + Seek> IndexedReader<R> {
                 memory
             }
         };
-        Ok(ReadPlan::new(id, selection, ranges, memory))
+        Ok(ReadPlan::new(
+            Arc::clone(&self.plan_owner),
+            id,
+            selection,
+            ranges,
+            memory,
+        ))
+    }
+
+    /// Materializes a plan from externally fetched stored payload buffers. No file I/O occurs.
+    pub fn materialize_selected_from_buffers(
+        &self,
+        plan: crate::ReadPlan,
+        buffers: Vec<Vec<u8>>,
+    ) -> Result<crate::SelectedRead, FormatError> {
+        if !Arc::ptr_eq(&plan.owner, &self.plan_owner) {
+            return Err(FormatError::PlanReaderMismatch);
+        }
+        if buffers.len() != plan.ranges().len() {
+            return Err(FormatError::PayloadBufferCount {
+                expected: plan.ranges().len(),
+                actual: buffers.len(),
+            });
+        }
+        let id = plan.block_id();
+        let selection = plan.selection();
+        let entry = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let mut decoded = Vec::new();
+        decoded
+            .try_reserve_exact(buffers.len())
+            .map_err(|_| FormatError::AllocationFailed(buffers.len()))?;
+        for (range_index, (range, stored)) in plan.ranges().iter().zip(buffers).enumerate() {
+            let expected = usize::try_from(range.stored_bytes())
+                .map_err(|_| FormatError::SizeOutOfRange(range.stored_bytes()))?;
+            if stored.len() != expected {
+                return Err(FormatError::PayloadBufferLength {
+                    expected,
+                    actual: stored.len(),
+                });
+            }
+            let attribute_width = match selection {
+                crate::ReadSelection::Attribute { schema_index } => {
+                    let descriptor = self
+                        .metadata
+                        .dataset()
+                        .hierarchy()
+                        .attributes()
+                        .get(schema_index as usize)
+                        .ok_or(FormatError::UnknownAttribute(schema_index))?;
+                    Some(crate::layout::attribute_tuple_width(descriptor)?)
+                }
+                crate::ReadSelection::DisplayColors => Some(3),
+                crate::ReadSelection::Geometry if range_index == 1 => Some(3),
+                _ => None,
+            };
+            let raw = self.decode_stored_payload(id, range, stored, attribute_width)?;
+            decoded.push(raw);
+        }
+        let count =
+            usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
+        use crate::{ReadSelection as S, SelectedRead as O};
+        Ok(match selection {
+            S::Positions => {
+                let mut c = SliceCursor::new(&decoded[0]);
+                O::Positions(self.decode_geometry(&mut c, id, entry, count)?)
+            }
+            S::Geometry if decoded.len() == 1 => {
+                let mut c = SliceCursor::new(&decoded[0]);
+                O::Geometry(self.decode_geometry(&mut c, id, entry, count)?)
+            }
+            S::Geometry => {
+                let mut c = SliceCursor::new(&decoded[0]);
+                let mut points = self
+                    .decode_geometry(&mut c, id, entry, count)?
+                    .into_points();
+                for (p, rgb) in points.iter_mut().zip(decoded[1].as_chunks::<3>().0) {
+                    p.color = ColorRgb::new(rgb[0], rgb[1], rgb[2]);
+                }
+                O::Geometry(PointBatch::new(points))
+            }
+            S::DisplayColors => O::DisplayColors(
+                decoded[0]
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|v| ColorRgb::new(v[0], v[1], v[2]))
+                    .collect(),
+            ),
+            S::Attribute { schema_index } => {
+                let descriptor =
+                    self.metadata.dataset().hierarchy().attributes()[schema_index as usize].clone();
+                let values = read_attribute_values(
+                    &mut SliceCursor::new(&decoded[0]),
+                    descriptor.data_type(),
+                    count
+                        .checked_mul(descriptor.component_count() as usize)
+                        .ok_or_else(|| {
+                            FormatError::AttributeLengthOverflow(descriptor.name().to_owned())
+                        })?,
+                )?;
+                O::Attribute(AttributeColumn::new(descriptor, values, count)?)
+            }
+        })
     }
 
     fn payload_range(
@@ -643,6 +747,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             metadata: Arc::clone(&self.metadata),
             blocks: Arc::clone(&self.blocks),
             block_bounds: Arc::clone(&self.block_bounds),
+            plan_owner: Arc::clone(&self.plan_owner),
             attribute_range_cache: Arc::clone(&self.attribute_range_cache),
             limits: self.limits,
         }
@@ -825,16 +930,34 @@ impl<R: Read + Seek> IndexedReader<R> {
         };
         reader.seek(SeekFrom::Start(range.offset()))?;
         reader.read_exact(&mut stored)?;
-        if crc32(&stored) != column.checksum {
+        self.decode_stored_payload(id, &range, stored, attribute_width)
+    }
+
+    fn decode_stored_payload(
+        &self,
+        id: BlockId,
+        range: &crate::PayloadReadRange,
+        stored: Vec<u8>,
+        attribute_width: Option<usize>,
+    ) -> Result<Vec<u8>, FormatError> {
+        let expected = usize::try_from(range.stored_bytes())
+            .map_err(|_| FormatError::SizeOutOfRange(range.stored_bytes()))?;
+        if stored.len() != expected {
+            return Err(FormatError::PayloadBufferLength {
+                expected,
+                actual: stored.len(),
+            });
+        }
+        if crc32(&stored) != range.checksum() {
             return Err(FormatError::InvalidBlockChecksum(id));
         }
-        let raw_size = usize::try_from(column.raw_length)
-            .map_err(|_| FormatError::SizeOutOfRange(column.raw_length))?;
-        if column.codec == BlockCodec::None {
+        let raw_size = usize::try_from(range.decoded_bytes())
+            .map_err(|_| FormatError::SizeOutOfRange(range.decoded_bytes()))?;
+        if range.codec() == BlockCodec::None {
             Ok(stored)
         } else if let Some(width) = attribute_width {
             crate::attribute_codec::decode(
-                column.codec,
+                range.codec(),
                 &stored,
                 raw_size,
                 width,
@@ -842,7 +965,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             )
         } else {
             Ok(decompress_block(
-                column.codec,
+                range.codec(),
                 &stored,
                 raw_size,
                 usize::try_from(self.limits.max_block_bytes).unwrap_or(usize::MAX),

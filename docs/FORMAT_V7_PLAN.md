@@ -191,10 +191,23 @@ comparación; no es el modelo de uso elegido para integrar el reader con el view
 
 **Pendiente de integración async/visor:**
 
+**Decisión confirmada por el usuario (25-10-2026):** la ruta WASM debe obtener apertura e índice
+y payloads mediante `Blob.slice(...).arrayBuffer()` u otra API Blob realmente asíncrona. No se
+considera cumplimiento envolver `FileReaderSync` en una tarea o worker.
+
+**Primer incremento implementado:** `FormatReader::materialize_selected_from_buffers` consume
+un `ReadPlan` de la misma instancia lógica y los buffers stored de sus rangos. Valida identidad,
+cantidad, longitudes y CRC antes de reutilizar los decodificadores de codec, XYZ, RGB y atributos;
+no hace I/O de archivo ni cambia los bytes V7. Las pruebas comparan la lectura síncrona para
+posiciones, geometría con/sin atributos, RGB y una columna, y rechazan plan ajeno, buffer truncado
+y checksum incorrecto. Esto habilita decodificar rangos externos, pero aún no implementa apertura
+Blob asíncrona, admisión por bytes ni integración con el ciclo LOD.
+
 Conectar el scheduler del core al controlador LOD con selección, prioridad, identidad de dataset
 y generación de objetivo. Limitar solicitudes y bytes simultáneamente, incluidos resultados.
-El renderer consume escenas; no abre archivos. Integrar Blob/OPFS en workers WASM tras probar
-el contrato nativo; una API que envuelve `FileReaderSync` no prueba I/O no bloqueante.
+El renderer consume escenas; no abre archivos. Abrir el índice del par split de forma asíncrona
+con límites `FormatReaderLimits`; luego reservar memoria antes de solicitar cada rango. Incluir
+en la cuota los `ArrayBuffer` JS, su copia a WASM, scratch de decodificación y resultado retenido.
 
 Como paso de caché posterior, medir primero deduplicación de peticiones exactas por identidad de
 dataset, bloque y selección. Después comparar coalescing de rangos solapados/adyacentes cuando

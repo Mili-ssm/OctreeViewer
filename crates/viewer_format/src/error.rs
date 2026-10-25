@@ -48,6 +48,12 @@ pub enum FormatError {
     MalformedIndex(&'static str),
     #[error("format block is malformed: {0}")]
     MalformedBlock(&'static str),
+    #[error("read plan was created by a different reader")]
+    PlanReaderMismatch,
+    #[error("payload buffer count is {actual}, expected {expected}")]
+    PayloadBufferCount { expected: usize, actual: usize },
+    #[error("payload buffer length is {actual}, expected {expected}")]
+    PayloadBufferLength { expected: usize, actual: usize },
     #[error("format index ended before a field was complete")]
     TruncatedIndex,
     #[error("format schema is invalid")]

@@ -100,6 +100,16 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend().plan_read(id, selection)
     }
 
+    /// Decodes externally fetched buffers for a plan created by this reader without file I/O.
+    pub fn materialize_selected_from_buffers(
+        &self,
+        plan: crate::ReadPlan,
+        buffers: Vec<Vec<u8>>,
+    ) -> Result<crate::SelectedRead, FormatError> {
+        self.backend()
+            .materialize_selected_from_buffers(plan, buffers)
+    }
+
     /// Executes a selective read after checking its estimated peak payload bytes.
     /// The budget is per invocation; callers must account for concurrent/retained results.
     pub fn read_selected(

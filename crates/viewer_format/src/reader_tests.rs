@@ -118,6 +118,152 @@ fn format_bytes() -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
+#[test]
+fn external_payload_buffers_materialize_selected_results_and_reject_bad_inputs() {
+    use crate::{ReadSelection, SelectedRead};
+    let bytes = format_bytes();
+    let reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+    for selection in [
+        ReadSelection::Positions,
+        ReadSelection::Geometry,
+        ReadSelection::DisplayColors,
+        ReadSelection::Attribute { schema_index: 0 },
+    ] {
+        let plan = reader.plan_read(BlockId::new(42), selection).unwrap();
+        let buffers = plan
+            .ranges()
+            .iter()
+            .map(|r| bytes[r.offset() as usize..(r.offset() + r.stored_bytes()) as usize].to_vec())
+            .collect();
+        let actual = reader
+            .materialize_selected_from_buffers(plan, buffers)
+            .unwrap();
+        let mut sync = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+        match (selection, actual) {
+            (ReadSelection::Positions, SelectedRead::Positions(points)) => assert_eq!(
+                points.points(),
+                sync.read_positions(BlockId::new(42)).unwrap().points()
+            ),
+            (ReadSelection::Geometry, SelectedRead::Geometry(points)) => assert_eq!(
+                points.points(),
+                sync.read_geometry(BlockId::new(42)).unwrap().points()
+            ),
+            (ReadSelection::DisplayColors, SelectedRead::DisplayColors(colors)) => {
+                assert_eq!(colors, sync.read_display_colors(BlockId::new(42)).unwrap())
+            }
+            (ReadSelection::Attribute { schema_index }, SelectedRead::Attribute(column)) => {
+                assert_eq!(
+                    column.values(),
+                    sync.read_attribute(BlockId::new(42), schema_index)
+                        .unwrap()
+                        .values()
+                )
+            }
+            _ => panic!("materialized variant does not match selection"),
+        }
+    }
+    let plan = reader
+        .plan_read(BlockId::new(42), ReadSelection::Positions)
+        .unwrap();
+    assert!(
+        reader
+            .materialize_selected_from_buffers(plan, vec![vec![0]])
+            .is_err()
+    );
+    let plan = reader
+        .plan_read(BlockId::new(42), ReadSelection::Positions)
+        .unwrap();
+    let mut bad = bytes.clone();
+    let range = plan.ranges()[0];
+    bad[range.offset() as usize] ^= 1;
+    let buffers = vec![
+        bad[range.offset() as usize..(range.offset() + range.stored_bytes()) as usize].to_vec(),
+    ];
+    assert!(
+        reader
+            .materialize_selected_from_buffers(plan, buffers)
+            .is_err()
+    );
+    let plan = reader
+        .plan_read(BlockId::new(42), ReadSelection::Positions)
+        .unwrap();
+    let other = FormatReader::new(Cursor::new(bytes)).unwrap();
+    let range = plan.ranges()[0];
+    let buffer = vec![vec![0; range.stored_bytes() as usize]];
+    assert!(
+        other
+            .materialize_selected_from_buffers(plan, buffer)
+            .is_err()
+    );
+}
+
+#[test]
+fn external_payload_buffers_materialize_geometry_without_attached_attributes() {
+    use crate::{ReadSelection, SelectedRead};
+    let base = metadata();
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            SpatialNode::new(
+                NodeId::new(0),
+                None,
+                0,
+                base.dataset().hierarchy().stats().root_bounds,
+                2,
+                0.25,
+                vec![BlockId::new(42)],
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        Some(2),
+    )
+    .unwrap();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+        base.crs().map(str::to_owned),
+        base.sampling_policy().map(str::to_owned),
+        Vec::new(),
+    )
+    .unwrap();
+    let mut writer = FormatWriter::new_split(
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata,
+        FormatWriterOptions::new(0.001, 1024).unwrap(),
+    )
+    .unwrap();
+    writer
+        .write_block(SourcePointBlock::new(
+            BlockId::new(42),
+            vec![[0.25, 0.5, 0.0], [1.5, 0.75, 1.0]],
+            vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
+            Vec::new(),
+        ))
+        .unwrap();
+    let (primary, _) = writer.finish_pair().unwrap();
+    let bytes = primary.into_inner();
+    let reader = FormatReader::new(Cursor::new(bytes.clone())).unwrap();
+    assert!(!reader.has_attributes());
+    let plan = reader
+        .plan_read(BlockId::new(42), ReadSelection::Geometry)
+        .unwrap();
+    assert_eq!(plan.ranges().len(), 1);
+    let range = plan.ranges()[0];
+    let payload =
+        bytes[range.offset() as usize..(range.offset() + range.stored_bytes()) as usize].to_vec();
+    let actual = reader
+        .materialize_selected_from_buffers(plan, vec![payload])
+        .unwrap();
+    let mut sync = FormatReader::new(Cursor::new(bytes)).unwrap();
+    let SelectedRead::Geometry(actual) = actual else {
+        panic!("materialized variant does not match selection");
+    };
+    assert_eq!(
+        actual.points(),
+        sync.read_geometry(BlockId::new(42)).unwrap().points()
+    );
+}
+
 fn empty_attribute_range_bytes() -> Vec<u8> {
     let origin = [0.0; 3];
     let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
