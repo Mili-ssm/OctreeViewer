@@ -1,4 +1,4 @@
-import init, { WasmAsyncFormatReader, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
+import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 
 let viewer = null;
 let wasmExports = null;
@@ -13,12 +13,14 @@ let refinementContext = { id: 0, trigger: "dataset", colorMode: "rgb" };
 let currentMetadata = null;
 let sceneGeneration = 0;
 let asyncFormatReader = null;
-let asyncReadInFlight = false;
-let failedAsyncBlock = null;
+const MAX_ASYNC_LOD_READS = 4;
+const asyncReadTasks = new Map();
+const failedAsyncBlocks = new Set();
 let currentColorMode = "rgb";
 let asyncHasAttributes = false;
 let asyncAttributeIndices = new Map();
-let asyncReadBudgetBytes = 0n;
+let asyncReadBudget = null;
+const asyncReadCancelTokens = new Set();
 const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
@@ -69,6 +71,12 @@ function recordFrameRenderSample(durationMs) {
     frameRenderSamples[nextFrameRenderSample] = durationMs;
     nextFrameRenderSample = (nextFrameRenderSample + 1) % FRAME_SAMPLE_CAPACITY;
     frameRenderSampleCount = Math.min(frameRenderSampleCount + 1, FRAME_SAMPLE_CAPACITY);
+}
+
+function advanceSceneGeneration() {
+    sceneGeneration += 1;
+    for (const token of asyncReadCancelTokens) token.cancel();
+    asyncReadCancelTokens.clear();
 }
 
 function frameRenderPercentiles() {
@@ -161,82 +169,86 @@ function postLodProgress(lod, afterRenderFrame = false) {
 }
 
 function scheduleAsyncLodRead() {
-    if (!asyncFormatReader || asyncReadInFlight || !viewer) return;
-    const blockId = viewer.nextAsyncLodBlock();
-    if (blockId === null || blockId === failedAsyncBlock) return;
+    if (!asyncFormatReader || !viewer) return;
+    const pending = typeof viewer.pendingAsyncLodBlocks === "function"
+        ? viewer.pendingAsyncLodBlocks()
+        : [viewer.nextAsyncLodBlock()];
+    for (const blockId of pending) {
+        if (asyncReadTasks.size >= MAX_ASYNC_LOD_READS) break;
+        if (blockId === null || blockId === undefined || failedAsyncBlocks.has(String(blockId))
+            || asyncReadTasks.has(String(blockId))) continue;
 
-    const generation = sceneGeneration;
-    const reader = asyncFormatReader;
-    const colorMode = currentColorMode;
-    const selectedAttribute = colorMode.startsWith("attribute:")
-        ? Number(colorMode.split(":")[1])
-        : null;
-    const requestedAttribute = selectedAttribute !== null
-        ? selectedAttribute
-        : colorMode === "intensity" ? asyncAttributeIndices.get("intensity")
-            : colorMode === "classification" ? asyncAttributeIndices.get("classification") : null;
-    const geometrySelection = colorMode === "rgb" && selectedAttribute === null
-        ? "geometry" : "positions";
-    asyncReadInFlight = true;
-
-    void (async () => {
-        let geometry;
-        let attribute = null;
+        const generation = sceneGeneration;
+        const reader = asyncFormatReader;
+        const colorMode = currentColorMode;
+        const selectedAttribute = colorMode.startsWith("attribute:")
+            ? Number(colorMode.split(":")[1])
+            : null;
+        const requestedAttribute = selectedAttribute !== null
+            ? selectedAttribute
+            : colorMode === "intensity" ? asyncAttributeIndices.get("intensity")
+                : colorMode === "classification" ? asyncAttributeIndices.get("classification") : null;
+        const geometrySelection = colorMode === "rgb" && selectedAttribute === null
+            ? "geometry" : "positions";
+        const selection = requestedAttribute !== null && asyncHasAttributes
+            ? "positionsAttribute" : geometrySelection;
+        let request;
         try {
-            const geometryPlan = reader.planRead(BigInt(blockId), geometrySelection);
-            const geometryPeak = BigInt(geometryPlan.peak_bytes);
-            const geometryOutput = BigInt(geometryPlan.output_bytes);
-            if (geometryPeak > asyncReadBudgetBytes) {
-                throw new Error(`geometry read needs ${geometryPeak} bytes; async read budget is ${asyncReadBudgetBytes}`);
-            }
-            geometry = await reader.read();
-            if (requestedAttribute !== null && asyncHasAttributes) {
-                const attributePlan = reader.planRead(BigInt(blockId), "attribute", requestedAttribute);
-                const attributePeak = BigInt(attributePlan.peak_bytes);
-                if (geometryOutput + attributePeak > asyncReadBudgetBytes) {
-                    throw new Error(`geometry result and attribute read need ${geometryOutput + attributePeak} bytes; async read budget is ${asyncReadBudgetBytes}`);
-                }
-                attribute = await reader.read();
-                const retainedOutputs = geometryOutput + BigInt(attributePlan.output_bytes);
-                if (retainedOutputs > asyncReadBudgetBytes) {
-                    throw new Error(`block results need ${retainedOutputs} bytes; async read budget is ${asyncReadBudgetBytes}`);
-                }
-            }
-            if (geometry.kind !== "geometry" && geometry.kind !== "positions") {
-                throw new Error(`unexpected async geometry result: ${geometry.kind}`);
-            }
-            if (attribute && attribute.kind !== "attribute") {
-                throw new Error(`unexpected async attribute result: ${attribute.kind}`);
-            }
-            messageQueue = messageQueue.then(() => {
-                if (generation !== sceneGeneration || reader !== asyncFormatReader) return;
-                viewer.insertAsyncLodBlock(blockId, geometry.values, geometry.colors, attribute);
-                const lod = viewer.updateLod(targetVoxelPixels);
-                self.postMessage({ type: "lod", lod });
-                postLodProgress(lod);
-            }).catch((error) => {
-                failedAsyncBlock = blockId;
-                self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
-            }).finally(() => {
-                asyncReadInFlight = false;
-                scheduleAsyncLodRead();
-            });
+            request = reader.planLodRead(BigInt(blockId), selection, requestedAttribute);
         } catch (error) {
-            messageQueue = messageQueue.then(() => {
-                if (generation === sceneGeneration) {
-                    failedAsyncBlock = blockId;
-                    self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
-                }
-            }).finally(() => {
-                asyncReadInFlight = false;
-                scheduleAsyncLodRead();
-            });
+            failedAsyncBlocks.add(String(blockId));
+            self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
+            continue;
         }
-    })();
+        // A null result means live reservations currently occupy the shared budget. Leave the
+        // block pending and try lower-priority candidates that may fit; completion retries all.
+        if (!request) continue;
+        const cancelToken = request.cancelToken();
+        asyncReadCancelTokens.add(cancelToken);
+        asyncReadTasks.set(String(blockId), { generation, reader, request, cancelToken });
+
+        void (async () => {
+            let result = null;
+            let payload = null;
+            try {
+                result = await request.read();
+                payload = result.value;
+                await (messageQueue = messageQueue.then(() => {
+                    if (generation !== sceneGeneration || reader !== asyncFormatReader) return;
+                    viewer.insertAsyncLodBlock(
+                        blockId, payload.positions, payload.colors ?? null, payload.attribute ?? null,
+                    );
+                    const lod = viewer.updateLod(targetVoxelPixels);
+                    self.postMessage({ type: "lod", lod });
+                    postLodProgress(lod);
+                }).catch((error) => {
+                    if (generation === sceneGeneration) {
+                        failedAsyncBlocks.add(String(blockId));
+                        self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
+                    }
+                }));
+            } catch (error) {
+                await (messageQueue = messageQueue.then(() => {
+                    if (generation === sceneGeneration) {
+                        failedAsyncBlocks.add(String(blockId));
+                        self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
+                    }
+                }));
+            } finally {
+                payload = null;
+                result?.release();
+                result?.free();
+                request.free();
+                asyncReadCancelTokens.delete(cancelToken);
+                asyncReadTasks.delete(String(blockId));
+                scheduleAsyncLodRead();
+            }
+        })();
+    }
 }
 
 function startAsyncDataset(data, requestId = null) {
-    sceneGeneration += 1;
+    advanceSceneGeneration();
     const generation = sceneGeneration;
     targetVoxelPixels = data.targetVoxelPixels;
     datasetOpenedAt = performance.now();
@@ -244,12 +256,12 @@ function startAsyncDataset(data, requestId = null) {
     asyncFormatReader = null;
     asyncHasAttributes = false;
     asyncAttributeIndices = new Map();
-    asyncReadBudgetBytes = BigInt(data.cacheBytes);
-    failedAsyncBlock = null;
+    failedAsyncBlocks.clear();
     beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
     const name = data.name ?? data.file.name;
     self.postMessage({ type: "status", message: `Opening ${name}…` });
-    void WasmAsyncFormatReader.open(data.file, data.attributes).then((reader) => {
+    asyncReadBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
+    void WasmAsyncFormatReader.open(data.file, data.attributes, asyncReadBudget.clone()).then((reader) => {
         messageQueue = messageQueue.then(() => {
             if (generation !== sceneGeneration) {
                 reader.free();
@@ -322,7 +334,7 @@ async function handleMessage({ data }) {
                         break;
                     }
                     case "fit":
-                        sceneGeneration += 1;
+                        advanceSceneGeneration();
                         value = viewer.fitScene();
                         break;
                     case "renderOnce":
@@ -333,13 +345,13 @@ async function handleMessage({ data }) {
                         value = viewer.cameraPose();
                         break;
                     case "setCamera":
-                        sceneGeneration += 1;
+                        advanceSceneGeneration();
                         value = viewer.setCameraPose(
                             new Float64Array(data.position), new Float64Array(data.target),
                         );
                         break;
                     case "setOrbitTarget":
-                        sceneGeneration += 1;
+                        advanceSceneGeneration();
                         value = viewer.setOrbitTarget(new Float64Array(data.target));
                         break;
                     case "getMetadata":
@@ -349,11 +361,11 @@ async function handleMessage({ data }) {
                         value = { lod: viewer.lodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
                         break;
                     case "moveCamera":
-                        sceneGeneration += 1;
+                        advanceSceneGeneration();
                         value = viewer.moveCamera(data.x, data.y, data.z);
                         break;
                     case "birdView":
-                        sceneGeneration += 1;
+                        advanceSceneGeneration();
                         viewer.setBirdView();
                         value = true;
                         break;
@@ -365,7 +377,7 @@ async function handleMessage({ data }) {
                         const pickedGeneration = sceneGeneration;
                         if (hit && data.recenter) {
                             viewer.setOrbitTarget(hit.voxelCenter);
-                            sceneGeneration += 1;
+                            advanceSceneGeneration();
                             viewer.renderFrame();
                         }
                         value = { hit, sceneGeneration: pickedGeneration };
@@ -378,14 +390,14 @@ async function handleMessage({ data }) {
                 break;
             }
             case "resize":
-                sceneGeneration += 1;
+                advanceSceneGeneration();
                 viewer.resize(data.width, data.height);
                 break;
             case "refine": {
                 const startedAt = performance.now();
                 viewer.setColorMode(data.colorMode);
-                sceneGeneration += 1;
-                failedAsyncBlock = null;
+                advanceSceneGeneration();
+                failedAsyncBlocks.clear();
                 currentColorMode = data.colorMode;
                 targetVoxelPixels = data.targetVoxelPixels;
                 beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
@@ -405,11 +417,11 @@ async function handleMessage({ data }) {
                 break;
             }
             case "fit":
-                sceneGeneration += 1;
+                advanceSceneGeneration();
                 viewer.fitScene();
                 break;
             case "birdView":
-                sceneGeneration += 1;
+                advanceSceneGeneration();
                 viewer.setBirdView();
                 break;
             case "pick": {
@@ -420,14 +432,14 @@ async function handleMessage({ data }) {
                 const pickedGeneration = sceneGeneration;
                 if (hit && data.recenter) {
                     viewer.setOrbitTarget(hit.voxelCenter);
-                    sceneGeneration += 1;
+                    advanceSceneGeneration();
                 }
                 self.postMessage({ type: "pick", hit, sceneGeneration: pickedGeneration });
                 break;
             }
             case "frame": {
                 const camera = data.camera;
-                if (Object.values(camera).some((value) => value !== 0)) sceneGeneration += 1;
+                if (Object.values(camera).some((value) => value !== 0)) advanceSceneGeneration();
                 if (camera.orbitX !== 0 || camera.orbitY !== 0) {
                     viewer.orbit(camera.orbitX, camera.orbitY);
                 }

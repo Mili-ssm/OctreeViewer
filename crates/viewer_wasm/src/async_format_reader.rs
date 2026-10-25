@@ -1,18 +1,27 @@
 //! Async range access to split `.oct` files using browser Blob promises.
-use std::io::Cursor;
+use std::{cell::Cell, io::Cursor, rc::Rc, sync::Arc};
 
 use js_sys::{ArrayBuffer, Float32Array, Promise, Uint8Array};
 use serde::Serialize;
 use viewer_core::{AttributeValues, BlockId, PointBatch};
 use viewer_format::{
-    FormatReader, FormatReaderLimits, PayloadReadRange, ReadSelection, ReadSource,
-    SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES, SelectedRead,
+    FormatReader, FormatReaderLimits, PayloadReadRange, ReadBudget, ReadReservation, ReadSelection,
+    ReadSource, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES, SelectedRead,
 };
 use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::Blob;
 
 type Reader = FormatReader<Cursor<Vec<u8>>>;
+const DEFAULT_ASYNC_READ_BUDGET_BYTES: u32 = 256 * 1024 * 1024;
+
+struct AsyncReaderShared {
+    reader: Reader,
+    primary: Blob,
+    attributes: Option<Blob>,
+    // The index reservation remains live while this shared reader or a pending read uses it.
+    _metadata_reservation: ReadReservation,
+}
 
 #[derive(Serialize)]
 struct RangeDescriptor {
@@ -35,10 +44,118 @@ struct ReadPlanDescriptor {
 /// Attributes preserve their declared integer/float type in a JS typed array.
 #[wasm_bindgen]
 pub struct WasmAsyncFormatReader {
-    reader: Reader,
-    primary: Blob,
-    attributes: Option<Blob>,
+    shared: Arc<AsyncReaderShared>,
+    budget: ReadBudget,
     plan: Option<viewer_format::ReadPlan>,
+}
+
+/// An independently owned LOD block request. Separate requests share the same immutable index
+/// and read budget, so their Blob promises can overlap without borrowing the facade mutably.
+#[wasm_bindgen]
+pub struct WasmAsyncLodReadRequest {
+    shared: Arc<AsyncReaderShared>,
+    plans: Vec<viewer_format::ReadPlan>,
+    reservation: Option<ReadReservation>,
+    cancelled: Rc<Cell<bool>>,
+}
+
+/// Cancellation is logical: an active Blob promise resolves before its reservation is released.
+#[wasm_bindgen]
+pub struct WasmAsyncReadCancelToken {
+    cancelled: Rc<Cell<bool>>,
+}
+
+/// Owns typed arrays and the request's quota until the worker inserts or discards the result.
+#[wasm_bindgen]
+pub struct WasmAsyncLodReadResult {
+    value: Option<JsValue>,
+    reservation: Option<ReadReservation>,
+}
+
+#[wasm_bindgen]
+pub struct WasmAsyncReadBudget {
+    inner: ReadBudget,
+}
+
+#[wasm_bindgen]
+impl WasmAsyncReadBudget {
+    #[wasm_bindgen(constructor)]
+    pub fn new(limit_bytes: u32) -> WasmAsyncReadBudget {
+        Self {
+            inner: ReadBudget::new(u64::from(limit_bytes)),
+        }
+    }
+
+    #[wasm_bindgen(js_name = clone)]
+    pub fn clone_budget(&self) -> WasmAsyncReadBudget {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = reservedBytes)]
+    pub fn reserved_bytes(&self) -> String {
+        self.inner.reserved_bytes().to_string()
+    }
+
+    #[wasm_bindgen(js_name = limitBytes)]
+    pub fn limit_bytes(&self) -> String {
+        self.inner.limit_bytes().to_string()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmAsyncReadCancelToken {
+    pub fn cancel(&self) {
+        self.cancelled.set(true);
+    }
+}
+
+#[wasm_bindgen]
+impl WasmAsyncLodReadResult {
+    #[wasm_bindgen(getter)]
+    pub fn value(&self) -> JsValue {
+        self.value.clone().unwrap_or(JsValue::NULL)
+    }
+
+    /// Releases the typed arrays and shared quota after insertion or logical discard.
+    pub fn release(&mut self) {
+        self.value = None;
+        self.reservation = None;
+    }
+}
+
+#[wasm_bindgen]
+impl WasmAsyncLodReadRequest {
+    #[wasm_bindgen(js_name = cancelToken)]
+    pub fn cancel_token(&self) -> WasmAsyncReadCancelToken {
+        WasmAsyncReadCancelToken {
+            cancelled: Rc::clone(&self.cancelled),
+        }
+    }
+
+    #[wasm_bindgen(js_name = read)]
+    pub async fn read(&mut self) -> Result<WasmAsyncLodReadResult, JsValue> {
+        let mut plans = std::mem::take(&mut self.plans).into_iter();
+        let first = plans
+            .next()
+            .ok_or_else(|| err("LOD read request is empty"))?;
+        let first_selection = first.selection();
+        let first_result = read_plan(&self.shared, first, &self.cancelled).await?;
+        let second_result = if let Some(second) = plans.next() {
+            if self.cancelled.get() {
+                return Err(err("LOD read request was cancelled"));
+            }
+            Some(read_plan(&self.shared, second, &self.cancelled).await?)
+        } else {
+            None
+        };
+        let value = lod_result_to_js(first_selection, first_result, second_result)?;
+        Ok(WasmAsyncLodReadResult {
+            value: Some(value),
+            reservation: self.reservation.take(),
+        })
+    }
 }
 
 #[wasm_bindgen]
@@ -48,7 +165,12 @@ impl WasmAsyncFormatReader {
     pub async fn open(
         primary: Blob,
         attributes: Option<Blob>,
+        budget: Option<WasmAsyncReadBudget>,
     ) -> Result<WasmAsyncFormatReader, JsValue> {
+        let budget = budget.map_or_else(
+            || ReadBudget::new(u64::from(DEFAULT_ASYNC_READ_BUDGET_BYTES)),
+            |budget| budget.inner,
+        );
         let primary_len = blob_length(&primary)?;
         let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
         let footer = read_range(
@@ -62,6 +184,12 @@ impl WasmAsyncFormatReader {
         let (offset, length) =
             Reader::split_index_range(primary_len, &header, &footer, FormatReaderLimits::default())
                 .map_err(format_error)?;
+        let metadata_reservation = budget
+            .try_reserve(length)
+            .map_err(format_error)?
+            .ok_or_else(|| {
+                err("shared async read budget is unavailable for the resident format index")
+            })?;
         let index = read_range(&primary, offset, length).await?;
         let mut reader = Reader::from_split_buffers(
             primary_len,
@@ -83,9 +211,13 @@ impl WasmAsyncFormatReader {
                 .map_err(format_error)?;
         }
         Ok(Self {
-            reader,
-            primary,
-            attributes,
+            shared: Arc::new(AsyncReaderShared {
+                reader,
+                primary,
+                attributes,
+                _metadata_reservation: metadata_reservation,
+            }),
+            budget,
             plan: None,
         })
     }
@@ -93,7 +225,7 @@ impl WasmAsyncFormatReader {
     /// Returns metadata in the descriptor shape accepted by `WasmVoxelViewer.openLodDataset`.
     #[wasm_bindgen(js_name = lodDatasetDescriptor)]
     pub fn lod_dataset_descriptor(&self, cache_bytes: u32) -> Result<JsValue, JsValue> {
-        let metadata = self.reader.format_metadata();
+        let metadata = self.shared.reader.format_metadata();
         let dataset = metadata.dataset();
         let hierarchy = dataset.hierarchy();
         let descriptor = js_sys::Object::new();
@@ -120,7 +252,7 @@ impl WasmAsyncFormatReader {
         set(
             &descriptor,
             "hasAttributes",
-            &JsValue::from_bool(self.reader.has_attributes()),
+            &JsValue::from_bool(self.shared.reader.has_attributes()),
         )?;
         if let Some(point_count) = hierarchy.stats().source_point_count {
             set(
@@ -190,6 +322,7 @@ impl WasmAsyncFormatReader {
             let ranges = js_sys::Array::new();
             for component in 0..attribute.component_count() {
                 let range = self
+                    .shared
                     .reader
                     .attribute_range(schema_index as u32, component)
                     .map_err(format_error)?
@@ -202,6 +335,64 @@ impl WasmAsyncFormatReader {
         set(&descriptor, "attributeSchema", &schema.into())?;
         set(&descriptor, "attributeRanges", &attribute_ranges.into())?;
         Ok(descriptor.into())
+    }
+
+    /// Plans a block result with one shared reservation, ready for independent async execution.
+    /// `positionsAttribute` returns XYZ and one typed column as a single quota-owned result.
+    #[wasm_bindgen(js_name = planLodRead)]
+    pub fn plan_lod_read(
+        &self,
+        block_id: u64,
+        selection: &str,
+        schema_index: Option<u32>,
+    ) -> Result<Option<WasmAsyncLodReadRequest>, JsValue> {
+        let id = BlockId::new(block_id);
+        let mut plans = Vec::with_capacity(2);
+        match selection {
+            "geometry" => plans.push(
+                self.shared
+                    .reader
+                    .plan_read(id, ReadSelection::Geometry)
+                    .map_err(format_error)?,
+            ),
+            "positions" => plans.push(
+                self.shared
+                    .reader
+                    .plan_read(id, ReadSelection::Positions)
+                    .map_err(format_error)?,
+            ),
+            "positionsAttribute" => {
+                let schema_index = schema_index.ok_or_else(|| err("schemaIndex required"))?;
+                plans.push(
+                    self.shared
+                        .reader
+                        .plan_read(id, ReadSelection::Positions)
+                        .map_err(format_error)?,
+                );
+                plans.push(
+                    self.shared
+                        .reader
+                        .plan_read(id, ReadSelection::Attribute { schema_index })
+                        .map_err(format_error)?,
+                );
+            }
+            _ => {
+                return Err(err(
+                    "selection must be geometry, positions, or positionsAttribute",
+                ));
+            }
+        }
+        let required = lod_request_peak_bytes(&plans)?;
+        let reservation = match self.budget.try_reserve(required).map_err(format_error)? {
+            Some(reservation) => reservation,
+            None => return Ok(None),
+        };
+        Ok(Some(WasmAsyncLodReadRequest {
+            shared: Arc::clone(&self.shared),
+            plans,
+            reservation: Some(reservation),
+            cancelled: Rc::new(Cell::new(false)),
+        }))
     }
 
     /// Plans one supported selection and returns the exact ranges to fetch. The plan remains
@@ -232,7 +423,11 @@ impl WasmAsyncFormatReader {
                 ));
             }
         };
-        let plan = self.reader.plan_read(id, selected).map_err(format_error)?;
+        let plan = self
+            .shared
+            .reader
+            .plan_read(id, selected)
+            .map_err(format_error)?;
         let ranges = plan
             .ranges()
             .iter()
@@ -259,29 +454,132 @@ impl WasmAsyncFormatReader {
             .take()
             .ok_or_else(|| err("call planRead before read"))?;
         let mut buffers = Vec::with_capacity(plan.ranges().len());
+        let not_cancelled = Cell::new(false);
         for range in plan.ranges() {
-            let blob = match range.source() {
-                ReadSource::Primary => &self.primary,
-                ReadSource::Attributes => self
-                    .attributes
-                    .as_ref()
-                    .ok_or_else(|| err("attribute Blob required by this selection"))?,
-            };
-            let end = range
-                .offset()
-                .checked_add(range.stored_bytes())
-                .ok_or_else(|| err("payload range overflow"))?;
-            if end > blob_length(blob)? {
-                return Err(err("payload range exceeds Blob length"));
-            }
-            buffers.push(read_range(blob, range.offset(), range.stored_bytes()).await?);
+            buffers.push(read_range_for(&self.shared, range, &not_cancelled).await?);
         }
         let selected = self
+            .shared
             .reader
             .materialize_selected_from_buffers(plan, buffers)
             .map_err(format_error)?;
         selected_to_js(selected)
     }
+}
+
+fn lod_request_peak_bytes(plans: &[viewer_format::ReadPlan]) -> Result<u64, JsValue> {
+    let mut result_bytes = 0_u64;
+    let mut peak_bytes = 0_u64;
+    for plan in plans {
+        let memory = plan.memory();
+        // Blob.arrayBuffer and Vec<u8> coexist; materialized Rust output and the JS typed-array
+        // copy coexist as well. Reserve conservatively until the viewer accepts the result.
+        let plan_peak = memory
+            .peak_bytes()
+            .checked_add(memory.stored_bytes())
+            .and_then(|bytes| bytes.checked_add(memory.output_bytes()))
+            .ok_or_else(|| err("async LOD read estimate overflow"))?;
+        let held_peak = result_bytes
+            .checked_add(plan_peak)
+            .ok_or_else(|| err("async LOD read estimate overflow"))?;
+        peak_bytes = peak_bytes.max(held_peak);
+        result_bytes = result_bytes
+            .checked_add(memory.output_bytes())
+            .ok_or_else(|| err("async LOD result estimate overflow"))?;
+    }
+    // The viewer copies JS outputs into Point/Attribute vectors before retaining its cache block.
+    let insertion_peak = result_bytes
+        .checked_mul(3)
+        .ok_or_else(|| err("async LOD insertion estimate overflow"))?;
+    Ok(peak_bytes.max(insertion_peak))
+}
+
+async fn read_plan(
+    shared: &AsyncReaderShared,
+    plan: viewer_format::ReadPlan,
+    cancelled: &Cell<bool>,
+) -> Result<SelectedRead, JsValue> {
+    let mut buffers = Vec::with_capacity(plan.ranges().len());
+    for range in plan.ranges() {
+        if cancelled.get() {
+            return Err(err("LOD read request was cancelled"));
+        }
+        buffers.push(read_range_for(shared, range, cancelled).await?);
+    }
+    if cancelled.get() {
+        return Err(err("LOD read request was cancelled"));
+    }
+    shared
+        .reader
+        .materialize_selected_from_buffers(plan, buffers)
+        .map_err(format_error)
+}
+
+async fn read_range_for(
+    shared: &AsyncReaderShared,
+    range: &PayloadReadRange,
+    cancelled: &Cell<bool>,
+) -> Result<Vec<u8>, JsValue> {
+    if cancelled.get() {
+        return Err(err("LOD read request was cancelled"));
+    }
+    let blob = match range.source() {
+        ReadSource::Primary => &shared.primary,
+        ReadSource::Attributes => shared
+            .attributes
+            .as_ref()
+            .ok_or_else(|| err("attribute Blob required by this selection"))?,
+    };
+    let end = range
+        .offset()
+        .checked_add(range.stored_bytes())
+        .ok_or_else(|| err("payload range overflow"))?;
+    if end > blob_length(blob)? {
+        return Err(err("payload range exceeds Blob length"));
+    }
+    let slice = blob.slice_with_f64_and_f64(range.offset() as f64, end as f64)?;
+    let promise: Promise = slice.array_buffer();
+    let value = JsFuture::from(promise).await?;
+    if cancelled.get() {
+        return Err(err("LOD read request was cancelled"));
+    }
+    let buffer: ArrayBuffer = value
+        .dyn_into()
+        .map_err(|_| err("Blob.arrayBuffer returned a non-ArrayBuffer"))?;
+    let array = Uint8Array::new(&buffer);
+    if u64::from(array.length()) != range.stored_bytes() {
+        return Err(err("Blob returned an unexpected range length"));
+    }
+    Ok(array.to_vec())
+}
+
+fn lod_result_to_js(
+    first_selection: ReadSelection,
+    first: SelectedRead,
+    second: Option<SelectedRead>,
+) -> Result<JsValue, JsValue> {
+    let first = selected_to_js(first)?;
+    let object = js_sys::Object::new();
+    let first_values = js_sys::Reflect::get(&first, &JsValue::from_str("values"))?;
+    set(&object, "positions", &first_values)?;
+    if first_selection == ReadSelection::Geometry {
+        let colors = js_sys::Reflect::get(&first, &JsValue::from_str("colors"))?;
+        set(&object, "colors", &colors)?;
+    }
+    if let Some(second) = second {
+        let second = selected_to_js(second)?;
+        if js_sys::Reflect::get(&second, &JsValue::from_str("kind"))?
+            .as_string()
+            .as_deref()
+            != Some("attribute")
+        {
+            return Err(err("second LOD read result must be an attribute"));
+        }
+        set(&object, "attribute", &second)?;
+    }
+    let point_count = js_sys::Reflect::get(&first, &JsValue::from_str("pointCount"))?;
+    set(&object, "pointCount", &point_count)?;
+    Ok(object.into())
 }
 
 fn range_descriptor(range: &PayloadReadRange) -> Result<RangeDescriptor, JsValue> {

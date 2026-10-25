@@ -28,6 +28,7 @@ pub struct WasmVoxelViewer {
     lod_session: Option<LodSession<FormatReader<BrowserBlobReader>>>,
     async_format_context: Option<AsyncFormatContext>,
     pending_async_block: Option<BlockId>,
+    pending_async_blocks: Vec<BlockId>,
     browser_read_stats: Arc<Mutex<BrowserReadStats>>,
     lod_range_read_stats: BrowserReadStats,
     selected_attribute: Option<(u32, u32)>,
@@ -61,6 +62,7 @@ impl WasmVoxelViewer {
             lod_session: None,
             async_format_context: None,
             pending_async_block: None,
+            pending_async_blocks: Vec::new(),
             browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
             lod_range_read_stats: BrowserReadStats::default(),
             selected_attribute: None,
@@ -236,6 +238,7 @@ impl WasmVoxelViewer {
         self.lod_session = Some(LodSession::External(dataset));
         self.async_format_context = async_format_context;
         self.pending_async_block = None;
+        self.pending_async_blocks.clear();
         self.reset_range_read_stats();
         self.selected_attribute = None;
         self.selected_attribute_range = None;
@@ -356,6 +359,7 @@ impl WasmVoxelViewer {
         self.lod_session = Some(LodSession::Format { dataset, reader });
         self.async_format_context = None;
         self.pending_async_block = None;
+        self.pending_async_blocks.clear();
         self.browser_read_stats = browser_read_stats;
         self.lod_range_read_stats = BrowserReadStats::default();
         self.selected_attribute = None;
@@ -536,6 +540,7 @@ impl WasmVoxelViewer {
             .insert_block(block)
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
         self.pending_async_block = None;
+        self.pending_async_blocks.clear();
         self.last_lod_error = None;
         self.lod_dirty = self.lod_config.is_some();
         Ok(accounted_bytes)
@@ -547,6 +552,15 @@ impl WasmVoxelViewer {
         self.pending_async_block
             .map(|id| JsValue::from_str(&id.get().to_string()))
             .unwrap_or(JsValue::NULL)
+    }
+
+    /// Current missing blocks in the projected-error order chosen by the LOD plan.
+    #[wasm_bindgen(js_name = pendingAsyncLodBlocks)]
+    pub fn pending_async_lod_blocks(&self) -> js_sys::Array {
+        self.pending_async_blocks
+            .iter()
+            .map(|id| JsValue::from_str(&id.get().to_string()))
+            .collect()
     }
 
     /// Selects a camera-aware voxel cut using the target projected voxel edge in pixels.
@@ -1159,7 +1173,7 @@ impl WasmVoxelViewer {
         let browser_read_stats = Arc::clone(&self.browser_read_stats);
         let mut lod_range_read_stats = self.lod_range_read_stats;
         let has_async_reader = self.async_format_context.is_some();
-        let mut pending_async_block = None;
+        let mut async_priority_order = Vec::new();
         let renderer = self
             .gpu_renderer
             .as_mut()
@@ -1175,6 +1189,7 @@ impl WasmVoxelViewer {
             target_voxel_pixels,
             selection_error_pixels,
             stage_pixels,
+            has_async_reader.then_some(&mut async_priority_order),
             |block_id| {
                 format_reader
                     .as_mut()
@@ -1192,17 +1207,13 @@ impl WasmVoxelViewer {
                         accumulate_browser_read_delta(&mut lod_range_read_stats, before, after);
                         loaded
                     })
-                    .unwrap_or_else(|| {
-                        if has_async_reader {
-                            pending_async_block = Some(block_id);
-                        }
-                        Ok(None)
-                    })
+                    .unwrap_or(Ok(None))
             },
         );
         self.lod_range_read_stats = lod_range_read_stats;
         let stats = stats.map_err(|error| JsValue::from_str(&error.to_string()))?;
-        self.pending_async_block = pending_async_block;
+        self.pending_async_blocks = async_priority_order;
+        self.pending_async_block = self.pending_async_blocks.first().copied();
         (self.lod_stage_pixels, self.lod_dirty) = next_lod_stage(
             Some(stage_pixels),
             target_voxel_pixels,
@@ -1222,6 +1233,7 @@ impl WasmVoxelViewer {
         self.lod_config = None;
         self.async_format_context = None;
         self.pending_async_block = None;
+        self.pending_async_blocks.clear();
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;

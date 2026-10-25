@@ -1,5 +1,7 @@
 // Async split-Blob reader probe; no GPU adapter or viewer renderer is required.
-import init, { WasmAsyncFormatReader, WasmVoxelViewer } from "../../../pkg/viewer_wasm.js";
+import init, {
+    WasmAsyncFormatReader, WasmAsyncReadBudget, WasmVoxelViewer,
+} from "../../../pkg/viewer_wasm.js";
 
 function assert(condition, message) {
     if (!condition) throw new Error(message);
@@ -27,7 +29,10 @@ self.onmessage = async ({ data = {} }) => {
             return originalSlice.call(this, start, end, type);
         };
         try {
-            const reader = await WasmAsyncFormatReader.open(primary, attributes);
+            const readBudget = new WasmAsyncReadBudget(64 * 1024 * 1024);
+            const reader = await WasmAsyncFormatReader.open(
+                primary, attributes, readBudget.clone(),
+            );
             const descriptor = reader.lodDatasetDescriptor(64 * 1024 * 1024);
             assert(descriptor.semantics === "replacement" && descriptor.nodes.length > 0
                 && descriptor.attributeSchema[0].name === "intensity"
@@ -106,6 +111,49 @@ self.onmessage = async ({ data = {} }) => {
             const colors = await reader.read();
             assert(colors.kind === "displayColors" && colors.values instanceof Uint8Array
                 && colors.values.length === 4096 * 3, "RGB result is invalid");
+
+            const metadataReservation = BigInt(readBudget.reservedBytes());
+            const delayedArrayBuffer = Blob.prototype.arrayBuffer;
+            let activeArrayBuffers = 0;
+            let maxActiveArrayBuffers = 0;
+            Blob.prototype.arrayBuffer = function () {
+                activeArrayBuffers += 1;
+                maxActiveArrayBuffers = Math.max(maxActiveArrayBuffers, activeArrayBuffers);
+                return new Promise((resolve, reject) => {
+                    setTimeout(() => delayedArrayBuffer.call(this).then(resolve, reject)
+                        .finally(() => { activeArrayBuffers -= 1; }), 5);
+                });
+            };
+            try {
+                const geometryRequest = reader.planLodRead(1n, "geometry");
+                const attributeRequest = reader.planLodRead(1n, "positionsAttribute", 0);
+                assert(geometryRequest && attributeRequest,
+                    "shared read quota rejected small concurrent requests");
+                assert(BigInt(readBudget.reservedBytes()) > metadataReservation,
+                    "concurrent requests did not reserve shared read quota");
+                const [geometryResult, attributeResult] = await Promise.all([
+                    geometryRequest.read(), attributeRequest.read(),
+                ]);
+                let geometryPayload = geometryResult.value;
+                let attributePayload = attributeResult.value;
+                assert(maxActiveArrayBuffers > 1,
+                    "independent requests from one reader did not overlap Blob reads");
+                assert(geometryPayload.positions instanceof Float32Array
+                    && geometryPayload.colors instanceof Uint8Array,
+                "concurrent geometry result lost XYZ/RGB arrays");
+                assert(attributePayload.positions instanceof Float32Array
+                    && attributePayload.attribute.name === "intensity"
+                    && attributePayload.attribute.values instanceof Uint16Array,
+                "concurrent typed attribute result is invalid");
+                geometryPayload = null;
+                attributePayload = null;
+                geometryResult.release();
+                attributeResult.release();
+                assert(BigInt(readBudget.reservedBytes()) === metadataReservation,
+                    "result release did not return quota to the shared reader budget");
+            } finally {
+                Blob.prototype.arrayBuffer = delayedArrayBuffer;
+            }
 
             let wrongCompanionRejected = false;
             try {

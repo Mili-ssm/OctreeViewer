@@ -13,7 +13,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     let colorMode = "rgb";
     let colorFrames = 0;
     let targetVoxelPixels = 4;
-    let pendingBlockId = null;
+    let pendingBlockIds = [];
     const insertedBlocks = [];
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
@@ -37,8 +37,12 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             colorMode = "rgb";
             return { status: "metadata_ready" };
         },
-        nextAsyncLodBlock: () => pendingBlockId,
-        insertAsyncLodBlock(blockId) { insertedBlocks.push(blockId); },
+        nextAsyncLodBlock: () => pendingBlockIds[0] ?? null,
+        pendingAsyncLodBlocks: () => [...pendingBlockIds],
+        insertAsyncLodBlock(blockId) {
+            insertedBlocks.push(blockId);
+            pendingBlockIds = pendingBlockIds.filter(id => id !== String(blockId));
+        },
         orbit() {},
         pan() {},
         zoom() {},
@@ -79,6 +83,10 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         }
         free() {}
     }
+    class DefaultAsyncReadBudget {
+        constructor(limitBytes) { this.limitBytes = limitBytes; }
+        clone() { return new DefaultAsyncReadBudget(this.limitBytes); }
+    }
     vm.runInNewContext(source, {
         self: {
             addEventListener(_name, callback) { receive = callback; },
@@ -87,6 +95,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         performance,
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
+        WasmAsyncReadBudget: DefaultAsyncReadBudget,
         WasmAsyncFormatReader: AsyncFormatReader ?? DefaultAsyncFormatReader,
         Float64Array,
         setTimeout,
@@ -104,7 +113,8 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         messages,
         send,
         setNow(value) { now = value; },
-        setPendingBlock(value) { pendingBlockId = value; },
+        setPendingBlock(value) { pendingBlockIds = value === null ? [] : [String(value)]; },
+        setPendingBlocks(values) { pendingBlockIds = values.map(String); },
         insertedBlocks,
     };
 }
@@ -239,10 +249,16 @@ test("async Blob reads leave the message queue responsive and discard stale gene
                 hasAttributes: false, attributeSchema: [],
             };
         }
-        planRead() { return { peak_bytes: "1", output_bytes: "1" }; }
-        read() {
-            readStarted = true;
-            return new Promise(resolve => { resolveRead = resolve; });
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => {
+                    readStarted = true;
+                    const value = await new Promise(resolve => { resolveRead = resolve; });
+                    return { value, release() {}, free() {} };
+                },
+                free() {},
+            };
         }
         free() {}
     }
@@ -258,10 +274,60 @@ test("async Blob reads leave the message queue responsive and discard stale gene
     });
     assert.ok(worker.messages.some(message => message.type === "frame"));
     worker.setPendingBlock(null);
-    resolveRead({ kind: "geometry", values: new Float32Array(3), colors: new Uint8Array(3) });
+    resolveRead({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
     await new Promise(setImmediate);
     await new Promise(setImmediate);
     assert.deepEqual(worker.insertedBlocks, []);
+});
+
+test("async worker overlaps reads and retries budget-deferred blocks after a result frees quota", async () => {
+    const resolvers = new Map();
+    const started = [];
+    let firstAdmission = true;
+    class ConcurrentAsyncReader {
+        static async open() { return new ConcurrentAsyncReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead(blockId) {
+            const id = String(blockId);
+            if (id === "9" && firstAdmission) {
+                firstAdmission = false;
+                return null;
+            }
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => {
+                    started.push(id);
+                    const value = await new Promise(resolve => { resolvers.set(id, resolve); });
+                    return { value, release() {}, free() {} };
+                },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), ConcurrentAsyncReader);
+    worker.setPendingBlocks(["7", "8", "9"]);
+    await worker.send("openFile", {
+        file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    assert.deepEqual(started, ["7", "8"]);
+
+    resolvers.get("7")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    await new Promise(setImmediate);
+    await new Promise(setImmediate);
+    assert.deepEqual(started, ["7", "8", "9"]);
+
+    resolvers.get("8")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    resolvers.get("9")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    await new Promise(setImmediate);
+    await new Promise(setImmediate);
+    assert.deepEqual(worker.insertedBlocks, ["7", "8", "9"]);
 });
 
 test("async worker rejects a read plan larger than the configured logical read budget", async () => {
@@ -275,7 +341,9 @@ test("async worker rejects a read plan larger than the configured logical read b
                 hasAttributes: false, attributeSchema: [],
             };
         }
-        planRead() { return { peak_bytes: "1025", output_bytes: "0" }; }
+        planLodRead() {
+            throw new Error("geometry read needs 1025 bytes; async read budget is 1024");
+        }
         async read() { reads += 1; }
         free() {}
     }

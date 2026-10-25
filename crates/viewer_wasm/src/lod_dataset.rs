@@ -273,6 +273,7 @@ impl LodDataset {
             target_voxel_pixels,
             target_voxel_pixels,
             target_voxel_pixels,
+            None,
             load_block,
         )
     }
@@ -283,6 +284,7 @@ impl LodDataset {
         target_voxel_pixels: f64,
         selection_error_pixels: f64,
         stage_voxel_pixels: f64,
+        async_priority_order: Option<&mut Vec<BlockId>>,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodViewStats, LodDatasetError> {
         let build_context = SuccessfulBuildContext {
@@ -345,13 +347,26 @@ impl LodDataset {
         let initial_plan = self
             .planner
             .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        let next_block = highest_priority_pending_block(
-            self.metadata.hierarchy(),
-            initial_plan.pending_blocks(),
-            &frustum,
-            renderer,
-            self.metadata.coordinate_frame().origin(),
-        );
+        let next_block = if let Some(priority_order) = async_priority_order {
+            let ordered = prioritized_pending_blocks(
+                self.metadata.hierarchy(),
+                initial_plan.pending_blocks(),
+                &frustum,
+                renderer,
+                self.metadata.coordinate_frame().origin(),
+            );
+            priority_order.clear();
+            priority_order.extend(ordered.iter().map(|(id, _)| *id));
+            ordered.first().map(|(id, _)| *id)
+        } else {
+            highest_priority_pending_block(
+                self.metadata.hierarchy(),
+                initial_plan.pending_blocks(),
+                &frustum,
+                renderer,
+                self.metadata.coordinate_frame().origin(),
+            )
+        };
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
         let mut evicted_blocks = Vec::new();
         let mut loaded_block = false;
@@ -738,6 +753,48 @@ fn highest_priority_pending_block(
         }
     }
     best.map(|(block_id, _)| block_id)
+}
+
+fn prioritized_pending_blocks(
+    hierarchy: &SpatialHierarchy,
+    pending: &[BlockId],
+    frustum: &SpatialFrustum,
+    renderer: &SurfaceRenderer<'_>,
+    coordinate_origin: [f64; 3],
+) -> Vec<(BlockId, f64)> {
+    if pending.is_empty() {
+        return Vec::new();
+    }
+    let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
+    let mut priorities = std::collections::HashMap::<BlockId, f64>::new();
+    for node in hierarchy.query_frustum(frustum.clone()) {
+        let priority = renderer.projected_error_pixels(
+            node.bounds(),
+            node.geometric_error(),
+            coordinate_origin,
+        );
+        for block_id in node.blocks() {
+            if pending_ids.contains(block_id) {
+                priorities
+                    .entry(*block_id)
+                    .and_modify(|current| {
+                        if priority.total_cmp(current).is_gt() {
+                            *current = priority;
+                        }
+                    })
+                    .or_insert(priority);
+            }
+        }
+    }
+    let mut ordered = priorities.into_iter().collect::<Vec<_>>();
+    ordered.sort_unstable_by(|candidate, current| {
+        if candidate.1.total_cmp(&current.1).is_eq() {
+            candidate.0.cmp(&current.0)
+        } else {
+            current.1.total_cmp(&candidate.1)
+        }
+    });
+    ordered
 }
 
 fn priority_precedes(candidate: (BlockId, f64), current: (BlockId, f64)) -> bool {

@@ -30,7 +30,10 @@ mod browser_convert;
 mod browser_io;
 
 #[cfg(target_arch = "wasm32")]
-pub use async_format_reader::WasmAsyncFormatReader;
+pub use async_format_reader::{
+    WasmAsyncFormatReader, WasmAsyncLodReadRequest, WasmAsyncLodReadResult, WasmAsyncReadBudget,
+    WasmAsyncReadCancelToken,
+};
 #[cfg(target_arch = "wasm32")]
 pub use bindings::WasmVoxelViewer;
 #[cfg(target_arch = "wasm32")]

@@ -219,8 +219,8 @@ atributo. Un fixture V7.1-pre reproducible comprueba esta ruta en el navegador, 
 sin lectura completa del Blob, colores, columna U16 y rechazo de payload corrupto.
 
 En ese incremento la fachada era un paso de biblioteca WASM separado del viewer. El quinto
-incremento, documentado al final, la conecta al worker y al ciclo LOD; siguen pendientes la cuota
-agregada de operaciones/bytes y el scheduler con más de una lectura en vuelo.
+incremento la conecta al worker y al ciclo LOD; el sexto añade lecturas simultáneas con presupuesto
+compartido. Sigue pendiente integrar el scheduler de tickets y medir navegación completa.
 
 **Contrato de integración WASM, contrastado con el flujo actual:** `LodDataset::update_view_progressive`
 selecciona el corte, invoca el loader para el bloque pendiente de mayor prioridad y vuelve a
@@ -494,3 +494,33 @@ respondió `no GPU adapter supports this surface`. Tampoco se implementan aún l
 apertura, caché, lecturas y resultados, concurrencia mayor que uno, deduplicación,
 reintento/cancelación física ni medición de RAM/latencia durante navegación. Por tanto la prioridad
 3 sigue abierta y esta entrega no valida rendimiento o continuidad visual GPU.
+
+## Evidencia del sexto incremento
+
+El 25-10-2026 cada lectura LOD ahora tiene un request WASM independiente, respaldado por el mismo
+índice inmutable y una cuota RAII compartida. La apertura reserva también el tamaño del índice
+residente. Cada reserva cubre el pico planificado, buffers Blob/WASM y salida tipada hasta que el
+worker inserta el bloque o descarta el resultado obsoleto. Las lecturas usan
+`Blob.slice(...).arrayBuffer()`; cancelar una generación es lógico y conserva cuota hasta que las
+promesas activas terminen.
+
+El worker toma el orden completo de bloques pendientes del plan LOD y solapa hasta cuatro
+peticiones. Si una petición no cabe por reservas activas, permanece pendiente; se prueban bloques
+posteriores y el conjunto vuelve a intentarse cuando una lectura libera su reserva. Los fallos
+reales siguen requiriendo una refinación explícita para reintentar. El scheduler de tickets de
+`viewer_core` todavía no se integra en WASM, y cuatro es el límite local actual, no un valor
+ajustado mediante mediciones.
+
+Node cubre solapamiento de tareas, disponibilidad del worker durante lecturas, descarte de
+generación obsoleta, diferimiento por cuota y rechazo de una lectura individual mayor al límite.
+La suite web completa pasa (36 tests); las pruebas nativas de `viewer_wasm` pasan (34; 1
+microbenchmark ignorado), y check/Clippy/formato WASM pasan.
+El probe real de navegador pasa: dos solicitudes independientes del mismo reader alcanzan más de
+una llamada Blob activa y conservan XYZ, RGB y U16; todas las reservas vuelven al nivel de metadata
+tras liberar resultados. Comprueba checksum, rangos Blob y companion. Esta prueba no necesita GPU.
+La inicialización visual del worker sigue sin estar validada en el navegador disponible por
+`no GPU adapter supports this surface`; tampoco hay medida de latencia/RAM con navegación LOD.
+
+Quedan abiertos en la prioridad 3: integrar el scheduler/tickets y retry explícito, definir el
+presupuesto conjunto con caché WASM/GPU, probar sustitución del dataset con varias lecturas
+pendientes en navegador y medir latencia/memoria durante navegación real.
