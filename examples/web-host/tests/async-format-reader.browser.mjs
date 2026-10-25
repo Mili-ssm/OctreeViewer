@@ -1,6 +1,6 @@
 // Async split-Blob reader probe; no GPU adapter or viewer renderer is required.
 import init, {
-    WasmAsyncFormatReader, WasmAsyncReadBudget, WasmVoxelViewer,
+    WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer,
 } from "../../../pkg/viewer_wasm.js";
 
 function assert(condition, message) {
@@ -15,6 +15,26 @@ self.onmessage = async ({ data = {} }) => {
         const attributes = data.attributes
             ?? await fetch(new URL("../sample-v7.octattrs", import.meta.url)).then(response => response.blob());
         const primaryBytes = new Uint8Array(await primary.arrayBuffer());
+
+        const scheduler = new WasmBlockRequestScheduler(2);
+        scheduler.updateBlocks(["3", "2", "1"]);
+        const secondPriority = scheduler.takeNextAdmitted(["2", "1"]);
+        const highest = scheduler.takeNextAdmitted(["3", "1"]);
+        assert(secondPriority.blockId === "2" && highest.blockId === "3",
+            "scheduler did not preserve priority among byte-admitted requests");
+        assert(scheduler.takeNextAdmitted(["1"]) === null,
+            "scheduler exceeded its in-flight limit");
+        const cancelledTickets = scheduler.updateBlocks(["2", "1"]);
+        assert(cancelledTickets.length === 1 && cancelledTickets[0] === highest.ticket,
+            "scheduler did not report a selection-obsolete ticket");
+        assert(scheduler.complete(highest.ticket, "3", false) === "discarded",
+            "cancelled ticket was not discarded on completion");
+        assert(scheduler.complete(secondPriority.ticket, "2", false) === "failed",
+            "selected ticket failure was not retained for explicit retry");
+        assert(scheduler.pendingBlocks().length === 1 && scheduler.pendingBlocks()[0] === "1",
+            "scheduler retried a failed ticket without an explicit retry");
+        assert(scheduler.retry("2") && scheduler.pendingBlocks()[0] === "2",
+            "scheduler could not explicitly retry a failed block");
 
         const originalArrayBuffer = Blob.prototype.arrayBuffer;
         const originalSlice = Blob.prototype.slice;
@@ -183,6 +203,7 @@ self.onmessage = async ({ data = {} }) => {
                 checksumRejected,
                 pointCount: geometry.pointCount,
                 attributeType: column.dataType,
+                schedulerTicketRetryPassed: true,
             });
             reader.free();
         } finally {

@@ -29,7 +29,7 @@ cerrar esas decisiones antes de congelar el formato, sin inventar un porcentaje 
 | [V5](../crates/viewer_format/FORMAT_V5.md): separación `.oct`/`.octattrs`, columnas y CRC independientes. | Abrir XYZ sin acompañante; RGB o una columna sin leer las demás; no compartir IDs entre columnas por defecto. |
 | [V6 pre4](../crates/viewer_format/FORMAT_V6_PRE4.md): delta, ocupación compacta, constantes, diccionarios y planos de bytes con fallback. | Reutilizar codecs y validaciones; contrastar tamaño completo y coste de candidatos. La ocupación por bloque no define una grilla global. |
 | [I/O existente](STORAGE_V6_IO.md): preparación Rayon, pipeline optativo con hasta dos lotes, `fork_reader` e índice compartido. | Reutilizar límites de propiedad y escritura ordenada; límites por lote y modelos actuales no garantizan RSS. La lectura paralela del ejemplo no está integrada en el viewer. |
-| [`BlockRequestScheduler`](../crates/viewer_core/src/scheduler.rs) y [reader](../crates/viewer_format/src/contracts.rs). | Prioridad, tickets y cancelación lógica existentes; falta integración WASM y admisión agregada por bytes. |
+| [`BlockRequestScheduler`](../crates/viewer_core/src/scheduler.rs) y [reader](../crates/viewer_format/src/contracts.rs). | Prioridad, tickets y cancelación lógica existentes; integrados en WASM con admisión por bytes antes del ticket. El presupuesto del viewer/cache y la medición conjunta siguen pendientes. |
 | [Memoria de conversión](V5_MEMORY_BENCH.md) y [memoria web](WEB_PERFORMANCE_BENCH.md). | Separar spools, buffers, índice, caché, WASM y GPU; las medidas existentes pertenecen a sus versiones y entornos. |
 
 ## 1. Base V7 verificable
@@ -220,7 +220,7 @@ sin lectura completa del Blob, colores, columna U16 y rechazo de payload corrupt
 
 En ese incremento la fachada era un paso de biblioteca WASM separado del viewer. El quinto
 incremento la conecta al worker y al ciclo LOD; el sexto añade lecturas simultáneas con presupuesto
-compartido. Sigue pendiente integrar el scheduler de tickets y medir navegación completa.
+compartido; el séptimo integra los tickets del scheduler. Sigue pendiente medir navegación completa.
 
 **Contrato de integración WASM, contrastado con el flujo actual:** `LodDataset::update_view_progressive`
 selecciona el corte, invoca el loader para el bloque pendiente de mayor prioridad y vuelve a
@@ -245,12 +245,13 @@ La implementación se separa en límites cortos de estado:
    respuesta obsoleta o fallida se descarta sin retirar el corte visible ni liberar cuota antes de
    soltar sus buffers.
 
-Conectar `BlockRequestScheduler` en esos límites, con prioridades derivadas del plan regional
-existente, no de un segundo selector LOD. Limitar operaciones y bytes simultáneamente, incluidos
-resultados; no reservar un slot mientras una petición espera cuota. La apertura también debe
-contabilizar el índice residente. El renderer consume escenas; no abre archivos. El worker debe
-permitir procesar cámara, cierre y reapertura mientras Blob resuelve, y serializar únicamente las
-transiciones WASM breves. No se mantendrá un préstamo mutable de WASM durante `await`.
+El séptimo incremento conecta `BlockRequestScheduler` en esos límites, con prioridades derivadas
+del orden del plan LOD existente y sin un segundo selector. Limita slots y bytes simultáneamente:
+la cuota Blob se reserva antes de tomar un ticket, y las cancelaciones lógicas mantienen su slot
+hasta completar el ticket. La apertura también contabiliza el índice residente. El renderer
+consume escenas; no abre archivos. El worker procesa mensajes de cámara/cierre mientras Blob
+resuelve y serializa únicamente las transiciones WASM breves; no mantiene préstamos WASM durante
+`await`.
 
 Como paso de caché posterior, medir primero deduplicación de peticiones exactas por identidad de
 dataset, bloque y selección. Después comparar coalescing de rangos solapados/adyacentes cuando
@@ -524,3 +525,26 @@ La inicialización visual del worker sigue sin estar validada en el navegador di
 Quedan abiertos en la prioridad 3: integrar el scheduler/tickets y retry explícito, definir el
 presupuesto conjunto con caché WASM/GPU, probar sustitución del dataset con varias lecturas
 pendientes en navegador y medir latencia/memoria durante navegación real.
+
+## Evidencia del séptimo incremento
+
+El scheduler WASM envuelve `BlockRequestScheduler`: actualiza selección y prioridad desde el orden
+del plan LOD, emite tickets opacos, informa cancelaciones, valida tickets vigentes antes de insertar
+y conserva los fallos hasta un retry explícito. La admisión por bytes sucede antes de tomar un slot;
+una lectura sobredimensionada se marca fallida sin iniciar Blob. Al cancelar una lectura activa el
+slot permanece ocupado hasta que su promise termina y se completa el ticket.
+
+El worker reconcilia el scheduler tras cada cambio LOD, inserta solo resultados con ticket todavía
+vigente y cancela lógicamente los obsoletos. Un cambio de color vacía tickets activos para releer
+con la columna solicitada. Una refinación permite reintentar los bloques fallidos; la sustitución
+del dataset cancela tickets anteriores y usa un scheduler nuevo.
+
+`cargo test -p viewer_core --offline` pasa (31 unitarias y 75 de integración); check/Clippy WASM,
+formato, 36 pruebas Node y el probe navegador con scheduler WASM pasan. El probe cubre prioridad
+entre candidatos admitidos, límite de slots, cancelación, descarte y reintento. La integración
+visual del worker sigue sin comprobarse por falta de adaptador WebGPU en el navegador disponible;
+no se ha medido memoria/latencia real.
+
+La prioridad 3 aún requiere navegación GPU real, prueba del worker completo sustituyendo dataset
+con varias lecturas Blob activas y memoria conjunta con caché WASM/GPU. El límite actual de cuatro
+lecturas sigue provisional y no está basado en una comparativa de recursos y latencia.

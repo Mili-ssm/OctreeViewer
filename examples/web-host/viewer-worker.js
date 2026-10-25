@@ -1,4 +1,4 @@
-import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
+import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 
 let viewer = null;
 let wasmExports = null;
@@ -12,10 +12,12 @@ let lastLodProgressKey = "";
 let refinementContext = { id: 0, trigger: "dataset", colorMode: "rgb" };
 let currentMetadata = null;
 let sceneGeneration = 0;
+let datasetGeneration = 0;
 let asyncFormatReader = null;
 const MAX_ASYNC_LOD_READS = 4;
 const asyncReadTasks = new Map();
 const failedAsyncBlocks = new Set();
+let asyncLodScheduler = null;
 let currentColorMode = "rgb";
 let asyncHasAttributes = false;
 let asyncAttributeIndices = new Map();
@@ -75,6 +77,10 @@ function recordFrameRenderSample(durationMs) {
 
 function advanceSceneGeneration() {
     sceneGeneration += 1;
+}
+
+function cancelAllAsyncReads() {
+    asyncLodScheduler?.cancelAll();
     for (const token of asyncReadCancelTokens) token.cancel();
     asyncReadCancelTokens.clear();
 }
@@ -168,18 +174,31 @@ function postLodProgress(lod, afterRenderFrame = false) {
     });
 }
 
-function scheduleAsyncLodRead() {
-    if (!asyncFormatReader || !viewer) return;
+function scheduleAsyncLodRead(retryFailed = false) {
+    if (!asyncFormatReader || !viewer || !asyncLodScheduler) return;
     const pending = typeof viewer.pendingAsyncLodBlocks === "function"
         ? viewer.pendingAsyncLodBlocks()
-        : [viewer.nextAsyncLodBlock()];
-    for (const blockId of pending) {
-        if (asyncReadTasks.size >= MAX_ASYNC_LOD_READS) break;
-        if (blockId === null || blockId === undefined || failedAsyncBlocks.has(String(blockId))
-            || asyncReadTasks.has(String(blockId))) continue;
+        : [viewer.nextAsyncLodBlock()].filter(blockId => blockId !== null);
+    const cancelledTickets = asyncLodScheduler.updateBlocks(pending);
+    for (const ticket of cancelledTickets) {
+        for (const task of asyncReadTasks.values()) {
+            if (task.ticket === String(ticket)) task.cancelToken.cancel();
+        }
+    }
+    if (retryFailed) {
+        for (const blockId of failedAsyncBlocks) {
+            asyncLodScheduler.retry(blockId);
+        }
+        failedAsyncBlocks.clear();
+    }
 
-        const generation = sceneGeneration;
-        const reader = asyncFormatReader;
+    const reader = asyncFormatReader;
+    const generation = datasetGeneration;
+    const ticketScheduler = asyncLodScheduler;
+    for (const blockId of ticketScheduler.pendingBlocks()) {
+        if (ticketScheduler.inFlightCount() >= MAX_ASYNC_LOD_READS) break;
+        if (asyncReadTasks.has(String(blockId))) continue;
+
         const colorMode = currentColorMode;
         const selectedAttribute = colorMode.startsWith("attribute:")
             ? Number(colorMode.split(":")[1])
@@ -196,41 +215,69 @@ function scheduleAsyncLodRead() {
         try {
             request = reader.planLodRead(BigInt(blockId), selection, requestedAttribute);
         } catch (error) {
+            ticketScheduler.fail(String(blockId));
             failedAsyncBlocks.add(String(blockId));
             self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
             continue;
         }
         // A null result means live reservations currently occupy the shared budget. Leave the
-        // block pending and try lower-priority candidates that may fit; completion retries all.
+        // block queued without taking a scheduler slot; lower-priority admitted blocks may proceed.
         if (!request) continue;
+        const scheduled = ticketScheduler.takeNextAdmitted([String(blockId)]);
+        if (!scheduled) {
+            request.free();
+            break;
+        }
+        const ticket = String(scheduled.ticket);
         const cancelToken = request.cancelToken();
         asyncReadCancelTokens.add(cancelToken);
-        asyncReadTasks.set(String(blockId), { generation, reader, request, cancelToken });
+        asyncReadTasks.set(String(blockId), { generation, reader, request, cancelToken, ticket });
 
         void (async () => {
             let result = null;
             let payload = null;
+            let ticketCompleted = false;
             try {
                 result = await request.read();
                 payload = result.value;
                 await (messageQueue = messageQueue.then(() => {
-                    if (generation !== sceneGeneration || reader !== asyncFormatReader) return;
+                    if (generation !== datasetGeneration || reader !== asyncFormatReader
+                        || ticketScheduler !== asyncLodScheduler) {
+                        ticketScheduler.complete(ticket, String(blockId), false);
+                        ticketCompleted = true;
+                        return;
+                    }
+                    if (!ticketScheduler.isCurrent(ticket)) {
+                        ticketScheduler.complete(ticket, String(blockId), false);
+                        ticketCompleted = true;
+                        return;
+                    }
                     viewer.insertAsyncLodBlock(
                         blockId, payload.positions, payload.colors ?? null, payload.attribute ?? null,
                     );
+                    ticketScheduler.complete(ticket, String(blockId), true);
+                    ticketCompleted = true;
                     const lod = viewer.updateLod(targetVoxelPixels);
                     self.postMessage({ type: "lod", lod });
                     postLodProgress(lod);
                 }).catch((error) => {
-                    if (generation === sceneGeneration) {
-                        failedAsyncBlocks.add(String(blockId));
+                    if (!ticketCompleted) {
+                        const outcome = ticketScheduler.complete(ticket, String(blockId), false);
+                        ticketCompleted = true;
+                        if (outcome === "failed") failedAsyncBlocks.add(String(blockId));
+                    }
+                    if (generation === datasetGeneration) {
                         self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
                     }
                 }));
             } catch (error) {
                 await (messageQueue = messageQueue.then(() => {
-                    if (generation === sceneGeneration) {
-                        failedAsyncBlocks.add(String(blockId));
+                    if (!ticketCompleted) {
+                        const outcome = ticketScheduler.complete(ticket, String(blockId), false);
+                        ticketCompleted = true;
+                        if (outcome === "failed") failedAsyncBlocks.add(String(blockId));
+                    }
+                    if (generation === datasetGeneration && outcome !== "discarded") {
                         self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
                     }
                 }));
@@ -249,7 +296,10 @@ function scheduleAsyncLodRead() {
 
 function startAsyncDataset(data, requestId = null) {
     advanceSceneGeneration();
-    const generation = sceneGeneration;
+    cancelAllAsyncReads();
+    datasetGeneration += 1;
+    const generation = datasetGeneration;
+    asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
     targetVoxelPixels = data.targetVoxelPixels;
     datasetOpenedAt = performance.now();
     currentColorMode = "rgb";
@@ -263,7 +313,7 @@ function startAsyncDataset(data, requestId = null) {
     asyncReadBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
     void WasmAsyncFormatReader.open(data.file, data.attributes, asyncReadBudget.clone()).then((reader) => {
         messageQueue = messageQueue.then(() => {
-            if (generation !== sceneGeneration) {
+            if (generation !== datasetGeneration) {
                 reader.free();
                 return;
             }
@@ -298,12 +348,12 @@ function startAsyncDataset(data, requestId = null) {
             postLodProgress(lod);
             scheduleAsyncLodRead();
         }).catch((error) => {
-            if (generation === sceneGeneration) {
+            if (generation === datasetGeneration) {
                 self.postMessage({ type: "error", operation: "openFile", requestId, message: String(error) });
             }
         });
     }).catch((error) => {
-        if (generation === sceneGeneration) {
+        if (generation === datasetGeneration) {
             self.postMessage({ type: "error", operation: "openFile", requestId, message: String(error) });
         }
     });
@@ -395,9 +445,10 @@ async function handleMessage({ data }) {
                 break;
             case "refine": {
                 const startedAt = performance.now();
+                const colorModeChanged = data.colorMode !== currentColorMode;
                 viewer.setColorMode(data.colorMode);
                 advanceSceneGeneration();
-                failedAsyncBlocks.clear();
+                if (colorModeChanged) cancelAllAsyncReads();
                 currentColorMode = data.colorMode;
                 targetVoxelPixels = data.targetVoxelPixels;
                 beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
@@ -405,7 +456,7 @@ async function handleMessage({ data }) {
                     const lod = viewer.updateLod(targetVoxelPixels);
                     self.postMessage({ type: "lod", lod });
                     postLodProgress(lod);
-                    scheduleAsyncLodRead();
+                    scheduleAsyncLodRead(true);
                 }
                 break;
             }

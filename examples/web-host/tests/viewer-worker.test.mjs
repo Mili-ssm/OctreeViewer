@@ -87,6 +87,88 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         constructor(limitBytes) { this.limitBytes = limitBytes; }
         clone() { return new DefaultAsyncReadBudget(this.limitBytes); }
     }
+    class DefaultBlockRequestScheduler {
+        constructor(limit) {
+            this.limit = limit;
+            this.nextTicket = 1;
+            this.selected = [];
+            this.active = new Map();
+            this.completed = new Set();
+            this.failed = new Set();
+        }
+        updateBlocks(ids) {
+            this.selected = ids.map(String);
+            const cancelled = [];
+            for (const request of this.active.values()) {
+                if (request.current && !this.selected.includes(request.blockId)) {
+                    request.current = false;
+                    cancelled.push(request.ticket);
+                }
+            }
+            for (const id of [...this.completed]) if (!this.selected.includes(id)) this.completed.delete(id);
+            for (const id of [...this.failed]) if (!this.selected.includes(id)) this.failed.delete(id);
+            return cancelled;
+        }
+        pendingBlocks() {
+            const active = new Set([...this.active.values()].map(item => item.blockId));
+            return this.selected.filter(id => !active.has(id)
+                && !this.completed.has(id) && !this.failed.has(id));
+        }
+        takeNextAdmitted(ids) {
+            if (this.active.size >= this.limit) return null;
+            const allowed = ids.map(String);
+            const blockId = this.pendingBlocks().find(id => allowed.includes(id));
+            if (blockId === undefined) return null;
+            const ticket = String(this.nextTicket++);
+            this.active.set(ticket, { ticket, blockId, current: true });
+            return { ticket, blockId };
+        }
+        complete(ticket, actualBlockId, succeeded) {
+            const request = this.active.get(String(ticket));
+            if (!request) throw new Error("unknown ticket");
+            this.active.delete(String(ticket));
+            if (!request.current || !this.selected.includes(request.blockId)) return "discarded";
+            if (!succeeded) {
+                this.failed.add(request.blockId);
+                return "failed";
+            }
+            if (request.blockId !== String(actualBlockId)) {
+                this.failed.add(request.blockId);
+                return "unexpectedBlock";
+            }
+            this.completed.add(request.blockId);
+            return "delivered";
+        }
+        isCurrent(ticket) {
+            const request = this.active.get(String(ticket));
+            return Boolean(request?.current && this.selected.includes(request.blockId));
+        }
+        retry(blockId) {
+            const id = String(blockId);
+            if (!this.selected.includes(id) || !this.failed.delete(id)) return false;
+            return true;
+        }
+        fail(blockId) {
+            const id = String(blockId);
+            if (!this.selected.includes(id)) return false;
+            this.failed.add(id);
+            return true;
+        }
+        cancelAll() {
+            const cancelled = [];
+            for (const request of this.active.values()) {
+                if (request.current) {
+                    request.current = false;
+                    cancelled.push(request.ticket);
+                }
+            }
+            this.selected = [];
+            this.completed.clear();
+            this.failed.clear();
+            return cancelled;
+        }
+        inFlightCount() { return this.active.size; }
+    }
     vm.runInNewContext(source, {
         self: {
             addEventListener(_name, callback) { receive = callback; },
@@ -96,6 +178,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
         WasmAsyncReadBudget: DefaultAsyncReadBudget,
+        WasmBlockRequestScheduler: DefaultBlockRequestScheduler,
         WasmAsyncFormatReader: AsyncFormatReader ?? DefaultAsyncFormatReader,
         Float64Array,
         setTimeout,
@@ -269,11 +352,11 @@ test("async Blob reads leave the message queue responsive and discard stale gene
     });
     assert.equal(readStarted, true);
 
+    worker.setPendingBlock(null);
     await worker.send("frame", {
         camera: { orbitX: 1, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 },
     });
     assert.ok(worker.messages.some(message => message.type === "frame"));
-    worker.setPendingBlock(null);
     resolveRead({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
     await new Promise(setImmediate);
     await new Promise(setImmediate);

@@ -15,6 +15,10 @@ pub struct RequestTicket {
 }
 
 impl RequestTicket {
+    pub const fn id(self) -> u64 {
+        self.id
+    }
+
     pub const fn block_id(self) -> BlockId {
         self.block_id
     }
@@ -210,6 +214,31 @@ impl BlockRequestScheduler {
         let Some(key) = self.pending.iter().next().copied() else {
             return Ok(None);
         };
+        self.admit(key)
+    }
+
+    /// Releases the highest-priority pending request among blocks already admitted by an
+    /// external byte budget. This lets callers avoid reserving an operation slot while waiting
+    /// for memory quota.
+    pub fn take_next_admitted(
+        &mut self,
+        admitted_blocks: &[BlockId],
+    ) -> Result<Option<ScheduledBlockRequest>, SchedulerError> {
+        if self.active.len() >= self.max_in_flight {
+            return Ok(None);
+        }
+        let Some(key) = self
+            .pending
+            .iter()
+            .find(|key| admitted_blocks.contains(&key.block_id))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        self.admit(key)
+    }
+
+    fn admit(&mut self, key: PriorityKey) -> Result<Option<ScheduledBlockRequest>, SchedulerError> {
         let ticket_id = self.next_ticket_id;
         let next_id = ticket_id
             .checked_add(1)
@@ -233,6 +262,11 @@ impl BlockRequestScheduler {
             ticket,
             priority_distance: key.distance,
         }))
+    }
+
+    /// Pending blocks in scheduler priority order.
+    pub fn pending_blocks(&self) -> Vec<BlockId> {
+        self.pending.iter().map(|key| key.block_id).collect()
     }
 
     /// Reports a read result and releases its concurrency slot.
@@ -297,6 +331,19 @@ impl BlockRequestScheduler {
         self.pending_by_block.remove(&block_id);
         self.insert_pending(block_id, self.priorities[&block_id]);
         true
+    }
+
+    /// Marks a selected request failed before it takes an in-flight ticket, for example when
+    /// admission discovers that a single request cannot fit the byte budget.
+    pub fn fail(&mut self, block_id: BlockId) -> bool {
+        if !self.selected.contains(&block_id)
+            || self.active_by_block.contains_key(&block_id)
+            || self.completed.contains(&block_id)
+        {
+            return false;
+        }
+        self.remove_pending(block_id);
+        self.failed.insert(block_id)
     }
 
     /// Forgets a delivered block after its decoded payload leaves the cache.
@@ -392,6 +439,13 @@ impl BlockRequestScheduler {
             return RequestState::Failed;
         }
         RequestState::NotSelected
+    }
+
+    pub fn ticket_is_current(&self, ticket: RequestTicket) -> bool {
+        self.active
+            .get(&ticket.id)
+            .is_some_and(|active| active.ticket == ticket && active.current)
+            && self.selected.contains(&ticket.block_id)
     }
 
     fn insert_pending(&mut self, block_id: BlockId, distance: f64) {
@@ -506,4 +560,47 @@ fn distance_to_bounds(camera: [f64; 3], node: &SpatialNode) -> f64 {
         }
     });
     distance[0].hypot(distance[1]).hypot(distance[2])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn byte_admission_skips_unadmitted_priority_without_using_a_slot() {
+        let mut scheduler = BlockRequestScheduler::new(2).unwrap();
+        scheduler
+            .update_blocks([
+                (BlockId::new(3), 0.0),
+                (BlockId::new(2), 1.0),
+                (BlockId::new(1), 2.0),
+            ])
+            .unwrap();
+
+        let admitted = scheduler
+            .take_next_admitted(&[BlockId::new(2), BlockId::new(1)])
+            .unwrap()
+            .unwrap();
+        assert_eq!(admitted.ticket().block_id(), BlockId::new(2));
+        assert_eq!(scheduler.in_flight_count(), 1);
+        assert_eq!(
+            scheduler.pending_blocks(),
+            vec![BlockId::new(3), BlockId::new(1)]
+        );
+    }
+
+    #[test]
+    fn failed_selected_blocks_need_an_explicit_retry() {
+        let mut scheduler = BlockRequestScheduler::new(1).unwrap();
+        let block_id = BlockId::new(7);
+        scheduler.update_blocks([(block_id, 0.0)]).unwrap();
+        let ticket = scheduler.take_next().unwrap().unwrap().ticket();
+        assert_eq!(
+            scheduler.complete(ticket, Err(())).unwrap(),
+            RequestCompletion::Failed
+        );
+        assert!(scheduler.pending_blocks().is_empty());
+        assert!(scheduler.retry(block_id));
+        assert_eq!(scheduler.pending_blocks(), vec![block_id]);
+    }
 }
