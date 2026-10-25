@@ -210,11 +210,35 @@ marcador rechaza lecturas síncronas de payload; las pruebas V7 comparan resulta
 rechazan corrupción y companion incompatible. Esto permite consumir rangos obtenidos externamente,
 pero todavía no llama `Blob.arrayBuffer()`, admite tareas por bytes ni se conecta al ciclo LOD.
 
-Conectar el scheduler del core al controlador LOD con selección, prioridad, identidad de dataset
-y generación de objetivo. Limitar solicitudes y bytes simultáneamente, incluidos resultados.
-El renderer consume escenas; no abre archivos. Abrir el índice del par split de forma asíncrona
-con límites `FormatReaderLimits`; luego reservar memoria antes de solicitar cada rango. Incluir
-en la cuota los `ArrayBuffer` JS, su copia a WASM, scratch de decodificación y resultado retenido.
+**Contrato de integración WASM, contrastado con el flujo actual:** `LodDataset::update_view_progressive`
+selecciona el corte, invoca el loader para el bloque pendiente de mayor prioridad y vuelve a
+preparar el plan. El loader puede responder `None`; así el bloque queda pendiente y la publicación
+conserva el corte anterior cubierto. La llamada completa es síncrona hoy y `bindings.rs` mantiene
+préstamos mutables de dataset/reader durante el loader, por lo que no se insertará un `await` en
+ese callback.
+
+La implementación se separa en límites cortos de estado:
+
+1. **Abrir:** el worker obtiene con `Blob.slice(...).arrayBuffer()` cabecera, footer, índice acotado
+   y cabecera/footer del companion. WASM construye el reader metadata-only con los límites de
+   `FormatReaderLimits`; nunca solicita el archivo completo.
+2. **Planificar:** el controlador conserva selección LOD, prioridad y preparación del corte. Para
+   un reader externo, registra el bloque pedido y devuelve su `ReadPlan` con identidad de dataset,
+   generación del objetivo, selección, rangos y coste estimado. Luego libera todos los préstamos.
+3. **Leer:** el worker reserva primero operaciones y bytes, y obtiene los rangos exactos con Blob
+   asíncrono fuera de la cola de mutaciones del viewer. La admisión cubre `ArrayBuffer` JS, copia a
+   WASM, scratch y resultados que aún no llegaron a caché.
+4. **Aceptar/publicar:** una transición síncrona valida ticket, dataset y generación; materializa
+   CRC/codec con el plan retenido en WASM, inserta el bloque y prepara/publica el corte. Una
+   respuesta obsoleta o fallida se descarta sin retirar el corte visible ni liberar cuota antes de
+   soltar sus buffers.
+
+Conectar `BlockRequestScheduler` en esos límites, con prioridades derivadas del plan regional
+existente, no de un segundo selector LOD. Limitar operaciones y bytes simultáneamente, incluidos
+resultados; no reservar un slot mientras una petición espera cuota. La apertura también debe
+contabilizar el índice residente. El renderer consume escenas; no abre archivos. El worker debe
+permitir procesar cámara, cierre y reapertura mientras Blob resuelve, y serializar únicamente las
+transiciones WASM breves. No se mantendrá un préstamo mutable de WASM durante `await`.
 
 Como paso de caché posterior, medir primero deduplicación de peticiones exactas por identidad de
 dataset, bloque y selección. Después comparar coalescing de rangos solapados/adyacentes cuando
