@@ -80,11 +80,11 @@ fn byte_dictionary(raw: &[u8], table: &mut Vec<u8>) -> [u16; 256] {
     lookup
 }
 
-pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+fn encode_raw_or_constant(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
     if width == 0 || !raw.len().is_multiple_of(width) {
         return Err(malformed());
     }
-    let mut best = compress_block(raw);
+    let best = compress_block(raw);
     let rows = raw.len() / width;
     if rows < 2 || rows > u32::MAX as usize {
         return Ok(best);
@@ -94,6 +94,15 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
             codec: BlockCodec::Constant,
             bytes: raw[..width].to_vec(),
         });
+    }
+    Ok(best)
+}
+
+pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+    let mut best = encode_raw_or_constant(raw, width)?;
+    let rows = raw.len() / width;
+    if rows < 2 || rows > u32::MAX as usize || best.codec() == BlockCodec::Constant {
+        return Ok(best);
     }
     let mut table = allocate(if width == 1 { rows.min(256) } else { raw.len() })?;
     let (unique, packed) = if width == 1 {
@@ -181,7 +190,25 @@ fn row_key(row: &[u8]) -> u64 {
 
 /// Pre4 keeps every pre3 candidate, adding a reversible independent byte-plane transform.
 pub(crate) fn encode_pre4(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
-    let best = encode(raw, width)?;
+    encode_byte_planes(raw, width, encode(raw, width)?)
+}
+
+/// V7.3 keeps dictionary candidates only for narrow 1/2/4-byte tuples.
+/// The alternative candidates and their tie order stay identical to pre4.
+pub(crate) fn encode_v7_pre3(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+    let best = if matches!(width, 1 | 2 | 4) {
+        encode(raw, width)?
+    } else {
+        encode_raw_or_constant(raw, width)?
+    };
+    encode_byte_planes(raw, width, best)
+}
+
+fn encode_byte_planes(
+    raw: &[u8],
+    width: usize,
+    best: EncodedBlock,
+) -> Result<EncodedBlock, FormatError> {
     if width <= 1 || raw.len() / width < 2 || best.codec() == BlockCodec::Constant {
         return Ok(best);
     }
@@ -595,6 +622,58 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn v73_dictionary_policy_matches_profiled_candidates_and_preserves_bits() {
+        let mut state = 0x1234_5678_u32;
+        for width in 1..=16 {
+            for rows in [0, 1, 257, 4096] {
+                for constant in [false, true] {
+                    let raw: Vec<_> = (0..rows * width)
+                        .map(|_| {
+                            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                            if constant { 0x5a } else { (state >> 24) as u8 }
+                        })
+                        .collect();
+                    let expected = if matches!(width, 1 | 2 | 4) {
+                        encode_pre4(&raw, width)
+                    } else {
+                        encode_without_wide_dictionary(&raw, width)
+                    }
+                    .unwrap();
+                    let actual = encode_v7_pre3(&raw, width).unwrap();
+                    assert_eq!(
+                        actual.codec(),
+                        expected.codec(),
+                        "width={width} rows={rows}"
+                    );
+                    assert_eq!(
+                        actual.bytes(),
+                        expected.bytes(),
+                        "width={width} rows={rows}"
+                    );
+                    if !matches!(width, 1 | 2 | 4) {
+                        assert_ne!(actual.codec(), BlockCodec::Dictionary);
+                    }
+                    assert_eq!(
+                        decode(actual.codec(), actual.bytes(), raw.len(), width, raw.len())
+                            .unwrap(),
+                        raw
+                    );
+                }
+            }
+        }
+        let bits = [0_u64, 1 << 63, 0x7ff8_0000_0000_0001, 0x7ff8_0000_0000_0042];
+        let raw: Vec<_> = (0..4096)
+            .flat_map(|i| bits[i % bits.len()].to_le_bytes())
+            .collect();
+        let actual = encode_v7_pre3(&raw, 8).unwrap();
+        assert_ne!(actual.codec(), BlockCodec::Dictionary);
+        assert_eq!(
+            decode(actual.codec(), actual.bytes(), raw.len(), 8, raw.len()).unwrap(),
+            raw
+        );
     }
 
     fn old_slice_encoder(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {

@@ -15,7 +15,7 @@ import sys
 from typing import Any, Sequence
 
 
-FORMAT_VERSIONS = ("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre")
+FORMAT_VERSIONS = ("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre", "v7.3-pre")
 MODES = ("hierarchy", "reconstruct", "progressive")
 KEY_VALUE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)")
 

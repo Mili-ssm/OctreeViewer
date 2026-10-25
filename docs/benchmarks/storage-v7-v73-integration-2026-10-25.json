@@ -1,0 +1,116 @@
+{
+  "kind": "v73_native_wasm_browser_integration",
+  "date": "2026-10-25",
+  "base_revision": "8676444",
+  "version": "v7.3-pre",
+  "identity": {
+    "major": 7,
+    "revision": 3,
+    "index_magic": "OCTVI73P",
+    "footer_magic": "OCTVE73P"
+  },
+  "scope": "Opt-in experimental revision; V5 default and V7.1/V7.2 bytes retained. Geometry search is V7.2 compact24/raw/delta. Attribute dictionary candidates only for tuple widths1/2/4; other widths retain raw/LZ4, constant, byteplanes.",
+  "artifacts": {
+    "target/v73-browser/sample.oct": {
+      "bytes": 26568,
+      "sha256": "c2e8963594b5e918040e6cb1a16bc27e7522ad64281448fdddf019e00a13b782"
+    },
+    "target/v73-browser/sample.octattrs": {
+      "bytes": 4041,
+      "sha256": "fa7f03b156af966a1c7da8bf24d5ed656881eebfc18e1cdfc6eb5f8dd4971dd4"
+    },
+    "target/v73-browser/pkg/viewer_wasm_bg.wasm": {
+      "bytes": 2129891,
+      "sha256": "4e35184708221866b50a6581556df2bf4120f0da397d78996109d53ebaded9e3"
+    },
+    "target/v73-browser/pkg/viewer_wasm.js": {
+      "bytes": 121799,
+      "sha256": "131e9cb9b8ada9dec21e21977615bf87e34b7b0930198b8ca1092f2fe45d008d"
+    },
+    "data/samples/fs_e430_n4008_18.las": {
+      "bytes": 3113649,
+      "sha256": "a4900d81f9eed572e8f3dd9f60ddcd9e995a1dd455b4270069d6403b19087456"
+    },
+    "native_smoke": {
+      "status": "complete",
+      "version": "v7.3-pre",
+      "artifacts": {
+        "oct": {
+          "bytes": 1107463,
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v73-native-smoke/output-run-001.oct",
+          "sha256": "11b80aa7246184d7faac18f5d188c66dbde246bfadc09d0eef98dac1feacac2c"
+        },
+        "octattrs": {
+          "bytes": 517021,
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/v73-native-smoke/output-run-001.octattrs",
+          "sha256": "b9dad9b636877ea1bded5e995be4856d7aef1e7b2ee0e76388503f8c919968f0"
+        }
+      },
+      "read_modes": [
+        "hierarchy",
+        "progressive",
+        "reconstruct"
+      ]
+    }
+  },
+  "browser_async_reader": {
+    "result": {
+      "identity": "v7.3-pre",
+      "type": "probeResult",
+      "passed": true,
+      "geometryRangeCount": 2,
+      "geometryPeakBytes": "104851",
+      "attributeRangeCount": 1,
+      "positionRangeCount": 1,
+      "colorRangeCount": 1,
+      "blobRangeReads": 29,
+      "arrayBufferCalls": 29,
+      "checksumRejected": true,
+      "pointCount": 4096,
+      "attributeType": "U16",
+      "schedulerTicketRetryPassed": true
+    },
+    "errors": [],
+    "browser": "156.0.8078.47"
+  },
+  "browser_opfs_conversion": {
+    "result": {
+      "version": "v7.3-pre",
+      "sourceBytes": 3113649,
+      "points": "111190",
+      "octBytes": 1074834,
+      "attributeBytes": 486281,
+      "storage": {
+        "type": "probeResult",
+        "passed": true,
+        "geometryHasAttributes": false,
+        "fullHasAttributes": true,
+        "sourcePointCount": "111190",
+        "nodeCount": 9,
+        "formatVersion": "v7.3-pre",
+        "schemaColumns": 8,
+        "wrongSidecarRejected": true,
+        "errors": [
+          "provisional format is no longer supported; regenerate from LAS/LAZ/EPT",
+          "format version v6.5-pre is recognized but has no supported decoder"
+        ]
+      },
+      "opfsOutputsRemoved": true
+    },
+    "errors": [],
+    "browser": "156.0.8078.47"
+  },
+  "validation_commands": [
+    "cargo test -p viewer_format --all-targets --features async-reader",
+    "cargo test -p viewer_convert --all-targets",
+    "cargo test -p viewer_convert resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_run",
+    "cargo check --target wasm32-unknown-unknown -p viewer_wasm",
+    "cargo clippy -p viewer_format -p viewer_convert --all-targets -- -D warnings",
+    "python3 -m unittest discover -s crates/viewer_convert/benchmarks -p 'test_*.py'"
+  ],
+  "recovery": "V7.2/V7.3 EPT interruption at a block boundary: resumed outputs equal clean output; cross-revision resume rejects and preserves both candidate prefixes. LAS published-output recovery also exercises V7.3.",
+  "v72_regression": "The attribute probe re-encoded three distributed Albuera V7.2 blocks after codec refactoring; codec/length/CRC matched persisted payloads and both decoders preserved exact bytes.",
+  "reproduction": "Build release WASM, generate web bindings with wasm-bindgen into target/v73-browser/pkg, and generate the 4096-point split fixture with create_web_sample ... v7.3-pre. Run existing async-format-reader.browser.mjs and converter-worker.js/storage-format.browser.mjs through Playwright MCP, with only import paths redirected to the temporary bindings. Conversion source: fs_e430_n4008_18.las, actual OPFS sync access handles.",
+  "limits": "Small-fixture browser evidence with Chromium 156; no GPU renderer/presentation, real navigation, physical-device or end-to-end large-corpus performance claim. No promotion. The 512-block Albuera profile motivating the policy is attribute-only.",
+  "cleanup": "OPFS outputs removed by probe. Native/synthetic conversion fixtures removed after recording sizes/hashes; logs and probe copies remain under target/v73-browser and target/v73-native-smoke."
+}

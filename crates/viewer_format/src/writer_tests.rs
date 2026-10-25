@@ -135,26 +135,34 @@ fn split_writer_resumes_from_committed_checkpoint_byte_identically() {
 }
 
 #[test]
-fn v72_pre2_uses_its_exact_identity_and_roundtrips_geometry() {
-    let mut writer = FormatWriter::new_for_version(
-        FormatVersion::V7_PRE2,
-        Cursor::new(Vec::new()),
-        sample_metadata(),
-        options(),
-    )
-    .unwrap();
-    writer.write_block(sample_block()).unwrap();
-    let bytes = writer.finish().unwrap().into_inner();
+fn v72_and_v73_use_exact_identities_and_roundtrip_geometry() {
+    for (version, revision, index_magic, footer_magic) in [
+        (FormatVersion::V7_PRE2, 2, b"OCTVI72P", b"OCTVE72P"),
+        (FormatVersion::V7_PRE3, 3, b"OCTVI73P", b"OCTVE73P"),
+    ] {
+        let mut writer = FormatWriter::new_for_version(
+            version,
+            Cursor::new(Vec::new()),
+            sample_metadata(),
+            options(),
+        )
+        .unwrap();
+        writer.write_block(sample_block()).unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
 
-    assert_eq!(&bytes[..8], b"OCTVFRM1");
-    assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 7);
-    assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 2);
-    assert!(bytes.windows(8).any(|window| window == b"OCTVI72P"));
-    assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], b"OCTVE72P");
+        assert_eq!(&bytes[..8], b"OCTVFRM1");
+        assert_eq!(u16::from_le_bytes(bytes[8..10].try_into().unwrap()), 7);
+        assert_eq!(
+            u32::from_le_bytes(bytes[16..20].try_into().unwrap()),
+            revision
+        );
+        assert!(bytes.windows(8).any(|window| window == index_magic));
+        assert_eq!(&bytes[bytes.len() - 40..bytes.len() - 32], footer_magic);
 
-    let mut reader = crate::FormatReader::new(Cursor::new(bytes)).unwrap();
-    assert_eq!(reader.format_version(), FormatVersion::V7_PRE2);
-    assert_eq!(reader.read_positions(BlockId::new(7)).unwrap().len(), 2);
+        let mut reader = crate::FormatReader::new(Cursor::new(bytes)).unwrap();
+        assert_eq!(reader.format_version(), version);
+        assert_eq!(reader.read_positions(BlockId::new(7)).unwrap().len(), 2);
+    }
 }
 
 #[test]

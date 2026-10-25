@@ -147,10 +147,10 @@ impl EptCheckpoint {
     ) -> Result<Self, CheckpointError> {
         if !matches!(
             options.format_version(),
-            FormatVersion::V7_PRE1 | FormatVersion::V7_PRE2
+            FormatVersion::V7_PRE1 | FormatVersion::V7_PRE2 | FormatVersion::V7_PRE3
         ) {
             return Err(CheckpointError::Invalid(
-                "EPT recovery supports only v7.1-pre and v7.2-pre".into(),
+                "EPT recovery supports only v7.1-pre, v7.2-pre, and v7.3-pre".into(),
             ));
         }
         let root = checkpoint_path(output_path);

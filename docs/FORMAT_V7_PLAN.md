@@ -784,3 +784,32 @@ luego convertir corpus completos y contrastar tiempo/tamaño/recursos antes de p
 Albuera generada se conserva temporalmente como control para esa comparación y se limpiará al
 cerrarla. La sonda no cambia ninguna ruta de producción. Pasan su prueba de corrección, el perfil
 con CRC de 512 bloques, Clippy y formato.
+
+
+## Implementación del candidato V7.3-pre
+
+Implementado con [identidad propia](../crates/viewer_format/FORMAT_V7_PRE3.md): major 7/revisión 3,
+índice `OCTVI73P` y footer `OCTVE73P`. La geometría mantiene compact24/raw/delta de V7.2; solo se
+prueban diccionarios de atributos con tuplas de 1/2/4 bytes. El resto conserva raw/LZ4, constantes
+y planos. El encoder comparte las reglas raw/constante/planos para conservar sus desempates; las
+pruebas diferenciales y el recodificado de tres bloques Albuera comprueban los bytes V7.2 previos.
+V5 sigue default; V7 final permanece rechazado.
+
+Pasan tests `viewer_format --all-targets --features async-reader`, `viewer_convert --all-targets`,
+Clippy, check/build WASM y las 24 pruebas Python. Se verifican mono/split y async, marcadores y
+companions incompatibles, bits tipados, salida serial/paralela/pipeline y recuperación LAS. EPT
+reanuda V7.2/V7.3 tras un bloque confirmado con salida igual a la limpia y rechaza otra revisión
+sin tocar ninguno de los dos prefijos de la pareja.
+
+Playwright MCP/Chromium 156 ejecutó el reader Blob async con fixture V7.3 de 4.096 puntos (29
+rangos/arrayBuffers, XYZ/RGB/U16, CRC, cuota y tickets/retry); consola sin errores. También ejecutó
+el worker de conversión con 111.190 puntos LAS, handles síncronos OPFS reales y selección V7.3;
+reabrió la pareja, comprobó conteos/esquema y rechazó companions incorrectos. Eliminó sus archivos
+OPFS. La suite nativa completó conversión V7.3 y hierarchy/reconstruct/progressive con la misma
+fuente pequeña. [Artefactos y límites](benchmarks/storage-v7-v73-integration-2026-10-25.json).
+Son pruebas de integración de almacenamiento, no presentación GPU ni latencia de navegación.
+
+**Pendiente de medición:** convertir Belvedere/Albuera/Majadas y contrastar V7.2/V7.3 y V5 en
+procesos identificados/alternados, con checksums lógicos, pareja completa, tiempos por fase,
+RSS/temporales y lectura selectiva. El +0,185%/−46,5% del muestreo de atributos no se considera
+resultado de la conversión nueva. V7.3 sigue optativo; todavía no se promueve ni retira V5/V6.

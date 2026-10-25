@@ -503,20 +503,21 @@ remaining presentation limitation are in [storage benchmarks](../../docs/STORAGE
 With fresh bindings, run `tests/async-format-reader.browser.mjs` as a module Worker and wait for
 `type === "probeResult"`. Against the V7.1-pre fixture it checks bounded metadata ranges,
 asynchronous `Blob.arrayBuffer()` payload reads, XYZ/RGB and typed U16 materialization, companion
-identity and CRC rejection without a full-file read. This verifies the WASM reader façade only;
-worker scheduling, memory admission and LOD publication remain pending in the [V7 plan](../../docs/FORMAT_V7_PLAN.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
+identity and CRC rejection without a full-file read, plus shared read quota, concurrent calls
+and scheduler tickets/retry. Equivalent V7.3 fixtures passed with fresh bindings ([evidence](../../docs/benchmarks/storage-v7-v73-integration-2026-10-25.json)). Visual
+LOD publication and navigation measurements remain pending in the [V7 plan](../../docs/FORMAT_V7_PLAN.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
 
-### Experimental v6 conversion
+### Opt-in conversion revisions
 
 Normal conversion stays on final v5. Programmatic callers may use
-`WasmLasOctConverter.createForVersion(file, primaryHandle, attributesHandle, "v6.1-pre")`, or send
-`{ type: "convert", file, formatVersion: "v6.1-pre" }` to the converter worker. Opening a Blob
-automatically selects final v5 or an implemented experimental identity: `v6.1-pre`,
-`v6.2-pre`, `v6.3-pre`, `v6.4-pre`. Both programmatic entry points accept these exact strings;
-paired files must have the exact same identity. Final `v6` and other revisions remain unsupported.
+`WasmLasOctConverter.createForVersion(file, primaryHandle, attributesHandle, "v7.3-pre")`, or send
+`{ type: "convert", file, formatVersion: "v7.3-pre" }` to the converter worker. Opening a Blob
+automatically selects final v5 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
+and `v7.1-pre`–`v7.3-pre`. Both programmatic entry points accept these exact strings;
+paired files must have the exact same identity. Final `v6`, final `v7` and later revisions remain unsupported.
 The demo defaults to v5; this programmatic selection does not add a format selector to its UI.
 
-For the storage probe, pass `expectedVersion: "v6.1-pre"` with the converted Blobs and check the
+For the storage probe, pass `expectedVersion: "v7.3-pre"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache
 busting query on the worker/probe URL avoids a stale development module). Results are recorded
 in [storage comparisons](../../docs/STORAGE_BENCH.md); GPU presentation remains separate.

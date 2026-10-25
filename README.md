@@ -8,8 +8,9 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 ## Estado actual — 25-10-2026
 
 - **V7 es la prioridad exclusiva de evolución**, con objetivo de retirar V5/V6 tras completar
-  la transición. La base optativa `v7.1-pre` hereda los contratos de pre4 y añade una mejora
-  compatible de buffers del encoder; la identidad por sí sola no reduce disco. El reader nativo
+  la transición. La base optativa `v7.1-pre` hereda pre4; `v7.2-pre` reduce la búsqueda de
+  ocupación y `v7.3-pre` limita diccionarios de atributos a tuplas de 1/2/4 bytes. Las revisiones
+  siguen experimentales; su identidad por sí sola no reduce disco. El reader nativo
   async ya permite concurrencia con cuota compartida y el viewer web solapa lecturas Blob
   priorizadas por LOD con resultados retenidos bajo cuota; falta agregar la caché del viewer y
   medir navegación concurrente. [Plan y
@@ -52,8 +53,8 @@ la transición como compatibilidad y referencia de comparación.
 | 1 | Base `v7.1-pre`: reader/writer, conversión, identidad/checkpoints exactos y menor buffer auxiliar sin cambiar payloads. | Implementado; verificación de esta entrega al final del [plan](docs/FORMAT_V7_PLAN.md#evidencia-del-primer-incremento). Sin mejora global de RSS/disco medida. |
 | 2 | Plan de rangos y costes por selección/codec; presupuesto agregado de memoria y medición por fase de temporales y RSS. | Planes selectivos y preflight por lectura implementados, con rangos sin I/O y estimación de buffers. La cuota compartida conserva reservas de tareas y resultados; el benchmark verifica bytes leídos. Falta completar diagnóstico de temporales/RSS. |
 | 3 | Reader lógico único por dataset en la aplicación, con llamadas concurrentes, prioridad/cancelación y bytes en vuelo; integrar scheduler en WASM y validar navegador. | El worker integra el scheduler WASM: reconcilia bloques por prioridad LOD, limita slots y reserva bytes antes de admitirlos. La cancelación de tickets es lógica y los errores solo se reintentan tras una refinación explícita. Falta validar navegación LOD con GPU y medir caché/memoria concurrente. [Plan y evidencia](docs/FORMAT_V7_PLAN.md#evidencia-del-septimo-incremento). |
-| 4 | Writer con admisión por bytes, pipeline ordenado, EPT y recuperación; reducir pico de spools sin romper checkpoints. | Preparación paralela/pipeline ordenado y checkpoints EPT V7.1/V7.2 por bloques implementados; identidad por rutas/tamaño/`mtime`, que puede omitir cambios con metadatos iguales. V7.2 limita la búsqueda a raw/delta/ocupación compacta de 24 bits y sigue experimental. Índice con pares `(u32, u32)` cuando caben y diccionarios de atributos con claves enteras conservan los payloads. Tres pares Belvedere del último cambio bajan 2,6% la preparación mediana y 1,4% el total; RSS pico muestreado 5,4% menor. Falta repetir corpus grandes, contrastar V5/V7 actuales y cerrar presupuestos/picos. [Plan y comparaciones](docs/FORMAT_V7_PLAN.md#4-writer-y-pico-de-disco), [A/B de atributos](docs/benchmarks/storage-v7-v72-integer-dictionary-2026-10-25.json). |
-| 5 | Contrastar representación XYZ/atributos, índices y páginas con el corpus real, incluidos RAM, disco temporal y latencia selectiva. | [Sonda de atributos](docs/benchmarks/storage-v7-v72-attribute-candidates-2026-10-25.json) sobre 512 bloques Albuera: conservar diccionarios en tuplas de 1/2/4 B compone +0,185% de bytes y −46,5% de tiempo del encoder aislado. Propuesto V7.3-pre; falta implementarlo y medir conversión/pareja completas. |
+| 4 | Writer con admisión por bytes, pipeline ordenado, EPT y recuperación; reducir pico de spools sin romper checkpoints. | Preparación paralela/pipeline ordenado y checkpoints EPT V7.1/V7.2/V7.3 por bloques implementados; identidad por rutas/tamaño/`mtime`, que puede omitir cambios con metadatos iguales. V7.2 limita la búsqueda a raw/delta/ocupación compacta de 24 bits y sigue experimental. Índice con pares `(u32, u32)` cuando caben y diccionarios de atributos con claves enteras conservan los payloads. Tres pares Belvedere del último cambio bajan 2,6% la preparación mediana y 1,4% el total; RSS pico muestreado 5,4% menor. Falta repetir corpus grandes, contrastar V5/V7 actuales y cerrar presupuestos/picos. [Plan y comparaciones](docs/FORMAT_V7_PLAN.md#4-writer-y-pico-de-disco), [A/B de atributos](docs/benchmarks/storage-v7-v72-integer-dictionary-2026-10-25.json). |
+| 5 | Contrastar representación XYZ/atributos, índices y páginas con el corpus real, incluidos RAM, disco temporal y latencia selectiva. | [Sonda de atributos](docs/benchmarks/storage-v7-v72-attribute-candidates-2026-10-25.json) sobre 512 bloques Albuera: conservar diccionarios en tuplas de 1/2/4 B compone +0,185% de bytes y −46,5% de tiempo del encoder aislado. [V7.3-pre](crates/viewer_format/FORMAT_V7_PRE3.md) implementado y verificado en nativo/async, EPT y Blob/OPFS WASM; falta medir conversión/pareja completas. |
 | 6 | Promover V7 final/default, regenerar fixtures/datasets activos y eliminar backends/opciones V5/V6. | [Inventario operativo de migración](docs/FORMAT_V7_PLAN.md#inventario-operativo-para-la-promoción-y-retirada) documentado; suite comparativa admite V7. Pendiente de contratos, comparaciones y validación nativa/WASM/navegador. |
 
 <details>
@@ -88,21 +89,21 @@ condicionadas en el inventario, sin convertirlos en compromisos nuevos.
 Conversión nativa:
 
 ```sh
-cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-version v7.1-pre
+cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-version v7.3-pre
 # v5 sigue siendo el default si se omite --format-version durante la transición.
 # También admite un directorio EPT local laszip o su ept.json.
-# --checkpoint conserva fases LAS/LAZ y bloques EPT V7.1/V7.2-pre; --resume retoma la misma entrada/opciones.
-# --format-version v7.2-pre selecciona el candidato de writer compact-only documentado abajo.
+# --checkpoint conserva fases LAS/LAZ y bloques EPT V7.1/V7.2/V7.3-pre; --resume retoma la misma entrada/opciones.
+# v7.2-pre limita ocupación a compact24; v7.3-pre además limita diccionarios a tuplas de 1/2/4 B.
 ```
 
-El comando anterior produce una pareja `v7.1-pre`, aún provisional. `v7.2-pre` es una revisión
-experimental separada que reduce la búsqueda de candidatos del writer; sus resultados se
-contrastan antes de promoverla. Las muestras versionadas
-siguen siendo V5 y se regenerarán antes de retirar su backend. Los archivos locales provisionales
+El comando anterior produce una pareja `v7.3-pre`, aún provisional. V7.2 y V7.3 son revisiones
+experimentales separadas que reducen la búsqueda de candidatos del writer; sus resultados se
+contrastan antes de promoverlas. La muestra principal sigue siendo V5; su regeneración y la
+migración de datasets activos precederán a la retirada del backend. Los archivos locales provisionales
 `OCTVWFRM` deben reconvertirse desde sus fuentes. `v5` y `v6.1-pre`–`v6.4-pre` siguen disponibles
 para compatibilidad y comparación durante la transición. Se rechazan versiones sin backend antes
-de escribir y checkpoints de otra identidad. `v7.1-pre` identifica una revisión exacta de
-desarrollo; `v7` final y revisiones posteriores siguen rechazadas.
+de escribir y checkpoints de otra identidad. Cada `v7.N-pre` identifica una revisión exacta de
+desarrollo; `v7` final y revisiones posteriores a V7.3 siguen rechazadas.
 
 La pareja contiene:
 

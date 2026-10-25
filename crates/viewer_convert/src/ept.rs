@@ -1375,6 +1375,7 @@ mod tests {
             viewer_format::FormatVersion::V6_PRE4,
             viewer_format::FormatVersion::V7_PRE1,
             viewer_format::FormatVersion::V7_PRE2,
+            viewer_format::FormatVersion::V7_PRE3,
         ] {
             let root = dir();
             fs::create_dir_all(root.join("ept-data")).unwrap();
@@ -1421,7 +1422,9 @@ mod tests {
             );
             if matches!(
                 version,
-                viewer_format::FormatVersion::V7_PRE1 | viewer_format::FormatVersion::V7_PRE2
+                viewer_format::FormatVersion::V7_PRE1
+                    | viewer_format::FormatVersion::V7_PRE2
+                    | viewer_format::FormatVersion::V7_PRE3
             ) {
                 let diagnostic_output = root.join("diagnostic.oct");
                 let (diagnostic_report, diagnostics) = crate::convert_file_with_diagnostics(
@@ -1465,7 +1468,9 @@ mod tests {
             );
             if matches!(
                 version,
-                viewer_format::FormatVersion::V7_PRE1 | viewer_format::FormatVersion::V7_PRE2
+                viewer_format::FormatVersion::V7_PRE1
+                    | viewer_format::FormatVersion::V7_PRE2
+                    | viewer_format::FormatVersion::V7_PRE3
             ) {
                 let cancelled_output = root.join("cancelled.oct");
                 let cancelled = crate::convert_file_with_progress(
@@ -1570,53 +1575,84 @@ mod tests {
     }
 
     #[test]
-    fn ept_v72_checkpoint_resumes_between_blocks_and_matches_clean_output() {
-        let root = dir();
-        fs::create_dir_all(root.join("ept-data")).unwrap();
-        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
-        write_manifest(&root, "laszip", 2);
-        fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":2}"#).unwrap();
-        write_laz_points(
-            &root.join("ept-data/0-0-0-0.laz"),
-            &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
-        );
-        let options = ConvertOptions::new(1, 0.01)
-            .unwrap()
-            .with_format_version(viewer_format::FormatVersion::V7_PRE2)
+    fn ept_v72_and_v73_checkpoints_resume_between_blocks_and_match_clean_output() {
+        for (version, label, other_version) in [
+            (
+                viewer_format::FormatVersion::V7_PRE2,
+                "v72",
+                viewer_format::FormatVersion::V7_PRE3,
+            ),
+            (
+                viewer_format::FormatVersion::V7_PRE3,
+                "v73",
+                viewer_format::FormatVersion::V7_PRE2,
+            ),
+        ] {
+            let root = dir();
+            fs::create_dir_all(root.join("ept-data")).unwrap();
+            fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+            write_manifest(&root, "laszip", 2);
+            fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":2}"#).unwrap();
+            write_laz_points(
+                &root.join("ept-data/0-0-0-0.laz"),
+                &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
+            );
+            let options = ConvertOptions::new(1, 0.01)
+                .unwrap()
+                .with_format_version(version)
+                .unwrap();
+            let output = root.join(format!("resumed-{label}.oct"));
+            let stopped = crate::convert_file_with_checkpoint(
+                &root,
+                &output,
+                options,
+                CheckpointMode::Create,
+                |progress| {
+                    !(progress.stage == ConversionStage::ReadingAndWritingBlocks
+                        && progress.points_processed == 1)
+                },
+            );
+            assert!(matches!(
+                stopped,
+                Err(ConvertError::Cancelled {
+                    points_processed: 1
+                })
+            ));
+            let checkpoint_root = output.with_extension("oct.checkpoint");
+            let candidate = checkpoint_root.join("candidate.oct");
+            let prefix_before = fs::read(&candidate).unwrap();
+            let candidate_attributes = checkpoint_root.join("candidate.octattrs");
+            let attributes_before = fs::read(&candidate_attributes).unwrap();
+            let wrong_revision = options.with_format_version(other_version).unwrap();
+            assert!(matches!(
+                crate::convert_file_with_checkpoint(
+                    &root,
+                    &output,
+                    wrong_revision,
+                    CheckpointMode::Resume,
+                    |_| true,
+                ),
+                Err(ConvertError::Checkpoint(crate::CheckpointError::Mismatch))
+            ));
+            assert_eq!(fs::read(&candidate).unwrap(), prefix_before);
+            assert_eq!(fs::read(&candidate_attributes).unwrap(), attributes_before);
+            crate::convert_file_with_checkpoint(
+                &root,
+                &output,
+                options,
+                CheckpointMode::Resume,
+                |_| true,
+            )
             .unwrap();
-        let output = root.join("resumed-v72.oct");
-        let stopped = crate::convert_file_with_checkpoint(
-            &root,
-            &output,
-            options,
-            CheckpointMode::Create,
-            |progress| {
-                !(progress.stage == ConversionStage::ReadingAndWritingBlocks
-                    && progress.points_processed == 1)
-            },
-        );
-        assert!(matches!(
-            stopped,
-            Err(ConvertError::Cancelled {
-                points_processed: 1
-            })
-        ));
-        crate::convert_file_with_checkpoint(
-            &root,
-            &output,
-            options,
-            CheckpointMode::Resume,
-            |_| true,
-        )
-        .unwrap();
 
-        let clean = root.join("clean-v72.oct");
-        crate::convert_file(&root, &clean, options).unwrap();
-        assert_eq!(fs::read(&output).unwrap(), fs::read(&clean).unwrap());
-        assert_eq!(
-            fs::read(output_attributes_path(&output)).unwrap(),
-            fs::read(output_attributes_path(&clean)).unwrap()
-        );
+            let clean = root.join(format!("clean-{label}.oct"));
+            crate::convert_file(&root, &clean, options).unwrap();
+            assert_eq!(fs::read(&output).unwrap(), fs::read(&clean).unwrap());
+            assert_eq!(
+                fs::read(output_attributes_path(&output)).unwrap(),
+                fs::read(output_attributes_path(&clean)).unwrap()
+            );
+        }
     }
 
     #[test]

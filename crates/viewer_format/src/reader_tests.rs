@@ -270,7 +270,7 @@ fn external_payload_buffers_materialize_geometry_without_attached_attributes() {
 fn v7_split_reader_opens_from_async_index_and_companion_ranges() {
     use crate::{ReadSelection, ReadSource, SelectedRead};
     let mut writer = FormatWriter::new_split_for_version(
-        crate::FormatVersion::V7_PRE1,
+        crate::FormatVersion::V7_PRE3,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata(),
@@ -281,6 +281,23 @@ fn v7_split_reader_opens_from_async_index_and_companion_ranges() {
     let (primary, attributes) = writer.finish_pair().unwrap();
     let primary = primary.into_inner();
     let attributes = attributes.unwrap().into_inner();
+
+    assert_eq!(u32::from_le_bytes(primary[16..20].try_into().unwrap()), 3);
+    assert!(primary.windows(8).any(|window| window == b"OCTVI73P"));
+    assert_eq!(
+        &primary[primary.len() - 40..primary.len() - 32],
+        b"OCTVE73P"
+    );
+    let mut wrong_revision_attributes = attributes.clone();
+    wrong_revision_attributes[16..20].copy_from_slice(&2_u32.to_le_bytes());
+    let header_crc = crate::crc32(&wrong_revision_attributes[..20]);
+    wrong_revision_attributes[20..24].copy_from_slice(&header_crc.to_le_bytes());
+    let mut version_check = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    assert!(
+        version_check
+            .attach_attributes(Cursor::new(wrong_revision_attributes))
+            .is_err()
+    );
 
     let header = &primary[..24];
     let footer = &primary[primary.len() - 40..];
