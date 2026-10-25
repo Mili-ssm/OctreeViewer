@@ -18,6 +18,21 @@ impl OccupiedCellIndex {
         root: OccupiedOctreeRoot,
         cells: impl IntoIterator<Item = VoxelCoord>,
     ) -> Result<Self, OccupiedOctreeError> {
+        let key_bytes = usize::from(root.depth()).saturating_mul(3).div_ceil(8);
+        if key_bytes <= std::mem::size_of::<u64>() {
+            let mut entries = cells
+                .into_iter()
+                .enumerate()
+                .map(|(row, coord)| {
+                    root.key(coord)
+                        .map(|key| (key as u64, row))
+                        .ok_or(OccupiedOctreeError::OutsideRoot(coord))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            radix_sort_by_key(&mut entries, key_bytes, u128::from);
+            return Ok(Self::from_sorted_entries(root, entries, u128::from));
+        }
+
         let mut entries = cells
             .into_iter()
             .enumerate()
@@ -30,31 +45,37 @@ impl OccupiedCellIndex {
         // Input rows are enumerated in ascending order. A stable LSD radix sort by key alone
         // therefore has the same `(key, row)` order as tuple sorting, while avoiding the
         // comparison cost for the many large blocks produced by the format writer.
-        radix_sort_by_key(
-            &mut entries,
-            usize::from(root.depth()).saturating_mul(3).div_ceil(8),
-        );
+        radix_sort_by_key(&mut entries, key_bytes, |key| key);
+        Ok(Self::from_sorted_entries(root, entries, |key| key))
+    }
+
+    fn from_sorted_entries<K: Copy + Eq>(
+        root: OccupiedOctreeRoot,
+        entries: Vec<(K, usize)>,
+        widen_key: impl Fn(K) -> u128,
+    ) -> Self {
         let mut keys = Vec::new();
         let mut leaf_offsets = Vec::new();
         // Allocate compact row storage explicitly: collecting a consuming tuple iterator
         // can reuse its wider allocation and retain excessive capacity for usize rows.
         let mut row_ids = Vec::with_capacity(entries.len());
-        for (offset, &(key, row)) in entries.iter().enumerate() {
+        let mut previous = None;
+        for (offset, (key, row)) in entries.into_iter().enumerate() {
             row_ids.push(row);
-            if keys.last() != Some(&key) {
-                keys.push(key);
+            if previous != Some(key) {
+                keys.push(widen_key(key));
                 leaf_offsets.push(offset);
             }
+            previous = Some(key);
         }
         // Sentinel also represents the empty mapping as [0].
-        leaf_offsets.push(entries.len());
-        drop(entries);
+        leaf_offsets.push(row_ids.len());
         let topology = OccupiedOctree::from_sorted_unique_keys(root, &keys);
-        Ok(Self {
+        Self {
             topology,
             leaf_offsets,
             row_ids,
-        })
+        }
     }
 
     pub fn topology(&self) -> &OccupiedOctree {
@@ -101,7 +122,11 @@ impl OccupiedCellIndex {
     }
 }
 
-fn radix_sort_by_key(entries: &mut Vec<(u128, usize)>, key_bytes: usize) {
+fn radix_sort_by_key<K: Copy>(
+    entries: &mut Vec<(K, usize)>,
+    key_bytes: usize,
+    key_value: impl Fn(K) -> u128,
+) {
     if entries.len() < 2 || key_bytes == 0 {
         return;
     }
@@ -110,7 +135,7 @@ fn radix_sort_by_key(entries: &mut Vec<(u128, usize)>, key_bytes: usize) {
         let shift = byte * 8;
         let mut counts = [0_usize; 256];
         for &(key, _) in entries.iter() {
-            counts[((key >> shift) & 0xff) as usize] += 1;
+            counts[((key_value(key) >> shift) & 0xff) as usize] += 1;
         }
         let mut next = [0_usize; 256];
         let mut total = 0;
@@ -119,9 +144,9 @@ fn radix_sort_by_key(entries: &mut Vec<(u128, usize)>, key_bytes: usize) {
             total += count;
         }
         scratch.clear();
-        scratch.resize(entries.len(), (0, 0));
+        scratch.resize(entries.len(), (entries[0].0, 0));
         for &(key, row) in entries.iter() {
-            let bucket = ((key >> shift) & 0xff) as usize;
+            let bucket = ((key_value(key) >> shift) & 0xff) as usize;
             scratch[next[bucket]] = (key, row);
             next[bucket] += 1;
         }
@@ -132,6 +157,7 @@ fn radix_sort_by_key(entries: &mut Vec<(u128, usize)>, key_bytes: usize) {
 #[cfg(test)]
 mod tests {
     use super::radix_sort_by_key;
+    use crate::OccupiedOctreeRoot;
 
     #[test]
     fn stable_radix_sort_matches_key_and_input_row_order() {
@@ -149,9 +175,72 @@ mod tests {
             let mut expected = actual.clone();
             expected.sort_unstable();
 
-            radix_sort_by_key(&mut actual, key_bytes);
+            radix_sort_by_key(&mut actual, key_bytes, |key| key);
 
             assert_eq!(actual, expected, "key_bytes={key_bytes}");
+        }
+    }
+
+    #[test]
+    fn compact_key_width_path_matches_full_morton_order() {
+        for depth in [8, 21, 22, 32] {
+            let root = OccupiedOctreeRoot::new([i32::MIN; 3], depth).unwrap();
+            let mut state = 0x1234_5678_u32;
+            let cells = (0..4096)
+                .map(|_| {
+                    let mut values = [0; 3];
+                    for value in &mut values {
+                        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        let offset = if depth == 32 {
+                            i64::from(state as i32) - i64::from(i32::MIN)
+                        } else {
+                            i64::from(state & ((1_u32 << depth) - 1))
+                        };
+                        *value = (i64::from(i32::MIN) + offset) as i32;
+                    }
+                    crate::VoxelCoord::new(values[0], values[1], values[2])
+                })
+                .collect::<Vec<_>>();
+            let mut expected = cells
+                .iter()
+                .enumerate()
+                .map(|(row, &cell)| (root.key(cell).unwrap(), row))
+                .collect::<Vec<_>>();
+            expected.sort_unstable();
+
+            let index = crate::OccupiedCellIndex::new(root, cells).unwrap();
+            let mut expected_keys = Vec::new();
+            let mut expected_rows = Vec::new();
+            let mut expected_offsets = Vec::new();
+            for (key, row) in expected {
+                if expected_keys.last() != Some(&key) {
+                    expected_keys.push(key);
+                    expected_offsets.push(expected_rows.len());
+                }
+                expected_rows.push(row);
+            }
+            expected_offsets.push(expected_rows.len());
+
+            assert_eq!(
+                index
+                    .topology()
+                    .cells()
+                    .map(|cell| root.key(cell).unwrap())
+                    .collect::<Vec<_>>(),
+                expected_keys,
+                "depth={depth}"
+            );
+            let actual_rows = (0..index.leaf_count())
+                .flat_map(|leaf| index.rows_for_leaf(leaf).unwrap().iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(actual_rows, expected_rows, "depth={depth}");
+            for leaf in 0..index.leaf_count() {
+                assert_eq!(
+                    index.rows_for_leaf(leaf).unwrap(),
+                    &expected_rows[expected_offsets[leaf]..expected_offsets[leaf + 1]],
+                    "depth={depth}, leaf={leaf}"
+                );
+            }
         }
     }
 }

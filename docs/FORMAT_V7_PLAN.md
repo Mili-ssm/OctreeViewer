@@ -647,3 +647,22 @@ planificación; V7.2 sigue experimental. Aun así, tarda 21,4% más que V5 hist�
 40,3% más en Albuera, aunque las parejas sean menores; la optimización parcial no satisface el
 criterio de promoción. Repetir con orden
 controlado y separar planificación/preparación antes de aceptar un cambio de default.
+
+## Claves Morton compactas para ocupación superficial
+
+El índice de celdas ocupadas ahora ordena claves `(u64, fila)` cuando la profundidad del octree
+necesita como máximo 64 bits (hasta profundidad 21); las raíces más profundas conservan
+`(u128, fila)`. Las claves V7.2 de 24 bits usan profundidad 8, por lo que se reduce a dos tercios
+el ancho de cada entrada de ordenación y su buffer scratch. La alternativa más sencilla era dejar
+siempre `u128`; las medidas mostraron una mejora pequeña con el mismo orden, pareja y checksum.
+
+En Belvedere V7.2, una corrida previa y tres posteriores mantuvieron 3 bloques compactos, 260
+delta y 1.080 raw; la mediana posterior fue 18,22 s de preparación y 51,37 s total, frente a
+19,13 s y 53,07 s en la corrida anterior (-4,8% y -3,2%). Los hashes de ambas salidas coinciden
+entre la base y las corridas posteriores verificadas; el lector progresivo confirmó
+`0737ca650c6081b4`. El RSS mediano posterior fue 7,3% mayor, mientras los temporales quedaron
+prácticamente iguales. Un A/B de una corrida en Majadas también baja preparación de 126,52 a
+120,45 s con la pareja idéntica; el total cae más porque la planificación fue 55 s menor, así que
+no se atribuye al sort. Falta una repetición de Majadas y medir Albuera. El detalle queda en
+[el A/B de claves Morton](benchmarks/storage-v7-v72-shallow-morton-keys-2026-10-25.json); la
+optimización mantiene los bytes V7.2 y no altera el estado experimental del formato.

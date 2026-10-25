@@ -1,0 +1,175 @@
+{
+  "baseline_output": {
+    "oct_bytes": 980940303,
+    "octattrs_bytes": 424619979,
+    "pair_bytes": 1405560282,
+    "sha256_oct": "4888dbc37d2d22338f9091eb708ab993b3da2a8e7739f17ce1d8e8d1c1725b90",
+    "sha256_octattrs": "3e6b81e66c7cd1dcd2d783dbdd3df2c0050cd05ec445ea52e147d0933ae44a05"
+  },
+  "binaries": {
+    "baseline_conversion_sha256": "3e6a2678d3799de4d4a7ad11194407cf3afaab96e6c5d4f44adf049610b62f2d",
+    "candidate_conversion_sha256": "f5c8a26cd96e2cda0dd4b7dbd0590451ad1f5f40db8fdc6da8bf8207ba0f8821",
+    "profile_tool_sha256": "2a7b1b42dafc43b1287b4337ce267201488e1a7b5de4c4ec1f203933ee8ddc8d",
+    "reader_sha256": "41275cffb88897ff574939adfcca8643f2c87fd8033e2b1406abf6c8381be43b"
+  },
+  "candidate_medians": {
+    "block_preparation_seconds": 18.216379736,
+    "block_stream_seconds": 18.656885069,
+    "elapsed_seconds": 51.37033946899464,
+    "output_validation_seconds": 5.472747616,
+    "rss_sampled_peak_bytes": 116400128,
+    "spatial_planning_seconds": 26.365835267,
+    "temporary_sampled_peak_bytes": 4660046095
+  },
+  "candidate_output": {
+    "oct_bytes": 980940303,
+    "octattrs_bytes": 424619979,
+    "pair_bytes": 1405560282,
+    "pair_hashes_verified_for": "first and third candidate runs; repeat 2 output pair was removed after its profile",
+    "sha256_oct": "4888dbc37d2d22338f9091eb708ab993b3da2a8e7739f17ce1d8e8d1c1725b90",
+    "sha256_octattrs": "3e6b81e66c7cd1dcd2d783dbdd3df2c0050cd05ec445ea52e147d0933ae44a05"
+  },
+  "change_percent_vs_baseline": {
+    "block_preparation_seconds": -4.786360246929256,
+    "block_stream_seconds": -4.599458032170212,
+    "elapsed_seconds": -3.1968315571146433,
+    "output_validation_seconds": -4.039686260810971,
+    "rss_sampled_peak_bytes": 7.28226811129149,
+    "spatial_planning_seconds": -3.1109105772325396,
+    "temporary_sampled_peak_bytes": 0.11449782059402835
+  },
+  "conditions": "Same host, perf profile, source, V7.2-pre and conversion settings. One baseline run before and three runs after the implementation; sequential, no cache purge. The baseline output and post-change runs 1 and 3 were SHA-256 identical; run 1 and the baseline were read progressively. One before run is a weak control.",
+  "conversion_options": {
+    "checkpoint": false,
+    "divisions": 2,
+    "format_version": "v7.2-pre",
+    "pipeline_writes": false,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "workers": 1
+  },
+  "date": "2026-10-25",
+  "kind": "occupied_cell_index_shallow_morton_key_width_trial",
+  "large_dataset_cross_check": {
+    "baseline_v72_before_key_width": {
+      "block_preparation_seconds": 126.51628964,
+      "block_stream_seconds": 129.041695042,
+      "elapsed_seconds": 447.89103387000796,
+      "pair_bytes": 4612644872,
+      "rss_sampled_peak_bytes": 115798016,
+      "sha256_oct": "5245bb012426e0e50e2f998098221f8a73e7a1ef87d19e787a81fe4f976cb45a",
+      "sha256_octattrs": "046e786e5976759e9cdbc5a0b433dd7b96bd602976d248fcba3625811a801644",
+      "temporary_sampled_peak_bytes": 18829623912
+    },
+    "candidate_after_key_width": {
+      "block_preparation_seconds": 120.450538088,
+      "block_stream_seconds": 124.572513797,
+      "elapsed_seconds": 388.64698794600554,
+      "geometry_candidates": {
+        "compact_occupied_blocks": 8,
+        "delta_blocks": 5938,
+        "raw_blocks": 313
+      },
+      "output_validation_seconds": 28.621122102,
+      "pair_bytes": 4612644872,
+      "rss_sampled_peak_bytes": 108535808,
+      "sha256_oct": "5245bb012426e0e50e2f998098221f8a73e7a1ef87d19e787a81fe4f976cb45a",
+      "sha256_octattrs": "046e786e5976759e9cdbc5a0b433dd7b96bd602976d248fcba3625811a801644",
+      "spatial_planning_seconds": 234.474220535,
+      "temporary_sampled_peak_bytes": 18818696358
+    },
+    "conditions": "One V7.2 run immediately before and one after key-width change; same one-worker options and host, no cache purge. Planning varies and dominates total.",
+    "dataset": "SensOFOREST Majadas TLS",
+    "interpretation": "Preparation is 4.8% lower in this paired observation and the pair remains byte-identical. Total time fell 13.2%, but spatial planning alone fell by about 55 seconds; do not attribute that total change to the key-width optimization. One pair cannot establish variance.",
+    "logical_read": {
+      "blocks": 6259,
+      "checksum": "b830818c4aeddac0",
+      "points_including_lod": 415602190,
+      "reader": "baseline and candidate files have identical pair SHA-256; progressive read of candidate passed"
+    },
+    "source_bytes": 1343266470,
+    "source_path": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+    "source_sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
+  },
+  "limits": "Belvedere shows a small preparation improvement across three candidate runs, with one baseline run and no RSS improvement. The Majadas before/after pair also reduces preparation by 4.8% with identical hashes and checksum, but its total-time difference is dominated by planning variation. Albuera remains unmeasured for this optimization. This does not close the V7 conversion gap or promote V7.2.",
+  "logical_read": {
+    "blocks": 1343,
+    "checksum": "0737ca650c6081b4",
+    "points_including_lod": 81706211,
+    "verified": "baseline and first candidate run via progressive reader; candidate run 3 output SHA-256 matches baseline"
+  },
+  "optimization": {
+    "alternative": "Keep u128 tuples for every depth; simplest representation, but twice the key width for V7.2 occupancy roots (depth 8 / 24-bit Morton keys).",
+    "change": "For Morton keys up to 64 bits (root depth <=21), sort (u64,row) entries with the same stable LSD radix passes instead of sorting (u128,row). Deeper roots retain u128. The ordered unique keys are widened only while building the existing topology.",
+    "file": "crates/viewer_core/src/occupied_cell_index.rs",
+    "serialized_layout_changed": false
+  },
+  "runs": [
+    {
+      "block_preparation_seconds": 19.132111516,
+      "block_stream_seconds": 19.556372201,
+      "compact_occupied_blocks": 3,
+      "delta_blocks": 260,
+      "elapsed_seconds": 53.06679553500726,
+      "label": "before-index-key-width",
+      "output_validation_seconds": 5.703136435,
+      "pair_bytes": 1405560282,
+      "raw_blocks": 1080,
+      "rss_sampled_peak_bytes": 108498944,
+      "spatial_planning_seconds": 27.212388334,
+      "temporary_sampled_peak_bytes": 4654716546
+    },
+    {
+      "block_preparation_seconds": 17.954089594,
+      "block_stream_seconds": 18.382803466,
+      "compact_occupied_blocks": 3,
+      "delta_blocks": 260,
+      "elapsed_seconds": 51.37033946899464,
+      "label": "after-index-key-width",
+      "output_validation_seconds": 5.472747616,
+      "pair_bytes": 1405560282,
+      "raw_blocks": 1080,
+      "rss_sampled_peak_bytes": 105615360,
+      "spatial_planning_seconds": 26.815774601,
+      "temporary_sampled_peak_bytes": 4669086019
+    },
+    {
+      "block_preparation_seconds": 18.216379736,
+      "block_stream_seconds": 18.656885069,
+      "compact_occupied_blocks": 3,
+      "delta_blocks": 260,
+      "elapsed_seconds": 51.15913710399764,
+      "label": "after-index-key-width-repeat2",
+      "output_validation_seconds": 5.502290368,
+      "pair_bytes": 1405560282,
+      "raw_blocks": 1080,
+      "rss_sampled_peak_bytes": 117157888,
+      "spatial_planning_seconds": 26.365835267,
+      "temporary_sampled_peak_bytes": 4628087696
+    },
+    {
+      "block_preparation_seconds": 18.860843548,
+      "block_stream_seconds": 19.302383487,
+      "compact_occupied_blocks": 3,
+      "delta_blocks": 260,
+      "elapsed_seconds": 51.56835892100935,
+      "label": "after-index-key-width-repeat3",
+      "output_validation_seconds": 5.395497089,
+      "pair_bytes": 1405560282,
+      "raw_blocks": 1080,
+      "rss_sampled_peak_bytes": 116400128,
+      "spatial_planning_seconds": 26.186952306,
+      "temporary_sampled_peak_bytes": 4660046095
+    }
+  ],
+  "source": {
+    "bytes": 618390994,
+    "path": "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+    "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+  },
+  "verification": {
+    "cargo_test_viewer_core_lib": "33 passed",
+    "identical_pair_hashes": "baseline, candidate run 1, and candidate run 3",
+    "v72_geometry_candidates": "3 compact, 260 delta, 1080 raw in each run"
+  }
+}
