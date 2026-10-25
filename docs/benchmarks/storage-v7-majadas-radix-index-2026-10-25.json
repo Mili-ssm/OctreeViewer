@@ -1,0 +1,108 @@
+{
+  "kind": "real_dataset_v7_occupied_index_radix_sort_optimization",
+  "date": "2026-10-25",
+  "conditions": "Same host, source, perf profile, one spatial worker, divisions 2, 262144 points per block, v7.1-pre, no checkpoint or write pipeline. Three serial candidate runs used the profile_conversion.py sampler. Cache was not purged. Planning time varied substantially; use block preparation as the primary measure.",
+  "source": {
+    "path": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+    "bytes": 1343266470,
+    "sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
+  },
+  "binaries": {
+    "baseline_v7_conversion_sha256": "263030cf0ce337689469b94bdb2d0233eaf32404519d7b9dfe2eaaefa5651b58",
+    "radix_v7_conversion_sha256": "635897e127254591e4fd06785ebcf42674bd51383455b4a99a8d864a02a04395"
+  },
+  "optimization": {
+    "file": "crates/viewer_core/src/occupied_cell_index.rs",
+    "change": "Replace comparison sorting of (spatial key, row) tuples with a stable LSD radix sort over the key. Input rows are enumerated in ascending order, so stable key ordering preserves the previous tuple order and duplicate-cell row identity.",
+    "encoding_candidates_changed": false
+  },
+  "baseline": {
+    "version": "v7.1-pre before radix sort",
+    "runs": 3,
+    "conversion_elapsed_seconds": {
+      "min": 444.6956647080078,
+      "median": 517.7148157280026,
+      "max": 787.1960520800058
+    },
+    "block_preparation_seconds": {
+      "min": 179.990582345,
+      "median": 186.888087923,
+      "max": 197.397448655
+    },
+    "block_stream_median_seconds": 189.541025299,
+    "output_pair_bytes": 4612644109,
+    "logical_checksum": "b830818c4aeddac0",
+    "rss_sampled_peak_median_bytes": 112082944,
+    "temporary_sampled_peak_median_bytes": 18812214630
+  },
+  "candidate": {
+    "version": "v7.1-pre with radix sort",
+    "runs": [
+      {
+        "elapsed_seconds": 460.76854316900426,
+        "spatial_planning_seconds": 259.776598007,
+        "block_stream_seconds": 171.860613635,
+        "block_preparation_seconds": 169.617661121,
+        "ordered_write_and_release_seconds": 2.238596881,
+        "output_validation_seconds": 28.49370252,
+        "rss_sampled_peak_bytes": 118263808,
+        "temporary_sampled_peak_bytes": 18804772276
+      },
+      {
+        "elapsed_seconds": 471.70156565999787,
+        "spatial_planning_seconds": 266.641963756,
+        "block_stream_seconds": 176.146747415,
+        "block_preparation_seconds": 173.767080426,
+        "ordered_write_and_release_seconds": 2.375793523,
+        "output_validation_seconds": 28.284415846,
+        "rss_sampled_peak_bytes": 107761664,
+        "temporary_sampled_peak_bytes": 18805732902
+      },
+      {
+        "elapsed_seconds": 689.4159693070105,
+        "spatial_planning_seconds": 482.629000319,
+        "block_stream_seconds": 177.743850962,
+        "block_preparation_seconds": 175.532684455,
+        "ordered_write_and_release_seconds": 2.206731093,
+        "output_validation_seconds": 28.38166576,
+        "rss_sampled_peak_bytes": 116715520,
+        "temporary_sampled_peak_bytes": 18829587546
+      }
+    ],
+    "medians": {
+      "elapsed_seconds": 471.70156565999787,
+      "spatial_planning_seconds": 266.641963756,
+      "block_stream_seconds": 176.146747415,
+      "block_preparation_seconds": 173.767080426,
+      "ordered_write_and_release_seconds": 2.238596881,
+      "output_validation_seconds": 28.38166576,
+      "rss_sampled_peak_bytes": 116715520,
+      "temporary_sampled_peak_bytes": 18805732902
+    },
+    "output_oct_bytes": 2197676578,
+    "output_octattrs_bytes": 2414967531,
+    "output_pair_bytes": 4612644109,
+    "sha256_oct": "0adb5c68a06627bd56e79e299cfbb506238918a9bbc8e22f3cb5be86d9b6d3aa",
+    "sha256_octattrs": "88edf01cbc10ebe233ccf40013c2d40e75ae931f502cbd22fdac85047b288864",
+    "pair_hashes_identical_across_runs": true,
+    "logical_checksum": "b830818c4aeddac0",
+    "points_including_lod": 415602190,
+    "blocks": 6259
+  },
+  "change_vs_baseline_percent": {
+    "block_preparation_seconds_median": -7.020783209257297,
+    "block_stream_seconds_median": -7.066690634848372,
+    "conversion_elapsed_seconds_median": -8.887759953962604,
+    "output_pair_bytes": 0,
+    "rss_sampled_peak_median_bytes": 4.13,
+    "temporary_sampled_peak_median_bytes": -0.034
+  },
+  "verification": {
+    "cargo_fmt_all_check": "pass",
+    "cargo_test_p_viewer_core_lib": "32 passed",
+    "cargo_test_p_viewer_format_lib": "91 passed, 1 ignored",
+    "cargo_check_wasm32_unknown_unknown_p_viewer_core": "pass",
+    "progressive_reader": "6259 blocks, 415602190 points, checksum b830818c4aeddac0"
+  },
+  "limits": "Timings are one-host observations, not performance guarantees. The baseline had three runs and the candidate has three instrumented runs; sampled RSS rose modestly, temporary peak stayed effectively unchanged, and spatial-planning variability dominates much of total elapsed time."
+}

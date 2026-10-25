@@ -385,12 +385,19 @@ y Majadas `b830818c4aeddac0` (6.259 bloques). V7 redujo el tamaño total 11,77% 
 (1.591.650.185 → 1.404.306.523 B) y 38,77% en Majadas (7.533.781.717 → 4.612.644.109 B).
 La mediana de conversión V7 fue 53,6% mayor en Belvedere (61,88 vs 40,30 s) y 40,3% mayor en
 Majadas (517,71 vs 368,88 s); Majadas mostró rangos amplios, especialmente en V7 (444,70–787,20 s).
-La descomposición de Majadas atribuye el diferencial principalmente a preparación de bloques:
-mediana 186,89 s en V7 frente a 58,23 s en V5; escritura ordenada fue 2,54 vs 1,66 s. El código V7
-prueba varios candidatos geométricos y de atributos por bloque, mientras V5 comprime el payload
-raw; falta perfilar por candidato antes de elegir una optimización con coste de tamaño conocido.
-Los archivos V5 locales antiguos llevan `OCTVWFRM` y el reader los rechaza como `ProvisionalFormat`;
-las referencias válidas se regeneraron desde LAS/LAZ. [Repeticiones, fases y límites](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json).
+La descomposición atribuye el diferencial principalmente a preparación de bloques: mediana 186,89 s
+en V7 frente a 58,23 s en V5; escritura ordenada fue 2,54 vs 1,66 s. Se cambió el ordenamiento
+comparativo de pares `(clave espacial, fila)` por radix estable sobre la clave, conservando el orden
+de filas duplicadas y sin cambiar candidatos ni bytes. Tres conversiones V7 instrumentadas de
+Majadas bajaron la mediana de preparación a 173,77 s (-7,02%); el bloque completo bajó 7,07%, con
+hashes SHA-256 idénticos entre repeticiones, mismo checksum lógico `b830818c4aeddac0` y pareja
+idéntica de 4.612.644.109 B. La mediana total observada bajó 8,89%, pero una planificación espacial
+de 482,63 s amplió el rango total a 460,77–689,42 s; RSS mediano subió 4,13% y el pico temporal
+quedó prácticamente igual. Es progreso localizado, no cierre: V7 sigue con preparación ~2,98× V5
+y total mediano ~27,9% mayor. Los archivos V5 locales antiguos llevan `OCTVWFRM` y el reader los
+rechaza como `ProvisionalFormat`; las referencias válidas se regeneraron desde LAS/LAZ.
+[Repeticiones V5/V7 y fases](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json),
+[optimización radix y límites](benchmarks/storage-v7-majadas-radix-index-2026-10-25.json).
 
 Usar muestras versionadas y Belvedere, Albuera y Majadas disponibles, más casos sintéticos de
 alta entropía/cardinalidad, constantes, extremos tipados, vacíos y duplicados. Fijar fuente,

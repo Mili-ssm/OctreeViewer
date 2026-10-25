@@ -11,7 +11,7 @@ pub struct OccupiedCellIndex {
 }
 
 impl OccupiedCellIndex {
-    /// Sorts path/row pairs once, preserving ascending original row IDs within each leaf.
+    /// Sorts spatial keys once, preserving input row order within each leaf.
     /// Temporary storage is O(rows), released before topology construction from unique keys.
     /// Allocation failures follow the normal Rust policy.
     pub fn new(
@@ -27,7 +27,13 @@ impl OccupiedCellIndex {
                     .ok_or(OccupiedOctreeError::OutsideRoot(coord))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        entries.sort_unstable();
+        // Input rows are enumerated in ascending order. A stable LSD radix sort by key alone
+        // therefore has the same `(key, row)` order as tuple sorting, while avoiding the
+        // comparison cost for the many large blocks produced by the format writer.
+        radix_sort_by_key(
+            &mut entries,
+            usize::from(root.depth()).saturating_mul(3).div_ceil(8),
+        );
         let mut keys = Vec::new();
         let mut leaf_offsets = Vec::new();
         // Allocate compact row storage explicitly: collecting a consuming tuple iterator
@@ -92,5 +98,60 @@ impl OccupiedCellIndex {
                     .capacity()
                     .saturating_mul(std::mem::size_of::<usize>()),
             )
+    }
+}
+
+fn radix_sort_by_key(entries: &mut Vec<(u128, usize)>, key_bytes: usize) {
+    if entries.len() < 2 || key_bytes == 0 {
+        return;
+    }
+    let mut scratch = Vec::with_capacity(entries.len());
+    for byte in 0..key_bytes {
+        let shift = byte * 8;
+        let mut counts = [0_usize; 256];
+        for &(key, _) in entries.iter() {
+            counts[((key >> shift) & 0xff) as usize] += 1;
+        }
+        let mut next = [0_usize; 256];
+        let mut total = 0;
+        for (offset, count) in next.iter_mut().zip(counts) {
+            *offset = total;
+            total += count;
+        }
+        scratch.clear();
+        scratch.resize(entries.len(), (0, 0));
+        for &(key, row) in entries.iter() {
+            let bucket = ((key >> shift) & 0xff) as usize;
+            scratch[next[bucket]] = (key, row);
+            next[bucket] += 1;
+        }
+        std::mem::swap(entries, &mut scratch);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::radix_sort_by_key;
+
+    #[test]
+    fn stable_radix_sort_matches_key_and_input_row_order() {
+        for key_bytes in [0, 1, 3, 12] {
+            let bits = key_bytes * 8;
+            let mask = if bits == 0 { 0 } else { (1_u128 << bits) - 1 };
+            let mut state = 0x9e37_79b9_7f4a_7c15_u128;
+            let mut actual = Vec::new();
+            for row in 0..4096 {
+                state ^= state << 23;
+                state ^= state >> 17;
+                state ^= state << 26;
+                actual.push((state & mask, row));
+            }
+            let mut expected = actual.clone();
+            expected.sort_unstable();
+
+            radix_sort_by_key(&mut actual, key_bytes);
+
+            assert_eq!(actual, expected, "key_bytes={key_bytes}");
+        }
     }
 }
