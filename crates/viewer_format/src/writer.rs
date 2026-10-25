@@ -62,6 +62,9 @@ pub struct PreparedPointBlock {
     ranges: Vec<crate::NodeAttributeRange>,
 }
 
+const WRITER_RECORD_MAGIC: &[u8; 8] = b"OCTVWRC1";
+const WRITER_RECORD_VERSION: u16 = 1;
+
 impl PreparedPointBlock {
     /// Capacity of the retained compressed payload buffer, excluding metadata and allocator overhead.
     pub fn encoded_payload_capacity_bytes(&self) -> usize {
@@ -80,9 +83,165 @@ pub struct FormatWriter<W> {
     block_nodes: BTreeMap<BlockId, Vec<NodeId>>,
     blocks: BTreeMap<BlockId, BlockRecord>,
     failed: bool,
+    resume_boundary_pending: bool,
 }
 
 impl<W: Write + Seek> FormatWriter<W> {
+    /// Encodes one committed block directory record for an external append-only journal.
+    /// The caller owns journal durability and candidate stream syncing.
+    pub fn checkpoint_record(&self, id: BlockId) -> Result<Vec<u8>, FormatError> {
+        if self.failed {
+            return Err(FormatError::WriterPoisoned);
+        }
+        let record = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        encode_checkpoint_record(id, record)
+    }
+
+    /// Returns the candidate streams so the caller can flush/sync and reopen them.
+    pub fn into_candidate_streams(self) -> (W, Option<W>) {
+        (self.writer, self.attributes)
+    }
+
+    /// Opens existing candidate streams for journal replay. This checks both headers and
+    /// performs no writes. Replay records in append order before writing another block.
+    pub fn resume_for_version(
+        version: FormatVersion,
+        mut writer: W,
+        mut attributes: Option<W>,
+        metadata: FormatMetadata,
+        options: FormatWriterOptions,
+    ) -> Result<Self, FormatError>
+    where
+        W: std::io::Read,
+    {
+        let layout = StorageLayout::from_version(version)?;
+        validate_metadata(&metadata)?;
+        let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
+        let primary_end = writer.seek(SeekFrom::End(0))?;
+        let attr_end = attributes
+            .as_mut()
+            .map(|s| s.seek(SeekFrom::End(0)))
+            .transpose()?;
+        let expected_header = header_for_role(
+            version,
+            if attributes.is_some() {
+                FileRole::SplitPrimary
+            } else {
+                FileRole::Monolithic
+            },
+        )?;
+        writer.seek(SeekFrom::Start(0))?;
+        let mut header = vec![0; HEADER_SIZE as usize];
+        std::io::Read::read_exact(&mut writer, &mut header)?;
+        if header.as_slice() != expected_header {
+            return Err(FormatError::InvalidHeader);
+        }
+        if let Some(stream) = attributes.as_mut() {
+            stream.seek(SeekFrom::Start(0))?;
+            let mut attr_header = vec![0; HEADER_SIZE as usize];
+            std::io::Read::read_exact(stream, &mut attr_header)?;
+            if attr_header.as_slice() != header_for_role(version, FileRole::Attributes)? {
+                return Err(FormatError::InvalidHeader);
+            }
+        }
+        if primary_end < HEADER_SIZE || attr_end.is_some_and(|end| end < HEADER_SIZE) {
+            return Err(FormatError::MalformedIndex("writer resume stream length"));
+        }
+        writer.seek(SeekFrom::Start(HEADER_SIZE))?;
+        if let Some(stream) = attributes.as_mut() {
+            stream.seek(SeekFrom::Start(HEADER_SIZE))?;
+        }
+        Ok(Self {
+            writer,
+            attributes,
+            metadata,
+            options,
+            layout,
+            block_nodes,
+            blocks: BTreeMap::new(),
+            failed: false,
+            resume_boundary_pending: true,
+        })
+    }
+
+    /// Restores one validated journal record. Payload bytes must already be present.
+    pub fn restore_committed_record(&mut self, bytes: &[u8]) -> Result<BlockId, FormatError>
+    where
+        W: std::io::Read,
+    {
+        if self.failed {
+            return Err(FormatError::WriterPoisoned);
+        }
+        let (id, record) = decode_checkpoint_record(
+            bytes,
+            self.metadata.dataset().hierarchy().attributes(),
+            self.attributes.is_some(),
+        )?;
+        self.ensure_block_available(id)?;
+        if record.offset != self.writer.stream_position()?
+            || record.payload_length != record.payloads[0].stored_length
+            || record.payloads.len() != self.metadata.dataset().hierarchy().attributes().len() + 2
+        {
+            return Err(FormatError::MalformedIndex(
+                "writer checkpoint block order or identity",
+            ));
+        }
+        validate_checkpoint_record(
+            &record,
+            self.attributes.is_some(),
+            self.metadata.dataset().hierarchy().attributes(),
+        )?;
+        let primary_end = self.writer.seek(SeekFrom::End(0))?;
+        let primary_next = record
+            .offset
+            .checked_add(record.payload_length)
+            .ok_or(FormatError::FileSizeOverflow)?;
+        if primary_next > primary_end {
+            return Err(FormatError::MalformedIndex(
+                "writer checkpoint primary bounds",
+            ));
+        }
+        self.writer.seek(SeekFrom::Start(primary_next))?;
+        if let Some(attributes) = self.attributes.as_mut() {
+            let mut next = attributes.stream_position()?;
+            for payload in record.payloads.iter().skip(1) {
+                if payload.offset != next {
+                    return Err(FormatError::MalformedIndex(
+                        "writer checkpoint companion order",
+                    ));
+                }
+                next = next
+                    .checked_add(payload.stored_length)
+                    .ok_or(FormatError::FileSizeOverflow)?;
+            }
+            let end = attributes.seek(SeekFrom::End(0))?;
+            if next > end {
+                return Err(FormatError::MalformedIndex(
+                    "writer checkpoint companion bounds",
+                ));
+            }
+            attributes.seek(SeekFrom::Start(next))?;
+        } else {
+            let end = self.writer.seek(SeekFrom::End(0))?;
+            let total = record.payloads.iter().try_fold(0u64, |n, payload| {
+                n.checked_add(payload.stored_length)
+                    .ok_or(FormatError::FileSizeOverflow)
+            })?;
+            let next = record
+                .offset
+                .checked_add(total)
+                .ok_or(FormatError::FileSizeOverflow)?;
+            if next > end {
+                return Err(FormatError::MalformedIndex(
+                    "writer checkpoint block bounds",
+                ));
+            }
+            self.writer.seek(SeekFrom::Start(next))?;
+        }
+        self.blocks.insert(id, record);
+        Ok(id)
+    }
+
     pub fn format_version(&self) -> FormatVersion {
         self.layout.version()
     }
@@ -140,6 +299,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             block_nodes,
             blocks: BTreeMap::new(),
             failed: false,
+            resume_boundary_pending: false,
         })
     }
 
@@ -195,6 +355,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 block: prepared.layout.version(),
             });
         }
+        self.ensure_append_boundary()?;
         self.ensure_block_available(prepared.id)?;
         let offset = self.writer.stream_position()?;
         let split_at = if self.attributes.is_some() {
@@ -249,6 +410,30 @@ impl<W: Write + Seek> FormatWriter<W> {
         if !self.block_nodes.contains_key(&id) {
             return Err(FormatError::UnreferencedBlock(id));
         }
+        Ok(())
+    }
+
+    fn ensure_append_boundary(&mut self) -> Result<(), FormatError> {
+        if !self.resume_boundary_pending {
+            return Ok(());
+        }
+        let primary = self.writer.stream_position()?;
+        if self.writer.seek(SeekFrom::End(0))? != primary {
+            return Err(FormatError::MalformedIndex(
+                "writer candidate primary cursor",
+            ));
+        }
+        self.writer.seek(SeekFrom::Start(primary))?;
+        if let Some(attributes) = self.attributes.as_mut() {
+            let cursor = attributes.stream_position()?;
+            if attributes.seek(SeekFrom::End(0))? != cursor {
+                return Err(FormatError::MalformedIndex(
+                    "writer candidate companion cursor",
+                ));
+            }
+            attributes.seek(SeekFrom::Start(cursor))?;
+        }
+        self.resume_boundary_pending = false;
         Ok(())
     }
 
@@ -407,6 +592,375 @@ impl<W: Write + Seek> FormatWriter<W> {
             }
         }
         Ok(source_metadata.with_dataset(dataset, ranges))
+    }
+}
+
+fn validate_checkpoint_record(
+    record: &BlockRecord,
+    split: bool,
+    schema: &[viewer_core::AttributeDescriptor],
+) -> Result<(), FormatError> {
+    if !record.quantization_error.is_finite()
+        || record.quantization_error < 0.0
+        || record
+            .origin
+            .iter()
+            .chain(record.scale.iter())
+            .any(|v| !v.is_finite())
+        || record.scale.iter().any(|v| *v <= 0.0)
+    {
+        return Err(FormatError::MalformedIndex(
+            "writer checkpoint numeric metadata",
+        ));
+    }
+    for (index, payload) in record.payloads.iter().enumerate() {
+        payload
+            .offset
+            .checked_add(payload.stored_length)
+            .ok_or(FormatError::FileSizeOverflow)?;
+        if payload.stored_length == 0 && payload.raw_length != 0 {
+            return Err(FormatError::MalformedIndex(
+                "writer checkpoint empty payload",
+            ));
+        }
+        if index == 0 {
+            record
+                .geometry_encoding
+                .validate_raw_length(record.point_count, payload.raw_length)?;
+        } else if index == 1 {
+            let expected = record
+                .point_count
+                .checked_mul(3)
+                .ok_or(FormatError::BlockSizeOverflow)?;
+            if payload.raw_length != expected {
+                return Err(FormatError::MalformedIndex(
+                    "writer checkpoint color raw length",
+                ));
+            }
+        } else {
+            let descriptor = schema.get(index - 2).ok_or(FormatError::MalformedIndex(
+                "writer checkpoint attribute schema",
+            ))?;
+            if payload.raw_length != attribute_payload_size(record.point_count, descriptor)? {
+                return Err(FormatError::MalformedIndex(
+                    "writer checkpoint attribute raw length",
+                ));
+            }
+        }
+        if !split || index == 0 {
+            let expected_offset = record.payloads[..index].iter().try_fold(0u64, |at, item| {
+                at.checked_add(item.stored_length)
+                    .ok_or(FormatError::FileSizeOverflow)
+            })?;
+            if payload.offset != expected_offset {
+                return Err(FormatError::MalformedIndex(
+                    "writer checkpoint payload offset",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn encode_checkpoint_record(id: BlockId, record: &BlockRecord) -> Result<Vec<u8>, FormatError> {
+    let mut out = Vec::new();
+    out.extend_from_slice(WRITER_RECORD_MAGIC);
+    out.extend_from_slice(&WRITER_RECORD_VERSION.to_le_bytes());
+    out.extend_from_slice(&id.get().to_le_bytes());
+    out.extend_from_slice(&record.offset.to_le_bytes());
+    out.extend_from_slice(&record.payload_length.to_le_bytes());
+    out.extend_from_slice(&record.point_count.to_le_bytes());
+    out.push(record.geometry_encoding as u8);
+    out.extend_from_slice(&record.quantization_error.to_bits().to_le_bytes());
+    for value in record.origin.into_iter().chain(record.scale) {
+        out.extend_from_slice(&value.to_bits().to_le_bytes());
+    }
+    if let Some(bounds) = record.world_bounds {
+        out.push(1);
+        for value in bounds.min().into_iter().chain(bounds.max()) {
+            out.extend_from_slice(&value.to_bits().to_le_bytes());
+        }
+    } else {
+        out.push(0);
+    }
+    put_count(&mut out, record.payloads.len())?;
+    for payload in &record.payloads {
+        for value in [payload.offset, payload.stored_length, payload.raw_length] {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        out.push(payload.codec as u8);
+        out.extend_from_slice(&payload.checksum.to_le_bytes());
+    }
+    put_count(&mut out, record.ranges.len())?;
+    for range in &record.ranges {
+        out.extend_from_slice(&range.schema_index().to_le_bytes());
+        encode_values(&range.min, &mut out);
+        encode_values(&range.max, &mut out);
+    }
+    let checksum = crc32(&out);
+    out.extend_from_slice(&checksum.to_le_bytes());
+    Ok(out)
+}
+
+fn decode_checkpoint_record(
+    bytes: &[u8],
+    schema: &[viewer_core::AttributeDescriptor],
+    split: bool,
+) -> Result<(BlockId, BlockRecord), FormatError> {
+    let mut maximum_length = 160usize
+        .checked_add(
+            schema
+                .len()
+                .checked_add(2)
+                .ok_or(FormatError::SchemaTooLarge)?
+                .checked_mul(29)
+                .ok_or(FormatError::BlockSizeOverflow)?,
+        )
+        .ok_or(FormatError::BlockSizeOverflow)?;
+    for descriptor in schema {
+        let width = usize::try_from(crate::layout::primitive_width(descriptor.data_type()))
+            .map_err(|_| FormatError::BlockSizeOverflow)?;
+        maximum_length = maximum_length
+            .checked_add(4)
+            .and_then(|n| {
+                n.checked_add(
+                    (descriptor.component_count() as usize)
+                        .checked_mul(width)?
+                        .checked_mul(2)?,
+                )
+            })
+            .ok_or(FormatError::BlockSizeOverflow)?;
+    }
+    if bytes.len() > maximum_length {
+        return Err(FormatError::MalformedIndex(
+            "writer checkpoint exceeds schema bounds",
+        ));
+    }
+    if bytes.len() < 14 {
+        return Err(FormatError::MalformedIndex("truncated writer checkpoint"));
+    }
+    let data_len = bytes
+        .len()
+        .checked_sub(4)
+        .ok_or(FormatError::MalformedIndex("truncated writer checkpoint"))?;
+    let expected_crc = u32::from_le_bytes(
+        bytes[data_len..]
+            .try_into()
+            .map_err(|_| FormatError::MalformedIndex("truncated writer checkpoint"))?,
+    );
+    if crc32(&bytes[..data_len]) != expected_crc {
+        return Err(FormatError::InvalidChecksum("writer checkpoint"));
+    }
+    let mut input = CheckpointInput {
+        bytes: &bytes[..data_len],
+        at: 0,
+    };
+    if input.take(8)? != WRITER_RECORD_MAGIC || input.u16()? != WRITER_RECORD_VERSION {
+        return Err(FormatError::MalformedIndex("writer checkpoint version"));
+    }
+    let id = BlockId::new(input.u64()?);
+    let offset = input.u64()?;
+    let payload_length = input.u64()?;
+    let point_count = input.u64()?;
+    let geometry_encoding = crate::GeometryEncoding::try_from(input.u8()?)?;
+    let quantization_error = f64::from_bits(input.u64()?);
+    let origin = input.triple()?;
+    let scale = input.triple()?;
+    let world_bounds = match input.u8()? {
+        0 => None,
+        1 => Some(SpatialBounds::new(input.triple()?, input.triple()?)?),
+        tag => {
+            return Err(FormatError::InvalidTag {
+                field: "checkpoint bounds",
+                tag,
+            });
+        }
+    };
+    let payload_count = input.count(
+        schema
+            .len()
+            .checked_add(2)
+            .ok_or(FormatError::SchemaTooLarge)?,
+    )?;
+    let mut payloads = Vec::new();
+    payloads
+        .try_reserve_exact(payload_count)
+        .map_err(|_| FormatError::AllocationFailed(payload_count))?;
+    for _ in 0..payload_count {
+        payloads.push(PayloadDirectoryEntry {
+            offset: input.u64()?,
+            stored_length: input.u64()?,
+            raw_length: input.u64()?,
+            codec: crate::BlockCodec::try_from(input.u8()?)?,
+            checksum: input.u32()?,
+        });
+    }
+    if payload_count != schema.len() + 2 {
+        return Err(FormatError::MalformedIndex(
+            "writer checkpoint payload count",
+        ));
+    }
+    let range_count = input.count(schema.len())?;
+    let mut ranges = Vec::new();
+    ranges
+        .try_reserve_exact(range_count)
+        .map_err(|_| FormatError::AllocationFailed(range_count))?;
+    let mut seen = BTreeSet::new();
+    for _ in 0..range_count {
+        let schema_index = input.u32()?;
+        let descriptor = schema
+            .get(schema_index as usize)
+            .ok_or(FormatError::MalformedIndex(
+                "writer checkpoint range schema",
+            ))?;
+        if !seen.insert(schema_index) {
+            return Err(FormatError::MalformedIndex(
+                "writer checkpoint duplicate range",
+            ));
+        }
+        let count = descriptor.component_count() as usize;
+        let min = input.values(descriptor.data_type(), count)?;
+        let max = input.values(descriptor.data_type(), count)?;
+        for component in 0..count {
+            let low = min
+                .scalar_as_f64(component)
+                .ok_or(FormatError::MalformedIndex("writer checkpoint range"))?;
+            let high = max
+                .scalar_as_f64(component)
+                .ok_or(FormatError::MalformedIndex("writer checkpoint range"))?;
+            if !low.is_finite() || !high.is_finite() || low > high {
+                return Err(FormatError::MalformedIndex(
+                    "writer checkpoint range values",
+                ));
+            }
+        }
+        ranges.push(crate::NodeAttributeRange::new(schema_index, min, max));
+    }
+    if input.at != input.bytes.len() {
+        return Err(FormatError::MalformedIndex(
+            "writer checkpoint trailing bytes",
+        ));
+    }
+    let record = BlockRecord {
+        offset,
+        payload_length,
+        point_count,
+        geometry_encoding,
+        quantization_error,
+        origin,
+        scale,
+        world_bounds,
+        payloads,
+        ranges,
+    };
+    validate_checkpoint_record(&record, split, schema)?;
+    Ok((id, record))
+}
+
+fn put_count(out: &mut Vec<u8>, count: usize) -> Result<(), FormatError> {
+    out.extend_from_slice(
+        &u32::try_from(count)
+            .map_err(|_| FormatError::TooManyBlocks)?
+            .to_le_bytes(),
+    );
+    Ok(())
+}
+
+struct CheckpointInput<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+impl CheckpointInput<'_> {
+    fn take(&mut self, len: usize) -> Result<&[u8], FormatError> {
+        let end = self.at.checked_add(len).ok_or(FormatError::MalformedIndex(
+            "writer checkpoint length overflow",
+        ))?;
+        let out = self
+            .bytes
+            .get(self.at..end)
+            .ok_or(FormatError::MalformedIndex("truncated writer checkpoint"))?;
+        self.at = end;
+        Ok(out)
+    }
+    fn u8(&mut self) -> Result<u8, FormatError> {
+        Ok(self.take(1)?[0])
+    }
+    fn u16(&mut self) -> Result<u16, FormatError> {
+        Ok(u16::from_le_bytes(self.take(2)?.try_into().map_err(
+            |_| FormatError::MalformedIndex("truncated writer checkpoint"),
+        )?))
+    }
+    fn u32(&mut self) -> Result<u32, FormatError> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().map_err(
+            |_| FormatError::MalformedIndex("truncated writer checkpoint"),
+        )?))
+    }
+    fn u64(&mut self) -> Result<u64, FormatError> {
+        Ok(u64::from_le_bytes(self.take(8)?.try_into().map_err(
+            |_| FormatError::MalformedIndex("truncated writer checkpoint"),
+        )?))
+    }
+    fn triple(&mut self) -> Result<[f64; 3], FormatError> {
+        Ok([
+            f64::from_bits(self.u64()?),
+            f64::from_bits(self.u64()?),
+            f64::from_bits(self.u64()?),
+        ])
+    }
+    fn count(&mut self, max: usize) -> Result<usize, FormatError> {
+        let count = usize::try_from(self.u32()?)
+            .map_err(|_| FormatError::MalformedIndex("writer checkpoint count"))?;
+        if count > max {
+            return Err(FormatError::MalformedIndex(
+                "writer checkpoint count exceeds schema",
+            ));
+        }
+        Ok(count)
+    }
+    fn values(
+        &mut self,
+        data_type: AttributeDataType,
+        count: usize,
+    ) -> Result<AttributeValues, FormatError> {
+        let bytes = count
+            .checked_mul(crate::layout::primitive_width(data_type) as usize)
+            .ok_or(FormatError::MalformedIndex(
+                "writer checkpoint range length overflow",
+            ))?;
+        let raw = self.take(bytes)?;
+        macro_rules! parse {
+            ($t:ty, $n:expr, $variant:ident) => {{
+                let chunks = raw.chunks_exact($n);
+                if !chunks.remainder().is_empty() {
+                    return Err(FormatError::MalformedIndex("writer checkpoint range width"));
+                }
+                AttributeValues::$variant(
+                    chunks
+                        .map(|c| <$t>::from_le_bytes(c.try_into().expect("exact chunk")))
+                        .collect(),
+                )
+            }};
+        }
+        Ok(match data_type {
+            AttributeDataType::U8 => AttributeValues::U8(raw.to_vec()),
+            AttributeDataType::I8 => AttributeValues::I8(raw.iter().map(|v| *v as i8).collect()),
+            AttributeDataType::U16 => parse!(u16, 2, U16),
+            AttributeDataType::I16 => parse!(i16, 2, I16),
+            AttributeDataType::U32 => parse!(u32, 4, U32),
+            AttributeDataType::I32 => parse!(i32, 4, I32),
+            AttributeDataType::U64 => parse!(u64, 8, U64),
+            AttributeDataType::I64 => parse!(i64, 8, I64),
+            AttributeDataType::F32 => AttributeValues::F32(
+                raw.chunks_exact(4)
+                    .map(|c| f32::from_bits(u32::from_le_bytes(c.try_into().expect("exact chunk"))))
+                    .collect(),
+            ),
+            AttributeDataType::F64 => AttributeValues::F64(
+                raw.chunks_exact(8)
+                    .map(|c| f64::from_bits(u64::from_le_bytes(c.try_into().expect("exact chunk"))))
+                    .collect(),
+            ),
+        })
     }
 }
 

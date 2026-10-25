@@ -296,6 +296,17 @@ topología), lectura/preparación/escritura de bloques y cierre/sync de la parej
 de spools, workers internos, validación ni memoria; esas mediciones siguen siendo externas y deben
 quedar explícitas como tales.
 
+**Contrato acordado para recuperación EPT; soporte parcial implementado:** el writer V7 ya expone
+registros binarios versionados por bloque y restaura registros validados en orden, con prueba de
+paridad byte a byte tras reanudar. `--checkpoint`/`--resume` conservará el prefijo de bloques
+confirmados. Falta que el convertidor sincronice ambos candidatos, anexe y sincronice el diario,
+y actualice atómicamente el manifest antes de anunciar progreso confirmado. Al reanudar validará
+el prefijo y truncará solo colas posteriores a sus offsets. La identidad de fuente usará rutas, tamaños y marcas de
+modificación de `ept.json`, las páginas de jerarquía alcanzables y los LAZ usados, con comprobación
+antes/después del recorrido y antes de publicar; no se hasheará el contenido. Metadatos iguales
+pueden ocultar contenido sustituido, por lo que esto no representa una instantánea inmutable.
+Implementación pendiente; este protocolo interno no cambia los bytes V7 publicados.
+
 Medir disco simultáneo: spools fuente/hijos/LOD + candidatos `.oct`/`.octattrs` + pareja anterior
 durante sustitución + checkpoints conservados. Comparar liberación temprana del último rango
 con spools comprimidos/chunks: menos bytes puede exigir más CPU y perjudicar lecturas parciales.

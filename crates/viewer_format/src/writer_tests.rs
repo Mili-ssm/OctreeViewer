@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
@@ -45,6 +45,143 @@ type MemoryOutput = (Cursor<Vec<u8>>, Option<Cursor<Vec<u8>>>);
 
 fn options() -> FormatWriterOptions {
     FormatWriterOptions::new(0.001, 1024).unwrap()
+}
+
+fn two_block_metadata() -> FormatMetadata {
+    let base = sample_metadata();
+    let bounds = base.dataset().hierarchy().stats().root_bounds;
+    let root = SpatialNode::new(
+        NodeId::new(0),
+        None,
+        0,
+        bounds,
+        4,
+        0.25,
+        vec![BlockId::new(7), BlockId::new(8)],
+    )
+    .unwrap();
+    let hierarchy = SpatialHierarchy::new(
+        vec![root],
+        vec![AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap()],
+        Some(4),
+    )
+    .unwrap();
+    FormatMetadata::new(
+        DatasetMetadata::new(base.dataset().coordinate_frame(), hierarchy),
+        base.crs().map(str::to_owned),
+        base.sampling_policy().map(str::to_owned),
+        Vec::new(),
+    )
+    .unwrap()
+}
+
+fn second_sample_block() -> SourcePointBlock {
+    let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
+    let attribute =
+        AttributeColumn::new(descriptor, AttributeValues::U16(vec![300, 400]), 2).unwrap();
+    SourcePointBlock::new(
+        BlockId::new(8),
+        vec![[0.5, 0.25, 0.0], [1.25, 0.5, 1.0]],
+        vec![ColorRgb::new(11, 21, 31), ColorRgb::new(41, 51, 61)],
+        vec![attribute],
+    )
+}
+
+#[test]
+fn split_writer_resumes_from_committed_checkpoint_byte_identically() {
+    let metadata = two_block_metadata();
+    let mut clean = FormatWriter::new_split_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata.clone(),
+        options(),
+    )
+    .unwrap();
+    clean.write_block(sample_block()).unwrap();
+    clean.write_block(second_sample_block()).unwrap();
+    let (clean_primary, clean_attributes) = clean.finish_pair().unwrap();
+
+    let mut partial = FormatWriter::new_split_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata.clone(),
+        options(),
+    )
+    .unwrap();
+    partial.write_block(sample_block()).unwrap();
+    let checkpoint = partial.checkpoint_record(BlockId::new(7)).unwrap();
+    let (mut primary, attributes) = partial.into_candidate_streams();
+    let mut attributes = attributes.unwrap();
+    primary.flush().unwrap();
+    attributes.flush().unwrap();
+    let mut resumed = FormatWriter::resume_for_version(
+        FormatVersion::V7_PRE1,
+        primary,
+        Some(attributes),
+        metadata.clone(),
+        options(),
+    )
+    .unwrap();
+    resumed.restore_committed_record(&checkpoint).unwrap();
+    resumed.write_block(second_sample_block()).unwrap();
+    let (resumed_primary, resumed_attributes) = resumed.finish_pair().unwrap();
+    assert_eq!(resumed_primary.into_inner(), clean_primary.into_inner());
+    assert_eq!(
+        resumed_attributes.unwrap().into_inner(),
+        clean_attributes.unwrap().into_inner()
+    );
+}
+
+#[test]
+fn split_resume_rejects_truncated_or_corrupt_record_without_writing_candidates() {
+    let metadata = two_block_metadata();
+    let mut partial = FormatWriter::new_split_for_version(
+        FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata.clone(),
+        options(),
+    )
+    .unwrap();
+    partial.write_block(sample_block()).unwrap();
+    let valid = partial.checkpoint_record(BlockId::new(7)).unwrap();
+    let (primary, attributes) = partial.into_candidate_streams();
+    let primary_bytes = primary.get_ref().clone();
+    let attributes = attributes.unwrap();
+    let attributes_bytes = attributes.get_ref().clone();
+
+    let mut corrupt = valid.clone();
+    corrupt[10] ^= 0x40;
+    // One geometry and one color directory entry precede the first schema attribute.
+    let mut bad_attribute_length = valid.clone();
+    let attribute_raw_length = 152 + 2 * 29 + 16;
+    bad_attribute_length[attribute_raw_length..attribute_raw_length + 8]
+        .copy_from_slice(&3u64.to_le_bytes());
+    let checksum_at = bad_attribute_length.len() - 4;
+    let checksum = crc32(&bad_attribute_length[..checksum_at]);
+    bad_attribute_length[checksum_at..].copy_from_slice(&checksum.to_le_bytes());
+    let bad_records = [
+        valid[..valid.len() - 1].to_vec(),
+        valid[..valid.len() - 4].to_vec(),
+        corrupt,
+        bad_attribute_length,
+    ];
+    for bad_record in &bad_records {
+        let mut resumed = FormatWriter::resume_for_version(
+            FormatVersion::V7_PRE1,
+            Cursor::new(primary_bytes.clone()),
+            Some(Cursor::new(attributes_bytes.clone())),
+            metadata.clone(),
+            options(),
+        )
+        .unwrap();
+        assert!(resumed.restore_committed_record(bad_record).is_err());
+        let (primary, attributes) = resumed.into_candidate_streams();
+        assert_eq!(primary.into_inner(), primary_bytes);
+        assert_eq!(attributes.unwrap().into_inner(), attributes_bytes);
+    }
 }
 
 #[test]
