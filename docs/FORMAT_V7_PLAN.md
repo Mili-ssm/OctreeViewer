@@ -378,16 +378,19 @@ Reconsiderarlo solo si la recuperación de pareja resulta un problema dominante 
 
 ## 6. Validación, promoción y retirada
 
-**V5/V7 en Belvedere y Majadas:** una conversión por formato/dataset con el mismo binario, un
-worker, divisiones 2 y bloques de 262.144 puntos. La lectura BFS dio el mismo checksum en cada
-pareja: Belvedere `0737ca650c6081b4` (1.343 bloques) y Majadas `b830818c4aeddac0` (6.259 bloques).
-V7 redujo el tamaño total 11,77% en Belvedere (1.591.650.185 → 1.404.306.523 B) y 38,77% en
-Majadas (7.533.781.717 → 4.612.644.109 B). En estas ejecuciones únicas tardó más: 61,38 vs 40,34 s
-en Belvedere y 444,70 vs 353,96 s en Majadas; caché sin purgar, no es una estimación de dispersión
-ni atribución al formato. Los archivos V5 de referencia se regeneraron desde LAS/LAZ porque las
-parejas locales antiguas llevan la firma provisional `OCTVWFRM` y el reader las rechaza como
-`ProvisionalFormat`. Fuentes, hashes, picos y límites:
-[comparación Belvedere/Majadas](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json).
+**V5/V7 repetidos en Belvedere y Majadas:** mismo binario, un worker, divisiones 2 y bloques de
+262.144. Dos pares en Belvedere y tres en Majadas, en órdenes alternados; la caché no se purgó.
+Todas las salidas conservaron el checksum por dataset: Belvedere `0737ca650c6081b4` (1.343 bloques)
+y Majadas `b830818c4aeddac0` (6.259 bloques). V7 redujo el tamaño total 11,77% en Belvedere
+(1.591.650.185 → 1.404.306.523 B) y 38,77% en Majadas (7.533.781.717 → 4.612.644.109 B).
+La mediana de conversión V7 fue 53,6% mayor en Belvedere (61,88 vs 40,30 s) y 40,3% mayor en
+Majadas (517,71 vs 368,88 s); Majadas mostró rangos amplios, especialmente en V7 (444,70–787,20 s).
+La descomposición de Majadas atribuye el diferencial principalmente a preparación de bloques:
+mediana 186,89 s en V7 frente a 58,23 s en V5; escritura ordenada fue 2,54 vs 1,66 s. El código V7
+prueba varios candidatos geométricos y de atributos por bloque, mientras V5 comprime el payload
+raw; falta perfilar por candidato antes de elegir una optimización con coste de tamaño conocido.
+Los archivos V5 locales antiguos llevan `OCTVWFRM` y el reader los rechaza como `ProvisionalFormat`;
+las referencias válidas se regeneraron desde LAS/LAZ. [Repeticiones, fases y límites](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json).
 
 Usar muestras versionadas y Belvedere, Albuera y Majadas disponibles, más casos sintéticos de
 alta entropía/cardinalidad, constantes, extremos tipados, vacíos y duplicados. Fijar fuente,

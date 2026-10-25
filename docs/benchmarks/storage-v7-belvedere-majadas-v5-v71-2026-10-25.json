@@ -1,5 +1,5 @@
 {
-  "conditions": "One conversion per format and dataset, same host, source, perf binary and options. V7 runs preceded V5; no concurrent jobs or cache purge. Single-run timing and memory values are observations, not dispersion or A/B latency evidence.",
+  "conditions": "Same host, perf binary, source and conversion options; sequential runs with conversion order alternated by dataset/run. OS cache was not purged. Belvedere has two runs per format; Majadas has three. Timing ranges are observations for this host, not a population guarantee.",
   "conversion_binary_sha256": "263030cf0ce337689469b94bdb2d0233eaf32404519d7b9dfe2eaaefa5651b58",
   "conversion_options": {
     "checkpoint": false,
@@ -10,18 +10,17 @@
     "sample_interval_ms": 100,
     "workers": 1
   },
-  "conversion_order": [
-    "belvedere v7.1-pre",
-    "majadas v7.1-pre",
-    "belvedere v5",
-    "majadas v5"
-  ],
   "datasets": {
     "belvedere": {
       "input": {
         "bytes": 618390994,
         "path": "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
         "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+      },
+      "logical_checksums_across_repeated_outputs": {
+        "v5": "0737ca650c6081b4",
+        "v7": "0737ca650c6081b4",
+        "validated_for_all_runs": true
       },
       "logical_read": {
         "blocks_v5": 1343,
@@ -36,7 +35,163 @@
         "same_checksum": true,
         "workers": 1
       },
+      "median_elapsed_change_v7_vs_v5_percent": 53.55317417827585,
       "pair_bytes_saved_by_v7": 187343662,
+      "repeated_conversion_runs": [
+        {
+          "conversion_order": [
+            "v7",
+            "v5"
+          ],
+          "run": 1,
+          "same_logical_checksum": true,
+          "versions": {
+            "v5": {
+              "block_preparation_seconds": 8.588352622,
+              "elapsed_seconds": 40.34425336799177,
+              "finalize_and_sync_seconds": 0.625148465,
+              "ordered_write_and_release_seconds": 0.353816389,
+              "pair_bytes": 1591650185,
+              "phase_seconds": {
+                "block_stream": 8.942552073,
+                "output_validation": 4.317089525,
+                "spatial_planning": 26.350763866
+              },
+              "rss_sampled_peak_bytes": 99352576,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 4617033528,
+              "vmhwm_observed_peak_bytes": 99352576
+            },
+            "v7": {
+              "block_preparation_seconds": 28.112557383,
+              "elapsed_seconds": 61.38375636200362,
+              "finalize_and_sync_seconds": 0.508434846,
+              "ordered_write_and_release_seconds": 0.551111991,
+              "pair_bytes": 1404306523,
+              "phase_seconds": {
+                "block_stream": 28.664179468,
+                "output_validation": 5.832423368,
+                "spatial_planning": 26.332157288
+              },
+              "rss_sampled_peak_bytes": 111386624,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 4645318930,
+              "vmhwm_observed_peak_bytes": 113184768
+            }
+          }
+        },
+        {
+          "conversion_order": [
+            "v5",
+            "v7"
+          ],
+          "run": 2,
+          "same_logical_checksum": true,
+          "versions": {
+            "v5": {
+              "block_preparation_seconds": 8.464530607,
+              "elapsed_seconds": 40.25250634101394,
+              "finalize_and_sync_seconds": 0.639638942,
+              "ordered_write_and_release_seconds": 0.358480368,
+              "pair_bytes": 1591650185,
+              "phase_seconds": {
+                "block_stream": 8.823321606,
+                "output_validation": 4.39063935,
+                "spatial_planning": 26.37252311
+              },
+              "rss_sampled_peak_bytes": 99459072,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 4626449746,
+              "vmhwm_observed_peak_bytes": 99459072
+            },
+            "v7": {
+              "block_preparation_seconds": 28.079340686,
+              "elapsed_seconds": 62.37512645601237,
+              "finalize_and_sync_seconds": 0.54111545,
+              "ordered_write_and_release_seconds": 0.59807517,
+              "pair_bytes": 1404306523,
+              "phase_seconds": {
+                "block_stream": 28.678034814,
+                "output_validation": 5.539470084,
+                "spatial_planning": 27.505511369
+              },
+              "rss_sampled_peak_bytes": 107364352,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 4640765429,
+              "vmhwm_observed_peak_bytes": 110964736
+            }
+          }
+        }
+      ],
+      "repeated_logical_checksum": "0737ca650c6081b4",
+      "repeated_statistics": {
+        "v5": {
+          "block_preparation_seconds": {
+            "max": 8.588352622,
+            "median": 8.526441614500001,
+            "min": 8.464530607
+          },
+          "conversion_runs": 2,
+          "elapsed_seconds": {
+            "max": 40.34425336799177,
+            "median": 40.298379854502855,
+            "min": 40.25250634101394
+          },
+          "ordered_write_and_release_seconds": {
+            "max": 0.358480368,
+            "median": 0.35614837850000003,
+            "min": 0.353816389
+          },
+          "phase_seconds_median": {
+            "block_stream": 8.882936839500001,
+            "output_validation": 4.3538644375,
+            "spatial_planning": 26.361643488
+          },
+          "rss_sampled_peak_bytes": {
+            "max": 99459072,
+            "median": 99405824.0,
+            "min": 99352576
+          },
+          "temporary_sampled_peak_bytes": {
+            "max": 4626449746,
+            "median": 4621741637.0,
+            "min": 4617033528
+          }
+        },
+        "v7": {
+          "block_preparation_seconds": {
+            "max": 28.112557383,
+            "median": 28.0959490345,
+            "min": 28.079340686
+          },
+          "conversion_runs": 2,
+          "elapsed_seconds": {
+            "max": 62.37512645601237,
+            "median": 61.879441409007995,
+            "min": 61.38375636200362
+          },
+          "ordered_write_and_release_seconds": {
+            "max": 0.59807517,
+            "median": 0.5745935805,
+            "min": 0.551111991
+          },
+          "phase_seconds_median": {
+            "block_stream": 28.671107141,
+            "output_validation": 5.685946726,
+            "spatial_planning": 26.9188343285
+          },
+          "rss_sampled_peak_bytes": {
+            "max": 111386624,
+            "median": 109375488.0,
+            "min": 107364352
+          },
+          "temporary_sampled_peak_bytes": {
+            "max": 4645318930,
+            "median": 4643042179.5,
+            "min": 4640765429
+          }
+        }
+      },
       "runs": {
         "v5": {
           "elapsed_seconds": 40.34425336799177,
@@ -97,6 +252,11 @@
         "path": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
         "sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
       },
+      "logical_checksums_across_repeated_outputs": {
+        "v5": "b830818c4aeddac0",
+        "v7": "b830818c4aeddac0",
+        "validated_for_all_runs": true
+      },
       "logical_read": {
         "blocks_v5": 6259,
         "blocks_v7": 6259,
@@ -110,7 +270,205 @@
         "same_checksum": true,
         "workers": 1
       },
+      "median_elapsed_change_v7_vs_v5_percent": 40.347715221354655,
       "pair_bytes_saved_by_v7": 2921137608,
+      "repeated_conversion_runs": [
+        {
+          "conversion_order": [
+            "v7",
+            "v5"
+          ],
+          "run": 1,
+          "same_logical_checksum": true,
+          "versions": {
+            "v5": {
+              "block_preparation_seconds": 55.941074229,
+              "elapsed_seconds": 353.9632054060057,
+              "finalize_and_sync_seconds": 2.866294074,
+              "ordered_write_and_release_seconds": 1.480536765,
+              "pair_bytes": 7533781717,
+              "phase_seconds": {
+                "block_stream": 57.423760253,
+                "output_validation": 22.426090069,
+                "spatial_planning": 271.178983452
+              },
+              "rss_sampled_peak_bytes": 89882624,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 18829623912,
+              "vmhwm_observed_peak_bytes": 89882624
+            },
+            "v7": {
+              "block_preparation_seconds": 179.990582345,
+              "elapsed_seconds": 444.6956647080078,
+              "finalize_and_sync_seconds": 0.569162956,
+              "ordered_write_and_release_seconds": 2.054756018,
+              "pair_bytes": 4612644109,
+              "phase_seconds": {
+                "block_stream": 182.049591367,
+                "output_validation": 28.802100459,
+                "spatial_planning": 233.160142035
+              },
+              "rss_sampled_peak_bytes": 112177152,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 18784061670,
+              "vmhwm_observed_peak_bytes": 112177152
+            }
+          }
+        },
+        {
+          "conversion_order": [
+            "v7",
+            "v5"
+          ],
+          "run": 2,
+          "same_logical_checksum": true,
+          "versions": {
+            "v5": {
+              "block_preparation_seconds": 58.227634977,
+              "elapsed_seconds": 496.49298552000255,
+              "finalize_and_sync_seconds": 35.490637993,
+              "ordered_write_and_release_seconds": 1.664940459,
+              "pair_bytes": 7533781717,
+              "phase_seconds": {
+                "block_stream": 59.894785274,
+                "output_validation": 21.928221827,
+                "spatial_planning": 379.057380279
+              },
+              "rss_sampled_peak_bytes": 92270592,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 18822861300,
+              "vmhwm_observed_peak_bytes": 92270592
+            },
+            "v7": {
+              "block_preparation_seconds": 186.888087923,
+              "elapsed_seconds": 517.7148157280026,
+              "finalize_and_sync_seconds": 0.90059588,
+              "ordered_write_and_release_seconds": 2.648746705,
+              "pair_bytes": 4612644109,
+              "phase_seconds": {
+                "block_stream": 189.541025299,
+                "output_validation": 29.973382809,
+                "spatial_planning": 297.165725008
+              },
+              "rss_sampled_peak_bytes": 109867008,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 18829623912,
+              "vmhwm_observed_peak_bytes": 109867008
+            }
+          }
+        },
+        {
+          "conversion_order": [
+            "v5",
+            "v7"
+          ],
+          "run": 3,
+          "same_logical_checksum": true,
+          "versions": {
+            "v5": {
+              "block_preparation_seconds": 59.477488669,
+              "elapsed_seconds": 368.8801167240017,
+              "finalize_and_sync_seconds": 0.414905821,
+              "ordered_write_and_release_seconds": 1.71193238,
+              "pair_bytes": 7533781717,
+              "phase_seconds": {
+                "block_stream": 61.191852479,
+                "output_validation": 23.413621266,
+                "spatial_planning": 283.794054399
+              },
+              "rss_sampled_peak_bytes": 92254208,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 18806911398,
+              "vmhwm_observed_peak_bytes": 92254208
+            },
+            "v7": {
+              "block_preparation_seconds": 197.397448655,
+              "elapsed_seconds": 787.1960520800058,
+              "finalize_and_sync_seconds": 0.389246404,
+              "ordered_write_and_release_seconds": 2.537170666,
+              "pair_bytes": 4612644109,
+              "phase_seconds": {
+                "block_stream": 199.938520411,
+                "output_validation": 28.735614809,
+                "spatial_planning": 558.010632198
+              },
+              "rss_sampled_peak_bytes": 112082944,
+              "status": "complete",
+              "temporary_sampled_peak_bytes": 18812214630,
+              "vmhwm_observed_peak_bytes": 112082944
+            }
+          }
+        }
+      ],
+      "repeated_logical_checksum": "b830818c4aeddac0",
+      "repeated_statistics": {
+        "v5": {
+          "block_preparation_seconds": {
+            "max": 59.477488669,
+            "median": 58.227634977,
+            "min": 55.941074229
+          },
+          "conversion_runs": 3,
+          "elapsed_seconds": {
+            "max": 496.49298552000255,
+            "median": 368.8801167240017,
+            "min": 353.9632054060057
+          },
+          "ordered_write_and_release_seconds": {
+            "max": 1.71193238,
+            "median": 1.664940459,
+            "min": 1.480536765
+          },
+          "phase_seconds_median": {
+            "block_stream": 59.894785274,
+            "output_validation": 22.426090069,
+            "spatial_planning": 283.794054399
+          },
+          "rss_sampled_peak_bytes": {
+            "max": 92270592,
+            "median": 92254208,
+            "min": 89882624
+          },
+          "temporary_sampled_peak_bytes": {
+            "max": 18829623912,
+            "median": 18822861300,
+            "min": 18806911398
+          }
+        },
+        "v7": {
+          "block_preparation_seconds": {
+            "max": 197.397448655,
+            "median": 186.888087923,
+            "min": 179.990582345
+          },
+          "conversion_runs": 3,
+          "elapsed_seconds": {
+            "max": 787.1960520800058,
+            "median": 517.7148157280026,
+            "min": 444.6956647080078
+          },
+          "ordered_write_and_release_seconds": {
+            "max": 2.648746705,
+            "median": 2.537170666,
+            "min": 2.054756018
+          },
+          "phase_seconds_median": {
+            "block_stream": 189.541025299,
+            "output_validation": 28.802100459,
+            "spatial_planning": 297.165725008
+          },
+          "rss_sampled_peak_bytes": {
+            "max": 112177152,
+            "median": 112082944,
+            "min": 109867008
+          },
+          "temporary_sampled_peak_bytes": {
+            "max": 18829623912,
+            "median": 18812214630,
+            "min": 18784061670
+          }
+        }
+      },
       "runs": {
         "v5": {
           "elapsed_seconds": 353.9632054060057,
@@ -167,7 +525,13 @@
     }
   },
   "date": "2026-10-25",
-  "kind": "real_dataset_v5_v7_corpus_single_run_comparison",
+  "initial_conversion_order": [
+    "belvedere v7.1-pre",
+    "majadas v7.1-pre",
+    "belvedere v5",
+    "majadas v5"
+  ],
+  "kind": "real_dataset_v5_v7_corpus_repeated_comparison",
   "legacy_reference_note": "The pre-existing data/datasets .oct pairs for these sources were rejected by the current reader as ProvisionalFormat; V5 reference pairs were regenerated from the original sources with this same binary and options.",
   "logical_read_command_template": "target/perf/examples/storage_bench OUTPUT.oct progressive 1 512",
   "logical_read_scope": "BFS checksum includes block IDs, reconstructed coordinates/color, attribute names/types and typed values.",
@@ -175,10 +539,28 @@
   "profile": "perf optimized",
   "reader_binary_sha256": "3057b73511ede34e1426c9f40f3bf15902d8f9e4e90a555bd1cc5f940c56c804",
   "summary": {
-    "all_four_conversions_complete": true,
+    "all_repeated_conversions_complete": true,
+    "majadas_median_block_preparation_seconds": {
+      "v5": 58.227634977,
+      "v7": 186.888087923
+    },
+    "majadas_median_block_preparation_v7_over_v5": 3.2096115185997345,
+    "majadas_median_block_stream_seconds": {
+      "v5": 59.894785274,
+      "v7": 189.541025299
+    },
+    "majadas_median_block_stream_v7_over_v5": 3.164566404769778,
+    "median_conversion_elapsed_change_v7_vs_v5_percent": {
+      "belvedere": 53.55317417827585,
+      "majadas": 40.347715221354655
+    },
     "pair_size_reduction_percent_by_dataset": {
       "belvedere": 11.770404311547892,
       "majadas": 38.773855119912014
+    },
+    "repeat_count_by_dataset": {
+      "belvedere": 2,
+      "majadas": 3
     },
     "same_logical_checksum_both_datasets": true
   }
