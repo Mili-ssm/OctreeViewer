@@ -33,9 +33,11 @@ decimales)** combinados, por debajo del límite de 50 GB solicitado. La copia lo
 | Albuera UAV LiDAR | `SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz` | 4.305.484.789 B | 508.809.556 | ETRS89 / UTM 29N |
 | Majadas TLS | `SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz` | 1.343.266.470 B | 415.465.882 | ETRS89 / UTM 30N |
 
-Las salidas locales se regeneraron en formato v5 el 10 de octubre de 2026. Cada conjunto consta de
-`.oct` de coordenadas y `.octattrs` opcional. Las duraciones corresponden a una ejecución release
-serial local; no son garantías de conversión:
+Las parejas `.oct`/`.octattrs` locales que se comprobaron para Belvedere y Majadas conservan la
+identidad provisional `OCTVWFRM` de las conversiones del 10 de octubre de 2026; el reader actual
+las rechaza como `ProvisionalFormat`. Sus tamaños y tiempos siguientes son históricos, no archivos
+válidos para abrir con la versión actual. Regenerar desde estas fuentes antes de usarlas. Las
+duraciones corresponden a una ejecución release serial local; no son garantías de conversión:
 
 | Dataset | Conversión | Coordenadas `.oct` | Atributos `.octattrs` | Total de salida |
 | --- | ---: | ---: | ---: | ---: |

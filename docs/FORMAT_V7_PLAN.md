@@ -319,13 +319,13 @@ durante sustitución + checkpoints conservados. Comparar liberación temprana de
 con spools comprimidos/chunks: menos bytes puede exigir más CPU y perjudicar lecturas parciales.
 Elegir según medidas de tráfico y pico; no cambiar checkpoints sin versionarlos.
 
-**Siguiente cierre medible:** extender la base V7 parcial de Albuera (abajo) a Belvedere y Majadas,
-1/2/4 workers con/sin checkpoint y EPT con/sin `--pipeline-writes`; repetir tiempos, RSS/PSS
-muestreados, bytes temporales máximos, hashes y capacidades retenidas de lotes. El profiler de
-filesystem puede perder picos breves o spools eliminados durante el recorrido; sus muestras no son
-una cota exacta de disco físico. Usar esa base antes de reemplazar la estimación de memoria actual
-por admisión ponderada por bytes, y aceptar el cambio solo si reduce el pico medido sin cambiar
-salida, orden ni recuperación.
+**Siguiente cierre medible:** repetir las conversiones actuales para estimar dispersión y completar
+Belvedere/Majadas con 1/2/4 workers; medir V7 con/sin checkpoint y EPT con/sin `--pipeline-writes`.
+Registrar RSS/PSS muestreados, bytes temporales máximos, hashes y capacidades retenidas de lotes.
+El profiler de filesystem puede perder picos breves o spools eliminados durante el recorrido; sus
+muestras no son una cota exacta de disco físico. Usar esa base antes de reemplazar la estimación de
+memoria actual por admisión ponderada por bytes, y aceptar el cambio solo si reduce el pico medido
+sin cambiar salida, orden ni recuperación.
 
 **Comparación secuencial Albuera V5/V6.4/V7:** una conversión por versión, en ese orden, mismo
 host, binario `perf`, fuente (4.305.484.789 B; SHA-256 en el JSON), un worker, divisiones 2 y
@@ -377,6 +377,17 @@ No integrar todos los candidatos: elegir con evidencia. Mantener split inicialme
 Reconsiderarlo solo si la recuperación de pareja resulta un problema dominante demostrado.
 
 ## 6. Validación, promoción y retirada
+
+**V5/V7 en Belvedere y Majadas:** una conversión por formato/dataset con el mismo binario, un
+worker, divisiones 2 y bloques de 262.144 puntos. La lectura BFS dio el mismo checksum en cada
+pareja: Belvedere `0737ca650c6081b4` (1.343 bloques) y Majadas `b830818c4aeddac0` (6.259 bloques).
+V7 redujo el tamaño total 11,77% en Belvedere (1.591.650.185 → 1.404.306.523 B) y 38,77% en
+Majadas (7.533.781.717 → 4.612.644.109 B). En estas ejecuciones únicas tardó más: 61,38 vs 40,34 s
+en Belvedere y 444,70 vs 353,96 s en Majadas; caché sin purgar, no es una estimación de dispersión
+ni atribución al formato. Los archivos V5 de referencia se regeneraron desde LAS/LAZ porque las
+parejas locales antiguas llevan la firma provisional `OCTVWFRM` y el reader las rechaza como
+`ProvisionalFormat`. Fuentes, hashes, picos y límites:
+[comparación Belvedere/Majadas](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json).
 
 Usar muestras versionadas y Belvedere, Albuera y Majadas disponibles, más casos sintéticos de
 alta entropía/cardinalidad, constantes, extremos tipados, vacíos y duplicados. Fijar fuente,

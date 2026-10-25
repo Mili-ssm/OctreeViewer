@@ -1,0 +1,185 @@
+{
+  "conditions": "One conversion per format and dataset, same host, source, perf binary and options. V7 runs preceded V5; no concurrent jobs or cache purge. Single-run timing and memory values are observations, not dispersion or A/B latency evidence.",
+  "conversion_binary_sha256": "263030cf0ce337689469b94bdb2d0233eaf32404519d7b9dfe2eaaefa5651b58",
+  "conversion_options": {
+    "checkpoint": false,
+    "divisions": 2,
+    "max_error": 0.01,
+    "pipeline_writes": false,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "workers": 1
+  },
+  "conversion_order": [
+    "belvedere v7.1-pre",
+    "majadas v7.1-pre",
+    "belvedere v5",
+    "majadas v5"
+  ],
+  "datasets": {
+    "belvedere": {
+      "input": {
+        "bytes": 618390994,
+        "path": "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+      },
+      "logical_read": {
+        "blocks_v5": 1343,
+        "blocks_v7": 1343,
+        "budget_mib": 512,
+        "checksum_v5": "0737ca650c6081b4",
+        "checksum_v7": "0737ca650c6081b4",
+        "points_including_lod_v5": 81706211,
+        "points_including_lod_v7": 81706211,
+        "read_v5_full_ms": 8332.69,
+        "read_v7_full_ms": 9351.99,
+        "same_checksum": true,
+        "workers": 1
+      },
+      "pair_bytes_saved_by_v7": 187343662,
+      "runs": {
+        "v5": {
+          "elapsed_seconds": 40.34425336799177,
+          "output_oct_bytes": 981063326,
+          "output_octattrs_bytes": 610586859,
+          "pair_bytes": 1591650185,
+          "phase_seconds": {
+            "block_stream": 8.942552073,
+            "output_validation": 4.317089525,
+            "spatial_planning": 26.350763866
+          },
+          "rss_sampled_peak_bytes": 99352576,
+          "status": "complete",
+          "temporary_observed_growth_bytes": 16774269783,
+          "temporary_sampled_peak_bytes": 4617033528,
+          "validation_workers": [
+            {
+              "blocks_read": 1343,
+              "max_decoded_block_estimated_bytes": 9626172,
+              "points_read": 81706211,
+              "read_elapsed_ns": 4311082087,
+              "worker_index": 0
+            }
+          ],
+          "vmhwm_observed_peak_bytes": 99352576
+        },
+        "v7": {
+          "elapsed_seconds": 61.38375636200362,
+          "output_oct_bytes": 979686544,
+          "output_octattrs_bytes": 424619979,
+          "pair_bytes": 1404306523,
+          "phase_seconds": {
+            "block_stream": 28.664179468,
+            "output_validation": 5.832423368,
+            "spatial_planning": 26.332157288
+          },
+          "rss_sampled_peak_bytes": 111386624,
+          "status": "complete",
+          "temporary_observed_growth_bytes": 16604646792,
+          "temporary_sampled_peak_bytes": 4645318930,
+          "validation_workers": [
+            {
+              "blocks_read": 1343,
+              "max_decoded_block_estimated_bytes": 9626172,
+              "points_read": 81706211,
+              "read_elapsed_ns": 5827095913,
+              "worker_index": 0
+            }
+          ],
+          "vmhwm_observed_peak_bytes": 113184768
+        }
+      },
+      "v7_pair_reduction_vs_v5_percent": 11.770404311547892
+    },
+    "majadas": {
+      "input": {
+        "bytes": 1343266470,
+        "path": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+        "sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
+      },
+      "logical_read": {
+        "blocks_v5": 6259,
+        "blocks_v7": 6259,
+        "budget_mib": 512,
+        "checksum_v5": "b830818c4aeddac0",
+        "checksum_v7": "b830818c4aeddac0",
+        "points_including_lod_v5": 415602190,
+        "points_including_lod_v7": 415602190,
+        "read_v5_full_ms": 37815.926,
+        "read_v7_full_ms": 42814.537,
+        "same_checksum": true,
+        "workers": 1
+      },
+      "pair_bytes_saved_by_v7": 2921137608,
+      "runs": {
+        "v5": {
+          "elapsed_seconds": 353.9632054060057,
+          "output_oct_bytes": 4214687109,
+          "output_octattrs_bytes": 3319094608,
+          "pair_bytes": 7533781717,
+          "phase_seconds": {
+            "block_stream": 57.423760253,
+            "output_validation": 22.426090069,
+            "spatial_planning": 271.178983452
+          },
+          "rss_sampled_peak_bytes": 89882624,
+          "status": "complete",
+          "temporary_observed_growth_bytes": 137671027335,
+          "temporary_sampled_peak_bytes": 18829623912,
+          "validation_workers": [
+            {
+              "blocks_read": 6259,
+              "max_decoded_block_estimated_bytes": 8912644,
+              "points_read": 415602190,
+              "read_elapsed_ns": 22400064142,
+              "worker_index": 0
+            }
+          ],
+          "vmhwm_observed_peak_bytes": 89882624
+        },
+        "v7": {
+          "elapsed_seconds": 444.6956647080078,
+          "output_oct_bytes": 2197676578,
+          "output_octattrs_bytes": 2414967531,
+          "pair_bytes": 4612644109,
+          "phase_seconds": {
+            "block_stream": 182.049591367,
+            "output_validation": 28.802100459,
+            "spatial_planning": 233.160142035
+          },
+          "rss_sampled_peak_bytes": 112177152,
+          "status": "complete",
+          "temporary_observed_growth_bytes": 134696569927,
+          "temporary_sampled_peak_bytes": 18784061670,
+          "validation_workers": [
+            {
+              "blocks_read": 6259,
+              "max_decoded_block_estimated_bytes": 8912644,
+              "points_read": 415602190,
+              "read_elapsed_ns": 28775891062,
+              "worker_index": 0
+            }
+          ],
+          "vmhwm_observed_peak_bytes": 112177152
+        }
+      },
+      "v7_pair_reduction_vs_v5_percent": 38.773855119912014
+    }
+  },
+  "date": "2026-10-25",
+  "kind": "real_dataset_v5_v7_corpus_single_run_comparison",
+  "legacy_reference_note": "The pre-existing data/datasets .oct pairs for these sources were rejected by the current reader as ProvisionalFormat; V5 reference pairs were regenerated from the original sources with this same binary and options.",
+  "logical_read_command_template": "target/perf/examples/storage_bench OUTPUT.oct progressive 1 512",
+  "logical_read_scope": "BFS checksum includes block IDs, reconstructed coordinates/color, attribute names/types and typed values.",
+  "measurement_scope": "Linux process RSS/VmHWM and logical temporary path sizes sampled every 100 ms; temporary sizes are not physical I/O and samples can miss brief peaks.",
+  "profile": "perf optimized",
+  "reader_binary_sha256": "3057b73511ede34e1426c9f40f3bf15902d8f9e4e90a555bd1cc5f940c56c804",
+  "summary": {
+    "all_four_conversions_complete": true,
+    "pair_size_reduction_percent_by_dataset": {
+      "belvedere": 11.770404311547892,
+      "majadas": 38.773855119912014
+    },
+    "same_logical_checksum_both_datasets": true
+  }
+}
