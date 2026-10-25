@@ -1,5 +1,5 @@
 //! Pre3 attribute-only transforms. Width/row count come from the existing schema/directory.
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use crate::{BlockCodec, EncodedBlock, FormatError, compress_block, decompress_block};
 
@@ -106,28 +106,10 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
             bits,
         )?;
         (unique, packed)
+    } else if width <= 8 {
+        dictionary_ids(raw, width, &mut table, row_key)?
     } else {
-        let mut lookup = HashMap::<&[u8], u32>::new();
-        lookup
-            .try_reserve(rows)
-            .map_err(|_| FormatError::AllocationFailed(rows))?;
-        let mut ids = Vec::new();
-        ids.try_reserve_exact(rows)
-            .map_err(|_| FormatError::AllocationFailed(rows))?;
-        // Preserve first-occurrence IDs while building the wider-column palette.
-        for row in raw.chunks_exact(width) {
-            let next = lookup.len() as u32;
-            ids.push(*lookup.entry(row).or_insert_with(|| {
-                table.extend_from_slice(row);
-                next
-            }));
-        }
-        let unique = table.len() / width;
-        let bits = id_bits(unique);
-        drop(lookup);
-        let packed = pack_ids(ids.iter().copied(), bits)?;
-        drop(ids);
-        (unique, packed)
+        dictionary_ids(raw, width, &mut table, |row| row)?
     };
     let compressed_table = compress_block(&table);
     drop(table);
@@ -151,6 +133,50 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
         };
     }
     Ok(best)
+}
+
+fn dictionary_ids<'a, K: Eq + Hash>(
+    raw: &'a [u8],
+    width: usize,
+    table: &mut Vec<u8>,
+    key: impl Fn(&'a [u8]) -> K,
+) -> Result<(usize, Vec<u8>), FormatError> {
+    let rows = raw.len() / width;
+    let mut lookup = HashMap::<K, u32>::new();
+    lookup
+        .try_reserve(rows)
+        .map_err(|_| FormatError::AllocationFailed(rows))?;
+    let mut ids = Vec::new();
+    ids.try_reserve_exact(rows)
+        .map_err(|_| FormatError::AllocationFailed(rows))?;
+    // IDs and the serialized palette retain the original first-occurrence order.
+    for row in raw.chunks_exact(width) {
+        let next = lookup.len() as u32;
+        ids.push(*lookup.entry(key(row)).or_insert_with(|| {
+            table.extend_from_slice(row);
+            next
+        }));
+    }
+    let unique = table.len() / width;
+    drop(lookup);
+    let packed = pack_ids(ids.iter().copied(), id_bits(unique))?;
+    Ok((unique, packed))
+}
+
+#[inline]
+// Fixed-width loads avoid a variable-size copy on every dictionary lookup.
+// Zero padding is injective because each dictionary has one fixed tuple width.
+fn row_key(row: &[u8]) -> u64 {
+    match row.len() {
+        2 => u64::from(u16::from_le_bytes([row[0], row[1]])),
+        3 => u64::from(u32::from_le_bytes([row[0], row[1], row[2], 0])),
+        4 => u64::from(u32::from_le_bytes([row[0], row[1], row[2], row[3]])),
+        5 => u64::from_le_bytes([row[0], row[1], row[2], row[3], row[4], 0, 0, 0]),
+        6 => u64::from_le_bytes([row[0], row[1], row[2], row[3], row[4], row[5], 0, 0]),
+        7 => u64::from_le_bytes([row[0], row[1], row[2], row[3], row[4], row[5], row[6], 0]),
+        8 => u64::from_le_bytes(row.try_into().expect("validated tuple width")),
+        _ => unreachable!("integer dictionary needs a width from two to eight"),
+    }
 }
 
 /// Pre4 keeps every pre3 candidate, adding a reversible independent byte-plane transform.
@@ -279,6 +305,171 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn old_slice_encoder(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
+        if width == 0 || !raw.len().is_multiple_of(width) {
+            return Err(malformed());
+        }
+        let mut best = compress_block(raw);
+        let rows = raw.len() / width;
+        if rows < 2 || rows > u32::MAX as usize {
+            return Ok(best);
+        }
+        if raw.chunks_exact(width).all(|row| row == &raw[..width]) && width < best.bytes().len() {
+            return Ok(EncodedBlock {
+                codec: BlockCodec::Constant,
+                bytes: raw[..width].to_vec(),
+            });
+        }
+        let mut table = allocate(raw.len())?;
+        let mut lookup = HashMap::<&[u8], u32>::new();
+        lookup
+            .try_reserve(rows)
+            .map_err(|_| FormatError::AllocationFailed(rows))?;
+        let mut ids = Vec::new();
+        ids.try_reserve_exact(rows)
+            .map_err(|_| FormatError::AllocationFailed(rows))?;
+        for row in raw.chunks_exact(width) {
+            let next = lookup.len() as u32;
+            ids.push(*lookup.entry(row).or_insert_with(|| {
+                table.extend_from_slice(row);
+                next
+            }));
+        }
+        let unique = table.len() / width;
+        let bits = id_bits(unique);
+        drop(lookup);
+        let packed = pack_ids(ids.iter().copied(), bits)?;
+        drop(ids);
+        let compressed_table = compress_block(&table);
+        drop(table);
+        let compressed_packed = compress_block(&packed);
+        drop(packed);
+        let length = HEADER
+            .checked_add(compressed_table.bytes().len())
+            .and_then(|n| n.checked_add(compressed_packed.bytes().len()))
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        if length < best.bytes().len() && u32::try_from(compressed_table.bytes().len()).is_ok() {
+            let mut bytes = allocate(length)?;
+            bytes.extend_from_slice(&(unique as u32).to_le_bytes());
+            bytes.push(compressed_table.codec() as u8);
+            bytes.push(compressed_packed.codec() as u8);
+            bytes.extend_from_slice(&(compressed_table.bytes().len() as u32).to_le_bytes());
+            bytes.extend_from_slice(compressed_table.bytes());
+            bytes.extend_from_slice(compressed_packed.bytes());
+            best = EncodedBlock {
+                codec: BlockCodec::Dictionary,
+                bytes,
+            };
+        }
+        Ok(best)
+    }
+
+    #[test]
+    fn integer_dictionary_matches_old_slice_encoder_byte_for_byte() {
+        let mut cases: Vec<(usize, Vec<u8>)> = Vec::new();
+        for width in [2, 3, 4, 5, 6, 7, 8, 9, 16] {
+            for rows in [0, 1, 2, 19, 257] {
+                cases.push((
+                    width,
+                    (0..rows * width)
+                        .map(|i| (i * 73 + width * 11) as u8)
+                        .collect(),
+                ));
+            }
+            cases.push((width, vec![0x5a; width * 257]));
+            cases.push((
+                width,
+                (0..257)
+                    .flat_map(|i| (0..width).map(move |b| ((i % 3) * 31 + b) as u8))
+                    .collect(),
+            ));
+            cases.push((
+                width,
+                (0..257 * width)
+                    .map(|i| ((i * 131 + i / width * 17) >> 2) as u8)
+                    .collect(),
+            ));
+        }
+        // Distinct IEEE encodings, including signed zeros and NaN payloads.
+        let patterns = [
+            0x0000000000000000_u64,
+            0x8000000000000000,
+            0x7ff8000000000001,
+            0x7ff8000000000042,
+        ];
+        cases.push((
+            8,
+            (0..257)
+                .flat_map(|i| patterns[i % patterns.len()].to_le_bytes())
+                .collect(),
+        ));
+        let mut state = 0x1234_5678_u32;
+        for width in [2, 3, 4, 6, 8, 12] {
+            let data = (0..4096 * width)
+                .map(|_| {
+                    state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                    (state >> 24) as u8
+                })
+                .collect();
+            cases.push((width, data));
+        }
+        for (width, raw) in cases {
+            let expected = old_slice_encoder(&raw, width).unwrap();
+            let actual = encode(&raw, width).unwrap();
+            assert_eq!(
+                actual.codec(),
+                expected.codec(),
+                "width={width}, rows={}",
+                raw.len() / width
+            );
+            assert_eq!(
+                actual.bytes(),
+                expected.bytes(),
+                "width={width}, rows={}",
+                raw.len() / width
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "focused full attribute encoder A/B benchmark"]
+    fn integer_dictionary_full_encoder_benchmark() {
+        use std::{hint::black_box, time::Instant};
+        let rows = 262_144;
+        for width in [2, 3, 6, 8] {
+            for unique in [4, 256, if width == 2 { 65_536 } else { rows }] {
+                let raw: Vec<u8> = (0..rows)
+                    .flat_map(|row| {
+                        let value = ((row % unique) as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+                        value.to_le_bytes()[..width].to_vec()
+                    })
+                    .collect();
+                for repetition in 0..3 {
+                    for old in if repetition % 2 == 0 {
+                        [true, false]
+                    } else {
+                        [false, true]
+                    } {
+                        let input = black_box(&raw);
+                        let started = Instant::now();
+                        let encoded = if old {
+                            old_slice_encoder(input, width)
+                        } else {
+                            encode(input, width)
+                        }
+                        .unwrap();
+                        black_box((encoded.codec(), encoded.bytes()));
+                        println!(
+                            "width={width} unique={unique} rep={} old={old} elapsed_ms={:.3}",
+                            repetition + 1,
+                            started.elapsed().as_secs_f64() * 1000.0
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     fn previous_byte_dictionary(raw: &[u8]) -> EncodedBlock {
         let mut best = compress_block(raw);

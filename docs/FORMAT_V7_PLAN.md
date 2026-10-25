@@ -715,3 +715,28 @@ conservaron los hashes, pero la construcción de ocupación solo bajó 2,0%; la 
 1,9% y el total 0,4%. El RSS y el pico temporal muestreados fueron algo menores, sin repetición
 representativa para atribuirlo. Se revirtió la ruta especializada: el coste de código no se justifica
 sin mejora de conversión. [Datos y rangos](benchmarks/storage-v7-v72-morton-mask-rejected-2026-10-25.json).
+
+
+## Claves enteras para diccionarios de atributos
+
+Los tiempos de geometría no explican toda la preparación; RGB y columnas tipadas también prueban
+un diccionario antes de elegir raw/LZ4/planos. Para tuplas de 2–8 bytes, el mapa ahora usa claves
+`u64` construidas con cargas de tamaño fijo y padding cero. El ancho es constante por diccionario:
+la clave conserva todos los bits, incluidos NaN y cero con signo. Se mantiene el `HashMap` estándar,
+la paleta de primera aparición, IDs, desempates y bytes comprimidos. Anchos mayores conservan
+claves de slices y el ancho 1 mantiene su lookup directo. La construcción común de IDs se comparte.
+La alternativa de copiar una longitud variable a un array empeoró varios anchos y se descartó.
+
+La comparación diferencial cubre anchos 2–9/12/16, vacíos, constantes, cardinalidad y patrones
+binarios; compara codec y payload completo con el encoder anterior. El ensayo aislado `perf`,
+262.144 filas y tres repeticiones por ancho/cardinalidad, observó entre 16% y 38% menos tiempo.
+Eso no equivale a una mejora global: tres parejas alternadas V7.2 en Belvedere bajaron la mediana
+de preparación 17,84→17,38 s (-2,6%) y total 52,68→51,96 s (-1,4%). Los seis pares conservaron
+los SHA-256 conocidos; RSS pico muestreado mediano 111.538.176→105.492.480 B (-5,4%) y temporales
+prácticamente iguales. Un corpus y un worker, caché sin purgar; faltan Albuera/Majadas y la matriz
+actual V5/V7. No cambia el estado experimental de V7.2. [Opciones, rangos y datos](benchmarks/storage-v7-v72-integer-dictionary-2026-10-25.json).
+
+Pasan formato/Clippy, `viewer_format --all-targets --features async-reader`, las 62 pruebas de
+`viewer_convert --lib` (incluida recuperación EPT) y compilación WASM. Siguiente cierre: atribuir
+coste/beneficio de candidatos de atributos en corpus grandes antes de cambiar su selección;
+conservar esta mejora de lookup sin inferir que resuelve la brecha total con V5.
