@@ -16,6 +16,7 @@ from typing import Any
 
 
 DEFAULT_BINARY = Path("target/perf/examples/real_dataset_bench")
+FORMAT_VERSIONS = ("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre")
 KILL_TIMEOUT_SECONDS = 5
 MAX_RECORDED_ERRORS = 100
 
@@ -475,9 +476,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--divisions", type=int, default=2)
     parser.add_argument("--interval-ms", type=int, default=100)
     parser.add_argument("--points-per-block", type=int, default=262144)
-    parser.add_argument(
-        "--format-version", choices=("v5", "v6.1-pre", "v7.1-pre"), default="v5"
-    )
+    parser.add_argument("--format-version", choices=FORMAT_VERSIONS, default="v5")
     args = parser.parse_args(argv)
     if (args.workers < 1 or args.divisions not in (2, 4, 8) or args.interval_ms < 1
             or not 1 <= args.points_per_block <= 1_000_000):

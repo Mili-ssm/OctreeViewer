@@ -1,0 +1,138 @@
+{
+  "conditions": "One conversion per format, sequential on the same host and current perf binary; no concurrent tests/builds/benchmarks. OS cache was not purged. Single run per format is an observation, not a statistical performance comparison.",
+  "conversion_binary_sha256": "263030cf0ce337689469b94bdb2d0233eaf32404519d7b9dfe2eaaefa5651b58",
+  "conversion_options": {
+    "checkpoint": false,
+    "divisions": 2,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "workers": 1
+  },
+  "date": "2026-10-25",
+  "input": {
+    "bytes": 4305484789,
+    "path": "data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+    "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+  },
+  "kind": "real_dataset_v5_v64_v71_sequential_single_run",
+  "logical_read_command_template": "target/perf/examples/storage_bench OUTPUT.oct progressive 1 512",
+  "logical_read_scope": "BFS checksum includes block IDs, reconstructed coordinates/color, attribute names/types and typed values. Reads are one per output in the listed order, without cache purge; read timings are not controlled latency evidence.",
+  "memory_scope": "Linux RSS/VmHWM and temporary paths sampled every 100 ms; temporary bytes are logical sampled file sizes, not physical I/O and may miss brief peaks.",
+  "profile": "perf optimized",
+  "profile_tool_sha256": "7fefa1116dba8dd6767b2b7dc91dd2b4316660efc7b2ba2d168a3bc74a8555dc",
+  "reader_binary_sha256": "3057b73511ede34e1426c9f40f3bf15902d8f9e4e90a555bd1cc5f940c56c804",
+  "results": {
+    "v5": {
+      "elapsed_seconds": 478.005475775004,
+      "logical_read": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 63356.242,
+        "mode": "progressive",
+        "points_including_lod": 508989347,
+        "progressive_wall_ms": 63307.453,
+        "read_ms": 46146.43,
+        "verify_ms": 16992.989,
+        "workers": 1
+      },
+      "output_oct_bytes": 6105617040,
+      "output_octattrs_bytes": 7561226723,
+      "pair_bytes": 13666843763,
+      "phase_seconds": {
+        "block_stream": 108.656249486,
+        "output_validation": 34.696232152,
+        "spatial_planning": 322.03347234
+      },
+      "phase_temporary_sampled_peak_bytes": {
+        "block_stream": 20868741311,
+        "output_validation": 13666843763,
+        "spatial_planning": 27460988122
+      },
+      "rss_sampled_peak_bytes": 111628288,
+      "status": "complete",
+      "temporary_observed_growth_bytes": 139991695059,
+      "temporary_sampled_peak_bytes": 27460988122,
+      "vmhwm_observed_peak_bytes": 111628288
+    },
+    "v6.4-pre": {
+      "elapsed_seconds": 809.3640653379989,
+      "logical_read": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 68865.5,
+        "mode": "progressive",
+        "points_including_lod": 508989347,
+        "progressive_wall_ms": 68804.119,
+        "read_ms": 51696.971,
+        "verify_ms": 16956.541,
+        "workers": 1
+      },
+      "output_oct_bytes": 6037118837,
+      "output_octattrs_bytes": 4283615930,
+      "pair_bytes": 10320734767,
+      "phase_seconds": {
+        "block_stream": 290.644259656,
+        "output_validation": 41.475942316,
+        "spatial_planning": 476.034371329
+      },
+      "phase_temporary_sampled_peak_bytes": {
+        "block_stream": 20870206673,
+        "output_validation": 10320734767,
+        "spatial_planning": 27456721085
+      },
+      "rss_sampled_peak_bytes": 119267328,
+      "status": "complete",
+      "temporary_observed_growth_bytes": 137925183211,
+      "temporary_sampled_peak_bytes": 27456721085,
+      "vmhwm_observed_peak_bytes": 124059648
+    },
+    "v7.1-pre": {
+      "elapsed_seconds": 796.8433155120001,
+      "logical_read": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 64340.33,
+        "mode": "progressive",
+        "points_including_lod": 508989347,
+        "progressive_wall_ms": 64294.347,
+        "read_ms": 47268.444,
+        "verify_ms": 16875.064,
+        "workers": 1
+      },
+      "output_oct_bytes": 6037118837,
+      "output_octattrs_bytes": 4283615930,
+      "pair_bytes": 10320734767,
+      "phase_seconds": {
+        "block_stream": 279.642164085,
+        "output_validation": 41.182498135,
+        "spatial_planning": 474.950054781
+      },
+      "phase_temporary_sampled_peak_bytes": {
+        "block_stream": 20869843592,
+        "output_validation": 10320734767,
+        "spatial_planning": 27463379529
+      },
+      "rss_sampled_peak_bytes": 123494400,
+      "status": "complete",
+      "temporary_observed_growth_bytes": 138427424615,
+      "temporary_sampled_peak_bytes": 27463379529,
+      "vmhwm_observed_peak_bytes": 123564032
+    }
+  },
+  "run_order": [
+    "v5",
+    "v6.4-pre",
+    "v7.1-pre"
+  ],
+  "summary": {
+    "lod_payload_bytes_read": 9528923,
+    "same_logical_checksum_all_formats": true,
+    "same_output_pair_bytes_v64_v71": true,
+    "source_payload_bytes_read": 20861191796,
+    "v5_pair_bytes_saved_by_v71": 3346108996,
+    "v71_pair_reduction_vs_v5_percent": 24.483407098417707
+  }
+}

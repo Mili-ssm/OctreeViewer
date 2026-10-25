@@ -327,22 +327,23 @@ una cota exacta de disco físico. Usar esa base antes de reemplazar la estimaci�
 por admisión ponderada por bytes, y aceptar el cambio solo si reduce el pico medido sin cambiar
 salida, orden ni recuperación.
 
-**Primera línea base V7 a escala:** una ejecución `perf`, sin checkpoint, un worker, divisiones 2
-y 262.144 puntos/bloque convirtió Albuera (`SHA-256` de fuente en el JSON). La pareja V7.1-pre
-ocupa 10.320.734.767 B frente a 13.666.843.763 B de la última V5 guardada con igual fuente y
-opciones: **3.346.108.996 B menos (24,48%)**. Los dos informes coinciden en 8.437 bloques,
-508.809.556 puntos fuente, 179.791 LOD y 20.868.563.227 B de payload lógico. El recorrido
-`storage_bench progressive` verificó las dos salidas con el mismo checksum lógico BFS
-`8caae2a09753e50e`: incluye IDs, coordenadas/color reconstruidos, nombres/tipos de columnas y
-valores tipados. Esto verifica igualdad lógica completa para esta pareja.
+**Comparación secuencial Albuera V5/V6.4/V7:** una conversión por versión, en ese orden, mismo
+host, binario `perf`, fuente (4.305.484.789 B; SHA-256 en el JSON), un worker, divisiones 2 y
+262.144 puntos/bloque, sin checkpoint ni cargas de test/build simultáneas. Todas completaron.
+V5 tomó 478,01 s y produjo 13.666.843.763 B; V6.4-pre tomó 809,36 s y V7.1-pre 796,84 s,
+ambas con 10.320.734.767 B. En esta muestra V7 conserva el tamaño V6.4 y ocupa **3.346.108.996 B
+menos (24,48%) que V5**. Los picos RSS muestreados fueron 111.628.288 / 119.267.328 / 123.494.400 B;
+los picos temporales 27.460.988.122 / 27.456.721.085 / 27.463.379.529 B. No se observa una
+reducción del pico de memoria/temporales con V7. Una sola corrida por versión y caché del sistema
+sin purgar no estiman dispersión ni permiten atribuir las diferencias de tiempo al layout.
 
-La muestra V7 observó 122.630.144 B de RSS máximo y 27.459.415.690 B de temporales simultáneos;
-la V5 anterior registró 111.386.624 B y 27.436.877.498 B. El tiempo fue 608,46 s frente a
-448,87 s, pero son una corrida por versión en días distintos, binario V5 no identificado y carga
-de host/caché no controlada: no atribuir el tiempo ni la variación de RSS al formato. La lectura
-completa posterior tardó 59,17 s en V5 y 64,18 s en V7; se ejecutó una vez, V5 primero y sin
-vaciar caché, así que tampoco es evidencia comparativa de latencia. Los tamaños, checksums y picos
-muestreados están en [la evidencia Albuera V5/V7](benchmarks/storage-v7-albuera-writer-smoke-2026-10-25.json).
+`storage_bench progressive` leyó cada pareja en el mismo orden y confirmó en las tres 8.437
+bloques, 508.989.347 puntos incluyendo LOD y el mismo checksum BFS `8caae2a09753e50e`; cubre IDs,
+coordenadas/color reconstruidos, nombres/tipos de columnas y valores tipados. Esto establece
+igualdad lógica para esta fuente. Las lecturas tardaron 63,36 / 68,87 / 64,34 s; al ser una lectura
+por salida sin control de caché, son observaciones, no evidencia comparativa de latencia. Reportes
+compactos, opciones, hashes de binarios, temporales y límites:
+[la serie secuencial Albuera](benchmarks/storage-v7-albuera-v5-v64-v71-sequential-2026-10-25.json).
 
 Error/cancelación: desbloquear canales, reunir workers y después limpiar temporales. No prometer
 cancelación dentro de un codec. Mantener fuente/opciones/revisión en checkpoint; nunca reanudar
