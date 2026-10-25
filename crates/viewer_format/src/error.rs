@@ -54,6 +54,8 @@ pub enum FormatError {
     PayloadBufferCount { expected: usize, actual: usize },
     #[error("payload buffer length is {actual}, expected {expected}")]
     PayloadBufferLength { expected: usize, actual: usize },
+    #[error("this metadata-only reader requires externally fetched payload buffers")]
+    ExternalPayloadBuffersRequired,
     #[error("format index ended before a field was complete")]
     TruncatedIndex,
     #[error("format schema is invalid")]

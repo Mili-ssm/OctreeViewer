@@ -1,4 +1,4 @@
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek};
 
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, DatasetSource,
@@ -181,6 +181,65 @@ impl<R: Read + Seek> FormatReader<R> {
     ) -> Result<AttributeValues, FormatError> {
         self.backend_mut()
             .read_attribute_row(id, row_id, schema_index)
+    }
+}
+
+impl FormatReader<Cursor<Vec<u8>>> {
+    /// Validate split header/footer and return the exact index byte range for transport.
+    pub fn split_index_range(
+        file_length: u64,
+        header: &[u8],
+        footer: &[u8],
+        limits: FormatReaderLimits,
+    ) -> Result<(u64, u64), FormatError> {
+        use crate::layout::{FOOTER_SIZE, HEADER_SIZE};
+        let header: &[u8; HEADER_SIZE as usize] =
+            header.try_into().map_err(|_| FormatError::InvalidHeader)?;
+        let identity = crate::version::parse_identity(header)?;
+        validate_identity(identity)?;
+        if identity.role != crate::FileRole::SplitPrimary {
+            return Err(FormatError::InvalidHeader);
+        }
+        let layout = crate::layout::StorageLayout::from_version(identity.version)?;
+        let footer: &[u8; FOOTER_SIZE as usize] =
+            footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
+        let (offset, length, declared, _) =
+            crate::reader::parse_split_footer(footer, layout.footer_magic())?;
+        crate::reader::validate_index_range(file_length, offset, length, declared, limits)?;
+        Ok((offset, length))
+    }
+
+    /// Builds a metadata-only split reader for async range transports. Its empty cursor is a
+    /// marker backend. Use `materialize_selected_from_buffers`; synchronous payload reads return
+    /// `ExternalPayloadBuffersRequired`.
+    pub fn from_split_buffers(
+        file_length: u64,
+        header: &[u8],
+        footer: &[u8],
+        index: &[u8],
+        limits: FormatReaderLimits,
+    ) -> Result<Self, FormatError> {
+        Ok(Self {
+            backend: IndexedReader::from_open_parts(
+                Cursor::new(Vec::new()),
+                file_length,
+                header,
+                footer,
+                index,
+                limits,
+            )?,
+        })
+    }
+
+    /// Bind a previously fetched companion's identity without retaining an attribute cursor.
+    pub fn attach_attribute_identity(
+        &mut self,
+        file_length: u64,
+        header: &[u8],
+        footer: &[u8],
+    ) -> Result<(), FormatError> {
+        self.backend
+            .attach_attribute_identity(file_length, header, footer)
     }
 }
 

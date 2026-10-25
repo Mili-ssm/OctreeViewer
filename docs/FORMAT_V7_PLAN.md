@@ -200,8 +200,15 @@ un `ReadPlan` de la misma instancia lógica y los buffers stored de sus rangos. 
 cantidad, longitudes y CRC antes de reutilizar los decodificadores de codec, XYZ, RGB y atributos;
 no hace I/O de archivo ni cambia los bytes V7. Las pruebas comparan la lectura síncrona para
 posiciones, geometría con/sin atributos, RGB y una columna, y rechazan plan ajeno, buffer truncado
-y checksum incorrecto. Esto habilita decodificar rangos externos, pero aún no implementa apertura
-Blob asíncrona, admisión por bytes ni integración con el ciclo LOD.
+y checksum incorrecto.
+
+**Segundo incremento implementado:** `split_index_range` valida cabecera/footer y devuelve el
+rango exacto del índice sujeto a `FormatReaderLimits`. `from_split_buffers` valida CRC y construye
+el índice residente desde cabecera, footer e índice ya obtenidos; `attach_attribute_identity`
+valida el companion desde su cabecera/footer sin exigir tener su payload en un cursor. El reader
+marcador rechaza lecturas síncronas de payload; las pruebas V7 comparan resultados con/sin attrs y
+rechazan corrupción y companion incompatible. Esto permite consumir rangos obtenidos externamente,
+pero todavía no llama `Blob.arrayBuffer()`, admite tareas por bytes ni se conecta al ciclo LOD.
 
 Conectar el scheduler del core al controlador LOD con selección, prioridad, identidad de dataset
 y generación de objetivo. Limitar solicitudes y bytes simultáneamente, incluidos resultados.

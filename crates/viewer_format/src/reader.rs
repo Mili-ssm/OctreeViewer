@@ -155,6 +155,8 @@ pub struct BlockPayloadStorageStats {
 pub(crate) struct IndexedReader<R> {
     reader: R,
     attributes: Option<R>,
+    attributes_attached: bool,
+    external_payloads_only: bool,
     split: bool,
     layout: StorageLayout,
     index_identity: (u64, u64, u32),
@@ -168,6 +170,107 @@ pub(crate) struct IndexedReader<R> {
 }
 
 impl<R: Read + Seek> IndexedReader<R> {
+    pub(crate) fn from_open_parts(
+        reader: R,
+        file_length: u64,
+        header: &[u8],
+        footer: &[u8],
+        index: &[u8],
+        limits: FormatReaderLimits,
+    ) -> Result<Self, FormatError> {
+        let header: &[u8; HEADER_SIZE as usize] =
+            header.try_into().map_err(|_| FormatError::InvalidHeader)?;
+        let identity = crate::version::parse_identity(header)?;
+        let layout = validate_supported_primary(identity)?;
+        if identity.role != FileRole::SplitPrimary {
+            return Err(FormatError::InvalidHeader);
+        }
+        let footer: &[u8; FOOTER_SIZE as usize] =
+            footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
+        let (index_offset, index_length, declared_length, checksum) =
+            parse_split_footer(footer, layout.footer_magic())?;
+        validate_index_range(
+            file_length,
+            index_offset,
+            index_length,
+            declared_length,
+            limits,
+        )?;
+        if usize::try_from(index_length).ok() != Some(index.len()) {
+            return Err(FormatError::InvalidFooter);
+        }
+        if crc32(index) != checksum {
+            return Err(FormatError::InvalidChecksum("index"));
+        }
+        let (metadata, blocks, block_bounds) =
+            parse_index(index, &limits, index_offset, true, layout)?;
+        let attribute_file_length = blocks
+            .values()
+            .flat_map(|b| b.payloads.iter().skip(1))
+            .try_fold(HEADER_SIZE, |end, p| {
+                p.offset
+                    .checked_add(p.stored_length)
+                    .map(|n| end.max(n))
+                    .ok_or(FormatError::FileSizeOverflow)
+            })?
+            .checked_add(FOOTER_SIZE)
+            .ok_or(FormatError::FileSizeOverflow)?;
+        Ok(Self {
+            reader,
+            attributes: None,
+            split: true,
+            layout,
+            index_identity: (index_offset, index_length, checksum),
+            attribute_file_length,
+            metadata: Arc::new(metadata),
+            blocks: Arc::new(blocks),
+            block_bounds: Arc::new(block_bounds),
+            attributes_attached: false,
+            external_payloads_only: true,
+            plan_owner: Arc::new(()),
+            attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
+            limits,
+        })
+    }
+
+    pub(crate) fn attach_attribute_identity(
+        &mut self,
+        file_length: u64,
+        header: &[u8],
+        footer: &[u8],
+    ) -> Result<(), FormatError> {
+        if !self.split {
+            return Err(FormatError::InvalidMetadata(
+                "monolithic file cannot attach attributes",
+            ));
+        }
+        if !self.external_payloads_only {
+            return Err(FormatError::InvalidMetadata(
+                "attribute identity requires a metadata-only reader",
+            ));
+        }
+        if file_length != self.attribute_file_length {
+            return Err(FormatError::InvalidFooter);
+        }
+        let header: &[u8; HEADER_SIZE as usize] =
+            header.try_into().map_err(|_| FormatError::InvalidHeader)?;
+        let identity = crate::version::parse_identity(header)?;
+        if identity.version != self.layout.version() || identity.role != FileRole::Attributes {
+            return Err(FormatError::InvalidHeader);
+        }
+        let footer: &[u8; FOOTER_SIZE as usize] =
+            footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
+        let (offset, len, declared, checksum) =
+            parse_split_footer(footer, self.layout.footer_magic())?;
+        if declared != file_length || (offset, len, checksum) != self.index_identity {
+            return Err(FormatError::InvalidMetadata(
+                "attribute companion does not match primary index",
+            ));
+        }
+        self.attributes_attached = true;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn new(reader: R) -> Result<Self, FormatError> {
         Self::with_limits(reader, FormatReaderLimits::default())
@@ -202,19 +305,20 @@ impl<R: Read + Seek> IndexedReader<R> {
         let mut footer = [0; FOOTER_SIZE as usize];
         reader.read_exact(&mut footer)?;
         let (index_offset, index_length, declared_file_length, index_checksum) =
-            parse_footer(&footer, layout.footer_magic())?;
+            parse_split_footer(&footer, layout.footer_magic())?;
         if index_length > limits.max_index_bytes {
             return Err(FormatError::IndexExceedsLimit {
                 requested: index_length,
                 limit: limits.max_index_bytes,
             });
         }
-        if declared_file_length != file_length
-            || index_offset < HEADER_SIZE
-            || index_offset.checked_add(index_length) != Some(footer_offset)
-        {
-            return Err(FormatError::InvalidFooter);
-        }
+        validate_index_range(
+            file_length,
+            index_offset,
+            index_length,
+            declared_file_length,
+            limits,
+        )?;
         let index_size =
             usize::try_from(index_length).map_err(|_| FormatError::SizeOutOfRange(index_length))?;
         let mut index = Vec::new();
@@ -248,6 +352,8 @@ impl<R: Read + Seek> IndexedReader<R> {
         Ok(Self {
             reader,
             attributes: None,
+            attributes_attached: false,
+            external_payloads_only: false,
             split,
             layout,
             index_identity: (index_offset, index_length, index_checksum),
@@ -286,18 +392,19 @@ impl<R: Read + Seek> IndexedReader<R> {
         let mut footer = [0; FOOTER_SIZE as usize];
         attributes.read_exact(&mut footer)?;
         let (offset, index_length, declared_length, checksum) =
-            parse_footer(&footer, self.layout.footer_magic())?;
+            parse_split_footer(&footer, self.layout.footer_magic())?;
         if declared_length != length || (offset, index_length, checksum) != self.index_identity {
             return Err(FormatError::InvalidMetadata(
                 "attribute companion does not match primary index",
             ));
         }
         self.attributes = Some(attributes);
+        self.attributes_attached = true;
         Ok(())
     }
 
     pub fn has_attributes(&self) -> bool {
-        !self.split || self.attributes.is_some()
+        !self.split || self.attributes_attached
     }
 
     /// Finite range over all node payloads, used consistently across LOD blocks.
@@ -627,7 +734,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         is_attribute: bool,
     ) -> Result<crate::PayloadReadRange, FormatError> {
         let (source, offset) = if self.split && is_attribute {
-            if self.attributes.is_none() {
+            if !self.has_attributes() {
                 return Err(FormatError::AttributesUnavailable);
             }
             (crate::ReadSource::Attributes, payload.offset)
@@ -740,6 +847,8 @@ impl<R: Read + Seek> IndexedReader<R> {
         IndexedReader {
             reader,
             attributes: None,
+            attributes_attached: false,
+            external_payloads_only: false,
             split: self.split,
             layout: self.layout,
             index_identity: self.index_identity,
@@ -913,6 +1022,9 @@ impl<R: Read + Seek> IndexedReader<R> {
         column: &PayloadDirectoryEntry,
         attribute_width: Option<usize>,
     ) -> Result<Vec<u8>, FormatError> {
+        if self.external_payloads_only {
+            return Err(FormatError::ExternalPayloadBuffersRequired);
+        }
         let range = self.payload_range(block, column, attribute_width.is_some())?;
         let size = usize::try_from(column.stored_length)
             .map_err(|_| FormatError::SizeOutOfRange(column.stored_length))?;
@@ -1016,7 +1128,7 @@ fn validate_supported_primary(
     Ok(layout)
 }
 
-fn parse_footer(
+pub(crate) fn parse_split_footer(
     footer: &[u8; FOOTER_SIZE as usize],
     magic: &[u8; 8],
 ) -> Result<(u64, u64, u64, u32), FormatError> {
@@ -1032,6 +1144,32 @@ fn parse_footer(
         u64::from_le_bytes(footer[24..32].try_into().expect("fixed width")),
         u32::from_le_bytes(footer[32..36].try_into().expect("fixed width")),
     ))
+}
+
+pub(crate) fn validate_index_range(
+    file_length: u64,
+    offset: u64,
+    length: u64,
+    declared: u64,
+    limits: FormatReaderLimits,
+) -> Result<(), FormatError> {
+    if file_length < HEADER_SIZE + FOOTER_SIZE {
+        return Err(FormatError::FileTooShort);
+    }
+    if length > limits.max_index_bytes {
+        return Err(FormatError::IndexExceedsLimit {
+            requested: length,
+            limit: limits.max_index_bytes,
+        });
+    }
+    let footer_offset = file_length - FOOTER_SIZE;
+    if declared != file_length
+        || offset < HEADER_SIZE
+        || offset.checked_add(length) != Some(footer_offset)
+    {
+        return Err(FormatError::InvalidFooter);
+    }
+    Ok(())
 }
 
 fn parse_index(

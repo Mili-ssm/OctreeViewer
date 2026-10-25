@@ -11,7 +11,9 @@ use viewer_core::{
     SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 
-use crate::{FormatMetadata, FormatReaderLimits, SourcePointBlock};
+use crate::{
+    FormatMetadata, FormatReader as PublicFormatReader, FormatReaderLimits, SourcePointBlock,
+};
 
 use super::{FormatError, IndexedReader as FormatReader};
 use crate::writer::{FormatWriter, FormatWriterOptions};
@@ -262,6 +264,164 @@ fn external_payload_buffers_materialize_geometry_without_attached_attributes() {
         actual.points(),
         sync.read_geometry(BlockId::new(42)).unwrap().points()
     );
+}
+
+#[test]
+fn v7_split_reader_opens_from_async_index_and_companion_ranges() {
+    use crate::{ReadSelection, ReadSource, SelectedRead};
+    let mut writer = FormatWriter::new_split_for_version(
+        crate::FormatVersion::V7_PRE1,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata(),
+        FormatWriterOptions::new(0.001, 1024).unwrap(),
+    )
+    .unwrap();
+    writer.write_block(source_block()).unwrap();
+    let (primary, attributes) = writer.finish_pair().unwrap();
+    let primary = primary.into_inner();
+    let attributes = attributes.unwrap().into_inner();
+
+    let header = &primary[..24];
+    let footer = &primary[primary.len() - 40..];
+    let (index_offset, index_length) = PublicFormatReader::<Cursor<Vec<u8>>>::split_index_range(
+        primary.len() as u64,
+        header,
+        footer,
+        FormatReaderLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(index_offset + index_length, primary.len() as u64 - 40);
+    let index = &primary[index_offset as usize..(index_offset + index_length) as usize];
+    let mut external = PublicFormatReader::<Cursor<Vec<u8>>>::from_split_buffers(
+        primary.len() as u64,
+        header,
+        footer,
+        index,
+        FormatReaderLimits::default(),
+    )
+    .unwrap();
+    assert!(!external.has_attributes());
+    assert!(matches!(
+        external.read_geometry(BlockId::new(42)),
+        Err(FormatError::ExternalPayloadBuffersRequired)
+    ));
+
+    let id = BlockId::new(42);
+    let positions_plan = external.plan_read(id, ReadSelection::Geometry).unwrap();
+    assert_eq!(positions_plan.ranges().len(), 1);
+    let range = positions_plan.ranges()[0];
+    assert_eq!(range.source(), ReadSource::Primary);
+    let payload =
+        primary[range.offset() as usize..(range.offset() + range.stored_bytes()) as usize].to_vec();
+    let SelectedRead::Geometry(actual_gray) = external
+        .materialize_selected_from_buffers(positions_plan, vec![payload])
+        .unwrap()
+    else {
+        panic!("materialized variant does not match selection");
+    };
+    let sync_gray = FormatReader::new(Cursor::new(primary.clone()))
+        .unwrap()
+        .read_geometry(id)
+        .unwrap();
+    assert_eq!(actual_gray.points(), sync_gray.points());
+
+    external
+        .attach_attribute_identity(
+            attributes.len() as u64,
+            &attributes[..24],
+            &attributes[attributes.len() - 40..],
+        )
+        .unwrap();
+    assert!(external.has_attributes());
+    let plan = external.plan_read(id, ReadSelection::Geometry).unwrap();
+    assert_eq!(plan.ranges().len(), 2);
+    let buffers = plan
+        .ranges()
+        .iter()
+        .map(|range| {
+            let source = match range.source() {
+                ReadSource::Primary => primary.as_slice(),
+                ReadSource::Attributes => attributes.as_slice(),
+            };
+            source[range.offset() as usize..(range.offset() + range.stored_bytes()) as usize]
+                .to_vec()
+        })
+        .collect();
+    let SelectedRead::Geometry(actual) = external
+        .materialize_selected_from_buffers(plan, buffers)
+        .unwrap()
+    else {
+        panic!("materialized variant does not match selection");
+    };
+    let mut sync = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    sync.attach_attributes(Cursor::new(attributes.clone()))
+        .unwrap();
+    assert_eq!(actual.points(), sync.read_geometry(id).unwrap().points());
+
+    let bad_header = {
+        let mut value = primary[..24].to_vec();
+        value[12] ^= 1;
+        value
+    };
+    assert!(
+        PublicFormatReader::<Cursor<Vec<u8>>>::split_index_range(
+            primary.len() as u64,
+            &bad_header,
+            footer,
+            FormatReaderLimits::default(),
+        )
+        .is_err()
+    );
+    let bad_footer = {
+        let mut value = footer.to_vec();
+        value[0] ^= 1;
+        value
+    };
+    assert!(
+        PublicFormatReader::<Cursor<Vec<u8>>>::split_index_range(
+            primary.len() as u64,
+            header,
+            &bad_footer,
+            FormatReaderLimits::default(),
+        )
+        .is_err()
+    );
+    let mut bad_index = index.to_vec();
+    bad_index[0] ^= 1;
+    assert!(
+        PublicFormatReader::<Cursor<Vec<u8>>>::from_split_buffers(
+            primary.len() as u64,
+            header,
+            footer,
+            &bad_index,
+            FormatReaderLimits::default(),
+        )
+        .is_err()
+    );
+    let mut bad_attributes_footer = attributes[attributes.len() - 40..].to_vec();
+    bad_attributes_footer[8] ^= 1;
+    assert!(
+        external
+            .attach_attribute_identity(
+                attributes.len() as u64,
+                &attributes[..24],
+                &bad_attributes_footer,
+            )
+            .is_err()
+    );
+    let mut mismatched_attributes_footer = attributes[attributes.len() - 40..].to_vec();
+    mismatched_attributes_footer[8] ^= 1;
+    let footer_crc = crate::crc32::crc32(&mismatched_attributes_footer[..36]);
+    mismatched_attributes_footer[36..40].copy_from_slice(&footer_crc.to_le_bytes());
+    assert!(matches!(
+        external.attach_attribute_identity(
+            attributes.len() as u64,
+            &attributes[..24],
+            &mismatched_attributes_footer,
+        ),
+        Err(FormatError::InvalidMetadata(_))
+    ));
 }
 
 fn empty_attribute_range_bytes() -> Vec<u8> {
