@@ -688,3 +688,21 @@ por candidato son sumas de trabajo; pueden solaparse entre workers. Cada corrida
 por lo que aquí no se solaparon. RSS y temporales son muestreados. No se elimina ni altera ningún
 candidato; el siguiente experimento debe optimizar construcción/codificación y comprobar el coste
 de tamaño con las salidas completas. [Datos por candidato](benchmarks/storage-v7-v72-candidate-costs-2026-10-25.json).
+
+## Filas estrechas para el radix Morton
+
+En ocupación de profundidad máxima 10, la clave Morton cabe en 30 bits. Si el iterador ofrece un
+límite superior que prueba que las filas caben en `u32`, el índice ahora ordena pares `(u32, u32)`;
+para claves/filas mayores conserva `(u64, usize)` o `(u128, usize)`. En el heap de 64 bits reduce
+de 32 a 16 bytes por fila entre entrada y scratch del radix. La cota del iterador impide truncar
+filas y el orden estable conserva duplicados/asociación. La topología y payload V7 no cambian.
+
+Tres parejas V7.2-pre alternadas en Belvedere mantuvieron los mismos hashes de salida. La mediana
+de preparación pasó de 18,38 a 18,21 s (-1,0%); construcción de ocupación, 2,78 a 2,59 s (-6,7%);
+total, 52,86 a 52,47 s (-0,7%). El RSS mediano subió de 105,0 a 107,4 MiB y el pico temporal
+muestreado de 4,638 a 4,645 GB, así que no se declara una reducción observada de RSS/memoria.
+En Albuera N=1, la construcción pasó de 20,29 a 17,70 s (-12,8%) y ambas salidas tuvieron hashes
+idénticos. La preparación total pasó de 220,76 a 180,97 s, pero también cambiaron los tiempos
+medidos de raw/delta y otras fases; esa diferencia no se atribuye al radix. Este es un ahorro
+pequeño y acotado, sin promoción de V7.2. El detalle y rangos están en
+[la comparación de filas estrechas](benchmarks/storage-v7-v72-shallow-morton-rows-2026-10-25.json).

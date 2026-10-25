@@ -18,10 +18,36 @@ impl OccupiedCellIndex {
         root: OccupiedOctreeRoot,
         cells: impl IntoIterator<Item = VoxelCoord>,
     ) -> Result<Self, OccupiedOctreeError> {
+        let cells = cells.into_iter();
         let key_bytes = usize::from(root.depth()).saturating_mul(3).div_ceil(8);
+        // A known upper bound proves every enumerated row fits u32. Keeping both the
+        // shallow Morton key and row ID narrow halves the radix entries and scratch
+        // buffer used by the common 24-bit occupancy path.
+        if key_bytes <= std::mem::size_of::<u32>()
+            && cells
+                .size_hint()
+                .1
+                .is_some_and(|upper| upper <= u32::MAX as usize)
+        {
+            let mut entries = cells
+                .enumerate()
+                .map(|(row, coord)| {
+                    root.key(coord)
+                        .map(|key| (key as u32, row as u32))
+                        .ok_or(OccupiedOctreeError::OutsideRoot(coord))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            radix_sort_by_key(&mut entries, key_bytes, u128::from);
+            return Ok(Self::from_sorted_entries(
+                root,
+                entries,
+                u128::from,
+                |row| row as usize,
+            ));
+        }
+
         if key_bytes <= std::mem::size_of::<u64>() {
             let mut entries = cells
-                .into_iter()
                 .enumerate()
                 .map(|(row, coord)| {
                     root.key(coord)
@@ -30,11 +56,15 @@ impl OccupiedCellIndex {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             radix_sort_by_key(&mut entries, key_bytes, u128::from);
-            return Ok(Self::from_sorted_entries(root, entries, u128::from));
+            return Ok(Self::from_sorted_entries(
+                root,
+                entries,
+                u128::from,
+                |row| row,
+            ));
         }
 
         let mut entries = cells
-            .into_iter()
             .enumerate()
             .map(|(row, coord)| {
                 root.key(coord)
@@ -46,13 +76,19 @@ impl OccupiedCellIndex {
         // therefore has the same `(key, row)` order as tuple sorting, while avoiding the
         // comparison cost for the many large blocks produced by the format writer.
         radix_sort_by_key(&mut entries, key_bytes, |key| key);
-        Ok(Self::from_sorted_entries(root, entries, |key| key))
+        Ok(Self::from_sorted_entries(
+            root,
+            entries,
+            |key| key,
+            |row| row,
+        ))
     }
 
-    fn from_sorted_entries<K: Copy + Eq>(
+    fn from_sorted_entries<K: Copy + Eq, R: Copy>(
         root: OccupiedOctreeRoot,
-        entries: Vec<(K, usize)>,
+        entries: Vec<(K, R)>,
         widen_key: impl Fn(K) -> u128,
+        widen_row: impl Fn(R) -> usize,
     ) -> Self {
         let mut keys = Vec::new();
         let mut leaf_offsets = Vec::new();
@@ -61,7 +97,7 @@ impl OccupiedCellIndex {
         let mut row_ids = Vec::with_capacity(entries.len());
         let mut previous = None;
         for (offset, (key, row)) in entries.into_iter().enumerate() {
-            row_ids.push(row);
+            row_ids.push(widen_row(row));
             if previous != Some(key) {
                 keys.push(widen_key(key));
                 leaf_offsets.push(offset);
@@ -122,8 +158,8 @@ impl OccupiedCellIndex {
     }
 }
 
-fn radix_sort_by_key<K: Copy>(
-    entries: &mut Vec<(K, usize)>,
+fn radix_sort_by_key<K: Copy, R: Copy + Default>(
+    entries: &mut Vec<(K, R)>,
     key_bytes: usize,
     key_value: impl Fn(K) -> u128,
 ) {
@@ -144,7 +180,7 @@ fn radix_sort_by_key<K: Copy>(
             total += count;
         }
         scratch.clear();
-        scratch.resize(entries.len(), (entries[0].0, 0));
+        scratch.resize(entries.len(), (entries[0].0, R::default()));
         for &(key, row) in entries.iter() {
             let bucket = ((key_value(key) >> shift) & 0xff) as usize;
             scratch[next[bucket]] = (key, row);

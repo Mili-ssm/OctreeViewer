@@ -1,0 +1,80 @@
+{
+  "kind": "v72_shallow_morton_u32_key_row_ab",
+  "date": "2026-10-25",
+  "baseline_revision": "7c171b0",
+  "candidate_revision": "working-tree based on 7c171b0",
+  "binaries": {
+    "baseline_sha256": "a0b7705d14449e53f5c7439fc3297e70d09ca8f45965c663b7a0d5cd14f4eeaa",
+    "candidate_sha256": "76571d27a3cde0963629e65030f184c9f061f929c0a5486d5c9706ab3ae73600"
+  },
+  "conditions": {
+    "dataset": "Belvedere 2009",
+    "format_version": "v7.2-pre",
+    "profile": "perf",
+    "workers": 1,
+    "divisions": 2,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "order": "baseline-1, candidate-1, baseline-2, candidate-2, baseline-3, candidate-3; same host and binary per variant; OS cache not purged"
+  },
+  "method": "For root depths needing at most 32 Morton key bits, use (u32 key, u32 row) when the iterator upper size bound proves rows fit. Continue with (u64, usize) for wider keys fitting 64 bits and (u128, usize) otherwise. No codec candidate or payload rule changed.",
+  "limits": "One candidate run on Albuera is compared with one baseline run from the candidate-cost profile. Candidate-specific occupancy build elapsed time is direct evidence; the much larger Albuera block-preparation/total differences are confounded by variation in other measured candidate costs and are not attributed to this change. RSS/temp are sampled, not hard bounds. The narrower temporary representation is structural; sampled RSS did not decrease.",
+  "belvedere": {
+    "source_sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1",
+    "runs": {
+      "baseline": [
+        {"elapsed_seconds": 54.079757551, "block_stream_seconds": 19.516704037, "block_preparation_seconds": 19.016318866, "occupancy_build_seconds": 2.819014805, "rss_sampled_peak_bytes": 105017344, "temporary_sampled_peak_bytes": 4631349211},
+        {"elapsed_seconds": 51.956499214, "block_stream_seconds": 18.851523538, "block_preparation_seconds": 18.371951917, "occupancy_build_seconds": 2.775305808, "rss_sampled_peak_bytes": 105672704, "temporary_sampled_peak_bytes": 4659274264},
+        {"elapsed_seconds": 52.862455976, "block_stream_seconds": 18.864608765, "block_preparation_seconds": 18.383934429, "occupancy_build_seconds": 2.765383828, "rss_sampled_peak_bytes": 101580800, "temporary_sampled_peak_bytes": 4637835493}
+      ],
+      "candidate": [
+        {"elapsed_seconds": 53.267240854, "block_stream_seconds": 18.877924465, "block_preparation_seconds": 18.267703544, "occupancy_build_seconds": 2.612654842, "rss_sampled_peak_bytes": 106139648, "temporary_sampled_peak_bytes": 4648482168},
+        {"elapsed_seconds": 52.467130362, "block_stream_seconds": 18.803085949, "block_preparation_seconds": 18.205416833, "occupancy_build_seconds": 2.583964521, "rss_sampled_peak_bytes": 107556864, "temporary_sampled_peak_bytes": 4631854981},
+        {"elapsed_seconds": 52.379135906, "block_stream_seconds": 18.656266177, "block_preparation_seconds": 18.077924026, "occupancy_build_seconds": 2.589515580, "rss_sampled_peak_bytes": 107364352, "temporary_sampled_peak_bytes": 4645417207}
+      ]
+    },
+    "median": {
+      "baseline": {"elapsed_seconds": 52.862455976, "block_stream_seconds": 18.864608765, "block_preparation_seconds": 18.383934429, "occupancy_build_seconds": 2.775305808, "rss_sampled_peak_bytes": 105017344, "temporary_sampled_peak_bytes": 4637835493},
+      "candidate": {"elapsed_seconds": 52.467130362, "block_stream_seconds": 18.803085949, "block_preparation_seconds": 18.205416833, "occupancy_build_seconds": 2.589515580, "rss_sampled_peak_bytes": 107364352, "temporary_sampled_peak_bytes": 4645417207},
+      "change_percent": {"elapsed_seconds": -0.75, "block_stream_seconds": -0.33, "block_preparation_seconds": -0.97, "occupancy_build_seconds": -6.69, "rss_sampled_peak_bytes": 2.24, "temporary_sampled_peak_bytes": 0.16}
+    },
+    "output": {
+      "oct_bytes": 980940303,
+      "octattrs_bytes": 424619979,
+      "pair_bytes": 1405560282,
+      "sha256_oct": "4888dbc37d2d22338f9091eb708ab993b3da2a8e7739f17ce1d8e8d1c1725b90",
+      "sha256_octattrs": "3e6b81e66c7cd1dcd2d783dbdd3df2c0050cd05ec445ea52e147d0933ae44a05"
+    }
+  },
+  "albuera": {
+    "baseline_profile": "docs/benchmarks/storage-v7-v72-candidate-costs-2026-10-25.json#datasets.albuera",
+    "candidate_run": {
+      "elapsed_seconds": 470.747173471,
+      "spatial_planning_seconds": 244.917671167,
+      "block_stream_seconds": 184.179293972,
+      "block_preparation_seconds": 180.974151342,
+      "occupancy_build_seconds": 17.699754684,
+      "blocks": 8437,
+      "source_points": 508809556,
+      "lod_sample_points": 179791,
+      "rss_sampled_peak_bytes": 118833152,
+      "temporary_sampled_peak_bytes": 27455779441,
+      "temporary_observed_growth_bytes": 140333588211
+    },
+    "baseline_run": {
+      "elapsed_seconds": 509.988669036,
+      "spatial_planning_seconds": 244.110692428,
+      "block_stream_seconds": 224.637821682,
+      "block_preparation_seconds": 220.758944154,
+      "occupancy_build_seconds": 20.290499435
+    },
+    "output": {
+      "oct_bytes": 6089570028,
+      "octattrs_bytes": 4283615930,
+      "pair_bytes": 10373185958,
+      "sha256_oct": "5c8fd442f2e1cad4b71bf21822dacaf6164043080667e5a7ac1ffb5c65053d9a",
+      "sha256_octattrs": "1ac60148c5a04afe9c3deeaaaa7d71a5d12c71e969e7330859451785349513d8",
+      "logical_checksum_from_prior_progressive_read": "8caae2a09753e50e"
+    }
+  }
+}
