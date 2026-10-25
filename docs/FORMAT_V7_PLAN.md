@@ -394,7 +394,9 @@ hashes SHA-256 idénticos entre repeticiones, mismo checksum lógico `b830818c4a
 idéntica de 4.612.644.109 B. La mediana total observada bajó 8,89%, pero una planificación espacial
 de 482,63 s amplió el rango total a 460,77–689,42 s; RSS mediano subió 4,13% y el pico temporal
 quedó prácticamente igual. Es progreso localizado, no cierre: V7 sigue con preparación ~2,98× V5
-y total mediano ~27,9% mayor. Los archivos V5 locales antiguos llevan `OCTVWFRM` y el reader los
+y total mediano ~27,9% mayor. Una prueba de reutilización del buffer radix no mostró ganancia
+(181,55 s de preparación en una corrida) y se revirtió; no es evidencia concluyente de regresión.
+Los archivos V5 locales antiguos llevan `OCTVWFRM` y el reader los
 rechaza como `ProvisionalFormat`; las referencias válidas se regeneraron desde LAS/LAZ.
 [Repeticiones V5/V7 y fases](benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json),
 [optimización radix y límites](benchmarks/storage-v7-majadas-radix-index-2026-10-25.json).

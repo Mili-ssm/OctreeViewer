@@ -104,5 +104,15 @@
     "cargo_check_wasm32_unknown_unknown_p_viewer_core": "pass",
     "progressive_reader": "6259 blocks, 415602190 points, checksum b830818c4aeddac0"
   },
+  "scratch_buffer_reuse_trial": {
+    "change": "Allocate and initialize the radix scratch vector once, then overwrite every destination on each pass instead of clearing and resizing it.",
+    "runs": 1,
+    "conversion_elapsed_seconds": 447.4364114429918,
+    "block_preparation_seconds": 181.554115812,
+    "output_pair_bytes": 4612644109,
+    "sha256_oct": "0adb5c68a06627bd56e79e299cfbb506238918a9bbc8e22f3cb5be86d9b6d3aa",
+    "sha256_octattrs": "88edf01cbc10ebe233ccf40013c2d40e75ae931f502cbd22fdac85047b288864",
+    "decision": "Output remained byte-identical, but one run did not demonstrate a preparation-time gain over the previous 173.77-second median. Reverted; treat timing as inconclusive, not as evidence of a regression or improvement."
+  },
   "limits": "Timings are one-host observations, not performance guarantees. The baseline had three runs and the candidate has three instrumented runs; sampled RSS rose modestly, temporary peak stayed effectively unchanged, and spatial-planning variability dominates much of total elapsed time."
 }
