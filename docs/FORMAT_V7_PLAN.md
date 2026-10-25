@@ -428,6 +428,21 @@ V5/V6, manteniendo solo detección y error de regeneración cuando ayude al usua
 especificaciones y benchmarks anteriores. Cierre: ninguna ruta de producción depende de V5/V6;
 no basta con cambiar la etiqueta o el default.
 
+### Inventario operativo para la promoción y retirada
+
+| Ruta actual | Cierre que habrá que comprobar al promover |
+| --- | --- |
+| `viewer_convert::ConvertOptions`, CLI y `viewer_format::{version,layout,reader,writer}` | V7 final como default y único backend operativo. Detección V5/V6 puede conservar un error explícito de regeneración; ningún payload legacy debe seguir necesitando su decoder. |
+| `viewer_wasm/src/browser_convert.rs` y `web-host/converter-worker.js` | Constructor y worker escriben V7 final, abren/reabren su pareja y superan flujos reales de navegador. |
+| `create_web_sample`, `web-host/sample*.oct*`, `package-local.py`, `data/samples/*.oct*` y datasets locales activos | Regenerar y validar antes de sustituir. Fuentes: generador sintético, LAS versionados de `data/samples/` y LAZ locales de Belvedere/Albuera/Majadas documentados en `data/datasets/README.md`. El paquete web debe incluir la pareja nueva. |
+| Suites/perfiladores y generadores auxiliares | Herramientas activas aceptan V7; archivar comparaciones antiguas y retirar opciones/backend V5/V6 tras migrar los consumidores. |
+
+La suite de almacenamiento y el perfilador ya comparten las revisiones soportadas, incluyendo
+V7.1/V7.2; el comparador alternado usa V5/V7.2 por defecto. Los defaults de conversión siguen V5.
+Pasan las 24 pruebas Python; la suite completó conversión V7.2 y lecturas hierarchy/reconstruct/
+progressive sobre `fs_e430_n4008_18.las`. Esto habilita la matriz pendiente, no constituye promoción
+ni retirada. [Comandos](STORAGE_BENCH.md).
+
 ## Evidencia del primer incremento
 
 Implementado el 24-10-2026: `v7.1-pre` en reader/writer y CLI, herencia de capacidades pre4,

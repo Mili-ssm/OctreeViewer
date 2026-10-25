@@ -26,7 +26,8 @@ def main() -> None:
     parser.add_argument("--convert-binary", type=Path, required=True)
     parser.add_argument("--read-binary", type=Path, required=True)
     parser.add_argument("--runner", type=Path, default=Path(storage_suite.__file__))
-    parser.add_argument("--versions", nargs=2, default=["v6.3-pre", "v6.4-pre"])
+    parser.add_argument("--versions", nargs=2, choices=storage_suite.FORMAT_VERSIONS,
+                        default=["v5", "v7.2-pre"])
     parser.add_argument("--rounds", type=int, default=3)
     args = parser.parse_args()
     if args.rounds <= 0 or args.versions[0] == args.versions[1]:

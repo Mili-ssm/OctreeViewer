@@ -159,7 +159,7 @@ class StorageSuiteTests(unittest.TestCase):
                     str(source), "result.oct", str(run_dir),
                     "--convert-binary", str(converter), "--read-binary", str(reader),
                     "--repetitions", "2", "--cache-state", "warm after conversion", "--profile", "release-perf",
-                    "--points-per-block", "10000",
+                    "--points-per-block", "10000", "--format-version", "v7.2-pre",
                 ]
             )
             self.assertEqual(storage_suite.run_suite(args), 1)
@@ -172,7 +172,8 @@ class StorageSuiteTests(unittest.TestCase):
             self.assertEqual(report["options"]["cache_state"], "warm after conversion")
             self.assertEqual(report["options"]["profile"], "release-perf")
             self.assertEqual(report["options"]["points_per_block"], 10000)
-            self.assertEqual(report["conversions"][0]["command"][-2:], ["10000", "v5"])
+            self.assertEqual(report["options"]["format_version"], "v7.2-pre")
+            self.assertEqual(report["conversions"][0]["command"][-2:], ["10000", "v7.2-pre"])
             self.assertEqual(report["input"]["bytes"], len(b"fixture"))
             self.assertGreater(report["conversions"][0]["artifacts"]["oct"]["bytes"], 0)
             self.assertEqual(len(report["conversions"][0]["artifacts"]["octattrs"]["sha256"]), 64)

@@ -35,9 +35,13 @@ python3 crates/viewer_convert/benchmarks/storage_suite.py \
   --convert-binary target/perf/examples/real_dataset_bench \
   --read-binary target/perf/examples/storage_bench \
   --repetitions 3 --workers 1 --divisions 2 --points-per-block 10000 --max-decoded-mib 512 \
-  --format-version v5 \
+  --format-version v7.2-pre \
   --profile perf --cache-state 'sin purga; lecturas tras conversion y validacion'
 ```
+
+La suite y el perfilador comparten la lista de revisiones admitidas, incluidas `v7.1-pre` y
+`v7.2-pre`; omitir la opción mantiene V5 durante la transición. `compare_storage_revisions.py`
+compara V5/V7.2 por defecto y permite elegir dos revisiones explícitas con `--versions`.
 
 El directorio debe ser nuevo. `--points-per-block` fija la misma partición para todas las
 repeticiones (default 262144; el ejemplo usa 10000 para generar hijos en una muestra pequeña). Cada repetición produce su propia pareja y ejecuta los tres modos

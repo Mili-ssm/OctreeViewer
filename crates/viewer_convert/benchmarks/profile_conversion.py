@@ -14,9 +14,10 @@ import sys
 import time
 from typing import Any
 
+from storage_suite import FORMAT_VERSIONS
+
 
 DEFAULT_BINARY = Path("target/perf/examples/real_dataset_bench")
-FORMAT_VERSIONS = ("v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre", "v7.1-pre", "v7.2-pre")
 KILL_TIMEOUT_SECONDS = 5
 MAX_RECORDED_ERRORS = 100
 
