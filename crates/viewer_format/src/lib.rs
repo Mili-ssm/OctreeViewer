@@ -32,6 +32,10 @@ pub use contracts::{BlockEncoder, OctreeReader, OctreeWriter, PreparedOctreeWrit
 pub use crc32::{Crc32, crc32};
 pub use error::FormatError;
 pub use geometry::GeometryEncoding;
+pub use geometry::{
+    GeometryCandidateDiagnostics, GeometryCandidateKind, GeometryCodecDiagnostics,
+    OccupancyBuildDiagnostics,
+};
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};
 pub use quantization::{

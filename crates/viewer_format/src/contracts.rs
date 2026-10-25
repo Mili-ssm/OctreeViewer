@@ -80,6 +80,15 @@ pub trait BlockEncoder: Sync {
 
     fn prepare(&self, block: SourcePointBlock) -> Result<Self::PreparedBlock, FormatError>;
 
+    /// Diagnostic preparation may add candidate-level instrumentation. Implementations that
+    /// do not expose such metrics retain the ordinary preparation path.
+    fn prepare_with_diagnostics(
+        &self,
+        block: SourcePointBlock,
+    ) -> Result<(Self::PreparedBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
+        self.prepare(block).map(|prepared| (prepared, None))
+    }
+
     /// Retained encoded payload capacity, excluding metadata and allocator overhead.
     fn encoded_payload_capacity_bytes(&self, block: &Self::PreparedBlock) -> usize;
 }

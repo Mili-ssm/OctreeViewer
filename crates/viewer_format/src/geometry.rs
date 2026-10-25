@@ -1,5 +1,39 @@
 use crate::FormatError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GeometryCandidateKind {
+    Raw,
+    Delta,
+    Occupancy { residual_bits: u8, own_octant: bool },
+    CompactOccupancy { residual_bits: u8 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeometryCandidateDiagnostics {
+    pub kind: GeometryCandidateKind,
+    pub attempts: u64,
+    pub encoding_elapsed_ns: u128,
+    pub compression_elapsed_ns: u128,
+    pub raw_bytes: u64,
+    pub compressed_bytes: u64,
+    pub selected_winners: u64,
+    pub selected_raw_bytes: u64,
+    pub selected_compressed_bytes: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OccupancyBuildDiagnostics {
+    pub residual_bits: u8,
+    pub attempts: u64,
+    pub elapsed_ns: u128,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GeometryCodecDiagnostics {
+    pub candidates: Vec<GeometryCandidateDiagnostics>,
+    pub occupancy_builds: Vec<OccupancyBuildDiagnostics>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GeometryEncoding {

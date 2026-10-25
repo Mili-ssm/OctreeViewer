@@ -274,6 +274,54 @@ fn convert(
         if let Some(elapsed_ns) = diagnostics.finalize_and_sync_elapsed_ns {
             println!("internal_finalize_and_sync_elapsed_ns={elapsed_ns}");
         }
+        if let Some(candidates) = diagnostics.geometry_candidates.as_ref() {
+            for candidate in candidates {
+                let name = match candidate.kind {
+                    viewer_format::GeometryCandidateKind::Raw => "raw".to_string(),
+                    viewer_format::GeometryCandidateKind::Delta => "delta".to_string(),
+                    viewer_format::GeometryCandidateKind::Occupancy {
+                        residual_bits,
+                        own_octant,
+                    } => format!("occupancy_{residual_bits}_own_{}", u8::from(own_octant)),
+                    viewer_format::GeometryCandidateKind::CompactOccupancy { residual_bits } => {
+                        format!("compact_occupancy_{residual_bits}")
+                    }
+                };
+                let prefix = format!("internal_geometry_candidate_{name}");
+                println!("{prefix}_attempts={}", candidate.attempts);
+                println!(
+                    "{prefix}_encoding_elapsed_ns={}",
+                    candidate.encoding_elapsed_ns
+                );
+                println!(
+                    "{prefix}_compression_elapsed_ns={}",
+                    candidate.compression_elapsed_ns
+                );
+                println!("{prefix}_raw_bytes={}", candidate.raw_bytes);
+                println!("{prefix}_compressed_bytes={}", candidate.compressed_bytes);
+                println!("{prefix}_selected_winners={}", candidate.selected_winners);
+                println!(
+                    "{prefix}_selected_raw_bytes={}",
+                    candidate.selected_raw_bytes
+                );
+                println!(
+                    "{prefix}_selected_compressed_bytes={}",
+                    candidate.selected_compressed_bytes
+                );
+            }
+        }
+        if let Some(builds) = diagnostics.occupancy_builds.as_ref() {
+            for build in builds {
+                println!(
+                    "internal_occupancy_build_bits_{}_attempts={}",
+                    build.residual_bits, build.attempts
+                );
+                println!(
+                    "internal_occupancy_build_bits_{}_elapsed_ns={}",
+                    build.residual_bits, build.elapsed_ns
+                );
+            }
+        }
     }
     println!("spatial_workers={workers}");
     println!("rayon_pool_threads={}", rayon::current_num_threads());

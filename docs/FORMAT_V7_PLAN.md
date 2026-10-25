@@ -666,3 +666,25 @@ prácticamente iguales. Un A/B de una corrida en Majadas también baja preparaci
 no se atribuye al sort. Falta una repetición de Majadas y medir Albuera. El detalle queda en
 [el A/B de claves Morton](benchmarks/storage-v7-v72-shallow-morton-keys-2026-10-25.json); la
 optimización mantiene los bytes V7.2 y no altera el estado experimental del formato.
+
+## Diagnóstico optativo del coste de candidatos geométricos
+
+La preparación V7 probaba geometría raw, delta y ocupación comprimida para elegir el menor
+payload. No se debe podar un candidato solo porque rara vez gane en una muestra: los perfiles
+previos cuentan 611 bloques compactos en Albuera y solo 3 en Belvedere. Se añadió instrumentación
+optativa de intentos, bytes, tiempo de encode/compresión y ganadores por candidato; el tiempo común
+de construir `QuantizedOccupancy` se agrupa aparte por profundidad. Sin diagnóstico, el encoder
+mantiene la ruta normal sin temporizadores ni asignaciones de métricas. Las salidas con/sin métricas
+se comparan byte a byte para V7.1-pre y V7.2-pre.
+
+Un perfil por dataset con un worker registró en Belvedere 1.343 intentos compactos de 24 bits y 3
+selecciones; la construcción de ocupación sumó 2,82 s y encode+compresión compacta 0,98 s. En
+Albuera hubo 8.437 intentos y 611 selecciones; construcción 20,29 s y encode+compresión 6,16 s.
+El delta consumió 1,28 s en Belvedere y 10,35 s en Albuera; raw, 0,28 s y 2,37 s. Los hashes de
+ambas parejas coinciden con las salidas V7.2 previamente validadas y leídas progresivamente; no
+cambió el checksum lógico. La conversión profileada totalizó 52,66 s en Belvedere y 509,99 s en
+Albuera, pero es una sola corrida instrumentada por fuente y no un A/B de rendimiento. Los tiempos
+por candidato son sumas de trabajo; pueden solaparse entre workers. Cada corrida usó un worker,
+por lo que aquí no se solaparon. RSS y temporales son muestreados. No se elimina ni altera ningún
+candidato; el siguiente experimento debe optimizar construcción/codificación y comprobar el coste
+de tamaño con las salidas completas. [Datos por candidato](benchmarks/storage-v7-v72-candidate-costs-2026-10-25.json).

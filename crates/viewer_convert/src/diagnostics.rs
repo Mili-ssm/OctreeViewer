@@ -1,4 +1,5 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use viewer_format::{GeometryCandidateDiagnostics, OccupancyBuildDiagnostics};
 
 /// Optional aggregate timings for one conversion invocation.
 ///
@@ -6,6 +7,10 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 /// observations with the whole phase; they do not attribute RSS or temporary bytes to internals.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConversionDiagnostics {
+    /// Aggregated V7 geometry candidate attempts across prepared blocks.
+    pub geometry_candidates: Option<Vec<GeometryCandidateDiagnostics>>,
+    /// Shared QuantizedOccupancy construction costs, grouped by residual bit depth.
+    pub occupancy_builds: Option<Vec<OccupancyBuildDiagnostics>>,
     /// Includes input spooling when used and construction/finalization of the spatial plan.
     pub spatial_planning: Option<DiagnosticWindow>,
     /// Whole block-stream scope; excludes final index/footer emission and file sync.

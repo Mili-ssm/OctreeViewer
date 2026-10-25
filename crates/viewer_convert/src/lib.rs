@@ -62,6 +62,42 @@ fn input_batch_point_limit(points_per_block: u64, record_length: usize) -> u64 {
     points_per_block.min((MAX_INPUT_BYTES_PER_BATCH / record_length.max(1)).max(1) as u64)
 }
 
+fn aggregate_geometry_codec_diagnostics(
+    diagnostics: &mut ConversionDiagnostics,
+    metric: viewer_format::GeometryCodecDiagnostics,
+) {
+    let candidates = diagnostics.geometry_candidates.get_or_insert_with(Vec::new);
+    for candidate in metric.candidates {
+        if let Some(total) = candidates
+            .iter_mut()
+            .find(|total| total.kind == candidate.kind)
+        {
+            total.attempts += candidate.attempts;
+            total.encoding_elapsed_ns += candidate.encoding_elapsed_ns;
+            total.compression_elapsed_ns += candidate.compression_elapsed_ns;
+            total.raw_bytes += candidate.raw_bytes;
+            total.compressed_bytes += candidate.compressed_bytes;
+            total.selected_winners += candidate.selected_winners;
+            total.selected_raw_bytes += candidate.selected_raw_bytes;
+            total.selected_compressed_bytes += candidate.selected_compressed_bytes;
+        } else {
+            candidates.push(candidate);
+        }
+    }
+    let builds = diagnostics.occupancy_builds.get_or_insert_with(Vec::new);
+    for build in metric.occupancy_builds {
+        if let Some(total) = builds
+            .iter_mut()
+            .find(|total| total.residual_bits == build.residual_bits)
+        {
+            total.attempts += build.attempts;
+            total.elapsed_ns += build.elapsed_ns;
+        } else {
+            builds.push(build);
+        }
+    }
+}
+
 fn default_spatial_workers() -> usize {
     std::thread::available_parallelism()
         .map_or(1, |workers| workers.get().min(DEFAULT_SPATIAL_WORKERS))
@@ -904,25 +940,46 @@ where
     let worker_count = requested_workers
         .min((memory_limited_workers / batch_slots).max(1))
         .min(plan.blocks.len().max(1));
+    let collect_codec_diagnostics = diagnostics.is_some();
     let prepare = |batch: &[PlannedBlock]| {
         let started = Instant::now();
-        let prepared = batch
-            .par_iter()
-            .map(|block| {
-                encoder
-                    .prepare(block.read(plan.frame)?)
-                    .map_err(ConvertError::Format)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((prepared, started.elapsed().as_nanos()))
+        let (prepared, metrics) = if collect_codec_diagnostics {
+            let prepared_with_metrics = batch
+                .par_iter()
+                .map(|block| {
+                    encoder
+                        .prepare_with_diagnostics(block.read(plan.frame)?)
+                        .map_err(ConvertError::Format)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let (prepared, metrics): (
+                Vec<_>,
+                Vec<Option<viewer_format::GeometryCodecDiagnostics>>,
+            ) = prepared_with_metrics.into_iter().unzip();
+            (prepared, Some(metrics))
+        } else {
+            let prepared = batch
+                .par_iter()
+                .map(|block| {
+                    encoder
+                        .prepare(block.read(plan.frame)?)
+                        .map_err(ConvertError::Format)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            (prepared, None)
+        };
+        Ok((prepared, metrics, started.elapsed().as_nanos()))
     };
     process_batches(
         &plan.blocks,
         worker_count,
         pipeline,
         prepare,
-        |batch, (prepared, batch_preparation_ns)| {
+        |batch, (prepared, codec_metrics, batch_preparation_ns)| {
             if let Some(diagnostics) = diagnostics.as_deref_mut() {
+                for metrics in codec_metrics.into_iter().flatten().flatten() {
+                    aggregate_geometry_codec_diagnostics(diagnostics, metrics);
+                }
                 let batch_capacity = prepared.iter().try_fold(0_u64, |total, block| {
                     let capacity = u64::try_from(encoder.encoded_payload_capacity_bytes(block))
                         .map_err(|_| ConvertError::SizeOverflow)?;
@@ -1663,6 +1720,45 @@ mod tests {
                 && worker.max_decoded_block_estimated_bytes > 0
         }));
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn v7_codec_diagnostics_preserve_output_and_separate_winner_from_attempts() {
+        for version in [
+            viewer_format::FormatVersion::V7_PRE1,
+            viewer_format::FormatVersion::V7_PRE2,
+        ] {
+            let dir = test_dir();
+            let input = dir.join("source.las");
+            let baseline = dir.join("baseline.oct");
+            let profiled = dir.join("profiled.oct");
+            fixture(&input, false, true, 24);
+            let options = ConvertOptions::new(8, 0.01)
+                .unwrap()
+                .with_format_version(version)
+                .unwrap();
+            convert_file(&input, &baseline, options).unwrap();
+            let (_, diagnostics) =
+                convert_file_with_diagnostics(&input, &profiled, options, |_| true).unwrap();
+            assert_eq!(fs::read(&baseline).unwrap(), fs::read(&profiled).unwrap());
+            assert_eq!(
+                fs::read(output_attributes_path(&baseline)).unwrap(),
+                fs::read(output_attributes_path(&profiled)).unwrap()
+            );
+            let candidates = diagnostics
+                .geometry_candidates
+                .expect("codec candidate rows");
+            assert!(candidates.iter().any(|candidate| candidate.attempts > 0));
+            let winners: u64 = candidates
+                .iter()
+                .map(|candidate| candidate.selected_winners)
+                .sum();
+            let attempts: u64 = candidates.iter().map(|candidate| candidate.attempts).sum();
+            assert!(winners > 0);
+            assert!(attempts > winners);
+            assert!(diagnostics.occupancy_builds.is_some());
+            fs::remove_dir_all(dir).unwrap();
+        }
     }
 
     #[test]

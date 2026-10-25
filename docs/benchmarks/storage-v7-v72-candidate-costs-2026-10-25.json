@@ -1,0 +1,151 @@
+{
+  "kind": "v72_geometry_candidate_cost_profile",
+  "date": "2026-10-25",
+  "base_revision": "dcc6914",
+  "binary_sha256": "a0b7705d14449e53f5c7439fc3297e70d09ca8f45965c663b7a0d5cd14f4eeaa",
+  "instrumentation": "candidate timers are enabled only by convert-profile diagnostics; occupancy construction is timed separately; candidate work sums may overlap across workers",
+  "conditions": {
+    "profile": "perf",
+    "format_version": "v7.2-pre",
+    "workers": 1,
+    "divisions": 2,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "cache_state": "not purged; sequential dataset runs; one run per dataset"
+  },
+  "limits": "One instrumented run per dataset. Timings are observations, not an A/B or speedup claim. RSS and temporary sizes are sampled. Output hashes equal previously validated V7.2 pairs; prior progressive reads confirmed checksums 0737ca650c6081b4 (Belvedere) and 8caae2a09753e50e (Albuera). No candidate selection was changed.",
+  "datasets": {
+    "belvedere": {
+      "source": {
+        "path": "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "bytes": 618390994,
+        "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+      },
+      "conversion": {
+        "elapsed_seconds": 52.663512841,
+        "spatial_planning_seconds": 27.203531485,
+        "block_stream_seconds": 19.364770534,
+        "block_preparation_seconds": 18.835773808,
+        "ordered_write_and_release_seconds": 0.527652396,
+        "output_validation_seconds": 5.504986235,
+        "blocks": 1343,
+        "source_points": 81682329,
+        "lod_sample_points": 23882,
+        "rss_sampled_peak_bytes": 103710720,
+        "temporary_sampled_peak_bytes": 4661454732,
+        "temporary_observed_growth_bytes": 16757349631
+      },
+      "candidates": {
+        "raw": {
+          "attempts": 1343,
+          "encoding_seconds": 0.095846565,
+          "compression_seconds": 0.184942576,
+          "raw_bytes_total": 980474532,
+          "compressed_bytes_total": 980255704,
+          "selected_blocks": 1080,
+          "selected_raw_bytes": 976163340,
+          "selected_compressed_bytes": 976074463
+        },
+        "delta": {
+          "attempts": 1343,
+          "encoding_seconds": 0.912655548,
+          "compression_seconds": 0.369245045,
+          "raw_bytes_total": 1200702818,
+          "compressed_bytes_total": 1200500257,
+          "selected_blocks": 260,
+          "selected_raw_bytes": 208958,
+          "selected_compressed_bytes": 68940
+        },
+        "compact_occupancy_24": {
+          "attempts": 1343,
+          "encoding_seconds": 0.798055203,
+          "compression_seconds": 0.184415037,
+          "raw_bytes_total": 1049564870,
+          "compressed_bytes_total": 1049380260,
+          "selected_blocks": 3,
+          "selected_raw_bytes": 3987935,
+          "selected_compressed_bytes": 3987935
+        }
+      },
+      "occupancy_builds": {
+        "residual_bits_24": {
+          "attempts": 1343,
+          "elapsed_seconds": 2.823522739
+        }
+      },
+      "output": {
+        "oct_bytes": 980940303,
+        "octattrs_bytes": 424619979,
+        "pair_bytes": 1405560282,
+        "sha256_oct": "4888dbc37d2d22338f9091eb708ab993b3da2a8e7739f17ce1d8e8d1c1725b90",
+        "sha256_octattrs": "3e6b81e66c7cd1dcd2d783dbdd3df2c0050cd05ec445ea52e147d0933ae44a05"
+      }
+    },
+    "albuera": {
+      "source": {
+        "path": "data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+        "bytes": 4305484789,
+        "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+      },
+      "conversion": {
+        "elapsed_seconds": 509.988669036,
+        "spatial_planning_seconds": 244.110692428,
+        "block_stream_seconds": 224.637821682,
+        "block_preparation_seconds": 220.758944154,
+        "ordered_write_and_release_seconds": 3.864954626,
+        "output_validation_seconds": 39.960037895,
+        "blocks": 8437,
+        "source_points": 508809556,
+        "lod_sample_points": 179791,
+        "rss_sampled_peak_bytes": 116527104,
+        "temporary_sampled_peak_bytes": 27458891546,
+        "temporary_observed_growth_bytes": 140869228086
+      },
+      "candidates": {
+        "raw": {
+          "attempts": 8437,
+          "encoding_seconds": 0.884372001,
+          "compression_seconds": 1.484817497,
+          "raw_bytes_total": 6107872164,
+          "compressed_bytes_total": 6100545924,
+          "selected_blocks": 6315,
+          "selected_raw_bytes": 5410071828,
+          "selected_compressed_bytes": 5403942627
+        },
+        "delta": {
+          "attempts": 8437,
+          "encoding_seconds": 5.826069132,
+          "compression_seconds": 4.523148918,
+          "raw_bytes_total": 7157251385,
+          "compressed_bytes_total": 7042387153,
+          "selected_blocks": 1511,
+          "selected_raw_bytes": 1458636,
+          "selected_compressed_bytes": 391570
+        },
+        "compact_occupancy_24": {
+          "attempts": 8437,
+          "encoding_seconds": 4.124669229,
+          "compression_seconds": 2.034473627,
+          "raw_bytes_total": 6787510554,
+          "compressed_bytes_total": 6649019697,
+          "selected_blocks": 611,
+          "selected_raw_bytes": 748944605,
+          "selected_compressed_bytes": 680156278
+        }
+      },
+      "occupancy_builds": {
+        "residual_bits_24": {
+          "attempts": 8437,
+          "elapsed_seconds": 20.290499435
+        }
+      },
+      "output": {
+        "oct_bytes": 6089570028,
+        "octattrs_bytes": 4283615930,
+        "pair_bytes": 10373185958,
+        "sha256_oct": "5c8fd442f2e1cad4b71bf21822dacaf6164043080667e5a7ac1ffb5c65053d9a",
+        "sha256_octattrs": "1ac60148c5a04afe9c3deeaaaa7d71a5d12c71e969e7330859451785349513d8"
+      }
+    }
+  }
+}

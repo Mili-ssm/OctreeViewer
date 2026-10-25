@@ -983,6 +983,27 @@ pub(crate) fn prepare_point_block_for_version(
     metadata: &FormatMetadata,
     options: FormatWriterOptions,
 ) -> Result<PreparedPointBlock, FormatError> {
+    prepare_point_block_for_version_impl(version, block, metadata, options, false)
+        .map(|(block, _)| block)
+}
+
+pub(crate) fn prepare_point_block_for_version_with_diagnostics(
+    version: FormatVersion,
+    block: SourcePointBlock,
+    metadata: &FormatMetadata,
+    options: FormatWriterOptions,
+) -> Result<(PreparedPointBlock, crate::GeometryCodecDiagnostics), FormatError> {
+    prepare_point_block_for_version_impl(version, block, metadata, options, true)
+        .map(|(block, diagnostics)| (block, diagnostics.expect("diagnostics enabled")))
+}
+
+fn prepare_point_block_for_version_impl(
+    version: FormatVersion,
+    block: SourcePointBlock,
+    metadata: &FormatMetadata,
+    options: FormatWriterOptions,
+    collect_codec_diagnostics: bool,
+) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
     let layout = StorageLayout::from_version(version)?;
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
@@ -1016,17 +1037,32 @@ pub(crate) fn prepare_point_block_for_version(
             .ok_or(FormatError::BlockSizeOverflow)?,
     )
     .map_err(|_| FormatError::BlockSizeOverflow)?;
+    let raw_encoding_started = collect_codec_diagnostics.then(std::time::Instant::now);
     let raw_geometry = encode_geometry(&quantized, geometry_length)?;
+    let raw_encoding_ns = raw_encoding_started.map_or(0, |started| started.elapsed().as_nanos());
     let raw_geometry_length = raw_geometry.len();
+    let mut codec_diagnostics =
+        collect_codec_diagnostics.then(crate::GeometryCodecDiagnostics::default);
+    let mut candidates = Vec::new();
     let (mut geometry_encoding, mut encoded_geometry, mut geometry_raw_length) =
         if layout == StorageLayout::V5 {
-            (
-                GeometryEncoding::RawU32,
-                compress_block(&raw_geometry),
-                raw_geometry_length,
-            )
+            let started = collect_codec_diagnostics.then(std::time::Instant::now);
+            let encoded = compress_block(&raw_geometry);
+            let elapsed = started.map_or(0, |started| started.elapsed().as_nanos());
+            if codec_diagnostics.is_some() {
+                candidates.push(candidate_metric(
+                    crate::GeometryCandidateKind::Raw,
+                    raw_encoding_ns,
+                    elapsed,
+                    raw_geometry_length,
+                    encoded.bytes().len(),
+                ));
+            }
+            (GeometryEncoding::RawU32, encoded, raw_geometry_length)
         } else {
+            let delta_started = collect_codec_diagnostics.then(std::time::Instant::now);
             let delta = encode_delta(quantized.coordinates())?;
+            let delta_encoding_ns = delta_started.map_or(0, |started| started.elapsed().as_nanos());
             let delta_length = delta.len();
             let other_raw_size = uncompressed_size
                 .checked_sub(geometry_length as u64)
@@ -1034,63 +1070,211 @@ pub(crate) fn prepare_point_block_for_version(
             let delta_total = other_raw_size
                 .checked_add(delta.len() as u64)
                 .ok_or(FormatError::BlockSizeOverflow)?;
+            let raw_started = collect_codec_diagnostics.then(std::time::Instant::now);
             let raw_encoded = compress_block(&raw_geometry);
+            let raw_compression_ns = raw_started.map_or(0, |started| started.elapsed().as_nanos());
+            if codec_diagnostics.is_some() {
+                candidates.push(candidate_metric(
+                    crate::GeometryCandidateKind::Raw,
+                    raw_encoding_ns,
+                    raw_compression_ns,
+                    raw_geometry_length,
+                    raw_encoded.bytes().len(),
+                ));
+            }
             if delta_total <= options.max_uncompressed_block_bytes {
+                let delta_started = collect_codec_diagnostics.then(std::time::Instant::now);
                 let delta_encoded = compress_block(&delta);
+                let delta_compression_ns =
+                    delta_started.map_or(0, |started| started.elapsed().as_nanos());
+                if codec_diagnostics.is_some() {
+                    candidates.push(candidate_metric(
+                        crate::GeometryCandidateKind::Delta,
+                        delta_encoding_ns,
+                        delta_compression_ns,
+                        delta_length,
+                        delta_encoded.bytes().len(),
+                    ));
+                }
                 if delta_encoded.bytes().len() < raw_encoded.bytes().len() {
                     (GeometryEncoding::DeltaVarint, delta_encoded, delta_length)
                 } else {
                     (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
                 }
             } else {
+                if codec_diagnostics.is_some() {
+                    candidates.push(candidate_metric(
+                        crate::GeometryCandidateKind::Delta,
+                        delta_encoding_ns,
+                        0,
+                        delta_length,
+                        0,
+                    ));
+                }
                 (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
             }
         };
+    let mut selected_candidate = match geometry_encoding {
+        GeometryEncoding::RawU32 => crate::GeometryCandidateKind::Raw,
+        GeometryEncoding::DeltaVarint => crate::GeometryCandidateKind::Delta,
+        GeometryEncoding::Occupied => crate::GeometryCandidateKind::Occupancy {
+            residual_bits: 0,
+            own_octant: false,
+        },
+        GeometryEncoding::CompactOccupied => {
+            crate::GeometryCandidateKind::CompactOccupancy { residual_bits: 0 }
+        }
+    };
     if layout.supports_occupancy() && point_count != 0 && u32::try_from(point_count).is_ok() {
         let max_geometry_bytes =
             options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
         if layout == StorageLayout::V7Pre2 {
+            let build_started = collect_codec_diagnostics.then(std::time::Instant::now);
             let candidate = crate::QuantizedOccupancy::new(&quantized, 24)
                 .map_err(|_| FormatError::BlockSizeOverflow)?;
+            record_occupancy_build(&mut codec_diagnostics, 24, build_started);
+            let encoding_started = collect_codec_diagnostics.then(std::time::Instant::now);
             if let Some(raw) =
                 crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
             {
+                let encoding_ns =
+                    encoding_started.map_or(0, |started| started.elapsed().as_nanos());
+                let compression_started = collect_codec_diagnostics.then(std::time::Instant::now);
                 let encoded = compress_block(&raw);
+                let compression_ns =
+                    compression_started.map_or(0, |started| started.elapsed().as_nanos());
+                if codec_diagnostics.is_some() {
+                    candidates.push(candidate_metric(
+                        crate::GeometryCandidateKind::CompactOccupancy { residual_bits: 24 },
+                        encoding_ns,
+                        compression_ns,
+                        raw.len(),
+                        encoded.bytes().len(),
+                    ));
+                }
                 if encoded.bytes().len() < encoded_geometry.bytes().len() {
                     geometry_encoding = GeometryEncoding::CompactOccupied;
+                    selected_candidate =
+                        crate::GeometryCandidateKind::CompactOccupancy { residual_bits: 24 };
                     geometry_raw_length = raw.len();
                     encoded_geometry = encoded;
                 }
+            } else if codec_diagnostics.is_some() {
+                candidates.push(candidate_metric(
+                    crate::GeometryCandidateKind::CompactOccupancy { residual_bits: 24 },
+                    encoding_started.map_or(0, |started| started.elapsed().as_nanos()),
+                    0,
+                    0,
+                    0,
+                ));
             }
         } else {
             for bits in [24, 28] {
+                let build_started = collect_codec_diagnostics.then(std::time::Instant::now);
                 let candidate = crate::QuantizedOccupancy::new(&quantized, bits)
                     .map_err(|_| FormatError::BlockSizeOverflow)?;
+                record_occupancy_build(&mut codec_diagnostics, bits, build_started);
                 for own_octant in [false, true] {
+                    let encoding_started = collect_codec_diagnostics.then(std::time::Instant::now);
                     if let Some(raw) =
                         crate::occupancy_codec::encode(&candidate, own_octant, max_geometry_bytes)?
                     {
+                        let encoding_ns =
+                            encoding_started.map_or(0, |started| started.elapsed().as_nanos());
+                        let compression_started =
+                            collect_codec_diagnostics.then(std::time::Instant::now);
                         let encoded = compress_block(&raw);
+                        let compression_ns =
+                            compression_started.map_or(0, |started| started.elapsed().as_nanos());
+                        if codec_diagnostics.is_some() {
+                            candidates.push(candidate_metric(
+                                crate::GeometryCandidateKind::Occupancy {
+                                    residual_bits: bits,
+                                    own_octant,
+                                },
+                                encoding_ns,
+                                compression_ns,
+                                raw.len(),
+                                encoded.bytes().len(),
+                            ));
+                        }
                         if encoded.bytes().len() < encoded_geometry.bytes().len() {
                             geometry_encoding = GeometryEncoding::Occupied;
+                            selected_candidate = crate::GeometryCandidateKind::Occupancy {
+                                residual_bits: bits,
+                                own_octant,
+                            };
                             geometry_raw_length = raw.len();
                             encoded_geometry = encoded;
                         }
+                    } else if codec_diagnostics.is_some() {
+                        candidates.push(candidate_metric(
+                            crate::GeometryCandidateKind::Occupancy {
+                                residual_bits: bits,
+                                own_octant,
+                            },
+                            encoding_started.map_or(0, |started| started.elapsed().as_nanos()),
+                            0,
+                            0,
+                            0,
+                        ));
                     }
                 }
-                if layout.supports_compact_occupancy()
-                    && let Some(raw) =
+                if layout.supports_compact_occupancy() {
+                    let encoding_started = collect_codec_diagnostics.then(std::time::Instant::now);
+                    if let Some(raw) =
                         crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
-                {
-                    let encoded = compress_block(&raw);
-                    if encoded.bytes().len() < encoded_geometry.bytes().len() {
-                        geometry_encoding = GeometryEncoding::CompactOccupied;
-                        geometry_raw_length = raw.len();
-                        encoded_geometry = encoded;
+                    {
+                        let encoding_ns =
+                            encoding_started.map_or(0, |started| started.elapsed().as_nanos());
+                        let compression_started =
+                            collect_codec_diagnostics.then(std::time::Instant::now);
+                        let encoded = compress_block(&raw);
+                        let compression_ns =
+                            compression_started.map_or(0, |started| started.elapsed().as_nanos());
+                        if codec_diagnostics.is_some() {
+                            candidates.push(candidate_metric(
+                                crate::GeometryCandidateKind::CompactOccupancy {
+                                    residual_bits: bits,
+                                },
+                                encoding_ns,
+                                compression_ns,
+                                raw.len(),
+                                encoded.bytes().len(),
+                            ));
+                        }
+                        if encoded.bytes().len() < encoded_geometry.bytes().len() {
+                            geometry_encoding = GeometryEncoding::CompactOccupied;
+                            selected_candidate = crate::GeometryCandidateKind::CompactOccupancy {
+                                residual_bits: bits,
+                            };
+                            geometry_raw_length = raw.len();
+                            encoded_geometry = encoded;
+                        }
+                    } else if codec_diagnostics.is_some() {
+                        candidates.push(candidate_metric(
+                            crate::GeometryCandidateKind::CompactOccupancy {
+                                residual_bits: bits,
+                            },
+                            encoding_started.map_or(0, |started| started.elapsed().as_nanos()),
+                            0,
+                            0,
+                            0,
+                        ));
                     }
                 }
             }
         }
+    }
+    if let Some(diagnostics) = codec_diagnostics.as_mut() {
+        for candidate in &mut candidates {
+            if candidate.kind == selected_candidate {
+                candidate.selected_winners = 1;
+                candidate.selected_raw_bytes = geometry_raw_length as u64;
+                candidate.selected_compressed_bytes = encoded_geometry.bytes().len() as u64;
+            }
+        }
+        diagnostics.candidates = candidates;
     }
     // The u32 coordinates have been encoded; retain only their scalar transform/error
     // while compressing payloads, rather than another 12 bytes per point.
@@ -1122,19 +1306,59 @@ pub(crate) fn prepare_point_block_for_version(
         let width = crate::layout::attribute_tuple_width(column.descriptor())?;
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
-    Ok(PreparedPointBlock {
-        layout,
-        geometry_encoding,
-        id: block.id(),
-        point_count: u64::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?,
-        quantization_error,
-        origin: transform.origin(),
-        scale: transform.scale(),
-        world_bounds,
-        bytes,
-        payloads,
-        ranges,
-    })
+    Ok((
+        PreparedPointBlock {
+            layout,
+            geometry_encoding,
+            id: block.id(),
+            point_count: u64::try_from(point_count)
+                .map_err(|_| FormatError::PointCountOutOfRange)?,
+            quantization_error,
+            origin: transform.origin(),
+            scale: transform.scale(),
+            world_bounds,
+            bytes,
+            payloads,
+            ranges,
+        },
+        codec_diagnostics,
+    ))
+}
+
+fn candidate_metric(
+    kind: crate::GeometryCandidateKind,
+    encoding_ns: u128,
+    compression_ns: u128,
+    raw_bytes: usize,
+    compressed_bytes: usize,
+) -> crate::GeometryCandidateDiagnostics {
+    crate::GeometryCandidateDiagnostics {
+        kind,
+        attempts: 1,
+        encoding_elapsed_ns: encoding_ns,
+        compression_elapsed_ns: compression_ns,
+        raw_bytes: raw_bytes as u64,
+        compressed_bytes: compressed_bytes as u64,
+        selected_winners: 0,
+        selected_raw_bytes: 0,
+        selected_compressed_bytes: 0,
+    }
+}
+
+fn record_occupancy_build(
+    diagnostics: &mut Option<crate::GeometryCodecDiagnostics>,
+    residual_bits: u8,
+    started: Option<std::time::Instant>,
+) {
+    if let (Some(diagnostics), Some(started)) = (diagnostics, started) {
+        diagnostics
+            .occupancy_builds
+            .push(crate::OccupancyBuildDiagnostics {
+                residual_bits,
+                attempts: 1,
+                elapsed_ns: started.elapsed().as_nanos(),
+            });
+    }
 }
 
 #[derive(Debug, Clone)]

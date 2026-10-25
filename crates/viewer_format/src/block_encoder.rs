@@ -38,6 +38,19 @@ impl BlockEncoder for FormatBlockEncoder<'_> {
         )
     }
 
+    fn prepare_with_diagnostics(
+        &self,
+        block: SourcePointBlock,
+    ) -> Result<(Self::PreparedBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
+        crate::writer::prepare_point_block_for_version_with_diagnostics(
+            self.version,
+            block,
+            self.metadata,
+            self.options,
+        )
+        .map(|(prepared, diagnostics)| (prepared, Some(diagnostics)))
+    }
+
     fn encoded_payload_capacity_bytes(&self, block: &Self::PreparedBlock) -> usize {
         block.encoded_payload_capacity_bytes()
     }
