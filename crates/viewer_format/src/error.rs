@@ -122,6 +122,8 @@ pub enum FormatError {
     BlockSizeOverflow,
     #[error("block needs {requested} raw bytes, exceeding limit {limit}")]
     BlockExceedsLimit { requested: u64, limit: u64 },
+    #[error("read needs an estimated {requested} payload bytes, exceeding budget {limit}")]
+    ReadBudgetExceeded { requested: u64, limit: u64 },
     #[error("size {0} cannot be represented by this platform")]
     SizeOutOfRange(u64),
     #[error("could not reserve {0} bytes for an encoded block")]

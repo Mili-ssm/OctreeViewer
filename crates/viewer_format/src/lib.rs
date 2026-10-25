@@ -2,6 +2,8 @@
 //! Use `FormatReader` for selective reads and `FormatWriter` for incremental output;
 //! both share the binary layout and metadata validation without depending on each other.
 
+#[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
+mod async_reader;
 mod attribute_codec;
 mod block_encoder;
 mod codec;
@@ -13,9 +15,13 @@ mod geometry;
 mod layout;
 mod metadata;
 mod occupancy_codec;
+#[cfg(not(target_arch = "wasm32"))]
+mod parallel_reader;
 mod quantization;
 mod quantized_occupancy;
 mod ranges;
+mod read_budget;
+mod read_plan;
 mod reader;
 mod storage_reader;
 mod version;
@@ -39,5 +45,15 @@ pub use writer::{FormatWriter, FormatWriterOptions, PreparedPointBlock, prepare_
 
 pub use version::{FileRole, FormatIdentity, FormatVersion, probe_format};
 
+#[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
+pub use async_reader::{AsyncFormatReader, AsyncReadError};
 pub use block_encoder::FormatBlockEncoder;
+#[cfg(not(target_arch = "wasm32"))]
+pub use parallel_reader::{
+    ParallelReadError, ParallelReadProgress, ParallelReadStatus, read_selected_parallel,
+};
+pub use read_budget::{BudgetedRead, ReadBudget, ReadReservation};
+pub use read_plan::{
+    PayloadReadRange, ReadMemoryEstimate, ReadPlan, ReadSelection, ReadSource, SelectedRead,
+};
 pub use storage_reader::FormatReader;

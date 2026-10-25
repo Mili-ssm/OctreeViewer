@@ -494,23 +494,11 @@ fn point_data_to_block(
     let positions = positions.into_iter().collect::<Vec<_>>();
     let count = positions.len();
     let intensities = data.intensity().collect::<Vec<_>>();
-    let rgb = data
-        .rgb()
-        .map(|values| {
-            values
-                .map(|(red, green, blue)| [red, green, blue])
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let colors16 = format.has_color.then_some(rgb);
-    let colors = if let Some(rgb) = &colors16 {
-        rgb.iter()
-            .map(|value| {
-                ColorRgb::new(
-                    (value[0] >> 8) as u8,
-                    (value[1] >> 8) as u8,
-                    (value[2] >> 8) as u8,
-                )
+    let colors = if format.has_color {
+        data.rgb()
+            .ok_or(ConvertError::InvalidAttributeSchema)?
+            .map(|(red, green, blue)| {
+                ColorRgb::new((red >> 8) as u8, (green >> 8) as u8, (blue >> 8) as u8)
             })
             .collect()
     } else {
@@ -571,10 +559,10 @@ fn point_data_to_block(
         )?);
     }
     if format.has_color {
-        let values = colors16
+        let values = data
+            .rgb()
             .ok_or(ConvertError::InvalidAttributeSchema)?
-            .into_iter()
-            .flatten()
+            .flat_map(|(red, green, blue)| [red, green, blue])
             .collect();
         attributes.push(AttributeColumn::new(
             descriptor("rgb", AttributeDataType::U16, 3),
@@ -820,7 +808,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use las::{Builder, Point, Writer, point::Format};
+    use las::{Builder, Color, Point, Writer, point::Format};
     use viewer_core::{DatasetSource, HierarchySemantics, NodeId};
     use viewer_format::{FormatReader, OctreeReader};
 
@@ -856,6 +844,23 @@ mod tests {
             .unwrap();
     }
 
+    fn write_laz_with_rgb(path: &Path) {
+        let mut builder = Builder::from((1, 2));
+        builder.point_format = Format::new(2).unwrap();
+        builder.point_format.is_compressed = true;
+        let mut writer = Writer::from_path(path, builder.into_header().unwrap()).unwrap();
+        writer
+            .write_point(Point {
+                x: 3.0,
+                y: 3.0,
+                z: 3.0,
+                intensity: 0xAB00,
+                color: Some(Color::new(0x1234, 0xABCD, 0xFEDC)),
+                ..Point::default()
+            })
+            .unwrap();
+    }
+
     fn write_manifest(root: &Path, data_type: &str, points: u64) {
         fs::write(
             root.join("ept.json"),
@@ -886,6 +891,7 @@ mod tests {
             viewer_format::FormatVersion::V6_PRE2,
             viewer_format::FormatVersion::V6_PRE3,
             viewer_format::FormatVersion::V6_PRE4,
+            viewer_format::FormatVersion::V7_PRE1,
         ] {
             let root = dir();
             fs::create_dir_all(root.join("ept-data")).unwrap();
@@ -951,6 +957,49 @@ mod tests {
             };
             assert_eq!(classification, &[2]);
         }
+    }
+
+    #[test]
+    fn v7_ept_rgb_conversion_preserves_display_and_typed_values() {
+        let root = dir();
+        fs::create_dir_all(root.join("ept-data")).unwrap();
+        fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+        fs::write(
+            root.join("ept.json"),
+            r#"{"dataType":"laszip","hierarchyType":"json","points":1,"bounds":[0,0,0,8,8,8],"schema":[{"name":"X","type":"signed","size":4},{"name":"Y","type":"signed","size":4},{"name":"Z","type":"signed","size":4},{"name":"Red","type":"unsigned","size":2},{"name":"Green","type":"unsigned","size":2},{"name":"Blue","type":"unsigned","size":2}]}"#,
+        )
+        .unwrap();
+        fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":1}"#).unwrap();
+        write_laz_with_rgb(&root.join("ept-data/0-0-0-0.laz"));
+
+        let output = root.join("result.oct");
+        crate::convert_file(
+            &root,
+            &output,
+            ConvertOptions::default()
+                .with_format_version(viewer_format::FormatVersion::V7_PRE1)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut reader = FormatReader::new(File::open(&output).unwrap()).unwrap();
+        reader
+            .attach_attributes(File::open(output_attributes_path(&output)).unwrap())
+            .unwrap();
+        assert_eq!(
+            reader.read_display_colors(BlockId::new(0)).unwrap(),
+            vec![ColorRgb::new(0x12, 0xAB, 0xFE)]
+        );
+        let block = reader.read_block(BlockId::new(0)).unwrap();
+        let rgb = block
+            .attributes()
+            .iter()
+            .find(|column| column.descriptor().name() == "rgb")
+            .unwrap();
+        let AttributeValues::U16(rgb) = rgb.values() else {
+            panic!("EPT RGB must remain u16");
+        };
+        assert_eq!(rgb, &[0x1234, 0xABCD, 0xFEDC]);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

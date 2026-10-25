@@ -442,6 +442,194 @@ impl<R: Read + Seek> IndexedReader<R> {
         self.layout.version()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn shares_index_with<S>(&self, other: &IndexedReader<S>) -> bool {
+        Arc::ptr_eq(&self.blocks, &other.blocks) && Arc::ptr_eq(&self.metadata, &other.metadata)
+    }
+
+    /// Plans only the requested payloads from the validated index, without payload I/O.
+    /// Estimates cover logical payload buffers, excluding the index, transport caches,
+    /// allocator overhead, schema strings and small decoder control structures.
+    pub fn plan_read(
+        &self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+    ) -> Result<crate::ReadPlan, FormatError> {
+        use crate::{ReadPlan, ReadSelection};
+        let block = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let points_bytes = || {
+            block
+                .point_count
+                .checked_mul(std::mem::size_of::<Point>() as u64)
+                .ok_or(FormatError::BlockSizeOverflow)
+        };
+        let colors_bytes = || {
+            block
+                .point_count
+                .checked_mul(std::mem::size_of::<ColorRgb>() as u64)
+                .ok_or(FormatError::BlockSizeOverflow)
+        };
+        let mut ranges = Vec::new();
+        ranges.try_reserve_exact(2).map_err(|_| {
+            FormatError::AllocationFailed(2 * std::mem::size_of::<crate::PayloadReadRange>())
+        })?;
+        let memory = match selection {
+            ReadSelection::Positions | ReadSelection::Geometry => {
+                let range = self.payload_range(block, &block.payloads[0], false)?;
+                let positions = crate::read_plan::estimate_payload(
+                    &range,
+                    points_bytes()?,
+                    Some((block.geometry_encoding, block.point_count)),
+                )?;
+                ranges.push(range);
+                if selection == ReadSelection::Geometry && self.has_attributes() {
+                    let range = self.payload_range(block, &block.payloads[1], true)?;
+                    let colors = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
+                    ranges.push(range);
+                    crate::read_plan::combine_geometry(positions, colors)?
+                } else {
+                    positions
+                }
+            }
+            ReadSelection::DisplayColors => {
+                let range = self.payload_range(block, &block.payloads[1], true)?;
+                let memory = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
+                ranges.push(range);
+                memory
+            }
+            ReadSelection::Attribute { schema_index } => {
+                let descriptor = self
+                    .metadata
+                    .dataset()
+                    .hierarchy()
+                    .attributes()
+                    .get(schema_index as usize)
+                    .ok_or(FormatError::UnknownAttribute(schema_index))?;
+                let output_bytes = attribute_payload_size(block.point_count, descriptor)?;
+                let range =
+                    self.payload_range(block, &block.payloads[schema_index as usize + 2], true)?;
+                let memory = crate::read_plan::estimate_payload(&range, output_bytes, None)?;
+                ranges.push(range);
+                memory
+            }
+        };
+        Ok(ReadPlan::new(id, selection, ranges, memory))
+    }
+
+    fn payload_range(
+        &self,
+        block: &BlockDirectoryEntry,
+        payload: &PayloadDirectoryEntry,
+        is_attribute: bool,
+    ) -> Result<crate::PayloadReadRange, FormatError> {
+        let (source, offset) = if self.split && is_attribute {
+            if self.attributes.is_none() {
+                return Err(FormatError::AttributesUnavailable);
+            }
+            (crate::ReadSource::Attributes, payload.offset)
+        } else {
+            (
+                crate::ReadSource::Primary,
+                block
+                    .offset
+                    .checked_add(payload.offset)
+                    .ok_or(FormatError::FileSizeOverflow)?,
+            )
+        };
+        for requested in [payload.stored_length, payload.raw_length] {
+            if requested > self.limits.max_block_bytes {
+                return Err(FormatError::BlockExceedsLimit {
+                    requested,
+                    limit: self.limits.max_block_bytes,
+                });
+            }
+        }
+        Ok(crate::PayloadReadRange::new(
+            source,
+            offset,
+            payload.stored_length,
+            payload.raw_length,
+            payload.codec,
+            payload.checksum,
+        ))
+    }
+
+    /// Rejects requests exceeding a per-read payload-buffer estimate before payload I/O.
+    /// This is not a shared concurrency quota or a process RSS limit. Replanning here
+    /// avoids executing a caller-provided plan against a different dataset or companion.
+    pub fn read_selected(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+        max_peak_bytes: u64,
+    ) -> Result<crate::SelectedRead, FormatError> {
+        let requested = self.plan_read(id, selection)?.memory().peak_bytes();
+        if requested > max_peak_bytes {
+            return Err(FormatError::ReadBudgetExceeded {
+                requested,
+                limit: max_peak_bytes,
+            });
+        }
+        self.materialize_selected(id, selection)
+    }
+
+    pub fn try_read_selected(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+        budget: &crate::ReadBudget,
+    ) -> Result<Option<crate::BudgetedRead>, FormatError> {
+        let plan = self.plan_read(id, selection)?;
+        let Some(reservation) = budget.try_reserve(plan.memory().peak_bytes())? else {
+            return Ok(None);
+        };
+        self.complete_reserved_read(plan, reservation).map(Some)
+    }
+
+    pub fn read_reserved(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+        reservation: crate::ReadReservation,
+    ) -> Result<crate::BudgetedRead, FormatError> {
+        let plan = self.plan_read(id, selection)?;
+        self.complete_reserved_read(plan, reservation)
+    }
+
+    fn complete_reserved_read(
+        &mut self,
+        plan: crate::ReadPlan,
+        reservation: crate::ReadReservation,
+    ) -> Result<crate::BudgetedRead, FormatError> {
+        let requested = plan.memory().peak_bytes();
+        if requested > reservation.bytes() {
+            return Err(FormatError::ReadBudgetExceeded {
+                requested,
+                limit: reservation.bytes(),
+            });
+        }
+        let result = self.materialize_selected(plan.block_id(), plan.selection())?;
+        crate::BudgetedRead::new(result, reservation, plan.memory().output_bytes())
+    }
+
+    fn materialize_selected(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+    ) -> Result<crate::SelectedRead, FormatError> {
+        use crate::{ReadSelection, SelectedRead};
+        match selection {
+            ReadSelection::Positions => self.read_positions(id).map(SelectedRead::Positions),
+            ReadSelection::Geometry => self.read_geometry(id).map(SelectedRead::Geometry),
+            ReadSelection::DisplayColors => self
+                .read_display_colors(id)
+                .map(SelectedRead::DisplayColors),
+            ReadSelection::Attribute { schema_index } => self
+                .read_attribute(id, schema_index)
+                .map(SelectedRead::Attribute),
+        }
+    }
+
     /// Creates a reader over an independent cursor while sharing the validated immutable index.
     /// The supplied stream must refer to the same unchanged file snapshot as this reader.
     pub fn fork_reader<S: Read + Seek>(&self, reader: S) -> IndexedReader<S> {
@@ -458,6 +646,18 @@ impl<R: Read + Seek> IndexedReader<R> {
             attribute_range_cache: Arc::clone(&self.attribute_range_cache),
             limits: self.limits,
         }
+    }
+
+    /// Internal async transport supplies cursors over the same already validated open files.
+    #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
+    pub(crate) fn fork_with_cursors<S: Read + Seek>(
+        &self,
+        reader: S,
+        attributes: Option<S>,
+    ) -> IndexedReader<S> {
+        let mut fork = self.fork_reader(reader);
+        fork.attributes = attributes;
+        fork
     }
 
     fn decode_geometry(
@@ -608,18 +808,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         column: &PayloadDirectoryEntry,
         attribute_width: Option<usize>,
     ) -> Result<Vec<u8>, FormatError> {
-        let is_attribute = attribute_width.is_some();
-        if self.split && is_attribute && self.attributes.is_none() {
-            return Err(FormatError::AttributesUnavailable);
-        }
-        for requested in [column.stored_length, column.raw_length] {
-            if requested > self.limits.max_block_bytes {
-                return Err(FormatError::BlockExceedsLimit {
-                    requested,
-                    limit: self.limits.max_block_bytes,
-                });
-            }
-        }
+        let range = self.payload_range(block, column, attribute_width.is_some())?;
         let size = usize::try_from(column.stored_length)
             .map_err(|_| FormatError::SizeOutOfRange(column.stored_length))?;
         let mut stored = Vec::new();
@@ -627,23 +816,14 @@ impl<R: Read + Seek> IndexedReader<R> {
             .try_reserve_exact(size)
             .map_err(|_| FormatError::AllocationFailed(size))?;
         stored.resize(size, 0);
-        let (reader, offset) = if self.split && is_attribute {
-            (
-                self.attributes
-                    .as_mut()
-                    .ok_or(FormatError::AttributesUnavailable)?,
-                column.offset,
-            )
-        } else {
-            (
-                &mut self.reader,
-                block
-                    .offset
-                    .checked_add(column.offset)
-                    .ok_or(FormatError::FileSizeOverflow)?,
-            )
+        let reader = match range.source() {
+            crate::ReadSource::Attributes => self
+                .attributes
+                .as_mut()
+                .ok_or(FormatError::AttributesUnavailable)?,
+            crate::ReadSource::Primary => &mut self.reader,
         };
-        reader.seek(SeekFrom::Start(offset))?;
+        reader.seek(SeekFrom::Start(range.offset()))?;
         reader.read_exact(&mut stored)?;
         if crc32(&stored) != column.checksum {
             return Err(FormatError::InvalidBlockChecksum(id));
@@ -703,7 +883,7 @@ impl<R: Read + Seek> DatasetSource for IndexedReader<R> {
 fn validate_supported_primary(
     identity: crate::FormatIdentity,
 ) -> Result<StorageLayout, FormatError> {
-    if !matches!(identity.version.major(), 5 | 6) {
+    if !matches!(identity.version.major(), 5..=7) {
         return Err(FormatError::UnsupportedVersion(identity.version.major()));
     }
     let layout = StorageLayout::from_version(identity.version)?;
@@ -931,17 +1111,13 @@ fn parse_index(
         } else {
             GeometryEncoding::RawU32
         };
-        if geometry_encoding == GeometryEncoding::Occupied
-            && !matches!(
-                layout,
-                StorageLayout::V6Pre2 | StorageLayout::V6Pre3 | StorageLayout::V6Pre4
-            )
-        {
+        if geometry_encoding == GeometryEncoding::Occupied && !layout.supports_occupancy() {
             return Err(FormatError::MalformedIndex(
                 "geometry encoding not supported in this revision",
             ));
         }
-        if geometry_encoding == GeometryEncoding::CompactOccupied && layout != StorageLayout::V6Pre4
+        if geometry_encoding == GeometryEncoding::CompactOccupied
+            && !layout.supports_compact_occupancy()
         {
             return Err(FormatError::MalformedIndex(
                 "compact geometry not supported in this revision",
@@ -1029,14 +1205,14 @@ fn parse_index(
                 } else {
                     0
                 };
-                if !matches!(layout, StorageLayout::V6Pre3 | StorageLayout::V6Pre4)
+                if !layout.supports_dictionary()
                     || payload_index == 0
                     || point_count < 2
                     || column.stored_length >= column.raw_length
                     || (column.codec == BlockCodec::Constant && column.stored_length != width)
                     || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
                     || (column.codec == BlockCodec::BytePlanes
-                        && (layout != StorageLayout::V6Pre4
+                        && (!layout.supports_byte_planes()
                             || width <= 1
                             || column.stored_length == 0))
                 {

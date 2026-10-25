@@ -37,6 +37,11 @@ impl<R: Read + Seek> FormatReader<R> {
         &mut self.backend
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn shares_index_with<S: Read + Seek>(&self, other: &FormatReader<S>) -> bool {
+        self.backend.shares_index_with(&other.backend)
+    }
+
     pub fn format_metadata(&self) -> &FormatMetadata {
         self.backend().format_metadata()
     }
@@ -66,12 +71,68 @@ impl<R: Read + Seek> FormatReader<R> {
         }
     }
 
+    #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
+    pub(crate) fn fork_with_cursors<S: Read + Seek>(
+        &self,
+        reader: S,
+        attributes: Option<S>,
+    ) -> FormatReader<S> {
+        FormatReader {
+            backend: self.backend.fork_with_cursors(reader, attributes),
+        }
+    }
+
     pub fn attach_attributes(&mut self, attributes: R) -> Result<(), FormatError> {
         self.backend_mut().attach_attributes(attributes)
     }
 
     pub fn has_attributes(&self) -> bool {
         self.backend().has_attributes()
+    }
+
+    /// Builds a selective range and payload-buffer plan without payload I/O.
+    /// Metadata, transport caches and allocator/control overhead are outside its estimate.
+    pub fn plan_read(
+        &self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+    ) -> Result<crate::ReadPlan, FormatError> {
+        self.backend().plan_read(id, selection)
+    }
+
+    /// Executes a selective read after checking its estimated peak payload bytes.
+    /// The budget is per invocation; callers must account for concurrent/retained results.
+    pub fn read_selected(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+        max_peak_bytes: u64,
+    ) -> Result<crate::SelectedRead, FormatError> {
+        self.backend_mut()
+            .read_selected(id, selection, max_peak_bytes)
+    }
+
+    /// Reserves a shared quota before payload I/O. `None` means the quota is currently busy;
+    /// an oversized request errors. Completed output keeps its reservation until dropped.
+    pub fn try_read_selected(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+        budget: &crate::ReadBudget,
+    ) -> Result<Option<crate::BudgetedRead>, FormatError> {
+        self.backend_mut().try_read_selected(id, selection, budget)
+    }
+
+    /// Consumes a reservation acquired before dispatching work to a reader thread.
+    /// The plan is validated against this reader; insufficient reservations fail before I/O.
+    /// Errors release the reservation; success retains only the estimated output bytes.
+    pub fn read_reserved(
+        &mut self,
+        id: BlockId,
+        selection: crate::ReadSelection,
+        reservation: crate::ReadReservation,
+    ) -> Result<crate::BudgetedRead, FormatError> {
+        self.backend_mut().read_reserved(id, selection, reservation)
     }
 
     pub fn attribute_range(

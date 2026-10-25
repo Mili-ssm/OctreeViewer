@@ -2140,6 +2140,7 @@ mod tests {
             viewer_format::FormatVersion::V6_PRE2,
             viewer_format::FormatVersion::V6_PRE3,
             viewer_format::FormatVersion::V6_PRE4,
+            viewer_format::FormatVersion::V7_PRE1,
         ] {
             let dir = test_dir();
             let input = dir.join("source.las");
@@ -2638,6 +2639,7 @@ mod tests {
             viewer_format::FormatVersion::V6_PRE2,
             viewer_format::FormatVersion::V6_PRE3,
             viewer_format::FormatVersion::V6_PRE4,
+            viewer_format::FormatVersion::V7_PRE1,
         ] {
             let dir = test_dir();
             let input = dir.join("source.las");

@@ -18,6 +18,7 @@ use viewer_convert::{
 use viewer_core::{DatasetSource, Point};
 use viewer_format::{
     BlockCodec, BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReader,
+    ReadSelection, SelectedRead,
 };
 
 #[path = "support/conversion_metrics.rs"]
@@ -461,15 +462,32 @@ fn read(
     let mut block_latencies_ns = Vec::with_capacity(selected.len());
     let decode_started = Instant::now();
     let mut decoded_points = 0_u64;
+    let read_selection = match mode {
+        ReadMode::All => None,
+        // Historical read-geometry measures XYZ only and deliberately omits the companion.
+        ReadMode::Geometry => Some(ReadSelection::Positions),
+        ReadMode::Attribute(schema_index) => Some(ReadSelection::Attribute { schema_index }),
+    };
+    let mut max_estimated_read_payload_peak_bytes = 0;
+    let mut planned_payload_bytes = 0_u64;
     for block in selected {
         let block_started = Instant::now();
-        decoded_points += match mode {
-            ReadMode::All => reader.read_block(block.id)?.points().len() as u64,
-            ReadMode::Geometry => reader.read_positions(block.id)?.len() as u64,
-            ReadMode::Attribute(schema_index) => {
-                reader.read_attribute(block.id, schema_index)?;
-                block.point_count
+        decoded_points += if let Some(selection) = read_selection {
+            let plan = reader.plan_read(block.id, selection)?;
+            let peak = plan.memory().peak_bytes();
+            max_estimated_read_payload_peak_bytes = max_estimated_read_payload_peak_bytes.max(peak);
+            planned_payload_bytes = planned_payload_bytes
+                .checked_add(plan.memory().stored_bytes())
+                .ok_or("planned payload byte count overflow")?;
+            // Check the per-read estimate, and consume/drop each result before the next block.
+            // This does not reserve an aggregate concurrent quota or enforce an RSS limit.
+            match reader.read_selected(block.id, selection, peak)? {
+                SelectedRead::Positions(points) => points.len() as u64,
+                SelectedRead::Attribute(_) => block.point_count,
+                _ => return Err("unexpected selective read result".into()),
             }
+        } else {
+            reader.read_block(block.id)?.points().len() as u64
         };
         block_latencies_ns
             .push(u64::try_from(block_started.elapsed().as_nanos()).unwrap_or(u64::MAX));
@@ -482,6 +500,9 @@ fn read(
         .load(Ordering::Relaxed)
         .saturating_sub(metadata_attribute_bytes);
     let payload_bytes_read = geometry_payload_bytes_read + attribute_payload_bytes_read;
+    if read_selection.is_some() && planned_payload_bytes != payload_bytes_read {
+        return Err("selective read fetched a different byte count from its plan".into());
+    }
     block_latencies_ns.sort_unstable();
     println!(
         "mode={}",
@@ -558,6 +579,12 @@ fn read(
     }
     println!("decoded_payload_points={decoded_points}");
     println!("payload_bytes_read={payload_bytes_read}");
+    if read_selection.is_some() {
+        println!("planned_payload_bytes={planned_payload_bytes}");
+        println!("max_estimated_read_payload_peak_bytes={max_estimated_read_payload_peak_bytes}");
+        println!("read_plan_included_in_timing=true");
+        println!("read_memory_basis=payload_buffers_excludes_metadata_cache_allocator_control");
+    }
     let source_point_count = source_points(&reader);
     if let Some(input) = input {
         let input_bytes = fs::metadata(input)?.len();

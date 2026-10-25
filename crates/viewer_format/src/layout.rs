@@ -22,6 +22,7 @@ pub(crate) enum StorageLayout {
     V6Pre2,
     V6Pre3,
     V6Pre4,
+    V7Pre1,
 }
 
 impl StorageLayout {
@@ -32,6 +33,7 @@ impl StorageLayout {
             crate::FormatVersion::V6Pre(revision) if revision.get() == 2 => Ok(Self::V6Pre2),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 3 => Ok(Self::V6Pre3),
             crate::FormatVersion::V6Pre(revision) if revision.get() == 4 => Ok(Self::V6Pre4),
+            crate::FormatVersion::V7Pre(revision) if revision.get() == 1 => Ok(Self::V7Pre1),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -43,6 +45,7 @@ impl StorageLayout {
             Self::V6Pre2 => crate::FormatVersion::V6_PRE2,
             Self::V6Pre3 => crate::FormatVersion::V6_PRE3,
             Self::V6Pre4 => crate::FormatVersion::V6_PRE4,
+            Self::V7Pre1 => crate::FormatVersion::V7_PRE1,
         }
     }
 
@@ -53,6 +56,7 @@ impl StorageLayout {
             Self::V6Pre2 => b"OCTVI62P",
             Self::V6Pre3 => b"OCTVI63P",
             Self::V6Pre4 => b"OCTVI64P",
+            Self::V7Pre1 => b"OCTVI71P",
         }
     }
 
@@ -63,7 +67,27 @@ impl StorageLayout {
             Self::V6Pre2 => b"OCTVE62P",
             Self::V6Pre3 => b"OCTVE63P",
             Self::V6Pre4 => b"OCTVE64P",
+            Self::V7Pre1 => b"OCTVE71P",
         }
+    }
+
+    pub(crate) const fn supports_occupancy(self) -> bool {
+        matches!(
+            self,
+            Self::V6Pre2 | Self::V6Pre3 | Self::V6Pre4 | Self::V7Pre1
+        )
+    }
+
+    pub(crate) const fn supports_compact_occupancy(self) -> bool {
+        matches!(self, Self::V6Pre4 | Self::V7Pre1)
+    }
+
+    pub(crate) const fn supports_dictionary(self) -> bool {
+        matches!(self, Self::V6Pre3 | Self::V6Pre4 | Self::V7Pre1)
+    }
+
+    pub(crate) const fn supports_byte_planes(self) -> bool {
+        matches!(self, Self::V6Pre4 | Self::V7Pre1)
     }
 }
 

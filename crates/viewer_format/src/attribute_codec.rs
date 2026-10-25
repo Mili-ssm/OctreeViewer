@@ -22,7 +22,7 @@ fn id_bits(unique: usize) -> usize {
 }
 
 // IDs are LSB-first, at most 32 bits. A byte-fed u64 holds at most 39 bits.
-fn pack_ids(ids: &[u32], bits: usize) -> Result<Vec<u8>, FormatError> {
+fn pack_ids(ids: impl ExactSizeIterator<Item = u32>, bits: usize) -> Result<Vec<u8>, FormatError> {
     let size = ids
         .len()
         .checked_mul(bits)
@@ -31,7 +31,7 @@ fn pack_ids(ids: &[u32], bits: usize) -> Result<Vec<u8>, FormatError> {
     let mut packed = allocate(size)?;
     let mut buffer = 0_u64;
     let mut buffered = 0;
-    for &id in ids {
+    for id in ids {
         buffer |= u64::from(id) << buffered;
         buffered += bits;
         while buffered >= 8 {
@@ -66,9 +66,9 @@ impl PackedIds<'_> {
     }
 }
 
-/// Fill an empty byte palette in first-occurrence order; capacity is reserved by the caller.
-fn append_byte_dictionary(raw: &[u8], table: &mut Vec<u8>, ids: &mut Vec<u32>) {
-    debug_assert!(table.is_empty() && ids.is_empty());
+/// Fill a byte palette in first-occurrence order and return byte-to-ID lookup.
+fn byte_dictionary(raw: &[u8], table: &mut Vec<u8>) -> [u16; 256] {
+    debug_assert!(table.is_empty());
     let mut lookup = [u16::MAX; 256];
     for &value in raw {
         let id = &mut lookup[usize::from(value)];
@@ -76,8 +76,8 @@ fn append_byte_dictionary(raw: &[u8], table: &mut Vec<u8>, ids: &mut Vec<u32>) {
             *id = table.len() as u16; // At most 256 distinct byte values.
             table.push(value);
         }
-        ids.push(u32::from(*id));
     }
+    lookup
 }
 
 pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
@@ -95,20 +95,26 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
             bytes: raw[..width].to_vec(),
         });
     }
-    let mut lookup = HashMap::<&[u8], u32>::new();
-    if width != 1 {
+    let mut table = allocate(if width == 1 { rows.min(256) } else { raw.len() })?;
+    let (unique, packed) = if width == 1 {
+        let lookup = byte_dictionary(raw, &mut table);
+        let unique = table.len();
+        let bits = id_bits(unique);
+        let packed = pack_ids(
+            raw.iter()
+                .map(|value| u32::from(lookup[usize::from(*value)])),
+            bits,
+        )?;
+        (unique, packed)
+    } else {
+        let mut lookup = HashMap::<&[u8], u32>::new();
         lookup
             .try_reserve(rows)
             .map_err(|_| FormatError::AllocationFailed(rows))?;
-    }
-    let mut table = allocate(if width == 1 { rows.min(256) } else { raw.len() })?;
-    let mut ids = Vec::new();
-    ids.try_reserve_exact(rows)
-        .map_err(|_| FormatError::AllocationFailed(rows))?;
-    if width == 1 {
-        append_byte_dictionary(raw, &mut table, &mut ids);
-    } else {
-        // Keep allocation order and lookup lifetime of the existing wider-column path.
+        let mut ids = Vec::new();
+        ids.try_reserve_exact(rows)
+            .map_err(|_| FormatError::AllocationFailed(rows))?;
+        // Preserve first-occurrence IDs while building the wider-column palette.
         for row in raw.chunks_exact(width) {
             let next = lookup.len() as u32;
             ids.push(*lookup.entry(row).or_insert_with(|| {
@@ -116,25 +122,29 @@ pub(crate) fn encode(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatErr
                 next
             }));
         }
-    }
-    let unique = table.len() / width;
-    let bits = id_bits(unique);
-    let packed = pack_ids(&ids, bits)?;
-    drop(ids);
-    let table = compress_block(&table);
-    let packed = compress_block(&packed);
+        let unique = table.len() / width;
+        let bits = id_bits(unique);
+        drop(lookup);
+        let packed = pack_ids(ids.iter().copied(), bits)?;
+        drop(ids);
+        (unique, packed)
+    };
+    let compressed_table = compress_block(&table);
+    drop(table);
+    let compressed_packed = compress_block(&packed);
+    drop(packed);
     let length = HEADER
-        .checked_add(table.bytes().len())
-        .and_then(|n| n.checked_add(packed.bytes().len()))
+        .checked_add(compressed_table.bytes().len())
+        .and_then(|n| n.checked_add(compressed_packed.bytes().len()))
         .ok_or(FormatError::BlockSizeOverflow)?;
-    if length < best.bytes().len() && u32::try_from(table.bytes().len()).is_ok() {
+    if length < best.bytes().len() && u32::try_from(compressed_table.bytes().len()).is_ok() {
         let mut bytes = allocate(length)?;
         bytes.extend_from_slice(&(unique as u32).to_le_bytes());
-        bytes.push(table.codec() as u8);
-        bytes.push(packed.codec() as u8);
-        bytes.extend_from_slice(&(table.bytes().len() as u32).to_le_bytes());
-        bytes.extend_from_slice(table.bytes());
-        bytes.extend_from_slice(packed.bytes());
+        bytes.push(compressed_table.codec() as u8);
+        bytes.push(compressed_packed.codec() as u8);
+        bytes.extend_from_slice(&(compressed_table.bytes().len() as u32).to_le_bytes());
+        bytes.extend_from_slice(compressed_table.bytes());
+        bytes.extend_from_slice(compressed_packed.bytes());
         best = EncodedBlock {
             codec: BlockCodec::Dictionary,
             bytes,
@@ -269,6 +279,71 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn previous_byte_dictionary(raw: &[u8]) -> EncodedBlock {
+        let mut best = compress_block(raw);
+        if !raw.is_empty() && raw.iter().all(|value| *value == raw[0]) && 1 < best.bytes().len() {
+            return EncodedBlock {
+                codec: BlockCodec::Constant,
+                bytes: vec![raw[0]],
+            };
+        }
+        let mut lookup = HashMap::<u8, u32>::new();
+        let mut table = Vec::new();
+        let mut ids = Vec::with_capacity(raw.len());
+        for &value in raw {
+            let next = lookup.len() as u32;
+            ids.push(*lookup.entry(value).or_insert_with(|| {
+                table.push(value);
+                next
+            }));
+        }
+        let unique = table.len();
+        let table = compress_block(&table);
+        let packed = compress_block(&pack_ids(ids.iter().copied(), id_bits(unique)).unwrap());
+        let length = HEADER + table.bytes().len() + packed.bytes().len();
+        if length < best.bytes().len() && u32::try_from(table.bytes().len()).is_ok() {
+            let mut bytes = Vec::with_capacity(length);
+            bytes.extend_from_slice(&(unique as u32).to_le_bytes());
+            bytes.push(table.codec() as u8);
+            bytes.push(packed.codec() as u8);
+            bytes.extend_from_slice(&(table.bytes().len() as u32).to_le_bytes());
+            bytes.extend_from_slice(table.bytes());
+            bytes.extend_from_slice(packed.bytes());
+            best = EncodedBlock {
+                codec: BlockCodec::Dictionary,
+                bytes,
+            };
+        }
+        best
+    }
+
+    #[test]
+    fn byte_dictionary_encoding_matches_previous_payload_for_all_cardinalities() {
+        for unique in 1..=256 {
+            for rows in [0, 1, 7, 257, 4096] {
+                let raw: Vec<_> = (0..rows)
+                    .map(|row| ((unique - 1 - row % unique) * 73 % 256) as u8)
+                    .collect();
+                let expected = previous_byte_dictionary(&raw);
+                let actual = encode(&raw, 1).unwrap();
+                assert_eq!(
+                    actual.codec(),
+                    expected.codec(),
+                    "unique={unique} rows={rows}"
+                );
+                assert_eq!(
+                    actual.bytes(),
+                    expected.bytes(),
+                    "unique={unique} rows={rows}"
+                );
+                assert_eq!(
+                    decode(actual.codec(), actual.bytes(), raw.len(), 1, raw.len()).unwrap(),
+                    raw
+                );
+            }
+        }
+    }
     #[test]
     #[ignore = "isolated dictionary construction benchmark; run with --profile perf"]
     fn byte_dictionary_lookup_benchmark() {
@@ -293,7 +368,12 @@ mod tests {
                     let mut table = allocate(if direct { 256 } else { rows }).unwrap();
                     let mut ids = Vec::with_capacity(rows);
                     if direct {
-                        append_byte_dictionary(input, &mut table, &mut ids);
+                        let lookup = byte_dictionary(input, &mut table);
+                        ids.extend(
+                            input
+                                .iter()
+                                .map(|value| u32::from(lookup[usize::from(*value)])),
+                        );
                     } else {
                         for row in input.chunks_exact(black_box(input.len() / rows)) {
                             let next = lookup.len() as u32;
@@ -340,8 +420,11 @@ mod tests {
                     })
                     .collect();
                 let mut table = allocate(raw.len().min(256)).unwrap();
-                let mut ids = Vec::with_capacity(rows);
-                append_byte_dictionary(&raw, &mut table, &mut ids);
+                let lookup = byte_dictionary(&raw, &mut table);
+                let ids: Vec<_> = raw
+                    .iter()
+                    .map(|&value| u32::from(lookup[usize::from(value)]))
+                    .collect();
                 assert_eq!(table, expected_table);
                 assert_eq!(ids, expected_ids);
                 assert!(table.capacity() <= 256);
@@ -369,7 +452,7 @@ mod tests {
                         oracle[offset / 8] |= (((id >> bit) & 1) as u8) << (offset % 8);
                     }
                 }
-                assert_eq!(pack_ids(&ids, bits).unwrap(), oracle);
+                assert_eq!(pack_ids(ids.iter().copied(), bits).unwrap(), oracle);
                 let mut reader = PackedIds {
                     bytes: oracle.iter(),
                     bits,

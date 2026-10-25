@@ -16,6 +16,8 @@ pub enum FormatVersion {
     V5,
     V6Pre(NonZeroU32),
     V6,
+    V7Pre(NonZeroU32),
+    V7,
     Unknown { major: u16, revision: u32 },
 }
 
@@ -27,6 +29,7 @@ impl FormatVersion {
 
     pub const V6_PRE3: Self = Self::V6Pre(NonZeroU32::new(3).expect("nonzero revision"));
     pub const V6_PRE4: Self = Self::V6Pre(NonZeroU32::new(4).expect("nonzero revision"));
+    pub const V7_PRE1: Self = Self::V7Pre(NonZeroU32::new(1).expect("nonzero revision"));
 
     /// Reject unimplemented output formats before touching any output stream.
     pub fn ensure_writable(self) -> Result<(), FormatError> {
@@ -37,15 +40,16 @@ impl FormatVersion {
         match self {
             Self::V5 => 5,
             Self::V6Pre(_) | Self::V6 => 6,
+            Self::V7Pre(_) | Self::V7 => 7,
             Self::Unknown { major, .. } => major,
         }
     }
 
     pub const fn revision(self) -> u32 {
         match self {
-            Self::V6Pre(revision) => revision.get(),
+            Self::V6Pre(revision) | Self::V7Pre(revision) => revision.get(),
             Self::Unknown { revision, .. } => revision,
-            Self::V5 | Self::V6 => 0,
+            Self::V5 | Self::V6 | Self::V7 => 0,
         }
     }
 }
@@ -56,6 +60,8 @@ impl fmt::Display for FormatVersion {
             Self::V5 => f.write_str("v5"),
             Self::V6 => f.write_str("v6"),
             Self::V6Pre(revision) => write!(f, "v6.{revision}-pre"),
+            Self::V7 => f.write_str("v7"),
+            Self::V7Pre(revision) => write!(f, "v7.{revision}-pre"),
             Self::Unknown { major, revision } => write!(f, "unknown({major}, {revision})"),
         }
     }
@@ -68,12 +74,20 @@ impl std::str::FromStr for FormatVersion {
         match value {
             "v5" => Ok(Self::V5),
             "v6" => Ok(Self::V6),
+            "v7" => Ok(Self::V7),
             _ => value
                 .strip_prefix("v6.")
                 .and_then(|v| v.strip_suffix("-pre"))
                 .and_then(|v| v.parse::<NonZeroU32>().ok())
                 .map(Self::V6Pre)
-                .ok_or("expected v5, v6 or v6.N-pre with a positive revision"),
+                .or_else(|| {
+                    value
+                        .strip_prefix("v7.")
+                        .and_then(|v| v.strip_suffix("-pre"))
+                        .and_then(|v| v.parse::<NonZeroU32>().ok())
+                        .map(Self::V7Pre)
+                })
+                .ok_or("expected v5, v6, v7 or a positive pre-release revision"),
         }
     }
 }
@@ -93,7 +107,7 @@ pub struct FormatIdentity {
 }
 
 impl FormatIdentity {
-    /// Encode the common v5/v6 header envelope. This does not encode a payload.
+    /// Encode the common format header envelope. This does not encode a payload.
     pub fn to_header_bytes(self) -> Result<[u8; HEADER_SIZE as usize], FormatError> {
         let mut header = [0; HEADER_SIZE as usize];
         header[..8].copy_from_slice(HEADER_MAGIC);
@@ -152,6 +166,8 @@ pub(crate) fn parse_identity(
         (5, None) => FormatVersion::V5,
         (6, None) => FormatVersion::V6,
         (6, Some(revision)) => FormatVersion::V6Pre(revision),
+        (7, None) => FormatVersion::V7,
+        (7, Some(revision)) => FormatVersion::V7Pre(revision),
         _ => FormatVersion::Unknown { major, revision },
     };
     let role = match flags {
@@ -186,12 +202,17 @@ mod tests {
             (6, 1, "v6.1-pre"),
             (6, 2, "v6.2-pre"),
             (6, 0, "v6"),
-            (7, 9, "unknown(7, 9)"),
+            (7, 1, "v7.1-pre"),
+            (7, 0, "v7"),
+            (8, 9, "unknown(8, 9)"),
         ] {
             let mut input = Cursor::new(header(major, revision));
             input.set_position(11);
             let identity = probe_format(&mut input).unwrap();
             assert_eq!(identity.version.to_string(), label);
+            if major <= 7 {
+                assert_eq!(label.parse::<FormatVersion>().unwrap(), identity.version);
+            }
             assert_eq!(identity.version.major(), major);
             assert_eq!(identity.version.revision(), revision);
             assert_eq!(input.position(), 11);

@@ -488,12 +488,7 @@ pub(crate) fn prepare_point_block_for_version(
                 (GeometryEncoding::RawU32, raw_encoded, raw_geometry_length)
             }
         };
-    if matches!(
-        layout,
-        StorageLayout::V6Pre2 | StorageLayout::V6Pre3 | StorageLayout::V6Pre4
-    ) && point_count != 0
-        && u32::try_from(point_count).is_ok()
-    {
+    if layout.supports_occupancy() && point_count != 0 && u32::try_from(point_count).is_ok() {
         let max_geometry_bytes =
             options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
         for bits in [24, 28] {
@@ -511,7 +506,7 @@ pub(crate) fn prepare_point_block_for_version(
                     }
                 }
             }
-            if layout == StorageLayout::V6Pre4
+            if layout.supports_compact_occupancy()
                 && let Some(raw) =
                     crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
             {
@@ -683,10 +678,12 @@ fn append_payload(
     layout: StorageLayout,
     width: usize,
 ) -> Result<(), FormatError> {
-    let encoded = match layout {
-        StorageLayout::V6Pre4 => crate::attribute_codec::encode_pre4(raw, width)?,
-        StorageLayout::V6Pre3 => crate::attribute_codec::encode(raw, width)?,
-        _ => compress_block(raw),
+    let encoded = if layout.supports_byte_planes() {
+        crate::attribute_codec::encode_pre4(raw, width)?
+    } else if layout.supports_dictionary() {
+        crate::attribute_codec::encode(raw, width)?
+    } else {
+        compress_block(raw)
     };
     append_encoded_payload(encoded, raw.len(), bytes, payloads)
 }
