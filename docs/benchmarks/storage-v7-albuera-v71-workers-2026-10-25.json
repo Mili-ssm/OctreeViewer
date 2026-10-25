@@ -1,0 +1,139 @@
+{
+  "conditions": "One conversion per worker count on the same host, source, code and perf binary; no other tests/builds/benchmarks ran concurrently. The OS cache was not purged. The one-run timings are observations, not a dispersion estimate.",
+  "conversion_binary_sha256": "263030cf0ce337689469b94bdb2d0233eaf32404519d7b9dfe2eaaefa5651b58",
+  "conversion_options": {
+    "checkpoint": false,
+    "divisions": 2,
+    "format_version": "v7.1-pre",
+    "pipeline_writes": false,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100
+  },
+  "date": "2026-10-25",
+  "input": {
+    "bytes": 4305484789,
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+    "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+  },
+  "kind": "real_dataset_v7_albuera_worker_single_run_observations",
+  "logical_read_command_template": "target/perf/examples/storage_bench OUTPUT.oct progressive 1 512",
+  "logical_read_scope": "The same BFS checksum covers block IDs, reconstructed coordinates/color, attribute names/types and typed values. Reads were sequential and not a controlled latency comparison.",
+  "measurement_scope": "Linux process RSS/VmHWM and temporary path sizes sampled every 100 ms. Temporary sizes are logical observations, not physical I/O, and may miss brief peaks.",
+  "profile": "perf optimized",
+  "reader_binary_sha256": "3057b73511ede34e1426c9f40f3bf15902d8f9e4e90a555bd1cc5f940c56c804",
+  "results_by_requested_spatial_workers": {
+    "1": {
+      "conversion_status": "complete",
+      "elapsed_seconds": 796.8433155120001,
+      "output_oct_bytes": 6037118837,
+      "output_octattrs_bytes": 4283615930,
+      "output_pair_bytes": 10320734767,
+      "phase_seconds": {
+        "block_stream": 279.642164085,
+        "output_validation": 41.182498135,
+        "spatial_planning": 474.950054781
+      },
+      "prepared_batch": {
+        "max_encoded_payload_capacity_per_batch_bytes": 5900424,
+        "max_encoded_payload_capacity_per_block_bytes": 5900424,
+        "max_prepared_blocks": 1
+      },
+      "read_verification": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 64340.33,
+        "points_including_lod": 508989347,
+        "progressive_wall_ms": 64294.347,
+        "read_ms": 47268.444,
+        "verify_ms": 16875.064,
+        "workers": 1
+      },
+      "rss_sampled_peak_bytes": 123494400,
+      "sample_count": 7083,
+      "temporary_observed_growth_bytes": 138427424615,
+      "temporary_sampled_peak_bytes": 27463379529,
+      "vmhwm_observed_peak_bytes": 123564032
+    },
+    "2": {
+      "conversion_status": "complete",
+      "elapsed_seconds": 662.5262682080065,
+      "output_oct_bytes": 6037118837,
+      "output_octattrs_bytes": 4283615930,
+      "output_pair_bytes": 10320734767,
+      "phase_seconds": {
+        "block_stream": 216.32591206,
+        "output_validation": 21.846591611,
+        "spatial_planning": 423.279094934
+      },
+      "prepared_batch": {
+        "max_encoded_payload_capacity_per_batch_bytes": 11345638,
+        "max_encoded_payload_capacity_per_block_bytes": 5900424,
+        "max_prepared_blocks": 2
+      },
+      "read_verification": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 65076.221,
+        "points_including_lod": 508989347,
+        "progressive_wall_ms": 65037.768,
+        "read_ms": 48005.987,
+        "verify_ms": 16845.398,
+        "workers": 1
+      },
+      "rss_sampled_peak_bytes": 243589120,
+      "sample_count": 5264,
+      "temporary_observed_growth_bytes": 138266060728,
+      "temporary_sampled_peak_bytes": 29258309075,
+      "vmhwm_observed_peak_bytes": 243589120
+    },
+    "4": {
+      "conversion_status": "complete",
+      "elapsed_seconds": 811.361366822006,
+      "output_oct_bytes": 6037118837,
+      "output_octattrs_bytes": 4283615930,
+      "output_pair_bytes": 10320734767,
+      "phase_seconds": {
+        "block_stream": 153.105626466,
+        "output_validation": 12.164707966,
+        "spatial_planning": 644.942296106
+      },
+      "prepared_batch": {
+        "max_encoded_payload_capacity_per_batch_bytes": 19631592,
+        "max_encoded_payload_capacity_per_block_bytes": 5900424,
+        "max_prepared_blocks": 4
+      },
+      "read_verification": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 60348.518,
+        "points_including_lod": 508989347,
+        "progressive_wall_ms": 60317.43,
+        "read_ms": 43475.752,
+        "verify_ms": 16712.004,
+        "workers": 1
+      },
+      "rss_sampled_peak_bytes": 400592896,
+      "sample_count": 4638,
+      "temporary_observed_growth_bytes": 130331746224,
+      "temporary_sampled_peak_bytes": 35911878607,
+      "vmhwm_observed_peak_bytes": 400592896
+    }
+  },
+  "run_order": [
+    1,
+    2,
+    4
+  ],
+  "summary": {
+    "all_conversions_complete": true,
+    "elapsed_change_workers_4_vs_1_percent": 1.8219455478116757,
+    "elapsed_reduction_workers_2_vs_1_percent": 16.85614281870334,
+    "rss_growth_workers_4_vs_1_percent": 224.38142620232173,
+    "same_logical_checksum": true,
+    "same_pair_bytes": true,
+    "temporary_peak_growth_workers_4_vs_1_percent": 30.76278019272462
+  }
+}

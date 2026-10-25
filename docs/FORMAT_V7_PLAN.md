@@ -319,8 +319,8 @@ durante sustitución + checkpoints conservados. Comparar liberación temprana de
 con spools comprimidos/chunks: menos bytes puede exigir más CPU y perjudicar lecturas parciales.
 Elegir según medidas de tráfico y pico; no cambiar checkpoints sin versionarlos.
 
-**Siguiente cierre medible:** establecer una base V7 en Belvedere, Albuera y Majadas para 1/2/4
-workers y con/sin checkpoint; incluir EPT con y sin `--pipeline-writes`: repetir tiempos, RSS/PSS
+**Siguiente cierre medible:** extender la base V7 parcial de Albuera (abajo) a Belvedere y Majadas,
+1/2/4 workers con/sin checkpoint y EPT con/sin `--pipeline-writes`; repetir tiempos, RSS/PSS
 muestreados, bytes temporales máximos, hashes y capacidades retenidas de lotes. El profiler de
 filesystem puede perder picos breves o spools eliminados durante el recorrido; sus muestras no son
 una cota exacta de disco físico. Usar esa base antes de reemplazar la estimación de memoria actual
@@ -344,6 +344,16 @@ igualdad lógica para esta fuente. Las lecturas tardaron 63,36 / 68,87 / 64,34 s
 por salida sin control de caché, son observaciones, no evidencia comparativa de latencia. Reportes
 compactos, opciones, hashes de binarios, temporales y límites:
 [la serie secuencial Albuera](benchmarks/storage-v7-albuera-v5-v64-v71-sequential-2026-10-25.json).
+
+**V7 Albuera por workers:** una pasada sin checkpoint ni pipeline, mismo host/binario y orden
+1/2/4 workers. El tiempo fue 796,84 / 662,53 / 811,36 s; 2 workers observó 16,86% menos tiempo
+que 1, mientras que 4 tardó 1,82% más. RSS máximo muestreado: 123.494.400 / 243.589.120 /
+400.592.896 B; temporales: 27.463.379.529 / 29.258.309.075 / 35.911.878.607 B. La capacidad
+codificada máxima por lote observada pasó de 5.900.424 a 11.345.638 y 19.631.592 B; los bloques
+preparados máximos fueron 1/2/4. Las tres parejas mantuvieron el mismo tamaño y checksum lógico
+(`8caae2a09753e50e`, 8.437 bloques, 508.989.347 puntos). Es una observación por configuración,
+con caché no purgada; el resultado de 2 workers no justifica cambiar la política general todavía.
+[Matriz parcial y diagnósticos](benchmarks/storage-v7-albuera-v71-workers-2026-10-25.json).
 
 Error/cancelación: desbloquear canales, reunir workers y después limpiar temporales. No prometer
 cancelación dentro de un codec. Mantener fuente/opciones/revisión en checkpoint; nunca reanudar
