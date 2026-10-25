@@ -52,7 +52,7 @@ la transición como compatibilidad y referencia de comparación.
 | 1 | Base `v7.1-pre`: reader/writer, conversión, identidad/checkpoints exactos y menor buffer auxiliar sin cambiar payloads. | Implementado; verificación de esta entrega al final del [plan](docs/FORMAT_V7_PLAN.md#evidencia-del-primer-incremento). Sin mejora global de RSS/disco medida. |
 | 2 | Plan de rangos y costes por selección/codec; presupuesto agregado de memoria y medición por fase de temporales y RSS. | Planes selectivos y preflight por lectura implementados, con rangos sin I/O y estimación de buffers. La cuota compartida conserva reservas de tareas y resultados; el benchmark verifica bytes leídos. Falta completar diagnóstico de temporales/RSS. |
 | 3 | Reader lógico único por dataset en la aplicación, con llamadas concurrentes, prioridad/cancelación y bytes en vuelo; integrar scheduler en WASM y validar navegador. | El worker integra el scheduler WASM: reconcilia bloques por prioridad LOD, limita slots y reserva bytes antes de admitirlos. La cancelación de tickets es lógica y los errores solo se reintentan tras una refinación explícita. Falta validar navegación LOD con GPU y medir caché/memoria concurrente. [Plan y evidencia](docs/FORMAT_V7_PLAN.md#evidencia-del-septimo-incremento). |
-| 4 | Writer con admisión por bytes, pipeline ordenado, EPT y recuperación; reducir pico de spools sin romper checkpoints. | EPT: eliminado un buffer RGB temporal (6 B/punto coloreado teóricos), con U16/display intactos; `--pipeline-writes` solapa lectura/preparación con escritura ordenada. Checkpoint V7.1-pre por bloques confirmado, journal durable, `Reader::seek` y publicación recuperable; la identidad usa rutas, tamaños y `mtime`, así que cambios con metadatos idénticos pueden pasar inadvertidos. Tres datasets conservaron checksum V5/V7; V7 ahorra 24,48%, 11,77% y 38,77% de tamaño. En Majadas, radix estable baja 7,0% la mediana de preparación sin cambiar hashes, checksum ni tamaño; la mediana total aún supera V5 en 27,9% y la preparación es 3×. Dos workers redujeron 12,2% el total frente a la mediana V7 de uno en una corrida, pero duplicaron RSS y siguieron 32,8% más lentos que V5 con dos; dato exploratorio, sin cambio de default. Sigue pendiente optimizar y medir checkpoint/pipeline antes de promover. [Comparación y perfiles radix](docs/benchmarks/storage-v7-belvedere-majadas-v5-v71-2026-10-25.json), [Majadas radix](docs/benchmarks/storage-v7-majadas-radix-index-2026-10-25.json), [workers 2](docs/benchmarks/storage-v5-v71-majadas-two-workers-2026-10-25.json), [Albuera/workers](docs/benchmarks/storage-v7-albuera-v71-workers-2026-10-25.json) y [plan](docs/FORMAT_V7_PLAN.md#4-writer-y-pico-de-disco). |
+| 4 | Writer con admisión por bytes, pipeline ordenado, EPT y recuperación; reducir pico de spools sin romper checkpoints. | EPT: eliminado un buffer RGB temporal (6 B/punto coloreado teóricos), con U16/display intactos; `--pipeline-writes` solapa lectura/preparación con escritura ordenada. Checkpoints V7.1/V7.2-pre por bloques, journal durable, `Reader::seek` y publicación recuperable; la identidad usa rutas, tamaños y `mtime`, así que cambios con metadatos idénticos pueden pasar inadvertidos. Tres datasets conservaron checksum V5/V7; V7 ahorra 24,48%, 11,77% y 38,77% de tamaño. En Majadas, radix estable baja 7,0% la mediana de preparación; dos workers bajaron 12,2% el total en una corrida, duplicando RSS. V7.2-pre reduce preparación observada a 126,52 s en Majadas y 202,41 s en Albuera, pero Albuera aún tarda 670,81 s frente a 478,01 s en V5 y ocupa 52.451.191 B más que V7.1. Una corrida por muestra: sigue experimental y sin cambio de default. [Comparación V7.2](docs/benchmarks/storage-v7-v72-compact24-2026-10-25.json), [perfiles radix](docs/benchmarks/storage-v7-majadas-radix-index-2026-10-25.json), [workers 2](docs/benchmarks/storage-v5-v71-majadas-two-workers-2026-10-25.json) y [plan](docs/FORMAT_V7_PLAN.md#4-writer-y-pico-de-disco). |
 | 5 | Contrastar representación XYZ/atributos, índices y páginas con el corpus real, incluidos RAM, disco temporal y latencia selectiva. | Pendiente; solo incorporar candidatos con evidencia. |
 | 6 | Promover V7 final/default, regenerar fixtures/datasets activos y eliminar backends/opciones V5/V6. | Pendiente de contratos, comparaciones y validación nativa/WASM/navegador. |
 
@@ -91,10 +91,13 @@ Conversión nativa:
 cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-version v7.1-pre
 # v5 sigue siendo el default si se omite --format-version durante la transición.
 # También admite un directorio EPT local laszip o su ept.json.
-# --checkpoint conserva fases LAS/LAZ y bloques EPT V7.1-pre; --resume retoma la misma entrada/opciones.
+# --checkpoint conserva fases LAS/LAZ y bloques EPT V7.1/V7.2-pre; --resume retoma la misma entrada/opciones.
+# --format-version v7.2-pre selecciona el candidato de writer compact-only documentado abajo.
 ```
 
-El comando anterior produce una pareja `v7.1-pre`, aún provisional. Las muestras versionadas
+El comando anterior produce una pareja `v7.1-pre`, aún provisional. `v7.2-pre` es una revisión
+experimental separada que reduce la búsqueda de candidatos del writer; sus resultados se
+contrastan antes de promoverla. Las muestras versionadas
 siguen siendo V5 y se regenerarán antes de retirar su backend. Los archivos locales provisionales
 `OCTVWFRM` deben reconvertirse desde sus fuentes. `v5` y `v6.1-pre`–`v6.4-pre` siguen disponibles
 para compatibilidad y comparación durante la transición. Se rechazan versiones sin backend antes
@@ -118,7 +121,8 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 Para doble clic se usa el paquete autocontenido `artifacts/visor-web-local/index.html`. Contrato,
 regeneración y pruebas de ambos modos: [README del host web](examples/web-host/README.md).
-Especificación de la base nueva: [V7.1-pre](crates/viewer_format/FORMAT_V7_PRE1.md);
+Especificación de revisiones nuevas: [V7.1-pre](crates/viewer_format/FORMAT_V7_PRE1.md) y
+[candidato V7.2-pre](crates/viewer_format/FORMAT_V7_PRE2.md);
 [contrato V5](crates/viewer_format/FORMAT_V5.md) durante la transición. La publicación de los dos
 archivos no es atómica; el conversor valida candidatos y publica atributos antes de coordenadas.
 
@@ -127,8 +131,8 @@ archivos no es atómica; el conversor valida candidatos y publica atributos ante
 | Área | Responsabilidad | Límite relevante |
 | --- | --- | --- |
 | `viewer_core` | Geometría, jerarquía, LOD, caché y contratos compartidos. | El índice residente y la memoria estimada no equivalen a RSS. |
-| `viewer_format` | V7.1-pre, V5 y v6 pre1/pre2/pre3/pre4, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
-| `viewer_convert` | Conversión LAS/LAZ con spools/checkpoints y EPT local. | EPT remoto y binary/zstandard no están soportados. Checkpoint EPT solo en V7.1-pre; identifica la fuente por metadatos, no por hash de contenido. |
+| `viewer_format` | V7.1/V7.2-pre, V5 y v6 pre1/pre2/pre3/pre4, cuantización, codecs, checksums y lectura selectiva. | XYZ lógico ocupa 12 bytes/punto; v6 puede reducir el stream antes de LZ4; los enteros de 64 bits conservan bits en disco, pero su proyección de color puede perder precisión. |
+| `viewer_convert` | Conversión LAS/LAZ con spools/checkpoints y EPT local. | EPT remoto y binary/zstandard no están soportados. Checkpoint EPT solo en V7.1/V7.2-pre; identifica la fuente por metadatos, no por hash de contenido. |
 | `viewer_render_wgpu` | Cámara, voxelización, buffers GPU, HZB y presentación. | Los presupuestos propios no representan toda la VRAM; la GPU puede reservar recursos fuera del control del renderer. |
 | `viewer_wasm` | Worker, carga LOD y conversión web en dos pasadas. | Lecturas por bloque síncronas; convertir fuentes de cientos de GB en navegador no es requisito. |
 | `examples/web-host` | Demo, API embebible, carga y descarga de archivos. | OPFS/cuota, pérdida de GPU, picking y cancelación requieren validación real en navegadores objetivo. |
@@ -148,7 +152,7 @@ siguen siendo las de este README.
 
 | Documento | Contenido vigente |
 | --- | --- |
-| [Plan V7](docs/FORMAT_V7_PLAN.md) y [base V7.1-pre](crates/viewer_format/FORMAT_V7_PRE1.md) | Prioridad actual: recursos, async/paralelismo, candidatos de formato y retirada de V5/V6. |
+| [Plan V7](docs/FORMAT_V7_PLAN.md), [base V7.1-pre](crates/viewer_format/FORMAT_V7_PRE1.md) y [candidato V7.2-pre](crates/viewer_format/FORMAT_V7_PRE2.md) | Prioridad actual: recursos, async/paralelismo, candidatos de formato y retirada de V5/V6. |
 | [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) / [pre3](crates/viewer_format/FORMAT_V6_PRE3.md) / [pre4](crates/viewer_format/FORMAT_V6_PRE4.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
 | [Pre3](docs/STORAGE_V6_PRE3_BENCH.md), [pre4](docs/STORAGE_V6_PRE4_BENCH.md) y [SensOFOREST completo](docs/SENSOFOREST_V6_BENCH.md) | Comparaciones de parejas válidas, tiempos, lectura selectiva y RSS con sus límites. |
 | [I/O v6](docs/STORAGE_V6_IO.md), [CPU/CRC/diccionarios](docs/STORAGE_V6_CPU.md) y [planos de bytes](docs/STORAGE_V6_BYTE_PLANES.md) | Pipeline optativo, lectores del benchmark y optimizaciones compatibles; tiling descartado para la ruta actual. |

@@ -91,13 +91,21 @@ fn fixture() -> (FormatMetadata, SourcePointBlock) {
 }
 
 fn write_fixture(dir: &TempDir, split: bool) -> (PathBuf, Option<PathBuf>) {
+    write_fixture_for_version(dir, split, FormatVersion::V7_PRE1)
+}
+
+fn write_fixture_for_version(
+    dir: &TempDir,
+    split: bool,
+    version: FormatVersion,
+) -> (PathBuf, Option<PathBuf>) {
     let (metadata, block) = fixture();
     let primary = dir.path().join("fixture.oct");
     let options = FormatWriterOptions::new(0.0001, 1024 * 1024).unwrap();
     if split {
         let attributes = dir.path().join("fixture.oct.attributes");
         let mut writer = crate::FormatWriter::new_split_for_version(
-            FormatVersion::V7_PRE1,
+            version,
             Cursor::new(Vec::new()),
             Cursor::new(Vec::new()),
             metadata,
@@ -111,7 +119,7 @@ fn write_fixture(dir: &TempDir, split: bool) -> (PathBuf, Option<PathBuf>) {
         (primary, Some(attributes))
     } else {
         let mut writer = crate::FormatWriter::new_for_version(
-            FormatVersion::V7_PRE1,
+            version,
             Cursor::new(Vec::new()),
             metadata,
             options,
@@ -121,6 +129,26 @@ fn write_fixture(dir: &TempDir, split: bool) -> (PathBuf, Option<PathBuf>) {
         fs::write(&primary, writer.finish().unwrap().into_inner()).unwrap();
         (primary, None)
     }
+}
+
+#[test]
+fn async_reader_accepts_v72_pre2_monolithic_and_split_files() {
+    runtime().block_on(async {
+        for split in [false, true] {
+            let dir = TempDir::new();
+            let (primary, attributes) =
+                write_fixture_for_version(&dir, split, FormatVersion::V7_PRE2);
+            let reader = AsyncFormatReader::open(primary, attributes, 1, u64::MAX)
+                .await
+                .unwrap();
+            assert_eq!(reader.format_version(), FormatVersion::V7_PRE2);
+            let read = reader.read(ID, ReadSelection::Positions).await.unwrap();
+            match read.selected() {
+                SelectedRead::Positions(points) => assert_eq!(points.len(), 3),
+                other => panic!("unexpected selection result: {other:?}"),
+            }
+        }
+    });
 }
 
 async fn open(dir: &TempDir, split: bool, slots: usize, limit: u64) -> AsyncFormatReader {
@@ -167,7 +195,10 @@ fn reads_monolithic_and_split_match_synchronous_values() {
             let reader = open(&dir, split, 2, u64::MAX).await;
             assert_eq!(reader.format_version(), FormatVersion::V7_PRE1);
             for selection in selections() {
-                let result = reader.read(ID, selection).await.unwrap();
+                let result = reader
+                    .read(ID, selection)
+                    .await
+                    .unwrap_or_else(|error| panic!("split={split} {selection:?}: {error}"));
                 match (selection, result.selected()) {
                     (ReadSelection::Positions, SelectedRead::Positions(points)) => {
                         assert_eq!(points.len(), 3)

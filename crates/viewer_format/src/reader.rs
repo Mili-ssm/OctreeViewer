@@ -871,6 +871,7 @@ impl<R: Read + Seek> IndexedReader<R> {
     ) -> IndexedReader<S> {
         let mut fork = self.fork_reader(reader);
         fork.attributes = attributes;
+        fork.attributes_attached = fork.attributes.is_some();
         fork
     }
 

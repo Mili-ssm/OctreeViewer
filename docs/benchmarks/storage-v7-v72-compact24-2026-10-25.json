@@ -1,0 +1,143 @@
+{
+  "binaries": {
+    "conversion_sha256": "3e6a2678d3799de4d4a7ad11194407cf3afaab96e6c5d4f44adf049610b62f2d",
+    "profile_tool_sha256": "2a7b1b42dafc43b1287b4337ce267201488e1a7b5de4c4ec1f203933ee8ddc8d",
+    "reader_sha256": "41275cffb88897ff574939adfcca8643f2c87fd8033e2b1406abf6c8381be43b"
+  },
+  "conditions": "One conversion per dataset, sequential on the same host, perf profile, one spatial worker, divisions 2, 262144 points per block, no checkpoint or write pipeline. OS cache was not purged. Timings are observations, not a statistical comparison.",
+  "conversion_options": {
+    "checkpoint": false,
+    "divisions": 2,
+    "format_version": "v7.2-pre",
+    "pipeline_writes": false,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "workers": 1
+  },
+  "date": "2026-10-25",
+  "historical_v5_reference": {
+    "albuera": {
+      "elapsed_seconds_v5": 478.005475775004,
+      "note": "Historical single run from storage-v7-albuera-v5-v64-v71-sequential-2026-10-25.json.",
+      "pair_bytes_v5": 13666843763
+    },
+    "majadas": {
+      "elapsed_seconds_median_v5": 368.8801167240017,
+      "note": "Historical three-run median from storage-v7-belvedere-majadas-v5-v71-2026-10-25.json.",
+      "pair_bytes_v5": 7533781717
+    },
+    "note": "Candidate elapsed time remains about 21.4% slower than historical V5 on Majadas and 40.3% slower on Albuera; candidate output pairs are smaller than V5 on both datasets."
+  },
+  "historical_v71_comparison": {
+    "albuera": {
+      "block_preparation_seconds_v71": 259.87,
+      "elapsed_seconds_v71": 796.84,
+      "pair_bytes_v71": 10320734767,
+      "rss_sampled_peak_bytes_v71": 123494400,
+      "temporary_sampled_peak_bytes_v71": 27463379529
+    },
+    "majadas": {
+      "block_preparation_seconds_median_v71": 173.767080426,
+      "elapsed_seconds_median_v71": 471.70156565999787,
+      "pair_bytes_v71": 4612644109,
+      "rss_sampled_peak_bytes_median_v71": 116715520,
+      "temporary_sampled_peak_bytes_median_v71": 18805732902
+    },
+    "note": "Historical V7.1 baselines have different run counts and planning variability. Compare phase work as observations; do not infer a population speedup from this single candidate run per dataset."
+  },
+  "kind": "real_dataset_v72_pre_compact24_candidate",
+  "limits": "V7.2 reduces block preparation on both datasets but is not promoted: single candidate runs; planning time varies, V7.2 Albuera remains about 40% slower than historical V5, and Albuera output is 52,451,191 bytes larger than V7.1. RSS and temporary sizes are sampled, not hard upper bounds. A first Albuera attempt stopped with ENOSPC before output publication; after freeing only generated experiment pairs under target/v7-codec-profile-2026-10-25, the retry completed.",
+  "results": {
+    "albuera": {
+      "conversion": {
+        "block_preparation_seconds": 202.410412746,
+        "blocks": 8437,
+        "elapsed_seconds": 670.805020224012,
+        "finalize_and_sync_seconds": 0.808031628,
+        "geometry_candidate_counts": {
+          "compact_occupied": 611,
+          "delta": 1511,
+          "legacy_occupied": 0,
+          "raw": 6315
+        },
+        "lod_sample_points": 179791,
+        "ordered_write_and_release_seconds": 3.639342061,
+        "phase_seconds": {
+          "block_stream": 206.055408653,
+          "output_validation": 39.810418958,
+          "spatial_planning": 424.030172882
+        },
+        "rss_sampled_peak_bytes": 123052032,
+        "source_points": 508809556,
+        "temporary_sampled_peak_bytes": 27463839467
+      },
+      "logical_read": {
+        "blocks": 8437,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 56588.144,
+        "points_including_lod": 508989347
+      },
+      "output": {
+        "oct_bytes": 6089570028,
+        "octattrs_bytes": 4283615930,
+        "pair_bytes": 10373185958,
+        "sha256_oct": "5c8fd442f2e1cad4b71bf21822dacaf6164043080667e5a7ac1ffb5c65053d9a",
+        "sha256_octattrs": "1ac60148c5a04afe9c3deeaaaa7d71a5d12c71e969e7330859451785349513d8"
+      },
+      "source": {
+        "bytes": 4305484789,
+        "path": "data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+        "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+      }
+    },
+    "majadas": {
+      "conversion": {
+        "block_preparation_seconds": 126.51628964,
+        "blocks": 6259,
+        "elapsed_seconds": 447.89103387000796,
+        "finalize_and_sync_seconds": 0.3988013,
+        "geometry_candidate_counts": {
+          "compact_occupied": 8,
+          "delta": 5938,
+          "legacy_occupied": 0,
+          "raw": 313
+        },
+        "lod_sample_points": 136308,
+        "ordered_write_and_release_seconds": 2.52077797,
+        "phase_seconds": {
+          "block_stream": 129.041695042,
+          "output_validation": 28.851080967,
+          "spatial_planning": 289.521828851
+        },
+        "rss_sampled_peak_bytes": 115798016,
+        "source_points": 415465882,
+        "temporary_sampled_peak_bytes": 18829623912
+      },
+      "logical_read": {
+        "blocks": 6259,
+        "checksum": "b830818c4aeddac0",
+        "full_ms": 40570.156,
+        "points_including_lod": 415602190
+      },
+      "output": {
+        "oct_bytes": 2197677341,
+        "octattrs_bytes": 2414967531,
+        "pair_bytes": 4612644872,
+        "sha256_oct": "5245bb012426e0e50e2f998098221f8a73e7a1ef87d19e787a81fe4f976cb45a",
+        "sha256_octattrs": "046e786e5976759e9cdbc5a0b433dd7b96bd602976d248fcba3625811a801644"
+      },
+      "source": {
+        "bytes": 1343266470,
+        "path": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+        "sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
+      }
+    }
+  },
+  "verification": {
+    "convert_tests": "cargo test -p viewer_convert --lib: 61 passed.",
+    "ept_v72_block_resume": "Unit integration test cancels after one committed block, resumes, and compares both output files byte for byte with clean conversion.",
+    "format_tests": "cargo test -p viewer_format --lib: 92 passed, 1 ignored; async-reader feature: 97 passed, 1 ignored.",
+    "logical_read_progressive": "Majadas: 6259 blocks, 415602190 points, checksum b830818c4aeddac0; Albuera: 8437 blocks, 508989347 points, checksum 8caae2a09753e50e.",
+    "wasm_check": "cargo check --target wasm32-unknown-unknown -p viewer_wasm: pass."
+  }
+}

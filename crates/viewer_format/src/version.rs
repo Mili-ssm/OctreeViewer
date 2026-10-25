@@ -30,6 +30,7 @@ impl FormatVersion {
     pub const V6_PRE3: Self = Self::V6Pre(NonZeroU32::new(3).expect("nonzero revision"));
     pub const V6_PRE4: Self = Self::V6Pre(NonZeroU32::new(4).expect("nonzero revision"));
     pub const V7_PRE1: Self = Self::V7Pre(NonZeroU32::new(1).expect("nonzero revision"));
+    pub const V7_PRE2: Self = Self::V7Pre(NonZeroU32::new(2).expect("nonzero revision"));
 
     /// Reject unimplemented output formats before touching any output stream.
     pub fn ensure_writable(self) -> Result<(), FormatError> {
@@ -203,6 +204,7 @@ mod tests {
             (6, 2, "v6.2-pre"),
             (6, 0, "v6"),
             (7, 1, "v7.1-pre"),
+            (7, 2, "v7.2-pre"),
             (7, 0, "v7"),
             (8, 9, "unknown(8, 9)"),
         ] {

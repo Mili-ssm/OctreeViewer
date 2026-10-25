@@ -83,7 +83,7 @@ mod tests {
             FormatVersion::V6,
             FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
             FormatVersion::V7,
-            FormatVersion::V7Pre(NonZeroU32::new(2).unwrap()),
+            FormatVersion::V7Pre(NonZeroU32::new(3).unwrap()),
             FormatVersion::Unknown {
                 major: 9,
                 revision: 7,

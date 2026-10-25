@@ -1049,30 +1049,45 @@ pub(crate) fn prepare_point_block_for_version(
     if layout.supports_occupancy() && point_count != 0 && u32::try_from(point_count).is_ok() {
         let max_geometry_bytes =
             options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
-        for bits in [24, 28] {
-            let candidate = crate::QuantizedOccupancy::new(&quantized, bits)
+        if layout == StorageLayout::V7Pre2 {
+            let candidate = crate::QuantizedOccupancy::new(&quantized, 24)
                 .map_err(|_| FormatError::BlockSizeOverflow)?;
-            for own_octant in [false, true] {
-                if let Some(raw) =
-                    crate::occupancy_codec::encode(&candidate, own_octant, max_geometry_bytes)?
-                {
-                    let encoded = compress_block(&raw);
-                    if encoded.bytes().len() < encoded_geometry.bytes().len() {
-                        geometry_encoding = GeometryEncoding::Occupied;
-                        geometry_raw_length = raw.len();
-                        encoded_geometry = encoded;
-                    }
-                }
-            }
-            if layout.supports_compact_occupancy()
-                && let Some(raw) =
-                    crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
+            if let Some(raw) =
+                crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
             {
                 let encoded = compress_block(&raw);
                 if encoded.bytes().len() < encoded_geometry.bytes().len() {
                     geometry_encoding = GeometryEncoding::CompactOccupied;
                     geometry_raw_length = raw.len();
                     encoded_geometry = encoded;
+                }
+            }
+        } else {
+            for bits in [24, 28] {
+                let candidate = crate::QuantizedOccupancy::new(&quantized, bits)
+                    .map_err(|_| FormatError::BlockSizeOverflow)?;
+                for own_octant in [false, true] {
+                    if let Some(raw) =
+                        crate::occupancy_codec::encode(&candidate, own_octant, max_geometry_bytes)?
+                    {
+                        let encoded = compress_block(&raw);
+                        if encoded.bytes().len() < encoded_geometry.bytes().len() {
+                            geometry_encoding = GeometryEncoding::Occupied;
+                            geometry_raw_length = raw.len();
+                            encoded_geometry = encoded;
+                        }
+                    }
+                }
+                if layout.supports_compact_occupancy()
+                    && let Some(raw) =
+                        crate::occupancy_codec::encode_compact(&candidate, max_geometry_bytes)?
+                {
+                    let encoded = compress_block(&raw);
+                    if encoded.bytes().len() < encoded_geometry.bytes().len() {
+                        geometry_encoding = GeometryEncoding::CompactOccupied;
+                        geometry_raw_length = raw.len();
+                        encoded_geometry = encoded;
+                    }
                 }
             }
         }

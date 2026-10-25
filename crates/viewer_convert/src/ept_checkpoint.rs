@@ -145,9 +145,12 @@ impl EptCheckpoint {
         mode: CheckpointMode,
         options: ConvertOptions,
     ) -> Result<Self, CheckpointError> {
-        if options.format_version() != FormatVersion::V7_PRE1 {
+        if !matches!(
+            options.format_version(),
+            FormatVersion::V7_PRE1 | FormatVersion::V7_PRE2
+        ) {
             return Err(CheckpointError::Invalid(
-                "EPT recovery supports only v7.1-pre".into(),
+                "EPT recovery supports only v7.1-pre and v7.2-pre".into(),
             ));
         }
         let root = checkpoint_path(output_path);
@@ -193,7 +196,7 @@ impl EptCheckpoint {
                 let m = read_manifest(&mp)?;
                 if m.schema != MANIFEST_SCHEMA
                     || m.plan_version != EPT_PLAN_VERSION
-                    || m.output_version != FormatVersion::V7_PRE1.to_string()
+                    || m.output_version != options.format_version().to_string()
                     || m.options != Options::from(options)
                 {
                     return Err(CheckpointError::Mismatch);
@@ -762,6 +765,34 @@ mod tests {
         ConvertOptions::default()
             .with_format_version(FormatVersion::V7_PRE1)
             .unwrap()
+    }
+
+    #[test]
+    fn v72_checkpoint_resumes_only_with_its_exact_format_identity() {
+        let p = dir().join("out");
+        let v72_options = ConvertOptions::default()
+            .with_format_version(FormatVersion::V7_PRE2)
+            .unwrap();
+        let mut checkpoint = EptCheckpoint::open(&p, CheckpointMode::Create, v72_options).unwrap();
+        checkpoint.bind_source_files(src()).unwrap();
+        writing(&mut checkpoint);
+        drop(checkpoint);
+
+        let resumed = EptCheckpoint::open(&p, CheckpointMode::Resume, v72_options).unwrap();
+        let mut records = 0;
+        resumed
+            .for_each_committed_record(|_| {
+                records += 1;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(records, 1);
+        drop(resumed);
+        assert!(matches!(
+            EptCheckpoint::open(&p, CheckpointMode::Resume, options()),
+            Err(CheckpointError::Mismatch)
+        ));
+        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
     }
     fn src() -> Vec<EptSourceFile> {
         vec![EptSourceFile {

@@ -689,6 +689,13 @@ fn summarize_stats(
             .count()
     );
     println!(
+        "geometry_compact_occupied_block_count={}",
+        stats
+            .iter()
+            .filter(|b| { b.geometry_encoding == viewer_format::GeometryEncoding::CompactOccupied })
+            .count()
+    );
+    println!(
         "geometry_raw_block_count={}",
         stats
             .iter()

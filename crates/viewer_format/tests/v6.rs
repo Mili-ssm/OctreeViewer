@@ -1548,7 +1548,7 @@ fn unsupported_v6_final_and_pre5_are_rejected_by_writer_encoder_and_reader() {
         FormatVersion::V6,
         FormatVersion::V6Pre(std::num::NonZeroU32::new(5).unwrap()),
         FormatVersion::V7,
-        FormatVersion::V7Pre(std::num::NonZeroU32::new(2).unwrap()),
+        FormatVersion::V7Pre(std::num::NonZeroU32::new(3).unwrap()),
     ];
     for version in versions {
         assert!(matches!(

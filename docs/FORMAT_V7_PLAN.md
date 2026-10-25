@@ -612,3 +612,38 @@ memoria/latencia real.
 La prioridad 3 aún requiere navegación GPU real, prueba del worker completo sustituyendo dataset
 con varias lecturas Blob activas y memoria conjunta con caché WASM/GPU. El límite actual de cuatro
 lecturas sigue provisional y no está basado en una comparativa de recursos y latencia.
+
+## Candidato de conversión V7.2-pre
+
+Para reducir CPU del writer se conservan dos identidades: V7.1-pre mantiene su búsqueda completa
+(24/28 bits, ocupación heredada y compacta); V7.2-pre evalúa solo ocupación compacta de 24 bits
+frente a raw/delta. Ambas comparten decodificación, mantienen orden de filas y los mismos valores
+lógicos, pero V7.2 usa magias de índice/footer propias. Así los resultados no se confunden con la
+línea base y los checkpoints EPT permanecen ligados a una revisión exacta. La alternativa sencilla
+era cambiar la selección bajo V7.1; se descarta porque habría hecho dependientes del binario los
+bytes nuevos de la misma identidad.
+
+La señal preliminar justifica medir el candidato: en Majadas, compact-only fue byte a byte igual
+al selector de 24 bits con serializaciones redundantes (+763 B respecto a V7.1 completo), y la
+preparación observada bajó de 173,77 s (mediana V7.1) a 126,39 s en una corrida. En Albuera,
+compact-only también coincidió byte a byte con ese selector de 24 bits; preparación 210,86 s
+frente a 259,87 s de la corrida V7.1, con +52.451.191 B. Estas pruebas temporales todavía tenían
+marcador V7.1 y una de las duraciones totales fue atípica; no se consideran medición formal de
+V7.2 ni criterio de promoción. La diferencia pequeña de tamaño en Albuera y la latencia absoluta
+V7 frente a V5 obligan a completar perfiles identificados como V7.2 antes de decidir.
+
+**Cierre implementado y medido el 25-10-2026:** V7.1 conserva su selector; V7.2 usa identidad
+exacta propia, y lectura nativa/async mono/split. EPT V7.2 retoma tras un bloque confirmado y
+coincide byte a byte con una ejecución limpia; los checkpoints de V7.1 no se aceptan como V7.2.
+Perfiles nativos identificados como V7.2 y lector progresivo confirmaron los checksums V5 en ambos
+datasets. Las cifras, hashes, contadores de candidatos y límites están en
+[el perfil compact-only](benchmarks/storage-v7-v72-compact24-2026-10-25.json).
+
+Majadas: preparación 126,52 s frente a la mediana V7.1 de 173,77 s (-27,2%); total 447,89 s
+frente a 471,70 s (-5,0%); pareja +763 B y 8 bloques compactos. Albuera: preparación 202,41 s
+frente a la corrida V7.1 de 259,87 s (-22,1%); total 670,81 s frente a 796,84 s (-15,8%); pareja
++52.451.191 B y 611 bloques compactos. Una muestra por dataset no aísla la variación de
+planificación; V7.2 sigue experimental. Aun así, tarda 21,4% más que V5 histórico en Majadas y
+40,3% más en Albuera, aunque las parejas sean menores; la optimización parcial no satisface el
+criterio de promoción. Repetir con orden
+controlado y separar planificación/preparación antes de aceptar un cambio de default.
