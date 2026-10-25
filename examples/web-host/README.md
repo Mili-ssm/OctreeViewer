@@ -21,6 +21,13 @@ workspace root with:
 cargo run --offline -p viewer_format --example create_web_sample -- examples/web-host/sample.oct
 ```
 
+The split pair `sample-v7.oct` / `sample-v7.octattrs` uses `v7.1-pre` and backs the asynchronous
+Blob-reader probe. Regenerate it with:
+
+```bash
+cargo run --offline -p viewer_format --example create_web_sample -- examples/web-host/sample-v7.oct v7.1-pre
+```
+
 ## Serve the demo
 
 La demo de desarrollo usa módulos externos: **no abrir este `index.html` con doble clic**.
@@ -490,6 +497,14 @@ With fresh bindings, run `tests/storage-format.browser.mjs` as a module Worker a
 the companion and explicit rejection of provisional files, unsupported v6 revisions and an
 incorrect companion. It needs no GPU adapter. Recorded native/OPFS/browser evidence and the
 remaining presentation limitation are in [storage benchmarks](../../docs/STORAGE_BENCH.md).
+
+### V7 asynchronous Blob range probe
+
+With fresh bindings, run `tests/async-format-reader.browser.mjs` as a module Worker and wait for
+`type === "probeResult"`. Against the V7.1-pre fixture it checks bounded metadata ranges,
+asynchronous `Blob.arrayBuffer()` payload reads, XYZ/RGB and typed U16 materialization, companion
+identity and CRC rejection without a full-file read. This verifies the WASM reader façade only;
+worker scheduling, memory admission and LOD publication remain pending in the [V7 plan](../../docs/FORMAT_V7_PLAN.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
 
 ### Experimental v6 conversion
 

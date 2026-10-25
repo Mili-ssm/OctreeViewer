@@ -7,8 +7,12 @@ pub const FORMAT_VERSION: u16 = 5;
 /// Common header envelope, identified by the final byte of OCTVFRM1.
 pub const HEADER_ENVELOPE_VERSION: u16 = 1;
 
-pub(crate) const HEADER_SIZE: u64 = 24;
-pub(crate) const FOOTER_SIZE: u64 = 40;
+/// Byte length of the common split-file header envelope.
+pub const SPLIT_HEADER_BYTES: u64 = 24;
+/// Byte length of the common split-file footer envelope.
+pub const SPLIT_FOOTER_BYTES: u64 = 40;
+pub(crate) const HEADER_SIZE: u64 = SPLIT_HEADER_BYTES;
+pub(crate) const FOOTER_SIZE: u64 = SPLIT_FOOTER_BYTES;
 pub const HEADER_MAGIC: &[u8; 8] = b"OCTVFRM1";
 pub(crate) const PROVISIONAL_HEADER_MAGIC: &[u8; 8] = b"OCTVWFRM";
 pub(crate) const INDEX_MAGIC: &[u8; 8] = b"OCTVIDX5";

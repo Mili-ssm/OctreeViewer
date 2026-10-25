@@ -1,0 +1,127 @@
+// Async split-Blob reader probe; no GPU adapter or viewer renderer is required.
+import init, { WasmAsyncFormatReader } from "../../../pkg/viewer_wasm.js";
+
+function assert(condition, message) {
+    if (!condition) throw new Error(message);
+}
+
+self.onmessage = async ({ data = {} }) => {
+    try {
+        await init();
+        const primary = data.primary
+            ?? await fetch(new URL("../sample-v7.oct", import.meta.url)).then(response => response.blob());
+        const attributes = data.attributes
+            ?? await fetch(new URL("../sample-v7.octattrs", import.meta.url)).then(response => response.blob());
+        const primaryBytes = new Uint8Array(await primary.arrayBuffer());
+
+        const originalArrayBuffer = Blob.prototype.arrayBuffer;
+        const originalSlice = Blob.prototype.slice;
+        const ranges = [];
+        let arrayBufferCalls = 0;
+        Blob.prototype.arrayBuffer = function () {
+            arrayBufferCalls += 1;
+            return originalArrayBuffer.call(this);
+        };
+        Blob.prototype.slice = function (start, end, type) {
+            ranges.push({ size: this.size, start, end });
+            return originalSlice.call(this, start, end, type);
+        };
+        try {
+            const reader = await WasmAsyncFormatReader.open(primary, attributes);
+            const geometryPlan = reader.planRead(1n, "geometry");
+            const geometryRanges = geometryPlan.ranges;
+            assert(geometryRanges.length === 2, "geometry did not plan XYZ and RGB ranges");
+            assert(BigInt(geometryPlan.peak_bytes) > 0n, "read plan omitted its memory estimate");
+            let pendingPlanProtected = false;
+            try {
+                reader.planRead(1n, "positions");
+            } catch {
+                pendingPlanProtected = true;
+            }
+            assert(pendingPlanProtected, "reader replaced a plan before its buffers were consumed");
+            const geometry = await reader.read();
+            assert(geometry.kind === "geometry" && geometry.pointCount === 4096,
+                "geometry result shape is invalid");
+            assert(geometry.values instanceof Float32Array && geometry.values.length === 4096 * 3,
+                "positions are not transferred as xyz float values");
+            assert(geometry.colors instanceof Uint8Array && geometry.colors.length === 4096 * 3,
+                "display colors are not transferred as packed RGB bytes");
+
+            const corruptBytes = primaryBytes.slice();
+            corruptBytes[Number(geometryRanges[0].offset)] ^= 1;
+            const corruptReader = await WasmAsyncFormatReader.open(new Blob([corruptBytes]), attributes);
+            corruptReader.planRead(1n, "geometry");
+            let checksumRejected = false;
+            try {
+                await corruptReader.read();
+            } catch (error) {
+                checksumRejected = String(error).toLowerCase().includes("checksum");
+            } finally {
+                corruptReader.free();
+            }
+            assert(checksumRejected, "corrupt payload was not rejected by its checksum");
+
+            const attrPlan = reader.planRead(1n, "attribute", 0);
+            const attrRanges = attrPlan.ranges;
+            assert(attrRanges.length === 1 && attrRanges[0].source === "attributes",
+                "attribute selection did not plan its companion range");
+            const column = await reader.read();
+            assert(column.kind === "attribute" && column.name === "intensity"
+                && column.dataType === "U16" && column.values instanceof Uint16Array
+                && column.values.length === 4096 && column.pointCount === 4096,
+            "typed attribute result is invalid");
+
+            const positionPlan = reader.planRead(1n, "positions");
+            const positionRanges = positionPlan.ranges;
+            assert(positionRanges.length === 1 && positionRanges[0].source === "primary",
+                "position selection did not plan its primary range");
+            const positions = await reader.read();
+            assert(positions.kind === "positions" && positions.values instanceof Float32Array
+                && positions.values.length === 4096 * 3, "positions result is invalid");
+
+            const colorPlan = reader.planRead(1n, "displayColors");
+            const colorRanges = colorPlan.ranges;
+            assert(colorRanges.length === 1 && colorRanges[0].source === "attributes",
+                "RGB selection did not plan its companion range");
+            const colors = await reader.read();
+            assert(colors.kind === "displayColors" && colors.values instanceof Uint8Array
+                && colors.values.length === 4096 * 3, "RGB result is invalid");
+
+            let wrongCompanionRejected = false;
+            try {
+                await WasmAsyncFormatReader.open(primary, primary);
+            } catch {
+                wrongCompanionRejected = true;
+            }
+            assert(wrongCompanionRejected, "primary Blob was accepted as its own companion");
+
+            assert(ranges.length > 0 && ranges.every(({ size, start, end }) => (
+                Number.isSafeInteger(start) && Number.isSafeInteger(end)
+                && start >= 0 && end > start && end <= size
+            )), "reader issued an invalid Blob range");
+            assert(ranges.every(({ size, start, end }) => start !== 0 || end !== size),
+                "reader requested an entire Blob");
+            assert(arrayBufferCalls === ranges.length, "each range must resolve through Blob.arrayBuffer");
+            self.postMessage({
+                type: "probeResult",
+                passed: true,
+                geometryRangeCount: geometryRanges.length,
+                geometryPeakBytes: geometryPlan.peak_bytes,
+                attributeRangeCount: attrRanges.length,
+                positionRangeCount: positionRanges.length,
+                colorRangeCount: colorRanges.length,
+                blobRangeReads: ranges.length,
+                arrayBufferCalls,
+                checksumRejected,
+                pointCount: geometry.pointCount,
+                attributeType: column.dataType,
+            });
+            reader.free();
+        } finally {
+            Blob.prototype.arrayBuffer = originalArrayBuffer;
+            Blob.prototype.slice = originalSlice;
+        }
+    } catch (error) {
+        self.postMessage({ type: "probeResult", passed: false, error: String(error) });
+    }
+};

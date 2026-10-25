@@ -5,13 +5,20 @@ use viewer_core::{
     CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy,
     SpatialNode,
 };
-use viewer_format::{FormatMetadata, FormatWriter, FormatWriterOptions, SourcePointBlock};
+use viewer_format::{
+    FormatMetadata, FormatVersion, FormatWriter, FormatWriterOptions, SourcePointBlock,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let output = env::args_os()
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("examples/web-host/sample.oct"));
+    let version = env::args()
+        .nth(2)
+        .map(|value| value.parse::<FormatVersion>())
+        .transpose()?
+        .unwrap_or(FormatVersion::V5);
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -61,7 +68,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut writer = FormatWriter::new_split(
+    let mut writer = FormatWriter::new_split_for_version(
+        version,
         File::create(&output)?,
         File::create(output.with_extension("octattrs"))?,
         metadata,

@@ -210,6 +210,19 @@ marcador rechaza lecturas síncronas de payload; las pruebas V7 comparan resulta
 rechazan corrupción y companion incompatible. Esto permite consumir rangos obtenidos externamente,
 pero todavía no llama `Blob.arrayBuffer()`, admite tareas por bytes ni se conecta al ciclo LOD.
 
+**Tercer incremento implementado:** `WasmAsyncFormatReader` abre Blobs split leyendo cabecera,
+footer e índice con `Blob.slice(...).arrayBuffer()`, luego crea planes internos para posiciones,
+geometría XYZ+RGB, RGB o una columna tipada y obtiene únicamente sus rangos. El plan queda ligado
+al reader y no puede sustituirse desde JS antes de consumirlo; el materializador común valida
+longitudes y CRC. Las posiciones/RGB/columnas llegan en typed arrays que conservan el tipo de cada
+atributo. Un fixture V7.1-pre reproducible comprueba esta ruta en el navegador, incluidos rangos
+sin lectura completa del Blob, colores, columna U16 y rechazo de payload corrupto.
+
+La fachada es un paso de biblioteca WASM, todavía separado del viewer: no tiene cuota agregada de
+operaciones/bytes, retención de permisos hasta insertar en caché, scheduler, invalidación por
+generación ni publicación LOD. `read()` consume sus rangos internamente; la integración del worker
+usará el plan visible para admitir la tarea y evitará mantener préstamos WASM durante las lecturas.
+
 **Contrato de integración WASM, contrastado con el flujo actual:** `LodDataset::update_view_progressive`
 selecciona el corte, invoca el loader para el bloque pendiente de mayor prioridad y vuelve a
 preparar el plan. El loader puede responder `None`; así el bloque queda pendiente y la publicación

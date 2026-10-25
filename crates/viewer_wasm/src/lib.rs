@@ -21,12 +21,16 @@ pub use controller::{
 pub use lod_dataset::{LodDataset, LodDatasetError, LodViewStats, LodWorkStats};
 
 #[cfg(target_arch = "wasm32")]
+mod async_format_reader;
+#[cfg(target_arch = "wasm32")]
 mod bindings;
 #[cfg(target_arch = "wasm32")]
 mod browser_convert;
 #[cfg(target_arch = "wasm32")]
 mod browser_io;
 
+#[cfg(target_arch = "wasm32")]
+pub use async_format_reader::WasmAsyncFormatReader;
 #[cfg(target_arch = "wasm32")]
 pub use bindings::WasmVoxelViewer;
 #[cfg(target_arch = "wasm32")]
