@@ -755,3 +755,32 @@ Pasan formato/Clippy, `viewer_format --all-targets --features async-reader`, las
 `viewer_convert --lib` (incluida recuperación EPT) y compilación WASM. Siguiente cierre: atribuir
 coste/beneficio de candidatos de atributos en corpus grandes antes de cambiar su selección;
 conservar esta mejora de lookup sin inferir que resuelve la brecha total con V5.
+
+
+## Coste y beneficio de diccionarios por columna
+
+Se regeneró Albuera con V7.2 actual: 455,78 s total, 169,83 s de preparación, pareja de
+10.373.185.958 B y los SHA-256 ya conocidos. Es N=1 y no permite comparar latencia con V5.
+Una sonda ignorada en `attribute_codec` lee un payload por vez y selecciona IDs repartidos por el
+índice, incluyendo extremos. Excluye lectura/serialización de tiempos y alterna tres encodes por
+payload. En el perfil final comprueba codec, longitud y CRC del encoder base contra lo persistido,
+además de reconstrucción exacta en ambas alternativas. Se ejecuta con ruta absoluta en
+`VIEWER_ATTRIBUTE_PROFILE_PATH`, límite `VIEWER_ATTRIBUTE_PROFILE_BLOCKS` y
+`cargo test --profile perf -p viewer_format profile_attribute_encoders_on_split_corpus -- --ignored --nocapture`.
+
+Los 512 bloques de Albuera suman 29.011.991 filas incluyendo LOD. Eliminar diccionarios de todas
+las tuplas anchas cambia payloads de atributos de 244.808.170 a 251.222.659 B (+2,62%) y el encoder
+medido de 3,84 a 1,29 s (-66,4%). Intensidad, ángulo F32 y source ID aportan gran parte del ahorro
+de bytes del diccionario, por lo que no conviene eliminarlos por ser columnas numéricas.
+Conservar candidatos de diccionario en tuplas de **1, 2 y 4 bytes**, usando la alternativa barata en
+las demás, compone 245.260.314 B (+0,185%) y 2,05 s (-46,5%) sobre esos mismos payloads. Es una
+composición de mediciones por columna, no una conversión nueva ni un ratio de pareja completa.
+El perfil inicial de 128 bloques apuntó al mismo intercambio. [Datos, codecs y límites](benchmarks/storage-v7-v72-attribute-candidates-2026-10-25.json).
+
+**Siguiente candidato:** V7.3-pre con identidad propia, geometría V7.2 y diccionarios solo para
+anchos 1/2/4; raw/LZ4, constantes y planos permanecen disponibles. V7.1/V7.2 conservan sus bytes.
+Implementar y verificar identidad/lecturas selectivas, nativo/async/WASM y reanudación EPT exacta;
+luego convertir corpus completos y contrastar tiempo/tamaño/recursos antes de promover. La pareja
+Albuera generada se conserva temporalmente como control para esa comparación y se limpiará al
+cerrarla. La sonda no cambia ninguna ruta de producción. Pasan su prueba de corrección, el perfil
+con CRC de 512 bloques, Clippy y formato.

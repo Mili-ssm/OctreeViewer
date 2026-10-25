@@ -305,6 +305,297 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{collections::BTreeMap, fs::File, io::BufReader, time::Instant};
+
+    fn encode_without_wide_dictionary(
+        raw: &[u8],
+        width: usize,
+    ) -> Result<EncodedBlock, FormatError> {
+        if width <= 1 {
+            return encode_pre4(raw, width);
+        }
+        if width == 0 || !raw.len().is_multiple_of(width) {
+            return Err(malformed());
+        }
+        let mut best = compress_block(raw);
+        let rows = raw.len() / width;
+        if rows < 2 || rows > u32::MAX as usize {
+            return Ok(best);
+        }
+        if raw.chunks_exact(width).all(|row| row == &raw[..width]) && width < best.bytes().len() {
+            return Ok(EncodedBlock {
+                codec: BlockCodec::Constant,
+                bytes: raw[..width].to_vec(),
+            });
+        }
+        let mut planes = allocate(raw.len())?;
+        planes.resize(raw.len(), 0);
+        for byte in 0..width {
+            for row in 0..rows {
+                planes[byte * rows + row] = raw[row * width + byte];
+            }
+        }
+        let encoded = compress_block(&planes);
+        if encoded.codec() == BlockCodec::Lz4 && encoded.bytes().len() < best.bytes().len() {
+            best = EncodedBlock {
+                codec: BlockCodec::BytePlanes,
+                bytes: encoded.into_bytes(),
+            };
+        }
+        Ok(best)
+    }
+
+    fn values_as_le_bytes(values: &viewer_core::AttributeValues) -> Vec<u8> {
+        use viewer_core::AttributeValues::*;
+        let mut bytes = Vec::new();
+        macro_rules! append {
+            ($values:expr) => {
+                for value in $values {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+            };
+        }
+        match values {
+            U8(values) => bytes.extend_from_slice(values),
+            I8(values) => bytes.extend(values.iter().map(|value| *value as u8)),
+            U16(values) => append!(values),
+            I16(values) => append!(values),
+            U32(values) => append!(values),
+            I32(values) => append!(values),
+            U64(values) => append!(values),
+            I64(values) => append!(values),
+            F32(values) => {
+                for value in values {
+                    bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+                }
+            }
+            F64(values) => {
+                for value in values {
+                    bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+                }
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn no_wide_dictionary_candidate_preserves_bytes_and_never_beats_exhaustive_encoder() {
+        for width in [1, 2, 3, 6, 8, 12] {
+            for unique in [0, 1, 3, 256] {
+                let rows = if unique == 0 { 0 } else { 513 };
+                let raw: Vec<u8> = (0..rows)
+                    .flat_map(|row| {
+                        (0..width).map(move |byte| {
+                            if unique == 1 {
+                                0x5a
+                            } else {
+                                ((row % unique) * 29 + byte * 17) as u8
+                            }
+                        })
+                    })
+                    .collect();
+                let baseline = encode_pre4(&raw, width).unwrap();
+                let candidate = encode_without_wide_dictionary(&raw, width).unwrap();
+                assert!(
+                    candidate.bytes().len() >= baseline.bytes().len(),
+                    "width={width} unique={unique}"
+                );
+                assert_eq!(
+                    decode(
+                        baseline.codec(),
+                        baseline.bytes(),
+                        raw.len(),
+                        width,
+                        raw.len()
+                    )
+                    .unwrap(),
+                    raw
+                );
+                assert_eq!(
+                    decode(
+                        candidate.codec(),
+                        candidate.bytes(),
+                        raw.len(),
+                        width,
+                        raw.len()
+                    )
+                    .unwrap(),
+                    raw
+                );
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct AttributeEncoderProfile {
+        blocks: u64,
+        rows: u64,
+        bytes: [u64; 2],
+        times: [[u128; 3]; 2],
+        codecs: [BTreeMap<String, u64>; 2],
+    }
+
+    impl AttributeEncoderProfile {
+        fn observe(&mut self, raw: &[u8], width: usize, stored: crate::PayloadReadRange) {
+            let reference = [
+                encode_pre4(raw, width).unwrap(),
+                encode_without_wide_dictionary(raw, width).unwrap(),
+            ];
+            assert_eq!(reference[0].codec(), stored.codec());
+            assert_eq!(reference[0].bytes().len() as u64, stored.stored_bytes());
+            assert_eq!(crate::crc32(reference[0].bytes()), stored.checksum());
+            assert!(reference[1].bytes().len() >= reference[0].bytes().len());
+            self.blocks += 1;
+            self.rows += (raw.len() / width) as u64;
+            for (variant, encoded) in reference.iter().enumerate() {
+                self.bytes[variant] += encoded.bytes().len() as u64;
+                *self.codecs[variant]
+                    .entry(format!("{:?}", encoded.codec()))
+                    .or_default() += 1;
+                assert_eq!(
+                    decode(
+                        encoded.codec(),
+                        encoded.bytes(),
+                        raw.len(),
+                        width,
+                        raw.len()
+                    )
+                    .unwrap(),
+                    raw
+                );
+            }
+            for repetition in 0..3 {
+                let order = if repetition % 2 == 0 { [0, 1] } else { [1, 0] };
+                for variant in order {
+                    let started = Instant::now();
+                    let encoded = if variant == 0 {
+                        encode_pre4(raw, width)
+                    } else {
+                        encode_without_wide_dictionary(raw, width)
+                    }
+                    .unwrap();
+                    self.times[variant][repetition] += started.elapsed().as_nanos();
+                    assert_eq!(encoded.codec(), reference[variant].codec());
+                    assert_eq!(encoded.bytes(), reference[variant].bytes());
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "profiles attribute encoders on an existing split .oct corpus"]
+    fn profile_attribute_encoders_on_split_corpus() {
+        let path = std::path::PathBuf::from(
+            std::env::var("VIEWER_ATTRIBUTE_PROFILE_PATH")
+                .expect("set VIEWER_ATTRIBUTE_PROFILE_PATH to a split primary .oct file"),
+        );
+        let limit = std::env::var("VIEWER_ATTRIBUTE_PROFILE_BLOCKS")
+            .ok()
+            .map(|value| value.parse::<usize>().expect("valid block limit"))
+            .unwrap_or(128);
+        assert!(limit > 0, "block limit must be positive");
+        let mut reader =
+            crate::FormatReader::new(BufReader::new(File::open(&path).unwrap())).unwrap();
+        reader
+            .attach_attributes(BufReader::new(
+                File::open(path.with_extension("octattrs")).expect("split companion .octattrs"),
+            ))
+            .unwrap();
+        let ids = reader.format_metadata().dataset().hierarchy().block_ids();
+        let count = limit.min(ids.len());
+        assert!(count > 0, "corpus contains no blocks");
+        let selected: Vec<_> = (0..count)
+            .map(|index| ids[index * (ids.len() - 1) / (count - 1).max(1)])
+            .collect();
+        println!(
+            "attribute_profile_input total_blocks={} sampled_blocks={count}",
+            ids.len()
+        );
+        let schema = reader
+            .format_metadata()
+            .dataset()
+            .hierarchy()
+            .attributes()
+            .to_vec();
+        let mut summaries: Vec<_> = (0..=schema.len())
+            .map(|_| AttributeEncoderProfile::default())
+            .collect();
+        // Read and serialize one payload at a time; neither operation is timed.
+        for id in selected {
+            let colors = reader.read_display_colors(id).unwrap();
+            let raw: Vec<_> = colors
+                .iter()
+                .flat_map(|color| [color.r, color.g, color.b])
+                .collect();
+            let plan = reader
+                .plan_read(id, crate::ReadSelection::DisplayColors)
+                .unwrap();
+            summaries[0].observe(&raw, 3, plan.ranges()[0]);
+            drop(raw);
+            drop(colors);
+            for (index, descriptor) in schema.iter().enumerate() {
+                let column = reader.read_attribute(id, index as u32).unwrap();
+                let raw = values_as_le_bytes(column.values());
+                let width = crate::layout::attribute_tuple_width(descriptor).unwrap();
+                let plan = reader
+                    .plan_read(
+                        id,
+                        crate::ReadSelection::Attribute {
+                            schema_index: index as u32,
+                        },
+                    )
+                    .unwrap();
+                summaries[index + 1].observe(&raw, width, plan.ranges()[0]);
+            }
+        }
+        for (index, summary) in summaries.iter().enumerate() {
+            let (name, width) = if index == 0 {
+                ("display_rgb", 3)
+            } else {
+                (
+                    schema[index - 1].name(),
+                    crate::layout::attribute_tuple_width(&schema[index - 1]).unwrap(),
+                )
+            };
+            println!("attribute_profile_name column={index} name={name:?}");
+            if index == 0 {
+                println!("attribute_profile_schema column=0 primitive=U8 components=3");
+            } else {
+                println!(
+                    "attribute_profile_schema column={index} primitive={:?} components={}",
+                    schema[index - 1].data_type(),
+                    schema[index - 1].component_count()
+                );
+            }
+            let mut baseline = summary.times[0];
+            let mut candidate = summary.times[1];
+            baseline.sort_unstable();
+            candidate.sort_unstable();
+            println!(
+                "attribute_profile column={index} width={width} blocks={} rows={} baseline_bytes={} candidate_bytes={} baseline_time_ns={} candidate_time_ns={}",
+                summary.blocks,
+                summary.rows,
+                summary.bytes[0],
+                summary.bytes[1],
+                baseline[1],
+                candidate[1]
+            );
+            for (variant, times) in summary.times.iter().enumerate() {
+                for (repetition, elapsed) in times.iter().enumerate() {
+                    println!(
+                        "attribute_profile_time column={index} variant={variant} repetition={repetition} elapsed_ns={elapsed}"
+                    );
+                }
+            }
+            for (variant, codecs) in summary.codecs.iter().enumerate() {
+                for (codec, blocks) in codecs {
+                    println!(
+                        "attribute_profile_codec column={index} variant={variant} codec={codec} blocks={blocks}"
+                    );
+                }
+            }
+        }
+    }
 
     fn old_slice_encoder(raw: &[u8], width: usize) -> Result<EncodedBlock, FormatError> {
         if width == 0 || !raw.len().is_multiple_of(width) {

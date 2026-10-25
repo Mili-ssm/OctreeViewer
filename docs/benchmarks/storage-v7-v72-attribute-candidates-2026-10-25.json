@@ -1,0 +1,532 @@
+{
+  "base_revision": "33ec195",
+  "cleanup": "Current Albuera pair retained temporarily as the baseline for the next V7.3 comparison; reports/logs/samples retained. Remove generated pair once that comparison is finished.",
+  "conditions": {
+    "cache": "not purged; probe reads after conversion/hash; no concurrent benchmark/build during measurement",
+    "divisions": 2,
+    "host_cpu": "AMD Ryzen AI 9 365 w/ Radeon 880M",
+    "points_per_block": 262144,
+    "profile": "perf",
+    "rustc": "1.99.0 (b940084d7 2026-09-28)",
+    "sample_interval_ms": 100,
+    "workers": 1
+  },
+  "converter_revision": "020463a; production unchanged by probe",
+  "converter_sha256": "fd9b3bb0d078170fcd8bfbda76bef2b2669ab44710c1c954d53206762e88bbb4",
+  "current_conversion": {
+    "block_preparation_seconds": 169.826416839,
+    "elapsed_seconds": 455.7761327150074,
+    "output": {
+      "oct_bytes": 6089570028,
+      "octattrs_bytes": 4283615930,
+      "sha256_oct": "5c8fd442f2e1cad4b71bf21822dacaf6164043080667e5a7ac1ffb5c65053d9a",
+      "sha256_octattrs": "1ac60148c5a04afe9c3deeaaaa7d71a5d12c71e969e7330859451785349513d8"
+    },
+    "phase_seconds": {
+      "block_stream": 172.830066055,
+      "output_validation": 39.704651385,
+      "spatial_planning": 241.938066629
+    },
+    "rss_sampled_peak_bytes": 123600896,
+    "temporary_sampled_peak_bytes": 27436255077,
+    "version": "v7.2-pre"
+  },
+  "date": "2026-10-25",
+  "derived_selective_policy": "keep_widths_1_2_4 combines the measured baseline encoder on tuple widths1/2/4 with the measured cheaper encoder on other widths. These are independent-column sums, not a new implemented storage revision or an end-to-end conversion timing.",
+  "exploratory_128": {
+    "log_sha256": "ebe225b67abb0ab074c9d94aa336bdcb172d2826d91badb0b0766ec290cf1f13",
+    "rows_per_column": 6992973,
+    "sampled_blocks": 128,
+    "total_blocks": 8437,
+    "totals": {
+      "baseline": {
+        "elapsed_change_percent": 0.0,
+        "elapsed_ns_by_repetition": [
+          1474809687,
+          1424831294,
+          1403329722
+        ],
+        "median_elapsed_ns": 1424831294,
+        "payload_bytes": 59340056,
+        "payload_change_percent": 0.0
+      },
+      "keep_widths_1_2_4": {
+        "elapsed_change_percent": -49.42481562311896,
+        "elapsed_ns_by_repetition": [
+          726722336,
+          719801872,
+          720611054
+        ],
+        "median_elapsed_ns": 720611054,
+        "payload_bytes": 59393635,
+        "payload_change_percent": 0.09029145506704861
+      },
+      "skip_all_wide": {
+        "elapsed_change_percent": -68.27666862010963,
+        "elapsed_ns_by_repetition": [
+          455519176,
+          451755410,
+          452003953
+        ],
+        "median_elapsed_ns": 452003953,
+        "payload_bytes": 60746770,
+        "payload_change_percent": 2.3705976954251584
+      }
+    }
+  },
+  "kind": "v72_attribute_candidate_probe",
+  "limits": "Only Albuera; deterministic block-ID sample, not full corpus or random coverage. Probe timers omit reading, serialization, validation and geometry. Do not extrapolate sampled payload ratios/timings to complete pair or conversion latency. Current full conversion is N=1 and is not an A/B performance comparison.",
+  "local_artifacts": "target/v7-attribute-candidates-20261025",
+  "method": "Evenly spaced block IDs including endpoints; read/serialize one payload at a time outside timers. Compare production encode_pre4 to raw/LZ4+constant+byteplanes with dictionaries retained only at width1. Warm up both, then alternate three encodes per payload; preserve bits on decode. Validated 512-block probe also checks production codec/length/CRC against persisted ranges.",
+  "next_candidate": "Separate exact V7.3-pre identity, V7.2 geometry policy, dictionary candidates only for tuple widths1/2/4; validate native/async/WASM/checkpoints and full corpus before promotion.",
+  "probe_binary_sha256": "0561e2bf5a3909b7a9cd8c3f04763d9ad2c778bd6fc61ef2058298d422cae966",
+  "probe_source_sha256": "4f853cf8270cbdc892ca331e02e24fc9a0514c88473ecb8ee6d7f276251e4200",
+  "source": {
+    "bytes": 4305484789,
+    "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+    "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+  },
+  "validated_512": {
+    "columns": [
+      {
+        "baseline_bytes": 85613355,
+        "baseline_time_ns": 526881025,
+        "blocks": 512,
+        "candidate_bytes": 85988499,
+        "candidate_time_ns": 38005872,
+        "codecs": [
+          {
+            "BytePlanes": 30,
+            "Dictionary": 23,
+            "Lz4": 36,
+            "None": 423
+          },
+          {
+            "BytePlanes": 37,
+            "Lz4": 37,
+            "None": 438
+          }
+        ],
+        "column": 0,
+        "name": "display_rgb",
+        "rows": 29011991,
+        "schema": {
+          "components": "3",
+          "primitive": "U8"
+        },
+        "times_ns": [
+          [
+            548708242,
+            526881025,
+            522200839
+          ],
+          [
+            38537463,
+            37925602,
+            38005872
+          ]
+        ],
+        "width": 3
+      },
+      {
+        "baseline_bytes": 21539056,
+        "baseline_time_ns": 370480088,
+        "blocks": 512,
+        "candidate_bytes": 24478914,
+        "candidate_time_ns": 117047597,
+        "codecs": [
+          {
+            "BytePlanes": 208,
+            "Constant": 2,
+            "Dictionary": 301,
+            "None": 1
+          },
+          {
+            "BytePlanes": 509,
+            "Constant": 2,
+            "None": 1
+          }
+        ],
+        "column": 1,
+        "name": "intensity",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "U16"
+        },
+        "times_ns": [
+          [
+            375913097,
+            370480088,
+            369837278
+          ],
+          [
+            119266124,
+            117047597,
+            115173662
+          ]
+        ],
+        "width": 2
+      },
+      {
+        "baseline_bytes": 1321990,
+        "baseline_time_ns": 40457092,
+        "blocks": 512,
+        "candidate_bytes": 1321990,
+        "candidate_time_ns": 40701682,
+        "codecs": [
+          {
+            "Constant": 183,
+            "Dictionary": 321,
+            "Lz4": 7,
+            "None": 1
+          },
+          {
+            "Constant": 183,
+            "Dictionary": 321,
+            "Lz4": 7,
+            "None": 1
+          }
+        ],
+        "column": 2,
+        "name": "classification",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "U8"
+        },
+        "times_ns": [
+          [
+            42162041,
+            40457092,
+            40228102
+          ],
+          [
+            40977302,
+            40701682,
+            40235959
+          ]
+        ],
+        "width": 1
+      },
+      {
+        "baseline_bytes": 193077,
+        "baseline_time_ns": 36651360,
+        "blocks": 512,
+        "candidate_bytes": 193077,
+        "candidate_time_ns": 36759150,
+        "codecs": [
+          {
+            "Constant": 115,
+            "Dictionary": 379,
+            "Lz4": 17,
+            "None": 1
+          },
+          {
+            "Constant": 115,
+            "Dictionary": 379,
+            "Lz4": 17,
+            "None": 1
+          }
+        ],
+        "column": 3,
+        "name": "return_number",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "U8"
+        },
+        "times_ns": [
+          [
+            36883554,
+            36641312,
+            36651360
+          ],
+          [
+            36810969,
+            36759150,
+            36691527
+          ]
+        ],
+        "width": 1
+      },
+      {
+        "baseline_bytes": 1621871,
+        "baseline_time_ns": 42130968,
+        "blocks": 512,
+        "candidate_bytes": 1621871,
+        "candidate_time_ns": 42337730,
+        "codecs": [
+          {
+            "Constant": 60,
+            "Dictionary": 440,
+            "Lz4": 11,
+            "None": 1
+          },
+          {
+            "Constant": 60,
+            "Dictionary": 440,
+            "Lz4": 11,
+            "None": 1
+          }
+        ],
+        "column": 4,
+        "name": "number_of_returns",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "U8"
+        },
+        "times_ns": [
+          [
+            43217952,
+            42130968,
+            42043910
+          ],
+          [
+            42655433,
+            42337730,
+            42029076
+          ]
+        ],
+        "width": 1
+      },
+      {
+        "baseline_bytes": 10064918,
+        "baseline_time_ns": 428452747,
+        "blocks": 512,
+        "candidate_bytes": 12884992,
+        "candidate_time_ns": 148989468,
+        "codecs": [
+          {
+            "BytePlanes": 124,
+            "Constant": 1,
+            "Dictionary": 379,
+            "Lz4": 7,
+            "None": 1
+          },
+          {
+            "BytePlanes": 503,
+            "Constant": 1,
+            "Lz4": 7,
+            "None": 1
+          }
+        ],
+        "column": 5,
+        "name": "scan_angle_degrees",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "F32"
+        },
+        "times_ns": [
+          [
+            438209801,
+            428452747,
+            427348588
+          ],
+          [
+            152447540,
+            148989468,
+            147662833
+          ]
+        ],
+        "width": 4
+      },
+      {
+        "baseline_bytes": 512,
+        "baseline_time_ns": 42288384,
+        "blocks": 512,
+        "candidate_bytes": 512,
+        "candidate_time_ns": 42387098,
+        "codecs": [
+          {
+            "Constant": 511,
+            "None": 1
+          },
+          {
+            "Constant": 511,
+            "None": 1
+          }
+        ],
+        "column": 6,
+        "name": "user_data",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "U8"
+        },
+        "times_ns": [
+          [
+            42420797,
+            42233379,
+            42288384
+          ],
+          [
+            42402317,
+            42387098,
+            42212749
+          ]
+        ],
+        "width": 1
+      },
+      {
+        "baseline_bytes": 29722,
+        "baseline_time_ns": 270314280,
+        "blocks": 512,
+        "candidate_bytes": 232135,
+        "candidate_time_ns": 37498231,
+        "codecs": [
+          {
+            "Constant": 30,
+            "Dictionary": 446,
+            "Lz4": 35,
+            "None": 1
+          },
+          {
+            "BytePlanes": 85,
+            "Constant": 30,
+            "Lz4": 396,
+            "None": 1
+          }
+        ],
+        "column": 7,
+        "name": "point_source_id",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "U16"
+        },
+        "times_ns": [
+          [
+            270534202,
+            270314280,
+            269713335
+          ],
+          [
+            37556036,
+            37498231,
+            37474046
+          ]
+        ],
+        "width": 2
+      },
+      {
+        "baseline_bytes": 37749775,
+        "baseline_time_ns": 1141199868,
+        "blocks": 512,
+        "candidate_bytes": 37749775,
+        "candidate_time_ns": 460545835,
+        "codecs": [
+          {
+            "BytePlanes": 507,
+            "Lz4": 4,
+            "None": 1
+          },
+          {
+            "BytePlanes": 507,
+            "Lz4": 4,
+            "None": 1
+          }
+        ],
+        "column": 8,
+        "name": "gps_time",
+        "rows": 29011991,
+        "schema": {
+          "components": "1",
+          "primitive": "F64"
+        },
+        "times_ns": [
+          [
+            1149466153,
+            1141199868,
+            1129481769
+          ],
+          [
+            460545835,
+            460760220,
+            458987158
+          ]
+        ],
+        "width": 8
+      },
+      {
+        "baseline_bytes": 86673894,
+        "baseline_time_ns": 942750408,
+        "blocks": 512,
+        "candidate_bytes": 86750894,
+        "candidate_time_ns": 324855838,
+        "codecs": [
+          {
+            "BytePlanes": 412,
+            "Dictionary": 2,
+            "None": 98
+          },
+          {
+            "BytePlanes": 414,
+            "None": 98
+          }
+        ],
+        "column": 9,
+        "name": "rgb",
+        "rows": 29011991,
+        "schema": {
+          "components": "3",
+          "primitive": "U16"
+        },
+        "times_ns": [
+          [
+            969390686,
+            942750408,
+            932797647
+          ],
+          [
+            325460346,
+            324855838,
+            324280674
+          ]
+        ],
+        "width": 6
+      }
+    ],
+    "log_sha256": "3217617e974c254d5754f8311194a2573495c5b999a6d76f72464c8fc49c7f67",
+    "rows_per_column": 29011991,
+    "sampled_blocks": 512,
+    "total_blocks": 8437,
+    "totals": {
+      "baseline": {
+        "elapsed_change_percent": 0.0,
+        "elapsed_ns_by_repetition": [
+          3916906525,
+          3841541167,
+          3812591212
+        ],
+        "median_elapsed_ns": 3841541167,
+        "payload_bytes": 244808170,
+        "payload_change_percent": 0.0
+      },
+      "keep_widths_1_2_4": {
+        "elapsed_change_percent": -46.525328333153325,
+        "elapsed_ns_by_repetition": [
+          2073885088,
+          2054251526,
+          2049384661
+        ],
+        "median_elapsed_ns": 2054251526,
+        "payload_bytes": 245260314,
+        "payload_change_percent": 0.1846931824211584
+      },
+      "skip_all_wide": {
+        "elapsed_change_percent": -66.43892229829123,
+        "elapsed_ns_by_repetition": [
+          1296659365,
+          1289262616,
+          1282753556
+        ],
+        "median_elapsed_ns": 1289262616,
+        "payload_bytes": 251222659,
+        "payload_change_percent": 2.6202103467380278
+      }
+    }
+  }
+}
