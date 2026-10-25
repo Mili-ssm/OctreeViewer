@@ -1,0 +1,43 @@
+{
+  "kind": "v72_morton_mask_interleave_rejected",
+  "date": "2026-10-25",
+  "baseline_revision": "fbf6b9b",
+  "candidate_revision": "working-tree based on fbf6b9b; reverted after measurement",
+  "binaries": {
+    "baseline_sha256": "76571d27a3cde0963629e65030f184c9f061f929c0a5486d5c9706ab3ae73600",
+    "candidate_sha256": "b2bdfe161d426edc7b50723781a2e92809bde89bb9e1624f81e609a680b8115e"
+  },
+  "conditions": {
+    "dataset": "Belvedere 2009",
+    "format_version": "v7.2-pre",
+    "workers": 1,
+    "divisions": 2,
+    "points_per_block": 262144,
+    "sample_interval_ms": 100,
+    "order": "baseline-1, candidate-1, baseline-2, candidate-2, baseline-3, candidate-3; same host and binary per variant; OS cache not purged"
+  },
+  "hypothesis": "For depths <=10, replace the per-bit Morton interleave loop with a mask-based spread of up to ten bits per axis.",
+  "decision": "Rejected and reverted. Differential tests passed, but the three-run median block preparation and total conversion were slower; the small occupancy-construction improvement did not justify the extra specialized path.",
+  "baseline": [
+    {"elapsed_seconds": 52.877743744, "block_stream_seconds": 18.676892909, "block_preparation_seconds": 18.241553423, "occupancy_build_seconds": 2.530237059, "rss_sampled_peak_bytes": 111915008, "temporary_sampled_peak_bytes": 4654214993},
+    {"elapsed_seconds": 52.571114373, "block_stream_seconds": 18.289288710, "block_preparation_seconds": 17.860612574, "occupancy_build_seconds": 2.478348039, "rss_sampled_peak_bytes": 111263744, "temporary_sampled_peak_bytes": 4652249453},
+    {"elapsed_seconds": 52.062696285, "block_stream_seconds": 18.273342061, "block_preparation_seconds": 17.841519624, "occupancy_build_seconds": 2.489428583, "rss_sampled_peak_bytes": 111644672, "temporary_sampled_peak_bytes": 4652070217}
+  ],
+  "candidate": [
+    {"elapsed_seconds": 52.681971700, "block_stream_seconds": 18.809590747, "block_preparation_seconds": 18.196855062, "occupancy_build_seconds": 2.446636934, "rss_sampled_peak_bytes": 109797376, "temporary_sampled_peak_bytes": 4621947378},
+    {"elapsed_seconds": 52.776073965, "block_stream_seconds": 18.712045226, "block_preparation_seconds": 18.104483945, "occupancy_build_seconds": 2.418716868, "rss_sampled_peak_bytes": 108871680, "temporary_sampled_peak_bytes": 4628762173},
+    {"elapsed_seconds": 52.861740798, "block_stream_seconds": 18.859623738, "block_preparation_seconds": 18.239842319, "occupancy_build_seconds": 2.440658077, "rss_sampled_peak_bytes": 102940672, "temporary_sampled_peak_bytes": 4645024099}
+  ],
+  "median": {
+    "baseline": {"elapsed_seconds": 52.571114373, "block_stream_seconds": 18.289288710, "block_preparation_seconds": 17.860612574, "occupancy_build_seconds": 2.489428583, "rss_sampled_peak_bytes": 111644672, "temporary_sampled_peak_bytes": 4652249453},
+    "candidate": {"elapsed_seconds": 52.776073965, "block_stream_seconds": 18.809590747, "block_preparation_seconds": 18.196855062, "occupancy_build_seconds": 2.440658077, "rss_sampled_peak_bytes": 108871680, "temporary_sampled_peak_bytes": 4628762173},
+    "change_percent": {"elapsed_seconds": 0.39, "block_stream_seconds": 2.84, "block_preparation_seconds": 1.88, "occupancy_build_seconds": -1.96, "rss_sampled_peak_bytes": -2.49, "temporary_sampled_peak_bytes": -0.51}
+  },
+  "output": {
+    "pair_bytes": 1405560282,
+    "sha256_oct": "4888dbc37d2d22338f9091eb708ab993b3da2a8e7739f17ce1d8e8d1c1725b90",
+    "sha256_octattrs": "3e6b81e66c7cd1dcd2d783dbdd3df2c0050cd05ec445ea52e147d0933ae44a05"
+  },
+  "limits": "One dataset and one worker. The output pair stayed byte-identical; sampled RSS/temporary differences are small and not treated as memory improvements. Benchmark outputs were deleted after recording hashes; per-run reports and samples remain in target/v7-morton-mask-ab-20261025/.",
+  "verification": "cargo test -p viewer_core --all-targets passed, including the test comparing mask interleave against the bit-loop reference at depths 0 through 10; implementation was then reverted."
+}

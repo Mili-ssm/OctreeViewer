@@ -706,3 +706,12 @@ idénticos. La preparación total pasó de 220,76 a 180,97 s, pero también camb
 medidos de raw/delta y otras fases; esa diferencia no se atribuye al radix. Este es un ahorro
 pequeño y acotado, sin promoción de V7.2. El detalle y rangos están en
 [la comparación de filas estrechas](benchmarks/storage-v7-v72-shallow-morton-rows-2026-10-25.json).
+
+### Intercalado Morton por máscaras: descartado
+
+Se probó reemplazar el bucle bit a bit por expansión de máscaras para profundidades de hasta 10,
+con igualdad comprobada contra la referencia para profundidades 0–10. Tres pares alternados en Belvedere
+conservaron los hashes, pero la construcción de ocupación solo bajó 2,0%; la preparación subió
+1,9% y el total 0,4%. El RSS y el pico temporal muestreados fueron algo menores, sin repetición
+representativa para atribuirlo. Se revirtió la ruta especializada: el coste de código no se justifica
+sin mejora de conversión. [Datos y rangos](benchmarks/storage-v7-v72-morton-mask-rejected-2026-10-25.json).
