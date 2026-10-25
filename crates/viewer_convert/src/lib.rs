@@ -373,7 +373,8 @@ where
 /// Converts LAS/LAZ while collecting bounded aggregate phase timings for diagnostics.
 ///
 /// External RSS and temporary-file samples may be correlated with the returned windows, but
-/// remain process-wide observations. EPT conversion currently returns empty diagnostics.
+/// remain process-wide observations. EPT reports phase windows but no internal worker or spool
+/// attribution because its current reader pipeline is serial per block.
 pub fn convert_file_with_diagnostics<F>(
     input_path: &Path,
     output_path: &Path,
@@ -433,7 +434,13 @@ fn convert_file_inner(
                 "--checkpoint and --resume are not supported for EPT inputs".to_owned(),
             ));
         }
-        return ept::convert(input_path, output_path, options, on_progress);
+        return ept::convert(
+            input_path,
+            output_path,
+            options,
+            on_progress,
+            diagnostics.as_deref_mut(),
+        );
     }
     let requested_attributes_path = output_attributes_path(output_path);
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {

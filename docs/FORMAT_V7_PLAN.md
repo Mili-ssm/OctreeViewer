@@ -291,6 +291,11 @@ checkpoint EPT. Una prueba de fixture compara byte a byte `.oct` y `.octattrs` e
 también con un presupuesto que fuerza el fallback. Esto valida orden y equivalencia en el fixture,
 no un speedup ni el RSS real.
 
+`convert_file_with_diagnostics` recoge para EPT ventanas de planificación (manifest, jerarquía y
+topología), lectura/preparación/escritura de bloques y cierre/sync de la pareja. No atribuye bytes
+de spools, workers internos, validación ni memoria; esas mediciones siguen siendo externas y deben
+quedar explícitas como tales.
+
 Medir disco simultáneo: spools fuente/hijos/LOD + candidatos `.oct`/`.octattrs` + pareja anterior
 durante sustitución + checkpoints conservados. Comparar liberación temprana del último rango
 con spools comprimidos/chunks: menos bytes puede exigir más CPU y perjudicar lecturas parciales.

@@ -17,9 +17,10 @@ use viewer_format::{
 };
 
 use super::{
-    ConversionProgress, ConversionReport, ConversionStage, ConvertError, ConvertOptions,
-    MAX_BLOCKS, create_temporary_pair, descriptor, emit_progress, input_batch_point_limit,
-    omitted_dimensions, output_attributes_path, publish_output_pair, source_schema,
+    ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage, ConvertError,
+    ConvertOptions, DiagnosticTimer, MAX_BLOCKS, create_temporary_pair, descriptor, emit_progress,
+    input_batch_point_limit, omitted_dimensions, output_attributes_path, publish_output_pair,
+    source_schema,
 };
 
 const MAX_EPT_NODES: usize = 1_000_000;
@@ -114,6 +115,7 @@ pub(super) fn convert(
     output_path: &Path,
     options: ConvertOptions,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
+    mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
     if output_path.exists() {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
@@ -131,6 +133,7 @@ pub(super) fn convert(
         ));
     }
 
+    let spatial_planning_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let manifest_path = if input_path.is_dir() {
         input_path.join("ept.json")
     } else {
@@ -344,6 +347,9 @@ pub(super) fn convert(
         Vec::new(),
     )?
     .with_visual_scale(super::visual_scale_for_bounds(bounds)?)?;
+    if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), spatial_planning_timer) {
+        diagnostics.spatial_planning = Some(timer.finish());
+    }
     let mut temporary = create_temporary_pair(output_path)?;
     let file = temporary
         .geometry
@@ -377,6 +383,7 @@ pub(super) fn convert(
             .saturating_sub(memory_estimate)
             >= second_block_estimate;
     let mut processed = 0_u64;
+    let block_stream_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let produce_each = |consume: &mut dyn FnMut(
         SourcePointBlock,
         u64,
@@ -471,12 +478,19 @@ pub(super) fn convert(
             actual: processed,
         });
     }
+    if let (Some(diagnostics), Some(timer)) = (diagnostics.as_deref_mut(), block_stream_timer) {
+        diagnostics.block_stream = Some(timer.finish());
+    }
+    let finalize_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let (file, attributes) = OctreeWriter::finish_pair(writer)?;
     file.sync_all()?;
     let attributes = attributes.expect("split writer returns companion");
     attributes.sync_all()?;
     drop(file);
     drop(attributes);
+    if let (Some(diagnostics), Some(timer)) = (diagnostics, finalize_timer) {
+        diagnostics.finalize_and_sync_elapsed_ns = Some(timer.finish().elapsed_ns);
+    }
     let file_length = fs::metadata(&temporary.geometry.path)?.len();
     let attributes_temporary_path = temporary.attributes.path.clone();
     let attributes_length = fs::metadata(&attributes_temporary_path)?.len();
@@ -992,6 +1006,28 @@ mod tests {
                 fs::read(output_attributes_path(&output)).unwrap(),
                 fs::read(output_attributes_path(&pipelined_output)).unwrap()
             );
+            if version == viewer_format::FormatVersion::V7_PRE1 {
+                let diagnostic_output = root.join("diagnostic.oct");
+                let (diagnostic_report, diagnostics) = crate::convert_file_with_diagnostics(
+                    &root,
+                    &diagnostic_output,
+                    options,
+                    |_| true,
+                )
+                .unwrap();
+                assert_eq!(diagnostic_report.point_count, report.point_count);
+                assert_eq!(
+                    fs::read(&output).unwrap(),
+                    fs::read(&diagnostic_output).unwrap()
+                );
+                assert_eq!(
+                    fs::read(output_attributes_path(&output)).unwrap(),
+                    fs::read(output_attributes_path(&diagnostic_output)).unwrap()
+                );
+                assert!(diagnostics.spatial_planning.is_some());
+                assert!(diagnostics.block_stream.is_some());
+                assert!(diagnostics.finalize_and_sync_elapsed_ns.is_some());
+            }
             let constrained_options = ConvertOptions::with_memory_budget(
                 options.points_per_block(),
                 options.max_quantization_error(),
@@ -1109,7 +1145,13 @@ mod tests {
         let root = dir();
         write_manifest(&root, "zstandard", 0);
         assert!(matches!(
-            convert(&root, &root.join("result.oct"), ConvertOptions::default(), &mut |_| true),
+            convert(
+                &root,
+                &root.join("result.oct"),
+                ConvertOptions::default(),
+                &mut |_| true,
+                None,
+            ),
             Err(ConvertError::UnsupportedEpt(message)) if message.contains("laszip")
         ));
     }
@@ -1131,7 +1173,7 @@ mod tests {
         ));
         let repartitioned = ConvertOptions::default().with_spatial_divisions(4).unwrap();
         assert!(matches!(
-            convert(&root, &output, repartitioned, &mut |_| true),
+            convert(&root, &output, repartitioned, &mut |_| true, None),
             Err(ConvertError::UnsupportedEpt(message)) if message.contains("topology")
         ));
         assert!(!output.exists());
@@ -1144,13 +1186,25 @@ mod tests {
         write_manifest(&root, "laszip", 2);
         fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":1}"#).unwrap();
         assert!(matches!(
-            convert(&root, &root.join("result.oct"), ConvertOptions::default(), &mut |_| true),
+            convert(
+                &root,
+                &root.join("result.oct"),
+                ConvertOptions::default(),
+                &mut |_| true,
+                None,
+            ),
             Err(ConvertError::InvalidEpt(message)) if message.contains("sums to 1")
         ));
 
         write_manifest(&root, "laszip", 1);
         assert!(matches!(
-            convert(&root, &root.join("result.oct"), ConvertOptions::default(), &mut |_| true),
+            convert(
+                &root,
+                &root.join("result.oct"),
+                ConvertOptions::default(),
+                &mut |_| true,
+                None,
+            ),
             Err(ConvertError::InvalidEpt(message)) if message.contains("is missing")
         ));
     }
@@ -1171,7 +1225,7 @@ mod tests {
         let options = ConvertOptions::with_memory_budget(1, 0.01, 1).unwrap();
 
         assert!(matches!(
-            convert(&root, &output, options, &mut |_| true),
+            convert(&root, &output, options, &mut |_| true, None),
             Err(ConvertError::MemoryBudgetExceeded { limit: 1, .. })
         ));
         assert!(!output.exists());
@@ -1200,7 +1254,7 @@ mod tests {
         let options = ConvertOptions::with_memory_budget(1, 0.01, 17 * 1024 * 1024).unwrap();
 
         assert!(matches!(
-            convert(&root, &output, options, &mut |_| true),
+            convert(&root, &output, options, &mut |_| true, None),
             Err(ConvertError::MemoryBudgetExceeded {
                 limit: 17_825_792,
                 ..
