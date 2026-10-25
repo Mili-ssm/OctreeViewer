@@ -413,6 +413,61 @@ test("async worker overlaps reads and retries budget-deferred blocks after a res
     assert.deepEqual(worker.insertedBlocks, ["7", "8", "9"]);
 });
 
+test("replacing a dataset cancels multiple active tickets before scheduling its blocks", async () => {
+    const resolvers = new Map();
+    const started = [];
+    let openedDatasets = 0;
+    class ReplaceableAsyncReader {
+        static async open() { return new ReplaceableAsyncReader(++openedDatasets); }
+        constructor(datasetId) { this.datasetId = datasetId; }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead(blockId) {
+            const id = String(blockId);
+            const readId = String(this.datasetId) + ":" + id;
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => {
+                    started.push(readId);
+                    const value = await new Promise(resolve => { resolvers.set(readId, resolve); });
+                    return { value, release() {}, free() {} };
+                },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), ReplaceableAsyncReader);
+    worker.setPendingBlocks(["7", "8"]);
+    await worker.send("openFile", {
+        file: { name: "first.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    assert.deepEqual(started, ["1:7", "1:8"]);
+
+    await worker.send("openFile", {
+        file: { name: "second.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    assert.deepEqual(started, ["1:7", "1:8"],
+        "replacement dataset scheduled duplicate blocks before old reads released their slots");
+
+    resolvers.get("1:7")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    resolvers.get("1:8")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    for (let index = 0; index < 4; index++) await new Promise(setImmediate);
+    assert.deepEqual(started, ["1:7", "1:8", "2:7", "2:8"]);
+    assert.deepEqual(worker.insertedBlocks, [],
+        "stale dataset results must not reach the current viewer");
+
+    resolvers.get("2:7")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    resolvers.get("2:8")({ positions: new Float32Array(3), colors: new Uint8Array(3), attribute: null });
+    for (let index = 0; index < 4; index++) await new Promise(setImmediate);
+    assert.deepEqual(worker.insertedBlocks, ["7", "8"]);
+});
+
 test("async worker rejects a read plan larger than the configured logical read budget", async () => {
     let reads = 0;
     class OversizedAsyncReader {

@@ -540,10 +540,13 @@ con la columna solicitada. Una refinación permite reintentar los bloques fallid
 del dataset cancela tickets anteriores y usa un scheduler nuevo.
 
 `cargo test -p viewer_core --offline` pasa (31 unitarias y 75 de integración); check/Clippy WASM,
-formato, 36 pruebas Node y el probe navegador con scheduler WASM pasan. El probe cubre prioridad
+formato, 37 pruebas Node y el probe navegador con scheduler WASM pasan. El probe cubre prioridad
 entre candidatos admitidos, límite de slots, cancelación, descarte y reintento. La integración
 visual del worker sigue sin comprobarse por falta de adaptador WebGPU en el navegador disponible;
-no se ha medido memoria/latencia real.
+Node además prueba la sustitución del dataset mientras dos lecturas están abiertas: conserva los
+slots viejos hasta completarse, descarta esos resultados y luego admite los dos bloques nuevos.
+Esta ruta usa un viewer simulado y no prueba la integración visual real. No se ha medido
+memoria/latencia real.
 
 La prioridad 3 aún requiere navegación GPU real, prueba del worker completo sustituyendo dataset
 con varias lecturas Blob activas y memoria conjunta con caché WASM/GPU. El límite actual de cuatro
