@@ -16,6 +16,12 @@ SPEC.loader.exec_module(profile_conversion)
 
 
 class ProfileConversionTests(unittest.TestCase):
+    def test_format_version_argument_accepts_v7_pre_identity(self) -> None:
+        args = profile_conversion.parse_args(
+            ["input.laz", "run-dir", "--format-version", "v7.1-pre"]
+        )
+        self.assertEqual(args.format_version, "v7.1-pre")
+
     def test_internal_phase_samples_require_complete_non_overlapping_windows(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

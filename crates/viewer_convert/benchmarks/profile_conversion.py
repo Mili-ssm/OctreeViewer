@@ -475,7 +475,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--divisions", type=int, default=2)
     parser.add_argument("--interval-ms", type=int, default=100)
     parser.add_argument("--points-per-block", type=int, default=262144)
-    parser.add_argument("--format-version", choices=("v5", "v6.1-pre"), default="v5")
+    parser.add_argument(
+        "--format-version", choices=("v5", "v6.1-pre", "v7.1-pre"), default="v5"
+    )
     args = parser.parse_args(argv)
     if (args.workers < 1 or args.divisions not in (2, 4, 8) or args.interval_ms < 1
             or not 1 <= args.points_per_block <= 1_000_000):

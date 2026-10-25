@@ -1,0 +1,263 @@
+{
+  "comparison": {
+    "elapsed_seconds_single_runs_only": {
+      "relative_observation_percent": 35.55302465616943,
+      "v5": 448.8694014119974,
+      "v7.1-pre": 608.456050370005
+    },
+    "pair_bytes": {
+      "v5": 13666843763,
+      "v7.1-pre": 10320734767
+    },
+    "semantic_counts_match": true,
+    "v7_pair_bytes_saved": 3346108996,
+    "v7_pair_size_reduction_percent": 24.483407098417707
+  },
+  "date": "2026-10-25",
+  "kind": "real_dataset_v5_v7_writer_single_run_observation",
+  "logical_read_verification": {
+    "cache_state": "outputs were SHA-256 hashed before these sequential reads; no cache purge; V5 was read first; one read per pair, not a controlled latency comparison",
+    "checksum_scope": "BFS checksum covers block IDs, reconstructed XYZ/color, attribute names/types and exact typed values including float bits",
+    "command_template": "target/perf/examples/storage_bench OUTPUT.oct progressive 1 512 --workers 1",
+    "reader_binary_sha256": "3057b73511ede34e1426c9f40f3bf15902d8f9e4e90a555bd1cc5f940c56c804",
+    "runs": {
+      "v5": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 59209.962,
+        "mode": "progressive",
+        "points": 508989347,
+        "progressive_wall_ms": 59168.191,
+        "read_ms": 41826.421,
+        "verify_ms": 17127.885,
+        "workers": 1
+      },
+      "v7.1-pre": {
+        "blocks": 8437,
+        "budget_mib": 512,
+        "checksum": "8caae2a09753e50e",
+        "full_ms": 64219.116,
+        "mode": "progressive",
+        "points": 508989347,
+        "progressive_wall_ms": 64183.804,
+        "read_ms": 46547.554,
+        "verify_ms": 17456.672,
+        "workers": 1
+      }
+    },
+    "same_checksum": true
+  },
+  "memory_scope": "Linux process RSS samples every 100 ms and directory temporary bytes sampled by profile_conversion.py; samples may miss brief peaks and temporary bytes are not physical disk I/O",
+  "profile": "perf optimized; one worker; divisions 2; 262144 points per block",
+  "run_conditions": "one run per format on different dates; host load and cache not controlled across runs; not A/B performance evidence; the V5 run binary hash is not available in its saved report, so only the V7 binary is fingerprinted here",
+  "runs": {
+    "v5": {
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+        "convert-profile",
+        "data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+        "target/albuera-current-v5/run-3/output.oct",
+        "1",
+        "2",
+        "262144",
+        "v5"
+      ],
+      "elapsed_seconds": 448.8694014119974,
+      "input": {
+        "bytes": 4305484789,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+        "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+      },
+      "options": {
+        "divisions": 2,
+        "format_version": "v5",
+        "points_per_block": 262144,
+        "workers": 1
+      },
+      "output_bytes_from_report": {
+        "oct": 6105617040,
+        "octattrs": 7561226723
+      },
+      "outputs": {
+        "output.oct": {
+          "bytes": 6105617040,
+          "sha256": "76ff300bbae2760ae321889cebec87265b868bb03173d4484a27368d6fa72e5a"
+        },
+        "output.octattrs": {
+          "bytes": 7561226723,
+          "sha256": "1c608875cdc999af1e22a99527c0317d77125f6d6ef2082863d1a5bc8676b645"
+        }
+      },
+      "payload_summary": {
+        "geometry_delta_block_count": 0,
+        "geometry_occupied_block_count": 0,
+        "lod_sample_points": 179791,
+        "logical_payload_bytes": 20868563227,
+        "payload_block_count": 8437,
+        "payload_points_including_lod": 508989347,
+        "source_points": 508809556,
+        "stored_payload_bytes": 13661772583
+      },
+      "phase_sampled_peaks": {
+        "BeforeFirstProgress": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "BuildingSpatialHierarchy": {
+          "rss_sampled_peak_bytes": 53817344,
+          "sample_count": 1796,
+          "temporary_sampled_peak_bytes": 27436877498
+        },
+        "Complete": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "InspectingInput": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "PlanningMetadata": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "PlanningSpatialIndex": {
+          "rss_sampled_peak_bytes": 49127424,
+          "sample_count": 777,
+          "temporary_sampled_peak_bytes": 20848253467
+        },
+        "PublishingOutput": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "ReadingAndWritingBlocks": {
+          "rss_sampled_peak_bytes": 99942400,
+          "sample_count": 1409,
+          "temporary_sampled_peak_bytes": 20872381783
+        },
+        "ValidatingOutput": {
+          "rss_sampled_peak_bytes": 111386624,
+          "sample_count": 378,
+          "temporary_sampled_peak_bytes": 13666843763
+        }
+      },
+      "rss_sampled_peak_bytes": 111386624,
+      "run_dir": "target/albuera-current-v5/run-3",
+      "sample_count": 4363,
+      "sample_interval_ms": 100,
+      "temporary_observed_growth_bytes": 144010350181,
+      "temporary_sampled_peak_bytes": 27436877498,
+      "vmhwm_observed_peak_bytes": 111386624
+    },
+    "v7.1-pre": {
+      "command": [
+        "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+        "convert-profile",
+        "data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+        "target/albuera-current-v7/run-1/output.oct",
+        "1",
+        "2",
+        "262144",
+        "v7.1-pre"
+      ],
+      "elapsed_seconds": 608.456050370005,
+      "input": {
+        "bytes": 4305484789,
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+        "sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f"
+      },
+      "options": {
+        "divisions": 2,
+        "format_version": "v7.1-pre",
+        "points_per_block": 262144,
+        "workers": 1
+      },
+      "output_bytes_from_report": {
+        "oct": 6037118837,
+        "octattrs": 4283615930
+      },
+      "outputs": {
+        "output.oct": {
+          "bytes": 6037118837,
+          "sha256": "1cd6aacc2e5feb9d617c87b3e90e25b97736f52fa105e6806651977f8f405bb3"
+        },
+        "output.octattrs": {
+          "bytes": 4283615930,
+          "sha256": "1f68034a13516e33008ae0b06fc4ca110444b324d260615e75b0e6b9c8fdbd17"
+        }
+      },
+      "payload_summary": {
+        "geometry_delta_block_count": 1511,
+        "geometry_occupied_block_count": 22,
+        "lod_sample_points": 179791,
+        "logical_payload_bytes": 20868563227,
+        "payload_block_count": 8437,
+        "payload_points_including_lod": 508989347,
+        "source_points": 508809556,
+        "stored_payload_bytes": 10315655150
+      },
+      "phase_sampled_peaks": {
+        "BeforeFirstProgress": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "BuildingSpatialHierarchy": {
+          "rss_sampled_peak_bytes": 49541120,
+          "sample_count": 1948,
+          "temporary_sampled_peak_bytes": 27459415690
+        },
+        "Complete": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "InspectingInput": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "PlanningMetadata": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "PlanningSpatialIndex": {
+          "rss_sampled_peak_bytes": 44851200,
+          "sample_count": 793,
+          "temporary_sampled_peak_bytes": 20858408757
+        },
+        "PublishingOutput": {
+          "rss_sampled_peak_bytes": null,
+          "sample_count": 0,
+          "temporary_sampled_peak_bytes": null
+        },
+        "ReadingAndWritingBlocks": {
+          "rss_sampled_peak_bytes": 122630144,
+          "sample_count": 2635,
+          "temporary_sampled_peak_bytes": 20867407989
+        },
+        "ValidatingOutput": {
+          "rss_sampled_peak_bytes": 113983488,
+          "sample_count": 450,
+          "temporary_sampled_peak_bytes": 10320734767
+        }
+      },
+      "rss_sampled_peak_bytes": 122630144,
+      "run_dir": "target/albuera-current-v7/run-1",
+      "sample_count": 5829,
+      "sample_interval_ms": 100,
+      "temporary_observed_growth_bytes": 139016801186,
+      "temporary_sampled_peak_bytes": 27459415690,
+      "vmhwm_observed_peak_bytes": 124514304
+    }
+  },
+  "source": "data/datasets/sensoforest/SensOFOREST_2026_02_22_Albuera_Pointcloud_UAV_LiDAR_20260503.laz",
+  "source_sha256": "071835a81420e10311821ddd6c06a0f1abf992929c5e3a0f4b5481cec975a90f",
+  "v7_profiler_binary_sha256": "e3e3eaee31fa41c55033c756867958974163dcc4df85720dfe93f039bb4b7289"
+}

@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-24",
+  "kind": "native_real_sample_correctness_smoke",
+  "profile": "fast (unoptimized)",
+  "performance_comparison": false,
+  "limits": "One sample; no RSS, temporary disk peak, cold-cache, browser or GPU measurement.",
+  "source": "data/samples/fs_e430_n4008_18.las",
+  "source_sha256": "a4900d81f9eed572e8f3dd9f60ddcd9e995a1dd455b4270069d6403b19087456",
+  "binary_sha256": {
+    "converter": "919402d563e8f8f8ea078a456bc771f06d55de42c3f5b3cc56d1d1160f7c8b5e",
+    "reader": "2087efade9fdfa8ebafda925dc86e53eff737e0bd332df3b7cd0f7224456cdeb"
+  },
+  "commands": [
+    [
+      "target/fast/viewer_convert",
+      "data/samples/fs_e430_n4008_18.las",
+      "$OUT/v6.oct",
+      "--format-version",
+      "v6.4-pre",
+      "--points-per-block",
+      "16384",
+      "--spatial-workers",
+      "2",
+      "--pipeline-writes"
+    ],
+    [
+      "target/fast/examples/storage_bench",
+      "$OUT/v6.oct",
+      "progressive",
+      "1",
+      "64",
+      "--workers",
+      "2"
+    ],
+    [
+      "target/fast/viewer_convert",
+      "data/samples/fs_e430_n4008_18.las",
+      "$OUT/v7_serial.oct",
+      "--format-version",
+      "v7.1-pre",
+      "--points-per-block",
+      "16384",
+      "--spatial-workers",
+      "1"
+    ],
+    [
+      "target/fast/examples/storage_bench",
+      "$OUT/v7_serial.oct",
+      "progressive",
+      "1",
+      "64",
+      "--workers",
+      "2"
+    ],
+    [
+      "target/fast/viewer_convert",
+      "data/samples/fs_e430_n4008_18.las",
+      "$OUT/v7_pipeline.oct",
+      "--format-version",
+      "v7.1-pre",
+      "--points-per-block",
+      "16384",
+      "--spatial-workers",
+      "2",
+      "--pipeline-writes"
+    ],
+    [
+      "target/fast/examples/storage_bench",
+      "$OUT/v7_pipeline.oct",
+      "progressive",
+      "1",
+      "64",
+      "--workers",
+      "2"
+    ]
+  ],
+  "runs": [
+    {
+      "label": "v6",
+      "version": "v6.4-pre",
+      "conversion_exit": 0,
+      "reading_exit": 0,
+      "primary_bytes": 1104466,
+      "attributes_bytes": 464902,
+      "primary_sha256": "3a9509487d979d60f9276ba7eddd01cbb271202adc9d66cce1df6c1e7fcd23c7",
+      "attributes_sha256": "e033c2315afd779b9366f8ad7851351082cb442cb15f48f4521e9bafb7452eb2",
+      "checksum": "6addac9995280fc1",
+      "points": "111422",
+      "blocks": "23",
+      "format_version": "v6.4-pre"
+    },
+    {
+      "label": "v7_serial",
+      "version": "v7.1-pre",
+      "conversion_exit": 0,
+      "reading_exit": 0,
+      "primary_bytes": 1104466,
+      "attributes_bytes": 464902,
+      "primary_sha256": "35ffafc8791aaff000628a2cc6c59747327b98d44331cb912086f6a422a67c6d",
+      "attributes_sha256": "6157601bdef6658851612e8fae1b0379b7072589e808d1e651a6a8b5aedaddb5",
+      "checksum": "6addac9995280fc1",
+      "points": "111422",
+      "blocks": "23",
+      "format_version": "v7.1-pre"
+    },
+    {
+      "label": "v7_pipeline",
+      "version": "v7.1-pre",
+      "conversion_exit": 0,
+      "reading_exit": 0,
+      "primary_bytes": 1104466,
+      "attributes_bytes": 464902,
+      "primary_sha256": "35ffafc8791aaff000628a2cc6c59747327b98d44331cb912086f6a422a67c6d",
+      "attributes_sha256": "6157601bdef6658851612e8fae1b0379b7072589e808d1e651a6a8b5aedaddb5",
+      "checksum": "6addac9995280fc1",
+      "points": "111422",
+      "blocks": "23",
+      "format_version": "v7.1-pre"
+    }
+  ],
+  "checks": {
+    "logical_checksum_matches_pre4": true,
+    "v7_serial_pipeline_pair_identical": true,
+    "pre4_v7_pair_sizes_equal": true
+  },
+  "summary_count_correction": {
+    "verified_date": "2026-10-25",
+    "reader_sha256": "b8e8aee8578880b01374148d1446f80fb6b83d5b37ee97ab065e8d183330a7a0",
+    "reason": "Parse the progressive summary line only; per-level lines repeat points/blocks and previously overwrote totals. Recreated V7 output has the original file hash. Historical hashes above describe the original run."
+  }
+}

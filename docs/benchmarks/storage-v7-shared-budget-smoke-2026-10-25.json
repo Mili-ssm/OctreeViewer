@@ -1,0 +1,556 @@
+{
+  "date": "2026-10-25",
+  "kind": "native_shared_budget_parallel_correctness_smoke",
+  "profile": "fast (unoptimized)",
+  "source": "data/samples/fs_e430_n4008_18.las",
+  "source_sha256": "a4900d81f9eed572e8f3dd9f60ddcd9e995a1dd455b4270069d6403b19087456",
+  "binary_sha256": {
+    "converter": "0861618787dd7ccc16979d6d76edd6d33f4652dd471d3cb22f2fddc4b9dcbfe8",
+    "parallel_example": "927a9cb65175f5aab78c1e12f4d96c76d9fe2ecd92a9b78258b5629be8068ecd"
+  },
+  "timing_scope": "Parallel call including planning, scoped threads and checksum callback; excludes open/forks/catalog setup. One run per configuration, not performance A/B evidence.",
+  "memory_scope": "Accounted logical payload estimates and retained output, not RSS; excludes index/control/cache/allocator and benchmark catalogs.",
+  "commands": [
+    [
+      "target/fast/viewer_convert",
+      "data/samples/fs_e430_n4008_18.las",
+      "$OUT/sample.oct",
+      "--format-version",
+      "v7.1-pre",
+      "--points-per-block",
+      "16384",
+      "--spatial-workers",
+      "2",
+      "--pipeline-writes"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "xyz",
+      "1",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "xyz",
+      "2",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "xyz",
+      "4",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "xyz",
+      "1",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "xyz",
+      "2",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "xyz",
+      "4",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "geometry",
+      "1",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "geometry",
+      "2",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "geometry",
+      "4",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "geometry",
+      "1",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "geometry",
+      "2",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "geometry",
+      "4",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "rgb",
+      "1",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "rgb",
+      "2",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "rgb",
+      "4",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "rgb",
+      "1",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "rgb",
+      "2",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "rgb",
+      "4",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "attribute:0",
+      "1",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "attribute:0",
+      "2",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "attribute:0",
+      "4",
+      "1"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "attribute:0",
+      "1",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "attribute:0",
+      "2",
+      "64"
+    ],
+    [
+      "target/fast/examples/selective_parallel_bench",
+      "$OUT/sample.oct",
+      "attribute:0",
+      "4",
+      "64"
+    ]
+  ],
+  "runs": [
+    {
+      "format_version": "v7.1-pre",
+      "mode": "xyz",
+      "workers": 1,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 391963,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "946a1ac0e86f3b7b",
+      "wall_ms": 129.343
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "xyz",
+      "workers": 2,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 461037,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "946a1ac0e86f3b7b",
+      "wall_ms": 196.634
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "xyz",
+      "workers": 4,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 841093,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "946a1ac0e86f3b7b",
+      "wall_ms": 117.337
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "xyz",
+      "workers": 1,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 391963,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "946a1ac0e86f3b7b",
+      "wall_ms": 116.698
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "xyz",
+      "workers": 2,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 461037,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "946a1ac0e86f3b7b",
+      "wall_ms": 212.045
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "xyz",
+      "workers": 4,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 841093,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "946a1ac0e86f3b7b",
+      "wall_ms": 121.814
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "geometry",
+      "workers": 1,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 391963,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "768a20660574f8f9",
+      "wall_ms": 133.73
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "geometry",
+      "workers": 2,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 461037,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "768a20660574f8f9",
+      "wall_ms": 214.873
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "geometry",
+      "workers": 4,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 841179,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "768a20660574f8f9",
+      "wall_ms": 154.052
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "geometry",
+      "workers": 1,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 391963,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "768a20660574f8f9",
+      "wall_ms": 134.427
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "geometry",
+      "workers": 2,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 461037,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "768a20660574f8f9",
+      "wall_ms": 238.518
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "geometry",
+      "workers": 4,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 841179,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "768a20660574f8f9",
+      "wall_ms": 154.146
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "rgb",
+      "workers": 1,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 127832,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "bc7d394c1eaf3f2b",
+      "wall_ms": 7.553
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "rgb",
+      "workers": 2,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 150499,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "bc7d394c1eaf3f2b",
+      "wall_ms": 17.46
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "rgb",
+      "workers": 4,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 274076,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "bc7d394c1eaf3f2b",
+      "wall_ms": 9.007
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "rgb",
+      "workers": 1,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 127832,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "bc7d394c1eaf3f2b",
+      "wall_ms": 7.669
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "rgb",
+      "workers": 2,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 150499,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "bc7d394c1eaf3f2b",
+      "wall_ms": 12.413
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "rgb",
+      "workers": 4,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 274076,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "bc7d394c1eaf3f2b",
+      "wall_ms": 8.699
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "attribute:0",
+      "workers": 1,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 99967,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "be87b62ac2d459d6",
+      "wall_ms": 24.864
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "attribute:0",
+      "workers": 2,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 118345,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "be87b62ac2d459d6",
+      "wall_ms": 34.669
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "attribute:0",
+      "workers": 4,
+      "budget_mib": 1,
+      "peak_reserved_bytes": 214639,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "be87b62ac2d459d6",
+      "wall_ms": 23.173
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "attribute:0",
+      "workers": 1,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 99967,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "be87b62ac2d459d6",
+      "wall_ms": 23.557
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "attribute:0",
+      "workers": 2,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 118345,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "be87b62ac2d459d6",
+      "wall_ms": 34.447
+    },
+    {
+      "format_version": "v7.1-pre",
+      "mode": "attribute:0",
+      "workers": 4,
+      "budget_mib": 64,
+      "peak_reserved_bytes": 214639,
+      "reserved_after": 0,
+      "status": "Complete",
+      "blocks": 23,
+      "rows": 111422,
+      "checksum": "be87b62ac2d459d6",
+      "wall_ms": 19.041
+    }
+  ],
+  "output": {
+    "primary_bytes": 1104466,
+    "attributes_bytes": 464902,
+    "primary_sha256": "35ffafc8791aaff000628a2cc6c59747327b98d44331cb912086f6a422a67c6d",
+    "attributes_sha256": "6157601bdef6658851612e8fae1b0379b7072589e808d1e651a6a8b5aedaddb5"
+  },
+  "invalid_cli_checks": [
+    {
+      "arguments": [
+        "target/fast/examples/selective_parallel_bench",
+        "$OUT/sample.oct",
+        "xyz",
+        "0",
+        "1"
+      ],
+      "exit_code": 1,
+      "stderr": "Error: \"workers must be from 1 to 8\""
+    },
+    {
+      "arguments": [
+        "target/fast/examples/selective_parallel_bench",
+        "$OUT/sample.oct",
+        "invalid",
+        "2",
+        "1"
+      ],
+      "exit_code": 1,
+      "stderr": "Error: \"selection must be xyz, geometry, rgb, or attribute:N\""
+    },
+    {
+      "arguments": [
+        "target/fast/examples/selective_parallel_bench",
+        "$OUT/sample.oct",
+        "xyz",
+        "2",
+        "0"
+      ],
+      "exit_code": 1,
+      "stderr": "Error: \"budget MiB must be greater than zero\""
+    }
+  ],
+  "checks": {
+    "output_pair_unchanged": true,
+    "checksums_match_1_2_4_readers_and_budgets": true,
+    "all_reservations_released": true,
+    "accounted_peaks_within_limits": true
+  }
+}

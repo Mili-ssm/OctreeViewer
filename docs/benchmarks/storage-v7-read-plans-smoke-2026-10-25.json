@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-25",
+  "kind": "native_selective_read_plan_correctness_smoke",
+  "profile": "fast (unoptimized)",
+  "source": "data/samples/fs_e430_n4008_18.las",
+  "source_sha256": "a4900d81f9eed572e8f3dd9f60ddcd9e995a1dd455b4270069d6403b19087456",
+  "binaries_sha256": {
+    "converter": "8ec16f7692bbd84fc6d99533f4e5fc95b64f58448a1f946d73e4bcf92239633d",
+    "selective_benchmark": "85e2ef7d1543e77384bb0008355fbed2923a951df56ab7f1f001aa0ba01a51e5"
+  },
+  "limits": "One native real sample, XYZ and one typed column. Estimates are logical payload buffers, not measured RSS. No concurrency, temporary-disk, browser, GPU or performance A/B measurement.",
+  "commands": [
+    [
+      "target/fast/viewer_convert",
+      "data/samples/fs_e430_n4008_18.las",
+      "$OUT/sample.oct",
+      "--format-version",
+      "v7.1-pre",
+      "--points-per-block",
+      "16384",
+      "--spatial-workers",
+      "2",
+      "--pipeline-writes"
+    ],
+    [
+      "target/fast/examples/real_dataset_bench",
+      "read-geometry",
+      "$OUT/sample.oct"
+    ],
+    [
+      "target/fast/examples/real_dataset_bench",
+      "read-attribute",
+      "$OUT/sample.oct",
+      "0"
+    ]
+  ],
+  "reads": [
+    {
+      "selection": "xyz",
+      "requested_block_count": 23,
+      "decoded_payload_points": 111422,
+      "geometry_payload_bytes_read": 1091188,
+      "attribute_payload_bytes_read": 0,
+      "payload_bytes_read": 1091188,
+      "planned_payload_bytes": 1091188,
+      "max_estimated_read_payload_peak_bytes": 391963
+    },
+    {
+      "selection": "attribute_0",
+      "requested_block_count": 23,
+      "decoded_payload_points": 111422,
+      "geometry_payload_bytes_read": 0,
+      "attribute_payload_bytes_read": 137525,
+      "payload_bytes_read": 137525,
+      "planned_payload_bytes": 137525,
+      "max_estimated_read_payload_peak_bytes": 99967
+    }
+  ],
+  "output": {
+    "primary_bytes": 1104466,
+    "attributes_bytes": 464902,
+    "primary_sha256": "35ffafc8791aaff000628a2cc6c59747327b98d44331cb912086f6a422a67c6d",
+    "attributes_sha256": "6157601bdef6658851612e8fae1b0379b7072589e808d1e651a6a8b5aedaddb5"
+  },
+  "checks": {
+    "planned_matches_actual_bytes": true,
+    "xyz_does_not_read_attributes": true,
+    "column_does_not_read_geometry": true,
+    "row_counts_match": true
+  }
+}
