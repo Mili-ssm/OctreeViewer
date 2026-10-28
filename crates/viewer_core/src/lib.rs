@@ -5,6 +5,7 @@ mod block_cache;
 mod categorical_attribute;
 mod dataset;
 mod geometry;
+pub mod las;
 mod lod_transition;
 mod node_attributes;
 mod occupied_cell_index;

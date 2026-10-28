@@ -10,8 +10,8 @@ use std::{
 use las::{PointDataBuilder, Reader};
 use serde::Deserialize;
 use viewer_core::{
-    AttributeColumn, AttributeDataType, AttributeValues, BlockId, ColorRgb, CoordinateFrame,
-    DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
+    AttributeColumn, AttributeValues, BlockId, ColorRgb, CoordinateFrame, DatasetMetadata,
+    HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
     FormatMetadata, FormatWriter, FormatWriterOptions, OctreeWriter, SourcePointBlock,
@@ -20,9 +20,9 @@ use viewer_format::{
 use super::ept_checkpoint::{EptCheckpoint, EptCheckpointStage, EptJournalRecord, EptSourceFile};
 use super::{
     CheckpointMode, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
-    ConvertError, ConvertOptions, DiagnosticTimer, MAX_BLOCKS, create_temporary_pair, descriptor,
-    emit_progress, input_batch_point_limit, omitted_dimensions, output_attributes_path,
-    publish_output_pair, source_schema,
+    ConvertError, ConvertOptions, DiagnosticTimer, MAX_BLOCKS, create_temporary_pair,
+    emit_progress, input_batch_point_limit, next_descriptor, omitted_dimensions,
+    output_attributes_path, publish_output_pair, source_schema,
 };
 
 const MAX_EPT_NODES: usize = 1_000_000;
@@ -886,46 +886,52 @@ fn point_data_to_block(
             })
             .collect()
     };
+    let mut descriptors = viewer_core::las::las_attribute_schema(
+        format.has_gps_time,
+        format.has_color,
+        format.has_nir,
+    )
+    .into_iter();
     let mut attributes = vec![
         AttributeColumn::new(
-            descriptor("intensity", AttributeDataType::U16, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U16(intensities),
             count,
         )?,
         AttributeColumn::new(
-            descriptor("classification", AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(data.classification().collect()),
             count,
         )?,
         AttributeColumn::new(
-            descriptor("return_number", AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(data.return_number().collect()),
             count,
         )?,
         AttributeColumn::new(
-            descriptor("number_of_returns", AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(data.number_of_returns().collect()),
             count,
         )?,
         AttributeColumn::new(
-            descriptor("scan_angle_degrees", AttributeDataType::F32, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::F32(data.scan_angle_degrees().collect()),
             count,
         )?,
         AttributeColumn::new(
-            descriptor("user_data", AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(data.user_data().collect()),
             count,
         )?,
         AttributeColumn::new(
-            descriptor("point_source_id", AttributeDataType::U16, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U16(data.point_source_id().collect()),
             count,
         )?,
     ];
     if format.has_gps_time {
         attributes.push(AttributeColumn::new(
-            descriptor("gps_time", AttributeDataType::F64, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::F64(
                 data.gps_time()
                     .ok_or(ConvertError::InvalidAttributeSchema)?
@@ -941,14 +947,14 @@ fn point_data_to_block(
             .flat_map(|(red, green, blue)| [red, green, blue])
             .collect();
         attributes.push(AttributeColumn::new(
-            descriptor("rgb", AttributeDataType::U16, 3),
+            next_descriptor(&mut descriptors),
             AttributeValues::U16(values),
             count,
         )?);
     }
     if format.has_nir {
         attributes.push(AttributeColumn::new(
-            descriptor("nir", AttributeDataType::U16, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U16(
                 data.nir()
                     .ok_or(ConvertError::InvalidAttributeSchema)?

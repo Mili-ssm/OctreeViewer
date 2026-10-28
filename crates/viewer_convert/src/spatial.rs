@@ -21,7 +21,7 @@ use viewer_format::{FormatMetadata, SourcePointBlock};
 
 use super::{
     ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SourceInfo,
-    SpatialPhaseDiagnostics, SpatialSpoolDiagnostics, descriptor, emit_progress,
+    SpatialPhaseDiagnostics, SpatialSpoolDiagnostics, emit_progress, next_descriptor,
     omitted_dimensions, source_schema,
 };
 
@@ -203,59 +203,65 @@ impl PlannedBlock {
             remaining -= records;
         }
 
+        let mut descriptors = viewer_core::las::las_attribute_schema(
+            self.layout.has_gps_time,
+            self.layout.has_color,
+            self.layout.has_nir,
+        )
+        .into_iter();
         let mut attributes = Vec::with_capacity(10);
         attributes.push(AttributeColumn::new(
-            descriptor("intensity", super::AttributeDataType::U16, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U16(intensities),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            descriptor("classification", super::AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(classifications),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            descriptor("return_number", super::AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(return_numbers),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            descriptor("number_of_returns", super::AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(returns_per_pulse),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            descriptor("scan_angle_degrees", super::AttributeDataType::F32, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::F32(scan_angles),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            descriptor("user_data", super::AttributeDataType::U8, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U8(user_data),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            descriptor("point_source_id", super::AttributeDataType::U16, 1),
+            next_descriptor(&mut descriptors),
             AttributeValues::U16(point_source_ids),
             self.point_count,
         )?);
         if self.layout.has_gps_time {
             attributes.push(AttributeColumn::new(
-                descriptor("gps_time", super::AttributeDataType::F64, 1),
+                next_descriptor(&mut descriptors),
                 AttributeValues::F64(gps_times),
                 self.point_count,
             )?);
         }
         if self.layout.has_color {
             attributes.push(AttributeColumn::new(
-                descriptor("rgb", super::AttributeDataType::U16, 3),
+                next_descriptor(&mut descriptors),
                 AttributeValues::U16(rgb_values),
                 self.point_count,
             )?);
         }
         if self.layout.has_nir {
             attributes.push(AttributeColumn::new(
-                descriptor("nir", super::AttributeDataType::U16, 1),
+                next_descriptor(&mut descriptors),
                 AttributeValues::U16(nir_values),
                 self.point_count,
             )?);

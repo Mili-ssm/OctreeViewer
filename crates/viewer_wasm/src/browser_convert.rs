@@ -76,7 +76,7 @@ impl WasmLasOctConverter {
                 "LAS/LAZ exceeds the browser converter block-index limit",
             ));
         }
-        let schema = las_attribute_schema(&point_format)?;
+        let schema = las_attribute_schema(&point_format);
         let buffer = las::PointDataBuilder::new()
             .for_header(reader.header())
             .build();
@@ -541,29 +541,8 @@ fn attribute_column(
     AttributeColumn::new(descriptor, values, count).map_err(|error| error.to_string())
 }
 
-fn las_attribute_schema(format: &las::point::Format) -> Result<Vec<AttributeDescriptor>, JsValue> {
-    let mut schema = vec![
-        AttributeDescriptor::new("intensity", AttributeDataType::U16, 1),
-        AttributeDescriptor::new("classification", AttributeDataType::U8, 1),
-        AttributeDescriptor::new("return_number", AttributeDataType::U8, 1),
-        AttributeDescriptor::new("number_of_returns", AttributeDataType::U8, 1),
-        AttributeDescriptor::new("scan_angle_degrees", AttributeDataType::F32, 1),
-        AttributeDescriptor::new("user_data", AttributeDataType::U8, 1),
-        AttributeDescriptor::new("point_source_id", AttributeDataType::U16, 1),
-    ]
-    .into_iter()
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|error| JsValue::from_str(&format!("attribute schema: {error}")))?;
-    if format.has_gps_time {
-        schema.push(AttributeDescriptor::new("gps_time", AttributeDataType::F64, 1).unwrap());
-    }
-    if format.has_color {
-        schema.push(AttributeDescriptor::new("rgb", AttributeDataType::U16, 3).unwrap());
-    }
-    if format.has_nir {
-        schema.push(AttributeDescriptor::new("nir", AttributeDataType::U16, 1).unwrap());
-    }
-    Ok(schema)
+fn las_attribute_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {
+    viewer_core::las::las_attribute_schema(format.has_gps_time, format.has_color, format.has_nir)
 }
 
 fn bounds_extent(bounds: SpatialBounds) -> f64 {
@@ -575,14 +554,8 @@ fn bounds_extent(bounds: SpatialBounds) -> f64 {
 }
 
 fn visual_scale(bounds: SpatialBounds) -> Result<f64, JsValue> {
-    let extent = bounds_extent(bounds);
-    let scale = if extent == 0.0 { 1.0 } else { 100.0 / extent };
-    if !scale.is_finite() || scale <= 0.0 || !(scale as f32).is_finite() || scale as f32 == 0.0 {
-        return Err(JsValue::from_str(
-            "LAS/LAZ bounds exceed the viewer coordinate range",
-        ));
-    }
-    Ok(scale)
+    viewer_core::las::visual_scale_for_bounds(bounds)
+        .ok_or_else(|| JsValue::from_str("LAS/LAZ bounds exceed the viewer coordinate range"))
 }
 
 struct OpfsWriter {

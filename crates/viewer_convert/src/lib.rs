@@ -18,9 +18,7 @@ use std::{
 use las::Reader;
 use rayon::prelude::*;
 use thiserror::Error;
-use viewer_core::{
-    AttributeDataType, AttributeDescriptor, BlockId, CoordinateFrame, DatasetSource, SpatialBounds,
-};
+use viewer_core::{AttributeDescriptor, BlockId, CoordinateFrame, DatasetSource, SpatialBounds};
 use viewer_format::{
     BlockEncoder, FormatBlockEncoder, FormatMetadata, FormatReader, FormatVersion, FormatWriter,
     FormatWriterOptions, OctreeWriter, PreparedOctreeWriter,
@@ -44,7 +42,6 @@ use spatial::{
 };
 
 const DEFAULT_POINTS_PER_BLOCK: u64 = 262_144;
-const TARGET_RENDER_EXTENT: f64 = 100.0;
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
 const MAX_SPATIAL_WORKERS: usize = 8;
@@ -104,19 +101,14 @@ fn default_spatial_workers() -> usize {
 }
 
 fn visual_scale_for_bounds(bounds: SpatialBounds) -> Result<f64, ConvertError> {
-    let min = bounds.min();
-    let max = bounds.max();
-    let extent = (0..3)
-        .map(|axis| max[axis] - min[axis])
-        .fold(0.0_f64, f64::max);
-    if extent == 0.0 {
-        return Ok(1.0);
-    }
-    let scale = TARGET_RENDER_EXTENT / extent;
-    if !scale.is_finite() || scale <= 0.0 || !(scale as f32).is_finite() || (scale as f32) == 0.0 {
-        return Err(ConvertError::InvalidVisualScale(scale));
-    }
-    Ok(scale)
+    viewer_core::las::visual_scale_for_bounds(bounds).ok_or_else(|| {
+        let min = bounds.min();
+        let max = bounds.max();
+        let extent = (0..3)
+            .map(|axis| max[axis] - min[axis])
+            .fold(0.0_f64, f64::max);
+        ConvertError::InvalidVisualScale(viewer_core::las::TARGET_RENDER_EXTENT / extent)
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1093,25 +1085,7 @@ fn process_batches<T: Sync, P: Send>(
 }
 
 fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {
-    let mut schema = vec![
-        descriptor("intensity", AttributeDataType::U16, 1),
-        descriptor("classification", AttributeDataType::U8, 1),
-        descriptor("return_number", AttributeDataType::U8, 1),
-        descriptor("number_of_returns", AttributeDataType::U8, 1),
-        descriptor("scan_angle_degrees", AttributeDataType::F32, 1),
-        descriptor("user_data", AttributeDataType::U8, 1),
-        descriptor("point_source_id", AttributeDataType::U16, 1),
-    ];
-    if format.has_gps_time {
-        schema.push(descriptor("gps_time", AttributeDataType::F64, 1));
-    }
-    if format.has_color {
-        schema.push(descriptor("rgb", AttributeDataType::U16, 3));
-    }
-    if format.has_nir {
-        schema.push(descriptor("nir", AttributeDataType::U16, 1));
-    }
-    schema
+    viewer_core::las::las_attribute_schema(format.has_gps_time, format.has_color, format.has_nir)
 }
 
 fn output_block_ids(path: &Path) -> Result<(Vec<BlockId>, Vec<BlockId>), ConvertError> {
@@ -1156,8 +1130,12 @@ fn link_or_copy(source: &Path, destination: &Path) -> Result<(), ConvertError> {
     }
 }
 
-fn descriptor(name: &str, data_type: AttributeDataType, components: u32) -> AttributeDescriptor {
-    AttributeDescriptor::new(name, data_type, components).expect("static attribute schema is valid")
+fn next_descriptor(
+    descriptors: &mut impl Iterator<Item = AttributeDescriptor>,
+) -> AttributeDescriptor {
+    descriptors
+        .next()
+        .expect("LAS attribute schema covers every column")
 }
 
 fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String> {
