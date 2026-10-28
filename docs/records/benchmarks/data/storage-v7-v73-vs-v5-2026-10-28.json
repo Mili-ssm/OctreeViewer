@@ -1,0 +1,4820 @@
+{
+  "status": "complete",
+  "date": "28-10-2026",
+  "note": "Belvedere: unmodified compare_storage_revisions.py (hierarchy, reconstruct, progressive; --max-decoded-mib 6144). Majadas: copy of the runner with MODES=(hierarchy, progressive) because reconstruct needs the whole decoded set resident (does not fit in 30 GB RAM); --max-decoded-mib 512 as in the 25-10-2026 reference. Reference datasets/options taken from storage-v7-belvedere-majadas-v5-v71-2026-10-25.json.",
+  "reports": {
+    "belvedere": {
+      "status": "complete",
+      "reference": {
+        "path": "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/ref_belv.json",
+        "bytes": 250,
+        "sha256": "0c3fb688fc1240f650223779b6f34746b3ca0bb5f927d542d141ceb2baf18260"
+      },
+      "environment": {
+        "git_head": "3571533731e526bcbe15a6f6968378b1c8d99eb1",
+        "git_dirty": false,
+        "platform": "Linux-7.2.11-200.fc44.x86_64-x86_64-with-glibc2.43",
+        "cpu": "x86_64",
+        "python": "3.14.8",
+        "rustc": "rustc 1.101.0-nightly (41089d07a 2026-10-27)"
+      },
+      "profile": "perf",
+      "protocol": "alternating revisions; serial conversion then hierarchy/resident/BFS; Linux time peak RSS",
+      "cache_state": "no purge; reads after conversion/validation/hashes on local NVMe",
+      "binaries": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+          "bytes": 2927904,
+          "sha256": "dbb4b3ff9627c970a8b8ac160eb06ba556e6b73c52d123c96267e4677aad46ca"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "bytes": 992928,
+          "sha256": "00426f730eb31a41b4ab35cb47dabdc0432b39733fcd94e0e6671513e145210b"
+        }
+      ],
+      "sources": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/async_reader.rs",
+          "bytes": 8933,
+          "sha256": "a52a2b4a1b1d0a63527a0e81773cb5af09f6eaa7ba624dde4a620c1acbd69757"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/async_reader_tests.rs",
+          "bytes": 13502,
+          "sha256": "83bbe6791167e2a70cbd9b7b8befc1fedc4ad644485cb89453b96b109756528e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/attribute_codec.rs",
+          "bytes": 11350,
+          "sha256": "cb3f72d909418fbdc24d264103b52057a8cf37179bf8d3b010f4def96aa53a40"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/attribute_codec_tests.rs",
+          "bytes": 29223,
+          "sha256": "01fc1a68a40583a4730a46b5998c2e45e1ac23da80f12c8734270f646615772e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/block_encoder.rs",
+          "bytes": 3938,
+          "sha256": "00f86bd2e77240dd468aeedd0b45cbc1f201be501867142498d309e1b2c9e3e2"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/checkpoint_record.rs",
+          "bytes": 14174,
+          "sha256": "d747f71f8769dd9e702f1d55dd9f7630f36e5df16ef4ab28b018c045ac70e84d"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/codec.rs",
+          "bytes": 5610,
+          "sha256": "347e44ddc5f4a53f5f1867b9a389099e6ffaab00a0a9c0500994d02844429724"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/contracts.rs",
+          "bytes": 6214,
+          "sha256": "bde1c622413136f48a5f93ec3a9b48d4559f3230f97fd405f8bdfc315107b64e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/crc32.rs",
+          "bytes": 4760,
+          "sha256": "185b013f3c199c705cdd71529fddb5563f19d07c6fc5b0b8e2469d25b189478a"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/error.rs",
+          "bytes": 7210,
+          "sha256": "188c61f50cf64959f8826770f16c82930ac6bb81b2aeca8139ac6bdde96df6e7"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/experimental_tuple_dictionary.rs",
+          "bytes": 13565,
+          "sha256": "09e807b16fcd49cc8cdb83f40a06ad1a9359c3a22208934e1774c9d48480c5df"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/geometry.rs",
+          "bytes": 11619,
+          "sha256": "1c8ff51792e0d18df6e67834795c715f8da56f230ec0df4bcff327f8c2ca6643"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/index_codec.rs",
+          "bytes": 31043,
+          "sha256": "9e3b6d0e158731f71ea7ddb5220a50b0d514c127ac22724f78a47b9377e942f5"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/layout.rs",
+          "bytes": 6808,
+          "sha256": "5a5e1f9c7d5c4984ca48babfa1a17ca5fc4999d7c76c99212c1d7f672faf4479"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/lib.rs",
+          "bytes": 2499,
+          "sha256": "2fa89ebb3e4d6c990d0b12bca0ec89a60dd3fc4d2fcc89ebbbbb53b876dc1eaf"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/metadata.rs",
+          "bytes": 9588,
+          "sha256": "b2e016ff2ec5134085f9fbf34eb3198439fa1ed4aaf1c31cdb1f59b11f74b6af"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/occupancy_codec.rs",
+          "bytes": 19611,
+          "sha256": "df4f44069cf3783d68014f85c3358eab88361068b41c7fde4609ab33a805aa43"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/parallel_reader.rs",
+          "bytes": 7240,
+          "sha256": "4223a4a3b108b8e93bbb35fb6562ffa4f9913c559ae5c2aeed46e6dff6a4f978"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/prepare.rs",
+          "bytes": 28746,
+          "sha256": "cd44bbc394639dbb416bcf108131d5e2bea5598cc3333325e49b41ff03832545"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/quantization.rs",
+          "bytes": 9969,
+          "sha256": "71abaa3f9d3046623a8a44ffc14fa1d98fae5872895db505b08d165186f0662a"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/quantized_occupancy.rs",
+          "bytes": 10963,
+          "sha256": "e07d7b047b9d785144b57728c4e116ae63992f4ab18b388fcc3c584be58c043b"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/ranges.rs",
+          "bytes": 2754,
+          "sha256": "994b78ca7591eb25099c2845b90f58122a71daf3a4f4a5171f5c0260f716ce3f"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/read_budget.rs",
+          "bytes": 9425,
+          "sha256": "df2490ba6d8f82ccf1d220e1cf7bd5151bf5dce3c689bf56b9691bf2241f0c21"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/read_plan.rs",
+          "bytes": 10212,
+          "sha256": "2a6c1034487803298bec40101198fefbb93204a4c3aada83dd5898035e7ed696"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/reader.rs",
+          "bytes": 42919,
+          "sha256": "88d913ddceb4cbd0185be05b12576353fd3d938aa2c7a996a22e8f3aee4c4f95"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/reader_limits.rs",
+          "bytes": 2279,
+          "sha256": "a08ab1f1d276913974dfc4f60a3196f654decb584b47077245182d10639325d8"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/reader_tests.rs",
+          "bytes": 57022,
+          "sha256": "eddc761976f2774a44ddf1e2f923b5c6589f3d6e5238dc09528d32f0e51a1737"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/slice_cursor.rs",
+          "bytes": 2896,
+          "sha256": "48acd0764da1e004226c6b7e8f21c1f90985aea202017728d98b08de012ab4fe"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/storage_reader.rs",
+          "bytes": 13704,
+          "sha256": "be311b81c90f22bba1bb2ec883b912e4ab57958f78fca10f8b2817f532a8656b"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/version.rs",
+          "bytes": 12561,
+          "sha256": "8185387bb1ca810b4489308b010bce8343a14aa728fa88190d954a5ab27436f4"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/writer.rs",
+          "bytes": 20985,
+          "sha256": "3db750e51ebdcf4d48166a4f55b45abdd1712085d26ce8513068f21e7eaa8d60"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/writer_tests.rs",
+          "bytes": 24318,
+          "sha256": "adb63e13fa62772fa22113e76bb317e86a0a85b2143e49cc1ed2e5f73c8c4e4c"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/checkpoint.rs",
+          "bytes": 22573,
+          "sha256": "45893270168201208dad53947fae3808f9e6b9a442bb7c4b793b5520ef6afae7"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/diagnostics.rs",
+          "bytes": 5374,
+          "sha256": "af1ec5cc527274970f4e7422df6d9ac2ef9efceb5a307d2f09ebc438055a03ba"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/ept.rs",
+          "bytes": 47956,
+          "sha256": "0bfa3bdda3e83a9d12e59563a058550ef2cf88a1bfe04dd4c46a3c157366c5ff"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/ept_checkpoint.rs",
+          "bytes": 35339,
+          "sha256": "bdc26be711d42187c40e59a6a1e28b0addfc261e1c2fc4cfc8d8031555d012a6"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/ept_tests.rs",
+          "bytes": 22977,
+          "sha256": "b3816ca2690c3d1c6bed0f798a1e91400442caecc266df7bdf7a14056e99f5dc"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/error.rs",
+          "bytes": 3375,
+          "sha256": "b75c30d38d65acbeb6bc1ab895e2ca9023fc26249b87c6ffccfe156f0b90b5ad"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/fs_util.rs",
+          "bytes": 771,
+          "sha256": "362dcaa4592b2a771595961194d7445ed3bfaa321daa787fa25933fbab3c2f03"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/las_source.rs",
+          "bytes": 29596,
+          "sha256": "1d1793d264c0aa0789aea3e5b20da7a6adb12f09dbaa386fecf99216766b43fd"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/lib.rs",
+          "bytes": 3295,
+          "sha256": "4f03024ae0d879f591b30491f8c5ccdae99510cc74bf6c23509a2ef52ec2e1a6"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/lib_tests.rs",
+          "bytes": 50213,
+          "sha256": "f09bc5c6532b96e51c01d5ecdb9891d27785f0a2c6198de5174e4ad3d9b09c9e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/main.rs",
+          "bytes": 8354,
+          "sha256": "02bdfbd3fd56aec7d6126c2332a42263c0494c4b724da277131926664e9c54b6"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/options.rs",
+          "bytes": 5210,
+          "sha256": "3ce5423141d6360adfa8df6b7e47b78a7bcf91a922cc3a6fdf99623f3d0a3445"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/publish.rs",
+          "bytes": 16231,
+          "sha256": "225843e0297383109b953c8dc7413907dba09036d7afc1ea5aeaa4cf31a9e4e4"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/report.rs",
+          "bytes": 3108,
+          "sha256": "4f0a5f7c21b71a20ba9ea5e13c687d9cb73a5ee1809179c638663c88be006fc1"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/spatial.rs",
+          "bytes": 87693,
+          "sha256": "1ea221e43e080f9fb82da9efa6e6a54153ab21f9857b359d48bfa124dc43d089"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/Cargo.toml",
+          "bytes": 1254,
+          "sha256": "19025e1ace01c34fd23d5615449e03866235e7bd91ccfd5819c5c5d61d15cf34"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/Cargo.lock",
+          "bytes": 41695,
+          "sha256": "0fe167b92cf1ae412548bde556a10e94a7edbecca550ab2e542acd6af1f4e9d3"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+          "bytes": 13559,
+          "sha256": "c0b882d38641dc5fce3439b4a0969d01fcdaf7a7f36544cb48c12bb2dd351060"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/compare_storage_revisions.py",
+          "bytes": 6298,
+          "sha256": "d534cea4d1a2a0c4ec7bc6e261eaccb9854e031c0ee269a70c1639f54f02eb53"
+        }
+      ]
+    },
+    "majadas": {
+      "status": "complete",
+      "reference": {
+        "path": "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/ref_maj.json",
+        "bytes": 280,
+        "sha256": "9802cdf89245df5a4635820bb25f51514b6190fa9bdad6a29f1c3d8364228479"
+      },
+      "environment": {
+        "git_head": "3571533731e526bcbe15a6f6968378b1c8d99eb1",
+        "git_dirty": true,
+        "platform": "Linux-7.2.11-200.fc44.x86_64-x86_64-with-glibc2.43",
+        "cpu": "x86_64",
+        "python": "3.14.8",
+        "rustc": "rustc 1.101.0-nightly (41089d07a 2026-10-27)"
+      },
+      "profile": "perf",
+      "protocol": "alternating revisions; serial conversion then hierarchy/resident/BFS; Linux time peak RSS",
+      "cache_state": "no purge; reads after conversion/validation/hashes on local NVMe",
+      "binaries": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+          "bytes": 2927904,
+          "sha256": "dbb4b3ff9627c970a8b8ac160eb06ba556e6b73c52d123c96267e4677aad46ca"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+          "bytes": 992928,
+          "sha256": "00426f730eb31a41b4ab35cb47dabdc0432b39733fcd94e0e6671513e145210b"
+        }
+      ],
+      "sources": [
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/async_reader.rs",
+          "bytes": 8933,
+          "sha256": "a52a2b4a1b1d0a63527a0e81773cb5af09f6eaa7ba624dde4a620c1acbd69757"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/async_reader_tests.rs",
+          "bytes": 13502,
+          "sha256": "83bbe6791167e2a70cbd9b7b8befc1fedc4ad644485cb89453b96b109756528e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/attribute_codec.rs",
+          "bytes": 11350,
+          "sha256": "cb3f72d909418fbdc24d264103b52057a8cf37179bf8d3b010f4def96aa53a40"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/attribute_codec_tests.rs",
+          "bytes": 29223,
+          "sha256": "01fc1a68a40583a4730a46b5998c2e45e1ac23da80f12c8734270f646615772e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/block_encoder.rs",
+          "bytes": 3938,
+          "sha256": "00f86bd2e77240dd468aeedd0b45cbc1f201be501867142498d309e1b2c9e3e2"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/checkpoint_record.rs",
+          "bytes": 14174,
+          "sha256": "d747f71f8769dd9e702f1d55dd9f7630f36e5df16ef4ab28b018c045ac70e84d"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/codec.rs",
+          "bytes": 5610,
+          "sha256": "347e44ddc5f4a53f5f1867b9a389099e6ffaab00a0a9c0500994d02844429724"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/contracts.rs",
+          "bytes": 6214,
+          "sha256": "bde1c622413136f48a5f93ec3a9b48d4559f3230f97fd405f8bdfc315107b64e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/crc32.rs",
+          "bytes": 4760,
+          "sha256": "185b013f3c199c705cdd71529fddb5563f19d07c6fc5b0b8e2469d25b189478a"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/error.rs",
+          "bytes": 7210,
+          "sha256": "188c61f50cf64959f8826770f16c82930ac6bb81b2aeca8139ac6bdde96df6e7"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/experimental_tuple_dictionary.rs",
+          "bytes": 13565,
+          "sha256": "09e807b16fcd49cc8cdb83f40a06ad1a9359c3a22208934e1774c9d48480c5df"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/geometry.rs",
+          "bytes": 11619,
+          "sha256": "1c8ff51792e0d18df6e67834795c715f8da56f230ec0df4bcff327f8c2ca6643"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/index_codec.rs",
+          "bytes": 31043,
+          "sha256": "9e3b6d0e158731f71ea7ddb5220a50b0d514c127ac22724f78a47b9377e942f5"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/layout.rs",
+          "bytes": 6808,
+          "sha256": "5a5e1f9c7d5c4984ca48babfa1a17ca5fc4999d7c76c99212c1d7f672faf4479"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/lib.rs",
+          "bytes": 2499,
+          "sha256": "2fa89ebb3e4d6c990d0b12bca0ec89a60dd3fc4d2fcc89ebbbbb53b876dc1eaf"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/metadata.rs",
+          "bytes": 9588,
+          "sha256": "b2e016ff2ec5134085f9fbf34eb3198439fa1ed4aaf1c31cdb1f59b11f74b6af"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/occupancy_codec.rs",
+          "bytes": 19611,
+          "sha256": "df4f44069cf3783d68014f85c3358eab88361068b41c7fde4609ab33a805aa43"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/parallel_reader.rs",
+          "bytes": 7240,
+          "sha256": "4223a4a3b108b8e93bbb35fb6562ffa4f9913c559ae5c2aeed46e6dff6a4f978"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/prepare.rs",
+          "bytes": 28746,
+          "sha256": "cd44bbc394639dbb416bcf108131d5e2bea5598cc3333325e49b41ff03832545"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/quantization.rs",
+          "bytes": 9969,
+          "sha256": "71abaa3f9d3046623a8a44ffc14fa1d98fae5872895db505b08d165186f0662a"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/quantized_occupancy.rs",
+          "bytes": 10963,
+          "sha256": "e07d7b047b9d785144b57728c4e116ae63992f4ab18b388fcc3c584be58c043b"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/ranges.rs",
+          "bytes": 2754,
+          "sha256": "994b78ca7591eb25099c2845b90f58122a71daf3a4f4a5171f5c0260f716ce3f"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/read_budget.rs",
+          "bytes": 9425,
+          "sha256": "df2490ba6d8f82ccf1d220e1cf7bd5151bf5dce3c689bf56b9691bf2241f0c21"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/read_plan.rs",
+          "bytes": 10212,
+          "sha256": "2a6c1034487803298bec40101198fefbb93204a4c3aada83dd5898035e7ed696"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/reader.rs",
+          "bytes": 42919,
+          "sha256": "88d913ddceb4cbd0185be05b12576353fd3d938aa2c7a996a22e8f3aee4c4f95"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/reader_limits.rs",
+          "bytes": 2279,
+          "sha256": "a08ab1f1d276913974dfc4f60a3196f654decb584b47077245182d10639325d8"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/reader_tests.rs",
+          "bytes": 57022,
+          "sha256": "eddc761976f2774a44ddf1e2f923b5c6589f3d6e5238dc09528d32f0e51a1737"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/slice_cursor.rs",
+          "bytes": 2896,
+          "sha256": "48acd0764da1e004226c6b7e8f21c1f90985aea202017728d98b08de012ab4fe"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/storage_reader.rs",
+          "bytes": 13704,
+          "sha256": "be311b81c90f22bba1bb2ec883b912e4ab57958f78fca10f8b2817f532a8656b"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/version.rs",
+          "bytes": 12561,
+          "sha256": "8185387bb1ca810b4489308b010bce8343a14aa728fa88190d954a5ab27436f4"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/writer.rs",
+          "bytes": 20985,
+          "sha256": "3db750e51ebdcf4d48166a4f55b45abdd1712085d26ce8513068f21e7eaa8d60"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_format/src/writer_tests.rs",
+          "bytes": 24318,
+          "sha256": "adb63e13fa62772fa22113e76bb317e86a0a85b2143e49cc1ed2e5f73c8c4e4c"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/checkpoint.rs",
+          "bytes": 22573,
+          "sha256": "45893270168201208dad53947fae3808f9e6b9a442bb7c4b793b5520ef6afae7"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/diagnostics.rs",
+          "bytes": 5374,
+          "sha256": "af1ec5cc527274970f4e7422df6d9ac2ef9efceb5a307d2f09ebc438055a03ba"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/ept.rs",
+          "bytes": 47956,
+          "sha256": "0bfa3bdda3e83a9d12e59563a058550ef2cf88a1bfe04dd4c46a3c157366c5ff"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/ept_checkpoint.rs",
+          "bytes": 35339,
+          "sha256": "bdc26be711d42187c40e59a6a1e28b0addfc261e1c2fc4cfc8d8031555d012a6"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/ept_tests.rs",
+          "bytes": 22977,
+          "sha256": "b3816ca2690c3d1c6bed0f798a1e91400442caecc266df7bdf7a14056e99f5dc"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/error.rs",
+          "bytes": 3375,
+          "sha256": "b75c30d38d65acbeb6bc1ab895e2ca9023fc26249b87c6ffccfe156f0b90b5ad"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/fs_util.rs",
+          "bytes": 771,
+          "sha256": "362dcaa4592b2a771595961194d7445ed3bfaa321daa787fa25933fbab3c2f03"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/las_source.rs",
+          "bytes": 29596,
+          "sha256": "1d1793d264c0aa0789aea3e5b20da7a6adb12f09dbaa386fecf99216766b43fd"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/lib.rs",
+          "bytes": 3295,
+          "sha256": "4f03024ae0d879f591b30491f8c5ccdae99510cc74bf6c23509a2ef52ec2e1a6"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/lib_tests.rs",
+          "bytes": 50213,
+          "sha256": "f09bc5c6532b96e51c01d5ecdb9891d27785f0a2c6198de5174e4ad3d9b09c9e"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/main.rs",
+          "bytes": 8354,
+          "sha256": "02bdfbd3fd56aec7d6126c2332a42263c0494c4b724da277131926664e9c54b6"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/options.rs",
+          "bytes": 5210,
+          "sha256": "3ce5423141d6360adfa8df6b7e47b78a7bcf91a922cc3a6fdf99623f3d0a3445"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/publish.rs",
+          "bytes": 16231,
+          "sha256": "225843e0297383109b953c8dc7413907dba09036d7afc1ea5aeaa4cf31a9e4e4"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/report.rs",
+          "bytes": 3108,
+          "sha256": "4f0a5f7c21b71a20ba9ea5e13c687d9cb73a5ee1809179c638663c88be006fc1"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/src/spatial.rs",
+          "bytes": 87693,
+          "sha256": "1ea221e43e080f9fb82da9efa6e6a54153ab21f9857b359d48bfa124dc43d089"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/Cargo.toml",
+          "bytes": 1254,
+          "sha256": "19025e1ace01c34fd23d5615449e03866235e7bd91ccfd5819c5c5d61d15cf34"
+        },
+        {
+          "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/Cargo.lock",
+          "bytes": 41695,
+          "sha256": "0fe167b92cf1ae412548bde556a10e94a7edbecca550ab2e542acd6af1f4e9d3"
+        },
+        {
+          "path": "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+          "bytes": 13544,
+          "sha256": "57cdd9e817be2a3a14183a8286260f7562ff85291880d2e5c48bf23863087671"
+        },
+        {
+          "path": "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/compare_storage_revisions.py",
+          "bytes": 6284,
+          "sha256": "74efc7059faf10f4d746e006307ac488063e1e0e60891d0a326976280f9af223"
+        }
+      ]
+    }
+  },
+  "datasets": [
+    {
+      "label": "belvedere",
+      "source": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+        "bytes": 618390994,
+        "sha256": "73cd064f489ede36b3e48c2b83a13b8325bdcab73ee509b09ee5237b6d5aa1e1"
+      },
+      "runs": [
+        {
+          "round": 1,
+          "version": "v5",
+          "command": [
+            "/usr/bin/python3",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v5",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v5",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "6144"
+          ],
+          "wall_seconds": 57.16374736599391,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v5/report.json",
+            "bytes": 43697,
+            "sha256": "39650385c50107ccdd03d17670c9100183d0cbbca65809f2d9f963b2229ac7d2"
+          }
+        },
+        {
+          "round": 1,
+          "version": "v7.3-pre",
+          "command": [
+            "/usr/bin/python3",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v7.3-pre",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v7.3-pre",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "6144"
+          ],
+          "wall_seconds": 68.40841719298624,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v7.3-pre/report.json",
+            "bytes": 47555,
+            "sha256": "f087f7a6794b446717a972974bbf3fe38a969fb99c4230c612fecd28d9bad740"
+          }
+        },
+        {
+          "round": 2,
+          "version": "v7.3-pre",
+          "command": [
+            "/usr/bin/python3",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/2-v7.3-pre",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v7.3-pre",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "6144"
+          ],
+          "wall_seconds": 67.21515463100513,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/2-v7.3-pre/report.json",
+            "bytes": 47543,
+            "sha256": "0645d94e22313d099e69d652bb54cfa62b63799146a41a887275001763df382a"
+          }
+        },
+        {
+          "round": 2,
+          "version": "v5",
+          "command": [
+            "/usr/bin/python3",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/2-v5",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v5",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "6144"
+          ],
+          "wall_seconds": 58.50167810899438,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/2-v5/report.json",
+            "bytes": 43688,
+            "sha256": "3b2de70df6064ef6b1186689cd5358bd038ba2aee4c086ba6a11b395eb464900"
+          }
+        },
+        {
+          "round": 3,
+          "version": "v5",
+          "command": [
+            "/usr/bin/python3",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/3-v5",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v5",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "6144"
+          ],
+          "wall_seconds": 58.574314193974715,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/3-v5/report.json",
+            "bytes": 43694,
+            "sha256": "77e7fbddcbf0f57f3c2ba9fc02d62bab92827a019936beacccdaa8f136250dc3"
+          }
+        },
+        {
+          "round": 3,
+          "version": "v7.3-pre",
+          "command": [
+            "/usr/bin/python3",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/belv_2009_digital-aerial_pcd_copc.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/3-v7.3-pre",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v7.3-pre",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "6144"
+          ],
+          "wall_seconds": 68.10903725004755,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/3-v7.3-pre/report.json",
+            "bytes": 47535,
+            "sha256": "9f4f60033b864e9a4fe41e9154065320715568c2eb0404929d74a23d127b01a4"
+          }
+        }
+      ],
+      "summaries": {
+        "v5": {
+          "conversion": {
+            "attribute_0_raw_payload_bytes": {
+              "median": 163412422,
+              "min": 163412422,
+              "max": 163412422,
+              "samples": 3
+            },
+            "attribute_0_stored_payload_bytes": {
+              "median": 656109,
+              "min": 656109,
+              "max": 656109,
+              "samples": 3
+            },
+            "attribute_1_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_1_stored_payload_bytes": {
+              "median": 335757,
+              "min": 335757,
+              "max": 335757,
+              "samples": 3
+            },
+            "attribute_2_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_2_stored_payload_bytes": {
+              "median": 335757,
+              "min": 335757,
+              "max": 335757,
+              "samples": 3
+            },
+            "attribute_3_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_3_stored_payload_bytes": {
+              "median": 335757,
+              "min": 335757,
+              "max": 335757,
+              "samples": 3
+            },
+            "attribute_4_raw_payload_bytes": {
+              "median": 326824844,
+              "min": 326824844,
+              "max": 326824844,
+              "samples": 3
+            },
+            "attribute_4_stored_payload_bytes": {
+              "median": 1296990,
+              "min": 1296990,
+              "max": 1296990,
+              "samples": 3
+            },
+            "attribute_5_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_5_stored_payload_bytes": {
+              "median": 335757,
+              "min": 335757,
+              "max": 335757,
+              "samples": 3
+            },
+            "attribute_6_raw_payload_bytes": {
+              "median": 163412422,
+              "min": 163412422,
+              "max": 163412422,
+              "samples": 3
+            },
+            "attribute_6_stored_payload_bytes": {
+              "median": 656109,
+              "min": 656109,
+              "max": 656109,
+              "samples": 3
+            },
+            "attribute_7_raw_payload_bytes": {
+              "median": 653649688,
+              "min": 653649688,
+              "max": 653649688,
+              "samples": 3
+            },
+            "attribute_7_stored_payload_bytes": {
+              "median": 2578651,
+              "min": 2578651,
+              "max": 2578651,
+              "samples": 3
+            },
+            "attribute_8_raw_payload_bytes": {
+              "median": 490237266,
+              "min": 490237266,
+              "max": 490237266,
+              "samples": 3
+            },
+            "attribute_8_stored_payload_bytes": {
+              "median": 360106626,
+              "min": 360106626,
+              "max": 360106626,
+              "samples": 3
+            },
+            "attribute_file_bytes": {
+              "median": 610586859,
+              "min": 610586859,
+              "max": 610586859,
+              "samples": 3
+            },
+            "controlled_memory_estimate_bytes": {
+              "median": 62940928,
+              "min": 62940928,
+              "max": 62940928,
+              "samples": 3
+            },
+            "conversion_elapsed_ms": {
+              "median": 42165.407,
+              "min": 40768.222,
+              "max": 42393.842,
+              "samples": 3
+            },
+            "conversion_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "conversion_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "conversion_io_write_bytes": {
+              "median": 17766113280,
+              "min": 17764995072,
+              "max": 17766993920,
+              "samples": 3
+            },
+            "display_rgb_raw_payload_bytes": {
+              "median": 245118633,
+              "min": 245118633,
+              "max": 245118633,
+              "samples": 3
+            },
+            "display_rgb_stored_payload_bytes": {
+              "median": 243949282,
+              "min": 243949282,
+              "max": 243949282,
+              "samples": 3
+            },
+            "format_overhead_bytes": {
+              "median": 807686,
+              "min": 807686,
+              "max": 807686,
+              "samples": 3
+            },
+            "geometry_file_bytes": {
+              "median": 981063326,
+              "min": 981063326,
+              "max": 981063326,
+              "samples": 3
+            },
+            "geometry_raw_payload_bytes": {
+              "median": 980474532,
+              "min": 980474532,
+              "max": 980474532,
+              "samples": 3
+            },
+            "geometry_stored_payload_bytes": {
+              "median": 980255704,
+              "min": 980255704,
+              "max": 980255704,
+              "samples": 3
+            },
+            "hypothetical_full_point_storage_bytes": {
+              "median": 1306917264,
+              "min": 1306917264,
+              "max": 1306917264,
+              "samples": 3
+            },
+            "input_bytes": {
+              "median": 618390994,
+              "min": 618390994,
+              "max": 618390994,
+              "samples": 3
+            },
+            "internal_block_preparation_elapsed_ns": {
+              "median": 8578400867,
+              "min": 8554305532,
+              "max": 8681478268,
+              "samples": 3
+            },
+            "internal_block_stream_elapsed_ns": {
+              "median": 8957885082,
+              "min": 8926804468,
+              "max": 9073004078,
+              "samples": 3
+            },
+            "internal_block_stream_lod_payload_read_bytes": {
+              "median": 1265746,
+              "min": 1265746,
+              "max": 1265746,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": {
+              "median": 5500248,
+              "min": 5500248,
+              "max": 5500248,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": {
+              "median": 5500248,
+              "min": 5500248,
+              "max": 5500248,
+              "samples": 3
+            },
+            "internal_block_stream_source_payload_read_bytes": {
+              "median": 3348975489,
+              "min": 3348975489,
+              "max": 3348975489,
+              "samples": 3
+            },
+            "internal_finalize_and_sync_elapsed_ns": {
+              "median": 609416022,
+              "min": 583927221,
+              "max": 610362519,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compressed_bytes": {
+              "median": 980255704,
+              "min": 980255704,
+              "max": 980255704,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compression_elapsed_ns": {
+              "median": 140231474,
+              "min": 135724115,
+              "max": 141474095,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_encoding_elapsed_ns": {
+              "median": 81561939,
+              "min": 80691461,
+              "max": 82140207,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_raw_bytes": {
+              "median": 980474532,
+              "min": 980474532,
+              "max": 980474532,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_compressed_bytes": {
+              "median": 980255704,
+              "min": 980255704,
+              "max": 980255704,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_raw_bytes": {
+              "median": 980474532,
+              "min": 980474532,
+              "max": 980474532,
+              "samples": 3
+            },
+            "internal_ordered_write_and_release_elapsed_ns": {
+              "median": 378536301,
+              "min": 371815166,
+              "max": 390750640,
+              "samples": 3
+            },
+            "internal_output_validation_elapsed_ns": {
+              "median": 4280802588,
+              "min": 4241384273,
+              "max": 4312039135,
+              "samples": 3
+            },
+            "internal_spatial_phase_lod_sample_write_elapsed_ns": {
+              "median": 7076907,
+              "min": 6788431,
+              "max": 7101098,
+              "samples": 3
+            },
+            "internal_spatial_phase_root_las_fill_elapsed_ns": {
+              "median": 6010749908,
+              "min": 5985255186,
+              "max": 6074768558,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": {
+              "median": 19664931194,
+              "min": 18527923123,
+              "max": 20046317429,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_scan_read_elapsed_ns": {
+              "median": 1874411135,
+              "min": 1825425102,
+              "max": 1886278348,
+              "samples": 3
+            },
+            "internal_spatial_planning_elapsed_ns": {
+              "median": 28149505464,
+              "min": 27000565651,
+              "max": 28519992066,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_scanned_bytes": {
+              "median": 12814915515,
+              "min": 12814915515,
+              "max": 12814915515,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_written_bytes": {
+              "median": 16163891004,
+              "min": 16163891004,
+              "max": 16163891004,
+              "samples": 3
+            },
+            "internal_spatial_spool_lod_payload_written_bytes": {
+              "median": 1265746,
+              "min": 1265746,
+              "max": 1265746,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_scanned_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_written_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_validation_worker_0_max_decoded_block_estimated_bytes": {
+              "median": 9626172,
+              "min": 9626172,
+              "max": 9626172,
+              "samples": 3
+            },
+            "internal_validation_worker_0_read_elapsed_ns": {
+              "median": 4274654545,
+              "min": 4234820357,
+              "max": 4307079358,
+              "samples": 3
+            },
+            "largest_block_point_storage_bytes": {
+              "median": 3666832,
+              "min": 3666832,
+              "max": 3666832,
+              "samples": 3
+            },
+            "largest_raw_block_bytes": {
+              "median": 9396257,
+              "min": 9396257,
+              "max": 9396257,
+              "samples": 3
+            },
+            "largest_stored_block_bytes": {
+              "median": 4515220,
+              "min": 4515220,
+              "max": 4515220,
+              "samples": 3
+            },
+            "logical_payload_bytes": {
+              "median": 3349954651,
+              "min": 3349954651,
+              "max": 3349954651,
+              "samples": 3
+            },
+            "output_bytes": {
+              "median": 1591650185,
+              "min": 1591650185,
+              "max": 1591650185,
+              "samples": 3
+            },
+            "output_size_bytes": {
+              "median": 1591650185,
+              "min": 1591650185,
+              "max": 1591650185,
+              "samples": 3
+            },
+            "phase_0_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_ms": {
+              "median": 0.091,
+              "min": 0.091,
+              "max": 0.094,
+              "samples": 3
+            },
+            "phase_1_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_ms": {
+              "median": 4.659,
+              "min": 4.006,
+              "max": 5.596,
+              "samples": 3
+            },
+            "phase_2_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_write_bytes": {
+              "median": 9502720,
+              "min": 9502720,
+              "max": 9519104,
+              "samples": 3
+            },
+            "phase_2_ms": {
+              "median": 39.592,
+              "min": 36.681,
+              "max": 43.958,
+              "samples": 3
+            },
+            "phase_3_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_3_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_3_io_write_bytes": {
+              "median": 3339509760,
+              "min": 3339509760,
+              "max": 3339558912,
+              "samples": 3
+            },
+            "phase_3_ms": {
+              "median": 10694.766,
+              "min": 10581.492,
+              "max": 10718.204,
+              "samples": 3
+            },
+            "phase_4_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_4_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_4_io_write_bytes": {
+              "median": 12821925888,
+              "min": 12821893120,
+              "max": 12821987328,
+              "samples": 3
+            },
+            "phase_4_ms": {
+              "median": 17415.451,
+              "min": 16375.517,
+              "max": 17765.417,
+              "samples": 3
+            },
+            "phase_5_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_5_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_5_io_write_bytes": {
+              "median": 1594785792,
+              "min": 1593909248,
+              "max": 1595858944,
+              "samples": 3
+            },
+            "phase_5_ms": {
+              "median": 9570.996,
+              "min": 9514.495,
+              "max": 9685.134,
+              "samples": 3
+            },
+            "phase_6_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_ms": {
+              "median": 4278.196,
+              "min": 4237.721,
+              "max": 4309.451,
+              "samples": 3
+            },
+            "phase_7_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_write_bytes": {
+              "median": 180224,
+              "min": 180224,
+              "max": 262144,
+              "samples": 3
+            },
+            "phase_7_ms": {
+              "median": 14.144,
+              "min": 9.26,
+              "max": 18.485,
+              "samples": 3
+            },
+            "phase_8_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 16384,
+              "samples": 3
+            },
+            "phase_8_ms": {
+              "median": 1.166,
+              "min": 1.016,
+              "max": 1.753,
+              "samples": 3
+            },
+            "preparation_estimated_bytes_per_worker": {
+              "median": 45050560,
+              "min": 45050560,
+              "max": 45050560,
+              "samples": 3
+            },
+            "raw_payload_bytes": {
+              "median": 3349954651,
+              "min": 3349954651,
+              "max": 3349954651,
+              "samples": 3
+            },
+            "rust_point_size_bytes": {
+              "median": 16,
+              "min": 16,
+              "max": 16,
+              "samples": 3
+            },
+            "serialized_index_bytes": {
+              "median": 807558,
+              "min": 807558,
+              "max": 807558,
+              "samples": 3
+            },
+            "stage_BeforeFirstProgress_ms": {
+              "median": 0.091,
+              "min": 0.091,
+              "max": 0.094,
+              "samples": 3
+            },
+            "stage_BuildingSpatialHierarchy_ms": {
+              "median": 17415.451,
+              "min": 16375.517,
+              "max": 17765.417,
+              "samples": 3
+            },
+            "stage_Complete_ms": {
+              "median": 1.166,
+              "min": 1.016,
+              "max": 1.753,
+              "samples": 3
+            },
+            "stage_InspectingInput_ms": {
+              "median": 4.659,
+              "min": 4.006,
+              "max": 5.596,
+              "samples": 3
+            },
+            "stage_PlanningMetadata_ms": {
+              "median": 39.592,
+              "min": 36.681,
+              "max": 43.958,
+              "samples": 3
+            },
+            "stage_PlanningSpatialIndex_ms": {
+              "median": 10694.766,
+              "min": 10581.492,
+              "max": 10718.204,
+              "samples": 3
+            },
+            "stage_PublishingOutput_ms": {
+              "median": 14.144,
+              "min": 9.26,
+              "max": 18.485,
+              "samples": 3
+            },
+            "stage_ReadingAndWritingBlocks_ms": {
+              "median": 9570.996,
+              "min": 9514.495,
+              "max": 9685.134,
+              "samples": 3
+            },
+            "stage_ValidatingOutput_ms": {
+              "median": 4278.196,
+              "min": 4237.721,
+              "max": 4309.451,
+              "samples": 3
+            },
+            "stored_payload_bytes": {
+              "median": 1590842499,
+              "min": 1590842499,
+              "max": 1590842499,
+              "samples": 3
+            },
+            "validation_estimated_bytes_per_worker": {
+              "median": 38633604,
+              "min": 38633604,
+              "max": 38633604,
+              "samples": 3
+            }
+          },
+          "artifacts": {
+            "oct": {
+              "bytes": 981063326,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v5/output-run-001.oct",
+              "sha256": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac"
+            },
+            "octattrs": {
+              "bytes": 610586859,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v5/output-run-001.octattrs",
+              "sha256": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8"
+            }
+          },
+          "rss": {
+            "conversion": {
+              "median": 97808384,
+              "samples": 3
+            },
+            "hierarchy": {
+              "median": 8011776,
+              "samples": 3
+            },
+            "reconstruct": {
+              "median": 3446837248,
+              "samples": 3
+            },
+            "progressive": {
+              "median": 19898368,
+              "samples": 3
+            }
+          },
+          "hierarchy": {
+            "attach_ms": {
+              "median": 0.0,
+              "min": 0.0,
+              "max": 0.0,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 610586859,
+              "min": 610586859,
+              "max": 610586859,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 6442450944,
+              "min": 6442450944,
+              "max": 6442450944,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 4657254027,
+              "min": 4657254027,
+              "max": 4657254027,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 4657254027,
+              "min": 4657254027,
+              "max": 4657254027,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 6.591,
+              "min": 5.332,
+              "max": 6.602,
+              "samples": 3
+            },
+            "load_ms": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 981063326,
+              "min": 981063326,
+              "max": 981063326,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 5.478,
+              "min": 4.699,
+              "max": 5.569,
+              "samples": 3
+            }
+          },
+          "reconstruct": {
+            "attach_ms": {
+              "median": 0.014,
+              "min": 0.01,
+              "max": 0.043,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 610586859,
+              "min": 610586859,
+              "max": 610586859,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 6442450944,
+              "min": 6442450944,
+              "max": 6442450944,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 4657254027,
+              "min": 4657254027,
+              "max": 4657254027,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 4657254027,
+              "min": 4657254027,
+              "max": 4657254027,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 7801.826,
+              "min": 7782.216,
+              "max": 7830.419,
+              "samples": 3
+            },
+            "load_ms": {
+              "median": 5125.266,
+              "min": 5102.898,
+              "max": 5154.64,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 981063326,
+              "min": 981063326,
+              "max": 981063326,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 5.599,
+              "min": 3.894,
+              "max": 5.807,
+              "samples": 3
+            },
+            "verify_ms": {
+              "median": 2671.248,
+              "min": 2669.456,
+              "max": 2672.642,
+              "samples": 3
+            }
+          },
+          "progressive": {
+            "attach_ms": {
+              "median": 0.014,
+              "min": 0.01,
+              "max": 0.016,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 610586859,
+              "min": 610586859,
+              "max": 610586859,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 6442450944,
+              "min": 6442450944,
+              "max": 6442450944,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 4657254027,
+              "min": 4657254027,
+              "max": 4657254027,
+              "samples": 3
+            },
+            "first_root_read_ms": {
+              "median": 0.025,
+              "min": 0.013,
+              "max": 0.029,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 7123.838,
+              "min": 7044.398,
+              "max": 7132.002,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 981063326,
+              "min": 981063326,
+              "max": 981063326,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 5.463,
+              "min": 3.977,
+              "max": 5.493,
+              "samples": 3
+            },
+            "progressive_wall_ms": {
+              "median": 7117.117,
+              "min": 7039.765,
+              "max": 7125.38,
+              "samples": 3
+            },
+            "read_ms": {
+              "median": 4373.365,
+              "min": 4305.428,
+              "max": 4376.928,
+              "samples": 3
+            },
+            "verify_ms": {
+              "median": 2724.798,
+              "min": 2714.801,
+              "max": 2730.216,
+              "samples": 3
+            }
+          }
+        },
+        "v7.3-pre": {
+          "conversion": {
+            "attribute_0_raw_payload_bytes": {
+              "median": 163412422,
+              "min": 163412422,
+              "max": 163412422,
+              "samples": 3
+            },
+            "attribute_0_stored_payload_bytes": {
+              "median": 2686,
+              "min": 2686,
+              "max": 2686,
+              "samples": 3
+            },
+            "attribute_1_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_1_stored_payload_bytes": {
+              "median": 1343,
+              "min": 1343,
+              "max": 1343,
+              "samples": 3
+            },
+            "attribute_2_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_2_stored_payload_bytes": {
+              "median": 1343,
+              "min": 1343,
+              "max": 1343,
+              "samples": 3
+            },
+            "attribute_3_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_3_stored_payload_bytes": {
+              "median": 1343,
+              "min": 1343,
+              "max": 1343,
+              "samples": 3
+            },
+            "attribute_4_raw_payload_bytes": {
+              "median": 326824844,
+              "min": 326824844,
+              "max": 326824844,
+              "samples": 3
+            },
+            "attribute_4_stored_payload_bytes": {
+              "median": 5372,
+              "min": 5372,
+              "max": 5372,
+              "samples": 3
+            },
+            "attribute_5_raw_payload_bytes": {
+              "median": 81706211,
+              "min": 81706211,
+              "max": 81706211,
+              "samples": 3
+            },
+            "attribute_5_stored_payload_bytes": {
+              "median": 1343,
+              "min": 1343,
+              "max": 1343,
+              "samples": 3
+            },
+            "attribute_6_raw_payload_bytes": {
+              "median": 163412422,
+              "min": 163412422,
+              "max": 163412422,
+              "samples": 3
+            },
+            "attribute_6_stored_payload_bytes": {
+              "median": 2686,
+              "min": 2686,
+              "max": 2686,
+              "samples": 3
+            },
+            "attribute_7_raw_payload_bytes": {
+              "median": 653649688,
+              "min": 653649688,
+              "max": 653649688,
+              "samples": 3
+            },
+            "attribute_7_stored_payload_bytes": {
+              "median": 10744,
+              "min": 10744,
+              "max": 10744,
+              "samples": 3
+            },
+            "attribute_8_raw_payload_bytes": {
+              "median": 490237266,
+              "min": 490237266,
+              "max": 490237266,
+              "samples": 3
+            },
+            "attribute_8_stored_payload_bytes": {
+              "median": 247171996,
+              "min": 247171996,
+              "max": 247171996,
+              "samples": 3
+            },
+            "attribute_file_bytes": {
+              "median": 491148201,
+              "min": 491148201,
+              "max": 491148201,
+              "samples": 3
+            },
+            "controlled_memory_estimate_bytes": {
+              "median": 62940928,
+              "min": 62940928,
+              "max": 62940928,
+              "samples": 3
+            },
+            "conversion_elapsed_ms": {
+              "median": 49702.363,
+              "min": 49012.132,
+              "max": 50028.305,
+              "samples": 3
+            },
+            "conversion_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "conversion_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "conversion_io_write_bytes": {
+              "median": 17645936640,
+              "min": 17645182976,
+              "max": 17646968832,
+              "samples": 3
+            },
+            "display_rgb_raw_payload_bytes": {
+              "median": 245118633,
+              "min": 245118633,
+              "max": 245118633,
+              "samples": 3
+            },
+            "display_rgb_stored_payload_bytes": {
+              "median": 243949281,
+              "min": 243949281,
+              "max": 243949281,
+              "samples": 3
+            },
+            "format_overhead_bytes": {
+              "median": 809029,
+              "min": 809029,
+              "max": 809029,
+              "samples": 3
+            },
+            "geometry_file_bytes": {
+              "median": 980940303,
+              "min": 980940303,
+              "max": 980940303,
+              "samples": 3
+            },
+            "geometry_raw_payload_bytes": {
+              "median": 980360233,
+              "min": 980360233,
+              "max": 980360233,
+              "samples": 3
+            },
+            "geometry_stored_payload_bytes": {
+              "median": 980131338,
+              "min": 980131338,
+              "max": 980131338,
+              "samples": 3
+            },
+            "hypothetical_full_point_storage_bytes": {
+              "median": 1306917264,
+              "min": 1306917264,
+              "max": 1306917264,
+              "samples": 3
+            },
+            "input_bytes": {
+              "median": 618390994,
+              "min": 618390994,
+              "max": 618390994,
+              "samples": 3
+            },
+            "internal_block_preparation_elapsed_ns": {
+              "median": 14682061661,
+              "min": 14682055586,
+              "max": 14703902283,
+              "samples": 3
+            },
+            "internal_block_stream_elapsed_ns": {
+              "median": 15267473675,
+              "min": 15246923934,
+              "max": 15272958859,
+              "samples": 3
+            },
+            "internal_block_stream_lod_payload_read_bytes": {
+              "median": 1265746,
+              "min": 1265746,
+              "max": 1265746,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": {
+              "median": 5500248,
+              "min": 5500248,
+              "max": 5500248,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": {
+              "median": 5500248,
+              "min": 5500248,
+              "max": 5500248,
+              "samples": 3
+            },
+            "internal_block_stream_source_payload_read_bytes": {
+              "median": 3348975489,
+              "min": 3348975489,
+              "max": 3348975489,
+              "samples": 3
+            },
+            "internal_finalize_and_sync_elapsed_ns": {
+              "median": 601764568,
+              "min": 557739859,
+              "max": 611419084,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_compressed_bytes": {
+              "median": 1049380260,
+              "min": 1049380260,
+              "max": 1049380260,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_compression_elapsed_ns": {
+              "median": 172536475,
+              "min": 171382043,
+              "max": 173462359,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_encoding_elapsed_ns": {
+              "median": 801234183,
+              "min": 799396708,
+              "max": 805472075,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_raw_bytes": {
+              "median": 1049564870,
+              "min": 1049564870,
+              "max": 1049564870,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_selected_compressed_bytes": {
+              "median": 3987935,
+              "min": 3987935,
+              "max": 3987935,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_selected_raw_bytes": {
+              "median": 3987935,
+              "min": 3987935,
+              "max": 3987935,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_compressed_bytes": {
+              "median": 1200500257,
+              "min": 1200500257,
+              "max": 1200500257,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_compression_elapsed_ns": {
+              "median": 372648355,
+              "min": 370790097,
+              "max": 374628128,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_encoding_elapsed_ns": {
+              "median": 716136075,
+              "min": 715070829,
+              "max": 716523390,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_raw_bytes": {
+              "median": 1200702818,
+              "min": 1200702818,
+              "max": 1200702818,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_selected_compressed_bytes": {
+              "median": 68940,
+              "min": 68940,
+              "max": 68940,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_selected_raw_bytes": {
+              "median": 208958,
+              "min": 208958,
+              "max": 208958,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compressed_bytes": {
+              "median": 980255704,
+              "min": 980255704,
+              "max": 980255704,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compression_elapsed_ns": {
+              "median": 190893291,
+              "min": 188781270,
+              "max": 191158169,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_encoding_elapsed_ns": {
+              "median": 104101134,
+              "min": 103762733,
+              "max": 104781289,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_raw_bytes": {
+              "median": 980474532,
+              "min": 980474532,
+              "max": 980474532,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_compressed_bytes": {
+              "median": 976074463,
+              "min": 976074463,
+              "max": 976074463,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_raw_bytes": {
+              "median": 976163340,
+              "min": 976163340,
+              "max": 976163340,
+              "samples": 3
+            },
+            "internal_occupancy_build_bits_24_elapsed_ns": {
+              "median": 2732419070,
+              "min": 2732247706,
+              "max": 2741442566,
+              "samples": 3
+            },
+            "internal_ordered_write_and_release_elapsed_ns": {
+              "median": 563383072,
+              "min": 562126909,
+              "max": 589420238,
+              "samples": 3
+            },
+            "internal_output_validation_elapsed_ns": {
+              "median": 5197610783,
+              "min": 5191965297,
+              "max": 5202871515,
+              "samples": 3
+            },
+            "internal_spatial_phase_lod_sample_write_elapsed_ns": {
+              "median": 7491226,
+              "min": 6554538,
+              "max": 8027317,
+              "samples": 3
+            },
+            "internal_spatial_phase_root_las_fill_elapsed_ns": {
+              "median": 6171544797,
+              "min": 5462635056,
+              "max": 6198270277,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": {
+              "median": 19915668536,
+              "min": 19877230443,
+              "max": 20212369126,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_scan_read_elapsed_ns": {
+              "median": 1934018927,
+              "min": 1922622733,
+              "max": 1949024632,
+              "samples": 3
+            },
+            "internal_spatial_planning_elapsed_ns": {
+              "median": 28663065513,
+              "min": 27913884420,
+              "max": 28953446040,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_scanned_bytes": {
+              "median": 12814915515,
+              "min": 12814915515,
+              "max": 12814915515,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_written_bytes": {
+              "median": 16163891004,
+              "min": 16163891004,
+              "max": 16163891004,
+              "samples": 3
+            },
+            "internal_spatial_spool_lod_payload_written_bytes": {
+              "median": 1265746,
+              "min": 1265746,
+              "max": 1265746,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_scanned_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_written_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_validation_worker_0_max_decoded_block_estimated_bytes": {
+              "median": 9626172,
+              "min": 9626172,
+              "max": 9626172,
+              "samples": 3
+            },
+            "internal_validation_worker_0_read_elapsed_ns": {
+              "median": 5188747962,
+              "min": 5176834077,
+              "max": 5197254567,
+              "samples": 3
+            },
+            "largest_block_point_storage_bytes": {
+              "median": 3666832,
+              "min": 3666832,
+              "max": 3666832,
+              "samples": 3
+            },
+            "largest_raw_block_bytes": {
+              "median": 9396257,
+              "min": 9396257,
+              "max": 9396257,
+              "samples": 3
+            },
+            "largest_stored_block_bytes": {
+              "median": 4130853,
+              "min": 4130853,
+              "max": 4130853,
+              "samples": 3
+            },
+            "logical_payload_bytes": {
+              "median": 3349954651,
+              "min": 3349954651,
+              "max": 3349954651,
+              "samples": 3
+            },
+            "output_bytes": {
+              "median": 1472088504,
+              "min": 1472088504,
+              "max": 1472088504,
+              "samples": 3
+            },
+            "output_size_bytes": {
+              "median": 1472088504,
+              "min": 1472088504,
+              "max": 1472088504,
+              "samples": 3
+            },
+            "phase_0_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_ms": {
+              "median": 0.097,
+              "min": 0.095,
+              "max": 0.103,
+              "samples": 3
+            },
+            "phase_1_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_ms": {
+              "median": 5.113,
+              "min": 5.098,
+              "max": 5.117,
+              "samples": 3
+            },
+            "phase_2_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_write_bytes": {
+              "median": 9502720,
+              "min": 9502720,
+              "max": 9519104,
+              "samples": 3
+            },
+            "phase_2_ms": {
+              "median": 41.251,
+              "min": 40.506,
+              "max": 49.452,
+              "samples": 3
+            },
+            "phase_3_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_3_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_3_io_write_bytes": {
+              "median": 3339509760,
+              "min": 3339509760,
+              "max": 3339522048,
+              "samples": 3
+            },
+            "phase_3_ms": {
+              "median": 10721.84,
+              "min": 10165.989,
+              "max": 10834.177,
+              "samples": 3
+            },
+            "phase_4_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_4_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_4_io_write_bytes": {
+              "median": 12821495808,
+              "min": 12820709376,
+              "max": 12822204416,
+              "samples": 3
+            },
+            "phase_4_ms": {
+              "median": 17779.753,
+              "min": 17707.924,
+              "max": 18190.649,
+              "samples": 3
+            },
+            "phase_5_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_5_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_5_io_write_bytes": {
+              "median": 1475264512,
+              "min": 1475248128,
+              "max": 1475411968,
+              "samples": 3
+            },
+            "phase_5_ms": {
+              "median": 15851.514,
+              "min": 15835.492,
+              "max": 15883.775,
+              "samples": 3
+            },
+            "phase_6_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_ms": {
+              "median": 5192.846,
+              "min": 5187.292,
+              "max": 5200.148,
+              "samples": 3
+            },
+            "phase_7_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_write_bytes": {
+              "median": 180224,
+              "min": 180224,
+              "max": 311296,
+              "samples": 3
+            },
+            "phase_7_ms": {
+              "median": 14.347,
+              "min": 9.592,
+              "max": 16.592,
+              "samples": 3
+            },
+            "phase_8_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 16384,
+              "samples": 3
+            },
+            "phase_8_ms": {
+              "median": 1.389,
+              "min": 1.085,
+              "max": 1.521,
+              "samples": 3
+            },
+            "preparation_estimated_bytes_per_worker": {
+              "median": 45050560,
+              "min": 45050560,
+              "max": 45050560,
+              "samples": 3
+            },
+            "raw_payload_bytes": {
+              "median": 3349840352,
+              "min": 3349840352,
+              "max": 3349840352,
+              "samples": 3
+            },
+            "rust_point_size_bytes": {
+              "median": 16,
+              "min": 16,
+              "max": 16,
+              "samples": 3
+            },
+            "serialized_index_bytes": {
+              "median": 808901,
+              "min": 808901,
+              "max": 808901,
+              "samples": 3
+            },
+            "stage_BeforeFirstProgress_ms": {
+              "median": 0.097,
+              "min": 0.095,
+              "max": 0.103,
+              "samples": 3
+            },
+            "stage_BuildingSpatialHierarchy_ms": {
+              "median": 17779.753,
+              "min": 17707.924,
+              "max": 18190.649,
+              "samples": 3
+            },
+            "stage_Complete_ms": {
+              "median": 1.389,
+              "min": 1.085,
+              "max": 1.521,
+              "samples": 3
+            },
+            "stage_InspectingInput_ms": {
+              "median": 5.113,
+              "min": 5.098,
+              "max": 5.117,
+              "samples": 3
+            },
+            "stage_PlanningMetadata_ms": {
+              "median": 41.251,
+              "min": 40.506,
+              "max": 49.452,
+              "samples": 3
+            },
+            "stage_PlanningSpatialIndex_ms": {
+              "median": 10721.84,
+              "min": 10165.989,
+              "max": 10834.177,
+              "samples": 3
+            },
+            "stage_PublishingOutput_ms": {
+              "median": 14.347,
+              "min": 9.592,
+              "max": 16.592,
+              "samples": 3
+            },
+            "stage_ReadingAndWritingBlocks_ms": {
+              "median": 15851.514,
+              "min": 15835.492,
+              "max": 15883.775,
+              "samples": 3
+            },
+            "stage_ValidatingOutput_ms": {
+              "median": 5192.846,
+              "min": 5187.292,
+              "max": 5200.148,
+              "samples": 3
+            },
+            "stored_payload_bytes": {
+              "median": 1471279475,
+              "min": 1471279475,
+              "max": 1471279475,
+              "samples": 3
+            },
+            "validation_estimated_bytes_per_worker": {
+              "median": 38633604,
+              "min": 38633604,
+              "max": 38633604,
+              "samples": 3
+            }
+          },
+          "artifacts": {
+            "oct": {
+              "bytes": 980940303,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v7.3-pre/output-run-001.oct",
+              "sha256": "b65c7c09f6167e397141ec6f61487191afd14064dfd3aef57e49a813c3a0a8f9"
+            },
+            "octattrs": {
+              "bytes": 491148201,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/belvedere/belvedere/1-v7.3-pre/output-run-001.octattrs",
+              "sha256": "e2840771c21a6ab8a4c6187aa3a5dbe53000271a4fbfe65a31825626c910c909"
+            }
+          },
+          "rss": {
+            "conversion": {
+              "median": 109268992,
+              "samples": 3
+            },
+            "hierarchy": {
+              "median": 7979008,
+              "samples": 3
+            },
+            "reconstruct": {
+              "median": 3446906880,
+              "samples": 3
+            },
+            "progressive": {
+              "median": 21364736,
+              "samples": 3
+            }
+          },
+          "hierarchy": {
+            "attach_ms": {
+              "median": 0.0,
+              "min": 0.0,
+              "max": 0.0,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 491148201,
+              "min": 491148201,
+              "max": 491148201,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 6442450944,
+              "min": 6442450944,
+              "max": 6442450944,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 4657139728,
+              "min": 4657139728,
+              "max": 4657139728,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 4657139728,
+              "min": 4657139728,
+              "max": 4657139728,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 6.718,
+              "min": 6.639,
+              "max": 6.737,
+              "samples": 3
+            },
+            "load_ms": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 980940303,
+              "min": 980940303,
+              "max": 980940303,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 5.684,
+              "min": 5.595,
+              "max": 5.704,
+              "samples": 3
+            }
+          },
+          "reconstruct": {
+            "attach_ms": {
+              "median": 0.013,
+              "min": 0.012,
+              "max": 0.036,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 491148201,
+              "min": 491148201,
+              "max": 491148201,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 6442450944,
+              "min": 6442450944,
+              "max": 6442450944,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 4657139728,
+              "min": 4657139728,
+              "max": 4657139728,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 4657139728,
+              "min": 4657139728,
+              "max": 4657139728,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 8838.594,
+              "min": 8697.934,
+              "max": 8865.699,
+              "samples": 3
+            },
+            "load_ms": {
+              "median": 6163.401,
+              "min": 6015.104,
+              "max": 6179.084,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 980940303,
+              "min": 980940303,
+              "max": 980940303,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 5.45,
+              "min": 5.292,
+              "max": 5.874,
+              "samples": 3
+            },
+            "verify_ms": {
+              "median": 2675.673,
+              "min": 2669.191,
+              "max": 2680.115,
+              "samples": 3
+            }
+          },
+          "progressive": {
+            "attach_ms": {
+              "median": 0.014,
+              "min": 0.014,
+              "max": 0.016,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 491148201,
+              "min": 491148201,
+              "max": 491148201,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 6442450944,
+              "min": 6442450944,
+              "max": 6442450944,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 4657139728,
+              "min": 4657139728,
+              "max": 4657139728,
+              "samples": 3
+            },
+            "first_root_read_ms": {
+              "median": 0.027,
+              "min": 0.018,
+              "max": 0.031,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 8154.887,
+              "min": 8130.072,
+              "max": 8219.31,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 13063089,
+              "min": 13063089,
+              "max": 13063089,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 980940303,
+              "min": 980940303,
+              "max": 980940303,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 5.501,
+              "min": 3.807,
+              "max": 5.738,
+              "samples": 3
+            },
+            "progressive_wall_ms": {
+              "median": 8147.912,
+              "min": 8123.387,
+              "max": 8214.834,
+              "samples": 3
+            },
+            "read_ms": {
+              "median": 5395.201,
+              "min": 5356.837,
+              "max": 5459.884,
+              "samples": 3
+            },
+            "verify_ms": {
+              "median": 2725.174,
+              "min": 2722.912,
+              "max": 2734.202,
+              "samples": 3
+            }
+          }
+        }
+      },
+      "checksums": {
+        "reconstruct": "36909ff142199a4e",
+        "progressive": "0737ca650c6081b4"
+      }
+    },
+    {
+      "label": "majadas",
+      "source": {
+        "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+        "bytes": 1343266470,
+        "sha256": "7f99a83a6848b316bddec2b9762ef0771b570d380f4549ee9c79956fbad0bd33"
+      },
+      "runs": [
+        {
+          "round": 1,
+          "version": "v5",
+          "command": [
+            "/usr/bin/python3",
+            "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v5",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v5",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "512"
+          ],
+          "wall_seconds": 341.9857808769448,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v5/report.json",
+            "bytes": 41769,
+            "sha256": "e27eae837ece409cac6421d6aa55ec7f7232ef8746422a916f2ed14b055d48ca"
+          }
+        },
+        {
+          "round": 1,
+          "version": "v7.3-pre",
+          "command": [
+            "/usr/bin/python3",
+            "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v7.3-pre",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v7.3-pre",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "512"
+          ],
+          "wall_seconds": 415.49387874500826,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v7.3-pre/report.json",
+            "bytes": 45591,
+            "sha256": "50a795ec40adc44eaf0eeac8323010998e9907f196f94e077f629747c6cf8afa"
+          }
+        },
+        {
+          "round": 2,
+          "version": "v7.3-pre",
+          "command": [
+            "/usr/bin/python3",
+            "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/2-v7.3-pre",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v7.3-pre",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "512"
+          ],
+          "wall_seconds": 417.49071290297434,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/2-v7.3-pre/report.json",
+            "bytes": 45604,
+            "sha256": "8b850c218894ef7f7bcbda42c7a84df811ad7bb878ac7bf2c21a7be8f9446c6c"
+          }
+        },
+        {
+          "round": 2,
+          "version": "v5",
+          "command": [
+            "/usr/bin/python3",
+            "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/2-v5",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v5",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "512"
+          ],
+          "wall_seconds": 352.7962082219892,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/2-v5/report.json",
+            "bytes": 41763,
+            "sha256": "9c7e555ea3c37e0f37c315bab8ae931d500deaf553cd1d670d332889a62591c7"
+          }
+        },
+        {
+          "round": 3,
+          "version": "v5",
+          "command": [
+            "/usr/bin/python3",
+            "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/3-v5",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v5",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "512"
+          ],
+          "wall_seconds": 353.96349759498844,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/3-v5/report.json",
+            "bytes": 41779,
+            "sha256": "6bf5218520ea536ce687c4ed85d8ff1ddf124df83bfa48c75dc13db6cfe07f87"
+          }
+        },
+        {
+          "round": 3,
+          "version": "v7.3-pre",
+          "command": [
+            "/usr/bin/python3",
+            "/tmp/claude-1000/-home-mili-Documentos-Mili-ssm-github-io-Private-Rust-octree-viewer-v3/814e5957-65a4-4d90-97f2-0c513b38cbee/scratchpad/bench/crates/viewer_convert/benchmarks/storage_suite.py",
+            "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+            "output.oct",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/3-v7.3-pre",
+            "--convert-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/real_dataset_bench",
+            "--read-binary",
+            "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/perf/examples/storage_bench",
+            "--format-version",
+            "v7.3-pre",
+            "--repetitions",
+            "1",
+            "--profile",
+            "perf",
+            "--cache-state",
+            "no purge; reads after conversion/validation/hashes on local NVMe",
+            "--measure-rss",
+            "--workers",
+            "1",
+            "--divisions",
+            "2",
+            "--points-per-block",
+            "262144",
+            "--max-decoded-mib",
+            "512"
+          ],
+          "wall_seconds": 407.1720283140312,
+          "raw_report": {
+            "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/3-v7.3-pre/report.json",
+            "bytes": 45574,
+            "sha256": "342164478b2115cdc446a5de02108746301d7d393c6e48a9a5af0a7cea02dbbd"
+          }
+        }
+      ],
+      "summaries": {
+        "v5": {
+          "conversion": {
+            "attribute_0_raw_payload_bytes": {
+              "median": 831204380,
+              "min": 831204380,
+              "max": 831204380,
+              "samples": 3
+            },
+            "attribute_0_stored_payload_bytes": {
+              "median": 3330129,
+              "min": 3330129,
+              "max": 3330129,
+              "samples": 3
+            },
+            "attribute_1_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_1_stored_payload_bytes": {
+              "median": 1700145,
+              "min": 1700145,
+              "max": 1700145,
+              "samples": 3
+            },
+            "attribute_2_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_2_stored_payload_bytes": {
+              "median": 1700145,
+              "min": 1700145,
+              "max": 1700145,
+              "samples": 3
+            },
+            "attribute_3_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_3_stored_payload_bytes": {
+              "median": 1700145,
+              "min": 1700145,
+              "max": 1700145,
+              "samples": 3
+            },
+            "attribute_4_raw_payload_bytes": {
+              "median": 1662408760,
+              "min": 1662408760,
+              "max": 1662408760,
+              "samples": 3
+            },
+            "attribute_4_stored_payload_bytes": {
+              "median": 6590158,
+              "min": 6590158,
+              "max": 6590158,
+              "samples": 3
+            },
+            "attribute_5_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_5_stored_payload_bytes": {
+              "median": 1700145,
+              "min": 1700145,
+              "max": 1700145,
+              "samples": 3
+            },
+            "attribute_6_raw_payload_bytes": {
+              "median": 831204380,
+              "min": 831204380,
+              "max": 831204380,
+              "samples": 3
+            },
+            "attribute_6_stored_payload_bytes": {
+              "median": 3330129,
+              "min": 3330129,
+              "max": 3330129,
+              "samples": 3
+            },
+            "attribute_7_raw_payload_bytes": {
+              "median": 2493613140,
+              "min": 2493613140,
+              "max": 2493613140,
+              "samples": 3
+            },
+            "attribute_7_stored_payload_bytes": {
+              "median": 2070382456,
+              "min": 2070382456,
+              "max": 2070382456,
+              "samples": 3
+            },
+            "attribute_file_bytes": {
+              "median": 3319094608,
+              "min": 3319094608,
+              "max": 3319094608,
+              "samples": 3
+            },
+            "controlled_memory_estimate_bytes": {
+              "median": 72308992,
+              "min": 72308992,
+              "max": 72308992,
+              "samples": 3
+            },
+            "conversion_elapsed_ms": {
+              "median": 313898.892,
+              "min": 303278.458,
+              "max": 313932.376,
+              "samples": 3
+            },
+            "conversion_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "conversion_io_read_bytes": {
+              "median": 21930373120,
+              "min": 20465217536,
+              "max": 21973774336,
+              "samples": 3
+            },
+            "conversion_io_write_bytes": {
+              "median": 142332919808,
+              "min": 142329303040,
+              "max": 142334836736,
+              "samples": 3
+            },
+            "display_rgb_raw_payload_bytes": {
+              "median": 1246806570,
+              "min": 1246806570,
+              "max": 1246806570,
+              "samples": 3
+            },
+            "display_rgb_stored_payload_bytes": {
+              "median": 1228661092,
+              "min": 1228661092,
+              "max": 1228661092,
+              "samples": 3
+            },
+            "format_overhead_bytes": {
+              "median": 3455494,
+              "min": 3455494,
+              "max": 3455494,
+              "samples": 3
+            },
+            "geometry_file_bytes": {
+              "median": 4214687109,
+              "min": 4214687109,
+              "max": 4214687109,
+              "samples": 3
+            },
+            "geometry_raw_payload_bytes": {
+              "median": 4987226280,
+              "min": 4987226280,
+              "max": 4987226280,
+              "samples": 3
+            },
+            "geometry_stored_payload_bytes": {
+              "median": 4211231679,
+              "min": 4211231679,
+              "max": 4211231679,
+              "samples": 3
+            },
+            "hypothetical_full_point_storage_bytes": {
+              "median": 6647454112,
+              "min": 6647454112,
+              "max": 6647454112,
+              "samples": 3
+            },
+            "input_bytes": {
+              "median": 1343266470,
+              "min": 1343266470,
+              "max": 1343266470,
+              "samples": 3
+            },
+            "internal_block_preparation_elapsed_ns": {
+              "median": 56259957650,
+              "min": 54846176967,
+              "max": 56557680991,
+              "samples": 3
+            },
+            "internal_block_stream_elapsed_ns": {
+              "median": 57948504190,
+              "min": 56585042264,
+              "max": 58187041801,
+              "samples": 3
+            },
+            "internal_block_stream_lod_payload_read_bytes": {
+              "median": 6133860,
+              "min": 6133860,
+              "max": 6133860,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": {
+              "median": 8967348,
+              "min": 8967348,
+              "max": 8967348,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": {
+              "median": 8967348,
+              "min": 8967348,
+              "max": 8967348,
+              "samples": 3
+            },
+            "internal_block_stream_source_payload_read_bytes": {
+              "median": 13710374106,
+              "min": 13710374106,
+              "max": 13710374106,
+              "samples": 3
+            },
+            "internal_finalize_and_sync_elapsed_ns": {
+              "median": 1040821012,
+              "min": 813027961,
+              "max": 1241211096,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compressed_bytes": {
+              "median": 4211231679,
+              "min": 4211231679,
+              "max": 4211231679,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compression_elapsed_ns": {
+              "median": 5301753751,
+              "min": 5147554207,
+              "max": 5322554748,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_encoding_elapsed_ns": {
+              "median": 589712271,
+              "min": 562335049,
+              "max": 594163736,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_raw_bytes": {
+              "median": 4987226280,
+              "min": 4987226280,
+              "max": 4987226280,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_compressed_bytes": {
+              "median": 4211231679,
+              "min": 4211231679,
+              "max": 4211231679,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_raw_bytes": {
+              "median": 4987226280,
+              "min": 4987226280,
+              "max": 4987226280,
+              "samples": 3
+            },
+            "internal_ordered_write_and_release_elapsed_ns": {
+              "median": 1682991112,
+              "min": 1625119059,
+              "max": 1733259272,
+              "samples": 3
+            },
+            "internal_output_validation_elapsed_ns": {
+              "median": 22402276731,
+              "min": 22376467324,
+              "max": 22542695517,
+              "samples": 3
+            },
+            "internal_spatial_phase_lod_sample_write_elapsed_ns": {
+              "median": 39460013,
+              "min": 36811078,
+              "max": 40896111,
+              "samples": 3
+            },
+            "internal_spatial_phase_root_las_fill_elapsed_ns": {
+              "median": 21429740372,
+              "min": 20987345734,
+              "max": 22886474767,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": {
+              "median": 181349050312,
+              "min": 172073420201,
+              "max": 181366794527,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_scan_read_elapsed_ns": {
+              "median": 23637340523,
+              "min": 21775149086,
+              "max": 25726446139,
+              "samples": 3
+            },
+            "internal_spatial_planning_elapsed_ns": {
+              "median": 231279288632,
+              "min": 221544872492,
+              "max": 233014495494,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_scanned_bytes": {
+              "median": 121007494245,
+              "min": 121007494245,
+              "max": 121007494245,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_written_bytes": {
+              "median": 134717868351,
+              "min": 134717868351,
+              "max": 134717868351,
+              "samples": 3
+            },
+            "internal_spatial_spool_lod_payload_written_bytes": {
+              "median": 6133860,
+              "min": 6133860,
+              "max": 6133860,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_scanned_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_written_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_validation_worker_0_max_decoded_block_estimated_bytes": {
+              "median": 8912644,
+              "min": 8912644,
+              "max": 8912644,
+              "samples": 3
+            },
+            "internal_validation_worker_0_read_elapsed_ns": {
+              "median": 22379081301,
+              "min": 22354262153,
+              "max": 22500634393,
+              "samples": 3
+            },
+            "largest_block_point_storage_bytes": {
+              "median": 4193872,
+              "min": 4193872,
+              "max": 4193872,
+              "samples": 3
+            },
+            "largest_raw_block_bytes": {
+              "median": 8649861,
+              "min": 8649861,
+              "max": 8649861,
+              "samples": 3
+            },
+            "largest_stored_block_bytes": {
+              "median": 5198646,
+              "min": 5198646,
+              "max": 5198646,
+              "samples": 3
+            },
+            "logical_payload_bytes": {
+              "median": 13714872270,
+              "min": 13714872270,
+              "max": 13714872270,
+              "samples": 3
+            },
+            "output_bytes": {
+              "median": 7533781717,
+              "min": 7533781717,
+              "max": 7533781717,
+              "samples": 3
+            },
+            "output_size_bytes": {
+              "median": 7533781717,
+              "min": 7533781717,
+              "max": 7533781717,
+              "samples": 3
+            },
+            "phase_0_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_ms": {
+              "median": 0.1,
+              "min": 0.094,
+              "max": 0.147,
+              "samples": 3
+            },
+            "phase_1_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_ms": {
+              "median": 4.392,
+              "min": 2.711,
+              "max": 4.448,
+              "samples": 3
+            },
+            "phase_2_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_write_bytes": {
+              "median": 8642560,
+              "min": 8642560,
+              "max": 8642560,
+              "samples": 3
+            },
+            "phase_2_ms": {
+              "median": 50.292,
+              "min": 37.052,
+              "max": 51.523,
+              "samples": 3
+            },
+            "phase_3_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_3_io_read_bytes": {
+              "median": 449933312,
+              "min": 397656064,
+              "max": 453230592,
+              "samples": 3
+            },
+            "phase_3_io_write_bytes": {
+              "median": 13701926912,
+              "min": 13701865472,
+              "max": 13701947392,
+              "samples": 3
+            },
+            "phase_3_ms": {
+              "median": 43339.158,
+              "min": 43194.864,
+              "max": 44399.23,
+              "samples": 3
+            },
+            "phase_4_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_4_io_read_bytes": {
+              "median": 9395220480,
+              "min": 9379278848,
+              "max": 9532616704,
+              "samples": 3
+            },
+            "phase_4_io_write_bytes": {
+              "median": 121068056576,
+              "min": 121066889216,
+              "max": 121072549888,
+              "samples": 3
+            },
+            "phase_4_ms": {
+              "median": 188766.311,
+              "min": 177447.68,
+              "max": 190646.968,
+              "samples": 3
+            },
+            "phase_5_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_5_io_read_bytes": {
+              "median": 4809117696,
+              "min": 4809084928,
+              "max": 4811558912,
+              "samples": 3
+            },
+            "phase_5_io_write_bytes": {
+              "median": 7551594496,
+              "min": 7551520768,
+              "max": 7554191360,
+              "samples": 3
+            },
+            "phase_5_ms": {
+              "median": 59011.503,
+              "min": 57637.304,
+              "max": 59200.947,
+              "samples": 3
+            },
+            "phase_6_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_io_read_bytes": {
+              "median": 7288778752,
+              "min": 5723385856,
+              "max": 7319502848,
+              "samples": 3
+            },
+            "phase_6_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_ms": {
+              "median": 22390.993,
+              "min": 22365.206,
+              "max": 22531.607,
+              "samples": 3
+            },
+            "phase_7_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_write_bytes": {
+              "median": 180224,
+              "min": 147456,
+              "max": 212992,
+              "samples": 3
+            },
+            "phase_7_ms": {
+              "median": 2.854,
+              "min": 2.717,
+              "max": 11.417,
+              "samples": 3
+            },
+            "phase_8_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_write_bytes": {
+              "median": 16384,
+              "min": 16384,
+              "max": 16384,
+              "samples": 3
+            },
+            "phase_8_ms": {
+              "median": 3.368,
+              "min": 3.298,
+              "max": 3.471,
+              "samples": 3
+            },
+            "preparation_estimated_bytes_per_worker": {
+              "median": 51375040,
+              "min": 51375040,
+              "max": 51375040,
+              "samples": 3
+            },
+            "raw_payload_bytes": {
+              "median": 13714872270,
+              "min": 13714872270,
+              "max": 13714872270,
+              "samples": 3
+            },
+            "rust_point_size_bytes": {
+              "median": 16,
+              "min": 16,
+              "max": 16,
+              "samples": 3
+            },
+            "serialized_index_bytes": {
+              "median": 3455366,
+              "min": 3455366,
+              "max": 3455366,
+              "samples": 3
+            },
+            "stage_BeforeFirstProgress_ms": {
+              "median": 0.1,
+              "min": 0.094,
+              "max": 0.147,
+              "samples": 3
+            },
+            "stage_BuildingSpatialHierarchy_ms": {
+              "median": 188766.311,
+              "min": 177447.68,
+              "max": 190646.968,
+              "samples": 3
+            },
+            "stage_Complete_ms": {
+              "median": 3.368,
+              "min": 3.298,
+              "max": 3.471,
+              "samples": 3
+            },
+            "stage_InspectingInput_ms": {
+              "median": 4.392,
+              "min": 2.711,
+              "max": 4.448,
+              "samples": 3
+            },
+            "stage_PlanningMetadata_ms": {
+              "median": 50.292,
+              "min": 37.052,
+              "max": 51.523,
+              "samples": 3
+            },
+            "stage_PlanningSpatialIndex_ms": {
+              "median": 43339.158,
+              "min": 43194.864,
+              "max": 44399.23,
+              "samples": 3
+            },
+            "stage_PublishingOutput_ms": {
+              "median": 2.854,
+              "min": 2.717,
+              "max": 11.417,
+              "samples": 3
+            },
+            "stage_ReadingAndWritingBlocks_ms": {
+              "median": 59011.503,
+              "min": 57637.304,
+              "max": 59200.947,
+              "samples": 3
+            },
+            "stage_ValidatingOutput_ms": {
+              "median": 22390.993,
+              "min": 22365.206,
+              "max": 22531.607,
+              "samples": 3
+            },
+            "stored_payload_bytes": {
+              "median": 7530326223,
+              "min": 7530326223,
+              "max": 7530326223,
+              "samples": 3
+            },
+            "validation_estimated_bytes_per_worker": {
+              "median": 35648020,
+              "min": 35648020,
+              "max": 35648020,
+              "samples": 3
+            }
+          },
+          "artifacts": {
+            "oct": {
+              "bytes": 4214687109,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v5/output-run-001.oct",
+              "sha256": "742262867c844bb4e876cd4280a648e45ee677624a3cebd1a8d71bbbf6ff6f04"
+            },
+            "octattrs": {
+              "bytes": 3319094608,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v5/output-run-001.octattrs",
+              "sha256": "d45cd5fd70816d24ea29137faaf4ec1ca6cc2a4fcdc8be2dabbefc20f9a543f1"
+            }
+          },
+          "rss": {
+            "conversion": {
+              "median": 83021824,
+              "samples": 3
+            },
+            "hierarchy": {
+              "median": 25116672,
+              "samples": 3
+            },
+            "progressive": {
+              "median": 37310464,
+              "samples": 3
+            }
+          },
+          "hierarchy": {
+            "attach_ms": {
+              "median": 0.0,
+              "min": 0.0,
+              "max": 0.0,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 3319094608,
+              "min": 3319094608,
+              "max": 3319094608,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 536870912,
+              "min": 536870912,
+              "max": 536870912,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 20364507310,
+              "min": 20364507310,
+              "max": 20364507310,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 20364507310,
+              "min": 20364507310,
+              "max": 20364507310,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 18.58,
+              "min": 17.088,
+              "max": 23.345,
+              "samples": 3
+            },
+            "load_ms": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 12843733,
+              "min": 12843733,
+              "max": 12843733,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 4214687109,
+              "min": 4214687109,
+              "max": 4214687109,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 15.716,
+              "min": 14.101,
+              "max": 20.351,
+              "samples": 3
+            }
+          },
+          "progressive": {
+            "attach_ms": {
+              "median": 0.035,
+              "min": 0.032,
+              "max": 0.047,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 3319094608,
+              "min": 3319094608,
+              "max": 3319094608,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 536870912,
+              "min": 536870912,
+              "max": 536870912,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 12843733,
+              "min": 12843733,
+              "max": 12843733,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 20364507310,
+              "min": 20364507310,
+              "max": 20364507310,
+              "samples": 3
+            },
+            "first_root_read_ms": {
+              "median": 0.024,
+              "min": 0.024,
+              "max": 0.027,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 34012.155,
+              "min": 34008.845,
+              "max": 35118.193,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 12843733,
+              "min": 12843733,
+              "max": 12843733,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 4214687109,
+              "min": 4214687109,
+              "max": 4214687109,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 23.001,
+              "min": 21.178,
+              "max": 24.203,
+              "samples": 3
+            },
+            "progressive_wall_ms": {
+              "median": 33985.459,
+              "min": 33979.183,
+              "max": 35093.562,
+              "samples": 3
+            },
+            "read_ms": {
+              "median": 22833.657,
+              "min": 22828.729,
+              "max": 23896.569,
+              "samples": 3
+            },
+            "verify_ms": {
+              "median": 11026.54,
+              "min": 11006.839,
+              "max": 11072.197,
+              "samples": 3
+            }
+          }
+        },
+        "v7.3-pre": {
+          "conversion": {
+            "attribute_0_raw_payload_bytes": {
+              "median": 831204380,
+              "min": 831204380,
+              "max": 831204380,
+              "samples": 3
+            },
+            "attribute_0_stored_payload_bytes": {
+              "median": 12518,
+              "min": 12518,
+              "max": 12518,
+              "samples": 3
+            },
+            "attribute_1_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_1_stored_payload_bytes": {
+              "median": 6259,
+              "min": 6259,
+              "max": 6259,
+              "samples": 3
+            },
+            "attribute_2_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_2_stored_payload_bytes": {
+              "median": 6259,
+              "min": 6259,
+              "max": 6259,
+              "samples": 3
+            },
+            "attribute_3_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_3_stored_payload_bytes": {
+              "median": 6259,
+              "min": 6259,
+              "max": 6259,
+              "samples": 3
+            },
+            "attribute_4_raw_payload_bytes": {
+              "median": 1662408760,
+              "min": 1662408760,
+              "max": 1662408760,
+              "samples": 3
+            },
+            "attribute_4_stored_payload_bytes": {
+              "median": 25036,
+              "min": 25036,
+              "max": 25036,
+              "samples": 3
+            },
+            "attribute_5_raw_payload_bytes": {
+              "median": 415602190,
+              "min": 415602190,
+              "max": 415602190,
+              "samples": 3
+            },
+            "attribute_5_stored_payload_bytes": {
+              "median": 6259,
+              "min": 6259,
+              "max": 6259,
+              "samples": 3
+            },
+            "attribute_6_raw_payload_bytes": {
+              "median": 831204380,
+              "min": 831204380,
+              "max": 831204380,
+              "samples": 3
+            },
+            "attribute_6_stored_payload_bytes": {
+              "median": 12518,
+              "min": 12518,
+              "max": 12518,
+              "samples": 3
+            },
+            "attribute_7_raw_payload_bytes": {
+              "median": 2493613140,
+              "min": 2493613140,
+              "max": 2493613140,
+              "samples": 3
+            },
+            "attribute_7_stored_payload_bytes": {
+              "median": 1219635905,
+              "min": 1219635905,
+              "max": 1219635905,
+              "samples": 3
+            },
+            "attribute_file_bytes": {
+              "median": 2429064395,
+              "min": 2429064395,
+              "max": 2429064395,
+              "samples": 3
+            },
+            "controlled_memory_estimate_bytes": {
+              "median": 72308992,
+              "min": 72308992,
+              "max": 72308992,
+              "samples": 3
+            },
+            "conversion_elapsed_ms": {
+              "median": 372059.167,
+              "min": 363606.939,
+              "max": 373732.398,
+              "samples": 3
+            },
+            "conversion_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "conversion_io_read_bytes": {
+              "median": 16638943232,
+              "min": 16491028480,
+              "max": 18239242240,
+              "samples": 3
+            },
+            "conversion_io_write_bytes": {
+              "median": 139423940608,
+              "min": 139422433280,
+              "max": 139429052416,
+              "samples": 3
+            },
+            "display_rgb_raw_payload_bytes": {
+              "median": 1246806570,
+              "min": 1246806570,
+              "max": 1246806570,
+              "samples": 3
+            },
+            "display_rgb_stored_payload_bytes": {
+              "median": 1209353318,
+              "min": 1209353318,
+              "max": 1209353318,
+              "samples": 3
+            },
+            "format_overhead_bytes": {
+              "median": 3461753,
+              "min": 3461753,
+              "max": 3461753,
+              "samples": 3
+            },
+            "geometry_file_bytes": {
+              "median": 2197677341,
+              "min": 2197677341,
+              "max": 2197677341,
+              "samples": 3
+            },
+            "geometry_raw_payload_bytes": {
+              "median": 4393098062,
+              "min": 4393098062,
+              "max": 4393098062,
+              "samples": 3
+            },
+            "geometry_stored_payload_bytes": {
+              "median": 2194215652,
+              "min": 2194215652,
+              "max": 2194215652,
+              "samples": 3
+            },
+            "hypothetical_full_point_storage_bytes": {
+              "median": 6647454112,
+              "min": 6647454112,
+              "max": 6647454112,
+              "samples": 3
+            },
+            "input_bytes": {
+              "median": 1343266470,
+              "min": 1343266470,
+              "max": 1343266470,
+              "samples": 3
+            },
+            "internal_block_preparation_elapsed_ns": {
+              "median": 105670872347,
+              "min": 96376146155,
+              "max": 105861684365,
+              "samples": 3
+            },
+            "internal_block_stream_elapsed_ns": {
+              "median": 108252259903,
+              "min": 98962708444,
+              "max": 108495621725,
+              "samples": 3
+            },
+            "internal_block_stream_lod_payload_read_bytes": {
+              "median": 6133860,
+              "min": 6133860,
+              "max": 6133860,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_batch_bytes": {
+              "median": 6049108,
+              "min": 6049108,
+              "max": 6049108,
+              "samples": 3
+            },
+            "internal_block_stream_max_encoded_payload_capacity_per_block_bytes": {
+              "median": 6049108,
+              "min": 6049108,
+              "max": 6049108,
+              "samples": 3
+            },
+            "internal_block_stream_source_payload_read_bytes": {
+              "median": 13710374106,
+              "min": 13710374106,
+              "max": 13710374106,
+              "samples": 3
+            },
+            "internal_finalize_and_sync_elapsed_ns": {
+              "median": 759522156,
+              "min": 694415330,
+              "max": 776624674,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_compressed_bytes": {
+              "median": 4965368169,
+              "min": 4965368169,
+              "max": 4965368169,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_compression_elapsed_ns": {
+              "median": 3681167886,
+              "min": 3679653274,
+              "max": 3692523765,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_encoding_elapsed_ns": {
+              "median": 3557004274,
+              "min": 3556345451,
+              "max": 3583366469,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_raw_bytes": {
+              "median": 5355812079,
+              "min": 5355812079,
+              "max": 5355812079,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_selected_compressed_bytes": {
+              "median": 702115,
+              "min": 702115,
+              "max": 702115,
+              "samples": 3
+            },
+            "internal_geometry_candidate_compact_occupancy_24_selected_raw_bytes": {
+              "median": 706094,
+              "min": 706094,
+              "max": 706094,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_compressed_bytes": {
+              "median": 2194252854,
+              "min": 2194252854,
+              "max": 2194252854,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_compression_elapsed_ns": {
+              "median": 6724527653,
+              "min": 6712234050,
+              "max": 6747187934,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_encoding_elapsed_ns": {
+              "median": 4133101847,
+              "min": 4132678082,
+              "max": 4134845116,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_raw_bytes": {
+              "median": 4393192144,
+              "min": 4393192144,
+              "max": 4393192144,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_selected_compressed_bytes": {
+              "median": 2192975354,
+              "min": 2192975354,
+              "max": 2192975354,
+              "samples": 3
+            },
+            "internal_geometry_candidate_delta_selected_raw_bytes": {
+              "median": 4391658720,
+              "min": 4391658720,
+              "max": 4391658720,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compressed_bytes": {
+              "median": 4211231679,
+              "min": 4211231679,
+              "max": 4211231679,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_compression_elapsed_ns": {
+              "median": 5450385124,
+              "min": 5443292747,
+              "max": 5459727599,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_encoding_elapsed_ns": {
+              "median": 867262458,
+              "min": 851750272,
+              "max": 869011180,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_raw_bytes": {
+              "median": 4987226280,
+              "min": 4987226280,
+              "max": 4987226280,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_compressed_bytes": {
+              "median": 538183,
+              "min": 538183,
+              "max": 538183,
+              "samples": 3
+            },
+            "internal_geometry_candidate_raw_selected_raw_bytes": {
+              "median": 733248,
+              "min": 733248,
+              "max": 733248,
+              "samples": 3
+            },
+            "internal_occupancy_build_bits_24_elapsed_ns": {
+              "median": 18179506739,
+              "min": 18074781167,
+              "max": 18182583559,
+              "samples": 3
+            },
+            "internal_ordered_write_and_release_elapsed_ns": {
+              "median": 2578261576,
+              "min": 2572884732,
+              "max": 2624653423,
+              "samples": 3
+            },
+            "internal_output_validation_elapsed_ns": {
+              "median": 28927573462,
+              "min": 28735360425,
+              "max": 29074568255,
+              "samples": 3
+            },
+            "internal_spatial_phase_lod_sample_write_elapsed_ns": {
+              "median": 41145574,
+              "min": 40628422,
+              "max": 47709424,
+              "samples": 3
+            },
+            "internal_spatial_phase_root_las_fill_elapsed_ns": {
+              "median": 20780009206,
+              "min": 20351288240,
+              "max": 20970062250,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": {
+              "median": 182692426666,
+              "min": 182422345201,
+              "max": 183584687611,
+              "samples": 3
+            },
+            "internal_spatial_phase_spool_scan_read_elapsed_ns": {
+              "median": 25777758790,
+              "min": 25585183740,
+              "max": 26211509285,
+              "samples": 3
+            },
+            "internal_spatial_planning_elapsed_ns": {
+              "median": 234218708563,
+              "min": 233914071431,
+              "max": 235051318586,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_scanned_bytes": {
+              "median": 121007494245,
+              "min": 121007494245,
+              "max": 121007494245,
+              "samples": 3
+            },
+            "internal_spatial_spool_child_payload_written_bytes": {
+              "median": 134717868351,
+              "min": 134717868351,
+              "max": 134717868351,
+              "samples": 3
+            },
+            "internal_spatial_spool_lod_payload_written_bytes": {
+              "median": 6133860,
+              "min": 6133860,
+              "max": 6133860,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_scanned_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_spatial_spool_source_payload_written_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "internal_validation_worker_0_max_decoded_block_estimated_bytes": {
+              "median": 8912644,
+              "min": 8912644,
+              "max": 8912644,
+              "samples": 3
+            },
+            "internal_validation_worker_0_read_elapsed_ns": {
+              "median": 28904356044,
+              "min": 28714230485,
+              "max": 29050831038,
+              "samples": 3
+            },
+            "largest_block_point_storage_bytes": {
+              "median": 4193872,
+              "min": 4193872,
+              "max": 4193872,
+              "samples": 3
+            },
+            "largest_raw_block_bytes": {
+              "median": 8536562,
+              "min": 8536562,
+              "max": 8536562,
+              "samples": 3
+            },
+            "largest_stored_block_bytes": {
+              "median": 3963183,
+              "min": 3963183,
+              "max": 3963183,
+              "samples": 3
+            },
+            "logical_payload_bytes": {
+              "median": 13714872270,
+              "min": 13714872270,
+              "max": 13714872270,
+              "samples": 3
+            },
+            "output_bytes": {
+              "median": 4626741736,
+              "min": 4626741736,
+              "max": 4626741736,
+              "samples": 3
+            },
+            "output_size_bytes": {
+              "median": 4626741736,
+              "min": 4626741736,
+              "max": 4626741736,
+              "samples": 3
+            },
+            "phase_0_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_0_ms": {
+              "median": 0.095,
+              "min": 0.094,
+              "max": 0.112,
+              "samples": 3
+            },
+            "phase_1_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_1_ms": {
+              "median": 4.398,
+              "min": 4.379,
+              "max": 4.633,
+              "samples": 3
+            },
+            "phase_2_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_2_io_write_bytes": {
+              "median": 8642560,
+              "min": 8642560,
+              "max": 8642560,
+              "samples": 3
+            },
+            "phase_2_ms": {
+              "median": 50.115,
+              "min": 49.749,
+              "max": 50.823,
+              "samples": 3
+            },
+            "phase_3_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_3_io_read_bytes": {
+              "median": 437182464,
+              "min": 425418752,
+              "max": 459333632,
+              "samples": 3
+            },
+            "phase_3_io_write_bytes": {
+              "median": 13701918720,
+              "min": 13701873664,
+              "max": 13701955584,
+              "samples": 3
+            },
+            "phase_3_ms": {
+              "median": 43172.815,
+              "min": 43028.683,
+              "max": 43379.036,
+              "samples": 3
+            },
+            "phase_4_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_4_io_read_bytes": {
+              "median": 9397506048,
+              "min": 9355366400,
+              "max": 9425190912,
+              "samples": 3
+            },
+            "phase_4_io_write_bytes": {
+              "median": 121068773376,
+              "min": 121068019712,
+              "max": 121073291264,
+              "samples": 3
+            },
+            "phase_4_ms": {
+              "median": 191672.934,
+              "min": 190926.658,
+              "max": 192308.583,
+              "samples": 3
+            },
+            "phase_5_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_5_io_read_bytes": {
+              "median": 4811046912,
+              "min": 4809601024,
+              "max": 4814815232,
+              "samples": 3
+            },
+            "phase_5_io_write_bytes": {
+              "median": 4644409344,
+              "min": 4643766272,
+              "max": 4645015552,
+              "samples": 3
+            },
+            "phase_5_ms": {
+              "median": 108958.31,
+              "min": 99752.004,
+              "max": 109268.151,
+              "samples": 3
+            },
+            "phase_6_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_io_read_bytes": {
+              "median": 2048557056,
+              "min": 1841524736,
+              "max": 3543670784,
+              "samples": 3
+            },
+            "phase_6_io_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_6_ms": {
+              "median": 28914.747,
+              "min": 28723.927,
+              "max": 29062.082,
+              "samples": 3
+            },
+            "phase_7_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_7_io_write_bytes": {
+              "median": 131072,
+              "min": 131072,
+              "max": 180224,
+              "samples": 3
+            },
+            "phase_7_ms": {
+              "median": 12.651,
+              "min": 10.178,
+              "max": 32.051,
+              "samples": 3
+            },
+            "phase_8_io_cancelled_write_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_read_bytes": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "phase_8_io_write_bytes": {
+              "median": 16384,
+              "min": 0,
+              "max": 16384,
+              "samples": 3
+            },
+            "phase_8_ms": {
+              "median": 3.644,
+              "min": 3.616,
+              "max": 3.985,
+              "samples": 3
+            },
+            "preparation_estimated_bytes_per_worker": {
+              "median": 51375040,
+              "min": 51375040,
+              "max": 51375040,
+              "samples": 3
+            },
+            "raw_payload_bytes": {
+              "median": 13120744052,
+              "min": 13120744052,
+              "max": 13120744052,
+              "samples": 3
+            },
+            "rust_point_size_bytes": {
+              "median": 16,
+              "min": 16,
+              "max": 16,
+              "samples": 3
+            },
+            "serialized_index_bytes": {
+              "median": 3461625,
+              "min": 3461625,
+              "max": 3461625,
+              "samples": 3
+            },
+            "stage_BeforeFirstProgress_ms": {
+              "median": 0.095,
+              "min": 0.094,
+              "max": 0.112,
+              "samples": 3
+            },
+            "stage_BuildingSpatialHierarchy_ms": {
+              "median": 191672.934,
+              "min": 190926.658,
+              "max": 192308.583,
+              "samples": 3
+            },
+            "stage_Complete_ms": {
+              "median": 3.644,
+              "min": 3.616,
+              "max": 3.985,
+              "samples": 3
+            },
+            "stage_InspectingInput_ms": {
+              "median": 4.398,
+              "min": 4.379,
+              "max": 4.633,
+              "samples": 3
+            },
+            "stage_PlanningMetadata_ms": {
+              "median": 50.115,
+              "min": 49.749,
+              "max": 50.823,
+              "samples": 3
+            },
+            "stage_PlanningSpatialIndex_ms": {
+              "median": 43172.815,
+              "min": 43028.683,
+              "max": 43379.036,
+              "samples": 3
+            },
+            "stage_PublishingOutput_ms": {
+              "median": 12.651,
+              "min": 10.178,
+              "max": 32.051,
+              "samples": 3
+            },
+            "stage_ReadingAndWritingBlocks_ms": {
+              "median": 108958.31,
+              "min": 99752.004,
+              "max": 109268.151,
+              "samples": 3
+            },
+            "stage_ValidatingOutput_ms": {
+              "median": 28914.747,
+              "min": 28723.927,
+              "max": 29062.082,
+              "samples": 3
+            },
+            "stored_payload_bytes": {
+              "median": 4623279983,
+              "min": 4623279983,
+              "max": 4623279983,
+              "samples": 3
+            },
+            "validation_estimated_bytes_per_worker": {
+              "median": 35648020,
+              "min": 35648020,
+              "max": 35648020,
+              "samples": 3
+            }
+          },
+          "artifacts": {
+            "oct": {
+              "bytes": 2197677341,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v7.3-pre/output-run-001.oct",
+              "sha256": "0e2920a7ffc88cb7f7bd8f8fedea12773fca209e85771fb65e735b4f414e37cf"
+            },
+            "octattrs": {
+              "bytes": 2429064395,
+              "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/storage-v7-v73-vs-v5-20261028/majadas/majadas/1-v7.3-pre/output-run-001.octattrs",
+              "sha256": "b529e5165cb4bd5edbb60c8881af5ed1abc2147bbb97ab1979d519f7c9c5f2f6"
+            }
+          },
+          "rss": {
+            "conversion": {
+              "median": 102633472,
+              "samples": 3
+            },
+            "hierarchy": {
+              "median": 25305088,
+              "samples": 3
+            },
+            "progressive": {
+              "median": 35909632,
+              "samples": 3
+            }
+          },
+          "hierarchy": {
+            "attach_ms": {
+              "median": 0.0,
+              "min": 0.0,
+              "max": 0.0,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 2429064395,
+              "min": 2429064395,
+              "max": 2429064395,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 536870912,
+              "min": 536870912,
+              "max": 536870912,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 19770379092,
+              "min": 19770379092,
+              "max": 19770379092,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 19770379092,
+              "min": 19770379092,
+              "max": 19770379092,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 25.272,
+              "min": 18.867,
+              "max": 30.092,
+              "samples": 3
+            },
+            "load_ms": {
+              "median": 0,
+              "min": 0,
+              "max": 0,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 12727266,
+              "min": 12727266,
+              "max": 12727266,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 2197677341,
+              "min": 2197677341,
+              "max": 2197677341,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 22.624,
+              "min": 14.98,
+              "max": 25.067,
+              "samples": 3
+            }
+          },
+          "progressive": {
+            "attach_ms": {
+              "median": 0.042,
+              "min": 0.035,
+              "max": 0.045,
+              "samples": 3
+            },
+            "attrs_bytes": {
+              "median": 2429064395,
+              "min": 2429064395,
+              "max": 2429064395,
+              "samples": 3
+            },
+            "budget_bytes": {
+              "median": 536870912,
+              "min": 536870912,
+              "max": 536870912,
+              "samples": 3
+            },
+            "budget_estimate_bytes": {
+              "median": 12727266,
+              "min": 12727266,
+              "max": 12727266,
+              "samples": 3
+            },
+            "decoded_estimate_bytes": {
+              "median": 19770379092,
+              "min": 19770379092,
+              "max": 19770379092,
+              "samples": 3
+            },
+            "first_root_read_ms": {
+              "median": 0.03,
+              "min": 0.026,
+              "max": 0.047,
+              "samples": 3
+            },
+            "full_ms": {
+              "median": 40238.256,
+              "min": 40181.744,
+              "max": 40335.875,
+              "samples": 3
+            },
+            "max_block_estimate_bytes": {
+              "median": 12727266,
+              "min": 12727266,
+              "max": 12727266,
+              "samples": 3
+            },
+            "oct_bytes": {
+              "median": 2197677341,
+              "min": 2197677341,
+              "max": 2197677341,
+              "samples": 3
+            },
+            "open_ms": {
+              "median": 16.024,
+              "min": 14.049,
+              "max": 23.853,
+              "samples": 3
+            },
+            "progressive_wall_ms": {
+              "median": 40207.885,
+              "min": 40164.291,
+              "max": 40316.287,
+              "samples": 3
+            },
+            "read_ms": {
+              "median": 28977.17,
+              "min": 28914.953,
+              "max": 29034.618,
+              "samples": 3
+            },
+            "verify_ms": {
+              "median": 11112.636,
+              "min": 11104.186,
+              "max": 11127.026,
+              "samples": 3
+            }
+          }
+        }
+      },
+      "checksums": {
+        "progressive": "b830818c4aeddac0"
+      }
+    }
+  ]
+}
