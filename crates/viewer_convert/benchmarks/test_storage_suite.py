@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -73,7 +75,7 @@ class StorageSuiteTests(unittest.TestCase):
             source = root / "input.laz"
             source.write_bytes(b"fixture")
             run_dir = root / "run"
-            with self.assertRaises(SystemExit):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 storage_suite.parse_args(
                     [
                         str(source), "result.oct", str(run_dir), "--convert-binary", "missing-convert",
@@ -92,7 +94,7 @@ class StorageSuiteTests(unittest.TestCase):
             self.assertFalse(run_dir.exists())
 
     def test_points_per_block_is_bounded_by_converter_limit(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             storage_suite.parse_args(
                 [
                     "input.laz", "result.oct", "run", "--convert-binary", "convert",

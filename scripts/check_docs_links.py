@@ -3,21 +3,29 @@
 
 Allowlist lines are `file|target`; an allowlisted entry that no longer occurs
 is itself an error, so stale entries cannot linger.
+
+Out of scope: reference-style links, `<a id>` anchors, setext headings and
+`<url>` link targets.
 """
 import os
 import re
 import subprocess
 import sys
 import unicodedata
+import urllib.parse
 
 LINK_RE = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 IMG_LINK_RE = re.compile(r"\!\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
-HEADING_RE = re.compile(r"^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+HEADING_RE = re.compile(r"^ {0,3}(#{1,6})\s+(.*?)\s*$")
 FENCE_RE = re.compile(r"^ {0,3}(```+|~~~+)")
 
 
 def slugify(text):
-    text = re.sub(r"`", "", text)
+    text = re.sub(r"\s#+$", "", text.strip())
+    text = re.sub(r"<[^>]*>", "", text)
+    text = text.replace("`", "").replace("*", "")
+    # Emphasis underscores sit at word boundaries; in-word ones stay.
+    text = re.sub(r"(?<![0-9A-Za-z])_+|_+(?![0-9A-Za-z])", "", text)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = text.strip().lower()
     out = []
@@ -87,7 +95,7 @@ def check_file(root, rel):
             if anchor and os.path.isfile(dest) and dest.endswith(".md"):
                 if dest not in cache:
                     cache[dest] = anchors(dest)
-                if anchor.lower() not in cache[dest]:
+                if urllib.parse.unquote(anchor).lower() not in cache[dest]:
                     broken.append((no, target))
     return broken
 

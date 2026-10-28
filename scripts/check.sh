@@ -33,7 +33,8 @@ step "python benchmark tests" python3 -m unittest discover -s crates/viewer_conv
 step "python scripts tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 step "docs links" python3 scripts/check_docs_links.py
 step "version literals" bash scripts/check_version_literals.sh
-step "git diff --check" git diff --check
+# Working tree + index vs HEAD (committed history is not re-checked).
+step "git diff --check" git diff --check HEAD
 
 echo
 echo "=== summary ==="

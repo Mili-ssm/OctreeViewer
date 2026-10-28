@@ -37,6 +37,22 @@ class LinkCheckerTests(unittest.TestCase):
         })
         self.assertEqual(errs, ["a.md:1: b.md#evidencia-del-septimo-incremento"])
 
+    def test_emphasis_underscore_dropped(self):
+        errs = self.check({"a.md": "[x](#emph-x)\n## _emph_ x\n"})
+        self.assertEqual(errs, [])
+
+    def test_in_word_underscore_kept(self):
+        errs = self.check({"a.md": "[x](#max_index)\n## `max_index`\n"})
+        self.assertEqual(errs, [])
+
+    def test_trailing_hash_handling(self):
+        errs = self.check({"a.md": "[x](#c) [y](#d)\n# C#\n# D #\n"})
+        self.assertEqual(errs, [])
+
+    def test_percent_encoded_anchor(self):
+        errs = self.check({"a.md": "[x](#s%C3%A9ptimo)\n# Séptimo\n"})
+        self.assertEqual(errs, [])
+
     def test_missing_file(self):
         errs = self.check({"a.md": "[x](nope.md)\n"})
         self.assertEqual(errs, ["a.md:1: nope.md"])
