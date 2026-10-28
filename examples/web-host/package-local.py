@@ -21,6 +21,17 @@ def require_replace(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new)
 
 
+# Workers import the generated bindings they use; the exported names change with the API.
+WASM_IMPORT = re.compile(r'^import init, \{[^}]*\} from "\.\./\.\./pkg/viewer_wasm\.js";\n', re.MULTILINE)
+
+
+def wasm_import_line(source: str, label: str) -> str:
+    lines = WASM_IMPORT.findall(source)
+    if len(lines) != 1:
+        raise ValueError(f"expected exactly one {label} marker")
+    return lines[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -51,12 +62,7 @@ def main() -> None:
     wasm_bytes = base64.b64encode(wasm_path.read_bytes()).decode("ascii")
     sample_bytes = base64.b64encode(sample_path.read_bytes()).decode("ascii")
     attributes_bytes = base64.b64encode((HOST / "sample.octattrs").read_bytes()).decode("ascii")
-    worker_js = require_replace(
-        worker_js,
-        'import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";\n',
-        "",
-        "WASM import",
-    )
+    worker_js = require_replace(worker_js, wasm_import_line(worker_js, "WASM import"), "", "WASM import")
     worker_js = require_replace(
         worker_js,
         "wasmExports = await init();",
@@ -86,7 +92,7 @@ def main() -> None:
     )
     converter_worker_js = require_replace(
         converter_worker_js,
-        'import init, { WasmLasOctConverter } from "../../pkg/viewer_wasm.js";\n',
+        wasm_import_line(converter_worker_js, "converter WASM import"),
         "",
         "converter WASM import",
     )
@@ -219,16 +225,19 @@ def main() -> None:
     readme_path.write_text(readme, encoding="utf-8")
     embed_dir = output / "embed"
     embed_dir.mkdir(parents=True, exist_ok=True)
+    embed_import = wasm_import_line(embed_worker_js, "embeddable worker WASM import")
     embed_worker_js = require_replace(
         embed_worker_js,
-        'import init, { WasmVoxelViewer } from "../../pkg/viewer_wasm.js";\n',
-        'import init, { WasmVoxelViewer } from "./viewer_wasm.js";\n',
+        embed_import,
+        embed_import.replace('"../../pkg/viewer_wasm.js"', '"./viewer_wasm.js"'),
         "embeddable worker WASM import",
     )
+    embed_converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
+    embed_converter_import = wasm_import_line(embed_converter_worker_js, "embeddable converter WASM import")
     embed_converter_worker_js = require_replace(
-        (HOST / "converter-worker.js").read_text(encoding="utf-8"),
-        'import init, { WasmLasOctConverter } from "../../pkg/viewer_wasm.js";\n',
-        'import init, { WasmLasOctConverter } from "./viewer_wasm.js";\n',
+        embed_converter_worker_js,
+        embed_converter_import,
+        embed_converter_import.replace('"../../pkg/viewer_wasm.js"', '"./viewer_wasm.js"'),
         "embeddable converter WASM import",
     )
     (embed_dir / "viewer-api.mjs").write_text(viewer_api_js, encoding="utf-8")

@@ -1,10 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 use viewer_core::{
-    AttributeDescriptor, BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult,
-    CoordinateFrame, DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache,
-    LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
-    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy,
+    BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
+    DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelectionConfig,
+    LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId, PointBlock, SpatialBounds,
+    SpatialFrustum, SpatialHierarchy,
 };
 use viewer_render_wgpu::{
     GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
@@ -563,7 +563,8 @@ impl LodDataset {
         &self.refinement_work
     }
 
-    pub(crate) fn attribute_schema(&self) -> &[AttributeDescriptor] {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn attribute_schema(&self) -> &[viewer_core::AttributeDescriptor] {
         self.metadata.hierarchy().attributes()
     }
 
