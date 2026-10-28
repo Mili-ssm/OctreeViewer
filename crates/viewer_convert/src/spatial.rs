@@ -823,7 +823,7 @@ impl SpatialBuilder<'_> {
                     fs::remove_file(child.path)?;
                 }
             }
-            let mut source_reader = Reader::from_path(input_path)?;
+            let mut source_reader = crate::las_source::open_las_reader(input_path)?;
             let spool_path = self.workspace.file("source.spool");
             let bytes = spool_source(
                 &mut source_reader,

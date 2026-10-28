@@ -7,7 +7,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use las::{PointDataBuilder, Reader};
+use las::PointDataBuilder;
 use serde::Deserialize;
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, CoordinateFrame, DatasetMetadata,
@@ -23,7 +23,7 @@ use super::{
     ConvertError, ConvertOptions,
 };
 use crate::diagnostics::DiagnosticTimer;
-use crate::las_source::{next_descriptor, omitted_dimensions, source_schema};
+use crate::las_source::{next_descriptor, omitted_dimensions, open_las_reader, source_schema};
 use crate::options::{MAX_BLOCKS, input_batch_point_limit};
 use crate::publish::{
     OutputValidation, create_temporary_pair, output_attributes_path, publish_output_pair,
@@ -264,7 +264,7 @@ pub(super) fn convert(
                 .as_ref()
                 .map(|_| source_file_identity(root, &file_path))
                 .transpose()?;
-            let reader = Reader::from_path(&file_path)?;
+            let reader = open_las_reader(&file_path)?;
             let header = reader.header();
             if let Some(before) = before {
                 verify_source_file_identity(root, &file_path, &before)?;
@@ -636,7 +636,7 @@ pub(super) fn convert(
             if checkpoint_mode.is_some() {
                 verify_source_inventory_entry(root, path, &source_files)?;
             }
-            let mut reader = Reader::from_path(path)?;
+            let mut reader = open_las_reader(path)?;
             let point_format = *reader.header().point_format();
             let mut data = PointDataBuilder::new().for_header(reader.header()).build();
             let mut node_processed = if node_index == resume_cursor.0 {

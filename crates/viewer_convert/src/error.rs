@@ -15,6 +15,8 @@ pub enum ConvertError {
     Io(#[from] io::Error),
     #[error("LAS/LAZ error: {0}")]
     Las(#[from] las::Error),
+    #[error("unsafe LAS/LAZ header: {0}")]
+    LasPreflight(#[from] viewer_core::las::LasPreflightError),
     #[error(transparent)]
     Format(#[from] viewer_format::FormatError),
     #[error(transparent)]

@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     path::Path,
     sync::mpsc,
     thread,
@@ -55,6 +55,14 @@ pub(crate) struct ConversionPlan {
     pub(crate) estimated_peak_memory_bytes: u64,
 }
 
+/// Bounds header-declared allocations by the file length, then opens the reader.
+pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
+    let mut file = File::open(path)?;
+    let file_len = file.metadata()?.len();
+    viewer_core::las::preflight_las(&mut file, file_len)?;
+    Ok(Reader::from_path(path)?)
+}
+
 pub(crate) fn convert_file_inner(
     input_path: &Path,
     output_path: &Path,
@@ -96,7 +104,7 @@ pub(crate) fn convert_file_inner(
         },
         0,
     )?;
-    let mut reader = Reader::from_path(input_path)?;
+    let mut reader = open_las_reader(input_path)?;
     let source = inspect_source(&reader)?;
     let expected_visual_scale = visual_scale_for_bounds(source.bounds)?;
     let mut checkpoint = if let Some(mode) = checkpoint_mode {

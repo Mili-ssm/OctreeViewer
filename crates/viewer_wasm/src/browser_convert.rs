@@ -54,6 +54,7 @@ impl WasmLasOctConverter {
         attributes_handle: JsValue,
     ) -> Result<Self, JsValue> {
         let source = BrowserBlobReader::new(input.clone(), false)?;
+        preflight_blob(&input)?;
         let reader = las::Reader::new(source)
             .map_err(|error| JsValue::from_str(&format!("LAS/LAZ header: {error}")))?;
         let header = reader.header();
@@ -515,6 +516,8 @@ impl WasmLasOctConverter {
             )
             .map_err(|error| format!("output file: {error}"))?,
         );
+        preflight_blob(&self.input)
+            .map_err(|error| format!("reopening LAS/LAZ input: {error:?}"))?;
         self.reader = las::Reader::new(
             BrowserBlobReader::new(self.input.clone(), false)
                 .map_err(|error| format!("reopening LAS/LAZ input: {error:?}"))?,
@@ -556,6 +559,12 @@ fn bounds_extent(bounds: SpatialBounds) -> f64 {
 fn visual_scale(bounds: SpatialBounds) -> Result<f64, JsValue> {
     viewer_core::las::visual_scale_for_bounds(bounds)
         .ok_or_else(|| JsValue::from_str("LAS/LAZ bounds exceed the viewer coordinate range"))
+}
+
+fn preflight_blob(blob: &Blob) -> Result<(), JsValue> {
+    let mut reader = BrowserBlobReader::new(blob.clone(), false)?;
+    viewer_core::las::preflight_las(&mut reader, blob.size() as u64)
+        .map_err(|error| JsValue::from_str(&format!("LAS/LAZ header: {error}")))
 }
 
 struct OpfsWriter {
