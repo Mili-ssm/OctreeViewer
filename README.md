@@ -5,8 +5,7 @@ jerarquía espacial persistente y carga los bloques necesarios para la vista. El
 plazo es explorar fuentes mayores de **500 GB decimales** con memoria acotada. La escala completa
 y cualquier superioridad frente a Potree siguen sin demostrarse. Índice de documentos:
 [docs/README.md](docs/README.md); desarrollo y checks: [CONTRIBUTING.md](CONTRIBUTING.md).
-Requiere Rust **nightly** fijado en `rust-toolchain.toml` (rustup lo descarga en la primera
-ejecución); no se usa ninguna `#![feature]` todavía.
+Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
 
 ## Estado actual — 28-10-2026
 
@@ -89,8 +88,7 @@ cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-vers
 
 Cada `v7.N-pre` identifica una revisión exacta de desarrollo, aún provisional; `v7` final y
 revisiones posteriores a V7.3 se rechazan, igual que versiones sin backend o checkpoints de otra
-identidad. La muestra principal sigue siendo V5: su regeneración y la migración de datasets
-activos preceden a la retirada del backend. Especificaciones:
+identidad. Especificaciones:
 [V5](docs/reference/format/FORMAT_V5.md), [V7.1-pre](docs/reference/format/FORMAT_V7_PRE1.md),
 [V7.2-pre](docs/reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](docs/reference/format/FORMAT_V7_PRE3.md).
 

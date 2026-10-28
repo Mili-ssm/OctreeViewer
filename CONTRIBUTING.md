@@ -14,7 +14,7 @@ características inestables se adoptan solo con evidencia de benchmark.
 scripts/check.sh
 ```
 
-Es el único punto de entrada (14 pasos): tests y clippy con features por defecto y con
+Es el único punto de entrada (14 pasos hoy): tests y clippy con features por defecto y con
 `--all-features`, clippy `wasm32`, `cargo doc` con `-D warnings`, `fmt`, tests Node, tres suites
 Python, comprobación de enlaces (`scripts/check_docs_links.py`, excepciones en
 `scripts/docs-links-allowlist.txt`), literales de versión (`scripts/check_version_literals.sh`) y
@@ -22,16 +22,14 @@ Python, comprobación de enlaces (`scripts/check_docs_links.py`, excepciones en
 ejecuta `.github/workflows/ci.yml`).
 
 No cubre: pruebas GPU ignoradas (requieren adaptador o Vulkan por software), probes de navegador
-(`*.browser.mjs`) ni presentación visual. Para cambios en el host web, comprobar además con
+(`*.browser.mjs`, requieren bindings recientes y orquestación) ni presentación visual. Para cambios en el host web, comprobar además con
 Playwright los flujos afectados, consola y escritorio/móvil. Readback nativo no es evidencia de
 presentación en todos los navegadores. Borrar de `target/` conversiones y temporales que ya no
 hagan falta; conservar informes y muestras que documenten resultados.
 
 ## Features Cargo
 
-Apagadas por defecto: `experimental` (`viewer_core`: `node_attributes`, `categorical_attribute`,
-`occupied_point_block`; `viewer_format`: `experimental_tuple_dictionary`) y `async-reader`
-(`viewer_format`, solo no-wasm).
+Apagadas por defecto; lista y alcance en el [inventario](docs/reference/inventory.md#componentes-y-puntos-de-entrada).
 
 ## Compilar WASM
 
@@ -54,14 +52,20 @@ python3 examples/web-host/package-local.py
 
 ## Convenciones
 
+Fuente única de las reglas; [CLAUDE.md](CLAUDE.md) las resume para agentes.
+
 - Commits: [Conventional Commits](https://www.conventionalcommits.org/) (`docs:`, `build:`, `fix:`…).
-- Los literales `FormatVersion::V<n>` solo viven en `viewer_format`; el resto usa su API de
-  capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`). Lo vigila
-  `scripts/check_version_literals.sh`.
-- Los registros bajo `docs/records/` son inmutables: no se editan; nueva evidencia va en un
-  registro nuevo o en `format-v7-evidence.md`, que se amplía.
-- Fechas `dd-mm-aaaa`; documentación en español salvo el README del host web (inglés).
-- Cada hecho vive en un solo documento; el resto enlaza ([índice](docs/README.md)).
-- Las cifras de benchmark no se trasladan entre revisiones, perfiles, navegadores, datasets ni
-  equipos. Registrar el perfil: `fast` (tests), `perf` (benchmarks nativos: `opt-level` 3, LTO
-  thin) y `release` (`opt-level` "s", LTO completo) no son intercambiables.
+- **V5 predeterminado**: sigue siendo la salida por defecto durante la transición a V7, que
+  concentra el desarrollo; no se crean revisiones V5/V6 nuevas.
+- **Literales de versión**: `FormatVersion::V<n>` solo vive en `viewer_format`; el resto usa su
+  API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
+  revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
+- **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
+  nueva evidencia va en un registro nuevo o en `format-v7-evidence.md`, que se amplía.
+- **Fechas** `dd-mm-aaaa`; documentación en español salvo el README del host web (inglés).
+- **Un hecho, un documento**: el resto enlaza ([índice](docs/README.md)); las prioridades activas
+  solo en «Prioridades pendientes» del README.
+- **Benchmarks**: las cifras no se trasladan entre revisiones, perfiles, navegadores, datasets ni
+  equipos; registrar el perfil. `fast` es para tests; `perf` (`opt-level` 3, LTO thin) para
+  benchmarks nativos; `release` (`opt-level` "s", LTO completo) es el de producción. No son
+  intercambiables.

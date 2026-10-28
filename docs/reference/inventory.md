@@ -107,11 +107,7 @@ necesidad concreta y evidencia suficiente; se favorecen cambios locales y contra
 
 ## Validación y mantenimiento documental
 
-Suites: tests Rust unitarios/integración/ejemplos, GPU ignorados (requieren adaptador o Vulkan
-por software), tests Node `*.test.mjs`, unittest Python del host, de benchmarks y de `scripts/`, y
-probes `*.browser.mjs`. Los probes requieren bindings recientes y orquestación de navegador; no
-los ejecuta `node --test`. Todo lo demás: `scripts/check.sh` ([CONTRIBUTING](../../CONTRIBUTING.md)),
-que también valida enlaces y literales de versión. Las entregas archivadas conservan sus checks
-originales, sin atribuirlos a revisiones posteriores. Al cerrar trabajo: actualizar la prioridad
-del README, conservar evidencia en el informe temático y no reintroducir casillas históricas como
-pendientes activos.
+Suites, alcance y lo que `scripts/check.sh` no cubre: [CONTRIBUTING](../../CONTRIBUTING.md#checks).
+Las entregas archivadas conservan sus checks originales, sin atribuirlos a revisiones posteriores.
+Al cerrar trabajo: actualizar la prioridad del README, conservar evidencia en el informe temático
+y no reintroducir casillas históricas como pendientes activos.
