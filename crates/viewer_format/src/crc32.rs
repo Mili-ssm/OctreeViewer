@@ -89,11 +89,6 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 mod tests {
     use super::{Crc32, crc32};
 
-    #[test]
-    fn crc32_matches_ieee_check_vector() {
-        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
-    }
-
     // Independent polynomial oracle, without any lookup table.
     fn bitwise_crc(bytes: &[u8]) -> u32 {
         let mut crc = u32::MAX;

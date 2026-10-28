@@ -9,6 +9,7 @@ mod common;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::Cursor;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use viewer_core::{
@@ -20,12 +21,13 @@ use viewer_format::{
     NodeAttributeRange, SourcePointBlock,
 };
 
-/// Process-wide live and peak heap bytes. This file holds a single test, so no other thread
-/// allocates concurrently during a measurement.
+/// Process-wide live and peak heap bytes. Tests that measure hold `MEASURE` so concurrent
+/// tests (e.g. under `--include-ignored`) cannot disturb the shared counters.
 struct PeakAllocator;
 
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
+static MEASURE: Mutex<()> = Mutex::new(());
 
 fn grow(size: usize) {
     let live = LIVE.fetch_add(size, Ordering::Relaxed) + size;
@@ -133,6 +135,7 @@ fn index_len(file: &[u8]) -> usize {
 #[test]
 #[ignore = "slow: ~70 s; run to reproduce the amplification table"]
 fn worst_case_index_parse_amplification() {
+    let _measure = MEASURE.lock().unwrap_or_else(|e| e.into_inner());
     for target_mib in [4_usize, 32, 128] {
         // About 1.6 KiB of index per node at 256 attributes.
         let nodes = (target_mib * 1024 * 1024 / 1_630) as u64;
@@ -140,9 +143,12 @@ fn worst_case_index_parse_amplification() {
         let index = index_len(&file);
         let baseline = LIVE.load(Ordering::Relaxed);
         PEAK.store(baseline, Ordering::Relaxed);
-        let reader =
-            FormatReader::with_limits(Cursor::new(file.as_slice()), FormatReaderLimits::default())
-                .expect("worst-case index within default limits opens");
+        // The 128 MiB case exceeds the default range total; measure the unbounded parse.
+        let limits = FormatReaderLimits::default()
+            .with_max_attribute_ranges(u64::MAX)
+            .unwrap();
+        let reader = FormatReader::with_limits(Cursor::new(file.as_slice()), limits)
+            .expect("worst-case index opens with the range bound lifted");
         let peak = PEAK.load(Ordering::Relaxed) - baseline;
         let retained = LIVE.load(Ordering::Relaxed) - baseline;
         drop(reader);
@@ -167,6 +173,7 @@ fn peak_of_open(file: &[u8], limits: FormatReaderLimits) -> (usize, Result<(), F
 
 #[test]
 fn range_bound_rejects_before_allocating_ranges() {
+    let _measure = MEASURE.lock().unwrap_or_else(|e| e.into_inner());
     let file = small_worst_case();
     let index = index_len(&file);
 
