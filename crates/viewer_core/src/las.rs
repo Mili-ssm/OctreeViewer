@@ -86,7 +86,9 @@ pub enum LasPreflightError {
         point_size: u64,
         limit: u64,
     },
-    #[error("header point count x point_data_record_length ({points} x {record_len} B) overflows u64")]
+    #[error(
+        "header point count x point_data_record_length ({points} x {record_len} B) overflows u64"
+    )]
     PointDataOverflow { points: u64, record_len: u64 },
     #[error(
         "header point count x point_data_record_length ({points} x {record_len} B) exceeds the {available} B after offset_to_point_data"
