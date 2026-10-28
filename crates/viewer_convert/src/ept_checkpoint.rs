@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use viewer_format::{FormatVersion, crc32};
+use viewer_format::{block_checkpoint_versions, crc32};
 
 use crate::{
     CheckpointError, CheckpointMode, ConversionWorkerStats, ConvertOptions,
@@ -146,16 +146,17 @@ impl EptCheckpoint {
         options: ConvertOptions,
     ) -> Result<Self, CheckpointError> {
         if !options.format_version().supports_block_checkpoint() {
-            let supported: Vec<String> = FormatVersion::WRITABLE
-                .into_iter()
-                .filter(|version| version.supports_block_checkpoint())
+            let supported: Vec<String> = block_checkpoint_versions()
                 .map(|version| version.to_string())
                 .collect();
-            let (last, rest) = supported.split_last().expect("checkpoint revisions exist");
-            return Err(CheckpointError::Invalid(format!(
-                "EPT recovery supports only {}, and {last}",
-                rest.join(", ")
-            )));
+            let message = match supported.split_last() {
+                Some((last, rest)) if !rest.is_empty() => {
+                    format!("EPT recovery supports only {}, and {last}", rest.join(", "))
+                }
+                Some((only, _)) => format!("EPT recovery supports only {only}"),
+                None => "EPT recovery is not supported by any output revision".to_owned(),
+            };
+            return Err(CheckpointError::Invalid(message));
         }
         let root = checkpoint_path(output_path);
         match mode {
@@ -726,6 +727,7 @@ mod tests {
     use super::*;
     use crate::ConvertOptions;
     use std::io::{Seek, SeekFrom};
+    use viewer_format::FormatVersion;
 
     #[test]
     fn crc32_matches_ieee_check_vector() {

@@ -12,7 +12,7 @@ use viewer_convert::{
     CheckpointMode, ConversionStage, ConvertOptions, convert_file_with_checkpoint,
     convert_file_with_progress,
 };
-use viewer_format::FormatVersion;
+use viewer_format::{FormatVersion, block_checkpoint_versions};
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -167,12 +167,14 @@ fn print_help() {
     let versions = FormatVersion::WRITABLE
         .map(|version| version.to_string())
         .join("|");
-    let checkpoint_versions = FormatVersion::WRITABLE
-        .into_iter()
-        .filter(|version| version.supports_block_checkpoint())
+    let checkpoint_versions = block_checkpoint_versions()
         .map(|version| version.to_string())
         .collect::<Vec<_>>()
         .join("/");
+    let checkpoint_family = block_checkpoint_versions().next().map_or_else(
+        || "no".to_owned(),
+        |version| format!("v{}.x-pre", version.major()),
+    );
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
@@ -182,7 +184,7 @@ fn print_help() {
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
-         COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires a v7.x-pre format.\n\
+         COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires a {checkpoint_family} format.\n\
          The converter preserves intensity, classification, returns, scan angle, user data and point source ID, plus GPS time, RGB16 and NIR when present, and reports omitted LAS dimensions."
     );
 }

@@ -53,7 +53,9 @@ pub use reader::{
 };
 pub use writer::{FormatWriter, FormatWriterOptions, PreparedPointBlock, prepare_point_block};
 
-pub use version::{FileRole, FormatIdentity, FormatVersion, probe_format};
+pub use version::{
+    FileRole, FormatIdentity, FormatVersion, block_checkpoint_versions, probe_format,
+};
 
 #[cfg(all(feature = "async-reader", not(target_arch = "wasm32")))]
 pub use async_reader::{AsyncFormatReader, AsyncReadError};

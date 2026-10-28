@@ -115,6 +115,13 @@ impl std::str::FromStr for FormatVersion {
     }
 }
 
+/// Writable revisions that support block-level EPT checkpoint/resume, in listing order.
+pub fn block_checkpoint_versions() -> impl Iterator<Item = FormatVersion> {
+    FormatVersion::WRITABLE
+        .into_iter()
+        .filter(|version| version.supports_block_checkpoint())
+}
+
 /// Recognized header identity does not imply that a payload decoder is available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FileRole {
