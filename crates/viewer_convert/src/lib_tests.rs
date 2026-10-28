@@ -1,4 +1,7 @@
-use super::{OutputValidation, output_attributes_path, output_block_ids, validate_output_pair};
+use crate::publish::{
+    OutputValidation, output_attributes_path, output_block_ids, validate_output_pair,
+    verify_candidate_visual_scale,
+};
 use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
@@ -11,11 +14,11 @@ use viewer_core::{AttributeValues, BlockId, DatasetSource, NodeId, SpatialBounds
 use viewer_format::{FormatReader, OctreeReader};
 
 use super::{
-    CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions,
-    DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS, convert_file, convert_file_with_checkpoint,
-    convert_file_with_diagnostics, convert_file_with_progress, verify_candidate_visual_scale,
+    CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions, convert_file,
+    convert_file_with_checkpoint, convert_file_with_diagnostics, convert_file_with_progress,
     visual_scale_for_bounds,
 };
+use crate::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -581,7 +584,7 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
 fn pipeline_prepares_next_batch_while_consuming_in_order() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let mut written = Vec::new();
-    super::process_batches(
+    crate::las::process_batches(
         &[0, 1, 2, 3],
         1,
         true,
@@ -609,7 +612,7 @@ fn pipeline_prepares_next_batch_while_consuming_in_order() {
 #[test]
 fn pipeline_propagates_preparation_and_consumer_errors_without_deadlock() {
     for fail_preparation in [false, true] {
-        let result = super::process_batches(
+        let result = crate::las::process_batches(
             &[0, 1, 2, 3],
             1,
             true,

@@ -20,10 +20,16 @@ use viewer_format::{
 use super::ept_checkpoint::{EptCheckpoint, EptCheckpointStage, EptJournalRecord, EptSourceFile};
 use super::{
     CheckpointMode, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
-    ConvertError, ConvertOptions, DiagnosticTimer, MAX_BLOCKS, create_temporary_pair,
-    emit_progress, input_batch_point_limit, next_descriptor, omitted_dimensions,
-    output_attributes_path, publish_output_pair, source_schema,
+    ConvertError, ConvertOptions, input_batch_point_limit,
 };
+use crate::diagnostics::DiagnosticTimer;
+use crate::las::{next_descriptor, omitted_dimensions, source_schema};
+use crate::options::MAX_BLOCKS;
+use crate::publish::{
+    OutputValidation, create_temporary_pair, output_attributes_path, publish_output_pair,
+    publish_validated_output_pair, validate_output_pair,
+};
+use crate::report::emit_progress;
 
 const MAX_EPT_NODES: usize = 1_000_000;
 const MAX_EPT_MANIFEST_BYTES: u64 = 1024 * 1024;
@@ -380,7 +386,7 @@ pub(super) fn convert(
         Some("EPT additive hierarchy; node payloads preserve source points; geometric error is the node-cell diagonal".to_owned()),
         Vec::new(),
     )?
-    .with_visual_scale(super::visual_scale_for_bounds(bounds)?)?;
+    .with_visual_scale(crate::visual_scale_for_bounds(bounds)?)?;
     source_files.sort_by(|left, right| left.path.cmp(&right.path));
     if source_files
         .windows(2)
@@ -413,7 +419,7 @@ pub(super) fn convert(
             return Err(ConvertError::Checkpoint(super::CheckpointError::Mismatch));
         }
         verify_source_inventory(root, &source_files)?;
-        let (output_bytes, output_validation) = super::publish_validated_output_pair(
+        let (output_bytes, output_validation) = publish_validated_output_pair(
             &candidate_path,
             &candidate_attributes_path,
             output_path,
@@ -768,7 +774,7 @@ pub(super) fn convert(
     }
     let file_length = fs::metadata(&primary_path)?.len();
     let attributes_length = fs::metadata(&attributes_path)?.len();
-    let validation = super::OutputValidation {
+    let validation = OutputValidation {
         total_points: manifest.points,
         block_ids: &all_blocks,
         source_block_ids: &all_blocks,
@@ -780,7 +786,7 @@ pub(super) fn convert(
     };
     let (output_bytes, output_validation) = if checkpoint.is_some() {
         let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
-        let output_validation = super::validate_output_pair(
+        let output_validation = validate_output_pair(
             &primary_path,
             &attributes_path,
             &validation,
@@ -795,7 +801,7 @@ pub(super) fn convert(
             .as_mut()
             .expect("checkpoint is present")
             .mark_output_ready(manifest.points, written_blocks, output_validation)?;
-        let published = super::publish_validated_output_pair(
+        let published = publish_validated_output_pair(
             &primary_path,
             &attributes_path,
             output_path,

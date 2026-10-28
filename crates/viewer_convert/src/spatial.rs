@@ -20,10 +20,11 @@ use viewer_core::{
 use viewer_format::{FormatMetadata, SourcePointBlock};
 
 use super::{
-    ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SourceInfo,
-    SpatialPhaseDiagnostics, SpatialSpoolDiagnostics, emit_progress, next_descriptor,
-    omitted_dimensions, source_schema,
+    ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SpatialPhaseDiagnostics,
+    SpatialSpoolDiagnostics,
 };
+use crate::las::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
+use crate::report::emit_progress;
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
 const SPOOL_IO_BUFFER_BYTES: usize = 64 * 1024;
@@ -130,7 +131,10 @@ impl PlannedBlock {
         Ok(())
     }
 
-    pub fn read(&self, frame: super::CoordinateFrame) -> Result<SourcePointBlock, ConvertError> {
+    pub fn read(
+        &self,
+        frame: viewer_core::CoordinateFrame,
+    ) -> Result<SourcePointBlock, ConvertError> {
         let byte_offset = self
             .offset_points
             .checked_mul(self.layout.record_bytes() as u64)
@@ -297,7 +301,8 @@ impl Workspace {
             .file_name()
             .ok_or_else(|| ConvertError::TemporaryPathUnavailable(output_path.to_owned()))?;
         for _ in 0..100 {
-            let counter = super::TEMP_COUNTER.fetch_add(1, super::Ordering::Relaxed);
+            let counter =
+                crate::publish::TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut name = file_name.to_os_string();
             name.push(format!(".{}.{}.work", std::process::id(), counter));
             let path = parent.join(name);
@@ -606,7 +611,7 @@ struct SpatialBuilder<'a> {
     point_limit: u64,
     memory_budget: u64,
     spatial_divisions: u8,
-    frame: super::CoordinateFrame,
+    frame: viewer_core::CoordinateFrame,
     layout: SpoolLayout,
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
@@ -1255,7 +1260,7 @@ impl SpatialBuilder<'_> {
         let next_block_id = block_offset
             .checked_add(branch.next_block_id)
             .ok_or(ConvertError::SizeOverflow)?;
-        if next_block_id > super::MAX_BLOCKS || next_block_id >= u64::from(u32::MAX) {
+        if next_block_id > crate::options::MAX_BLOCKS || next_block_id >= u64::from(u32::MAX) {
             return Err(ConvertError::TooManyBlocks(next_block_id));
         }
         for node in &mut branch.node_records {
@@ -1340,7 +1345,9 @@ impl SpatialBuilder<'_> {
     }
 
     fn allocate_block_id(&mut self) -> Result<BlockId, ConvertError> {
-        if self.next_block_id >= super::MAX_BLOCKS || self.next_block_id >= u64::from(u32::MAX) {
+        if self.next_block_id >= crate::options::MAX_BLOCKS
+            || self.next_block_id >= u64::from(u32::MAX)
+        {
             return Err(ConvertError::TooManyBlocks(self.next_block_id + 1));
         }
         self.ensure_memory(self.node_records.len(), self.output_blocks.len() + 1)?;
@@ -1897,7 +1904,7 @@ fn voxel_center(index: usize, bounds: SpatialBounds) -> [f64; 3] {
     std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size)
 }
 
-fn center_rounding_error(bounds: SpatialBounds, frame: super::CoordinateFrame) -> f64 {
+fn center_rounding_error(bounds: SpatialBounds, frame: viewer_core::CoordinateFrame) -> f64 {
     (0..3)
         .map(|axis| {
             let min = bounds.min()[axis] - frame.origin()[axis];
@@ -1936,10 +1943,10 @@ fn estimate_memory(
         .ok_or(ConvertError::SizeOverflow)?;
     let block_bytes = u64::try_from(block_count)
         .map_err(|_| ConvertError::SizeOverflow)?
-        .checked_mul(super::ESTIMATED_DIRECTORY_BYTES_PER_BLOCK)
+        .checked_mul(crate::options::ESTIMATED_DIRECTORY_BYTES_PER_BLOCK)
         .ok_or(ConvertError::SizeOverflow)?;
     let working_bytes = point_limit
-        .checked_mul(super::ESTIMATED_WORKING_BYTES_PER_POINT)
+        .checked_mul(crate::options::ESTIMATED_WORKING_BYTES_PER_POINT)
         .ok_or(ConvertError::SizeOverflow)?;
     let sample_accumulators = (SAMPLE_GRID_SIZE.pow(3) as u64)
         .checked_mul(256)
@@ -1950,7 +1957,7 @@ fn estimate_memory(
         .and_then(|bytes| bytes.checked_add(block_bytes))
         .and_then(|bytes| bytes.checked_add(sample_accumulators))
         .and_then(|bytes| bytes.checked_add(child_spool_buffers))
-        .and_then(|bytes| bytes.checked_add(super::ESTIMATED_FIXED_OVERHEAD_BYTES))
+        .and_then(|bytes| bytes.checked_add(crate::options::ESTIMATED_FIXED_OVERHEAD_BYTES))
         .ok_or(ConvertError::SizeOverflow)
 }
 
@@ -2041,7 +2048,7 @@ mod partition_tests {
         ];
         let source = SourceInfo {
             bounds: SpatialBounds::new(position, position).unwrap(),
-            frame: super::super::CoordinateFrame::new(position).unwrap(),
+            frame: viewer_core::CoordinateFrame::new(position).unwrap(),
             point_count: 1,
             record_length: las::point::Format::new(format_id).unwrap().len() as usize,
             point_format: las::point::Format::new(format_id).unwrap(),
