@@ -160,11 +160,11 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
             return Err(LasPreflightError::VlrOutOfBounds("VLR record_length"));
         }
         if record_id == LASZIP_RECORD_ID && user_id.starts_with(b"laszip encoded\0") {
-            // laszip record: compressor u16, coder u16, version 4 B, options u32, chunk_size u32.
-            if record_len < 18 {
+            // laszip record: compressor u16, coder u16, version 4 B, options u32 (chunk_size at +12).
+            if record_len < 16 {
                 return Err(LasPreflightError::VlrOutOfBounds("laszip record"));
             }
-            laz_chunk_size = Some(match read_u32_at(reader, end + 14)? {
+            laz_chunk_size = Some(match read_u32_at(reader, end + 12)? {
                 0 => LASZIP_VARIABLE_CHUNK,
                 size => size,
             });
@@ -344,8 +344,8 @@ mod tests {
         vlr[18..20].copy_from_slice(&22204u16.to_le_bytes());
         let mut record = vec![0u8; 34];
         record[0..2].copy_from_slice(&2u16.to_le_bytes());
-        record[10..14].copy_from_slice(&0u32.to_le_bytes());
-        record[14..18].copy_from_slice(&chunk_size.to_le_bytes());
+        record[12..16].copy_from_slice(&chunk_size.to_le_bytes());
+        record[16..24].copy_from_slice(&(-1i64).to_le_bytes());
         vlr[20..22].copy_from_slice(&(record.len() as u16).to_le_bytes());
         bytes.extend_from_slice(&vlr);
         bytes.extend_from_slice(&record);
@@ -384,5 +384,62 @@ mod tests {
             check(&bytes),
             Err(LasPreflightError::ChunkTableOutOfBounds(_))
         ));
+    }
+
+    /// Zero-filled virtual file with a few real byte ranges.
+    struct SparseFile {
+        parts: Vec<(u64, Vec<u8>)>,
+        pos: u64,
+    }
+
+    impl std::io::Read for SparseFile {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            buf.fill(0);
+            for (start, data) in &self.parts {
+                for (i, byte) in buf.iter_mut().enumerate() {
+                    let at = self.pos + i as u64;
+                    if at >= *start && at < start + data.len() as u64 {
+                        *byte = data[(at - start) as usize];
+                    }
+                }
+            }
+            self.pos += buf.len() as u64;
+            Ok(buf.len())
+        }
+    }
+
+    impl std::io::Seek for SparseFile {
+        fn seek(&mut self, from: std::io::SeekFrom) -> std::io::Result<u64> {
+            if let std::io::SeekFrom::Start(at) = from {
+                self.pos = at;
+            }
+            Ok(self.pos)
+        }
+    }
+
+    #[test]
+    fn laz_1_2_legacy_point_count_with_table_beyond_u32_passes() {
+        let mut head = laz_file(10_177, 50_000, 508_809_556);
+        head[24..26].copy_from_slice(&[1, 2]);
+        head[94..96].copy_from_slice(&227u16.to_le_bytes());
+        // 1.2 header is 227 B: move VLR + record down, leaving bytes 227.. as VLR data.
+        let vlr_and_record = head[375..375 + 54 + 34].to_vec();
+        let mut bytes = head[..227].to_vec();
+        bytes.extend_from_slice(&vlr_and_record);
+        let point_data = bytes.len() as u64;
+        bytes[96..100].copy_from_slice(&(point_data as u32).to_le_bytes());
+        let table = 4_305_464_060u64;
+        let mut table_bytes = 0u32.to_le_bytes().to_vec();
+        table_bytes.extend_from_slice(&10_177u32.to_le_bytes());
+        let len = table + 1_000;
+        let mut file = SparseFile {
+            parts: vec![
+                (0, bytes),
+                (point_data, table.to_le_bytes().to_vec()),
+                (table, table_bytes),
+            ],
+            pos: 0,
+        };
+        preflight_las(&mut file, len).unwrap();
     }
 }
