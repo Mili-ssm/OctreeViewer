@@ -28,13 +28,22 @@ def _require(container: dict, key: str, where: str):
     return container[key]
 
 
-def parse_reference(reference: dict) -> list[dict]:
+def _resolve(path, root: Path | None) -> Path:
+    path = Path(path)
+    return path if root is None or path.is_absolute() else root / path
+
+
+def parse_reference(reference: dict, root: Path | None = None) -> list[dict]:
     """Return [{label, source, options: {flag: value}}] from either supported reference layout.
 
     Command layout: ``datasets`` is a list of ``{label, runs: [{command: [...]}]}`` (a storage_suite
     command line). Recorded layout: ``datasets`` is a mapping ``label -> {input: {path},
     logical_read: {budget_mib}}`` with top-level ``conversion_options``
     ``{workers, divisions, points_per_block}``.
+
+    Relative source paths are resolved against ``root`` (the repository root) in both layouts, never
+    the cwd or the reference file's directory: the recorded paths (e.g. ``data/x.laz``) are
+    repository-relative. With ``root=None`` they are returned unchanged.
     """
     datasets = _require(reference, "datasets", "")
     parsed = []
@@ -50,8 +59,11 @@ def parse_reference(reference: dict) -> list[dict]:
             for flag in OPTION_FLAGS:
                 if flag not in template:
                     raise ValueError(f"reference {where}.runs[0].command lacks option {flag}")
-                options[flag] = str(template[template.index(flag) + 1])
-            parsed.append({"label": label, "source": Path(template[2]), "options": options})
+                position = template.index(flag) + 1
+                if position >= len(template):
+                    raise ValueError(f"reference {where}.runs[0].command has option {flag} without a value")
+                options[flag] = str(template[position])
+            parsed.append({"label": label, "source": _resolve(template[2], root), "options": options})
     elif isinstance(datasets, dict):
         conversion = _require(reference, "conversion_options", "")
         for label, dataset in datasets.items():
@@ -62,7 +74,7 @@ def parse_reference(reference: dict) -> list[dict]:
                        "--divisions": _require(conversion, "divisions", "conversion_options"),
                        "--points-per-block": _require(conversion, "points_per_block", "conversion_options"),
                        "--max-decoded-mib": budget}
-            parsed.append({"label": label, "source": Path(source),
+            parsed.append({"label": label, "source": _resolve(source, root),
                            "options": {k: str(v) for k, v in options.items()}})
     else:
         raise ValueError("reference field datasets must be a list or a mapping")
@@ -92,10 +104,13 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    root = args.runner.resolve().parents[3]
+    datasets = parse_reference(json.loads(args.reference.read_text()), root)
+    missing = [str(d["source"]) for d in datasets if not d["source"].is_file()]
+    if missing:  # validate before creating any output so a failure leaves nothing behind
+        raise FileNotFoundError(f"missing source files: {', '.join(missing)}")
     args.output.mkdir(parents=True, exist_ok=False)
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    datasets = parse_reference(json.loads(args.reference.read_text()))
-    root = args.runner.resolve().parents[3]
     sources = [p for folder in ("viewer_format/src", "viewer_convert/src")
                for p in sorted((root / "crates" / folder).glob("*.rs"))]
     sources += [root / "Cargo.toml", root / "Cargo.lock", args.runner, Path(__file__)]
