@@ -312,6 +312,13 @@ fn preflight_inner<R: Read + Seek>(
         }
     }
 
+    // `las` decides by the compression bit of the point format, not by the laszip VLR.
+    if format_byte & 0x80 == 0 {
+        laz_chunk_size = None;
+    } else if laz_chunk_size.is_none() {
+        // `las` fails with "laszip vlr not found" without allocating.
+        return Ok(None);
+    }
     if let Some(chunk_size) = laz_chunk_size {
         let point_size = record_len.max(laz_items_size);
         if chunk_size != LASZIP_VARIABLE_CHUNK {
@@ -518,6 +525,7 @@ mod tests {
     fn laz_file(number_of_chunks: u32, chunk_size: u32, points: u32) -> Vec<u8> {
         let mut bytes = las_header(4, 375);
         bytes[100..104].copy_from_slice(&1u32.to_le_bytes());
+        bytes[104] = 0x80;
         bytes[107..111].copy_from_slice(&points.to_le_bytes());
         let mut vlr = vec![0u8; 54];
         vlr[2..16].copy_from_slice(b"laszip encoded");
@@ -640,6 +648,28 @@ mod tests {
             check(&bytes),
             Err(LasPreflightError::PointDataOverflow { .. })
         ));
+    }
+
+    #[test]
+    fn uncompressed_file_with_stale_laszip_vlr_gets_the_uncompressed_bound() {
+        // `las` decides by the point-format compression bit, not by the VLR.
+        let mut bytes = poc_laz(2, 227, 50_000, 0, 0);
+        bytes[104] = 3;
+        check(&bytes).unwrap();
+        bytes[107..111].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::PointDataExceedsFile { .. })
+        ));
+    }
+
+    #[test]
+    fn compressed_bit_without_laszip_vlr_is_left_to_las() {
+        // `las` fails cleanly with LasZipVlrNotFound; no uncompressed byte bound applies.
+        let mut bytes = poc_laz(2, 227, 50_000, u32::MAX, 0);
+        bytes[100..104].copy_from_slice(&0u32.to_le_bytes());
+        bytes.drain(227..227 + 54 + 46);
+        check(&bytes).unwrap();
     }
 
     #[test]
