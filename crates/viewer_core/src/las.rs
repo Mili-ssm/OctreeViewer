@@ -86,6 +86,16 @@ pub enum LasPreflightError {
         point_size: u64,
         limit: u64,
     },
+    #[error("header point count x point_data_record_length ({points} x {record_len} B) overflows u64")]
+    PointDataOverflow { points: u64, record_len: u64 },
+    #[error(
+        "header point count x point_data_record_length ({points} x {record_len} B) exceeds the {available} B after offset_to_point_data"
+    )]
+    PointDataExceedsFile {
+        points: u64,
+        record_len: u64,
+        available: u64,
+    },
     #[error("LAZ chunk table offset {0} lies outside the file")]
     ChunkTableOutOfBounds(u64),
     #[error("LAZ chunk table declares {chunks} chunks, more than the {limit} the file can hold")]
@@ -233,6 +243,11 @@ fn preflight_inner<R: Read + Seek>(
         points = read_u64_at(reader, 247)?;
     }
 
+    // `las` multiplies these unchecked (panics in debug builds).
+    let point_bytes = points
+        .checked_mul(record_len)
+        .ok_or(LasPreflightError::PointDataOverflow { points, record_len })?;
+
     let mut laz_chunk_size = None;
     let mut laz_items_size = 0u64;
     let mut pos = header_size;
@@ -336,6 +351,16 @@ fn preflight_inner<R: Read + Seek>(
             header_points: points,
         }));
     }
+    // Uncompressed: records are stored verbatim. EVLRs are not subtracted, so a file
+    // `las` can read is never rejected.
+    let available = file_len.saturating_sub(point_data_offset);
+    if point_bytes > available {
+        return Err(LasPreflightError::PointDataExceedsFile {
+            points,
+            record_len,
+            available,
+        });
+    }
     Ok(None)
 }
 
@@ -424,6 +449,30 @@ mod tests {
         let mut bytes = las_header(2, 227);
         bytes[107..111].copy_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&[0u8; 60]);
+        check(&bytes).unwrap();
+    }
+
+    #[test]
+    fn point_data_product_overflow_is_rejected() {
+        let mut bytes = las_header(4, 375);
+        bytes[105..107].copy_from_slice(&u16::MAX.to_le_bytes());
+        bytes[247..255].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::PointDataOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn uncompressed_las_declaring_more_points_than_bytes_is_rejected() {
+        let mut bytes = las_header(2, 227);
+        bytes[107..111].copy_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 60]); // 3 records of 20 B
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::PointDataExceedsFile { .. })
+        ));
+        bytes.extend_from_slice(&[0u8; 20]);
         check(&bytes).unwrap();
     }
 
