@@ -35,6 +35,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Pre3](records/benchmarks/STORAGE_V6_PRE3_BENCH.md), [pre4](records/benchmarks/STORAGE_V6_PRE4_BENCH.md), [SensOFOREST](records/benchmarks/SENSOFOREST_V6_BENCH.md) | Parejas válidas, tiempos, lectura selectiva y RSS. | histórico |
 | [I/O v6](records/benchmarks/STORAGE_V6_IO.md), [CPU](records/benchmarks/STORAGE_V6_CPU.md), [planos de bytes](records/benchmarks/STORAGE_V6_BYTE_PLANES.md) | Pipeline optativo, CRC/diccionarios y localidad (tiling descartado). | histórico |
 | [Diccionarios](records/benchmarks/ATTRIBUTE_DICTIONARY_BENCH.md) | Experimento de diccionarios de atributos. | histórico |
+| [Características nightly](records/benchmarks/nightly-features-2026-10-28.md) | Evaluación de `portable_simd` en CRC32 y planos de bytes (ninguna adoptada). | fechado |
 | [Ocupación cuantizada](records/benchmarks/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos y coste del índice. | histórico |
 | [Selección LOD](records/benchmarks/LOD_FRONTIER_BENCH.md) | Frontera y prioridad incremental. | histórico |
 | [Datos reales](records/benchmarks/REAL_DATASET_BENCH.md) | Protocolo y resultados con un escaneo grande. | histórico |
