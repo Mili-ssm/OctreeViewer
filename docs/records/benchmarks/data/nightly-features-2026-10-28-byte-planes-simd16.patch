@@ -1,0 +1,78 @@
+diff --git a/crates/viewer_format/examples/byte_plane_bench.rs b/crates/viewer_format/examples/byte_plane_bench.rs
+index 0bed23b..780cfb7 100644
+--- a/crates/viewer_format/examples/byte_plane_bench.rs
++++ b/crates/viewer_format/examples/byte_plane_bench.rs
+@@ -1,4 +1,6 @@
+ //! Isolated exact byte-plane locality experiment; no production codec selection changes.
++#![feature(portable_simd)]
++use std::simd::Simd;
+ use std::{hint::black_box, time::Instant};
+ use viewer_format::crc32;
+ 
+@@ -7,6 +9,7 @@ enum Strategy {
+     Column,
+     Row,
+     Tile,
++    Simd16,
+ }
+ 
+ impl Strategy {
+@@ -15,6 +18,7 @@ impl Strategy {
+             Self::Column => "column",
+             Self::Row => "row",
+             Self::Tile => "tile256",
++            Self::Simd16 => "simd16",
+         }
+     }
+ }
+@@ -53,6 +57,27 @@ fn transform<const DECODE: bool>(input: &[u8], width: usize, strategy: Strategy)
+                 }
+             }
+         }
++        Strategy::Simd16 => {
++            let lane = Simd::<usize, 16>::from_array(std::array::from_fn(|i| i * width));
++            for byte in 0..width {
++                let mut row = 0;
++                while row + 16 <= rows {
++                    let index = lane + Simd::splat(byte);
++                    if DECODE {
++                        let v = Simd::<u8, 16>::from_slice(&input[byte * rows + row..]);
++                        v.scatter(&mut output[row * width..], index);
++                    } else {
++                        let v = Simd::<u8, 16>::gather_or_default(&input[row * width..], index);
++                        v.copy_to_slice(&mut output[byte * rows + row..byte * rows + row + 16]);
++                    }
++                    row += 16;
++                }
++                while row < rows {
++                    copy_byte::<DECODE>(input, &mut output, width, rows, row, byte);
++                    row += 1;
++                }
++            }
++        }
+         Strategy::Tile => {
+             for start in (0..rows).step_by(256) {
+                 let end = (start + 256).min(rows);
+@@ -69,10 +94,10 @@ fn transform<const DECODE: bool>(input: &[u8], width: usize, strategy: Strategy)
+ 
+ fn measure<const DECODE: bool>(input: &[u8], width: usize, repetitions: usize) {
+     let expected = transform::<DECODE>(input, width, Strategy::Column);
+-    let strategies = [Strategy::Column, Strategy::Row, Strategy::Tile];
++    let strategies = [Strategy::Column, Strategy::Row, Strategy::Tile, Strategy::Simd16];
+     for repetition in 0..repetitions {
+-        for offset in 0..3 {
+-            let strategy = strategies[(repetition + offset) % 3];
++        for offset in 0..4 {
++            let strategy = strategies[(repetition + offset) % 4];
+             let started = Instant::now();
+             let output = transform::<DECODE>(black_box(input), width, strategy);
+             black_box(&output);
+@@ -136,7 +161,7 @@ mod tests {
+             for width in [1, 3, 6, 8, 16, 257] {
+                 let raw: Vec<_> = (0..rows * width).map(|i| (i ^ (i >> 8)) as u8).collect();
+                 let expected = transform::<false>(&raw, width, Strategy::Column);
+-                for strategy in [Strategy::Column, Strategy::Row, Strategy::Tile] {
++                for strategy in [Strategy::Column, Strategy::Row, Strategy::Tile, Strategy::Simd16] {
+                     let planes = transform::<false>(&raw, width, strategy);
+                     assert_eq!(planes, expected);
+                     assert_eq!(transform::<true>(&planes, width, strategy), raw);
