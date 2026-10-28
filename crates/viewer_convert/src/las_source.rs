@@ -113,6 +113,18 @@ fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result
             }
         }
     }
+    // `laz` asserts that the table decodes at least as many points as the reader requests.
+    let covered = match layout.fixed_chunk_size {
+        None => sum_points,
+        Some(chunk_size) => (table.as_ref().len() as u64).saturating_mul(u64::from(chunk_size)),
+    };
+    if covered < layout.header_points {
+        return Err(reject(
+            "chunk point_count total",
+            covered,
+            layout.header_points,
+        ));
+    }
     Ok(())
 }
 

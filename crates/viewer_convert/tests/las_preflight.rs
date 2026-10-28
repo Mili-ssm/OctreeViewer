@@ -178,3 +178,16 @@ fn variable_chunk_trusting_forged_header_count_is_rejected() {
         ))
     ));
 }
+
+// Found by fuzzing: a table that decodes fewer points than the header declares made the
+// parallel decompressor trip `debug_assert!(num_points >= requested)` in `laz`.
+#[test]
+fn variable_chunk_table_covering_fewer_points_than_declared_is_rejected() {
+    assert_rejected(craft(true, 1, 10, 1), "chunk point_count total");
+}
+
+#[test]
+fn fixed_chunk_table_covering_fewer_points_than_declared_is_rejected() {
+    // 200 declared points, default chunk size 50_000: zero chunks cannot hold them.
+    assert_rejected(craft(false, 0, 10, 0), "chunk point_count total");
+}
