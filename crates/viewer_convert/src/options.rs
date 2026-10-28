@@ -145,3 +145,8 @@ impl Default for ConvertOptions {
         }
     }
 }
+
+/// Applies the same input staging limit to planning, spooling and EPT reads.
+pub(crate) fn input_batch_point_limit(points_per_block: u64, record_length: usize) -> u64 {
+    points_per_block.min((MAX_INPUT_BYTES_PER_BATCH / record_length.max(1)).max(1) as u64)
+}

@@ -23,7 +23,7 @@ use super::{
     ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SpatialPhaseDiagnostics,
     SpatialSpoolDiagnostics,
 };
-use crate::las::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
+use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
 use crate::report::emit_progress;
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
@@ -415,7 +415,7 @@ fn build_spatial_plan_inner(
     source_spool_bytes_written: u64,
 ) -> Result<SpatialPlan, ConvertError> {
     let point_limit =
-        super::input_batch_point_limit(options.points_per_block(), source.record_length);
+        crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
     check_memory_budget(
         estimate_memory(point_limit, 0, 0, options.spatial_divisions())?,
         options.max_memory_budget_bytes(),
@@ -506,7 +506,7 @@ fn build_spatial_plan_inner(
         )),
         Vec::new(),
     )?
-    .with_visual_scale(super::visual_scale_for_bounds(source.bounds)?)?;
+    .with_visual_scale(crate::publish::visual_scale_for_bounds(source.bounds)?)?;
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
@@ -763,7 +763,8 @@ impl SpatialBuilder<'_> {
         let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
         let subdivision = SpatialSubdivision::new(bounds, self.spatial_divisions)
             .expect("converter subdivisions are validated");
-        let point_limit = super::input_batch_point_limit(self.point_limit, source.record_length);
+        let point_limit =
+            crate::options::input_batch_point_limit(self.point_limit, source.record_length);
         let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
         let mut processed = 0_u64;
         while processed < source.point_count {
@@ -1493,7 +1494,7 @@ pub(crate) fn spool_source(
     collect_diagnostics: bool,
 ) -> Result<Option<u64>, ConvertError> {
     let point_limit =
-        super::input_batch_point_limit(options.points_per_block(), source.record_length);
+        crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
     let mut writer = BufWriter::new(File::create(spool_path)?);
     let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
     let mut processed = 0_u64;

@@ -18,14 +18,21 @@ use crate::checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 use crate::diagnostics::DiagnosticTimer;
 use crate::ept;
 use crate::error::ConvertError;
-use crate::options::*;
-use crate::publish::*;
-use crate::report::*;
+use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
+use crate::publish::{
+    OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
+    output_block_ids, publish_output_pair, validate_output_pair, verify_candidate_visual_scale,
+    visual_scale_for_bounds,
+};
+use crate::report::{
+    ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats,
+    aggregate_geometry_codec_diagnostics, emit_progress,
+};
 use crate::spatial::{
     PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
     spool_source,
 };
-use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions, visual_scale_for_bounds};
+use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions};
 
 pub(crate) struct SourceInfo {
     pub(crate) bounds: SpatialBounds,

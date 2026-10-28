@@ -11,15 +11,15 @@ use std::{
     time::Instant,
 };
 
-use viewer_core::{BlockId, DatasetSource};
+use viewer_core::{BlockId, DatasetSource, SpatialBounds};
 use viewer_format::FormatReader;
 
+use crate::ConversionDiagnostics;
 use crate::checkpoint::fingerprint_file;
 use crate::diagnostics::{DiagnosticTimer, ValidationWorkerDiagnostics};
 use crate::error::ConvertError;
 use crate::fs_util;
-use crate::report::{ConversionWorkerStats, emit_progress};
-use crate::{ConversionDiagnostics, ConversionProgress, ConversionStage};
+use crate::report::{ConversionProgress, ConversionStage, ConversionWorkerStats, emit_progress};
 
 pub(crate) static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -423,5 +423,16 @@ pub(crate) fn create_temporary_pair(output_path: &Path) -> Result<TemporaryPair,
     Ok(TemporaryPair {
         geometry: create_temporary_output(output_path)?,
         attributes: create_temporary_output(&output_attributes_path(output_path))?,
+    })
+}
+
+pub(crate) fn visual_scale_for_bounds(bounds: SpatialBounds) -> Result<f64, ConvertError> {
+    viewer_core::las::visual_scale_for_bounds(bounds).ok_or_else(|| {
+        let min = bounds.min();
+        let max = bounds.max();
+        let extent = (0..3)
+            .map(|axis| max[axis] - min[axis])
+            .fold(0.0_f64, f64::max);
+        ConvertError::InvalidVisualScale(viewer_core::las::TARGET_RENDER_EXTENT / extent)
     })
 }

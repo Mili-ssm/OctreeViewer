@@ -20,14 +20,14 @@ use viewer_format::{
 use super::ept_checkpoint::{EptCheckpoint, EptCheckpointStage, EptJournalRecord, EptSourceFile};
 use super::{
     CheckpointMode, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
-    ConvertError, ConvertOptions, input_batch_point_limit,
+    ConvertError, ConvertOptions,
 };
 use crate::diagnostics::DiagnosticTimer;
-use crate::las::{next_descriptor, omitted_dimensions, source_schema};
-use crate::options::MAX_BLOCKS;
+use crate::las_source::{next_descriptor, omitted_dimensions, source_schema};
+use crate::options::{MAX_BLOCKS, input_batch_point_limit};
 use crate::publish::{
     OutputValidation, create_temporary_pair, output_attributes_path, publish_output_pair,
-    publish_validated_output_pair, validate_output_pair,
+    publish_validated_output_pair, validate_output_pair, visual_scale_for_bounds,
 };
 use crate::report::emit_progress;
 
@@ -386,7 +386,7 @@ pub(super) fn convert(
         Some("EPT additive hierarchy; node payloads preserve source points; geometric error is the node-cell diagonal".to_owned()),
         Vec::new(),
     )?
-    .with_visual_scale(crate::visual_scale_for_bounds(bounds)?)?;
+    .with_visual_scale(visual_scale_for_bounds(bounds)?)?;
     source_files.sort_by(|left, right| left.path.cmp(&right.path));
     if source_files
         .windows(2)

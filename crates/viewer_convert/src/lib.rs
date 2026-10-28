@@ -4,10 +4,7 @@
 
 use std::path::Path;
 
-use viewer_core::SpatialBounds;
-
-use las::convert_file_inner;
-use options::MAX_INPUT_BYTES_PER_BATCH;
+use las_source::convert_file_inner;
 
 mod checkpoint;
 mod diagnostics;
@@ -15,7 +12,7 @@ mod ept;
 mod ept_checkpoint;
 mod error;
 mod fs_util;
-mod las;
+mod las_source;
 mod options;
 mod publish;
 mod report;
@@ -29,22 +26,6 @@ pub use diagnostics::{
 pub use error::ConvertError;
 pub use options::ConvertOptions;
 pub use report::{ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats};
-
-/// Applies the same input staging limit to planning, spooling and EPT reads.
-pub(crate) fn input_batch_point_limit(points_per_block: u64, record_length: usize) -> u64 {
-    points_per_block.min((MAX_INPUT_BYTES_PER_BATCH / record_length.max(1)).max(1) as u64)
-}
-
-pub(crate) fn visual_scale_for_bounds(bounds: SpatialBounds) -> Result<f64, ConvertError> {
-    viewer_core::las::visual_scale_for_bounds(bounds).ok_or_else(|| {
-        let min = bounds.min();
-        let max = bounds.max();
-        let extent = (0..3)
-            .map(|axis| max[axis] - min[axis])
-            .fold(0.0_f64, f64::max);
-        ConvertError::InvalidVisualScale(viewer_core::las::TARGET_RENDER_EXTENT / extent)
-    })
-}
 
 /// Converts LAS/LAZ or a local laszip EPT dataset to the native format.
 /// LAS/LAZ output uses replacement hierarchy samples; EPT output preserves its additive hierarchy.
