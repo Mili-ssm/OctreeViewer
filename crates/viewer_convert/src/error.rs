@@ -59,6 +59,15 @@ pub enum ConvertError {
     InvalidHeaderBounds,
     #[error("LAS/LAZ point count requires {0} blocks, exceeding the limit of {MAX_BLOCKS}")]
     TooManyBlocks(u64),
+    #[error(
+        "output would hold up to {ranges} attribute ranges ({nodes} nodes x {attributes} attributes), more than the {limit} the default reader accepts"
+    )]
+    TooManyAttributeRanges {
+        nodes: u64,
+        attributes: u64,
+        ranges: u64,
+        limit: u64,
+    },
     #[error("LAS/LAZ point data ended after {actual} points; header declared {expected}")]
     PointCountMismatch { expected: u64, actual: u64 },
     #[error("unsupported EPT dataset: {0}")]

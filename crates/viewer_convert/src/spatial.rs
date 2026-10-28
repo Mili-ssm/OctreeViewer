@@ -477,6 +477,7 @@ fn build_spatial_plan_inner(
     )?;
 
     let schema = source_schema(&source.point_format);
+    crate::publish::check_reader_attribute_ranges(builder.node_records.len(), schema.len())?;
     let nodes = builder
         .node_records
         .iter()

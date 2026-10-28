@@ -30,6 +30,11 @@ pub struct FormatReaderLimits {
 }
 
 impl FormatReaderLimits {
+    /// Total per-node attribute ranges the default limits accept across the whole index.
+    pub const DEFAULT_MAX_ATTRIBUTE_RANGES: u64 = MAX_ATTRIBUTE_RANGES_DEFAULT;
+
+    /// The attribute-range total stays at [`Self::DEFAULT_MAX_ATTRIBUTE_RANGES`]; change it
+    /// with [`Self::with_max_attribute_ranges`].
     pub fn new(
         max_index_bytes: u64,
         max_block_bytes: u64,

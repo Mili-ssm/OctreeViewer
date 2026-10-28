@@ -354,6 +354,7 @@ pub(super) fn convert(
             })
             .transpose()?;
     }
+    crate::publish::check_reader_attribute_ranges(nodes.len(), schema.len())?;
     let spatial_nodes = nodes
         .iter()
         .map(|node| {
