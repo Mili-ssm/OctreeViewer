@@ -237,7 +237,8 @@ fn preflight_inner<R: Read + Seek>(
     }
     let point_data_offset = u64::from(read_u32_at(reader, 96)?);
     let vlr_count = read_u32_at(reader, 100)?;
-    let format_id = read_array::<1, _>(reader, 104)?[0] & 0x3f;
+    let format_byte = read_array::<1, _>(reader, 104)?[0];
+    let format_id = format_byte & 0x3f;
     let record_len = u64::from(read_u16_at(reader, 105)?);
     let mut points = u64::from(read_u32_at(reader, 107)?);
     if minor >= 4 && points == 0 {
@@ -248,6 +249,10 @@ fn preflight_inner<R: Read + Seek>(
     // `las` multiplies these unchecked (panics in debug builds).
     let point_bytes = points
         .checked_mul(record_len)
+        .ok_or(LasPreflightError::PointDataOverflow { points, record_len })?;
+    // `las` also adds the point data offset (LAS and LAZ alike), panicking in debug builds.
+    point_data_offset
+        .checked_add(point_bytes)
         .ok_or(LasPreflightError::PointDataOverflow { points, record_len })?;
 
     let mut laz_chunk_size = None;
@@ -611,6 +616,29 @@ mod tests {
         assert!(matches!(
             check(&bytes),
             Err(LasPreflightError::ChunkCountExceedsPoints { .. })
+        ));
+    }
+
+    #[test]
+    fn point_data_end_offset_overflow_is_rejected_for_laz() {
+        // Product fits in u64 but `offset_to_point_data + product` does not (las header.rs).
+        let mut bytes = poc_laz(4, 375, 50_000, 0, u64::MAX / 34);
+        bytes[104] = 0x80 | 6;
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::PointDataOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn point_data_end_offset_overflow_is_rejected_for_las() {
+        let mut bytes = las_header(4, 375);
+        bytes[96..100].copy_from_slice(&375u32.to_le_bytes());
+        bytes[105..107].copy_from_slice(&30u16.to_le_bytes());
+        bytes[247..255].copy_from_slice(&(u64::MAX / 30).to_le_bytes());
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::PointDataOverflow { .. })
         ));
     }
 
