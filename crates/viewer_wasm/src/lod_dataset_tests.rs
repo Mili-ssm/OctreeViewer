@@ -1,0 +1,875 @@
+use viewer_core::{
+    BlockId, ColorRgb, DecodedBlockCache, FrustumPlane, HierarchySemantics, LodSelectionConfig,
+    LodTransitionPlanner, NodeId, Point, PointBatch, PointBlock, SpatialBounds, SpatialFrustum,
+    SpatialHierarchy, SpatialNode,
+};
+
+use super::{
+    CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
+    next_lod_stage, prefix_extension_points, priority_precedes, resident_target_plan_is_complete,
+    reusable_build_match,
+};
+use viewer_render_wgpu::{OrbitCamera, RenderScene, build_voxel_scene};
+
+fn scene_for_test(
+    hierarchy: &SpatialHierarchy,
+    ids: &[NodeId],
+    cache: &DecodedBlockCache,
+    origin: [f64; 3],
+) -> RenderScene {
+    build_voxel_scene(hierarchy, ids, cache, origin, 1.0, &|bounds| {
+        bounds_side(bounds) * 8.0
+    })
+    .scene
+}
+
+#[test]
+fn progressive_lod_advances_from_coarse_to_requested_pixel_stages() {
+    let (stage, continue_loading) = next_lod_stage(None, 4.0, false, true);
+    assert_eq!(stage, Some(8.0));
+    assert!(continue_loading);
+
+    let (stage, continue_loading) = next_lod_stage(stage, 4.0, false, true);
+    assert_eq!(stage, Some(4.0));
+    assert!(continue_loading);
+
+    let (stage, continue_loading) = next_lod_stage(stage, 4.0, false, true);
+    assert_eq!(stage, Some(4.0));
+    assert!(!continue_loading);
+}
+
+#[test]
+fn progressive_lod_can_refine_to_half_pixel_target() {
+    let mut stage = None;
+    let mut stages = vec![16.0];
+    loop {
+        let (next, continue_loading) = next_lod_stage(stage, 0.5, false, true);
+        if next == stage {
+            assert!(!continue_loading);
+            break;
+        }
+        stage = next;
+        stages.push(stage.unwrap());
+    }
+
+    assert_eq!(stages, [16.0, 8.0, 4.0, 2.0, 1.0, 0.5]);
+}
+
+#[test]
+fn progressive_lod_waits_for_current_stage_blocks_and_stops_on_read_failure() {
+    assert_eq!(next_lod_stage(None, 4.0, true, true), (None, true));
+    assert_eq!(
+        next_lod_stage(Some(8.0), 4.0, true, true),
+        (Some(8.0), true)
+    );
+    assert_eq!(
+        next_lod_stage(Some(8.0), 4.0, true, false),
+        (Some(8.0), false)
+    );
+    assert_eq!(next_lod_stage(None, 16.0, false, true), (Some(16.0), false));
+}
+
+#[test]
+fn resident_target_requires_complete_multiblock_coverage_and_all_budgets() {
+    fn plan(
+        semantics: HierarchySemantics,
+        budget: u64,
+        resident_blocks: &[u64],
+    ) -> (viewer_core::LodSelection, viewer_core::LodTransitionPlan) {
+        let hierarchy = SpatialHierarchy::new_with_semantics(
+            vec![
+                SpatialNode::new(
+                    NodeId::new(1),
+                    None,
+                    0,
+                    SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                    1,
+                    100.0,
+                    vec![BlockId::new(10)],
+                )
+                .unwrap(),
+                SpatialNode::new(
+                    NodeId::new(2),
+                    Some(NodeId::new(1)),
+                    1,
+                    SpatialBounds::new([0.0; 3], [0.5; 3]).unwrap(),
+                    1,
+                    0.0,
+                    vec![BlockId::new(11)],
+                )
+                .unwrap(),
+                SpatialNode::new(
+                    NodeId::new(3),
+                    Some(NodeId::new(1)),
+                    1,
+                    SpatialBounds::new([0.5, 0.0, 0.0], [1.0, 0.5, 0.5]).unwrap(),
+                    1,
+                    0.0,
+                    vec![BlockId::new(12)],
+                )
+                .unwrap(),
+            ],
+            Vec::new(),
+            None,
+            semantics,
+        )
+        .unwrap();
+        let frustum =
+            SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 10.0).unwrap()]).unwrap();
+        let target = hierarchy
+            .select_lod(
+                &frustum,
+                LodSelectionConfig::new(4.0, budget).unwrap(),
+                |node| if node.level() == 0 { 100.0 } else { 0.0 },
+            )
+            .unwrap();
+        let mut cache = DecodedBlockCache::new(usize::MAX);
+        for id in resident_blocks {
+            cache.insert(if *id == 11 {
+                block_with_points(*id, 2)
+            } else {
+                block(*id)
+            });
+        }
+        let prepared = LodTransitionPlanner::new().prepare(&hierarchy, &target, &cache);
+        (target, prepared)
+    }
+
+    let (target, prepared) = plan(HierarchySemantics::Replacement, u64::MAX, &[11, 12]);
+    assert!(resident_target_plan_is_complete(&target, &prepared));
+    assert_eq!(prepared.block_ids(), [BlockId::new(11), BlockId::new(12)]);
+
+    let (target, prepared) = plan(HierarchySemantics::Replacement, u64::MAX, &[10, 11]);
+    assert!(prepared.uncovered_nodes().is_empty()); // The visible parent still covers the gap.
+    assert_eq!(prepared.pending_blocks(), [BlockId::new(12)]);
+    assert!(!resident_target_plan_is_complete(&target, &prepared));
+
+    let (target, prepared) = plan(HierarchySemantics::Additive, u64::MAX, &[10, 11]);
+    assert_eq!(prepared.pending_blocks(), [BlockId::new(12)]);
+    assert_eq!(prepared.uncovered_nodes(), [NodeId::new(3)]);
+    assert!(!resident_target_plan_is_complete(&target, &prepared));
+
+    let (target, prepared) = plan(HierarchySemantics::Additive, 3, &[10, 11, 12]);
+    assert!(!prepared.budget_omitted_nodes().is_empty());
+    assert!(!resident_target_plan_is_complete(&target, &prepared));
+
+    let (target, prepared) = plan(HierarchySemantics::Replacement, 1, &[10]);
+    assert!(!target.budget_limited().is_empty());
+    assert!(prepared.pending_blocks().is_empty());
+    assert!(!resident_target_plan_is_complete(&target, &prepared));
+}
+
+#[test]
+fn progressive_block_priority_prefers_larger_error_then_lower_block_id() {
+    assert!(priority_precedes(
+        (BlockId::new(2), 8.0),
+        (BlockId::new(1), 4.0)
+    ));
+    assert!(priority_precedes(
+        (BlockId::new(1), 4.0),
+        (BlockId::new(2), 4.0)
+    ));
+    assert!(!priority_precedes(
+        (BlockId::new(2), 4.0),
+        (BlockId::new(1), 4.0)
+    ));
+}
+
+fn dataset(cache_bytes: usize) -> LodDataset {
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        Some(1),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    LodDataset::new([0.0; 3], hierarchy, cache_bytes).unwrap()
+}
+
+fn block(id: u64) -> PointBlock {
+    block_with_points(id, 1)
+}
+
+fn block_with_points(id: u64, count: usize) -> PointBlock {
+    PointBlock::new(
+        BlockId::new(id),
+        PointBatch::new(
+            (0..count)
+                .map(|_| Point::new([0.5; 3], ColorRgb::new(1, 2, 3)))
+                .collect(),
+        ),
+        Vec::new(),
+    )
+}
+
+fn build_context(
+    plane_offset: f64,
+    viewport: [u32; 2],
+    stage_voxel_pixels: f64,
+) -> SuccessfulBuildContext {
+    let mut camera = OrbitCamera::default();
+    camera.set_pose([plane_offset, -5.0, 2.0], [0.0; 3]);
+    SuccessfulBuildContext {
+        camera,
+        viewport,
+        stage_voxel_pixels,
+    }
+}
+
+#[test]
+fn reusable_build_match_requires_same_cut_and_every_build_input() {
+    let nodes = [NodeId::new(1), NodeId::new(2)];
+    let blocks = [BlockId::new(10), BlockId::new(11)];
+    let baseline = build_context(1.0, [800, 600], 4.0);
+
+    assert_eq!(
+        reusable_build_match(
+            Some(&nodes),
+            Some(&blocks),
+            &nodes,
+            &blocks,
+            Some(&baseline),
+            &baseline
+        ),
+        (true, true)
+    );
+    assert_eq!(
+        reusable_build_match(
+            Some(&nodes),
+            Some(&blocks),
+            &[NodeId::new(1)],
+            &blocks,
+            Some(&baseline),
+            &baseline
+        ),
+        (false, false)
+    );
+    for changed in [
+        build_context(2.0, [800, 600], 4.0),
+        build_context(1.0, [1024, 600], 4.0),
+        build_context(1.0, [800, 600], 8.0),
+    ] {
+        assert_eq!(
+            reusable_build_match(
+                Some(&nodes),
+                Some(&blocks),
+                &nodes,
+                &blocks,
+                Some(&baseline),
+                &changed
+            ),
+            (true, false)
+        );
+    }
+}
+
+#[test]
+fn prefix_measurement_preserves_traversal_order_and_context_invalidation() {
+    let make = |id, parent: Option<u64>, level, ids: Vec<u64>| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+            ids.len() as u64,
+            0.0,
+            ids.into_iter().map(BlockId::new).collect(),
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            make(1, None, 0, vec![13]),
+            make(2, Some(1), 1, vec![11, 10]),
+            make(3, Some(1), 1, vec![12]),
+            make(4, Some(1), 1, vec![10]),
+        ],
+        vec![],
+        None,
+        HierarchySemantics::Additive,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    for id in 10..=13 {
+        assert!(cache.insert(block(id)).cached());
+    }
+    let baseline = build_context(1.0, [800, 600], 4.0);
+    let measure = |old: &[u64], new: &[u64], context: Option<&SuccessfulBuildContext>| {
+        prefix_extension_points(
+            &hierarchy,
+            &cache,
+            Some(&old.iter().copied().map(NodeId::new).collect::<Vec<_>>()),
+            &new.iter().copied().map(NodeId::new).collect::<Vec<_>>(),
+            context,
+            &baseline,
+        )
+    };
+    assert_eq!(measure(&[2], &[2, 3], Some(&baseline)), Some((2, 1)));
+    // Shared references count exactly as the builder visits them.
+    assert_eq!(measure(&[2], &[2, 4], Some(&baseline)), Some((2, 1)));
+    for (old, new) in [
+        (&[2][..], &[2][..]),
+        (&[2, 3], &[2]),
+        (&[1], &[2, 3]),
+        (&[2, 3], &[3, 2]),
+        (&[4], &[2]),
+        (&[], &[2]),
+    ] {
+        assert_eq!(measure(old, new, Some(&baseline)), None);
+    }
+    // Absent context also models payload/attribute invalidation.
+    assert_eq!(measure(&[2], &[2, 3], None), None);
+    for changed in [
+        build_context(2.0, [800, 600], 4.0),
+        build_context(1.0, [1024, 600], 4.0),
+        build_context(1.0, [800, 600], 8.0),
+    ] {
+        assert_eq!(measure(&[2], &[2, 3], Some(&changed)), None);
+    }
+}
+
+#[test]
+fn accepts_only_referenced_blocks_and_accounts_decoded_memory() {
+    let payload_bytes = block(10).estimated_memory_bytes();
+    let mut dataset = dataset(payload_bytes);
+    assert!(matches!(
+        dataset.insert_block(block(11)),
+        Err(LodDatasetError::UnknownBlock(id)) if id == BlockId::new(11)
+    ));
+    let accounted_bytes = dataset.insert_block(block(10)).unwrap();
+    assert_eq!(accounted_bytes, payload_bytes);
+    assert_eq!(dataset.cache_stats().insertions, 1);
+    assert_eq!(dataset.cache_bytes(), payload_bytes);
+    assert!(matches!(
+        dataset.insert_block(block_with_points(10, 2)),
+        Err(LodDatasetError::CacheRejected(_))
+    ));
+    assert_eq!(dataset.cache_stats().rejected_oversize, 1);
+    assert_eq!(dataset.cache_stats().insertions, 1);
+}
+
+#[test]
+fn replacing_visible_payload_invalidates_build_context_only_after_success() {
+    let mut dataset = dataset(block(10).estimated_memory_bytes());
+    dataset.insert_block(block(10)).unwrap();
+    let frustum = viewer_core::SpatialFrustum::new(vec![
+        viewer_core::FrustumPlane::new([1.0, 0.0, 0.0], 1.0).unwrap(),
+    ])
+    .unwrap();
+    let target = dataset
+        .metadata
+        .hierarchy()
+        .select_lod(
+            &frustum,
+            viewer_core::LodSelectionConfig::new(4.0, u64::MAX).unwrap(),
+            |_| 0.0,
+        )
+        .unwrap();
+    dataset.visible_plan = Some(dataset.planner.prepare(
+        dataset.metadata.hierarchy(),
+        &target,
+        &dataset.cache,
+    ));
+    dataset.last_successful_build = Some(build_context(1.0, [800, 600], 4.0));
+    assert!(dataset.insert_block(block_with_points(10, 2)).is_err());
+    assert!(dataset.last_successful_build.is_some());
+    dataset.cache_cycle = Some(CacheCycleDetector::new(&dataset.cache, 4.0, 4.0));
+    dataset.insert_block(block(10)).unwrap();
+    assert!(dataset.cache_cycle.is_none());
+    assert!(dataset.last_successful_build.is_none());
+}
+
+#[test]
+fn cache_cycles_compare_order_sizes_and_protection_without_activity_counters() {
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(block(10));
+    cache.insert(block(11));
+    let mut detector = CacheCycleDetector::new(&cache, 4.0, 4.0);
+    // A different LRU order must not match, despite identical membership.
+    cache.get(BlockId::new(10));
+    assert!(!detector.observe(&cache));
+    cache.set_protected_blocks([BlockId::new(10)]);
+    assert!(!detector.observe(&cache));
+    cache.set_protected_blocks([]);
+    cache.insert(block_with_points(10, 2));
+    assert!(!detector.observe(&cache));
+    // Resident state can recur even though hit/insertion counters have advanced.
+    let mut detector = CacheCycleDetector::new(&cache, 4.0, 4.0);
+    cache.get(BlockId::new(11));
+    cache.get(BlockId::new(10));
+    assert!(detector.observe(&cache));
+    assert!(detector.paused);
+}
+
+#[test]
+fn cache_cycle_detection_handles_longer_cycles_and_finite_progress() {
+    let mut cache = DecodedBlockCache::new(block(10).estimated_memory_bytes());
+    cache.insert(block(10));
+    let mut detector = CacheCycleDetector::new(&cache, 4.0, 4.0);
+    // A long sequence of new states is progress, regardless of checkpoint intervals.
+    for id in 11..30 {
+        cache.insert(block(id));
+        assert!(!detector.observe(&cache));
+    }
+    // A cycle longer than two is detected without retaining its full history.
+    let mut detected = false;
+    for id in [40, 41, 42, 43].into_iter().cycle().take(32) {
+        cache.insert(block(id));
+        if detector.observe(&cache) {
+            detected = true;
+            break;
+        }
+    }
+    assert!(detected);
+    assert_eq!(detector.checkpoint.len(), 1);
+}
+
+#[test]
+#[ignore = "release microbenchmark; run with --release --ignored --nocapture"]
+fn cache_cycle_detector_microbenchmark() {
+    use std::{hint::black_box, time::Instant};
+
+    const ENTRIES: u64 = 500;
+    const ITERATIONS: u64 = 100_000;
+    const ROUNDS: usize = 5;
+
+    fn populated_cache() -> DecodedBlockCache {
+        let mut cache = DecodedBlockCache::new(usize::MAX);
+        for id in 1..=ENTRIES {
+            cache.insert(block(id));
+        }
+        cache
+    }
+
+    let init_cache = populated_cache();
+    let init_started = Instant::now();
+    for _ in 0..ITERATIONS / 10 {
+        black_box(CacheCycleDetector::new(&init_cache, 4.0, 4.0));
+    }
+    let init_ns = init_started.elapsed().as_nanos() / u128::from(ITERATIONS / 10);
+
+    let mut match_ns = Vec::with_capacity(ROUNDS);
+    let mut mismatch_ns = Vec::with_capacity(ROUNDS);
+    for _ in 0..ROUNDS {
+        let matching_cache = populated_cache();
+        let mut matching_detector = CacheCycleDetector::new(&matching_cache, 4.0, 4.0);
+        matching_detector.power = u64::MAX;
+        let match_started = Instant::now();
+        for _ in 0..ITERATIONS {
+            black_box(matching_detector.observe(&matching_cache));
+        }
+        match_ns.push(match_started.elapsed().as_nanos() / u128::from(ITERATIONS));
+
+        let mut changed_cache = populated_cache();
+        let mut changed_detector = CacheCycleDetector::new(&changed_cache, 4.0, 4.0);
+        changed_detector.power = u64::MAX;
+        // Protecting the MRU entry makes the only state difference occur at the final item.
+        changed_cache.set_protected_blocks([BlockId::new(ENTRIES)]);
+        let mismatch_started = Instant::now();
+        for _ in 0..ITERATIONS {
+            black_box(changed_detector.observe(&changed_cache));
+        }
+        mismatch_ns.push(mismatch_started.elapsed().as_nanos() / u128::from(ITERATIONS));
+    }
+    match_ns.sort_unstable();
+    mismatch_ns.sort_unstable();
+    eprintln!(
+        "entries={ENTRIES}, detector_init_ns={init_ns}, matching_check_ns=[{}, {}, {}], full_scan_mismatch_ns=[{}, {}, {}]",
+        match_ns[0],
+        match_ns[ROUNDS / 2],
+        match_ns[ROUNDS - 1],
+        mismatch_ns[0],
+        mismatch_ns[ROUNDS / 2],
+        mismatch_ns[ROUNDS - 1],
+    );
+}
+
+#[test]
+fn reports_cache_budget_for_bounding_external_block_imports() {
+    let dataset = dataset(4096);
+    assert_eq!(dataset.block_cache_budget_bytes(), 4096);
+}
+
+#[test]
+fn reports_the_deepest_level_in_the_visible_cut() {
+    let dataset = dataset(4096);
+    assert_eq!(
+        super::max_visible_level(dataset.metadata.hierarchy(), &[NodeId::new(1)]),
+        Some(0)
+    );
+    assert_eq!(
+        super::max_visible_level(dataset.metadata.hierarchy(), &[]),
+        None
+    );
+}
+
+#[test]
+fn replacement_voxels_use_integer_cells_and_deduplicate_source_points() {
+    let hierarchy = dataset(4096).metadata.hierarchy().clone();
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(PointBlock::new(
+        BlockId::new(10),
+        PointBatch::new(vec![
+            Point::new([0.13, 0.2, 0.2], ColorRgb::new(100, 0, 0)),
+            Point::new([0.20, 0.2, 0.2], ColorRgb::new(0, 100, 0)),
+            Point::new([0.25, 0.2, 0.2], ColorRgb::new(0, 0, 100)),
+        ]),
+        Vec::new(),
+    ));
+
+    let scene = scene_for_test(&hierarchy, &[NodeId::new(1)], &cache, [0.0; 3]);
+    let instances = scene.instances();
+    assert_eq!(instances.len(), 2);
+    assert!(
+        instances
+            .iter()
+            .all(|instance| instance.size < 0.125 && instance.size > 0.124)
+    );
+    let mut centers: Vec<_> = instances
+        .iter()
+        .map(|instance| instance.center[0])
+        .collect();
+    centers.sort_by(f32::total_cmp);
+    assert_eq!(centers, [0.1875, 0.3125]);
+    let half_size = f32::from_bits(instances[0].size.to_bits()) / 2.0;
+    assert!(centers[0] + half_size <= centers[1] - half_size);
+}
+
+#[test]
+fn voxel_scene_converts_world_bounds_back_to_dataset_local_positions() {
+    let origin = [100.0, 200.0, 300.0];
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new(origin, [101.0, 201.0, 301.0]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        Some(1),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(PointBlock::new(
+        BlockId::new(10),
+        PointBatch::new(vec![Point::new([0.5; 3], ColorRgb::new(20, 30, 40))]),
+        Vec::new(),
+    ));
+
+    let scene = scene_for_test(&hierarchy, &[NodeId::new(1)], &cache, origin);
+
+    assert_eq!(scene.instance_count(), 1);
+    assert_eq!(scene.instances()[0].center, [0.5625; 3]);
+    assert!(scene.instances()[0].center.iter().all(|value| *value < 1.0));
+}
+
+#[test]
+fn additive_ancestors_and_descendants_share_one_integer_grid() {
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+            SpatialNode::new(
+                NodeId::new(2),
+                Some(NodeId::new(1)),
+                1,
+                SpatialBounds::new([0.0; 3], [0.5; 3]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(11)],
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        Some(2),
+        HierarchySemantics::Additive,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    for id in [10, 11] {
+        cache.insert(PointBlock::new(
+            BlockId::new(id),
+            PointBatch::new(vec![Point::new([0.2; 3], ColorRgb::new(20, 30, 40))]),
+            Vec::new(),
+        ));
+    }
+
+    let scene = scene_for_test(
+        &hierarchy,
+        &[NodeId::new(1), NodeId::new(2)],
+        &cache,
+        [0.0; 3],
+    );
+    assert_eq!(scene.instance_count(), 1);
+    assert!(scene.instances()[0].size < 0.125);
+}
+#[test]
+fn replacement_parent_keeps_cell_extent_until_children_are_available() {
+    let make = |id, parent: Option<u64>, level, side, block| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new([0.0; 3], [side; 3]).unwrap(),
+            1,
+            0.0,
+            vec![BlockId::new(block)],
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![make(1, None, 0, 8.0, 10), make(2, Some(1), 1, 4.0, 11)],
+        vec![],
+        None,
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(PointBlock::new(
+        BlockId::new(10),
+        PointBatch::new(vec![Point::new([0.5; 3], ColorRgb::new(1, 2, 3))]),
+        vec![],
+    ));
+    let project = |bounds| bounds_side(bounds) * 32.0;
+    for target in [16.0, 4.0, 1.0] {
+        let parent = build_voxel_scene(
+            &hierarchy,
+            &[NodeId::new(1)],
+            &cache,
+            [0.0; 3],
+            target,
+            &project,
+        );
+        assert!((parent.scene.instances()[0].size - 1.0).abs() < 1e-5);
+    }
+    cache.insert(PointBlock::new(
+        BlockId::new(11),
+        PointBatch::new(vec![
+            Point::new([0.25; 3], ColorRgb::new(1, 2, 3)),
+            Point::new([0.75; 3], ColorRgb::new(1, 2, 3)),
+        ]),
+        vec![],
+    ));
+    let children = build_voxel_scene(
+        &hierarchy,
+        &[NodeId::new(2)],
+        &cache,
+        [0.0; 3],
+        16.0,
+        &project,
+    );
+    assert_eq!(children.scene.instance_count(), 2);
+    assert!(
+        children
+            .scene
+            .instances()
+            .iter()
+            .all(|cell| (cell.size - 0.5).abs() < 1e-5)
+    );
+}
+
+#[test]
+fn source_leaf_depth_does_not_determine_voxel_size_or_limit_granularity() {
+    let make = |id, parent: Option<u64>, level, min, max, blocks: Vec<u64>| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new(min, max).unwrap(),
+            if blocks.is_empty() { 0 } else { 1 },
+            0.0,
+            blocks.into_iter().map(BlockId::new).collect(),
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            make(1, None, 0, [0.0; 3], [2.0; 3], vec![]),
+            make(2, Some(1), 1, [0.0; 3], [1.0; 3], vec![10]),
+            make(3, Some(1), 1, [1.0, 0.0, 0.0], [2.0, 1.0, 1.0], vec![]),
+            make(4, Some(3), 2, [1.0, 0.0, 0.0], [1.5, 0.5, 0.5], vec![11]),
+        ],
+        vec![],
+        Some(2),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    for (id, point) in [(10, [0.2, 0.2, 0.5]), (11, [1.2, 0.2, 0.5])] {
+        cache.insert(PointBlock::new(
+            BlockId::new(id),
+            PointBatch::new(vec![Point::new(point, ColorRgb::new(1, 2, 3))]),
+            vec![],
+        ));
+    }
+    let result = build_voxel_scene(
+        &hierarchy,
+        &[NodeId::new(2), NodeId::new(4)],
+        &cache,
+        [0.0; 3],
+        1.0,
+        &|bounds| bounds_side(bounds) * 32.0,
+    );
+    assert_eq!(result.scene.instance_count(), 2);
+    assert_eq!(
+        result.scene.instances()[0].size,
+        result.scene.instances()[1].size
+    );
+    assert!(result.scene.instances()[0].size < 1.0 / 32.0);
+    assert_eq!(result.oversized_voxels, 0);
+    assert!((result.max_edge_pixels - 1.0).abs() < 1e-10);
+}
+
+#[test]
+fn adaptive_cells_obey_pixel_target_grow_with_distance_and_never_overlap() {
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [2.0; 3]).unwrap(),
+                256,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+        ],
+        vec![],
+        Some(256),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let points = (0..16)
+        .flat_map(|x| {
+            (0..16).map(move |z| {
+                Point::new(
+                    [x as f32 / 8.0, 0.25, z as f32 / 8.0],
+                    ColorRgb::new(10, 20, 30),
+                )
+            })
+        })
+        .collect();
+    let mut cache = DecodedBlockCache::new(65536);
+    cache.insert(PointBlock::new(
+        BlockId::new(10),
+        PointBatch::new(points),
+        vec![],
+    ));
+    let project = |bounds: SpatialBounds| bounds_side(bounds) * 16.0 / (1.0 + bounds.min()[2]);
+    for target in [1.0, 2.0, 4.0, 16.0] {
+        let result = build_voxel_scene(
+            &hierarchy,
+            &[NodeId::new(1)],
+            &cache,
+            [0.0; 3],
+            target,
+            &project,
+        );
+        assert_eq!(result.oversized_voxels, 0);
+        assert!(result.max_edge_pixels <= target + 1e-10);
+        assert!(result.min_edge_pixels >= target / 2.0 - 1e-10);
+        let instances = result.scene.instances();
+        let near = instances
+            .iter()
+            .filter(|v| v.center[2] < 0.25)
+            .map(|v| v.size)
+            .fold(f32::INFINITY, f32::min);
+        let far = instances
+            .iter()
+            .filter(|v| v.center[2] > 1.5)
+            .map(|v| v.size)
+            .fold(0.0_f32, f32::max);
+        if target <= 4.0 {
+            assert!(far > near);
+        }
+        for (i, a) in instances.iter().enumerate() {
+            for b in &instances[i + 1..] {
+                let overlap = (0..3).all(|axis| {
+                    (f64::from(a.center[axis]) - f64::from(b.center[axis])).abs()
+                        < (f64::from(a.size) + f64::from(b.size)) * 0.5 - 1e-8
+                });
+                assert!(!overlap, "adaptive cells must not overlap");
+            }
+        }
+    }
+}
+
+#[test]
+fn fine_local_cells_survive_a_large_geographic_origin() {
+    let origin = [1.0e12; 3];
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new(origin, origin.map(|value| value + 1.0)).unwrap(),
+                2,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+        ],
+        vec![],
+        Some(2),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut cache = DecodedBlockCache::new(4096);
+    cache.insert(PointBlock::new(
+        BlockId::new(10),
+        PointBatch::new(vec![
+            Point::new([0.5; 3], ColorRgb::new(1, 2, 3)),
+            Point::new([0.500002, 0.5, 0.5], ColorRgb::new(1, 2, 3)),
+        ]),
+        vec![],
+    ));
+    let result = build_voxel_scene(
+        &hierarchy,
+        &[NodeId::new(1)],
+        &cache,
+        origin,
+        1.0,
+        &|bounds| bounds_side(bounds) * 1_048_576.0,
+    );
+    assert_eq!(result.scene.instance_count(), 2);
+    assert_eq!(result.oversized_voxels, 0);
+    assert_ne!(
+        result.scene.instances()[0].center,
+        result.scene.instances()[1].center
+    );
+    assert!(
+        result
+            .scene
+            .instances()
+            .iter()
+            .all(|cell| cell.size < 1.0e-6)
+    );
+}
