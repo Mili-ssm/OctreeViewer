@@ -2,6 +2,7 @@
 name = "viewer_convert"
 version.workspace = true
 edition.workspace = true
+readme = "README.md"
 
 [[bin]]
 name = "viewer_convert"

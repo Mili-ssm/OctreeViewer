@@ -45,7 +45,7 @@ primaria de [superficie wgpu](https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfa
 | unittest Python del host / benchmarks del conversor | 11 / 23 tests pasan. |
 | `cargo fmt --all -- --check`, `git diff --check` | Pasan. |
 
-Comandos adicionales al [README](../../README.md#desarrollo):
+Comandos adicionales al [README](../../CONTRIBUTING.md#checks):
 
 ```sh
 WGPU_BACKEND=vulkan VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \

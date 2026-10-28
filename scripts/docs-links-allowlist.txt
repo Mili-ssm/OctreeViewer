@@ -1,4 +1,1 @@
-# Known broken links awaiting a docs fix (Task 13 empties this file).
-README.md|docs/records/benchmarks/format-v7-evidence.md#evidencia-del-septimo-incremento
-# bindings.rs became the bindings/ directory.
-docs/reference/inventory.md|../../crates/viewer_wasm/src/bindings.rs
+# Known broken links awaiting a docs fix (empty: none pending).

@@ -2,6 +2,7 @@
 name = "viewer_render_wgpu"
 version.workspace = true
 edition.workspace = true
+readme = "README.md"
 
 [dependencies]
 bytemuck.workspace = true
