@@ -58,6 +58,12 @@ class LinkCheckerTests(unittest.TestCase):
         errs = self.check({"a.md": "[x](#max_index)\n## `max_index`\n"})
         self.assertEqual(errs, [])
 
+    def test_in_word_underscore_kept_next_to_non_ascii_letters(self):
+        self.assertEqual(c.slugify("é_x"), "é_x")
+        self.assertEqual(c.slugify("_énfasis_ x"), "énfasis-x")
+        errs = self.check({"a.md": "[x](#é_x)\n## é_x\n"})
+        self.assertEqual(errs, [])
+
     def test_trailing_hash_handling(self):
         errs = self.check({"a.md": "[x](#c) [y](#d)\n# C#\n# D #\n"})
         self.assertEqual(errs, [])

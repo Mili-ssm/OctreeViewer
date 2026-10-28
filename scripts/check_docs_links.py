@@ -25,7 +25,8 @@ def slugify(text):
     text = re.sub(r"<[^>]*>", "", text)
     text = text.replace("`", "").replace("*", "")
     # Emphasis underscores sit at word boundaries; in-word ones stay.
-    text = re.sub(r"(?<![0-9A-Za-z])_+|_+(?![0-9A-Za-z])", "", text)
+    # `[^\W_]` is any Unicode letter or digit.
+    text = re.sub(r"(?<![^\W_])_+|_+(?![^\W_])", "", text)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = text.strip().lower()
     out = []
