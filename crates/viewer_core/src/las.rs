@@ -8,6 +8,11 @@ use crate::{AttributeDataType, AttributeDescriptor, SpatialBounds};
 pub const TARGET_RENDER_EXTENT: f64 = 100.0;
 
 /// Attribute schema stored for LAS sources, in on-disk column order.
+///
+/// Order is a contract: the seven base descriptors come first, then `gps_time`, `rgb` and
+/// `nir` when enabled. Callers pair descriptors with per-point values positionally (see the
+/// `debug_assert`s in `viewer_convert`'s `las_source.rs`), so the flags must match the values
+/// they push.
 pub fn las_attribute_schema(
     has_gps_time: bool,
     has_color: bool,
@@ -38,22 +43,30 @@ pub fn las_attribute_schema(
     schema
 }
 
-/// Visual scale for `bounds`; `None` when it is not representable as a finite
-/// non-zero `f32`.
+/// Visual scale for `bounds`: [`TARGET_RENDER_EXTENT`] divided by the longest axis extent.
+///
+/// Zero extent (a single point or empty bounds) yields `Some(1.0)`. Returns `None` when the
+/// scale is not representable as a finite non-zero `f32`; use [`checked_visual_scale`] to also
+/// get the rejected raw value.
 pub fn visual_scale_for_bounds(bounds: SpatialBounds) -> Option<f64> {
+    checked_visual_scale(bounds).ok()
+}
+
+/// Like [`visual_scale_for_bounds`], but `Err` carries the raw, unrepresentable scale.
+pub fn checked_visual_scale(bounds: SpatialBounds) -> Result<f64, f64> {
     let min = bounds.min();
     let max = bounds.max();
     let extent = (0..3)
         .map(|axis| max[axis] - min[axis])
         .fold(0.0_f64, f64::max);
     if extent == 0.0 {
-        return Some(1.0);
+        return Ok(1.0);
     }
     let scale = TARGET_RENDER_EXTENT / extent;
     if !scale.is_finite() || scale <= 0.0 || !(scale as f32).is_finite() || (scale as f32) == 0.0 {
-        return None;
+        return Err(scale);
     }
-    Some(scale)
+    Ok(scale)
 }
 
 /// Rejection reasons from [`preflight_las`]; each names the offending header field.
@@ -633,5 +646,49 @@ mod tests {
             pos: 0,
         };
         preflight_las(&mut file, len).unwrap();
+    }
+
+    #[test]
+    fn evlr_walk_is_skipped_when_start_of_first_evlr_is_zero() {
+        // Bytes 24..28 of the header read as a huge EVLR length if the walk ran from offset 0.
+        let mut bytes = las_header(4, 375);
+        bytes[243..247].copy_from_slice(&1u32.to_le_bytes());
+        check(&bytes).unwrap();
+        // Same count with a real start offset past the end is still rejected.
+        let past_end = bytes.len() as u64 + 1;
+        bytes[235..243].copy_from_slice(&past_end.to_le_bytes());
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::EvlrOutOfBounds)
+        ));
+    }
+
+    /// `poc_laz` with an empty chunk table, so only the header point count is observable.
+    fn header_points(minor: u8, legacy: u32, wide: u64) -> u64 {
+        let mut bytes = poc_laz(
+            minor,
+            if minor >= 4 { 375 } else { 227 },
+            50_000,
+            legacy,
+            wide,
+        );
+        let layout = preflight_las_layout(&mut Cursor::new(&bytes), bytes.len() as u64);
+        // The crafted table claims `u32::MAX` chunks; zero them to reach the layout.
+        assert!(layout.is_err());
+        let point_data = u32::from_le_bytes(bytes[96..100].try_into().unwrap()) as usize;
+        let chunks_at = point_data + 8 + 16 + 4;
+        bytes[chunks_at..chunks_at + 4].copy_from_slice(&0u32.to_le_bytes());
+        preflight_las_layout(&mut Cursor::new(&bytes), bytes.len() as u64)
+            .unwrap()
+            .unwrap()
+            .header_points
+    }
+
+    #[test]
+    fn las_1_4_legacy_point_count_wins_over_wide_count_when_non_zero() {
+        assert_eq!(header_points(4, 100, 1 << 58), 100);
+        assert_eq!(header_points(4, 0, 1 << 40), 1 << 40);
+        // Before 1.4 the wide field does not exist and is ignored.
+        assert_eq!(header_points(2, 100, 0), 100);
     }
 }
