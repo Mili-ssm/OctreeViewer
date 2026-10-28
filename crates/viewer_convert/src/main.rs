@@ -12,6 +12,7 @@ use viewer_convert::{
     CheckpointMode, ConversionStage, ConvertOptions, convert_file_with_checkpoint,
     convert_file_with_progress,
 };
+use viewer_format::FormatVersion;
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -163,10 +164,20 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
 }
 
 fn print_help() {
+    let versions = FormatVersion::WRITABLE
+        .map(|version| version.to_string())
+        .join("|");
+    let checkpoint_versions = FormatVersion::WRITABLE
+        .into_iter()
+        .filter(|version| version.supports_block_checkpoint())
+        .map(|version| version.to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: v7.1-pre/v7.2-pre/v7.3-pre only)]\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
          Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
-         Defaults: format v5, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
+         Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\

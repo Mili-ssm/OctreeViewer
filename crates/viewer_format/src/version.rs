@@ -33,6 +33,27 @@ impl FormatVersion {
     pub const V7_PRE2: Self = Self::V7Pre(NonZeroU32::new(2).expect("nonzero revision"));
     pub const V7_PRE3: Self = Self::V7Pre(NonZeroU32::new(3).expect("nonzero revision"));
 
+    /// Revision written when the caller does not choose one.
+    pub const DEFAULT_OUTPUT: Self = Self::V5;
+
+    /// Every revision the writer implements, in user-facing listing order.
+    pub const WRITABLE: [Self; 8] = [
+        Self::V7_PRE1,
+        Self::V7_PRE2,
+        Self::V7_PRE3,
+        Self::V5,
+        Self::V6_PRE1,
+        Self::V6_PRE2,
+        Self::V6_PRE3,
+        Self::V6_PRE4,
+    ];
+
+    /// Whether block-level EPT checkpoint/resume can target this revision.
+    pub fn supports_block_checkpoint(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::supports_block_checkpoint)
+    }
+
     /// Reject unimplemented output formats before touching any output stream.
     pub fn ensure_writable(self) -> Result<(), FormatError> {
         crate::layout::StorageLayout::from_version(self).map(|_| ())
@@ -195,6 +216,47 @@ mod tests {
         let checksum = crc32(&bytes[..20]);
         bytes[20..24].copy_from_slice(&checksum.to_le_bytes());
         bytes
+    }
+
+    #[test]
+    fn writable_versions_are_exactly_the_implemented_layouts() {
+        for version in FormatVersion::WRITABLE {
+            assert!(version.ensure_writable().is_ok(), "{version}");
+        }
+        for version in [
+            FormatVersion::V6,
+            FormatVersion::V7,
+            FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
+            FormatVersion::V7Pre(NonZeroU32::new(4).unwrap()),
+        ] {
+            assert!(version.ensure_writable().is_err(), "{version}");
+        }
+        assert!(FormatVersion::DEFAULT_OUTPUT.ensure_writable().is_ok());
+        let names: Vec<String> = FormatVersion::WRITABLE
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            names.join("|"),
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre"
+        );
+    }
+
+    #[test]
+    fn block_checkpoint_is_supported_only_by_v7_pre1_to_3() {
+        let supported: Vec<FormatVersion> = FormatVersion::WRITABLE
+            .into_iter()
+            .filter(|version| version.supports_block_checkpoint())
+            .collect();
+        assert_eq!(
+            supported,
+            [
+                FormatVersion::V7_PRE1,
+                FormatVersion::V7_PRE2,
+                FormatVersion::V7_PRE3
+            ]
+        );
+        assert!(!FormatVersion::V7.supports_block_checkpoint());
     }
 
     #[test]

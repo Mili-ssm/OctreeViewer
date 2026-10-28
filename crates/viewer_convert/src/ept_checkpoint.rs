@@ -145,13 +145,17 @@ impl EptCheckpoint {
         mode: CheckpointMode,
         options: ConvertOptions,
     ) -> Result<Self, CheckpointError> {
-        if !matches!(
-            options.format_version(),
-            FormatVersion::V7_PRE1 | FormatVersion::V7_PRE2 | FormatVersion::V7_PRE3
-        ) {
-            return Err(CheckpointError::Invalid(
-                "EPT recovery supports only v7.1-pre, v7.2-pre, and v7.3-pre".into(),
-            ));
+        if !options.format_version().supports_block_checkpoint() {
+            let supported: Vec<String> = FormatVersion::WRITABLE
+                .into_iter()
+                .filter(|version| version.supports_block_checkpoint())
+                .map(|version| version.to_string())
+                .collect();
+            let (last, rest) = supported.split_last().expect("checkpoint revisions exist");
+            return Err(CheckpointError::Invalid(format!(
+                "EPT recovery supports only {}, and {last}",
+                rest.join(", ")
+            )));
         }
         let root = checkpoint_path(output_path);
         match mode {

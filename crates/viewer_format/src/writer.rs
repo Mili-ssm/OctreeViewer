@@ -1128,7 +1128,7 @@ fn prepare_point_block_for_version_impl(
     if layout.supports_occupancy() && point_count != 0 && u32::try_from(point_count).is_ok() {
         let max_geometry_bytes =
             options.max_uncompressed_block_bytes - (uncompressed_size - geometry_length as u64);
-        if matches!(layout, StorageLayout::V7Pre2 | StorageLayout::V7Pre3) {
+        if layout.restricts_occupancy_to_compact24() {
             let build_started = collect_codec_diagnostics.then(std::time::Instant::now);
             let candidate = crate::QuantizedOccupancy::new(&quantized, 24)
                 .map_err(|_| FormatError::BlockSizeOverflow)?;
@@ -1475,7 +1475,7 @@ fn append_payload(
     layout: StorageLayout,
     width: usize,
 ) -> Result<(), FormatError> {
-    let encoded = if layout == StorageLayout::V7Pre3 {
+    let encoded = if layout.restricts_dictionary_tuples() {
         crate::attribute_codec::encode_v7_pre3(raw, width)?
     } else if layout.supports_byte_planes() {
         crate::attribute_codec::encode_pre4(raw, width)?

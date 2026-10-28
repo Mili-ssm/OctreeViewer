@@ -174,7 +174,7 @@ impl ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
-            format_version: FormatVersion::V5,
+            format_version: FormatVersion::DEFAULT_OUTPUT,
         })
     }
 
@@ -241,7 +241,7 @@ impl Default for ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
-            format_version: FormatVersion::V5,
+            format_version: FormatVersion::DEFAULT_OUTPUT,
         }
     }
 }

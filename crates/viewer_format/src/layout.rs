@@ -85,6 +85,21 @@ impl StorageLayout {
         }
     }
 
+    /// Only the v7 pre-releases up to v7.3 can be resumed block by block.
+    pub(crate) const fn supports_block_checkpoint(self) -> bool {
+        matches!(self, Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3)
+    }
+
+    /// Writer policy: occupancy blocks are always compact 24-bit candidates.
+    pub(crate) const fn restricts_occupancy_to_compact24(self) -> bool {
+        matches!(self, Self::V7Pre2 | Self::V7Pre3)
+    }
+
+    /// Writer policy: attribute payloads use the v7.3 dictionary-tuple encoder.
+    pub(crate) const fn restricts_dictionary_tuples(self) -> bool {
+        matches!(self, Self::V7Pre3)
+    }
+
     pub(crate) const fn supports_occupancy(self) -> bool {
         matches!(
             self,

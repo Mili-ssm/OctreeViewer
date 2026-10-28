@@ -99,7 +99,7 @@ impl WasmLasOctConverter {
             attributes_handle,
             buffer,
             writer: None,
-            format_version: viewer_format::FormatVersion::V5,
+            format_version: viewer_format::FormatVersion::DEFAULT_OUTPUT,
             processed_points: 0,
             total_points,
             spatial_bounds,
