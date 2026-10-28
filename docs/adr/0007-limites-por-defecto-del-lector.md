@@ -15,7 +15,7 @@ Las cabeceras y el índice declaran tamaños controlados por el archivo; sin top
 | Writer rechaza esquemas >256 | Aún sin decidir: evita archivos que el lector por defecto no abre, pero impone un tope al formato, que sí admite esquemas anchos. |
 
 ## Consecuencias
-Los archivos válidos grandes necesitan opt-in. No hay todavía test de regresión para esquemas >256 atributos (pendiente).
+Los archivos válidos grandes necesitan opt-in. El test `wide_schema_requires_explicit_reader_limits` (`crates/viewer_format/src/writer_tests.rs`) cubre un esquema de 257 atributos en todas las revisiones de `FormatVersion::WRITABLE`: el writer lo acepta, los límites por defecto lo rechazan (`CountLimit`) y límites propios lo abren.
 
 ## Revisar si
 Se decide la política de compatibilidad por defecto, o un corpus real supera algún límite.

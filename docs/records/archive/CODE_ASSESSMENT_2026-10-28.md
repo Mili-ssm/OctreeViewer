@@ -44,13 +44,13 @@ Lista completa: `git log --oneline f43416d^..HEAD`.
 ## Verificación
 
 - `scripts/check.sh`: 14 pasos en verde (tests y clippy con y sin `--all-features`, clippy `wasm32`, `cargo doc`, `fmt`, Node, tres suites Python, enlaces, literales de versión, `git diff --check`).
-- Preflight: 228 archivos LAS/LAZ reales (muestras, Belvedere COPC 1.4, teselas EPT, Albuera, Majadas) y 2100 generados con `las::Writer` pasan; 3 PoC manipulados se rechazan.
+- Atributos: `wide_schema_requires_explicit_reader_limits` (`viewer_format/src/writer_tests.rs`) cubre 257 atributos en cada revisión de `WRITABLE`: el writer acepta el esquema, `FormatReaderLimits` por defecto lo rechaza y límites propios lo abren ([ADR 0007](../../adr/0007-limites-por-defecto-del-lector.md)).
+- Preflight: 228 archivos LAS/LAZ reales (muestras, Belvedere COPC 1.4, teselas EPT, Albuera, Majadas) y 2100 generados con `las::Writer` pasan; 3 PoC manipulados se rechazan. Alcance: la cabecera (`viewer_core::las`) acota EVLR y el número de chunks; la ruta nativa además acota las entradas decodificadas de la tabla de chunks en `viewer_convert` (`laz::laszip::ChunkTable`, necesario porque el descompresor paralelo reserva según `point_count`/`byte_count` con signo extendido); la ruta WASM usa el descompresor secuencial y no depende de esas entradas. Los 228 archivos reales también pasan la comprobación de entradas.
 - Recuento de tests por tarea: 404 por defecto y 425 con `--all-features` tras la tarea 8; 408/0/6 tras la tarea 9.
 
 ## Pendiente
 
-- Falta un test de lector con 257 atributos (la evaluación del 24-10 y el README anterior lo afirmaban sin que existiera): el writer acepta el esquema, `FormatReaderLimits` por defecto lo rechaza y límites propios lo abren ([ADR 0007](../../adr/0007-limites-por-defecto-del-lector.md)).
-- Reportar a upstream los problemas de reservas de `las`/`laz` (EVLR, tabla de chunks) y el desbordamiento en compilación debug observado en `las` 0.11.1 con conteos u64 enormes (`raw/header.rs:359`; release envuelve; no reverificado en 0.11.2, cuyo changelog solo menciona una constante obsoleta y CI, por lo que las reservas EVLR/tabla de chunks siguen sin corregir upstream).
+- Reportar a upstream los problemas de reservas de `las`/`laz` (EVLR, tabla de chunks) y el desbordamiento en compilación debug con conteos u64 enormes (`raw/header.rs:359`; release envuelve). La diferencia de fuentes `las` 0.11.1→0.11.2 es formato y un `use std::f64` eliminado, así que ese desbordamiento no cambia en 0.11.2, y las reservas EVLR (`las`) y de entradas/capacidad de la tabla de chunks (`laz`) siguen sin corregir upstream. Acción abierta: reportarlos.
 - Preflight: la cota aún permite ~0,8× el tamaño del fichero en la tabla de chunks (proporcional, no amplificación); sin tests de EVLR con `start == 0` ni de precedencia del conteo legacy.
 - Duplicación de `WRITABLE.filter(supports_block_checkpoint)` en `ept_checkpoint.rs` y `main.rs`; `expect()` en `ept_checkpoint.rs` (código de biblioteca); texto de ayuda con «v7.x-pre» fijo.
 - `convert/lib.rs` recalcula la extensión para el error `InvalidVisualScale`; docs de `visual_scale_for_bounds` y `las_attribute_schema` escuetas.

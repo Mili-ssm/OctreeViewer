@@ -240,41 +240,48 @@ fn wide_schema_requires_explicit_reader_limits() {
         Vec::new(),
     )
     .unwrap();
-    let columns = schema
-        .into_iter()
-        .map(|descriptor| {
-            AttributeColumn::new(descriptor, AttributeValues::U8(vec![1, 2]), 2).unwrap()
-        })
-        .collect();
-    let block = SourcePointBlock::new(
-        BlockId::new(7),
-        vec![[0.25, 0.5, 0.0], [1.5, 0.75, 1.0]],
-        vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
-        columns,
-    );
-    let mut writer = FormatWriter::new(Cursor::new(Vec::new()), metadata, options()).unwrap();
-    writer.write_block(block).unwrap();
-    let bytes = writer.finish().unwrap().into_inner();
-
-    assert!(matches!(
-        crate::FormatReader::new(Cursor::new(bytes.clone())),
-        Err(FormatError::CountLimit {
-            kind: "attributes",
-            requested: 257,
-            limit: 256
-        })
-    ));
+    let block = || {
+        let columns = schema
+            .iter()
+            .cloned()
+            .map(|descriptor| {
+                AttributeColumn::new(descriptor, AttributeValues::U8(vec![1, 2]), 2).unwrap()
+            })
+            .collect();
+        SourcePointBlock::new(
+            BlockId::new(7),
+            vec![[0.25, 0.5, 0.0], [1.5, 0.75, 1.0]],
+            vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
+            columns,
+        )
+    };
     let limits = FormatReaderLimits::new(1 << 20, 1 << 20, 10, 10, 257, 65_535, 1 << 20).unwrap();
-    let reader = crate::FormatReader::with_limits(Cursor::new(bytes), limits).unwrap();
-    assert_eq!(
-        reader
-            .format_metadata()
-            .dataset()
-            .hierarchy()
-            .attributes()
-            .len(),
-        257
-    );
+    for version in FormatVersion::WRITABLE {
+        let mut writer = FormatWriter::new_for_version(
+            version,
+            Cursor::new(Vec::new()),
+            metadata.clone(),
+            options(),
+        )
+        .unwrap();
+        writer.write_block(block()).unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+
+        assert!(
+            matches!(
+                crate::FormatReader::new(Cursor::new(bytes.clone())),
+                Err(FormatError::CountLimit {
+                    kind: "attributes",
+                    requested: 257,
+                    limit: 256
+                })
+            ),
+            "{version:?}"
+        );
+        let reader = crate::FormatReader::with_limits(Cursor::new(bytes), limits).unwrap();
+        let attributes = reader.format_metadata().dataset().hierarchy().attributes();
+        assert_eq!(attributes.len(), 257, "{version:?}");
+    }
 }
 
 fn write_sample<W: OctreeWriter<Error = FormatError> + ?Sized>(writer: &mut W) {
