@@ -60,7 +60,7 @@ pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
     let mut file = File::open(path)?;
     let file_len = file.metadata()?.len();
     viewer_core::las::preflight_las(&mut file, file_len)?;
-    Ok(Reader::from_path(path)?)
+    Ok(Reader::new(std::io::BufReader::new(file))?)
 }
 
 pub(crate) fn convert_file_inner(

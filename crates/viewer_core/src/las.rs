@@ -79,6 +79,23 @@ const EVLR_HEADER_LEN: u64 = 60;
 const LASZIP_RECORD_ID: u16 = 22204;
 const LASZIP_VARIABLE_CHUNK: u32 = u32::MAX;
 
+fn min_point_record_len(format_id: u8) -> u64 {
+    match format_id {
+        0 => 20,
+        1 => 28,
+        2 => 26,
+        3 => 34,
+        4 => 57,
+        5 => 63,
+        6 => 30,
+        7 => 36,
+        8 => 38,
+        9 => 59,
+        10 => 67,
+        _ => 20,
+    }
+}
+
 fn read_array<const N: usize, R: Read + Seek>(
     reader: &mut R,
     at: u64,
@@ -109,6 +126,7 @@ fn read_u64_at<R: Read + Seek>(reader: &mut R, at: u64) -> Result<u64, LasPrefli
 
 /// Bounds header-declared sizes by the real file length before the `las`/`laz`
 /// crates allocate from them. Parses raw bytes; the reader is rewound to 0.
+/// No `BufReader`: every access seeks, so a buffer would be discarded each time.
 pub fn preflight_las<R: Read + Seek>(
     reader: &mut R,
     file_len: u64,
@@ -129,21 +147,27 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
         return Ok(());
     }
     let [_, minor] = read_array::<2, _>(reader, 24)?;
-    let header_size = u64::from(read_u16_at(reader, 94)?);
-    if header_size < LAS_MIN_HEADER || header_size > file_len {
+    let declared_header_size = u64::from(read_u16_at(reader, 94)?);
+    if declared_header_size < LAS_MIN_HEADER || declared_header_size > file_len {
         return Err(LasPreflightError::Truncated("header_size"));
+    }
+    // `las` always reads the fixed header of the version; VLRs start after the larger one.
+    let header_size = declared_header_size.max(match minor {
+        0..=2 => 227,
+        3 => 235,
+        _ => 375,
+    });
+    if header_size > file_len {
+        return Err(LasPreflightError::Truncated("version header"));
     }
     let point_data_offset = u64::from(read_u32_at(reader, 96)?);
     let vlr_count = read_u32_at(reader, 100)?;
+    let format_id = read_array::<1, _>(reader, 104)?[0] & 0x3f;
+    let record_len = u64::from(read_u16_at(reader, 105)?);
     let mut points = u64::from(read_u32_at(reader, 107)?);
-    if minor >= 4 {
-        if header_size < 375 {
-            return Err(LasPreflightError::Truncated("LAS 1.4 header_size"));
-        }
-        let wide = read_u64_at(reader, 247)?;
-        if wide != 0 {
-            points = wide;
-        }
+    if minor >= 4 && points == 0 {
+        // Same precedence as `las`: legacy count when non-zero.
+        points = read_u64_at(reader, 247)?;
     }
 
     let mut laz_chunk_size = None;
@@ -155,13 +179,16 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
         }
         let user_id = read_array::<16, _>(reader, pos + 2)?;
         let record_id = read_u16_at(reader, pos + 18)?;
-        let record_len = u64::from(read_u16_at(reader, pos + 20)?);
-        if end + record_len > file_len {
+        let vlr_len = u64::from(read_u16_at(reader, pos + 20)?);
+        if end + vlr_len > file_len {
             return Err(LasPreflightError::VlrOutOfBounds("VLR record_length"));
         }
-        if record_id == LASZIP_RECORD_ID && user_id.starts_with(b"laszip encoded\0") {
+        if laz_chunk_size.is_none()
+            && record_id == LASZIP_RECORD_ID
+            && user_id.starts_with(b"laszip encoded\0")
+        {
             // laszip record: compressor u16, coder u16, version 4 B, options u32 (chunk_size at +12).
-            if record_len < 16 {
+            if vlr_len < 16 {
                 return Err(LasPreflightError::VlrOutOfBounds("laszip record"));
             }
             laz_chunk_size = Some(match read_u32_at(reader, end + 12)? {
@@ -169,13 +196,15 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
                 size => size,
             });
         }
-        pos = end + record_len;
+        pos = end + vlr_len;
     }
 
     if minor >= 4 {
         let first_evlr = read_u64_at(reader, 235)?;
         let evlr_count = read_u32_at(reader, 243)?;
         let mut pos = first_evlr;
+        // `las` ignores EVLRs unless both fields are non-zero.
+        let evlr_count = if first_evlr == 0 { 0 } else { evlr_count };
         for _ in 0..evlr_count {
             let end = pos
                 .checked_add(EVLR_HEADER_LEN)
@@ -203,11 +232,23 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
             return Err(LasPreflightError::ChunkTableOutOfBounds(table));
         }
         let chunks = u64::from(read_u32_at(reader, table + 4)?);
-        let limit = if chunk_size == LASZIP_VARIABLE_CHUNK {
-            points.min(file_len)
+        let by_points = if chunk_size == LASZIP_VARIABLE_CHUNK {
+            points.min(file_len) + 1
         } else {
             points.div_ceil(u64::from(chunk_size)) + 1
         };
+        // Every chunk starts with at least one uncompressed point record.
+        let min_record = record_len.max(min_point_record_len(format_id)).max(1);
+        let by_bytes = table
+            .checked_sub(point_data_offset + 8)
+            .map_or(0, |bytes| bytes / min_record);
+        // A valid empty file may still carry one empty chunk.
+        let by_bytes = if points == 0 {
+            by_bytes.max(1)
+        } else {
+            by_bytes
+        };
+        let limit = by_points.min(by_bytes);
         if chunks > limit {
             return Err(LasPreflightError::ChunkCountExceedsPoints { chunks, limit });
         }
@@ -351,11 +392,92 @@ mod tests {
         bytes.extend_from_slice(&record);
         let point_data = bytes.len() as u32;
         bytes[96..100].copy_from_slice(&point_data.to_le_bytes());
-        let table_offset = u64::from(point_data) + 8;
+        // 2000 bytes of chunk data (100 records of 20 B) precede the table.
+        let table_offset = u64::from(point_data) + 8 + 2000;
         bytes.extend_from_slice(&table_offset.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 2000]);
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&number_of_chunks.to_le_bytes());
         bytes
+    }
+
+    #[test]
+    fn evlr_length_is_read_at_offset_20() {
+        let mut bytes = las_header(4, 375);
+        bytes[235..243].copy_from_slice(&375u64.to_le_bytes());
+        bytes[243..247].copy_from_slice(&1u32.to_le_bytes());
+        // Neighbouring fields are 0xFF: reading the length at @18/@22 would reject.
+        let mut evlr = vec![0xFFu8; 60];
+        evlr[20..28].copy_from_slice(&8u64.to_le_bytes());
+        bytes.extend_from_slice(&evlr);
+        bytes.extend_from_slice(&[0u8; 8]);
+        check(&bytes).unwrap();
+        bytes.pop();
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::EvlrOutOfBounds)
+        ));
+    }
+
+    /// Crafted LAZ with a laszip VLR (point format 3, 34 B records) and a tiny chunk table.
+    fn poc_laz(minor: u8, header_total: usize, chunk_size: u32, legacy: u32, wide: u64) -> Vec<u8> {
+        let mut b = vec![0u8; header_total];
+        b[..4].copy_from_slice(b"LASF");
+        b[24] = 1;
+        b[25] = minor;
+        b[94..96].copy_from_slice(&(header_total.min(375) as u16).to_le_bytes());
+        b[100..104].copy_from_slice(&1u32.to_le_bytes());
+        b[104] = 0x80 | 3;
+        b[105..107].copy_from_slice(&34u16.to_le_bytes());
+        b[107..111].copy_from_slice(&legacy.to_le_bytes());
+        if header_total >= 255 {
+            b[247..255].copy_from_slice(&wide.to_le_bytes());
+        }
+        let mut record = vec![0u8; 46];
+        record[0..2].copy_from_slice(&2u16.to_le_bytes());
+        record[12..16].copy_from_slice(&chunk_size.to_le_bytes());
+        let mut vlr = vec![0u8; 54];
+        vlr[2..16].copy_from_slice(b"laszip encoded");
+        vlr[18..20].copy_from_slice(&22204u16.to_le_bytes());
+        vlr[20..22].copy_from_slice(&(record.len() as u16).to_le_bytes());
+        b.extend_from_slice(&vlr);
+        b.extend_from_slice(&record);
+        let point_data = b.len() as u32;
+        b[96..100].copy_from_slice(&point_data.to_le_bytes());
+        b.extend_from_slice(&(u64::from(point_data) + 8 + 16).to_le_bytes());
+        b.extend_from_slice(&[0u8; 16]);
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b.extend_from_slice(&u32::MAX.to_le_bytes());
+        b.extend_from_slice(&[0u8; 64]);
+        b
+    }
+
+    #[test]
+    fn poc_a_las12_tiny_chunks_with_huge_count_is_rejected() {
+        let bytes = poc_laz(2, 227, 1, u32::MAX, 0);
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::ChunkCountExceedsPoints { .. })
+        ));
+    }
+
+    #[test]
+    fn poc_b_las14_huge_wide_point_count_is_rejected() {
+        let bytes = poc_laz(4, 375, 50_000, 0, 1 << 58);
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::ChunkCountExceedsPoints { .. })
+        ));
+    }
+
+    #[test]
+    fn poc_c_las13_with_short_header_size_still_finds_laszip_vlr() {
+        let mut bytes = poc_laz(3, 235, 50_000, 100, 0);
+        bytes[94..96].copy_from_slice(&227u16.to_le_bytes());
+        assert!(matches!(
+            check(&bytes),
+            Err(LasPreflightError::ChunkCountExceedsPoints { .. })
+        ));
     }
 
     #[test]
@@ -378,7 +500,7 @@ mod tests {
     #[test]
     fn laz_chunk_table_offset_past_end_is_rejected() {
         let mut bytes = laz_file(1, 50_000, 100);
-        let at = bytes.len() - 16;
+        let at = u32::from_le_bytes(bytes[96..100].try_into().unwrap()) as usize;
         bytes[at..at + 8].copy_from_slice(&i64::MAX.to_le_bytes());
         assert!(matches!(
             check(&bytes),
