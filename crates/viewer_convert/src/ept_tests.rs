@@ -614,3 +614,40 @@ fn rejects_ept_memory_budget_while_reading_large_hierarchy_page() {
     assert!(!output.exists());
     assert!(!output_attributes_path(&output).exists());
 }
+
+fn assert_rejected_by_size_cap(root: &Path) {
+    let output = root.join("result.oct");
+    let options = ConvertOptions::with_memory_budget(1, 0.01, 1 << 30).unwrap();
+    match convert(root, &output, options, None, &mut |_| true, None) {
+        Err(ConvertError::InvalidEpt(message)) => {
+            assert!(message.contains("exceeding"), "{message}");
+        }
+        other => panic!("expected a size-cap rejection, got {other:?}"),
+    }
+    assert!(!output.exists());
+}
+
+#[test]
+fn rejects_oversized_manifest_before_parsing() {
+    let tmp = dir();
+    let root = tmp.path().to_owned();
+    // Sparse and not valid JSON: only a size check can produce the "exceeding" message.
+    fs::File::create(root.join("ept.json"))
+        .unwrap()
+        .set_len(MAX_EPT_MANIFEST_BYTES + 1)
+        .unwrap();
+    assert_rejected_by_size_cap(&root);
+}
+
+#[test]
+fn rejects_oversized_hierarchy_page_before_parsing() {
+    let tmp = dir();
+    let root = tmp.path().to_owned();
+    fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+    write_manifest(&root, "laszip", 0);
+    fs::File::create(root.join("ept-hierarchy/0-0-0-0.json"))
+        .unwrap()
+        .set_len(MAX_EPT_HIERARCHY_PAGE_BYTES + 1)
+        .unwrap();
+    assert_rejected_by_size_cap(&root);
+}
