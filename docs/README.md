@@ -42,7 +42,12 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [V6 pre1](records/archive/FORMAT_V6_PRE1.md), [pre2](records/archive/FORMAT_V6_PRE2.md), [pre3](records/archive/FORMAT_V6_PRE3.md), [pre4](records/archive/FORMAT_V6_PRE4.md), [V4](records/archive/FORMAT_V4.md) | Especificaciones de formatos retirados o en retirada. | histórico |
 | [Entregas 14-10-2026](records/archive/DELIVERIES_2026-10-14.md) | Implementaciones y experimentos cerrados, con checks históricos. | histórico |
 | [Evaluación 24-10-2026](records/archive/CODE_ASSESSMENT_2026-10-24.md) | Contraste de documentación, checks y próximos pasos. | histórico |
+| [Evaluación 28-10-2026](records/archive/CODE_ASSESSMENT_2026-10-28.md) | Revisión por áreas, plan de 15 tareas, decisiones, verificación y pendientes. | histórico |
 | [Historial técnico](records/archive/DEVELOPMENT_HISTORY.md) | Snapshot anterior a v5. | histórico |
+
+## Decisiones
+
+[ADR](adr/README.md): decisiones de formato, versiones, límites, toolchain y seguridad, con alternativas y condiciones de revisión (vivo).
 
 ## Datos y recursos
 

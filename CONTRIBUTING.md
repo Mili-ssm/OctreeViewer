@@ -63,6 +63,7 @@ Fuente única de las reglas; [CLAUDE.md](CLAUDE.md) las resume para agentes.
 - **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
   nueva evidencia va en un registro nuevo o en `format-v7-evidence.md`, que se amplía.
 - **Fechas** `dd-mm-aaaa`; documentación en español salvo el README del host web (inglés).
+- **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
 - **Un hecho, un documento**: el resto enlaza ([índice](docs/README.md)); las prioridades activas
   solo en «Prioridades pendientes» del README.
 - **Benchmarks**: las cifras no se trasladan entre revisiones, perfiles, navegadores, datasets ni
