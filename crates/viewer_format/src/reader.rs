@@ -1,12 +1,12 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     io::{Read, Seek, SeekFrom},
     sync::{Arc, Mutex},
 };
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeValues, BlockId, ColorRgb, DatasetMetadata,
-    DatasetSource, Point, PointBatch, PointBlock, SpatialBounds, SpatialNode,
+    DatasetSource, Point, PointBatch, PointBlock, SpatialBounds,
 };
 
 use crate::geometry::{GeometryDecoder, GeometryEncoding};
@@ -17,7 +17,9 @@ use crate::layout::{
 use crate::version::FileRole;
 use crate::{BlockCodec, FormatError, FormatMetadata, crc32, decompress_block};
 
-pub(crate) use crate::index_codec::{parse_index, parse_split_footer, validate_index_range};
+use crate::index_codec::{
+    BlockDirectoryEntry, parse_index, parse_split_footer, validate_index_range,
+};
 pub use crate::reader_limits::FormatReaderLimits;
 use crate::slice_cursor::SliceCursor;
 
@@ -29,24 +31,6 @@ struct CachedAttributeRange {
     component: u32,
     range: Option<[f64; 2]>,
 }
-
-#[derive(Debug, Clone)]
-pub(crate) struct BlockDirectoryEntry {
-    pub(crate) offset: u64,
-    pub(crate) payload_length: u64,
-    pub(crate) point_count: u64,
-    pub(crate) quantization_error: f64,
-    pub(crate) origin: [f64; 3],
-    pub(crate) scale: [f64; 3],
-    pub(crate) geometry_encoding: GeometryEncoding,
-    pub(crate) payloads: Vec<PayloadDirectoryEntry>,
-}
-
-pub(crate) type ParsedIndex = (
-    FormatMetadata,
-    BTreeMap<BlockId, BlockDirectoryEntry>,
-    BTreeMap<BlockId, Vec<SpatialBounds>>,
-);
 
 /// Aggregate sizes for an entire block, excluding the file index.
 /// `logical_bytes` is the canonical geometry and attribute size; `raw_bytes` is the
@@ -1064,83 +1048,6 @@ pub(crate) fn contains_point(bounds: SpatialBounds, point: [f64; 3]) -> bool {
     let min = bounds.min();
     let max = bounds.max();
     (0..3).all(|axis| point[axis] >= min[axis] && point[axis] <= max[axis])
-}
-
-pub(crate) fn validate_block_layout(
-    nodes: &[SpatialNode],
-    blocks: &BTreeMap<BlockId, BlockDirectoryEntry>,
-    index_offset: u64,
-) -> Result<(), FormatError> {
-    let referenced: BTreeSet<_> = nodes
-        .iter()
-        .flat_map(|node| node.blocks().iter().copied())
-        .collect();
-    if referenced.len() != blocks.len() || referenced.iter().any(|id| !blocks.contains_key(id)) {
-        return Err(FormatError::MalformedIndex(
-            "block directory and node references disagree",
-        ));
-    }
-    let mut by_offset = blocks.iter().collect::<Vec<_>>();
-    by_offset.sort_unstable_by_key(|(id, entry)| (entry.offset, entry.payload_length, **id));
-    let mut expected_offset = HEADER_SIZE;
-    for (_, entry) in by_offset {
-        if entry.offset != expected_offset {
-            return Err(FormatError::MalformedIndex(
-                "block payloads overlap or leave gaps",
-            ));
-        }
-        expected_offset = expected_offset
-            .checked_add(entry.payload_length)
-            .ok_or(FormatError::FileSizeOverflow)?;
-    }
-    if expected_offset != index_offset {
-        return Err(FormatError::MalformedIndex(
-            "block payload section does not end at the index",
-        ));
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_node_point_counts(
-    nodes: &[SpatialNode],
-    blocks: &BTreeMap<BlockId, BlockDirectoryEntry>,
-) -> Result<(), FormatError> {
-    for node in nodes {
-        let count = node.blocks().iter().try_fold(0_u64, |sum, id| {
-            blocks
-                .get(id)
-                .and_then(|entry| sum.checked_add(entry.point_count))
-                .ok_or(FormatError::PointCountOverflow(node.id()))
-        })?;
-        if count != node.point_count() {
-            return Err(FormatError::NodePointCountMismatch {
-                node: node.id(),
-                declared: node.point_count(),
-                blocks: count,
-            });
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_node_error_bounds(
-    nodes: &[SpatialNode],
-    blocks: &BTreeMap<BlockId, BlockDirectoryEntry>,
-) -> Result<(), FormatError> {
-    for node in nodes {
-        let required = node.blocks().iter().try_fold(0.0_f64, |maximum, id| {
-            blocks
-                .get(id)
-                .map(|entry| maximum.max(entry.quantization_error))
-                .ok_or(FormatError::UnreferencedBlock(*id))
-        })?;
-        if node.geometric_error() < required {
-            return Err(FormatError::MalformedIndex(
-                "node geometric error excludes block quantization error",
-            ));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn read_attribute_values(

@@ -544,7 +544,7 @@ fn streamed_bounds_match_materialized_source_and_render_positions() {
                 Some(expected.to_bounds().unwrap())
             };
             assert_eq!(
-                super::block_world_bounds(source, &quantized, &metadata).unwrap(),
+                crate::prepare::block_world_bounds(source, &quantized, &metadata).unwrap(),
                 expected,
                 "source={source:?} origin={origin:?}"
             );

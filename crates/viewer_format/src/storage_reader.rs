@@ -204,8 +204,8 @@ impl FormatReader<Cursor<Vec<u8>>> {
         let footer: &[u8; FOOTER_SIZE as usize] =
             footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
         let (offset, length, declared, _) =
-            crate::reader::parse_split_footer(footer, layout.footer_magic())?;
-        crate::reader::validate_index_range(file_length, offset, length, declared, limits)?;
+            crate::index_codec::parse_split_footer(footer, layout.footer_magic())?;
+        crate::index_codec::validate_index_range(file_length, offset, length, declared, limits)?;
         Ok((offset, length))
     }
 

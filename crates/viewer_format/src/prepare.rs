@@ -8,7 +8,6 @@ use crate::geometry::{GeometryEncoding, encode_delta};
 use crate::layout::{
     PayloadDirectoryEntry, StorageLayout, attribute_payload_size, block_payload_size,
 };
-use crate::writer::{FormatWriterOptions, PreparedPointBlock};
 use crate::{
     FormatError, FormatMetadata, FormatVersion, SourcePointBlock, compress_block, crc32,
     quantize_local_positions,
@@ -653,5 +652,54 @@ impl BoundsAccumulator {
             return Err(FormatError::InvalidMetadata("empty spatial bounds"));
         }
         Ok(SpatialBounds::new(self.min, self.max)?)
+    }
+}
+
+/// Bounds per-block allocations made by the writer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FormatWriterOptions {
+    max_quantization_error: f64,
+    max_uncompressed_block_bytes: u64,
+}
+
+impl FormatWriterOptions {
+    pub fn new(
+        max_quantization_error: f64,
+        max_uncompressed_block_bytes: u64,
+    ) -> Result<Self, FormatError> {
+        if !max_quantization_error.is_finite() || max_quantization_error < 0.0 {
+            return Err(FormatError::InvalidQuantizationLimit(
+                max_quantization_error,
+            ));
+        }
+        if max_uncompressed_block_bytes == 0 {
+            return Err(FormatError::ZeroBlockLimit);
+        }
+        Ok(Self {
+            max_quantization_error,
+            max_uncompressed_block_bytes,
+        })
+    }
+}
+
+/// A fully encoded block ready for ordered append to a format writer.
+pub struct PreparedPointBlock {
+    pub(crate) layout: StorageLayout,
+    pub(crate) geometry_encoding: GeometryEncoding,
+    pub(crate) id: BlockId,
+    pub(crate) point_count: u64,
+    pub(crate) quantization_error: f64,
+    pub(crate) origin: [f64; 3],
+    pub(crate) scale: [f64; 3],
+    pub(crate) world_bounds: Option<SpatialBounds>,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) payloads: Vec<PayloadDirectoryEntry>,
+    pub(crate) ranges: Vec<crate::NodeAttributeRange>,
+}
+
+impl PreparedPointBlock {
+    /// Capacity of the retained compressed payload buffer, excluding metadata and allocator overhead.
+    pub fn encoded_payload_capacity_bytes(&self) -> usize {
+        self.bytes.capacity()
     }
 }

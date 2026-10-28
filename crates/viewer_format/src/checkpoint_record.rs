@@ -3,8 +3,7 @@ use std::collections::BTreeSet;
 use viewer_core::{AttributeDataType, AttributeValues, BlockId, SpatialBounds};
 
 use crate::layout::{PayloadDirectoryEntry, attribute_payload_size};
-use crate::prepare::BlockRecord;
-use crate::prepare::*;
+use crate::prepare::{BlockRecord, encode_values};
 use crate::{FormatError, crc32};
 
 pub(crate) const WRITER_RECORD_MAGIC: &[u8; 8] = b"OCTVWRC1";

@@ -30,7 +30,7 @@ impl BlockEncoder for FormatBlockEncoder<'_> {
     type PreparedBlock = PreparedPointBlock;
 
     fn prepare(&self, block: SourcePointBlock) -> Result<Self::PreparedBlock, FormatError> {
-        crate::writer::prepare_point_block_for_version(
+        crate::prepare::prepare_point_block_for_version(
             self.version,
             block,
             self.metadata,
@@ -42,7 +42,7 @@ impl BlockEncoder for FormatBlockEncoder<'_> {
         &self,
         block: SourcePointBlock,
     ) -> Result<(Self::PreparedBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
-        crate::writer::prepare_point_block_for_version_with_diagnostics(
+        crate::prepare::prepare_point_block_for_version_with_diagnostics(
             self.version,
             block,
             self.metadata,

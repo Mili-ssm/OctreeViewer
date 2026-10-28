@@ -3,10 +3,9 @@ use std::{
     io::{Seek, SeekFrom, Write},
 };
 
-use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode};
+use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode};
 
-use crate::geometry::GeometryEncoding;
-use crate::layout::{FOOTER_SIZE, HEADER_SIZE, PayloadDirectoryEntry, StorageLayout};
+use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::version::FileRole;
 use crate::{FormatError, FormatMetadata, FormatVersion, SourcePointBlock};
@@ -15,60 +14,10 @@ use crate::checkpoint_record::{
     decode_checkpoint_record, encode_checkpoint_record, validate_checkpoint_record,
 };
 use crate::index_codec::{footer_bytes, header_for_role, write_index};
-pub use crate::prepare::prepare_point_block;
 pub(crate) use crate::prepare::{
     BlockRecord, BoundsAccumulator, build_block_nodes, prepare_point_block_for_version,
-    prepare_point_block_for_version_with_diagnostics,
 };
-
-/// Bounds per-block allocations made by the writer.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FormatWriterOptions {
-    pub(crate) max_quantization_error: f64,
-    pub(crate) max_uncompressed_block_bytes: u64,
-}
-
-impl FormatWriterOptions {
-    pub fn new(
-        max_quantization_error: f64,
-        max_uncompressed_block_bytes: u64,
-    ) -> Result<Self, FormatError> {
-        if !max_quantization_error.is_finite() || max_quantization_error < 0.0 {
-            return Err(FormatError::InvalidQuantizationLimit(
-                max_quantization_error,
-            ));
-        }
-        if max_uncompressed_block_bytes == 0 {
-            return Err(FormatError::ZeroBlockLimit);
-        }
-        Ok(Self {
-            max_quantization_error,
-            max_uncompressed_block_bytes,
-        })
-    }
-}
-
-/// A fully encoded block ready for ordered append to a format writer.
-pub struct PreparedPointBlock {
-    pub(crate) layout: StorageLayout,
-    pub(crate) geometry_encoding: GeometryEncoding,
-    pub(crate) id: BlockId,
-    pub(crate) point_count: u64,
-    pub(crate) quantization_error: f64,
-    pub(crate) origin: [f64; 3],
-    pub(crate) scale: [f64; 3],
-    pub(crate) world_bounds: Option<SpatialBounds>,
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) payloads: Vec<PayloadDirectoryEntry>,
-    pub(crate) ranges: Vec<crate::NodeAttributeRange>,
-}
-
-impl PreparedPointBlock {
-    /// Capacity of the retained compressed payload buffer, excluding metadata and allocator overhead.
-    pub fn encoded_payload_capacity_bytes(&self) -> usize {
-        self.bytes.capacity()
-    }
-}
+pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, prepare_point_block};
 
 /// Writes independently encoded blocks and a canonical index to a fresh seekable stream.
 /// A footer is emitted only after every payload and the complete index have been written.
@@ -592,9 +541,6 @@ impl<W: Write + Seek> FormatWriter<W> {
         Ok(source_metadata.with_dataset(dataset, ranges))
     }
 }
-
-#[cfg(test)]
-use crate::prepare::block_world_bounds;
 
 #[cfg(test)]
 #[path = "writer_tests.rs"]
