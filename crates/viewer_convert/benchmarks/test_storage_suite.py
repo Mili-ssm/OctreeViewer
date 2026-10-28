@@ -93,6 +93,15 @@ class StorageSuiteTests(unittest.TestCase):
                 storage_suite.run_suite(args)
             self.assertFalse(run_dir.exists())
 
+    def test_modes_default_to_all_and_subset_is_canonical_order(self):
+        base = ["input.laz", "result.oct", "run", "--convert-binary", "c", "--read-binary", "r",
+                "--cache-state", "cold"]
+        self.assertEqual(storage_suite.parse_args(base).modes, list(storage_suite.MODES))
+        args = storage_suite.parse_args([*base, "--modes", "progressive", "hierarchy"])
+        self.assertEqual(args.modes, ["hierarchy", "progressive"])
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            storage_suite.parse_args([*base, "--modes", "bogus"])
+
     def test_points_per_block_is_bounded_by_converter_limit(self):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             storage_suite.parse_args(

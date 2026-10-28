@@ -18,9 +18,61 @@ def fingerprint(path: Path) -> dict:
             "sha256": storage_suite.sha256_file(path)}
 
 
-def main() -> None:
+OPTION_FLAGS = ("--workers", "--divisions", "--points-per-block", "--max-decoded-mib")
+
+
+def _require(container: dict, key: str, where: str):
+    if not isinstance(container, dict) or key not in container:
+        raise ValueError(f"reference lacks required field {where}.{key}" if where else
+                         f"reference lacks required field {key}")
+    return container[key]
+
+
+def parse_reference(reference: dict) -> list[dict]:
+    """Return [{label, source, options: {flag: value}}] from either supported reference layout.
+
+    Command layout: ``datasets`` is a list of ``{label, runs: [{command: [...]}]}`` (a storage_suite
+    command line). Recorded layout: ``datasets`` is a mapping ``label -> {input: {path},
+    logical_read: {budget_mib}}`` with top-level ``conversion_options``
+    ``{workers, divisions, points_per_block}``.
+    """
+    datasets = _require(reference, "datasets", "")
+    parsed = []
+    if isinstance(datasets, list):
+        for index, dataset in enumerate(datasets):
+            where = f"datasets[{index}]"
+            label = _require(dataset, "label", where)
+            runs = _require(dataset, "runs", where)
+            if not runs:
+                raise ValueError(f"reference lacks required field {where}.runs[0]")
+            template = _require(runs[0], "command", f"{where}.runs[0]")
+            options = {}
+            for flag in OPTION_FLAGS:
+                if flag not in template:
+                    raise ValueError(f"reference {where}.runs[0].command lacks option {flag}")
+                options[flag] = str(template[template.index(flag) + 1])
+            parsed.append({"label": label, "source": Path(template[2]), "options": options})
+    elif isinstance(datasets, dict):
+        conversion = _require(reference, "conversion_options", "")
+        for label, dataset in datasets.items():
+            where = f"datasets.{label}"
+            source = _require(_require(dataset, "input", where), "path", f"{where}.input")
+            budget = _require(_require(dataset, "logical_read", where), "budget_mib", f"{where}.logical_read")
+            options = {"--workers": _require(conversion, "workers", "conversion_options"),
+                       "--divisions": _require(conversion, "divisions", "conversion_options"),
+                       "--points-per-block": _require(conversion, "points_per_block", "conversion_options"),
+                       "--max-decoded-mib": budget}
+            parsed.append({"label": label, "source": Path(source),
+                           "options": {k: str(v) for k, v in options.items()}})
+    else:
+        raise ValueError("reference field datasets must be a list or a mapping")
+    return parsed
+
+
+def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("reference", type=Path, help="recorded comparison with datasets/runs/command")
+    parser.add_argument("reference", type=Path, help="recorded comparison: datasets list with runs[0].command, or a storage-suite "
+                        "report with datasets{label: input.path, logical_read.budget_mib} and conversion_options")
     parser.add_argument("output", type=Path, help="new directory for full raw evidence")
     parser.add_argument("report", type=Path, help="compact aggregate JSON")
     parser.add_argument("--convert-binary", type=Path, required=True)
@@ -29,26 +81,33 @@ def main() -> None:
     parser.add_argument("--versions", nargs=2, choices=storage_suite.FORMAT_VERSIONS,
                         default=["v5", "v7.2-pre"])
     parser.add_argument("--rounds", type=int, default=3)
-    args = parser.parse_args()
+    parser.add_argument("--modes", nargs="+", choices=storage_suite.MODES, default=list(storage_suite.MODES),
+                        help="read modes to run (default: all; 'reconstruct' decodes the whole dataset into RAM)")
+    args = parser.parse_args(argv)
+    args.modes = [mode for mode in storage_suite.MODES if mode in set(args.modes)]
     if args.rounds <= 0 or args.versions[0] == args.versions[1]:
         parser.error("positive rounds and two distinct revisions required")
+    return args
+
+
+def main() -> None:
+    args = parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    reference = json.loads(args.reference.read_text())
+    datasets = parse_reference(json.loads(args.reference.read_text()))
     root = args.runner.resolve().parents[3]
     sources = [p for folder in ("viewer_format/src", "viewer_convert/src")
                for p in sorted((root / "crates" / folder).glob("*.rs"))]
     sources += [root / "Cargo.toml", root / "Cargo.lock", args.runner, Path(__file__)]
     report = {"status": "incomplete", "reference": fingerprint(args.reference),
               "environment": storage_suite.repository_metadata(root),
-              "profile": "perf", "protocol": "alternating revisions; serial conversion then hierarchy/resident/BFS; Linux time peak RSS",
+              "profile": "perf", "modes": args.modes, "protocol": "alternating revisions; serial conversion then hierarchy/resident/BFS; Linux time peak RSS",
               "cache_state": "no purge; reads after conversion/validation/hashes on local NVMe",
               "binaries": [fingerprint(args.convert_binary), fingerprint(args.read_binary)],
               "sources": [fingerprint(p) for p in sources], "datasets": []}
     args.report.write_text(json.dumps(report, indent=2) + "\n")
-    for dataset in reference["datasets"]:
-        template = dataset["runs"][0]["command"]
-        source = Path(template[2])
+    for dataset in datasets:
+        source = dataset["source"]
         label = "".join(c if c.isalnum() else "-" for c in dataset["label"])
         result = {"label": dataset["label"], "source": fingerprint(source), "runs": [], "summaries": {}}
         report["datasets"].append(result)
@@ -61,9 +120,10 @@ def main() -> None:
                            str(run_dir), "--convert-binary", str(args.convert_binary.resolve()),
                            "--read-binary", str(args.read_binary.resolve()), "--format-version", version,
                            "--repetitions", "1", "--profile", "perf", "--cache-state", report["cache_state"],
-                           "--measure-rss"]
-                for option in ("--workers", "--divisions", "--points-per-block", "--max-decoded-mib"):
-                    command += [option, template[template.index(option) + 1]]
+                           "--measure-rss",
+                           "--modes", *args.modes]
+                for option, value in dataset["options"].items():
+                    command += [option, value]
                 start = time.monotonic()
                 subprocess.run(command, check=True, timeout=1800)
                 raw_path = run_dir / "report.json"
@@ -82,14 +142,14 @@ def main() -> None:
                             raise RuntimeError(f"unstable hashes for {v} {artifact}")
                     stats = {"conversion": storage_suite.numeric_summary(conversions),
                              "artifacts": conversions[0]["artifacts"], "rss": {}}
-                    for operation in ("conversion", *storage_suite.MODES):
+                    for operation in ("conversion", *args.modes):
                         records = conversions if operation == "conversion" else [r["reads"][operation][0] for r in runs]
                         stats["rss"][operation] = {"median": statistics.median(r["peak_rss_bytes"] for r in records),
                                                   "samples": len(records)}
                         if operation != "conversion":
                             stats[operation] = storage_suite.numeric_summary(records)
                     result["summaries"][v] = stats
-                for mode in ("reconstruct", "progressive"):
+                for mode in (m for m in ("reconstruct", "progressive") if m in args.modes):
                     records = [r["reads"][mode][0]["metrics"][0] for runs in collected.values() for r in runs]
                     signatures = {(r["checksum"], r["points"], r["blocks"]) for r in records}
                     if len(signatures) != 1:

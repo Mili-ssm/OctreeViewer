@@ -104,7 +104,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cache-state", required=True, help="free-form cache-state description")
     parser.add_argument("--profile", default="perf", help="profile label recorded in the report (default: perf)")
     parser.add_argument("--measure-rss", action="store_true", help="Linux process peak RSS via /usr/bin/time")
+    parser.add_argument("--modes", nargs="+", choices=MODES, default=list(MODES),
+                        help="read modes to run (default: all; 'reconstruct' decodes the whole dataset into RAM)")
     args = parser.parse_args(argv)
+    args.modes = [mode for mode in MODES if mode in set(args.modes)]
     if args.repetitions <= 0:
         parser.error("--repetitions must be positive")
     if args.workers <= 0 or args.divisions <= 0 or args.points_per_block <= 0 or args.max_decoded_mib <= 0:
@@ -220,9 +223,10 @@ def run_suite(args: argparse.Namespace) -> int:
             "cache_state": args.cache_state,
             "profile": args.profile,
             "measure_rss": args.measure_rss,
+            "modes": list(args.modes),
         },
         "conversions": [],
-        "reads": {mode: [] for mode in MODES},
+        "reads": {mode: [] for mode in args.modes},
         "summaries": {},
         "error": None,
     }
@@ -275,7 +279,7 @@ def run_suite(args: argparse.Namespace) -> int:
                     conversion.get("artifact_error")
                     or f"conversion repetition {repetition} exited {conversion['exit_code']}"
                 )
-            for mode in MODES:
+            for mode in args.modes:
                 read = run_operation(
                     [
                         str(read_binary), str(output_path), mode, "1", str(args.max_decoded_mib),
@@ -301,7 +305,7 @@ def run_suite(args: argparse.Namespace) -> int:
             "conversion": numeric_summary(report["conversions"]),
             **{
                 mode: numeric_summary(report["reads"][mode])
-                for mode in MODES
+                for mode in args.modes
             },
         }
         write_report(report_path, report)
