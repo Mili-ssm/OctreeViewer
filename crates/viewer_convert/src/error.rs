@@ -17,6 +17,12 @@ pub enum ConvertError {
     Las(#[from] las::Error),
     #[error("unsafe LAS/LAZ header: {0}")]
     LasPreflight(#[from] viewer_core::las::LasPreflightError),
+    #[error("unsafe LAZ chunk table: {field} = {value} is outside the bound {bound}")]
+    LazChunkTable {
+        field: &'static str,
+        value: u64,
+        bound: u64,
+    },
     #[error(transparent)]
     Format(#[from] viewer_format::FormatError),
     #[error(transparent)]

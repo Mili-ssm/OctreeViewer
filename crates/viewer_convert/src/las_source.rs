@@ -1,5 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
+    io::{Seek, SeekFrom},
     path::Path,
     sync::mpsc,
     thread,
@@ -8,6 +9,7 @@ use std::{
 
 use las::Reader;
 use rayon::prelude::*;
+use viewer_core::las::LazChunkTableLayout;
 use viewer_core::{AttributeDescriptor, BlockId, CoordinateFrame, SpatialBounds};
 use viewer_format::{
     BlockEncoder, FormatBlockEncoder, FormatMetadata, FormatWriter, FormatWriterOptions,
@@ -55,12 +57,61 @@ pub(crate) struct ConversionPlan {
     pub(crate) estimated_peak_memory_bytes: u64,
 }
 
-/// Bounds header-declared allocations by the file length, then opens the reader.
+/// Bounds header-declared allocations by the file length and decoded LAZ chunk
+/// table entries by the header, then opens the reader.
 pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
     let mut file = File::open(path)?;
     let file_len = file.metadata()?.len();
-    viewer_core::las::preflight_las(&mut file, file_len)?;
+    if let Some(layout) = viewer_core::las::preflight_las_layout(&mut file, file_len)? {
+        check_laz_chunk_table(&mut file, layout)?;
+        file.seek(SeekFrom::Start(0))?;
+    }
     Ok(Reader::new(std::io::BufReader::new(file))?)
+}
+
+/// The parallel LAZ decompressor sizes buffers from decoded entries (i32
+/// sign-extended to u64), so each one must fit what the file can hold.
+fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result<(), ConvertError> {
+    let reject = |field, value, bound| ConvertError::LazChunkTable {
+        field,
+        value,
+        bound,
+    };
+    let variable = layout.fixed_chunk_size.is_none();
+    file.seek(SeekFrom::Start(layout.table_offset))?;
+    let table = laz::laszip::ChunkTable::read(file, variable)?;
+    let data_bytes = layout
+        .table_offset
+        .saturating_sub(layout.point_data_offset + laz::laszip::ChunkTable::OFFSET_SIZE as u64);
+    let (mut sum_bytes, mut sum_points) = (0u64, 0u64);
+    for entry in table.as_ref() {
+        let bytes_bound = data_bytes.min(i32::MAX as u64);
+        if entry.byte_count > bytes_bound {
+            return Err(reject("chunk byte_count", entry.byte_count, bytes_bound));
+        }
+        sum_bytes += entry.byte_count;
+        if sum_bytes > data_bytes {
+            return Err(reject("chunk byte_count sum", sum_bytes, data_bytes));
+        }
+        if variable {
+            if entry.point_count > layout.header_points {
+                return Err(reject(
+                    "chunk point_count",
+                    entry.point_count,
+                    layout.header_points,
+                ));
+            }
+            sum_points += entry.point_count;
+            if sum_points > layout.header_points {
+                return Err(reject(
+                    "chunk point_count sum",
+                    sum_points,
+                    layout.header_points,
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn convert_file_inner(

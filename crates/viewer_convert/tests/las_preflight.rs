@@ -70,3 +70,81 @@ fn empty_laz_passes_preflight() {
     assert_valid(write_laz((1, 2), 0, None, 0));
     assert_valid(write_laz((1, 4), 6, Some(0), 0));
 }
+
+// --- decoded chunk-table entries (native parallel decompressor) ---
+
+use laz::laszip::{ChunkTable, ChunkTableEntry, LazVlr};
+use viewer_convert::{ConvertError, ConvertOptions, convert_file};
+
+/// Rewrites the chunk table of a 1.2 format-0 LAZ with `chunks` copies of one entry.
+fn craft(variable: bool, point_count: u64, byte_count: u64, chunks: usize) -> Vec<u8> {
+    let mut bytes = write_laz((1, 2), 0, None, 200);
+    let data_offset = u32::from_le_bytes(bytes[96..100].try_into().unwrap()) as usize;
+    let table = i64::from_le_bytes(bytes[data_offset..data_offset + 8].try_into().unwrap());
+    let record = 227 + 54;
+    if variable {
+        bytes[record + 12..record + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+    }
+    let length = u16::from_le_bytes(bytes[227 + 20..227 + 22].try_into().unwrap()) as usize;
+    let vlr = LazVlr::read_from(&bytes[record..record + length]).unwrap();
+    let mut entries = ChunkTable::with_capacity(chunks);
+    for _ in 0..chunks {
+        entries.push(ChunkTableEntry {
+            point_count,
+            byte_count,
+        });
+    }
+    let mut encoded = Vec::new();
+    entries.write_to(&mut encoded, &vlr).unwrap();
+    bytes.truncate(table as usize);
+    bytes.extend_from_slice(&encoded);
+    bytes
+}
+
+fn convert_bytes(bytes: &[u8]) -> Result<(), ConvertError> {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.laz");
+    std::fs::write(&input, bytes).unwrap();
+    convert_file(
+        &input,
+        &dir.path().join("out.oct"),
+        ConvertOptions::default(),
+    )
+    .map(|_| ())
+}
+
+fn assert_rejected(bytes: Vec<u8>, field: &str) {
+    let len = bytes.len() as u64;
+    preflight_las(&mut Cursor::new(&bytes), len).expect("header preflight alone accepts it");
+    match convert_bytes(&bytes) {
+        Err(ConvertError::LazChunkTable { field: got, .. }) => assert_eq!(got, field),
+        other => panic!("expected LazChunkTable({field}), got {other:?}"),
+    }
+}
+
+#[test]
+fn negative_variable_chunk_point_count_is_rejected() {
+    assert_rejected(
+        craft(true, u64::MAX, 10, 1), // i32 -1 sign-extended
+        "chunk point_count",
+    );
+}
+
+#[test]
+fn negative_fixed_chunk_byte_count_is_rejected() {
+    assert_rejected(craft(false, 50_000, u64::MAX, 1), "chunk byte_count");
+}
+
+#[test]
+fn huge_fixed_chunk_byte_count_is_rejected() {
+    assert_rejected(craft(false, 50_000, i32::MAX as u64, 1), "chunk byte_count");
+}
+
+#[test]
+fn las_crate_laz_output_still_converts() {
+    for version in [(1, 2), (1, 4)] {
+        for chunk_size in [None, Some(40), Some(0)] {
+            convert_bytes(&write_laz(version, 3, chunk_size, 130)).unwrap();
+        }
+    }
+}

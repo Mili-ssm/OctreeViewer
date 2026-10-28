@@ -124,6 +124,18 @@ fn read_u64_at<R: Read + Seek>(reader: &mut R, at: u64) -> Result<u64, LasPrefli
     Ok(u64::from_le_bytes(read_array(reader, at)?))
 }
 
+/// Where the LAZ chunk table lives and what the header says about its contents.
+/// Raw header facts only; decoding the table needs the `laz` crate (see
+/// `viewer_convert`), which bounds the decoded entries with these values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LazChunkTableLayout {
+    pub point_data_offset: u64,
+    pub table_offset: u64,
+    /// `None` for variable-size chunks.
+    pub fixed_chunk_size: Option<u32>,
+    pub header_points: u64,
+}
+
 /// Bounds header-declared sizes by the real file length before the `las`/`laz`
 /// crates allocate from them. Parses raw bytes; the reader is rewound to 0.
 /// No `BufReader`: every access seeks, so a buffer would be discarded each time.
@@ -131,12 +143,24 @@ pub fn preflight_las<R: Read + Seek>(
     reader: &mut R,
     file_len: u64,
 ) -> Result<(), LasPreflightError> {
+    preflight_las_layout(reader, file_len).map(|_| ())
+}
+
+/// Same checks as [`preflight_las`]; also returns the chunk table location for
+/// LAZ inputs that carry one.
+pub fn preflight_las_layout<R: Read + Seek>(
+    reader: &mut R,
+    file_len: u64,
+) -> Result<Option<LazChunkTableLayout>, LasPreflightError> {
     let result = preflight_inner(reader, file_len);
     reader.seek(SeekFrom::Start(0))?;
     result
 }
 
-fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), LasPreflightError> {
+fn preflight_inner<R: Read + Seek>(
+    reader: &mut R,
+    file_len: u64,
+) -> Result<Option<LazChunkTableLayout>, LasPreflightError> {
     if file_len < LAS_MIN_HEADER {
         return Err(LasPreflightError::Truncated(
             "file shorter than a LAS header",
@@ -144,7 +168,7 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
     }
     if &read_array::<4, _>(reader, 0)? != b"LASF" {
         // Not LAS: the parser rejects it without header-driven allocations.
-        return Ok(());
+        return Ok(None);
     }
     let [_, minor] = read_array::<2, _>(reader, 24)?;
     let declared_header_size = u64::from(read_u16_at(reader, 94)?);
@@ -224,7 +248,7 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
             // Writer could not patch the offset; laz reads it from the file tail.
             table = i64::from_le_bytes(read_array(reader, file_len - 8)?);
             if table <= point_data_offset as i64 {
-                return Ok(());
+                return Ok(None);
             }
         }
         let table = table as u64;
@@ -252,8 +276,14 @@ fn preflight_inner<R: Read + Seek>(reader: &mut R, file_len: u64) -> Result<(), 
         if chunks > limit {
             return Err(LasPreflightError::ChunkCountExceedsPoints { chunks, limit });
         }
+        return Ok(Some(LazChunkTableLayout {
+            point_data_offset,
+            table_offset: table,
+            fixed_chunk_size: (chunk_size != LASZIP_VARIABLE_CHUNK).then_some(chunk_size),
+            header_points: points,
+        }));
     }
-    Ok(())
+    Ok(None)
 }
 
 #[cfg(test)]

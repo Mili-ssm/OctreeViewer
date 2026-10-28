@@ -1371,3 +1371,17 @@ fn checkpoint_resumes_companion_only_publication_and_rejects_foreign_companion()
         .unwrap();
     assert!(!candidate_dir.exists());
 }
+
+/// Opt-in check against local datasets: `LAS_REAL_FILES` is newline-separated.
+#[test]
+#[ignore = "needs LAS_REAL_FILES"]
+fn real_files_open() {
+    let list = std::env::var("LAS_REAL_FILES").expect("LAS_REAL_FILES");
+    let mut count = 0;
+    for path in list.lines().filter(|line| !line.is_empty()) {
+        crate::las_source::open_las_reader(std::path::Path::new(path))
+            .unwrap_or_else(|error| panic!("{path}: {error}"));
+        count += 1;
+    }
+    println!("real files opened: {count}");
+}
