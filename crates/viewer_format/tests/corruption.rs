@@ -610,6 +610,14 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
                         violations.push(format!("{context}: allocated {largest} bytes"));
                     }
                     match result {
+                        // Every field must fail through format validation: the fixtures
+                        // are in-memory cursors, so `Io` (including `UnexpectedEof`) would
+                        // mean a bound was checked by the stream instead of the parser.
+                        Err(FormatError::Io(error)) => {
+                            violations.push(format!(
+                                "{context}: I/O error instead of validation: {error}"
+                            ));
+                        }
                         Err(_) => {}
                         Ok(_) if field.max_is_fatal && value == max_for(field.width) => {
                             violations.push(format!("{context}: MAX accepted"));

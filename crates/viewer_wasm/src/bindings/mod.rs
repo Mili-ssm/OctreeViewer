@@ -150,7 +150,7 @@ impl WasmVoxelViewer {
 }
 
 impl WasmVoxelViewer {
-    pub(super) async fn create_offscreen_with_config(
+    async fn create_offscreen_with_config(
         canvas: web_sys::OffscreenCanvas,
         voxel_size: f32,
         config: RendererConfig,

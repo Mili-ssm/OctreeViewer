@@ -19,12 +19,10 @@ use viewer_core::{
 };
 use viewer_format::{FormatMetadata, SourcePointBlock};
 
-use super::{
-    ConversionProgress, ConversionStage, ConvertError, ConvertOptions, SpatialPhaseDiagnostics,
-    SpatialSpoolDiagnostics,
-};
+use super::{ConvertError, ConvertOptions};
+use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
-use crate::report::emit_progress;
+use crate::report::{ConversionProgress, ConversionStage, emit_progress};
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
 const SPOOL_IO_BUFFER_BYTES: usize = 64 * 1024;
@@ -2123,9 +2121,8 @@ mod partition_tests {
     fn child_spool_diagnostics_count_only_flushed_payload() {
         let (source, point) = spool_fixture(3);
         let layout = SpoolLayout::source(&source);
-        let workspace_path =
-            std::env::temp_dir().join(format!("child-spool-diagnostics-{}", std::process::id()));
-        let workspace = Workspace::create_at(&workspace_path).unwrap();
+        let temp = tempfile::TempDir::new().unwrap();
+        let workspace = Workspace::create_at(&temp.path().join("workspace")).unwrap();
         let mut child = ChildSpool::new(workspace.file("child.spool"), layout, true);
 
         child.write_point(&point).unwrap();
@@ -2206,7 +2203,8 @@ mod partition_tests {
 
     #[test]
     fn planned_blocks_seek_using_their_compact_record_layout() {
-        let workspace = Workspace::create(&std::env::temp_dir().join("compact-spool.oct")).unwrap();
+        let temp = tempfile::TempDir::new().unwrap();
+        let workspace = Workspace::create(&temp.path().join("compact-spool.oct")).unwrap();
         for format_id in [0, 2, 3, 8] {
             let (source, fixture) = spool_fixture(format_id);
             let source_layout = SpoolLayout::source(&source);
