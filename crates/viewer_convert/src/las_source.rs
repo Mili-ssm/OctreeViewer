@@ -84,6 +84,7 @@ fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result
         .table_offset
         .saturating_sub(layout.point_data_offset + laz::laszip::ChunkTable::OFFSET_SIZE as u64);
     let (mut sum_bytes, mut sum_points) = (0u64, 0u64);
+    let mut chunk_start = layout.point_data_offset + laz::laszip::ChunkTable::OFFSET_SIZE as u64;
     for entry in table.as_ref() {
         let bytes_bound = data_bytes.min(i32::MAX as u64);
         if entry.byte_count > bytes_bound {
@@ -93,6 +94,12 @@ fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result
         if sum_bytes > data_bytes {
             return Err(reject("chunk byte_count sum", sum_bytes, data_bytes));
         }
+        // The parallel reader starts each chunk at the table's cumulative offset.
+        let chunk_end = chunk_start + entry.byte_count;
+        if let (Some(layered), true) = (layout.layered, entry.byte_count > 0) {
+            viewer_core::las::check_layered_chunk(file, layered, chunk_start, chunk_end)?;
+        }
+        chunk_start = chunk_end;
         if variable {
             if entry.point_count > layout.header_points {
                 return Err(reject(

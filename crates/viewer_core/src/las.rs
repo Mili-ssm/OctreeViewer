@@ -102,6 +102,18 @@ pub enum LasPreflightError {
     ChunkTableOutOfBounds(u64),
     #[error("LAZ chunk table declares {chunks} chunks, more than the {limit} the file can hold")]
     ChunkCountExceedsPoints { chunks: u64, limit: u64 },
+    #[error(
+        "LAZ point_data_record_length ({record_len} B) differs from the laszip item sizes ({items_size} B)"
+    )]
+    LazRecordLengthMismatch { record_len: u64, items_size: u64 },
+    #[error(
+        "LAZ layered chunk declares a {size} B layer (layers total {total} B), but only {available} B remain in the chunk"
+    )]
+    LazLayerExceedsChunk {
+        size: u64,
+        total: u64,
+        available: u64,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -185,6 +197,86 @@ pub struct LazChunkTableLayout {
     /// record length and the laszip item sizes.
     pub point_size: u64,
     pub header_points: u64,
+    /// Present when the chunks use the layered (point14) encoding.
+    pub layered: Option<LayeredChunks>,
+}
+
+/// Raw layout of a layered LAZ chunk, derived from the laszip items:
+/// the first point uncompressed (`first_point` B), a `u32` point count, one `u32` size per
+/// layer (`layer_words`, in item order: point14 9, rgb14 1, rgbnir14 2, wavepacket14 1,
+/// byte14 one per extra byte), then the layers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayeredChunks {
+    pub first_point: u64,
+    pub layer_words: u64,
+}
+
+/// `laz` allocates each layer size read from the chunk before reading it, so every
+/// size (and their sum) must fit in the chunk `start..end`. Returns the chunk's point
+/// count and its length as the sequential reader consumes it.
+pub fn check_layered_chunk<R: Read + Seek>(
+    reader: &mut R,
+    layered: LayeredChunks,
+    start: u64,
+    end: u64,
+) -> Result<(u32, u64), LasPreflightError> {
+    let header_len = layered
+        .first_point
+        .saturating_add(4)
+        .saturating_add(layered.layer_words * 4);
+    let body = start.saturating_add(header_len);
+    if body > end {
+        return Err(LasPreflightError::Truncated("LAZ layered chunk header"));
+    }
+    let count = read_u32_at(reader, start + layered.first_point)?;
+    reader.seek(SeekFrom::Start(start + layered.first_point + 4))?;
+    let mut sizes = vec![0u8; (layered.layer_words * 4) as usize];
+    reader.read_exact(&mut sizes).map_err(|error| match error.kind() {
+        std::io::ErrorKind::UnexpectedEof => {
+            LasPreflightError::Truncated("LAZ layered chunk header")
+        }
+        _ => error.into(),
+    })?;
+    let available = end - body;
+    let sizes: Vec<u64> = sizes
+        .chunks_exact(4)
+        .map(|word| u64::from(u32::from_le_bytes([word[0], word[1], word[2], word[3]])))
+        .collect();
+    let total: u64 = sizes.iter().sum();
+    if let Some(size) = sizes.iter().copied().find(|size| *size > available) {
+        return Err(LasPreflightError::LazLayerExceedsChunk {
+            size,
+            total,
+            available,
+        });
+    }
+    if total > available {
+        return Err(LasPreflightError::LazLayerExceedsChunk {
+            size: total,
+            total,
+            available,
+        });
+    }
+    Ok((count, header_len + total))
+}
+
+/// Walks chunks the way the sequential reader locates them (each starts where the
+/// previous one's layers end) until the header's points are covered or `end` is reached.
+fn walk_layered_chunks<R: Read + Seek>(
+    reader: &mut R,
+    layered: LayeredChunks,
+    fixed_chunk_size: Option<u32>,
+    start: u64,
+    end: u64,
+    points: u64,
+) -> Result<(), LasPreflightError> {
+    let (mut pos, mut remaining) = (start, points);
+    while remaining > 0 && pos < end {
+        let (count, len) = check_layered_chunk(reader, layered, pos, end)?;
+        pos += len;
+        remaining = remaining.saturating_sub(fixed_chunk_size.map_or(u64::from(count), u64::from));
+    }
+    Ok(())
 }
 
 /// Bounds header-declared sizes by the real file length before the `las`/`laz`
@@ -257,6 +349,7 @@ fn preflight_inner<R: Read + Seek>(
 
     let mut laz_chunk_size = None;
     let mut laz_items_size = 0u64;
+    let mut laz_layer_words: Option<u64> = None;
     let mut pos = header_size;
     for _ in 0..vlr_count {
         let end = pos + VLR_HEADER_LEN;
@@ -285,8 +378,22 @@ fn preflight_inner<R: Read + Seek>(
             // A shorter record is rejected by `laz` itself.
             if vlr_len >= 34 {
                 let count = u64::from(read_u16_at(reader, end + 32)?).min((vlr_len - 34) / 6);
+                let mut words = 0u64;
                 for item in 0..count {
-                    laz_items_size += u64::from(read_u16_at(reader, end + 34 + item * 6 + 2)?);
+                    let item_type = read_u16_at(reader, end + 34 + item * 6)?;
+                    let size = u64::from(read_u16_at(reader, end + 34 + item * 6 + 2)?);
+                    laz_items_size += size;
+                    words += match item_type {
+                        10 => 9,
+                        11 | 13 => 1,
+                        12 => 2,
+                        14 => size,
+                        _ => 0,
+                    };
+                }
+                // `laz` picks the layered decoder from the first item's version.
+                if count > 0 && matches!(read_u16_at(reader, end + 34 + 4)?, 3 | 4) {
+                    laz_layer_words = Some(words);
                 }
             }
         }
@@ -320,7 +427,19 @@ fn preflight_inner<R: Read + Seek>(
         return Ok(None);
     }
     if let Some(chunk_size) = laz_chunk_size {
+        // `las` sizes buffers by the header record length, `laz` by the items; valid files agree.
+        if laz_items_size != 0 && laz_items_size != record_len {
+            return Err(LasPreflightError::LazRecordLengthMismatch {
+                record_len,
+                items_size: laz_items_size,
+            });
+        }
         let point_size = record_len.max(laz_items_size);
+        let layered = laz_layer_words.map(|layer_words| LayeredChunks {
+            first_point: laz_items_size,
+            layer_words,
+        });
+        let fixed = (chunk_size != LASZIP_VARIABLE_CHUNK).then_some(chunk_size);
         if chunk_size != LASZIP_VARIABLE_CHUNK {
             check_chunk_bytes(u64::from(chunk_size), point_size)?;
         }
@@ -329,6 +448,11 @@ fn preflight_inner<R: Read + Seek>(
             // Writer could not patch the offset; laz reads it from the file tail.
             table = i64::from_le_bytes(read_array(reader, file_len - 8)?);
             if table <= point_data_offset as i64 {
+                if let Some(layered) = layered {
+                    // No table: `laz` still reads the chunks sequentially up to the file end.
+                    let first = point_data_offset + 8;
+                    walk_layered_chunks(reader, layered, fixed, first, file_len, points)?;
+                }
                 return Ok(None);
             }
         }
@@ -357,12 +481,17 @@ fn preflight_inner<R: Read + Seek>(
         if chunks > limit {
             return Err(LasPreflightError::ChunkCountExceedsPoints { chunks, limit });
         }
+        if let Some(layered) = layered {
+            let first = point_data_offset + 8;
+            walk_layered_chunks(reader, layered, fixed, first, table, points)?;
+        }
         return Ok(Some(LazChunkTableLayout {
             point_data_offset,
             table_offset: table,
-            fixed_chunk_size: (chunk_size != LASZIP_VARIABLE_CHUNK).then_some(chunk_size),
+            fixed_chunk_size: fixed,
             point_size,
             header_points: points,
+            layered,
         }));
     }
     // Uncompressed: records are stored verbatim. EVLRs are not subtracted, so a file

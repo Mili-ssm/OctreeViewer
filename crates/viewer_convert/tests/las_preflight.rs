@@ -191,3 +191,42 @@ fn fixed_chunk_table_covering_fewer_points_than_declared_is_rejected() {
     // 200 declared points, default chunk size 50_000: zero chunks cannot hold them.
     assert_rejected(craft(false, 0, 10, 0), "chunk point_count total");
 }
+
+// Found by fuzzing (fuzz_las_preflight). Both reached `laz` through the guarded path, so
+// the header preflight (shared with the browser converter) and `convert_file` must reject them.
+use viewer_core::las::LasPreflightError;
+
+// Header record length 34 B, laszip items 146 B: `laz` asserted `out.len() % point_size == 0`.
+const RECORD_LENGTH_MISMATCH: &[u8] = include_bytes!("fixtures/laz_record_length_mismatch.laz");
+// LAS 1.4 format 8 layered chunk declaring a 4 GiB layer: `laz` allocated it unchecked.
+const LAYER_SIZE_OOM: &[u8] = include_bytes!("fixtures/laz_layer_size_oom.laz");
+
+#[test]
+fn laz_record_length_differing_from_laszip_items_is_rejected() {
+    let len = RECORD_LENGTH_MISMATCH.len() as u64;
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(RECORD_LENGTH_MISMATCH), len),
+        Err(LasPreflightError::LazRecordLengthMismatch { .. })
+    ));
+    assert!(matches!(
+        convert_bytes(RECORD_LENGTH_MISMATCH),
+        Err(ConvertError::LasPreflight(
+            LasPreflightError::LazRecordLengthMismatch { .. }
+        ))
+    ));
+}
+
+#[test]
+fn laz_layer_size_beyond_its_chunk_is_rejected() {
+    let len = LAYER_SIZE_OOM.len() as u64;
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(LAYER_SIZE_OOM), len),
+        Err(LasPreflightError::LazLayerExceedsChunk { .. })
+    ));
+    assert!(matches!(
+        convert_bytes(LAYER_SIZE_OOM),
+        Err(ConvertError::LasPreflight(
+            LasPreflightError::LazLayerExceedsChunk { .. }
+        ))
+    ));
+}
