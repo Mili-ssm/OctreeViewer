@@ -1,0 +1,4 @@
+# Known broken links awaiting a docs fix (Task 13 empties this file).
+README.md|docs/FORMAT_V7_PLAN.md#evidencia-del-septimo-incremento
+# bindings.rs became the bindings/ directory.
+docs/PROJECT_INVENTORY.md|../crates/viewer_wasm/src/bindings.rs

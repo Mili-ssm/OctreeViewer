@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Local CI: runs every check. Offline by default; CHECK_LOCKED=1 uses --locked.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+CARGO_MODE="--offline"
+if [ "${CHECK_LOCKED:-0}" = "1" ]; then
+  CARGO_MODE="--locked"
+fi
+
+steps=()
+step() {
+  local name="$1"
+  shift
+  echo
+  echo "=== $name ==="
+  "$@"
+  steps+=("ok   $name")
+}
+
+export RUSTDOCFLAGS="-D warnings"
+
+step "tests (default features)" cargo test --workspace --profile fast $CARGO_MODE
+step "tests (all features)" cargo test --workspace --all-features --profile fast $CARGO_MODE
+step "fmt" cargo fmt --all -- --check
+step "clippy (default features)" cargo clippy --workspace --all-targets $CARGO_MODE -- -D warnings
+step "clippy (all features)" cargo clippy --workspace --all-targets --all-features $CARGO_MODE -- -D warnings
+step "clippy wasm32" cargo clippy -p viewer_wasm --target wasm32-unknown-unknown $CARGO_MODE -- -D warnings
+step "cargo doc" cargo doc --workspace --no-deps $CARGO_MODE
+step "node tests" node --test examples/web-host/tests/*.test.mjs
+step "python web-host tests" python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'
+step "python benchmark tests" python3 -m unittest discover -s crates/viewer_convert/benchmarks -p 'test_*.py'
+step "python scripts tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+step "docs links" python3 scripts/check_docs_links.py
+step "version literals" bash scripts/check_version_literals.sh
+step "git diff --check" git diff --check
+
+echo
+echo "=== summary ==="
+printf '%s\n' "${steps[@]}"
+echo "all ${#steps[@]} steps passed"
