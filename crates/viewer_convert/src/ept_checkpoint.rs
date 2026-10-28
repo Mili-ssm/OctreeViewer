@@ -5,11 +5,11 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use viewer_format::FormatVersion;
+use viewer_format::{FormatVersion, crc32};
 
 use crate::{
     CheckpointError, CheckpointMode, ConversionWorkerStats, ConvertOptions,
-    checkpoint::fingerprint_file,
+    checkpoint::fingerprint_file, fs_util::sync_parent,
 };
 
 const MANIFEST_SCHEMA: u32 = 1;
@@ -634,22 +634,6 @@ fn checkpoint_path(p: &Path) -> PathBuf {
     s.push(".checkpoint");
     PathBuf::from(s)
 }
-fn sync_parent(p: &Path) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        File::open(
-            p.parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new(".")),
-        )?
-        .sync_all()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = p;
-        Ok(())
-    }
-}
 fn sync_file(p: &Path) -> Result<(), CheckpointError> {
     OpenOptions::new()
         .read(true)
@@ -736,16 +720,6 @@ fn decode_record(b: &[u8]) -> Result<EptJournalRecord, CheckpointError> {
         writer_record: b[52..].to_vec(),
     })
 }
-fn crc32(b: &[u8]) -> u32 {
-    let mut c = !0u32;
-    for x in b {
-        c ^= *x as u32;
-        for _ in 0..8 {
-            c = (c >> 1) ^ (0xedb88320u32 & (0u32.wrapping_sub(c & 1)));
-        }
-    }
-    !c
-}
 
 #[cfg(test)]
 mod tests {
@@ -753,6 +727,11 @@ mod tests {
     use crate::ConvertOptions;
     use std::io::{Seek, SeekFrom};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn crc32_matches_ieee_check_vector() {
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+    }
     fn dir() -> PathBuf {
         let p = std::env::temp_dir().join(format!(
             "ept-checkpoint-{}-{}",

@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::ConvertOptions;
+use crate::{ConvertOptions, fs_util::sync_parent};
 use thiserror::Error;
 use viewer_format::{FormatVersion, HEADER_ENVELOPE_VERSION};
 
@@ -488,22 +488,6 @@ fn read_manifest(
             .map_err(|_| CheckpointError::Invalid("invalid spatial divisions".to_owned()))?,
         stage,
     })
-}
-
-fn sync_parent(path: &Path) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        let parent = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        File::open(parent)?.sync_all()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        Ok(())
-    }
 }
 
 #[cfg(test)]

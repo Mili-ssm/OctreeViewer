@@ -28,6 +28,7 @@ mod checkpoint;
 mod diagnostics;
 mod ept;
 mod ept_checkpoint;
+mod fs_util;
 mod spatial;
 use checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 pub use checkpoint::{CheckpointError, CheckpointMode};
@@ -1428,10 +1429,6 @@ pub(crate) fn publish_validated_output_pair(
     {
         return Err(ConvertError::OutputExists(attributes_path));
     }
-    let parent = output_path
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
     if !attributes_exists {
         fs::hard_link(attributes_temporary_path, &attributes_path).map_err(|error| {
             if error.kind() == io::ErrorKind::AlreadyExists || attributes_path.exists() {
@@ -1441,7 +1438,7 @@ pub(crate) fn publish_validated_output_pair(
             }
         })?;
     }
-    File::open(parent)?.sync_all()?;
+    fs_util::sync_parent(output_path)?;
     if !primary_exists && let Err(error) = fs::hard_link(temporary_path, output_path) {
         if !attributes_exists {
             let _ = fs::remove_file(&attributes_path);
@@ -1454,11 +1451,7 @@ pub(crate) fn publish_validated_output_pair(
             },
         );
     }
-    let parent = output_path
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    File::open(parent)?.sync_all()?;
+    fs_util::sync_parent(output_path)?;
     Ok((output_bytes, output_validation))
 }
 
