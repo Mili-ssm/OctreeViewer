@@ -27,6 +27,11 @@ Playwright los flujos afectados, consola y escritorio/móvil. Readback nativo no
 presentación en todos los navegadores. Borrar de `target/` conversiones y temporales que ya no
 hagan falta; conservar informes y muestras que documenten resultados.
 
+### Fuzzing (opcional)
+
+Objetivos `cargo-fuzz` para el lector de formato y el preflight LAS/LAZ; fuera de `scripts/check.sh`
+y de CI. Uso y gestión de crashes: [fuzz/README.md](fuzz/README.md).
+
 ## Features Cargo
 
 Apagadas por defecto; lista y alcance en el [inventario](docs/reference/inventory.md#componentes-y-puntos-de-entrada).

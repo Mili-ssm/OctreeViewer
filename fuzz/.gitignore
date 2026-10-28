@@ -1,0 +1,8 @@
+target
+artifacts
+coverage
+# Only tiny seeds are tracked (`cargo run --bin gen_seeds` regenerates all of them).
+corpus/*/*
+!corpus/*/seed-las-*
+!corpus/*/seed-laz-*
+!corpus/*/seed-sample*

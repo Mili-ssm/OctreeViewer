@@ -1,0 +1,38 @@
+[package]
+name = "octree_viewer_fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+viewer_convert = { path = "../crates/viewer_convert" }
+viewer_core = { path = "../crates/viewer_core" }
+viewer_format = { path = "../crates/viewer_format" }
+las = { version = "0.11.1", default-features = false, features = ["laz", "laz-parallel"] }
+
+[[bin]]
+name = "fuzz_format_reader"
+path = "fuzz_targets/fuzz_format_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_las_preflight"
+path = "fuzz_targets/fuzz_las_preflight.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gen_seeds"
+path = "src/bin/gen_seeds.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
