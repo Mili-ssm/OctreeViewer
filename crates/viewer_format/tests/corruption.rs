@@ -637,3 +637,39 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
         "too few mutations were exercised"
     );
 }
+
+/// A tiny index declaring the default maximum of nodes must be rejected before any
+/// allocation sized from that count.
+#[test]
+fn node_count_beyond_index_bytes_is_rejected_without_reserving() {
+    let default_max_nodes = 2_000_000_u64;
+    for version in FormatVersion::WRITABLE {
+        let mut fixture = monolithic(version);
+        let bytes = &mut fixture.primary;
+        let footer = bytes.len() - FOOTER;
+        let index_offset = get_int(bytes, footer + 8, 8) as usize;
+        let index_length = get_int(bytes, footer + 16, 8) as usize;
+        let node_count = index_fields(&bytes[index_offset..index_offset + index_length], version)
+            .into_iter()
+            .find(|field| field.name == "node_count")
+            .unwrap();
+        let at = index_offset + node_count.offset;
+        bytes[at..at + 8].copy_from_slice(&default_max_nodes.to_le_bytes());
+        repair(bytes, Target::Primary);
+
+        LARGEST_ALLOCATION.with(|largest| largest.set(0));
+        let result = FormatReader::with_limits(
+            Cursor::new(fixture.primary.clone()),
+            FormatReaderLimits::default(),
+        );
+        assert!(
+            result.is_err(),
+            "{version:?}: tiny index declaring 2 M nodes opened"
+        );
+        assert!(
+            largest_allocation() < ALLOCATION_CEILING,
+            "{version:?}: allocated {} bytes",
+            largest_allocation()
+        );
+    }
+}

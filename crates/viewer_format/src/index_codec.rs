@@ -324,6 +324,10 @@ pub(crate) fn validate_index_range(
     Ok(())
 }
 
+/// Smallest encoded node: id 8, parent tag 1, level 4, bounds 48, point count 8, geometric
+/// error 8, block count 4, range count 4.
+const MIN_NODE_RECORD_LEN: usize = 85;
+
 pub(crate) fn parse_index(
     bytes: &[u8],
     limits: &FormatReaderLimits,
@@ -391,6 +395,10 @@ pub(crate) fn parse_index(
         });
     }
     let node_capacity = usize::try_from(node_count).map_err(|_| FormatError::TooManyNodes)?;
+    // Reserving before this check would let a tiny index force ~100 B per declared node.
+    if node_capacity.saturating_mul(MIN_NODE_RECORD_LEN) > cursor.remaining() {
+        return Err(FormatError::TruncatedIndex);
+    }
     let mut nodes = Vec::new();
     nodes
         .try_reserve_exact(node_capacity)
