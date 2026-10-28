@@ -22,7 +22,6 @@ use viewer_format::{
 const BLOCKS: u64 = 3;
 const POINTS_PER_BLOCK: usize = 24;
 const FOOTER: usize = 40;
-const HEADER: usize = 16;
 /// Small enough that any allocation sized from an unchecked field would exceed it.
 const LIMIT_BYTES: u64 = 64 * 1024;
 const ALLOCATION_CEILING: usize = 1024 * 1024;
@@ -331,42 +330,10 @@ fn file_len(fixture: &Fixture, target: Target) -> usize {
     }
 }
 
-/// Names the structure a byte belongs to, for failure messages.
-fn describe(fixture: &Fixture, version: FormatVersion, target: Target, offset: usize) -> String {
-    let bytes = match target {
-        Target::Primary => &fixture.primary,
-        Target::Attributes => fixture.attributes.as_ref().unwrap(),
-    };
-    if offset < HEADER {
-        return "header".into();
-    }
-    if offset >= bytes.len() - FOOTER {
-        return "footer".into();
-    }
-    if matches!(target, Target::Attributes) {
-        return "payload".into();
-    }
-    let footer = bytes.len() - FOOTER;
-    let index_offset = get_int(bytes, footer + 8, 8) as usize;
-    if offset < index_offset {
-        return "payload".into();
-    }
-    index_fields(&bytes[index_offset..footer], version)
-        .into_iter()
-        .find(|field| {
-            (field.offset + index_offset..)
-                .take(field.width)
-                .any(|at| at == offset)
-        })
-        .map_or("index", |field| field.name)
-        .into()
-}
-
-/// Flips one bit at every offset of every file of every revision. With `repaired`, the index
-/// and footer checksums are recomputed afterwards so only structural validation remains.
-/// `require_same_data` demands that any accepted file decodes exactly like the original;
-/// otherwise acceptance is only required not to panic.
-fn flip_sweep(repaired: bool, require_same_data: bool) {
+/// Flips one bit at every offset of every file of every revision, optionally recomputing the
+/// index/footer checksums afterwards. An accepted file must decode like the original unless
+/// the checksums were repaired.
+fn flip_sweep(repaired: bool) {
     sweep_versions(|version| {
         let mut findings = Vec::new();
         for (kind, fixture) in fixtures(version) {
@@ -380,12 +347,11 @@ fn flip_sweep(repaired: bool, require_same_data: bool) {
                         repair(bytes, target);
                     }
                     if let Ok(decoded) = read_all(&broken)
-                        && require_same_data
+                        && !repaired
                         && decoded != expected
                     {
                         findings.push(format!(
-                            "{version:?} {kind} {target:?} offset {offset} ({}) repaired={repaired}",
-                            describe(&fixture, version, target, offset)
+                            "{version:?} {kind} {target:?} offset {offset}: different data accepted"
                         ));
                     }
                 }
@@ -399,17 +365,10 @@ fn flip_sweep(repaired: bool, require_same_data: bool) {
 fn single_bit_flip_never_panics() {
     // Without repair, a file is rejected or (for bytes outside every checksum) decodes to the
     // original data.
-    flip_sweep(false, true);
-    // With index/footer checksums repaired only the structural validators remain; the sweep
-    // must never panic.
-    flip_sweep(true, false);
-}
-
-#[test]
-#[ignore = "monolithic index fields attribute_name, block_origin and block_scale are covered \
-            only by the index checksum, so a forged checksum yields different decoded data"]
-fn repaired_bit_flip_never_changes_decoded_data() {
-    flip_sweep(true, true);
+    flip_sweep(false);
+    // CRC repair can legitimately yield a different valid file (checksums are not
+    // authentication), so only the absence of panics is required here.
+    flip_sweep(true);
 }
 
 /// A named byte region of the index; integers are what the extreme-value test mutates.
@@ -537,12 +496,16 @@ fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
     walker.fields
 }
 
-fn candidates(width: usize, file_length: usize, original: u64) -> Vec<u64> {
-    let max = if width == 4 {
+fn max_for(width: usize) -> u64 {
+    if width == 4 {
         u64::from(u32::MAX)
     } else {
         u64::MAX
-    };
+    }
+}
+
+fn candidates(width: usize, file_length: usize, original: u64) -> Vec<u64> {
+    let max = max_for(width);
     let length = file_length as u64;
     let mut values = vec![0, 1, max, length - 1, length + 1];
     values.retain(|value| *value != original && *value <= max);
@@ -648,7 +611,7 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
                     }
                     match result {
                         Err(_) => {}
-                        Ok(_) if field.max_is_fatal && value == max_value(field.width) => {
+                        Ok(_) if field.max_is_fatal && value == max_for(field.width) => {
                             violations.push(format!("{context}: MAX accepted"));
                         }
                         Ok(decoded) if decoded != expected => {
@@ -666,13 +629,3 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
         "too few mutations were exercised"
     );
 }
-
-fn max_value(width: usize) -> u64 {
-    if width == 4 {
-        u64::from(u32::MAX)
-    } else {
-        u64::MAX
-    }
-}
-
-const _: () = assert!(HEADER == 16);
