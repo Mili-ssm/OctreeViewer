@@ -6,7 +6,6 @@ use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use las::{Builder, Color, Point, Writer, point::Format};
@@ -18,8 +17,6 @@ use super::{
     convert_file_with_checkpoint, convert_file_with_diagnostics, convert_file_with_progress,
 };
 use crate::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
-
-static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn visual_scale_normalizes_bounds_without_changing_coordinates() {
@@ -39,7 +36,8 @@ fn visual_scale_normalizes_bounds_without_changing_coordinates() {
 
 #[test]
 fn rejects_checkpoint_candidates_with_a_stale_visual_scale() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
@@ -49,18 +47,10 @@ fn rejects_checkpoint_candidates_with_a_stale_visual_scale() {
         verify_candidate_visual_scale(&output, 25.0),
         Err(ConvertError::StaleVisualScaleCheckpoint { .. })
     ));
-    fs::remove_dir_all(dir).unwrap();
 }
 
-fn test_dir() -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "viewer-convert-{}-{}",
-        std::process::id(),
-        TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = fs::remove_dir_all(&path);
-    fs::create_dir_all(&path).unwrap();
-    path
+fn test_dir() -> tempfile::TempDir {
+    tempfile::tempdir().unwrap()
 }
 
 fn fixture(path: &std::path::Path, compressed: bool, colored: bool, count: usize) {
@@ -92,7 +82,8 @@ fn fixture(path: &std::path::Path, compressed: bool, colored: bool, count: usize
 
 #[test]
 fn diagnostics_report_internal_windows_without_changing_output_bytes() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let baseline = dir.join("baseline.oct");
     let profiled = dir.join("profiled.oct");
@@ -159,7 +150,6 @@ fn diagnostics_report_internal_windows_without_changing_output_bytes() {
             && worker.read_elapsed_ns > 0
             && worker.max_decoded_block_estimated_bytes > 0
     }));
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -169,7 +159,8 @@ fn v7_codec_diagnostics_preserve_output_and_separate_winner_from_attempts() {
         viewer_format::FormatVersion::V7_PRE2,
         viewer_format::FormatVersion::V7_PRE3,
     ] {
-        let dir = test_dir();
+        let tmp = test_dir();
+        let dir = tmp.path().to_owned();
         let input = dir.join("source.las");
         let baseline = dir.join("baseline.oct");
         let profiled = dir.join("profiled.oct");
@@ -198,13 +189,13 @@ fn v7_codec_diagnostics_preserve_output_and_separate_winner_from_attempts() {
         assert!(winners > 0);
         assert!(attempts > winners);
         assert!(diagnostics.occupancy_builds.is_some());
-        fs::remove_dir_all(dir).unwrap();
     }
 }
 
 #[test]
 fn diagnostics_count_partition_and_lod_spool_payloads() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let serial_output = dir.join("serial.oct");
     let parallel_output = dir.join("parallel.oct");
@@ -275,7 +266,6 @@ fn diagnostics_count_partition_and_lod_spool_payloads() {
     assert!(phases.spool_partition_and_sample_elapsed_ns > 0);
     assert!(phases.spool_scan_read_elapsed_ns > 0);
     assert!(phases.lod_sample_write_elapsed_ns > 0);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 fn coincident_fixture(path: &std::path::Path) {
@@ -338,7 +328,8 @@ fn extended_fixture(path: &std::path::Path) {
 
 #[test]
 fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.laz");
     let output = dir.join("result.oct");
     fixture(&input, true, true, 5);
@@ -471,12 +462,12 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
     }
     assert_eq!(all_source_ids, (100..105).collect());
     assert!(source_values.into_iter().all(|found| found));
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn converts_las_without_rgb_and_uses_intensity_for_display_color() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
@@ -503,12 +494,12 @@ fn converts_las_without_rgb_and_uses_intensity_for_display_color() {
         }
     }
     assert!(found_last_point);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn bounded_spatial_workers_preserve_the_serial_output() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let serial_output = dir.join("serial.oct");
     let parallel_output = dir.join("parallel.oct");
@@ -576,7 +567,6 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
         fs::read(output_attributes_path(&serial_output)).unwrap(),
         fs::read(output_attributes_path(&parallel_output)).unwrap()
     );
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -636,7 +626,8 @@ fn pipeline_propagates_preparation_and_consumer_errors_without_deadlock() {
 
 #[test]
 fn pipeline_with_no_memory_margin_preserves_serial_output() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let serial_output = dir.join("serial.oct");
     let output = dir.join("tight.oct");
@@ -665,12 +656,12 @@ fn pipeline_with_no_memory_margin_preserves_serial_output() {
         fs::read(output_attributes_path(&output)).unwrap(),
         fs::read(output_attributes_path(&serial_output)).unwrap()
     );
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn cancelling_pipelined_conversion_does_not_publish_outputs() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("pipelined.oct");
     fixture(&input, false, true, 100);
@@ -685,7 +676,6 @@ fn cancelling_pipelined_conversion_does_not_publish_outputs() {
     assert!(matches!(result, Err(ConvertError::Cancelled { .. })));
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -699,7 +689,8 @@ fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
         viewer_format::FormatVersion::V7_PRE2,
         viewer_format::FormatVersion::V7_PRE3,
     ] {
-        let dir = test_dir();
+        let tmp = test_dir();
+        let dir = tmp.path().to_owned();
         let input = dir.join("source.las");
         let serial_output = dir.join("serial-v6.oct");
         let parallel_output = dir.join("parallel-v6.oct");
@@ -757,13 +748,13 @@ fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
         }
         assert_eq!(serial.point_count, parallel.point_count);
         assert_eq!(serial.block_count, parallel.block_count);
-        fs::remove_dir_all(dir).unwrap();
     }
 }
 
 #[test]
 fn parallel_worker_limits_are_validated_and_budget_is_respected() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("parallel.oct");
     fixture(&input, false, false, 100);
@@ -797,7 +788,6 @@ fn parallel_worker_limits_are_validated_and_budget_is_respected() {
     ));
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -816,7 +806,8 @@ fn default_worker_count_uses_available_parallelism_with_a_safe_cap() {
 
 #[test]
 fn cancellation_during_parallel_spatial_planning_does_not_publish_output() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("parallel.oct");
     fixture(&input, false, false, 100);
@@ -839,12 +830,12 @@ fn cancellation_during_parallel_spatial_planning_does_not_publish_output() {
     assert_eq!(hierarchy_updates, 12);
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn preserves_optional_gps_time_rgb_and_nir_dimensions() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("extended.las");
     let output = dir.join("result.oct");
     extended_fixture(&input);
@@ -881,12 +872,12 @@ fn preserves_optional_gps_time_rgb_and_nir_dimensions() {
         panic!("RGB must remain u16");
     };
     assert_eq!(rgb, &[0x1200, 0xAB00, 0xFF00]);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn keeps_existing_outputs_unchanged_and_cleans_temporary_files_on_failure() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
@@ -904,12 +895,12 @@ fn keeps_existing_outputs_unchanged_and_cleans_temporary_files_on_failure() {
     assert!(convert_file(&input, &output, ConvertOptions::default()).is_err());
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn memory_budget_rejects_the_plan_before_creating_an_output() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
@@ -921,12 +912,12 @@ fn memory_budget_rejects_the_plan_before_creating_an_output() {
     ));
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn identical_positions_remain_full_resolution_without_deep_empty_splits() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("identical.las");
     let output = dir.join("result.oct");
     coincident_fixture(&input);
@@ -956,14 +947,14 @@ fn identical_positions_remain_full_resolution_without_deep_empty_splits() {
     }
     intensities.sort_unstable();
     assert_eq!(intensities, [1, 2, 3, 4, 5]);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn shared_leaf_and_lod_spools_are_released_before_validation() {
     for shared_spool in [true, false] {
         for workers in [1, 2, 3] {
-            let dir = test_dir();
+            let tmp = test_dir();
+            let dir = tmp.path().to_owned();
             let input = dir.join("source.las");
             let output = dir.join("result.oct");
             if shared_spool {
@@ -992,14 +983,14 @@ fn shared_leaf_and_lod_spools_are_released_before_validation() {
             })
             .unwrap();
             assert!(validated);
-            fs::remove_dir_all(dir).unwrap();
         }
     }
 }
 
 #[test]
 fn lod_voxels_average_color_and_copy_other_attributes_from_nearest_point() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("colors.las");
     let output = dir.join("result.oct");
     let mut builder = Builder::from((1, 2));
@@ -1062,12 +1053,12 @@ fn lod_voxels_average_color_and_copy_other_attributes_from_nearest_point() {
     };
     let rgb = &rgb[averaged_sample * 3..averaged_sample * 3 + 3];
     assert_eq!(rgb, &[0x8000; 3]);
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn cancellation_removes_the_temporary_file_without_publishing_output() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 5);
@@ -1102,12 +1093,12 @@ fn cancellation_removes_the_temporary_file_without_publishing_output() {
         .expect("a cancelled conversion can be rebuilt from its source");
     assert_eq!(rebuilt.point_count, 5);
     assert!(output.exists());
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn resumes_from_the_completed_source_spool_and_rejects_changed_options() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     let expected = dir.join("expected.oct");
@@ -1178,7 +1169,6 @@ fn resumes_from_the_completed_source_spool_and_rejects_changed_options() {
         fs::read(output_attributes_path(&output)).unwrap(),
         fs::read(output_attributes_path(&expected)).unwrap()
     );
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -1192,7 +1182,8 @@ fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_r
         viewer_format::FormatVersion::V7_PRE2,
         viewer_format::FormatVersion::V7_PRE3,
     ] {
-        let dir = test_dir();
+        let tmp = test_dir();
+        let dir = tmp.path().to_owned();
         let input = dir.join("source.las");
         let output = dir.join("result.oct");
         let expected = dir.join("expected.oct");
@@ -1266,13 +1257,13 @@ fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_r
 
         convert_file(&input, &expected, options).unwrap();
         assert_eq!(fs::read(output).unwrap(), fs::read(expected).unwrap());
-        fs::remove_dir_all(dir).unwrap();
     }
 }
 
 #[test]
 fn rejects_changed_input_and_preserves_the_checkpoint() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     let mut checkpoint_dir = output.as_os_str().to_owned();
@@ -1307,11 +1298,11 @@ fn rejects_changed_input_and_preserves_the_checkpoint() {
     ));
     assert!(checkpoint_dir.join("source.spool").is_file());
     assert!(!output.exists());
-    fs::remove_dir_all(dir).unwrap();
 }
 #[test]
 fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     let attrs = output_attributes_path(&output);
@@ -1340,12 +1331,12 @@ fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
                 .all(|p| p.color == viewer_core::ColorRgb::new(160, 160, 160))
         );
     }
-    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
 fn checkpoint_resumes_companion_only_publication_and_rejects_foreign_companion() {
-    let dir = test_dir();
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 5);
@@ -1379,5 +1370,4 @@ fn checkpoint_resumes_companion_only_publication_and_rejects_foreign_companion()
         .attach_attributes(fs::File::open(&attrs).unwrap())
         .unwrap();
     assert!(!candidate_dir.exists());
-    fs::remove_dir_all(dir).unwrap();
 }

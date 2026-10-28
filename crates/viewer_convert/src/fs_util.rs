@@ -23,11 +23,9 @@ mod tests {
 
     #[test]
     fn sync_parent_succeeds_for_file_in_existing_directory() {
-        let dir = std::env::temp_dir().join(format!("fs-util-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("entry.bin");
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("entry.bin");
         std::fs::write(&file, b"x").unwrap();
         sync_parent(&file).unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

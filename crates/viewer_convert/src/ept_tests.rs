@@ -1,9 +1,4 @@
-use std::{
-    fs,
-    io::Write,
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{fs, io::Write};
 
 use las::{Builder, Color, Point, Writer, point::Format};
 use viewer_core::{DatasetSource, HierarchySemantics, NodeId};
@@ -11,17 +6,8 @@ use viewer_format::{FormatReader, OctreeReader};
 
 use super::*;
 
-static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn dir() -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "viewer-ept-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = fs::remove_dir_all(&path);
-    fs::create_dir_all(&path).unwrap();
-    path
+fn dir() -> tempfile::TempDir {
+    tempfile::tempdir().unwrap()
 }
 
 fn write_laz(path: &Path, position: [f64; 3]) {
@@ -98,7 +84,8 @@ fn converts_local_laszip_ept_pages_as_additive_hierarchy() {
         viewer_format::FormatVersion::V7_PRE2,
         viewer_format::FormatVersion::V7_PRE3,
     ] {
-        let root = dir();
+        let tmp = dir();
+        let root = tmp.path().to_owned();
         fs::create_dir_all(root.join("ept-data")).unwrap();
         fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
         write_manifest(&root, "laszip", 3);
@@ -239,7 +226,8 @@ fn converts_local_laszip_ept_pages_as_additive_hierarchy() {
 
 #[test]
 fn ept_checkpoint_resumes_within_laz_and_matches_clean_output() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-data")).unwrap();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     write_manifest(&root, "laszip", 2);
@@ -298,7 +286,8 @@ fn ept_v72_and_v73_checkpoints_resume_between_blocks_and_match_clean_output() {
             viewer_format::FormatVersion::V7_PRE2,
         ),
     ] {
-        let root = dir();
+        let tmp = dir();
+        let root = tmp.path().to_owned();
         fs::create_dir_all(root.join("ept-data")).unwrap();
         fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
         write_manifest(&root, "laszip", 2);
@@ -367,7 +356,8 @@ fn ept_v72_and_v73_checkpoints_resume_between_blocks_and_match_clean_output() {
 
 #[test]
 fn ept_checkpoint_recovers_after_output_validation_before_publication() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-data")).unwrap();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     write_manifest(&root, "laszip", 1);
@@ -397,7 +387,8 @@ fn ept_checkpoint_recovers_after_output_validation_before_publication() {
 
 #[test]
 fn ept_checkpoint_rejects_changed_source_metadata_without_touching_prefix() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-data")).unwrap();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     write_manifest(&root, "laszip", 2);
@@ -450,7 +441,8 @@ fn ept_checkpoint_rejects_changed_source_metadata_without_touching_prefix() {
 
 #[test]
 fn v7_ept_rgb_conversion_preserves_display_and_typed_values() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-data")).unwrap();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     fs::write(
@@ -488,12 +480,12 @@ fn v7_ept_rgb_conversion_preserves_display_and_typed_values() {
         panic!("EPT RGB must remain u16");
     };
     assert_eq!(rgb, &[0x1234, 0xABCD, 0xFEDC]);
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn rejects_unsupported_ept_codec_before_reading_hierarchy() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     write_manifest(&root, "zstandard", 0);
     assert!(matches!(
         convert(
@@ -510,7 +502,8 @@ fn rejects_unsupported_ept_codec_before_reading_hierarchy() {
 
 #[test]
 fn rejects_checkpoint_and_repartition_options_for_ept() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     write_manifest(&root, "laszip", 0);
     let output = root.join("result.oct");
     assert!(matches!(
@@ -534,7 +527,8 @@ fn rejects_checkpoint_and_repartition_options_for_ept() {
 
 #[test]
 fn rejects_ept_count_mismatch_and_missing_node_files() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     write_manifest(&root, "laszip", 2);
     fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":1}"#).unwrap();
@@ -566,7 +560,8 @@ fn rejects_ept_count_mismatch_and_missing_node_files() {
 
 #[test]
 fn rejects_ept_memory_budget_before_planning_all_nodes_or_creating_output() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-data")).unwrap();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     write_manifest(&root, "laszip", 2);
@@ -589,7 +584,8 @@ fn rejects_ept_memory_budget_before_planning_all_nodes_or_creating_output() {
 
 #[test]
 fn rejects_ept_memory_budget_while_reading_large_hierarchy_page() {
-    let root = dir();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     write_manifest(&root, "laszip", 0);
     let mut page = serde_json::Map::new();

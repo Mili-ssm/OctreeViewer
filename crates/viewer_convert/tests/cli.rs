@@ -6,7 +6,8 @@ use viewer_format::FormatReader;
 
 #[test]
 fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
-    let root = std::env::temp_dir().join(format!("viewer-ept-cli-{}", std::process::id()));
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().to_owned();
     fs::create_dir_all(root.join("ept-data")).unwrap();
     fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
     fs::write(
@@ -61,5 +62,4 @@ fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
     assert!(!rejected.status.success());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("EPT topology is preserved"));
     assert!(!rejected_path.exists());
-    fs::remove_dir_all(root).unwrap();
 }

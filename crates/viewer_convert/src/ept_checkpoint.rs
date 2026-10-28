@@ -726,23 +726,13 @@ mod tests {
     use super::*;
     use crate::ConvertOptions;
     use std::io::{Seek, SeekFrom};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn crc32_matches_ieee_check_vector() {
         assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
     }
-    fn dir() -> PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "ept-checkpoint-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&p).unwrap();
-        p
+    fn dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
     fn options() -> ConvertOptions {
         ConvertOptions::default()
@@ -752,7 +742,8 @@ mod tests {
 
     #[test]
     fn v72_checkpoint_resumes_only_with_its_exact_format_identity() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let v72_options = ConvertOptions::default()
             .with_format_version(FormatVersion::V7_PRE2)
             .unwrap();
@@ -775,7 +766,6 @@ mod tests {
             EptCheckpoint::open(&p, CheckpointMode::Resume, options()),
             Err(CheckpointError::Mismatch)
         ));
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
     }
     fn src() -> Vec<EptSourceFile> {
         vec![EptSourceFile {
@@ -802,7 +792,8 @@ mod tests {
     }
     #[test]
     fn option_and_source_mismatch() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         drop(c);
@@ -824,11 +815,11 @@ mod tests {
             Err(CheckpointError::Mismatch)
         ));
         c.bind_source_files(src()).unwrap();
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
     }
     #[test]
     fn source_catalog_detects_crc_corruption_and_truncation() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         drop(c);
@@ -843,11 +834,11 @@ mod tests {
         fs::write(&catalog, &original[..original.len() - 1]).unwrap();
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Resume, options()).unwrap();
         assert!(c.bind_source_files(src()).is_err());
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
     }
     #[test]
     fn tails_are_ignored_until_truncate() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         writing(&mut c);
@@ -873,11 +864,64 @@ mod tests {
         c.truncate_uncommitted_artifacts().unwrap();
         assert_eq!(fs::metadata(c.candidate_path()).unwrap().len(), 7);
         drop(c);
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
+    }
+    #[test]
+    fn journal_tail_corruption_is_ignored_and_committed_corruption_is_error() {
+        let tmp = dir();
+        let p = tmp.path().join("out");
+        let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
+        c.bind_source_files(src()).unwrap();
+        writing(&mut c);
+        let journal = c.journal_path();
+        let committed = fs::read(&journal).unwrap();
+        let replay = |c: &EptCheckpoint| {
+            let mut seen = Vec::new();
+            c.for_each_committed_record(|r| {
+                seen.push((r.ordinal, r.processed_points, r.writer_record));
+                Ok(())
+            })
+            .map(|()| seen)
+        };
+        let baseline = replay(&c).unwrap();
+        assert_eq!(baseline, vec![(0, 2, vec![1, 2])]);
+
+        // The uncommitted tail is a well-formed record, as left by a crash between the
+        // journal append and the manifest update; every prefix and every flipped byte of it
+        // must be ignored.
+        let tail = committed.clone();
+        for length in 0..=tail.len() {
+            let mut bytes = committed.clone();
+            bytes.extend_from_slice(&tail[..length]);
+            fs::write(&journal, &bytes).unwrap();
+            assert_eq!(replay(&c).unwrap(), baseline, "tail prefix {length}");
+        }
+        for offset in 0..tail.len() {
+            let mut bytes = committed.clone();
+            bytes.extend_from_slice(&tail);
+            bytes[committed.len() + offset] ^= 1 << (offset % 8);
+            fs::write(&journal, &bytes).unwrap();
+            assert_eq!(replay(&c).unwrap(), baseline, "tail flip {offset}");
+            c.truncate_uncommitted_artifacts().unwrap();
+            assert_eq!(fs::read(&journal).unwrap(), committed);
+        }
+
+        // Every byte of the committed record is covered by framing or CRC.
+        for offset in 0..committed.len() {
+            let mut bytes = committed.clone();
+            bytes[offset] ^= 1 << (offset % 8);
+            fs::write(&journal, &bytes).unwrap();
+            assert!(replay(&c).is_err(), "committed flip {offset}");
+        }
+        // Dropping bytes from the committed prefix is also an error.
+        for length in 0..committed.len() {
+            fs::write(&journal, &committed[..length]).unwrap();
+            assert!(replay(&c).is_err(), "committed truncation {length}");
+        }
     }
     #[test]
     fn resumed_catalog_keeps_journal_replay_functional() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         writing(&mut c);
@@ -891,11 +935,11 @@ mod tests {
         })
         .unwrap();
         assert_eq!(seen, vec![0]);
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
     }
     #[test]
     fn detects_corrupt_committed_record_and_short_candidate() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         writing(&mut c);
@@ -907,7 +951,7 @@ mod tests {
         f.write_all(&[9]).unwrap();
         assert!(c.for_each_committed_record(|_| Ok(())).is_err());
         drop(c);
-        let p2 = dir().join("out");
+        let p2 = tmp.path().join("out2");
         let mut c = EptCheckpoint::open(&p2, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         writing(&mut c);
@@ -918,12 +962,11 @@ mod tests {
             .set_len(1)
             .unwrap();
         assert!(c.truncate_uncommitted_artifacts().is_err());
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
-        let _ = fs::remove_dir_all(p2.with_file_name("out.checkpoint"));
     }
     #[test]
     fn output_ready_fingerprint_is_checked() {
-        let p = dir().join("out");
+        let tmp = dir();
+        let p = tmp.path().join("out");
         let mut c = EptCheckpoint::open(&p, CheckpointMode::Create, options()).unwrap();
         c.bind_source_files(src()).unwrap();
         writing(&mut c);
@@ -938,6 +981,5 @@ mod tests {
         .unwrap();
         fs::write(c.candidate_path(), b"changed").unwrap();
         assert!(c.verify_output_ready().is_err());
-        let _ = fs::remove_dir_all(p.with_file_name("out.checkpoint"));
     }
 }

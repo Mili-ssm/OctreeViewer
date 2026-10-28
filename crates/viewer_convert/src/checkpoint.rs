@@ -492,11 +492,7 @@ fn read_manifest(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        path::PathBuf,
-        sync::atomic::{AtomicU64, Ordering},
-    };
+    use std::fs;
 
     use crate::ConvertOptions;
 
@@ -504,16 +500,6 @@ mod tests {
         Checkpoint, CheckpointError, CheckpointMode, CheckpointStage, FileFingerprint,
         MANIFEST_VERSION,
     };
-
-    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn output() -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "octree-checkpoint-{}-{}.oct",
-            std::process::id(),
-            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ))
-    }
 
     fn options(points_per_block: u64, spatial_divisions: u8) -> ConvertOptions {
         ConvertOptions::with_memory_budget(points_per_block, 0.01, 1024)
@@ -524,7 +510,8 @@ mod tests {
 
     #[test]
     fn persists_phase_and_rejects_changed_options_without_mutating_checkpoint() {
-        let output = output();
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("out.oct");
         let source = FileFingerprint {
             bytes: 123,
             hash: 456,
@@ -540,12 +527,12 @@ mod tests {
             Err(CheckpointError::Mismatch)
         ));
         assert!(root.join("manifest.txt").is_file());
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn rejects_a_second_writer_while_checkpoint_is_open() {
-        let output = output();
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("out.oct");
         let source = FileFingerprint {
             bytes: 123,
             hash: 456,
@@ -556,33 +543,31 @@ mod tests {
             Checkpoint::open(&output, CheckpointMode::Resume, source, options(32, 2)),
             Err(CheckpointError::Locked)
         ));
-        let root = checkpoint.root().to_owned();
         drop(checkpoint);
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn resume_rejects_a_different_spatial_division() {
-        let output = output();
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("out.oct");
         let source = FileFingerprint {
             bytes: 123,
             hash: 456,
         };
         let checkpoint =
             Checkpoint::open(&output, CheckpointMode::Create, source, options(32, 2)).unwrap();
-        let root = checkpoint.root().to_owned();
         drop(checkpoint);
 
         assert!(matches!(
             Checkpoint::open(&output, CheckpointMode::Resume, source, options(32, 4)),
             Err(CheckpointError::Mismatch)
         ));
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn older_manifest_versions_cannot_resume_incompatible_spools() {
-        let output = output();
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("out.oct");
         let source = FileFingerprint {
             bytes: 123,
             hash: 456,
@@ -610,12 +595,12 @@ mod tests {
                 Err(CheckpointError::Invalid(reason)) if reason == "unsupported manifest version"
             ));
         }
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn resume_rejects_missing_or_different_output_identity() {
-        let output = output();
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("out.oct");
         let source = FileFingerprint {
             bytes: 123,
             hash: 456,
@@ -640,6 +625,5 @@ mod tests {
                 Err(CheckpointError::Invalid(_))
             ));
         }
-        fs::remove_dir_all(root).unwrap();
     }
 }
