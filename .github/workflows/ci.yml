@@ -8,6 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Toolchain, components and targets come from rust-toolchain.toml (single source).
+      # Needs rustup >= 1.28 to install the channel/components/targets from rust-toolchain.toml.
       - run: rustup toolchain install --no-self-update
       - uses: actions/setup-node@v4
         with:

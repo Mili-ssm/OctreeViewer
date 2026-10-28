@@ -10,14 +10,17 @@ crate-type = ["cdylib", "rlib"]
 serde.workspace = true
 thiserror.workspace = true
 viewer_core = { path = "../viewer_core" }
-viewer_format = { path = "../viewer_format" }
 viewer_render_wgpu = { path = "../viewer_render_wgpu" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 las.workspace = true
+viewer_format = { path = "../viewer_format" }
 js-sys.workspace = true
 serde-wasm-bindgen = "0.6"
 wasm-bindgen-futures = "0.4"
 wasm-bindgen.workspace = true
 web-sys.workspace = true
 wgpu.workspace = true
+
+[dev-dependencies]
+viewer_format = { path = "../viewer_format" }

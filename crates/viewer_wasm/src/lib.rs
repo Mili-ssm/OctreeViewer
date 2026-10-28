@@ -2,10 +2,6 @@
 //! `ViewerController` manages in-memory scenes and `LodDataset` manages streamed blocks;
 //! browser bindings adapt these contracts to workers, typed arrays and WebGPU surfaces.
 
-// viewer_format is only used by wasm32/test modules; this marks it used for plain host builds.
-#[cfg(not(any(target_arch = "wasm32", test)))]
-use viewer_format as _;
-
 #[cfg(any(target_arch = "wasm32", test))]
 mod block_loading;
 mod controller;
