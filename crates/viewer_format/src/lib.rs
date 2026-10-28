@@ -11,6 +11,7 @@ mod codec;
 mod contracts;
 mod crc32;
 mod error;
+#[cfg(feature = "experimental")]
 pub mod experimental_tuple_dictionary;
 mod geometry;
 mod index_codec;

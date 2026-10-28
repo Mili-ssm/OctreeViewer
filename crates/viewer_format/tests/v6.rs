@@ -2,14 +2,18 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
-    CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, OccupiedOctreeRoot,
-    OccupiedPointBlock, SpatialBounds, SpatialHierarchy, SpatialNode, VoxelCoord,
+    CoordinateFrame, DatasetMetadata, DatasetSource, NodeId, SpatialBounds, SpatialHierarchy,
+    SpatialNode,
 };
+#[cfg(feature = "experimental")]
+use viewer_core::{OccupiedOctreeRoot, OccupiedPointBlock, VoxelCoord};
+#[cfg(feature = "experimental")]
+use viewer_format::QuantizedOccupancy;
 use viewer_format::{
     FileRole, FormatBlockEncoder, FormatError, FormatIdentity, FormatMetadata, FormatReader,
     FormatVersion, FormatWriter, FormatWriterOptions, GeometryEncoding, OctreeReader,
-    QuantizedOccupancy, ReadSelection, ReadSource, SelectedRead, SourcePointBlock,
-    prepare_point_block, quantize_local_positions,
+    ReadSelection, ReadSource, SelectedRead, SourcePointBlock, prepare_point_block,
+    quantize_local_positions,
 };
 
 const BLOCK_ID: BlockId = BlockId::new(17);
@@ -1572,6 +1576,7 @@ fn unsupported_v6_final_pre5_and_v7_pre4_are_rejected_by_writer_encoder_and_read
     }
 }
 
+#[cfg(feature = "experimental")]
 #[test]
 fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
     let a = VoxelCoord::new(-1, 0, 0);
@@ -1640,6 +1645,7 @@ fn occupied_cells_keep_rows_and_attribute_bits_from_v5_and_v6_readers() {
     }
 }
 
+#[cfg(feature = "experimental")]
 #[test]
 fn quantized_occupancy_preserves_row_identity_for_geometry_rgb_and_all_attribute_types() {
     let original = quantize_local_positions(&POINTS, 0.001).unwrap();

@@ -3,7 +3,18 @@ name = "viewer_core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+experimental = []
+
 [dependencies]
 glam.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[[test]]
+name = "node_attributes"
+required-features = ["experimental"]
+
+[[test]]
+name = "occupied_point_block"
+required-features = ["experimental"]

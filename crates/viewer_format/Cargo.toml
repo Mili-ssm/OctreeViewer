@@ -5,6 +5,7 @@ edition.workspace = true
 
 [features]
 async-reader = ["dep:tokio"]
+experimental = ["viewer_core/experimental"]
 
 [dependencies]
 lz4_flex = "0.14"
@@ -16,3 +17,11 @@ tokio = { version = "1.53.3", optional = true, features = ["rt", "sync"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.53.3", features = ["rt", "sync", "time"] }
+
+[[test]]
+name = "experimental_tuple_dictionary"
+required-features = ["experimental"]
+
+[[example]]
+name = "node_attribute_bench"
+required-features = ["experimental"]
