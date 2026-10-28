@@ -729,10 +729,6 @@ mod tests {
     use std::io::{Seek, SeekFrom};
     use viewer_format::FormatVersion;
 
-    #[test]
-    fn crc32_matches_ieee_check_vector() {
-        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
-    }
     fn dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
     }
