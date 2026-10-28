@@ -215,57 +215,57 @@ impl PlannedBlock {
         .into_iter();
         let mut attributes = Vec::with_capacity(10);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "intensity"),
             AttributeValues::U16(intensities),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "classification"),
             AttributeValues::U8(classifications),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "return_number"),
             AttributeValues::U8(return_numbers),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "number_of_returns"),
             AttributeValues::U8(returns_per_pulse),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "scan_angle_degrees"),
             AttributeValues::F32(scan_angles),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "user_data"),
             AttributeValues::U8(user_data),
             self.point_count,
         )?);
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "point_source_id"),
             AttributeValues::U16(point_source_ids),
             self.point_count,
         )?);
         if self.layout.has_gps_time {
             attributes.push(AttributeColumn::new(
-                next_descriptor(&mut descriptors),
+                next_descriptor(&mut descriptors, "gps_time"),
                 AttributeValues::F64(gps_times),
                 self.point_count,
             )?);
         }
         if self.layout.has_color {
             attributes.push(AttributeColumn::new(
-                next_descriptor(&mut descriptors),
+                next_descriptor(&mut descriptors, "rgb"),
                 AttributeValues::U16(rgb_values),
                 self.point_count,
             )?);
         }
         if self.layout.has_nir {
             attributes.push(AttributeColumn::new(
-                next_descriptor(&mut descriptors),
+                next_descriptor(&mut descriptors, "nir"),
                 AttributeValues::U16(nir_values),
                 self.point_count,
             )?);

@@ -756,12 +756,17 @@ pub(crate) fn source_schema(format: &las::point::Format) -> Vec<AttributeDescrip
     viewer_core::las::las_attribute_schema(format.has_gps_time, format.has_color, format.has_nir)
 }
 
+/// Pairs columns with `las_attribute_schema` by position; the name check makes
+/// a reordered schema fail loudly in tests instead of mislabelling data.
 pub(crate) fn next_descriptor(
     descriptors: &mut impl Iterator<Item = AttributeDescriptor>,
+    expected: &str,
 ) -> AttributeDescriptor {
-    descriptors
+    let descriptor = descriptors
         .next()
-        .expect("LAS attribute schema covers every column")
+        .expect("LAS attribute schema covers every column");
+    debug_assert_eq!(descriptor.name(), expected);
+    descriptor
 }
 
 pub(crate) fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String> {

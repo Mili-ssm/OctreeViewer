@@ -132,6 +132,7 @@ class BenchmarkCollectorTests(unittest.TestCase):
         self.assertEqual(cell("-1.50"), "-1.50")
         self.assertEqual(cell("-1.50 [-3.00–2.00]"), "-1.50 [-3.00–2.00]")
         self.assertEqual(cell("—"), "—")
+        self.assertEqual(cell("-1\n"), "'-1\n")
 
 
 if __name__ == "__main__":

@@ -131,12 +131,12 @@ def collect(paths: list[Path]) -> list[list[str]]:
     return rows
 
 
-NUMERIC_CELL = re.compile(r"^-?\d+(\.\d+)?( \[-?\d+(\.\d+)?–-?\d+(\.\d+)?\])?$")
+NUMERIC_CELL = re.compile(r"-?\d+(\.\d+)?( \[-?\d+(\.\d+)?–-?\d+(\.\d+)?\])?")
 
 
 def csv_cell(value: Any) -> Any:
     """Neutralize spreadsheet formulas in text cells; numbers stay untouched."""
-    if not isinstance(value, str) or NUMERIC_CELL.match(value):
+    if not isinstance(value, str) or NUMERIC_CELL.fullmatch(value):
         return value
     return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
 

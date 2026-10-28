@@ -900,44 +900,44 @@ fn point_data_to_block(
     .into_iter();
     let mut attributes = vec![
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "intensity"),
             AttributeValues::U16(intensities),
             count,
         )?,
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "classification"),
             AttributeValues::U8(data.classification().collect()),
             count,
         )?,
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "return_number"),
             AttributeValues::U8(data.return_number().collect()),
             count,
         )?,
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "number_of_returns"),
             AttributeValues::U8(data.number_of_returns().collect()),
             count,
         )?,
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "scan_angle_degrees"),
             AttributeValues::F32(data.scan_angle_degrees().collect()),
             count,
         )?,
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "user_data"),
             AttributeValues::U8(data.user_data().collect()),
             count,
         )?,
         AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "point_source_id"),
             AttributeValues::U16(data.point_source_id().collect()),
             count,
         )?,
     ];
     if format.has_gps_time {
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "gps_time"),
             AttributeValues::F64(
                 data.gps_time()
                     .ok_or(ConvertError::InvalidAttributeSchema)?
@@ -953,14 +953,14 @@ fn point_data_to_block(
             .flat_map(|(red, green, blue)| [red, green, blue])
             .collect();
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "rgb"),
             AttributeValues::U16(values),
             count,
         )?);
     }
     if format.has_nir {
         attributes.push(AttributeColumn::new(
-            next_descriptor(&mut descriptors),
+            next_descriptor(&mut descriptors, "nir"),
             AttributeValues::U16(
                 data.nir()
                     .ok_or(ConvertError::InvalidAttributeSchema)?
