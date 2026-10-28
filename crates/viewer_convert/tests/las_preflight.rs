@@ -230,3 +230,19 @@ fn laz_layer_size_beyond_its_chunk_is_rejected() {
         ))
     ));
 }
+
+// Same crash with an empty laszip item list (items size 0): `laz` divides by it.
+#[test]
+fn laz_without_laszip_items_is_rejected() {
+    const BYTES: &[u8] = include_bytes!("fixtures/laz_without_laszip_items.laz");
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(BYTES), BYTES.len() as u64),
+        Err(LasPreflightError::LazRecordLengthMismatch { items_size: 0, .. })
+    ));
+    assert!(matches!(
+        convert_bytes(BYTES),
+        Err(ConvertError::LasPreflight(
+            LasPreflightError::LazRecordLengthMismatch { .. }
+        ))
+    ));
+}

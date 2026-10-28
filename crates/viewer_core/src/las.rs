@@ -428,7 +428,7 @@ fn preflight_inner<R: Read + Seek>(
     }
     if let Some(chunk_size) = laz_chunk_size {
         // `las` sizes buffers by the header record length, `laz` by the items; valid files agree.
-        if laz_items_size != 0 && laz_items_size != record_len {
+        if laz_items_size != record_len {
             return Err(LasPreflightError::LazRecordLengthMismatch {
                 record_len,
                 items_size: laz_items_size,
@@ -659,8 +659,11 @@ mod tests {
         let mut vlr = vec![0u8; 54];
         vlr[2..16].copy_from_slice(b"laszip encoded");
         vlr[18..20].copy_from_slice(&22204u16.to_le_bytes());
-        let mut record = vec![0u8; 34];
+        let mut record = vec![0u8; 40];
         record[0..2].copy_from_slice(&2u16.to_le_bytes());
+        // One item whose size matches the 20 B record length of `las_header`.
+        record[32..34].copy_from_slice(&1u16.to_le_bytes());
+        record[34..40].copy_from_slice(&[6, 0, 20, 0, 2, 0]);
         record[12..16].copy_from_slice(&chunk_size.to_le_bytes());
         record[16..24].copy_from_slice(&(-1i64).to_le_bytes());
         vlr[20..22].copy_from_slice(&(record.len() as u16).to_le_bytes());
@@ -711,6 +714,9 @@ mod tests {
         }
         let mut record = vec![0u8; 46];
         record[0..2].copy_from_slice(&2u16.to_le_bytes());
+        // One byte item of 34 B, matching the record length above.
+        record[32..34].copy_from_slice(&1u16.to_le_bytes());
+        record[34..40].copy_from_slice(&[0, 0, 34, 0, 2, 0]);
         record[12..16].copy_from_slice(&chunk_size.to_le_bytes());
         let mut vlr = vec![0u8; 54];
         vlr[2..16].copy_from_slice(b"laszip encoded");
@@ -866,7 +872,7 @@ mod tests {
         head[24..26].copy_from_slice(&[1, 2]);
         head[94..96].copy_from_slice(&227u16.to_le_bytes());
         // 1.2 header is 227 B: move VLR + record down, leaving bytes 227.. as VLR data.
-        let vlr_and_record = head[375..375 + 54 + 34].to_vec();
+        let vlr_and_record = head[375..375 + 54 + 46].to_vec();
         let mut bytes = head[..227].to_vec();
         bytes.extend_from_slice(&vlr_and_record);
         let point_data = bytes.len() as u64;
