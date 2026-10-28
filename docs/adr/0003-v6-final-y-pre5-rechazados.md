@@ -3,7 +3,7 @@
 Estado: Aceptada · Fecha: 14-10-2026 (según los registros de v6)
 
 ## Contexto
-Pre1–pre4 exploraron deltas, ocupación por profundidad, constantes/diccionarios y planos de bytes. Los candidatos siguientes (RGB agrupado, bitpacking por rango, índice compacto) no demostraron beneficio suficiente frente a pre3/pre4 con pareja completa, y el desarrollo se trasladó a V7.
+Pre1–pre4 exploraron deltas, ocupación por profundidad, constantes/diccionarios y planos de bytes. Los candidatos siguientes (RGB agrupado, bitpacking por rango, índice compacto) no se evaluaron y siguen sin evidencia (fila «Siguientes candidatos v6» del README, [entregas](../records/archive/DELIVERIES_2026-10-14.md), [plan V7](../explanation/format-v7-plan.md)); el desarrollo se trasladó a V7.
 
 ## Decisión
 La selección admite exactamente v5 y `v6.1-pre`–`v6.4-pre`. V6 final, pre5 y otras identidades se reconocen por cabecera pero se rechazan: no se infiere compatibilidad por orden.

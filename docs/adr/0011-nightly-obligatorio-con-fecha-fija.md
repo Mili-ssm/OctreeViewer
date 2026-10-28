@@ -11,7 +11,7 @@ El propietario quiere poder adoptar características inestables si hay ganancia 
 ## Alternativas consideradas
 | Opción | Descartada porque |
 | --- | --- |
-| Stable pinneado (1.99.0) | Descartada por decisión del propietario: no permite características inestables. |
+| Stable pinneado (1.99.0) | Superada por la decisión del propietario (28-10-2026; el pin stable fue una decisión previa del coordinador el mismo día): no permite características inestables. |
 | Nightly flotante | Builds no reproducibles. |
 
 ## Consecuencias
