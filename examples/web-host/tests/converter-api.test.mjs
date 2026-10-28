@@ -25,7 +25,7 @@ class FakeWorker {
         if (this.postMessageError) throw this.postMessageError;
         this.messages.push(message);
     }
-    terminate() { this.terminated = true; }
+    terminate() { this.terminated = true; this.terminateCount = (this.terminateCount ?? 0) + 1; }
     dispatch(type, data) {
         for (const callback of this.listeners.get(type) ?? []) callback({ data, message: data?.message });
     }
@@ -121,5 +121,54 @@ test("messageerror emits an error and rejects the active conversion", { concurre
 
     await assert.rejects(active, /message decode failed/);
     assert.deepEqual(errors, ["message decode failed"]);
+    converter.dispose();
+});
+
+test("a worker error message recycles the worker on the next conversion", { concurrency: false }, async () => {
+    const converter = createConverter();
+    const first = workers[0];
+    const failed = converter.convert(lasFile());
+    first.dispatch("message", { type: "error", message: "RuntimeError: unreachable" });
+    await assert.rejects(failed, /unreachable/);
+    assert.equal(first.terminated, true);
+    assert.equal(workers.length, 1);
+
+    const retry = converter.convert(lasFile());
+    assert.equal(workers.length, 2);
+    assert.equal(first.terminateCount, 1);
+    assert.equal(workers[1].messages.at(-1).type, "convert");
+    workers[1].dispatch("message", { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" });
+    await retry;
+    converter.dispose();
+    assert.equal(first.terminateCount, 1);
+    assert.equal(workers[1].terminated, true);
+});
+
+test("a cancellation keeps the same worker", { concurrency: false }, async () => {
+    const converter = createConverter();
+    const active = converter.convert(lasFile());
+    converter.cancel();
+    workers[0].dispatch("message", { type: "cancelled", message: "Conversion cancelled." });
+    await assert.rejects(active, { name: "AbortError" });
+    const next = converter.convert(lasFile());
+    assert.equal(workers.length, 1);
+    assert.equal(workers[0].terminated, false);
+    workers[0].dispatch("message", { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" });
+    await next;
+    converter.dispose();
+});
+
+test("a worker error event recycles the worker on the next conversion", { concurrency: false }, async () => {
+    const converter = createConverter();
+    const first = workers[0];
+    const failed = converter.convert(lasFile());
+    first.dispatch("error", { message: "worker crashed" });
+    await assert.rejects(failed, /worker crashed/);
+    assert.equal(first.terminated, true);
+    const retry = converter.convert(lasFile());
+    assert.equal(workers.length, 2);
+    assert.equal(first.terminateCount, 1);
+    workers[1].dispatch("message", { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" });
+    await retry;
     converter.dispose();
 });

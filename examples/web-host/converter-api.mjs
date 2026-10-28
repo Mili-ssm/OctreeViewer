@@ -4,9 +4,7 @@ export function createConverter(options = {}) {
     const workerUrl = options.workerUrl
         ?? globalThis.__CONVERTER_WORKER_URL__
         ?? new URL("./converter-worker.js", import.meta.url);
-    const worker = new Worker(workerUrl, {
-        type: "module",
-    });
+    let worker = null;
     const listeners = new Map();
     let active = null;
     let disposed = false;
@@ -27,7 +25,14 @@ export function createConverter(options = {}) {
         if (error) request.reject(error);
         else request.resolve(value);
     }
-    worker.addEventListener("message", ({ data }) => {
+    // After a failure the WASM instance (e.g. post-trap) is untrusted: drop the worker, respawn lazily.
+    function discardWorker() {
+        const stale = worker;
+        worker = null;
+        stale?.terminate();
+    }
+    function onMessage(source, { data }) {
+        if (source !== worker) return;
         if (data.type === "progress" || data.type === "status") emit(data.type, data);
         else if (data.type === "complete") {
             emit("complete", data);
@@ -46,17 +51,30 @@ export function createConverter(options = {}) {
             settle(error);
         } else if (data.type === "error") {
             const error = new Error(data.message);
+            discardWorker();
             emit("error", error);
             settle(error);
         }
-    });
-    const onWorkerError = (event) => {
+    }
+    function onWorkerError(source, event) {
+        if (source !== worker) return;
+        discardWorker();
         const error = new Error(event.message || "converter worker failed");
         emit("error", error);
         settle(error);
-    };
-    worker.addEventListener("error", onWorkerError);
-    worker.addEventListener("messageerror", onWorkerError);
+    }
+    function ensureWorker() {
+        if (worker) return worker;
+        const created = new Worker(workerUrl, {
+            type: "module",
+        });
+        worker = created;
+        created.addEventListener("message", (event) => onMessage(created, event));
+        created.addEventListener("error", (event) => onWorkerError(created, event));
+        created.addEventListener("messageerror", (event) => onWorkerError(created, event));
+        return created;
+    }
+    ensureWorker();
 
     return {
         convert(file) {
@@ -67,7 +85,7 @@ export function createConverter(options = {}) {
             }
             const result = new Promise((resolve, reject) => { active = { resolve, reject }; });
             try {
-                worker.postMessage({ type: "convert", file });
+                ensureWorker().postMessage({ type: "convert", file });
             } catch (error) {
                 settle(error);
             }
@@ -75,7 +93,7 @@ export function createConverter(options = {}) {
         },
         cancel() {
             if (!active || disposed) return false;
-            worker.postMessage({ type: "cancel" });
+            worker?.postMessage({ type: "cancel" });
             return true;
         },
         on(type, callback) {
@@ -88,7 +106,7 @@ export function createConverter(options = {}) {
         dispose() {
             if (disposed) return;
             disposed = true;
-            worker.terminate();
+            discardWorker();
             settle(new Error("converter was disposed"));
             listeners.clear();
         },

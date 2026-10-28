@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[2]
 HOST = ROOT / "examples" / "web-host"
 
 
+def inline_json(value: str) -> str:
+    """JSON string literal safe inside an inline <script> (cannot close the tag or open a comment)."""
+    return json.dumps(value).replace("</", "<\\/").replace("<!--", "<\\!--")
+
+
 def require_replace(source: str, old: str, new: str, label: str) -> str:
     if source.count(old) != 1:
         raise ValueError(f"expected exactly one {label} marker")
@@ -172,14 +177,14 @@ def main() -> None:
         "attribute sample fetch")
     inline_runtime = (
         "<script>\n"
-        + f"const WORKER_SOURCE = {json.dumps(worker_source)};\n"
+        + f"const WORKER_SOURCE = {inline_json(worker_source)};\n"
         + f'window.__VIEWER_SAMPLE_BYTES__ = Uint8Array.from(atob("{sample_bytes}"), '
         "(value) => value.charCodeAt(0));\n"
         + f'window.__VIEWER_ATTRIBUTE_BYTES__ = Uint8Array.from(atob("{attributes_bytes}"), '
         "(value) => value.charCodeAt(0));\n"
         + "window.__VIEWER_WORKER_URL__ = URL.createObjectURL("
         "new Blob([WORKER_SOURCE], { type: \"text/javascript\" }));\n"
-        + f"const CONVERTER_WORKER_SOURCE = {json.dumps(converter_worker_source)};\n"
+        + f"const CONVERTER_WORKER_SOURCE = {inline_json(converter_worker_source)};\n"
         + "window.__CONVERTER_WORKER_URL__ = URL.createObjectURL("
         "new Blob([CONVERTER_WORKER_SOURCE], { type: \"text/javascript\" }));\n"
         + queue_js

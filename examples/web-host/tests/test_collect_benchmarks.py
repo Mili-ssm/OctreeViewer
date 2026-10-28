@@ -123,6 +123,16 @@ class BenchmarkCollectorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported benchmark schema"):
                 collect_benchmarks.collect([path])
 
+    def test_csv_cell_neutralizes_formulas_but_keeps_numbers(self):
+        cell = collect_benchmarks.csv_cell
+        for text in ["=1+1", "+cmd", "-cmd", "@SUM(A1)", "\tx", "\rx"]:
+            self.assertEqual(cell(text), "'" + text)
+        self.assertEqual(cell("normal"), "normal")
+        self.assertEqual(cell(-1.5), -1.5)
+        self.assertEqual(cell("-1.50"), "-1.50")
+        self.assertEqual(cell("-1.50 [-3.00–2.00]"), "-1.50 [-3.00–2.00]")
+        self.assertEqual(cell("—"), "—")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -130,6 +131,16 @@ def collect(paths: list[Path]) -> list[list[str]]:
     return rows
 
 
+NUMERIC_CELL = re.compile(r"^-?\d+(\.\d+)?( \[-?\d+(\.\d+)?–-?\d+(\.\d+)?\])?$")
+
+
+def csv_cell(value: Any) -> Any:
+    """Neutralize spreadsheet formulas in text cells; numbers stay untouched."""
+    if not isinstance(value, str) or NUMERIC_CELL.match(value):
+        return value
+    return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runs", nargs="+", type=Path, help="exported web-bench-*.json files")
@@ -144,7 +155,7 @@ def main() -> None:
     if args.format == "csv":
         writer = csv.writer(sys.stdout)
         writer.writerow(headers)
-        writer.writerows(rows)
+        writer.writerows([csv_cell(cell) for cell in row] for row in rows)
         return
     print("| " + " | ".join(headers) + " |")
     print("| " + " | ".join("---" for _ in headers) + " |")

@@ -83,6 +83,19 @@ export { initSync, __wbg_init as default };
             self.assertIn('type: "module",', (embed / "converter-api.mjs").read_text())
             self.assertIn('from "./viewer_wasm.js"', (embed / "viewer-worker.js").read_text())
 
+    def test_inline_json_cannot_close_the_script_tag(self):
+        source = 'const a = "</script><script>alert(1)</script>"; // <!-- x'
+        literal = package_local.inline_json(source)
+        self.assertNotIn("</", literal)
+        self.assertNotIn("<!--", literal)
+        html = f"<script>const S = {literal};</script>"
+        self.assertEqual(html.count("</script>"), 1)
+        result = subprocess.run(
+            ["node", "-e", f"const S = {literal}; process.stdout.write(S);"],
+            text=True, capture_output=True, check=True,
+        )
+        self.assertEqual(result.stdout, source)
+
     def check_script(self, source):
         result = subprocess.run(
             ["node", "--check"], input=source, text=True, capture_output=True, check=False
