@@ -72,8 +72,24 @@ def anchors(path):
     return result
 
 
-def check_file(root, rel):
-    """Return list of (lineno, target) broken links."""
+def tracked_paths(root, listed):
+    """Absolute paths of tracked files plus each of their parent directories."""
+    paths = set()
+    for rel in listed:
+        full = os.path.join(root, rel)
+        while full != root and full not in paths:
+            paths.add(full)
+            full = os.path.dirname(full)
+    paths.add(root)
+    return paths
+
+
+def check_file(root, rel, tracked=None):
+    """Return list of (lineno, target) broken links.
+
+    With `tracked` (see `tracked_paths`) targets must be tracked, so a link
+    into a git-ignored local path fails here exactly as it does in CI.
+    """
     path = os.path.join(root, rel)
     broken = []
     cache = {}
@@ -87,7 +103,7 @@ def check_file(root, rel):
             file_part, _, anchor = target.partition("#")
             if file_part:
                 dest = os.path.normpath(os.path.join(os.path.dirname(path), file_part))
-                if not os.path.exists(dest):
+                if not (dest in tracked if tracked is not None else os.path.exists(dest)):
                     broken.append((no, target))
                     continue
             else:
@@ -111,12 +127,12 @@ def load_allowlist(path):
     return entries
 
 
-def run(root, files, allowlist_path=None):
+def run(root, files, allowlist_path=None, tracked=None):
     allow = load_allowlist(allowlist_path)
     used = set()
     errors = []
     for rel in files:
-        for no, target in check_file(root, rel):
+        for no, target in check_file(root, rel, tracked):
             key = f"{rel}|{target}"
             if key in allow:
                 used.add(key)
@@ -134,9 +150,11 @@ def main():
     files = subprocess.check_output(
         ["git", "ls-files", "*.md"], cwd=root, text=True
     ).split("\n")
+    listed = subprocess.check_output(["git", "ls-files"], cwd=root, text=True).split("\n")
+    tracked = tracked_paths(root, [f for f in listed if f])
     files = [f for f in files if f and os.path.exists(os.path.join(root, f))]
     allow = os.path.join(root, "scripts", "docs-links-allowlist.txt")
-    errors = run(root, files, allow)
+    errors = run(root, files, allow, tracked)
     for e in errors:
         print(e)
     if errors:

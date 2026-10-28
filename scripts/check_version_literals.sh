@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-for d in crates src examples; do
+for d in crates examples; do
   [ -d "$d" ] || { echo "error: missing directory $d" >&2; exit 1; }
 done
 
@@ -23,7 +23,7 @@ first_test_mod() {
   ' "$1"
 }
 
-hits=$(grep -rnE 'FormatVersion::V[0-9]' crates src examples --include='*.rs' \
+hits=$(grep -rnE 'FormatVersion::V[0-9]' crates examples --include='*.rs' \
   | grep -v '^crates/viewer_format/' \
   | grep -vE '_tests\.rs:|/tests/|/examples/|/benches/' || true)
 

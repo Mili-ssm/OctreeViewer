@@ -23,6 +23,19 @@ class LinkCheckerTests(unittest.TestCase):
             mds = [n for n in files if n.endswith(".md")]
             return c.run(root, mds, allow_path)
 
+    def test_untracked_target_is_broken_when_tracked_set_given(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "artifacts"))
+            open(os.path.join(root, "artifacts", "out.png"), "w").close()
+            with open(os.path.join(root, "a.md"), "w", encoding="utf-8") as fh:
+                fh.write("[x](artifacts/out.png)\n")
+            tracked = c.tracked_paths(root, ["a.md"])
+            self.assertEqual(c.run(root, ["a.md"], None, None), [])
+            self.assertEqual(
+                c.run(root, ["a.md"], None, tracked),
+                ["a.md:1: artifacts/out.png"],
+            )
+
     def test_accented_heading_anchor_resolves(self):
         errs = self.check({
             "a.md": "[x](b.md#evidencia-del-séptimo-incremento)\n",
