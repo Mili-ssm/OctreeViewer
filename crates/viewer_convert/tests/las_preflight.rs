@@ -148,3 +148,33 @@ fn las_crate_laz_output_still_converts() {
         }
     }
 }
+
+#[test]
+fn huge_fixed_chunk_size_is_rejected_by_header_preflight() {
+    let mut bytes = write_laz((1, 2), 0, None, 200);
+    bytes[227 + 54 + 12..227 + 54 + 16].copy_from_slice(&(u32::MAX - 1).to_le_bytes());
+    let len = bytes.len() as u64;
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(&bytes), len),
+        Err(viewer_core::las::LasPreflightError::ChunkTooLarge { .. })
+    ));
+    assert!(matches!(
+        convert_bytes(&bytes),
+        Err(ConvertError::LasPreflight(_))
+    ));
+}
+
+#[test]
+fn variable_chunk_trusting_forged_header_count_is_rejected() {
+    // Header point count u32::MAX makes `point_count <= header` true for i32::MAX.
+    let mut bytes = craft(true, i32::MAX as u64, 10, 1);
+    bytes[107..111].copy_from_slice(&u32::MAX.to_le_bytes());
+    let len = bytes.len() as u64;
+    preflight_las(&mut Cursor::new(&bytes), len).expect("header preflight alone accepts it");
+    assert!(matches!(
+        convert_bytes(&bytes),
+        Err(ConvertError::LasPreflight(
+            viewer_core::las::LasPreflightError::ChunkTooLarge { .. }
+        ))
+    ));
+}

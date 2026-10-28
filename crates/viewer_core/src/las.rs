@@ -65,6 +65,14 @@ pub enum LasPreflightError {
     VlrOutOfBounds(&'static str),
     #[error("EVLR record_length/start_of_first_evlr extends past the end of the file")]
     EvlrOutOfBounds,
+    #[error(
+        "LAZ chunk of {points} points x {point_size} B exceeds the {limit} B decompressed-chunk cap"
+    )]
+    ChunkTooLarge {
+        points: u64,
+        point_size: u64,
+        limit: u64,
+    },
     #[error("LAZ chunk table offset {0} lies outside the file")]
     ChunkTableOutOfBounds(u64),
     #[error("LAZ chunk table declares {chunks} chunks, more than the {limit} the file can hold")]
@@ -73,11 +81,26 @@ pub enum LasPreflightError {
     Io(#[from] std::io::Error),
 }
 
+/// Cap on decompressed bytes per LAZ chunk: `laz` allocates this much from table
+/// or VLR values. Real files use 50 000 points x <=67 B (~3.4 MB); COPC <=1 M x 67 B (~67 MB).
+pub const MAX_LAZ_CHUNK_BYTES: u64 = 256 << 20;
 const LAS_MIN_HEADER: u64 = 227;
 const VLR_HEADER_LEN: u64 = 54;
 const EVLR_HEADER_LEN: u64 = 60;
 const LASZIP_RECORD_ID: u16 = 22204;
 const LASZIP_VARIABLE_CHUNK: u32 = u32::MAX;
+
+/// Rejects chunks whose decompressed size exceeds [`MAX_LAZ_CHUNK_BYTES`].
+pub fn check_chunk_bytes(points: u64, point_size: u64) -> Result<(), LasPreflightError> {
+    match points.checked_mul(point_size) {
+        Some(bytes) if bytes <= MAX_LAZ_CHUNK_BYTES => Ok(()),
+        _ => Err(LasPreflightError::ChunkTooLarge {
+            points,
+            point_size,
+            limit: MAX_LAZ_CHUNK_BYTES,
+        }),
+    }
+}
 
 fn min_point_record_len(format_id: u8) -> u64 {
     match format_id {
@@ -133,6 +156,9 @@ pub struct LazChunkTableLayout {
     pub table_offset: u64,
     /// `None` for variable-size chunks.
     pub fixed_chunk_size: Option<u32>,
+    /// Decompressed bytes per point as `laz` sizes buffers: the larger of the header
+    /// record length and the laszip item sizes.
+    pub point_size: u64,
     pub header_points: u64,
 }
 
@@ -195,6 +221,7 @@ fn preflight_inner<R: Read + Seek>(
     }
 
     let mut laz_chunk_size = None;
+    let mut laz_items_size = 0u64;
     let mut pos = header_size;
     for _ in 0..vlr_count {
         let end = pos + VLR_HEADER_LEN;
@@ -219,6 +246,14 @@ fn preflight_inner<R: Read + Seek>(
                 0 => LASZIP_VARIABLE_CHUNK,
                 size => size,
             });
+            // Items follow the 32-byte fixed part: count u16, then (type, size, version) u16 each.
+            // A shorter record is rejected by `laz` itself.
+            if vlr_len >= 34 {
+                let count = u64::from(read_u16_at(reader, end + 32)?).min((vlr_len - 34) / 6);
+                for item in 0..count {
+                    laz_items_size += u64::from(read_u16_at(reader, end + 34 + item * 6 + 2)?);
+                }
+            }
         }
         pos = end + vlr_len;
     }
@@ -243,6 +278,10 @@ fn preflight_inner<R: Read + Seek>(
     }
 
     if let Some(chunk_size) = laz_chunk_size {
+        let point_size = record_len.max(laz_items_size);
+        if chunk_size != LASZIP_VARIABLE_CHUNK {
+            check_chunk_bytes(u64::from(chunk_size), point_size)?;
+        }
         let mut table = i64::from_le_bytes(read_array(reader, point_data_offset)?);
         if table <= point_data_offset as i64 {
             // Writer could not patch the offset; laz reads it from the file tail.
@@ -280,6 +319,7 @@ fn preflight_inner<R: Read + Seek>(
             point_data_offset,
             table_offset: table,
             fixed_chunk_size: (chunk_size != LASZIP_VARIABLE_CHUNK).then_some(chunk_size),
+            point_size,
             header_points: points,
         }));
     }

@@ -101,6 +101,8 @@ fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result
                     layout.header_points,
                 ));
             }
+            // The header count is attacker-controlled, so it cannot bound allocations alone.
+            viewer_core::las::check_chunk_bytes(entry.point_count, layout.point_size)?;
             sum_points += entry.point_count;
             if sum_points > layout.header_points {
                 return Err(reject(
