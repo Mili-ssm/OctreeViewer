@@ -6,23 +6,28 @@
 mod async_reader;
 mod attribute_codec;
 mod block_encoder;
+mod checkpoint_record;
 mod codec;
 mod contracts;
 mod crc32;
 mod error;
 pub mod experimental_tuple_dictionary;
 mod geometry;
+mod index_codec;
 mod layout;
 mod metadata;
 mod occupancy_codec;
 #[cfg(not(target_arch = "wasm32"))]
 mod parallel_reader;
+mod prepare;
 mod quantization;
 mod quantized_occupancy;
 mod ranges;
 mod read_budget;
 mod read_plan;
 mod reader;
+mod reader_limits;
+mod slice_cursor;
 mod storage_reader;
 mod version;
 mod writer;
