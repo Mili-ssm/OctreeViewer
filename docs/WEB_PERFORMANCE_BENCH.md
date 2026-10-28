@@ -1747,3 +1747,18 @@ sin repetición para variabilidad ni comparación controlada de memoria con otro
 
 Salidas locales ignoradas: `target/combined-memory-majadas-4-current/` y
 `target/combined-memory-majadas-4-current-process.jsonl`.
+
+### Repetición de Majadas v5 a 4 px — 24-10-2026
+
+Se repitió el probe con la misma pareja `.oct`, Firefox 158.0.1 headless/WebGPU, host local,
+framebuffer 1280×720 y caché de 256 MiB. La apertura fue 58 ms, el primer frame 72 ms y el corte
+objetivo se completó en 54.002 ms: 239 bloques cargados, 0 pendientes, cobertura completa y
+102.958.469 B leídos. La vista de cámara terminó sin cargar bloques adicionales. La captura muestra
+la nube y `console-errors.json` está vacío.
+
+El PSS/RSS máximo muestreado del árbol Firefox fue **965.480.448 / 1.770.516.480 B**, frente a
+**3.731.787.776 / 4.535.824.384 B** en la ejecución anterior. La diferencia entre dos perfiles es
+grande y su causa no está identificada; no se interpreta como mejora ni como memoria del renderer,
+WASM o GPU. Los máximos son muestreados, no garantizados. El proceso completó y la repetición sirve
+para documentar variabilidad, no para estimar un pico representativo. Datos locales ignorados por Git:
+`target/combined-memory-majadas-4-repeat-20261024/`.

@@ -41,7 +41,9 @@ lectura. Es una medida por proceso, no la suma simultánea de procesos ni memori
 logs individuales y sus comandos se conservan. No confundir RSS con estimaciones de caché
 o buffers que también emite el benchmark.
 
-El runner serial y sus resultados completos están en `target/storage-pre4-20261014/`.
+Los reportes y logs del runner serial se conservan en `target/storage-pre4-20261014/`; sus
+parejas `.oct`/`.octattrs` generadas se purgaron el 25-10-2026 para liberar espacio y pueden
+regenerarse desde la fuente documentada.
 El JSON compacto enlaza los reportes con hashes, evitando duplicar miles de líneas de logs.
 El nuevo `storage_payload_stats` atribuye bytes/codecs leyendo únicamente la metadata.
 

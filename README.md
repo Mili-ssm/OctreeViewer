@@ -190,6 +190,9 @@ python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'
 python3 -m unittest discover -s crates/viewer_convert/benchmarks -p 'test_*.py'
 ```
 
+Al terminar cada prueba o benchmark, borra de `target/` las conversiones y temporales generados
+que ya no necesites; conserva los informes y muestras que documenten resultados útiles.
+
 Las pruebas GPU ignoradas requieren un adaptador compatible o Vulkan por software. Para cambios en
 el host web, además de las suites anteriores, comprobar con Playwright los flujos afectados, la
 consola y escritorio/móvil cuando corresponda. No considerar tests nativos ni lecturas GPU como

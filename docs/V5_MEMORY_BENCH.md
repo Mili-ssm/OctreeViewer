@@ -313,8 +313,9 @@ conversión; no se fijan frecuencia CPU, modo de energía o writeback del SO.
 No hay compilaciones ni otros benchmarks concurrentes durante las medidas. Se reutiliza
 `convert-profile` y el muestreador externo cada 100 ms, con las mismas definiciones y límites
 de intervalos, I/O lógico/de almacenamiento y máximos observados descritos arriba.
-Los logs, parejas, muestras e información de entorno quedan localmente en
-`target/audit-v5-majadas-2026-10-12/`.
+Los logs, muestras e información de entorno se conservan localmente en
+`target/audit-v5-majadas-2026-10-12/`. Las parejas `.oct`/`.octattrs` generadas se purgaron
+el 25-10-2026 para liberar espacio; pueden regenerarse desde la fuente LAZ descrita arriba.
 
 ### Resultados y equivalencia
 
@@ -405,7 +406,9 @@ El ejecutable de referencia permanece fijo durante las tres medidas, sin compila
 otros benchmarks concurrentes. La preparación del cambio de liberación de spools en fuentes
 no modifica ese binario ni estos resultados. Muestreo externo cada 100 ms, intervalos de
 notificaciones y contadores Linux con las mismas definiciones/limitaciones descritas arriba.
-Logs, parejas, muestras, entorno y resumen local: `target/audit-v5-albuera-2026-10-12/`.
+Logs, muestras, entorno y resumen local: `target/audit-v5-albuera-2026-10-12/`. Las parejas
+`.oct`/`.octattrs` generadas se purgaron el 25-10-2026 para liberar espacio; pueden regenerarse
+desde la fuente LAZ descrita arriba.
 
 Las tres conversiones finalizaron con código cero, validación profunda y sin errores de
 observación. Mediana y mínimo–máximo entre procesos:
@@ -816,9 +819,10 @@ no atribuir esas diferencias a una optimización ni prometer aceleración/ahorro
 cumplirse <5 min y pareja ≤3× en ambas fuentes. Falta medir varios workers, condiciones frías,
 memoria de navegador y escala; no se cierra la base completa del README.
 
-Logs, parejas, muestras, entorno/binario y datos crudos/agregados:
+Logs, muestras, entorno/binario y datos crudos/agregados:
 `target/phase-peaks-large-2026-10-12/{majadas,albuera}/run-{1,2,3}/`, `environment.json`,
-`results.json` y `summary.json`. Se comprobaron estados, contabilidad de muestras, invariantes,
+`results.json` y `summary.json`. Las parejas `.oct`/`.octattrs` se purgaron el 25-10-2026
+para liberar espacio. Se comprobaron estados, contabilidad de muestras, invariantes,
 hashes de las salidas y que el ejecutable permaneció fijo. Esta entrega de resultados no cambia
 código nativo; los ocho tests Python del perfilador pasaron antes de iniciar las medidas.
 
@@ -1168,3 +1172,23 @@ lógico positivo de temporales sumó 137.658.716.851 B; no equivale a I/O físic
 100 ms, con posible pérdida de picos y algunas muestras fuera de los límites exactos de fase.
 Es una ejecución, no una mediana ni una comparación de rendimiento con Albuera. El informe y los
 samples locales ignorados por Git están en `target/majadas-current-v5/run-1/report.json`.
+
+## Repetición de conversión v5 actual: 24-10-2026
+
+Se repitieron Albuera y Majadas con los mismos parámetros declarados en sus secciones anteriores,
+fuente verificada y destinos nuevos. La revisión reconstruyó `real_dataset_bench` tras el cambio
+LOD; por tanto, los tiempos son observaciones de procesos distintos, no una comparación A/B ni una
+serie estadística con binario idéntico. El muestreo conserva los límites de RSS y temporales ya
+descritos arriba.
+
+| Corpus | Tiempo | RSS pico muestreado | Pico lógico temporal | SHA-256 abreviado (`prefijo…sufijo`) de `.oct` / `.octattrs` |
+| --- | ---: | ---: | ---: | --- |
+| Albuera, run 2 → 3 | 354,4 → 448,9 s | 104,2 → 106,2 MiB | 27.432.684.346 → 27.436.877.498 B | `76ff300b…72e5a` / `1c608875…6b645` |
+| Majadas, run 1 → 2 | 298,9 → 317,6 s | 84,8 → 82,7 MiB | 18.824.399.892 → 18.800.855.238 B | `74226286…6f04` / `d45cd5fd…43f1` |
+
+Cada repetición produjo hashes idénticos a los dos archivos de su primera conversión. Eso confirma
+reproducibilidad de salida en estas parejas; no explica la variación de tiempo, que puede depender
+del binario reconstruido, caché y condiciones del host. Las diferencias de RSS y temporales son
+mediciones muestreadas. El crecimiento lógico acumulado de temporales no es I/O físico. Los informes
+completos están en `target/albuera-current-v5/run-3/report.json` y
+`target/majadas-current-v5/run-2/report.json` (locales e ignorados por Git).

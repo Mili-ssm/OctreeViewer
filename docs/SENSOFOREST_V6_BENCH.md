@@ -39,9 +39,10 @@ HDD/remota ni necesariamente lectura íntegramente desde RAM.
 
 ## Espacio y reproducibilidad
 
-Se conservan `.oct` y `.octattrs` en directorios nuevos bajo
-`target/sensoforest-pre4-20261014/`. Los temporales también se sitúan en ese filesystem, con
-`TMPDIR` explícito. No se reemplazan las parejas existentes de `data/datasets/sensoforest/`.
+Los `.oct` y `.octattrs` experimentales bajo `target/sensoforest-pre4-20261014/` se purgaron
+el 25-10-2026 para liberar espacio; los informes y logs se conservan y las salidas pueden
+regenerarse desde los LAZ fuente. Los temporales también se situaron en ese filesystem, con
+`TMPDIR` explícito. No se reemplazaron las parejas existentes de `data/datasets/sensoforest/`.
 
 El reporte distingue tamaño lógico (`st_size`) de bloques asignados al archivo
 (`st_blocks * 512`), antes y después de las lecturas. El segundo refleja asignación observada
