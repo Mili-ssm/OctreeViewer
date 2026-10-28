@@ -7,6 +7,11 @@ const MAX_INDEX_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
 const MAX_BLOCK_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
 const MAX_NODES_DEFAULT: u64 = 2_000_000;
 const MAX_BLOCKS_DEFAULT: u64 = 2_000_000;
+// Measured worst case (`tests/index_amplification.rs`, `fast` profile): one `u8` range takes
+// 6 B on disk but about 76 B of heap (two `Vec`s plus allocator overhead). 2^23 ranges cost
+// about 640 MB, which with the index buffer (256 MiB) and node records keeps the worst case
+// near 4x `MAX_INDEX_BYTES_DEFAULT` (1 GiB) instead of the unbounded ~13x.
+const MAX_ATTRIBUTE_RANGES_DEFAULT: u64 = 1 << 23;
 
 /// Resource limits checked before reader allocations.
 ///
@@ -21,6 +26,7 @@ pub struct FormatReaderLimits {
     pub(crate) max_attributes: u32,
     pub(crate) max_attribute_components: u32,
     pub(crate) max_string_bytes: u32,
+    pub(crate) max_attribute_ranges: u64,
 }
 
 impl FormatReaderLimits {
@@ -54,7 +60,18 @@ impl FormatReaderLimits {
             max_attributes,
             max_attribute_components,
             max_string_bytes,
+            max_attribute_ranges: MAX_ATTRIBUTE_RANGES_DEFAULT,
         })
+    }
+
+    /// Caps the total number of per-node attribute ranges in the index, checked before each
+    /// node's ranges are allocated. Each range costs far more heap than its on-disk bytes.
+    pub fn with_max_attribute_ranges(mut self, max: u64) -> Result<Self, FormatError> {
+        if max == 0 {
+            return Err(FormatError::InvalidReaderLimits);
+        }
+        self.max_attribute_ranges = max;
+        Ok(self)
     }
 }
 
@@ -68,6 +85,7 @@ impl Default for FormatReaderLimits {
             max_attributes: MAX_ATTRIBUTES_DEFAULT,
             max_attribute_components: MAX_COMPONENTS_DEFAULT,
             max_string_bytes: MAX_STRING_BYTES_DEFAULT,
+            max_attribute_ranges: MAX_ATTRIBUTE_RANGES_DEFAULT,
         }
     }
 }

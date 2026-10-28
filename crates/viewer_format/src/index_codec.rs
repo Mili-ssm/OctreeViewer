@@ -400,6 +400,7 @@ pub(crate) fn parse_index(
         .try_reserve_exact(node_capacity)
         .map_err(|_| FormatError::AllocationFailed(node_capacity))?;
     let mut previous_node_id = None;
+    let mut total_ranges = 0_u64;
     for _ in 0..node_count {
         let id = NodeId::new(cursor.u64()?);
         if previous_node_id.is_some_and(|previous| previous >= id) {
@@ -452,6 +453,14 @@ pub(crate) fn parse_index(
             return Err(FormatError::MalformedIndex(
                 "too many node attribute ranges",
             ));
+        }
+        total_ranges = total_ranges.saturating_add(u64::from(range_count));
+        if total_ranges > limits.max_attribute_ranges {
+            return Err(FormatError::CountLimit {
+                kind: "node attribute ranges",
+                requested: total_ranges,
+                limit: limits.max_attribute_ranges,
+            });
         }
         let mut ranges = Vec::new();
         ranges

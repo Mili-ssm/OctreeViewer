@@ -16,7 +16,7 @@ use viewer_core::{
     DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 use viewer_format::{
-    FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
+    FormatError, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion, FormatWriter,
     NodeAttributeRange, SourcePointBlock,
 };
 
@@ -151,4 +151,52 @@ fn worst_case_index_parse_amplification() {
             "nodes={nodes} index={index} B peak={peak} B retained={retained} B factor={factor:.2}"
         );
     }
+}
+
+/// 4 MiB worst-case file: 2573 nodes x 256 ranges = 658 688 ranges.
+fn small_worst_case() -> Vec<u8> {
+    worst_case_file(4 * 1024 * 1024 / 1_630)
+}
+
+fn peak_of_open(file: &[u8], limits: FormatReaderLimits) -> (usize, Result<(), FormatError>) {
+    let baseline = LIVE.load(Ordering::Relaxed);
+    PEAK.store(baseline, Ordering::Relaxed);
+    let result = FormatReader::with_limits(Cursor::new(file), limits).map(drop);
+    (PEAK.load(Ordering::Relaxed) - baseline, result)
+}
+
+#[test]
+fn range_bound_rejects_before_allocating_ranges() {
+    let file = small_worst_case();
+    let index = index_len(&file);
+
+    let (open_peak, result) = peak_of_open(&file, FormatReaderLimits::default());
+    result.expect("worst-case index below the default range bound opens");
+    assert!(
+        open_peak > 4 * index,
+        "fixture no longer amplifies: {open_peak}"
+    );
+
+    let limits = FormatReaderLimits::default()
+        .with_max_attribute_ranges(100_000)
+        .unwrap();
+    let (peak, result) = peak_of_open(&file, limits);
+    assert!(
+        matches!(
+            result,
+            Err(FormatError::CountLimit {
+                kind: "node attribute ranges",
+                limit: 100_000,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+    // Rejected after ~390 nodes, long before the ~50 MB of ranges of a full parse.
+    assert!(peak < 4 * index, "peak {peak} B for index {index} B");
+    assert!(
+        FormatReaderLimits::default()
+            .with_max_attribute_ranges(0)
+            .is_err()
+    );
 }
