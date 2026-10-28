@@ -155,6 +155,8 @@ impl AttributeEncoderProfile {
                 raw
             );
         }
+        // Index spans two arrays (`times[variant][repetition]`) and drives the run order; iterators would obscure that.
+        #[allow(clippy::needless_range_loop)]
         for repetition in 0..3 {
             let order = if repetition % 2 == 0 { [0, 1] } else { [1, 0] };
             for variant in order {
