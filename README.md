@@ -14,7 +14,7 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
   async ya permite concurrencia con cuota compartida y el viewer web solapa lecturas Blob
   priorizadas por LOD con resultados retenidos bajo cuota; falta agregar la caché del viewer y
   medir navegación concurrente. [Plan y
-  criterios](docs/FORMAT_V7_PLAN.md).
+  criterios](docs/explanation/format-v7-plan.md).
 - El formato predeterminado durante la transición es **v5 definitivo** (`OCTVFRM1`, revisión 0), separado en `.oct` (coordenadas y jerarquía) y
   `.octattrs` (RGB y atributos numéricos). Se lee y escribe v5; hay que regenerar archivos v1–v4 y v5 provisionales (`OCTVWFRM`) desde sus fuentes.
 - Están implementados **`v6.1-pre`, `v6.2-pre`, `v6.3-pre` y `v6.4-pre` optativos**. Pre1 añade deltas; pre2 serializa
@@ -32,7 +32,7 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 - La migración a **wgpu/naga 30 y glam 0.34** ya compila en nativo/WASM y pasa
   los checks nativos y readback por software. La validación de navegador sigue parcial por
   pérdida de dispositivo también reproducida con un clear independiente.
-  [Cambios de contrato, checks y límites](docs/RENDERER_DEPENDENCIES.md).
+  [Cambios de contrato, checks y límites](docs/explanation/RENDERER_DEPENDENCIES.md).
 - `createViewer` libera el worker y los recursos registrados si falla la inicialización;
   EPT rechaza presupuestos estimados inviables al leer la jerarquía y antes de reservar
   bloques de planificación. Son correcciones locales; no certifican GPU ni un límite RSS.
@@ -44,32 +44,32 @@ y cualquier superioridad frente a Potree siguen sin demostrarse.
 
 ## Prioridades pendientes
 
-Esta es la única lista activa. El [plan V7](docs/FORMAT_V7_PLAN.md) desarrolla contratos,
+Esta es la única lista activa. El [plan V7](docs/explanation/format-v7-plan.md) desarrolla contratos,
 alternativas y verificación. No se desarrollarán nuevas revisiones V5/V6: se conservan durante
 la transición como compatibilidad y referencia de comparación.
 
 | Fase | Resultado y cierre | Estado |
 | --- | --- | --- |
-| 1 | Base `v7.1-pre`: reader/writer, conversión, identidad/checkpoints exactos y menor buffer auxiliar sin cambiar payloads. | Implementado; verificación de esta entrega al final del [plan](docs/FORMAT_V7_PLAN.md#evidencia-del-primer-incremento). Sin mejora global de RSS/disco medida. |
+| 1 | Base `v7.1-pre`: reader/writer, conversión, identidad/checkpoints exactos y menor buffer auxiliar sin cambiar payloads. | Implementado; verificación de esta entrega al final del [plan](docs/records/benchmarks/format-v7-evidence.md#evidencia-del-primer-incremento). Sin mejora global de RSS/disco medida. |
 | 2 | Plan de rangos y costes por selección/codec; presupuesto agregado de memoria y medición por fase de temporales y RSS. | Planes selectivos y preflight por lectura implementados, con rangos sin I/O y estimación de buffers. La cuota compartida conserva reservas de tareas y resultados; el benchmark verifica bytes leídos. Falta completar diagnóstico de temporales/RSS. |
-| 3 | Reader lógico único por dataset en la aplicación, con llamadas concurrentes, prioridad/cancelación y bytes en vuelo; integrar scheduler en WASM y validar navegador. | El worker integra el scheduler WASM: reconcilia bloques por prioridad LOD, limita slots y reserva bytes antes de admitirlos. La cancelación de tickets es lógica y los errores solo se reintentan tras una refinación explícita. Falta validar navegación LOD con GPU y medir caché/memoria concurrente. [Plan y evidencia](docs/FORMAT_V7_PLAN.md#evidencia-del-septimo-incremento). |
-| 4 | Writer con admisión por bytes, pipeline ordenado, EPT y recuperación; reducir pico de spools sin romper checkpoints. | Preparación paralela/pipeline ordenado y checkpoints EPT V7.1/V7.2/V7.3 por bloques implementados; identidad por rutas/tamaño/`mtime`, que puede omitir cambios con metadatos iguales. V7.2 limita la búsqueda a raw/delta/ocupación compacta de 24 bits y sigue experimental. Índice con pares `(u32, u32)` cuando caben y diccionarios de atributos con claves enteras conservan los payloads. Tres pares Belvedere del último cambio bajan 2,6% la preparación mediana y 1,4% el total; RSS pico muestreado 5,4% menor. Falta repetir corpus grandes, contrastar V5/V7 actuales y cerrar presupuestos/picos. [Plan y comparaciones](docs/FORMAT_V7_PLAN.md#4-writer-y-pico-de-disco), [A/B de atributos](docs/benchmarks/storage-v7-v72-integer-dictionary-2026-10-25.json). |
-| 5 | Contrastar representación XYZ/atributos, índices y páginas con el corpus real, incluidos RAM, disco temporal y latencia selectiva. | [Sonda de atributos](docs/benchmarks/storage-v7-v72-attribute-candidates-2026-10-25.json) sobre 512 bloques Albuera: conservar diccionarios en tuplas de 1/2/4 B compone +0,185% de bytes y −46,5% de tiempo del encoder aislado. [V7.3-pre](crates/viewer_format/FORMAT_V7_PRE3.md) implementado y verificado en nativo/async, EPT y Blob/OPFS WASM; falta medir conversión/pareja completas. |
-| 6 | Promover V7 final/default, regenerar fixtures/datasets activos y eliminar backends/opciones V5/V6. | [Inventario operativo de migración](docs/FORMAT_V7_PLAN.md#inventario-operativo-para-la-promoción-y-retirada) documentado; suite comparativa admite V7. Pendiente de contratos, comparaciones y validación nativa/WASM/navegador. |
+| 3 | Reader lógico único por dataset en la aplicación, con llamadas concurrentes, prioridad/cancelación y bytes en vuelo; integrar scheduler en WASM y validar navegador. | El worker integra el scheduler WASM: reconcilia bloques por prioridad LOD, limita slots y reserva bytes antes de admitirlos. La cancelación de tickets es lógica y los errores solo se reintentan tras una refinación explícita. Falta validar navegación LOD con GPU y medir caché/memoria concurrente. [Plan y evidencia](docs/records/benchmarks/format-v7-evidence.md#evidencia-del-septimo-incremento). |
+| 4 | Writer con admisión por bytes, pipeline ordenado, EPT y recuperación; reducir pico de spools sin romper checkpoints. | Preparación paralela/pipeline ordenado y checkpoints EPT V7.1/V7.2/V7.3 por bloques implementados; identidad por rutas/tamaño/`mtime`, que puede omitir cambios con metadatos iguales. V7.2 limita la búsqueda a raw/delta/ocupación compacta de 24 bits y sigue experimental. Índice con pares `(u32, u32)` cuando caben y diccionarios de atributos con claves enteras conservan los payloads. Tres pares Belvedere del último cambio bajan 2,6% la preparación mediana y 1,4% el total; RSS pico muestreado 5,4% menor. Falta repetir corpus grandes, contrastar V5/V7 actuales y cerrar presupuestos/picos. [Plan y comparaciones](docs/explanation/format-v7-plan.md#4-writer-y-pico-de-disco), [A/B de atributos](docs/records/benchmarks/data/storage-v7-v72-integer-dictionary-2026-10-25.json). |
+| 5 | Contrastar representación XYZ/atributos, índices y páginas con el corpus real, incluidos RAM, disco temporal y latencia selectiva. | [Sonda de atributos](docs/records/benchmarks/data/storage-v7-v72-attribute-candidates-2026-10-25.json) sobre 512 bloques Albuera: conservar diccionarios en tuplas de 1/2/4 B compone +0,185% de bytes y −46,5% de tiempo del encoder aislado. [V7.3-pre](docs/reference/format/FORMAT_V7_PRE3.md) implementado y verificado en nativo/async, EPT y Blob/OPFS WASM; falta medir conversión/pareja completas. |
+| 6 | Promover V7 final/default, regenerar fixtures/datasets activos y eliminar backends/opciones V5/V6. | [Inventario operativo de migración](docs/explanation/format-v7-plan.md#inventario-operativo-para-la-promoción-y-retirada) documentado; suite comparativa admite V7. Pendiente de contratos, comparaciones y validación nativa/WASM/navegador. |
 
 <details>
 <summary>Pendientes anteriores conservados para después de V7 y como escenarios de regresión</summary>
 
-El [inventario por componente](docs/PROJECT_INVENTORY.md) conserva el mapa del proyecto.
-Las entregas cerradas están en [el archivo del 14-10-2026](docs/DELIVERIES_2026-10-14.md).
+El [inventario por componente](docs/reference/inventory.md) conserva el mapa del proyecto.
+Las entregas cerradas están en [el archivo del 14-10-2026](docs/records/archive/DELIVERIES_2026-10-14.md).
 Las filas V6 siguientes describen el punto de partida histórico; su evolución se absorbe en V7.
 
 | Orden | Trabajo abierto y componentes | Siguiente paso / criterio de cierre |
 | --- | --- | --- |
-| 1 | **Corrección visual y transición LOD** — core, render, WASM. | El planificador admite un hijo directo residente junto al padre Replacement cuando su frontera coincide con la grilla y no supera la resolución de los representantes del padre. Durante una carga, conserva por región el último corte visible con cobertura completa tanto en Replacement como en Additive; al completar el objetivo publica solo el corte nuevo. Los payloads retenidos respetan el presupuesto de caché: si no cabe el bloque nuevo, la inserción se rechaza y la escena queda visible hasta que otro objetivo residente cierre la transición o se reinicie el dataset. El builder omite los puntos del padre dentro de la región del hijo y conserva RGB/atributos propios. Firefox headless presentó un `.oct` real de 55 bloques, conservó el corte visible tras un checksum fallido y recuperó la carga al abrir el archivo sano; [protocolo y límites](docs/REGIONAL_VOXEL_LOD.md). Faltan zoom, más cámaras/cargas, Chrome/GPU objetivo y memoria/presentación representativa. `sync_visible_blocks` solo vacía la escena en WASM; el corte voxelizado se publica con `upload_voxel_cut`. |
-| 2 | **Validación de navegador** — WASM y host. | Firefox 158 y Chrome 156 local con AMD Radeon 880M/RDNA3 presentaron clear y muestra WASM. Chrome completó picking, recentrado, resize, carga del host a 4 px y cambio de vista con `W` en modo pájaro; a 390 px no hubo desbordamiento horizontal. [Entorno, pasos y límites](docs/RENDERER_DEPENDENCIES.md). Faltan pérdida de dispositivo reproducible y recuperación observada, móvil físico y teclado físico. La limpieza de `createViewer` ante fallo síncrono tiene regresiones Node ([evaluación](docs/CODE_ASSESSMENT_2026-10-24.md)); readback/picking no cierran por sí solos la presentación. |
-| 3 | **Pico conjunto de memoria** — core, render, WASM. | Repeticiones independientes de Firefox 158 en Belvedere a 8 px y Additive real parcial completan el corte y el cambio de cámara. En tres Belvedere actuales el PSS muestreado llega a 3,47–3,49 GB (RSS 4,28–4,30 GB); el A/B con el planner anterior también llega a 3,56 GB. `smaps` encuentra páginas anónimas, sin identificar su dueño; el pico no se atribuye al cambio LOD. [Medidas, A/B y límites](docs/WEB_PERFORMANCE_BENCH.md). Falta explicar esa memoria y capturar asignaciones transitorias con más resolución, repetir Additive ramificado representativo y evaluar acumulación persistente. |
-| 4 | **Conversión y escala de extremo a extremo** — convert y host. | Se repitieron las conversiones v5 actuales de Albuera (354→449 s) y Majadas (299→318 s); ambos pares `.oct`/`.octattrs` conservaron hashes idénticos. Firefox 158 repitió Majadas a 4 px: 54,0 s, 239 bloques, 0 pendientes; PSS/RSS observados 0,97/1,77 GB frente a 3,73/4,54 GB antes, variación no explicada que no se atribuye a una mejora. [Conversión y límites](docs/V5_MEMORY_BENCH.md#repetición-de-conversión-v5-actual-24-10-2026), [host](docs/WEB_PERFORMANCE_BENCH.md). Belvedere mostró primer frame grueso en 28 ms, pero tras 600 s a 4 px aún tenía 783 bloques pendientes y 87 expulsiones; PSS llegó a 2,59 GB. Sigue pendiente completar Belvedere a 4 px y repetir Albuera en host; separar apertura, I/O, temporales y memoria. El rechazo temprano del presupuesto estimado EPT tiene regresiones; falta medir RSS y escala real ([evaluación](docs/CODE_ASSESSMENT_2026-10-24.md)). Más de 500 GB y comparación con Potree requieren hardware, calidad y tareas equivalentes. |
+| 1 | **Corrección visual y transición LOD** — core, render, WASM. | El planificador admite un hijo directo residente junto al padre Replacement cuando su frontera coincide con la grilla y no supera la resolución de los representantes del padre. Durante una carga, conserva por región el último corte visible con cobertura completa tanto en Replacement como en Additive; al completar el objetivo publica solo el corte nuevo. Los payloads retenidos respetan el presupuesto de caché: si no cabe el bloque nuevo, la inserción se rechaza y la escena queda visible hasta que otro objetivo residente cierre la transición o se reinicie el dataset. El builder omite los puntos del padre dentro de la región del hijo y conserva RGB/atributos propios. Firefox headless presentó un `.oct` real de 55 bloques, conservó el corte visible tras un checksum fallido y recuperó la carga al abrir el archivo sano; [protocolo y límites](docs/explanation/REGIONAL_VOXEL_LOD.md). Faltan zoom, más cámaras/cargas, Chrome/GPU objetivo y memoria/presentación representativa. `sync_visible_blocks` solo vacía la escena en WASM; el corte voxelizado se publica con `upload_voxel_cut`. |
+| 2 | **Validación de navegador** — WASM y host. | Firefox 158 y Chrome 156 local con AMD Radeon 880M/RDNA3 presentaron clear y muestra WASM. Chrome completó picking, recentrado, resize, carga del host a 4 px y cambio de vista con `W` en modo pájaro; a 390 px no hubo desbordamiento horizontal. [Entorno, pasos y límites](docs/explanation/RENDERER_DEPENDENCIES.md). Faltan pérdida de dispositivo reproducible y recuperación observada, móvil físico y teclado físico. La limpieza de `createViewer` ante fallo síncrono tiene regresiones Node ([evaluación](docs/records/archive/CODE_ASSESSMENT_2026-10-24.md)); readback/picking no cierran por sí solos la presentación. |
+| 3 | **Pico conjunto de memoria** — core, render, WASM. | Repeticiones independientes de Firefox 158 en Belvedere a 8 px y Additive real parcial completan el corte y el cambio de cámara. En tres Belvedere actuales el PSS muestreado llega a 3,47–3,49 GB (RSS 4,28–4,30 GB); el A/B con el planner anterior también llega a 3,56 GB. `smaps` encuentra páginas anónimas, sin identificar su dueño; el pico no se atribuye al cambio LOD. [Medidas, A/B y límites](docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). Falta explicar esa memoria y capturar asignaciones transitorias con más resolución, repetir Additive ramificado representativo y evaluar acumulación persistente. |
+| 4 | **Conversión y escala de extremo a extremo** — convert y host. | Se repitieron las conversiones v5 actuales de Albuera (354→449 s) y Majadas (299→318 s); ambos pares `.oct`/`.octattrs` conservaron hashes idénticos. Firefox 158 repitió Majadas a 4 px: 54,0 s, 239 bloques, 0 pendientes; PSS/RSS observados 0,97/1,77 GB frente a 3,73/4,54 GB antes, variación no explicada que no se atribuye a una mejora. [Conversión y límites](docs/records/benchmarks/V5_MEMORY_BENCH.md#repetición-de-conversión-v5-actual-24-10-2026), [host](docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). Belvedere mostró primer frame grueso en 28 ms, pero tras 600 s a 4 px aún tenía 783 bloques pendientes y 87 expulsiones; PSS llegó a 2,59 GB. Sigue pendiente completar Belvedere a 4 px y repetir Albuera en host; separar apertura, I/O, temporales y memoria. El rechazo temprano del presupuesto estimado EPT tiene regresiones; falta medir RSS y escala real ([evaluación](docs/records/archive/CODE_ASSESSMENT_2026-10-24.md)). Más de 500 GB y comparación con Potree requieren hardware, calidad y tareas equivalentes. |
 | 5 | **Requisitos de producto y soporte** — transversal. | Acordar plataformas y mínimos RAM/GPU, dimensiones LAS/LAZ (CRS, flags, Extra Bytes), licencia/compatibilidad y alcance de medición, clasificación, recorte y exportación. Documentar decisiones antes de prometer soporte. |
 | 6 | **Almacenamiento v6: lectura selectiva y transporte** — format, core y WASM. | El trabajo V7 ya conecta el Blob async al worker; la tabla histórica sigue documentando la ruta V6 previa, mientras cuotas, concurrencia y cancelación lógica coherentes quedan en la prioridad 3. No se desarrollarán nuevas revisiones V6. |
 | 7 | **Siguientes candidatos v6** — core y format. | Perfilar selector de codecs; comparar grupos RGB exactos, bitpacking por rango y resúmenes/diccionarios con los codecs pre3/pre4 en la misma envoltura. Exigir parejas válidas, lectura selectiva, precisión, corrupción, checkpoints y WASM antes de otra revisión incompatible; mantener v6 final rechazado. |
@@ -77,8 +77,8 @@ Las filas V6 siguientes describen el punto de partida histórico; su evolución 
 
 Estos pendientes se conservan; V7 concentra ahora el desarrollo. Los avances de almacenamiento
 no cierran la validación visual ni la memoria conjunta. El detalle y los límites están en los
-[benchmarks web](docs/WEB_PERFORMANCE_BENCH.md), de
-[vóxeles](docs/VOXEL_BUILD_BENCH.md) y de [almacenamiento](docs/STORAGE_BENCH.md).
+[benchmarks web](docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md), de
+[vóxeles](docs/records/benchmarks/VOXEL_BUILD_BENCH.md) y de [almacenamiento](docs/records/benchmarks/STORAGE_BENCH.md).
 Caras expuestas/agrupadas, índice exterior compacto y otros añadidos se mantienen como propuestas
 condicionadas en el inventario, sin convertirlos en compromisos nuevos.
 
@@ -122,9 +122,9 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 Para doble clic se usa el paquete autocontenido `artifacts/visor-web-local/index.html`. Contrato,
 regeneración y pruebas de ambos modos: [README del host web](examples/web-host/README.md).
-Especificación de revisiones nuevas: [V7.1-pre](crates/viewer_format/FORMAT_V7_PRE1.md) y
-[candidato V7.2-pre](crates/viewer_format/FORMAT_V7_PRE2.md);
-[contrato V5](crates/viewer_format/FORMAT_V5.md) durante la transición. La publicación de los dos
+Especificación de revisiones nuevas: [V7.1-pre](docs/reference/format/FORMAT_V7_PRE1.md) y
+[candidato V7.2-pre](docs/reference/format/FORMAT_V7_PRE2.md);
+[contrato V5](docs/reference/format/FORMAT_V5.md) durante la transición. La publicación de los dos
 archivos no es atómica; el conversor valida candidatos y publica atributos antes de coordenadas.
 
 ## Arquitectura y límites conocidos
@@ -145,32 +145,32 @@ render reconstruye posiciones locales `f32`.
 
 ## Documentación
 
-Punto de entrada para retomar trabajo: [inventario del proyecto](docs/PROJECT_INVENTORY.md).
+Punto de entrada para retomar trabajo: [inventario del proyecto](docs/reference/inventory.md).
 Incluye mapa de código, herramientas, cobertura disponible y propuestas de mejora.
-La [evaluación del código del 24-10-2026](docs/CODE_ASSESSMENT_2026-10-24.md) contrasta
+La [evaluación del código del 24-10-2026](docs/records/archive/CODE_ASSESSMENT_2026-10-24.md) contrasta
 documentación, criterios de desarrollo, checks y próximos pasos; las prioridades activas
 siguen siendo las de este README.
 
 | Documento | Contenido vigente |
 | --- | --- |
-| [Plan V7](docs/FORMAT_V7_PLAN.md), [base V7.1-pre](crates/viewer_format/FORMAT_V7_PRE1.md) y [candidato V7.2-pre](crates/viewer_format/FORMAT_V7_PRE2.md) | Prioridad actual: recursos, async/paralelismo, candidatos de formato y retirada de V5/V6. |
-| [Preparación v6](docs/STORAGE_V6_PREPARATION.md) y [pre1](crates/viewer_format/FORMAT_V6_PRE1.md) / [pre2](crates/viewer_format/FORMAT_V6_PRE2.md) / [pre3](crates/viewer_format/FORMAT_V6_PRE3.md) / [pre4](crates/viewer_format/FORMAT_V6_PRE4.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
-| [Pre3](docs/STORAGE_V6_PRE3_BENCH.md), [pre4](docs/STORAGE_V6_PRE4_BENCH.md) y [SensOFOREST completo](docs/SENSOFOREST_V6_BENCH.md) | Comparaciones de parejas válidas, tiempos, lectura selectiva y RSS con sus límites. |
-| [I/O v6](docs/STORAGE_V6_IO.md), [CPU/CRC/diccionarios](docs/STORAGE_V6_CPU.md) y [planos de bytes](docs/STORAGE_V6_BYTE_PLANES.md) | Pipeline optativo, lectores del benchmark y optimizaciones compatibles; tiling descartado para la ruta actual. |
-| [Resúmenes por nodo](docs/NODE_ATTRIBUTE_SUMMARIES.md) y [diccionarios](docs/ATTRIBUTE_DICTIONARY_BENCH.md) | Experimentos; no equivalen a integración en `.oct`/`.octattrs`. |
-| [Benchmarks de almacenamiento](docs/STORAGE_BENCH.md) | Suite repetida: tamaños, escritura, reconstrucción y carga secuencial de hijos. |
-| [Ocupación cuantizada](docs/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
-| [Benchmark v5 de memoria y lectura](docs/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
-| [Benchmark de construcción de vóxeles](docs/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta, acumuladores y experimentos de reutilización. |
-| [Resolución regional LOD](docs/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback, regresiones, probe WebGPU y comparación nativa de cortes Belvedere. |
-| [Dependencias del renderer](docs/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, contratos de superficie/readback y validación parcial de navegador. |
-| [Benchmark web](docs/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos, resultados y limitaciones visuales. |
-| [Selección LOD](docs/LOD_FRONTIER_BENCH.md) | Contratos y mediciones de selección de frontera y prioridad incremental. |
-| [Datos reales](docs/REAL_DATASET_BENCH.md) | Protocolo y resultados históricos; revisar fecha/versión antes de comparar con v5. |
-| [Ramificación espacial](docs/SPATIAL_BRANCHING_BENCH.md) | Experimentos de subdivisión y cortes con diferentes ramas. |
-| [Anchura de coordenadas](docs/COORDINATE_WIDTH_BENCH.md) | Evaluación del experimento `u16` y sus límites. |
-| [Entregas del 14-10-2026](docs/DELIVERIES_2026-10-14.md) | Archivo de implementaciones y experimentos cerrados, con checks históricos. |
-| [Historial técnico](docs/DEVELOPMENT_HISTORY.md) | Snapshot anterior a v5; archivo de decisiones y evidencia, no hoja de ruta activa. |
+| [Plan V7](docs/explanation/format-v7-plan.md), [base V7.1-pre](docs/reference/format/FORMAT_V7_PRE1.md) y [candidato V7.2-pre](docs/reference/format/FORMAT_V7_PRE2.md) | Prioridad actual: recursos, async/paralelismo, candidatos de formato y retirada de V5/V6. |
+| [Preparación v6](docs/records/benchmarks/STORAGE_V6_PREPARATION.md) y [pre1](docs/records/archive/FORMAT_V6_PRE1.md) / [pre2](docs/records/archive/FORMAT_V6_PRE2.md) / [pre3](docs/records/archive/FORMAT_V6_PRE3.md) / [pre4](docs/records/archive/FORMAT_V6_PRE4.md) | Traits, formatos experimentales, compatibilidad y criterios pendientes. |
+| [Pre3](docs/records/benchmarks/STORAGE_V6_PRE3_BENCH.md), [pre4](docs/records/benchmarks/STORAGE_V6_PRE4_BENCH.md) y [SensOFOREST completo](docs/records/benchmarks/SENSOFOREST_V6_BENCH.md) | Comparaciones de parejas válidas, tiempos, lectura selectiva y RSS con sus límites. |
+| [I/O v6](docs/records/benchmarks/STORAGE_V6_IO.md), [CPU/CRC/diccionarios](docs/records/benchmarks/STORAGE_V6_CPU.md) y [planos de bytes](docs/records/benchmarks/STORAGE_V6_BYTE_PLANES.md) | Pipeline optativo, lectores del benchmark y optimizaciones compatibles; tiling descartado para la ruta actual. |
+| [Resúmenes por nodo](docs/explanation/NODE_ATTRIBUTE_SUMMARIES.md) y [diccionarios](docs/records/benchmarks/ATTRIBUTE_DICTIONARY_BENCH.md) | Experimentos; no equivalen a integración en `.oct`/`.octattrs`. |
+| [Benchmarks de almacenamiento](docs/records/benchmarks/STORAGE_BENCH.md) | Suite repetida: tamaños, escritura, reconstrucción y carga secuencial de hijos. |
+| [Ocupación cuantizada](docs/records/benchmarks/QUANTIZED_OCCUPANCY_BENCH.md) | Residuales exactos, coste del índice en memoria y límites del candidato. |
+| [Benchmark v5 de memoria y lectura](docs/records/benchmarks/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. |
+| [Benchmark de construcción de vóxeles](docs/records/benchmarks/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta, acumuladores y experimentos de reutilización. |
+| [Resolución regional LOD](docs/explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback, regresiones, probe WebGPU y comparación nativa de cortes Belvedere. |
+| [Dependencias del renderer](docs/explanation/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, contratos de superficie/readback y validación parcial de navegador. |
+| [Benchmark web](docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos, resultados y limitaciones visuales. |
+| [Selección LOD](docs/records/benchmarks/LOD_FRONTIER_BENCH.md) | Contratos y mediciones de selección de frontera y prioridad incremental. |
+| [Datos reales](docs/records/benchmarks/REAL_DATASET_BENCH.md) | Protocolo y resultados históricos; revisar fecha/versión antes de comparar con v5. |
+| [Ramificación espacial](docs/records/benchmarks/SPATIAL_BRANCHING_BENCH.md) | Experimentos de subdivisión y cortes con diferentes ramas. |
+| [Anchura de coordenadas](docs/records/benchmarks/COORDINATE_WIDTH_BENCH.md) | Evaluación del experimento `u16` y sus límites. |
+| [Entregas del 14-10-2026](docs/records/archive/DELIVERIES_2026-10-14.md) | Archivo de implementaciones y experimentos cerrados, con checks históricos. |
+| [Historial técnico](docs/records/archive/DEVELOPMENT_HISTORY.md) | Snapshot anterior a v5; archivo de decisiones y evidencia, no hoja de ruta activa. |
 | [Dataset de escala](data/datasets/README.md) y [muestras](data/samples/README.md) | Fuentes, procedencia y preparación reproducible. |
 
 Los documentos de benchmark mantienen los comandos, versiones, dispersión y contraejemplos. Sus
@@ -201,5 +201,5 @@ evidencia de presentación visual en todos los navegadores.
 Para compilar WASM y generar bindings/paquete local, seguir el
 [host web](examples/web-host/README.md). Los perfiles `fast`, `perf` y `release` tienen objetivos
 distintos; registrar el perfil al comparar medidas. El inventario inicial no reejecutó
-suites ni benchmarks; la [migración posterior](docs/RENDERER_DEPENDENCIES.md) registra los checks
+suites ni benchmarks; la [migración posterior](docs/explanation/RENDERER_DEPENDENCIES.md) registra los checks
 actuales y sus límites. Las mediciones de rendimiento anteriores pertenecen a sus revisiones.

@@ -1,4 +1,4 @@
-// Browser-only, bounded real-data diagnostic. See docs/VOXEL_BUILD_BENCH.md.
+// Browser-only, bounded real-data diagnostic. See docs/records/benchmarks/VOXEL_BUILD_BENCH.md.
 import { createViewer } from "./viewer-api.mjs";
 
 export async function probeRealAdditive(inputUrl = "/target/additive-real-v5.oct") {

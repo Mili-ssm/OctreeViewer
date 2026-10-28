@@ -1,4 +1,4 @@
-//! Experimental streams, NOT a supported .octattrs format. See docs/ATTRIBUTE_DICTIONARY_BENCH.md.
+//! Experimental streams, NOT a supported .octattrs format. See docs/records/benchmarks/ATTRIBUTE_DICTIONARY_BENCH.md.
 use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},

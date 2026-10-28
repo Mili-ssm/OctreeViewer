@@ -113,7 +113,7 @@ memoria máxima y tiempo para archivos grandes aún no están validados con Albu
 The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has current v5
 XYZ/RGB/typed-attribute and visual evidence. Chrome 155 passes the small functional flows;
 current headless captures still require investigation. Older Bunny/Outer Banks Chrome captures
-do not certify the current build. See [web measurements](../../docs/WEB_PERFORMANCE_BENCH.md).
+do not certify the current build. See [web measurements](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md).
 For a small independent presentation/picking diagnostic, serve the repository and open
 [`tests/presentation.html`](tests/presentation.html). The left canvas must be red and the right
 must show the RGB sample. `window.presentationResults` records a one-pixel GPU readback,
@@ -121,7 +121,7 @@ direct/indirect frames, a center pick in dataset coordinates, an out-of-bounds m
 Readback/counters alone do not certify presentation: inspect or capture both canvases. The clear
 worker records device-loss/uncaptured errors; this does not test the host's device-loss recovery.
 Both workers time out after 30 seconds if they produce no result. See the
-[observed Chrome/Firefox split](../../docs/WEB_PERFORMANCE_BENCH.md#independent-presentation-and-picking-diagnostic--13-10-2026).
+[observed Chrome/Firefox split](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md#independent-presentation-and-picking-diagnostic--13-10-2026).
 
 The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
@@ -178,7 +178,7 @@ need validation.
 Chrome 155 is now available and the small software-WebGPU flows pass, but pick/device loss remain
 unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
-in [web performance](../../docs/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
+in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
 
 The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
 `File`, runs in another worker, and returns `{ file, name, attributesFile, outputAttributesName, points, timings }`; progress/status events and
@@ -259,7 +259,7 @@ For web benchmarks, open one file at a fixed viewport/detail, wait until the tar
 click **Run 15 s FPS benchmark**, keep the camera still until it completes, then export the JSON. It includes file/index open time, first
 coarse frame, target-LOD time, a warmed 10-second worker-frame-reply rate, reply intervals and WASM/CPU
 frame percentiles. Frame replies mean frames submitted by the worker; they are not GPU completion or
-display FPS. The [benchmark protocol](../../docs/WEB_PERFORMANCE_BENCH.md) defines a dataset-size,
+display FPS. The [benchmark protocol](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md) defines a dataset-size,
 LOD-detail and viewport matrix, and `collect-benchmarks.py` aggregates repeated exports by median.
 
 The generic WASM point APIs accept typed arrays and stage them in batches of 16,384 points into
@@ -316,7 +316,7 @@ rebuilt WASM/WebGPU/OffscreenCanvas and is separate from the Node suite. Majadas
 and RGB-component selection plus rejection of Albuera's sidecar. Its sequential API loop timings
 are integration diagnostics, not host load/FPS benchmarks. Repeated host column-change loads and
 other browsers remain pending. See the
-[measured matrix](../../docs/WEB_PERFORMANCE_BENCH.md).
+[measured matrix](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md).
 
 Firefox 157.0.1 headless also passed opening the regenerated local package directly through
 `file://` with the HTTP server stopped and a fresh WebGPU-enabled profile. The embedded sample
@@ -332,7 +332,7 @@ caché. `refinementWork.evictedPendingBlocks` cuenta expulsiones de bloques que 
 plan objetivo vuelve a pedir inmediatamente y se reinicia con los demás contadores
 de trabajo. Puede haber presión sin rechazos: el padre visible está protegido y
 los hijos aún incompletos pueden expulsarse entre sí. Ver el
-[contrato y prueba](../../docs/WEB_PERFORMANCE_BENCH.md#cache-pressure-diagnostics--12-10-2026).
+[contrato y prueba](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md#cache-pressure-diagnostics--12-10-2026).
 
 ## Reproduce a cache/camera diagnostic in Firefox
 
@@ -395,9 +395,9 @@ Add `&mode=viewer` for the fixed 4,096-point RGB WASM sample; `mode=clear` remai
 Both modes wait for browser queue completion. Viewer mode temporarily captures the browser
 requestDevice result during initialization, restores the prototype immediately, and uses that
 queue reference only inside the diagnostic; no product API is changed. Read the
-[WASM matrix and counterexamples](../../docs/WEB_PERFORMANCE_BENCH.md#fixed-small-wasm-sample-surface-matrix--13-10-2026).
+[WASM matrix and counterexamples](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md#fixed-small-wasm-sample-surface-matrix--13-10-2026).
 This is a diagnostic submission sequence, not an FPS benchmark or VRAM measurement.
-See the [six-run observations](../../docs/WEB_PERFORMANCE_BENCH.md#independent-clear-only-surface-memory-matrix--13-10-2026).
+See the [six-run observations](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md#independent-clear-only-surface-memory-matrix--13-10-2026).
 
 For ordered Linux parent-map captures, serve the repository on port 8767 and start a dedicated
 WebGPU-enabled Firefox BiDi instance on port 9222. Then run, from the repository root:
@@ -480,7 +480,7 @@ For Playwright MCP with Chrome software WebGPU, launch channel `chrome` with
 `--enable-unsafe-webgpu --use-angle=swiftshader`. The default headless launch may expose
 `navigator.gpu` while returning no adapter. Chrome 155 functional coverage and the mapped
 HZB-buffer regression are recorded in
-[the web measurements](../../docs/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
+[the web measurements](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md#chrome-software-webgpu-hzb-buffer-fix--13-10-2026).
 Software-adapter checks do not establish hardware performance.
 
 La API `getStats()` y los eventos de estadísticas/progreso incluyen
@@ -496,7 +496,7 @@ With fresh bindings, run `tests/storage-format.browser.mjs` as a module Worker a
 `type === "probeResult"`, ignoring read-progress messages. It checks Blob opening with/without
 the companion and explicit rejection of provisional files, unsupported v6 revisions and an
 incorrect companion. It needs no GPU adapter. Recorded native/OPFS/browser evidence and the
-remaining presentation limitation are in [storage benchmarks](../../docs/STORAGE_BENCH.md).
+remaining presentation limitation are in [storage benchmarks](../../docs/records/benchmarks/STORAGE_BENCH.md).
 
 ### V7 asynchronous Blob range probe
 
@@ -504,8 +504,8 @@ With fresh bindings, run `tests/async-format-reader.browser.mjs` as a module Wor
 `type === "probeResult"`. Against the V7.1-pre fixture it checks bounded metadata ranges,
 asynchronous `Blob.arrayBuffer()` payload reads, XYZ/RGB and typed U16 materialization, companion
 identity and CRC rejection without a full-file read, plus shared read quota, concurrent calls
-and scheduler tickets/retry. Equivalent V7.3 fixtures passed with fresh bindings ([evidence](../../docs/benchmarks/storage-v7-v73-integration-2026-10-25.json)). Visual
-LOD publication and navigation measurements remain pending in the [V7 plan](../../docs/FORMAT_V7_PLAN.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
+and scheduler tickets/retry. Equivalent V7.3 fixtures passed with fresh bindings ([evidence](../../docs/records/benchmarks/data/storage-v7-v73-integration-2026-10-25.json)). Visual
+LOD publication and navigation measurements remain pending in the [V7 plan](../../docs/explanation/format-v7-plan.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
 
 ### Opt-in conversion revisions
 
@@ -520,10 +520,10 @@ The demo defaults to v5; this programmatic selection does not add a format selec
 For the storage probe, pass `expectedVersion: "v7.3-pre"` with the converted Blobs and check the
 returned `formatVersion`. Use fresh bindings and reload worker scripts after rebuilding (a cache
 busting query on the worker/probe URL avoids a stale development module). Results are recorded
-in [storage comparisons](../../docs/STORAGE_BENCH.md); GPU presentation remains separate.
+in [storage comparisons](../../docs/records/benchmarks/STORAGE_BENCH.md); GPU presentation remains separate.
 
-Physical contracts and later Blob/OPFS checks: [format preparation](../../docs/STORAGE_V6_PREPARATION.md),
-[pre3](../../docs/STORAGE_V6_PRE3_BENCH.md) and [pre4](../../docs/STORAGE_V6_PRE4_BENCH.md).
+Physical contracts and later Blob/OPFS checks: [format preparation](../../docs/records/benchmarks/STORAGE_V6_PREPARATION.md),
+[pre3](../../docs/records/benchmarks/STORAGE_V6_PRE3_BENCH.md) and [pre4](../../docs/records/benchmarks/STORAGE_V6_PRE4_BENCH.md).
 These storage checks do not certify WebGPU presentation. For the current cross-component
 inventory and pending work, use the [project README](../../README.md#prioridades-pendientes).
 
@@ -532,5 +532,5 @@ inventory and pending work, use the [project README](../../README.md#prioridades
 With fresh bindings, run `tests/lod-regions.browser.mjs` as a module worker and wait for
 `type === "probeResult"`. It requires WebGPU enabled and a usable adapter. It checks a resident
 parent fallback with an independently detailed sibling, resize rebuilding and child replacement.
-The [regional LOD report](../../docs/REGIONAL_VOXEL_LOD.md) records the software adapter, native
+The [regional LOD report](../../docs/explanation/REGIONAL_VOXEL_LOD.md) records the software adapter, native
 comparison and outstanding visual validation; a `presented` status alone is not screenshot proof.
