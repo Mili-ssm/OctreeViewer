@@ -8,18 +8,17 @@ use libfuzzer_sys::fuzz_target;
 use viewer_convert::{ConvertOptions, convert_file};
 use viewer_core::las::preflight_las;
 
-/// Scratch directory, preferably on tmpfs: one input and one output file reused per process.
-fn scratch() -> &'static Path {
-    static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| {
+/// Per-process scratch file stem, preferably on tmpfs. Files are removed after every iteration
+/// because `fuzz_target!` has no teardown; nothing but two short-lived files is ever left behind.
+fn scratch_stem() -> &'static Path {
+    static STEM: OnceLock<PathBuf> = OnceLock::new();
+    STEM.get_or_init(|| {
         let base = if Path::new("/dev/shm").is_dir() {
             PathBuf::from("/dev/shm")
         } else {
             std::env::temp_dir()
         };
-        let dir = base.join(format!("octree-fuzz-las-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+        base.join(format!("octree-fuzz-las-{}", std::process::id()))
     })
 }
 
@@ -32,8 +31,12 @@ fuzz_target!(|data: &[u8]| {
     if preflight_las(&mut Cursor::new(data), len).is_err() {
         return;
     }
-    let dir = scratch();
-    let input = dir.join("in.laz");
+    let stem = scratch_stem();
+    let input = stem.with_extension("laz");
+    let output = stem.with_extension("oct");
     std::fs::write(&input, data).unwrap();
-    let _ = convert_file(&input, &dir.join("out.oct"), ConvertOptions::default());
+    let _ = convert_file(&input, &output, ConvertOptions::default());
+    let _ = std::fs::remove_file(&input);
+    let _ = std::fs::remove_file(output.with_extension("octattrs"));
+    let _ = std::fs::remove_file(&output);
 });

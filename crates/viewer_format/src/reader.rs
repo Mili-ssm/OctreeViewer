@@ -15,7 +15,7 @@ use crate::layout::{
     block_payload_size,
 };
 use crate::version::FileRole;
-use crate::{BlockCodec, FormatError, FormatMetadata, crc32, decompress_block};
+use crate::{BlockCodec, FormatError, FormatMetadata, crc32::checksum_matches, decompress_block};
 
 use crate::index_codec::{
     BlockDirectoryEntry, parse_index, parse_split_footer, validate_index_range,
@@ -114,7 +114,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         if usize::try_from(index_length).ok() != Some(index.len()) {
             return Err(FormatError::InvalidFooter);
         }
-        if crc32(index) != checksum {
+        if !checksum_matches(index, checksum) {
             return Err(FormatError::InvalidChecksum("index"));
         }
         let (metadata, blocks, block_bounds) =
@@ -243,7 +243,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         index.resize(index_size, 0);
         reader.seek(SeekFrom::Start(index_offset))?;
         reader.read_exact(&mut index)?;
-        if crc32(&index) != index_checksum {
+        if !checksum_matches(&index, index_checksum) {
             return Err(FormatError::InvalidChecksum("index"));
         }
 
@@ -976,7 +976,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 actual: stored.len(),
             });
         }
-        if crc32(&stored) != range.checksum() {
+        if !checksum_matches(&stored, range.checksum()) {
             return Err(FormatError::InvalidBlockChecksum(id));
         }
         let raw_size = usize::try_from(range.decoded_bytes())

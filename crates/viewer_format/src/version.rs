@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     FormatError, crc32,
+    crc32::checksum_matches,
     layout::{HEADER_MAGIC, HEADER_SIZE, PROVISIONAL_HEADER_MAGIC},
 };
 
@@ -187,7 +188,7 @@ pub(crate) fn parse_identity(
     if &header[..8] != HEADER_MAGIC
         || u64::from(length) != HEADER_SIZE
         || !matches!(flags, 0..=2)
-        || checksum != crc32(&header[..20])
+        || !checksum_matches(&header[..20], checksum)
         || (major == 5 && revision != 0)
     {
         return Err(FormatError::InvalidHeader);

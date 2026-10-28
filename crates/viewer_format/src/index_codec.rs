@@ -21,7 +21,7 @@ use crate::slice_cursor::SliceCursor;
 use crate::version::FileRole;
 use crate::{
     BlockCodec, Crc32, FormatError, FormatIdentity, FormatMetadata, FormatVersion,
-    NodeAttributeRange, crc32,
+    NodeAttributeRange, crc32, crc32::checksum_matches,
 };
 
 pub(crate) fn header_for_role(
@@ -285,8 +285,10 @@ pub(crate) fn parse_split_footer(
     magic: &[u8; 8],
 ) -> Result<(u64, u64, u64, u32), FormatError> {
     if &footer[..8] != magic
-        || u32::from_le_bytes(footer[36..40].try_into().expect("fixed width"))
-            != crc32(&footer[..36])
+        || !checksum_matches(
+            &footer[..36],
+            u32::from_le_bytes(footer[36..40].try_into().expect("fixed width")),
+        )
     {
         return Err(FormatError::InvalidFooter);
     }

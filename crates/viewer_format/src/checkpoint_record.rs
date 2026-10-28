@@ -4,7 +4,7 @@ use viewer_core::{AttributeDataType, AttributeValues, BlockId, SpatialBounds};
 
 use crate::layout::{PayloadDirectoryEntry, attribute_payload_size};
 use crate::prepare::{BlockRecord, encode_values};
-use crate::{FormatError, crc32};
+use crate::{FormatError, crc32, crc32::checksum_matches};
 
 pub(crate) const WRITER_RECORD_MAGIC: &[u8; 8] = b"OCTVWRC1";
 pub(crate) const WRITER_RECORD_VERSION: u16 = 1;
@@ -165,7 +165,7 @@ pub(crate) fn decode_checkpoint_record(
             .try_into()
             .map_err(|_| FormatError::MalformedIndex("truncated writer checkpoint"))?,
     );
-    if crc32(&bytes[..data_len]) != expected_crc {
+    if !checksum_matches(&bytes[..data_len], expected_crc) {
         return Err(FormatError::InvalidChecksum("writer checkpoint"));
     }
     let mut input = CheckpointInput {

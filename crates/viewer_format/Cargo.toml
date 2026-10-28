@@ -26,3 +26,6 @@ required-features = ["experimental"]
 [[example]]
 name = "node_attribute_bench"
 required-features = ["experimental"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }

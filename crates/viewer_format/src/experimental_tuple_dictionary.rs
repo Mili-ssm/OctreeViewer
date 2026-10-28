@@ -1,6 +1,8 @@
 //! Experimental columnar full-tuple dictionary, NOT a supported `.octattrs` revision.
 //! One shared packed ID per row, segment counts (e.g. internal depths), independent tables.
-use crate::{BlockCodec, CodecError, compress_block, crc32, decompress_block};
+use crate::{
+    BlockCodec, CodecError, compress_block, crc32, crc32::checksum_matches, decompress_block,
+};
 use std::{
     collections::HashMap,
     io::{Read, Seek, SeekFrom},
@@ -220,7 +222,7 @@ fn read_payload(
     reader.seek(SeekFrom::Start(payload.offset))?;
     let mut stored = vec![0; payload.stored];
     reader.read_exact(&mut stored)?;
-    if crc32(&stored) != payload.crc {
+    if !checksum_matches(&stored, payload.crc) {
         return Err(invalid("payload CRC"));
     }
     Ok(decompress_block(
@@ -275,7 +277,7 @@ pub fn read_column(
     metadata_bytes[..HEADER].copy_from_slice(&header);
     reader.read_exact(&mut metadata_bytes[HEADER..])?;
     let expected_crc = u32::from_le_bytes(metadata_bytes[metadata - 4..].try_into().unwrap());
-    if crc32(&metadata_bytes[..metadata - 4]) != expected_crc {
+    if !checksum_matches(&metadata_bytes[..metadata - 4], expected_crc) {
         return Err(invalid("metadata CRC"));
     }
     let mut directory = std::io::Cursor::new(&metadata_bytes[HEADER..metadata - 4]);

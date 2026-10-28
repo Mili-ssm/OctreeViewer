@@ -85,6 +85,13 @@ pub fn crc32(bytes: &[u8]) -> u32 {
     checksum.finish()
 }
 
+/// Compares the CRC-32 of `bytes` with a stored value. Under `cfg(fuzzing)` (set only by
+/// `cargo fuzz` builds) it always matches, so mutated inputs reach the parsers behind the
+/// checksums instead of being rejected up front. Normal builds always verify.
+pub(crate) fn checksum_matches(bytes: &[u8], expected: u32) -> bool {
+    cfg!(fuzzing) || crc32(bytes) == expected
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Crc32, crc32};
