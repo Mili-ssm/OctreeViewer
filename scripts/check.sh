@@ -33,6 +33,15 @@ step "python benchmark tests" python3 -m unittest discover -s crates/viewer_conv
 step "python scripts tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 step "docs links" python3 scripts/check_docs_links.py
 step "version literals" bash scripts/check_version_literals.sh
+# The fuzz crate is outside the workspace; FUZZ_CHECK=0 skips both steps (no nightly/C++ toolchain).
+if [ "${FUZZ_CHECK:-1}" = "0" ]; then
+  echo
+  echo "=== fuzz crate: skipped (FUZZ_CHECK=0) ==="
+  steps+=("skip fuzz crate (FUZZ_CHECK=0)")
+else
+  step "fuzz fmt" cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+  step "fuzz check" cargo check --manifest-path fuzz/Cargo.toml --offline
+fi
 # Working tree + index vs HEAD (committed history is not re-checked).
 step "git diff --check" git diff --check HEAD
 

@@ -29,8 +29,11 @@ hagan falta; conservar informes y muestras que documenten resultados.
 
 ### Fuzzing (opcional)
 
-Objetivos `cargo-fuzz` para el lector de formato y el preflight LAS/LAZ; fuera de `scripts/check.sh`
-y de CI. Uso y gestión de crashes: [fuzz/README.md](fuzz/README.md).
+Objetivos `cargo-fuzz` para el lector de formato y el preflight LAS/LAZ; no se ejecutan en
+`scripts/check.sh` ni en CI, pero `check.sh` sí comprueba que el crate compila y está formateado
+(`cargo check`/`cargo fmt --check` sobre `fuzz/`). `FUZZ_CHECK=0 scripts/check.sh` omite esos dos
+pasos cuando no hay nightly o toolchain C++ para compilar `libfuzzer-sys`. Uso y gestión de
+crashes: [fuzz/README.md](fuzz/README.md).
 
 ## Features Cargo
 
