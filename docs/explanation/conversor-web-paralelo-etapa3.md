@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** plan redactado y enmendado tras el pre-mortem (abajo); Tareas 1–3 en curso.
+**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8, pendiente de decisión del propietario antes de M3b. Firmas de M2 fijadas (Tarea 3). Tarea 4 en curso.
 
 **Objetivo:** llegar a M3a: un núcleo `viewer_convert_core` sin E/S que compila para wasm32 (M2),
 la partición raíz por rangos de chunks con los mismos bytes en nativo, y una conversión web con un
@@ -84,11 +84,11 @@ secuencial en wasm32 que en nativo?
 **Interfaces:**
 - Produce: un prototipo `decode_chunk_range(bytes_or_reader, header, chunk_table, chunks: Range<usize>, out: &mut las::PointData) -> Result<u64, _>` y la receta exacta de la API de `laz` 0.13 que usa, para que la Tarea 5 lo convierta en `PointSource`.
 
-- [ ] **Paso 1:** prototipo nativo; test que compara, para cada partición de los chunks en W = 1..8 rangos, la concatenación de puntos decodificados por rango con la lectura secuencial completa: autzen COPC, Belvedere COPC (ignorado si falta el fichero) y una fixture sintética con chunks `[7, 13, 5, 11, 50000, 3]`.
-- [ ] **Paso 1b (B1):** SHA de referencia del CLI serie (base de la etapa) para la fixture multi-chunk variable con 4096 puntos por bloque, divisiones 2 y 8; fixture versionada si ocupa < 2 MB o generador con semilla fija.
-- [ ] **Paso 2 (B7, sin otros agentes activos):** coste de arranque por chunk y puntos/s nativo frente a wasm32 bajo Node, sobre los primeros ≥ 64 chunks de Belvedere, 5 rondas alternadas; mediana y rango.
-- [ ] **Paso 3:** registro con método, cifras, límites y decisión: receta para la Tarea 5. Si `laz` 0.13 no lo permite sin parche, el registro compara parche vendorizado (como `vendor/lz4_flex`) frente a otra ruta y **para** antes de la Tarea 5. Si wasm32 > 4 × nativo, se anota como riesgo del criterio de parada de M3b.
-- [ ] **Paso 4:** commit.
+- [x] **Paso 1:** prototipo nativo; test que compara, para cada partición de los chunks en W = 1..8 rangos, la concatenación de puntos decodificados por rango con la lectura secuencial completa: autzen COPC, Belvedere COPC (ignorado si falta el fichero) y una fixture sintética con chunks `[7, 13, 5, 11, 50000, 3]`.
+- [x] **Paso 1b (B1):** SHA de referencia del CLI serie (base de la etapa) para la fixture multi-chunk variable con 4096 puntos por bloque, divisiones 2 y 8; fixture versionada si ocupa < 2 MB o generador con semilla fija.
+- [x] **Paso 2 (B7, sin otros agentes activos):** coste de arranque por chunk y puntos/s nativo frente a wasm32 bajo Node, sobre los primeros ≥ 64 chunks de Belvedere, 5 rondas alternadas; mediana y rango.
+- [x] **Paso 3:** registro con método, cifras, límites y decisión: receta para la Tarea 5. Si `laz` 0.13 no lo permite sin parche, el registro compara parche vendorizado (como `vendor/lz4_flex`) frente a otra ruta y **para** antes de la Tarea 5. Si wasm32 > 4 × nativo, se anota como riesgo del criterio de parada de M3b.
+- [x] **Paso 4:** commit.
 
 ### Tarea 2: spike S10 — pico de RAM del híbrido y apertura de handles
 
@@ -109,10 +109,10 @@ Políticas a comparar:
 - Crear: `docs/records/benchmarks/data/hybrid-spool-ram-2026-10-29.{html,js,-driver.mjs,jsonl,json}`
 - Crear: `docs/records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md`
 
-- [ ] **Paso 1:** test del modelo con un árbol manual de 5 nodos: pico, bytes volcados, ficheros y handles por política coinciden con valores calculados a mano.
-- [ ] **Paso 2:** modelo sobre los eventos de Belvedere (2 y 8 divisiones) y Majadas: pico de RAM de spools, bytes y ficheros volcados, handles abiertos y su coste con las latencias medidas de S9, para presupuestos de spools de 0,5/1/2/3 GiB y N = 1, 4, 8.
-- [ ] **Paso 3:** navegador (Chrome y Firefox, HTTP, Playwright): PSS frente a bytes retenidos para segmentos de 32 KiB y 1 MiB hasta 2 GiB en un worker, y coste de transferirlos al host; muestreo con `examples/web-host/sample-process-memory.py`.
-- [ ] **Paso 4:** registro con decisión: política, tamaño de segmento, presupuesto inicial y fórmula del pico para M3b/M6. Commit.
+- [x] **Paso 1:** test del modelo con un árbol manual de 5 nodos: pico, bytes volcados, ficheros y handles por política coinciden con valores calculados a mano.
+- [x] **Paso 2:** modelo sobre los eventos de Belvedere (2 y 8 divisiones) y Majadas: pico de RAM de spools, bytes y ficheros volcados, handles abiertos y su coste con las latencias medidas de S9, para presupuestos de spools de 0,5/1/2/3 GiB y N = 1, 4, 8.
+- [x] **Paso 3:** navegador (Chrome y Firefox, HTTP, Playwright): PSS frente a bytes retenidos para segmentos de 32 KiB y 1 MiB hasta 2 GiB en un worker, y coste de transferirlos al host; muestreo con `examples/web-host/sample-process-memory.py`.
+- [x] **Paso 4:** registro con decisión: política, tamaño de segmento, presupuesto inicial y fórmula del pico para M3b/M6. Commit.
 
 ### Tarea 3: M2 paso 1 — firmas del núcleo y de la partición por rangos (arquitecto)
 
