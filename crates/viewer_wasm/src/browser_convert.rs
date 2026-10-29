@@ -563,8 +563,14 @@ fn visual_scale(bounds: SpatialBounds) -> Result<f64, JsValue> {
 
 fn preflight_blob(blob: &Blob) -> Result<(), JsValue> {
     let mut reader = BrowserBlobReader::new(blob.clone(), false)?;
-    viewer_core::las::preflight_las(&mut reader, blob.size() as u64)
-        .map_err(|error| JsValue::from_str(&format!("LAS/LAZ header: {error}")))
+    let header_error = |error| JsValue::from_str(&format!("LAS/LAZ header: {error}"));
+    let layout = viewer_core::las::preflight_las_layout(&mut reader, blob.size() as u64)
+        .map_err(header_error)?;
+    // The sequential decoder traps on a table that covers fewer points than the header declares.
+    if let Some(layout) = layout {
+        viewer_core::las::check_laz_chunk_table(&mut reader, layout).map_err(header_error)?;
+    }
+    Ok(())
 }
 
 struct OpfsWriter {

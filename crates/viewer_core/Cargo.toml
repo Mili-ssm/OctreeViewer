@@ -6,9 +6,13 @@ readme = "README.md"
 
 [features]
 experimental = []
+# Decoded LAZ chunk-table check (`las::check_laz_chunk_table`); sequential `laz` only.
+laz = ["dep:laz"]
 
 [dependencies]
 glam.workspace = true
+# Same version as the lock via `las`; no `parallel`, so it builds for wasm32.
+laz = { version = "0.13", optional = true }
 serde.workspace = true
 thiserror.workspace = true
 

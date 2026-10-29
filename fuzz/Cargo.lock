@@ -556,6 +556,7 @@ name = "viewer_core"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "laz",
  "serde",
  "thiserror",
 ]

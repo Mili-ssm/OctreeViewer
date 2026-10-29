@@ -114,6 +114,12 @@ pub enum LasPreflightError {
         total: u64,
         available: u64,
     },
+    #[error("unsafe LAZ chunk table: {field} = {value} is outside the bound {bound}")]
+    LazChunkTable {
+        field: &'static str,
+        value: u64,
+        bound: u64,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -186,7 +192,7 @@ fn read_u64_at<R: Read + Seek>(reader: &mut R, at: u64) -> Result<u64, LasPrefli
 
 /// Where the LAZ chunk table lives and what the header says about its contents.
 /// Raw header facts only; decoding the table needs the `laz` crate (see
-/// `viewer_convert`), which bounds the decoded entries with these values.
+/// [`check_laz_chunk_table`], behind the `laz` feature), which bounds the decoded entries with these values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LazChunkTableLayout {
     pub point_data_offset: u64,
@@ -279,6 +285,88 @@ fn walk_layered_chunks<R: Read + Seek>(
         let (count, len) = check_layered_chunk(reader, layered, pos, end)?;
         pos += len;
         remaining = remaining.saturating_sub(fixed_chunk_size.map_or(u64::from(count), u64::from));
+    }
+    if remaining > 0 {
+        // The sequential reader would read the table or EVLR bytes as another chunk's layers.
+        return Err(LasPreflightError::Truncated(
+            "LAZ layered chunks hold fewer points than the header declares",
+        ));
+    }
+    Ok(())
+}
+
+/// Bounds the decoded chunk-table entries by the header (`layout` comes from
+/// [`preflight_las_layout`]) before `laz` sizes buffers from them, and checks that the table
+/// covers the points the header declares: the sequential decompressor indexes the table by
+/// chunk and traps past its end, which wasm32 cannot catch. Leaves the reader positioned
+/// arbitrarily.
+#[cfg(feature = "laz")]
+pub fn check_laz_chunk_table<R: Read + Seek>(
+    reader: &mut R,
+    layout: LazChunkTableLayout,
+) -> Result<(), LasPreflightError> {
+    use laz::laszip::ChunkTable;
+
+    let reject = |field, value, bound| LasPreflightError::LazChunkTable {
+        field,
+        value,
+        bound,
+    };
+    let offset_size = ChunkTable::OFFSET_SIZE as u64;
+    let variable = layout.fixed_chunk_size.is_none();
+    reader.seek(SeekFrom::Start(layout.table_offset))?;
+    let table = ChunkTable::read(reader, variable)?;
+    let data_bytes = layout
+        .table_offset
+        .saturating_sub(layout.point_data_offset + offset_size);
+    let (mut sum_bytes, mut sum_points) = (0u64, 0u64);
+    let mut chunk_start = layout.point_data_offset + offset_size;
+    for entry in table.as_ref() {
+        let bytes_bound = data_bytes.min(i32::MAX as u64);
+        if entry.byte_count > bytes_bound {
+            return Err(reject("chunk byte_count", entry.byte_count, bytes_bound));
+        }
+        sum_bytes += entry.byte_count;
+        if sum_bytes > data_bytes {
+            return Err(reject("chunk byte_count sum", sum_bytes, data_bytes));
+        }
+        // The parallel reader starts each chunk at the table's cumulative offset.
+        let chunk_end = chunk_start + entry.byte_count;
+        if let (Some(layered), true) = (layout.layered, entry.byte_count > 0) {
+            check_layered_chunk(reader, layered, chunk_start, chunk_end)?;
+        }
+        chunk_start = chunk_end;
+        if variable {
+            if entry.point_count > layout.header_points {
+                return Err(reject(
+                    "chunk point_count",
+                    entry.point_count,
+                    layout.header_points,
+                ));
+            }
+            // The header count is attacker-controlled, so it cannot bound allocations alone.
+            check_chunk_bytes(entry.point_count, layout.point_size)?;
+            sum_points += entry.point_count;
+            if sum_points > layout.header_points {
+                return Err(reject(
+                    "chunk point_count sum",
+                    sum_points,
+                    layout.header_points,
+                ));
+            }
+        }
+    }
+    // `laz` asserts that the table decodes at least as many points as the reader requests.
+    let covered = match layout.fixed_chunk_size {
+        None => sum_points,
+        Some(chunk_size) => (table.as_ref().len() as u64).saturating_mul(u64::from(chunk_size)),
+    };
+    if covered < layout.header_points {
+        return Err(reject(
+            "chunk point_count total",
+            covered,
+            layout.header_points,
+        ));
     }
     Ok(())
 }

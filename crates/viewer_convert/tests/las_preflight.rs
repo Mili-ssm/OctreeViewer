@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use las::{Builder, LazParallelism, Point, Reader, Writer, WriterOptions, point::Format};
-use viewer_core::las::preflight_las;
+use viewer_core::las::{LasPreflightError, preflight_las};
 
 fn write_laz(version: (u8, u8), format: u8, chunk_size: Option<u32>, points: usize) -> Vec<u8> {
     let mut builder = Builder::from(version);
@@ -194,7 +194,6 @@ fn fixed_chunk_table_covering_fewer_points_than_declared_is_rejected() {
 
 // Found by fuzzing (fuzz_las_preflight). Both reached `laz` through the guarded path, so
 // the header preflight (shared with the browser converter) and `convert_file` must reject them.
-use viewer_core::las::LasPreflightError;
 
 // Header record length 34 B, laszip items 146 B: `laz` asserted `out.len() % point_size == 0`.
 const RECORD_LENGTH_MISMATCH: &[u8] = include_bytes!("fixtures/laz_record_length_mismatch.laz");
@@ -296,5 +295,97 @@ fn laz_gps_item_size_declared_differently_from_its_type_is_rejected() {
         Err(ConvertError::LasPreflight(
             LasPreflightError::LazRecordLengthMismatch { .. }
         ))
+    ));
+}
+
+// --- browser converter parity: the sequential reader cannot catch panics ---
+
+use laz::{LasZipCompressor, laszip::LazVlrBuilder};
+use std::io::{Seek, SeekFrom};
+
+/// LAS 1.2 format-0 LAZ with variable chunks of 4 points each, `chunks` of them, whose header
+/// declares `declared_points` instead of the real count.
+fn variable_chunk_laz(chunks: usize, declared_points: u32) -> Vec<u8> {
+    let template = write_laz((1, 2), 0, None, 4);
+    let record = 227 + 54;
+    let length = u16::from_le_bytes(template[227 + 20..227 + 22].try_into().unwrap()) as usize;
+    let vlr = LazVlr::read_from(&template[record..record + length]).unwrap();
+    let vlr = LazVlrBuilder::default()
+        .with_laz_items(vlr.items().clone())
+        .with_variable_chunk_size()
+        .build();
+    let mut bytes = template[..record + length].to_vec();
+    bytes[96..100].copy_from_slice(&((record + length) as u32).to_le_bytes());
+    bytes[227 + 54 + 12..227 + 54 + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+    bytes[107..111].copy_from_slice(&declared_points.to_le_bytes());
+    let mut cursor = Cursor::new(bytes);
+    cursor.seek(SeekFrom::End(0)).unwrap();
+    let mut compressor = LasZipCompressor::new(&mut cursor, vlr).unwrap();
+    for chunk in 0..chunks {
+        compressor.compress_many(&[0u8; 4 * 20]).unwrap();
+        // `done` closes the last chunk itself; closing it here too adds an empty entry.
+        if chunk + 1 < chunks {
+            compressor.finish_current_chunk().unwrap();
+        }
+    }
+    compressor.done().unwrap();
+    drop(compressor);
+    // Trailing bytes (as EVLRs would be) let the sequential reader start a chunk past the table.
+    let mut bytes = cursor.into_inner();
+    bytes.extend_from_slice(&[0u8; 64]);
+    bytes
+}
+
+fn open_sequential(bytes: Vec<u8>) {
+    let options = las::ReaderOptions::default().with_laz_parallelism(LazParallelism::No);
+    let mut reader = Reader::with_options(Cursor::new(bytes), options).unwrap();
+    let _ = reader.read_points(12);
+}
+
+fn shared_check(bytes: &[u8]) -> Result<(), LasPreflightError> {
+    let len = bytes.len() as u64;
+    let mut cursor = Cursor::new(bytes);
+    let layout = viewer_core::las::preflight_las_layout(&mut cursor, len)
+        .expect("header preflight alone accepts it")
+        .expect("compressed with a chunk table");
+    viewer_core::las::check_laz_chunk_table(&mut cursor, layout)
+}
+
+#[test]
+fn variable_chunk_laz_matching_its_header_passes_the_shared_check() {
+    let bytes = variable_chunk_laz(2, 8);
+    shared_check(&bytes).unwrap();
+    open_sequential(bytes);
+}
+
+// The browser decoder reads sequentially and traps on `chunk_table[current_chunk]` out of
+// bounds when the header declares more points than the table covers.
+#[test]
+fn variable_chunk_table_covering_fewer_points_is_rejected_by_the_shared_check() {
+    assert!(matches!(
+        shared_check(&variable_chunk_laz(2, 12)),
+        Err(LasPreflightError::LazChunkTable {
+            field: "chunk point_count total",
+            ..
+        })
+    ));
+}
+
+#[test]
+#[should_panic]
+fn sequential_reader_panics_on_the_same_file() {
+    open_sequential(variable_chunk_laz(2, 12));
+}
+
+// A layered walk that reaches the table with points left over made the sequential reader read
+// the table bytes as layer sizes.
+#[test]
+fn layered_chunks_holding_fewer_points_than_declared_are_rejected_by_preflight() {
+    let mut bytes = write_laz((1, 4), 6, Some(40), 130); // 4 chunks of 40 cover 160
+    bytes[107..111].copy_from_slice(&1000u32.to_le_bytes());
+    let len = bytes.len() as u64;
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(&bytes), len),
+        Err(LasPreflightError::Truncated(_))
     ));
 }
