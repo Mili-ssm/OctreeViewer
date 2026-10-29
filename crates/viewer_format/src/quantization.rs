@@ -197,7 +197,7 @@ pub fn quantize_local_positions(
 
 /// Euclidean norm from IEEE-754 correctly rounded operations only (`+ * /` and `sqrt`), so it is
 /// bit-identical on every target. Scaling by the largest axis avoids overflow and underflow.
-fn norm3(v: [f64; 3]) -> f64 {
+pub fn norm3(v: [f64; 3]) -> f64 {
     let m = v[0].abs().max(v[1].abs()).max(v[2].abs());
     if m == 0.0 {
         return 0.0;

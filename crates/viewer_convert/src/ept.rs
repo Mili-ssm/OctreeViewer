@@ -1282,7 +1282,7 @@ fn cell_bounds(root: SpatialBounds, key: EptKey) -> Result<SpatialBounds, Conver
 
 fn node_diagonal(bounds: SpatialBounds) -> f64 {
     let size: [f64; 3] = std::array::from_fn(|axis| bounds.max()[axis] - bounds.min()[axis]);
-    size[0].hypot(size[1]).hypot(size[2])
+    viewer_format::norm3(size)
 }
 
 #[cfg(test)]

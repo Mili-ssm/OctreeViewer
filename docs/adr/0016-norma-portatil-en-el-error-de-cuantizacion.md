@@ -37,8 +37,9 @@ por libm (`hypot`, `powf`, `exp`, `ln`, `log*`, `cbrt`, `sin`, `cos`, `tan`, `at
   `tools/convert_parity`, sin casos exentos).
 - La guarda de clippy impide reintroducir libm en la ruta de salida; usos legítimos ajenos a ella
   (ejemplos) llevan `#[expect]` con motivo.
-- Pendiente fuera de esta decisión: `viewer_convert/src/ept.rs` (`node_diagonal`) usa `hypot` en la
-  ruta de entrada EPT, solo nativa y fuera del núcleo; no entra en la comprobación de paridad web.
+- La diagonal de nodo EPT (`viewer_convert/src/ept.rs`, `node_diagonal`), que entra en el error
+  geométrico, usa la misma norma: la salida EPT del CLI tampoco depende de glibc. El shell
+  `viewer_convert` tiene la misma guarda de clippy.
 
 ## Revisar si
 Aparece una función libm necesaria en la ruta de salida, o un destino cuya `sqrt` o aritmética básica

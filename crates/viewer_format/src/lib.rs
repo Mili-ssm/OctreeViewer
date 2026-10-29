@@ -45,7 +45,7 @@ pub use geometry::{
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};
 pub use quantization::{
-    QuantizationError, QuantizationTransform, QuantizedCoordinates, quantize_local_positions,
+    QuantizationError, QuantizationTransform, QuantizedCoordinates, norm3, quantize_local_positions,
 };
 pub use quantized_occupancy::{QuantizedOccupancy, QuantizedOccupancyError};
 pub use reader::{
