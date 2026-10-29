@@ -30,6 +30,8 @@ mod bindings;
 mod browser_convert;
 #[cfg(target_arch = "wasm32")]
 mod browser_io;
+#[cfg(target_arch = "wasm32")]
+mod core_convert;
 
 #[cfg(target_arch = "wasm32")]
 pub use async_format_reader::{
@@ -40,5 +42,7 @@ pub use async_format_reader::{
 pub use bindings::WasmVoxelViewer;
 #[cfg(target_arch = "wasm32")]
 pub use browser_convert::WasmLasOctConverter;
+#[cfg(target_arch = "wasm32")]
+pub use core_convert::WasmCoreConverter;
 #[cfg(target_arch = "wasm32")]
 pub use lod_request_scheduler::WasmBlockRequestScheduler;

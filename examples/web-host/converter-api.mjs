@@ -1,4 +1,42 @@
-/** Creates a local LAS/LAZ converter backed by a dedicated worker and OPFS. */
+const PARTIAL_PATTERN = /^conversion-.*\.partial$/;
+
+/**
+ * Deletes `conversion-*.partial` files left by earlier sessions. Files held open by a live
+ * conversion (another tab) refuse removal and are kept.
+ */
+export async function removeOrphanPartials(storage, directoryName = "octree-viewer-conversions") {
+    try {
+        const root = await storage.getDirectory();
+        const directory = await root.getDirectoryHandle(directoryName);
+        const names = [];
+        for await (const name of directory.keys()) if (PARTIAL_PATTERN.test(name)) names.push(name);
+        await Promise.all(names.map((name) => directory.removeEntry(name).catch(() => {})));
+    } catch {
+        // No directory yet, or no OPFS: nothing to clean.
+    }
+}
+
+async function removePartials(storage, directoryName, names) {
+    const directory = await (await storage.getDirectory()).getDirectoryHandle(directoryName);
+    for (const name of names) {
+        // A terminated worker releases its sync access handles asynchronously.
+        for (let attempt = 0; attempt < 20; attempt++) {
+            try {
+                await directory.removeEntry(name);
+                break;
+            } catch (error) {
+                if (error?.name === "NotFoundError") break;
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        }
+    }
+}
+
+/**
+ * Creates a local LAS/LAZ converter backed by a dedicated worker and OPFS.
+ * `options.engine` is "legacy" (default) or "core"; `options.converterOptions` are the core
+ * engine options. Both can be overridden per `convert(file, { engine, options })` call.
+ */
 export function createConverter(options = {}) {
     if (typeof Worker === "undefined") throw new Error("Web Workers are required");
     const workerUrl = options.workerUrl
@@ -8,6 +46,10 @@ export function createConverter(options = {}) {
     const listeners = new Map();
     let active = null;
     let disposed = false;
+    let partial = null;
+    const storage = options.storage ?? globalThis.navigator?.storage;
+    // Sessions that were closed mid-conversion leave partial files behind.
+    if (storage?.getDirectory) void removeOrphanPartials(storage);
 
     function emit(type, value) {
         for (const callback of listeners.get(type) ?? []) {
@@ -34,6 +76,7 @@ export function createConverter(options = {}) {
     function onMessage(source, { data }) {
         if (source !== worker) return;
         if (data.type === "progress" || data.type === "status") emit(data.type, data);
+        else if (data.type === "partial-files") partial = { directory: data.directory, names: data.names };
         else if (data.type === "complete") {
             emit("complete", data);
             settle(null, {
@@ -77,7 +120,7 @@ export function createConverter(options = {}) {
     ensureWorker();
 
     return {
-        convert(file) {
+        convert(file, request = {}) {
             if (disposed) return Promise.reject(new Error("converter is disposed"));
             if (active) return Promise.reject(new Error("conversion is already in progress"));
             if (!(file instanceof Blob) || !/\.(las|laz)$/i.test(file.name ?? "")) {
@@ -85,7 +128,16 @@ export function createConverter(options = {}) {
             }
             const result = new Promise((resolve, reject) => { active = { resolve, reject }; });
             try {
-                ensureWorker().postMessage({ type: "convert", file });
+                const engine = request.engine ?? options.engine ?? "legacy";
+                if (engine !== "legacy" && engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
+                partial = null;
+                const message = { type: "convert", file };
+                if (engine === "core") {
+                    message.engine = "core";
+                    message.options = request.options ?? options.converterOptions ?? {};
+                }
+                active.engine = engine;
+                ensureWorker().postMessage(message);
             } catch (error) {
                 settle(error);
             }
@@ -93,7 +145,21 @@ export function createConverter(options = {}) {
         },
         cancel() {
             if (!active || disposed) return false;
-            worker?.postMessage({ type: "cancel" });
+            if (active.engine !== "core") {
+                worker?.postMessage({ type: "cancel" });
+                return true;
+            }
+            // The core engine runs in one synchronous call that cannot observe a message: stop
+            // the worker and delete its partial files; the next conversion respawns it.
+            const files = partial;
+            partial = null;
+            discardWorker();
+            const error = new DOMException("Conversion cancelled.", "AbortError");
+            emit("cancelled", error);
+            settle(error);
+            if (files && storage?.getDirectory) {
+                return removePartials(storage, files.directory, files.names).then(() => true, () => true);
+            }
             return true;
         },
         on(type, callback) {

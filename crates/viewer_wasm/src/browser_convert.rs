@@ -573,13 +573,13 @@ fn preflight_blob(blob: &Blob) -> Result<(), JsValue> {
     Ok(())
 }
 
-struct OpfsWriter {
+pub(crate) struct OpfsWriter {
     handle: JsValue,
     position: u64,
 }
 
 impl OpfsWriter {
-    fn new(handle: JsValue) -> Result<Self, JsValue> {
+    pub(crate) fn new(handle: JsValue) -> Result<Self, JsValue> {
         Ok(Self {
             handle,
             position: 0,

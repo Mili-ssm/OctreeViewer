@@ -1,4 +1,4 @@
-import init, { WasmLasOctConverter } from "../../pkg/viewer_wasm.js";
+import init, { WasmCoreConverter, WasmLasOctConverter } from "../../pkg/viewer_wasm.js";
 
 let cancelRequested = false;
 
@@ -7,7 +7,8 @@ self.addEventListener("message", ({ data }) => {
         cancelRequested = true;
     } else if (data?.type === "convert") {
         cancelRequested = false;
-        void convert(data.file, data.formatVersion ?? "v5");
+        if (data.engine === "core") void convertWithCore(data.file, data.options ?? {});
+        else void convert(data.file, data.formatVersion ?? "v5");
     }
 });
 
@@ -146,6 +147,79 @@ async function convert(file, formatVersion) {
             attributesAccessHandle?.close();
         } catch {
             // The handle may already have been closed after a successful conversion.
+        }
+    }
+}
+
+const PARTIAL_DIRECTORY = "octree-viewer-conversions";
+
+/**
+ * Engine "core": one synchronous call over the shared native-equivalent converter. Cancelling is
+ * the host's job (it terminates this worker and deletes the partial files named in `partial-files`).
+ */
+async function convertWithCore(file, options) {
+    const startedAt = performance.now();
+    let geometryHandle = null;
+    let attributesHandle = null;
+    let converter = null;
+    let directory = null;
+    let names = null;
+    try {
+        if (!file || !/\.la[sz]$/i.test(file.name)) throw new Error("Choose a .las or .laz file.");
+        if (!navigator.storage?.getDirectory) {
+            throw new Error("This browser does not support the Origin Private File System (OPFS).");
+        }
+        await init();
+        const root = await navigator.storage.getDirectory();
+        directory = await root.getDirectoryHandle(PARTIAL_DIRECTORY, { create: true });
+        const id = crypto.randomUUID();
+        names = [`conversion-${id}.oct.partial`, `conversion-${id}.octattrs.partial`];
+        // Announced before the files exist so a cancel can always find what to delete.
+        self.postMessage({ type: "partial-files", directory: PARTIAL_DIRECTORY, names });
+        const geometryFile = await directory.getFileHandle(names[0], { create: true });
+        const attributesFile = await directory.getFileHandle(names[1], { create: true });
+        geometryHandle = await geometryFile.createSyncAccessHandle();
+        attributesHandle = await attributesFile.createSyncAccessHandle();
+        geometryHandle.truncate(0);
+        attributesHandle.truncate(0);
+        self.postMessage({ type: "status", message: `Converting ${file.name} locally…` });
+        let lastProgressAt = -Infinity;
+        const onProgress = (progress) => {
+            const now = performance.now();
+            if (now - lastProgressAt < 100) return true;
+            lastProgressAt = now;
+            self.postMessage({ type: "progress", ...progress, sourceName: file.name });
+            return true;
+        };
+        converter = new WasmCoreConverter(file, geometryHandle, attributesHandle, options, onProgress);
+        const summary = converter.convert();
+        converter.free();
+        converter = null;
+        geometryHandle.flush();
+        geometryHandle.close();
+        geometryHandle = null;
+        attributesHandle.flush();
+        attributesHandle.close();
+        attributesHandle = null;
+        const outputName = file.name.replace(/\.(las|laz)$/i, ".oct");
+        self.postMessage({
+            type: "complete",
+            file: await geometryFile.getFile(),
+            attributesFile: await attributesFile.getFile(),
+            outputName,
+            outputAttributesName: outputName.replace(/\.oct$/i, ".octattrs"),
+            points: summary.pointCount,
+            blocks: summary.blockCount,
+            timings: { totalMs: Math.round(performance.now() - startedAt) },
+        });
+    } catch (error) {
+        try { converter?.free(); } catch { /* an untrusted instance may trap again */ }
+        for (const handle of [geometryHandle, attributesHandle]) {
+            try { handle?.close(); } catch { /* already closed by a failed finalization */ }
+        }
+        self.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+        for (const name of names ?? []) {
+            try { await directory.removeEntry(name); } catch { /* the entry may be locked briefly */ }
         }
     }
 }

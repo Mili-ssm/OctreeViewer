@@ -1,0 +1,272 @@
+//! Browser converter over the shared `viewer_convert_core` serial path: the same planner and block
+//! writer as the native CLI, with a Blob as input and two OPFS sync access handles as output.
+//! Everything runs in one synchronous call inside a dedicated worker; cancelling means the host
+//! terminates the worker and deletes the partial files.
+
+use std::io::{self, Read, Seek, SeekFrom};
+
+use viewer_convert_core::{
+    ByteSource, ConversionProgress, ConversionStage, ConvertError, ConvertOptions, LasFactory,
+    MemSpoolStore, NoClock, convert_serial, validate_output_serial,
+};
+use viewer_format::FormatVersion;
+use wasm_bindgen::{JsCast, prelude::*};
+use web_sys::Blob;
+
+use crate::browser_convert::OpfsWriter;
+use crate::browser_io::{BrowserBlobReader, js_error_to_io};
+
+/// Opens a fresh cached reader per call; `las::Reader` needs `Send + Sync`, which `JsValue` holds
+/// on wasm32 without atomics (the same assumption `WasmLasOctConverter` makes).
+struct BlobBytes {
+    blob: Blob,
+}
+
+impl ByteSource for BlobBytes {
+    type Reader = BrowserBlobReader;
+
+    fn open(&self) -> Result<Self::Reader, ConvertError> {
+        BrowserBlobReader::new(self.blob.clone(), false)
+            .map_err(|error| io::Error::other(format!("{error:?}")).into())
+    }
+
+    fn len(&self) -> u64 {
+        self.blob.size() as u64
+    }
+}
+
+/// `Read + Seek` over `FileSystemSyncAccessHandle.read(buffer, { at })`.
+struct OpfsReader {
+    handle: JsValue,
+    position: u64,
+}
+
+impl OpfsReader {
+    fn call(&self, name: &str, arguments: &[JsValue]) -> Result<JsValue, JsValue> {
+        let method = js_sys::Reflect::get(&self.handle, &JsValue::from_str(name))?
+            .dyn_into::<js_sys::Function>()?;
+        let args = js_sys::Array::new();
+        for argument in arguments {
+            args.push(argument);
+        }
+        method.apply(&self.handle, &args)
+    }
+
+    fn size(&self) -> io::Result<u64> {
+        self.call("getSize", &[])
+            .map_err(js_error_to_io)?
+            .as_f64()
+            .map(|size| size as u64)
+            .ok_or_else(|| io::Error::other("OPFS getSize returned an invalid value"))
+    }
+}
+
+impl Read for OpfsReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        let array = js_sys::Uint8Array::new_with_length(buffer.len() as u32);
+        let options = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &options,
+            &"at".into(),
+            &JsValue::from_f64(self.position as f64),
+        )
+        .map_err(js_error_to_io)?;
+        let read = self
+            .call("read", &[array.clone().into(), options.into()])
+            .map_err(js_error_to_io)?
+            .as_f64()
+            .filter(|read| *read >= 0.0 && *read <= buffer.len() as f64 && read.fract() == 0.0)
+            .ok_or_else(|| io::Error::other("OPFS read returned an invalid byte count"))?
+            as usize;
+        array.subarray(0, read as u32).copy_to(&mut buffer[..read]);
+        self.position += read as u64;
+        Ok(read)
+    }
+}
+
+impl Seek for OpfsReader {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        let next = match position {
+            SeekFrom::Start(offset) => Some(offset),
+            SeekFrom::Current(offset) => self.position.checked_add_signed(offset),
+            SeekFrom::End(offset) => self.size()?.checked_add_signed(offset),
+        }
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid OPFS seek"))?;
+        self.position = next;
+        Ok(next)
+    }
+}
+
+fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
+    if options.is_undefined() || options.is_null() {
+        return Ok(None);
+    }
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(key))?;
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+    value
+        .as_f64()
+        .filter(|value| {
+            value.is_finite() && *value >= 0.0 && (key == "maxError" || value.fract() == 0.0)
+        })
+        .map(Some)
+        .ok_or_else(|| JsValue::from_str(&format!("option {key} must be a non-negative number")))
+}
+
+/// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys:
+/// `formatVersion`, `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and
+/// `spatialWorkers`.
+fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
+    let defaults = ConvertOptions::default();
+    let invalid = |error: ConvertError| JsValue::from_str(&error.to_string());
+    let points =
+        number(options, "pointsPerBlock")?.map_or(defaults.points_per_block(), |v| v as u64);
+    let max_error = number(options, "maxError")?.unwrap_or(defaults.max_quantization_error());
+    let memory = number(options, "maxMemoryMiB")?
+        .map(|mib| (mib as u64).checked_mul(1024 * 1024))
+        .map_or(Ok(defaults.max_memory_budget_bytes()), |bytes| {
+            bytes.ok_or_else(|| JsValue::from_str("option maxMemoryMiB overflows bytes"))
+        })?;
+    let mut converted =
+        ConvertOptions::with_memory_budget(points, max_error, memory).map_err(invalid)?;
+    if let Some(divisions) = number(options, "spatialDivisions")? {
+        let divisions = u8::try_from(divisions as u64).unwrap_or(u8::MAX);
+        converted = converted
+            .with_spatial_divisions(divisions)
+            .map_err(invalid)?;
+    }
+    if let Some(workers) = number(options, "spatialWorkers")? {
+        converted = converted
+            .with_spatial_workers(workers as usize)
+            .map_err(invalid)?;
+    }
+    if !options.is_undefined() && !options.is_null() {
+        let version = js_sys::Reflect::get(options, &"formatVersion".into())?;
+        if let Some(version) = version.as_string() {
+            let version: FormatVersion = version.parse().map_err(JsValue::from_str)?;
+            converted = converted.with_format_version(version).map_err(invalid)?;
+        }
+    }
+    Ok(converted)
+}
+
+/// Converts a LAS/LAZ Blob into the `.oct` / `.octattrs` pair behind two OPFS sync access handles.
+#[wasm_bindgen]
+pub struct WasmCoreConverter {
+    input: Blob,
+    geometry: JsValue,
+    attributes: JsValue,
+    options: ConvertOptions,
+    on_progress: Option<js_sys::Function>,
+}
+
+#[wasm_bindgen]
+impl WasmCoreConverter {
+    /// `options` is a plain object (see `parse_options`); `on_progress` receives
+    /// `{ stage, processedPoints, totalPoints }` and may return `false` to stop the conversion.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        input: Blob,
+        geometry_handle: JsValue,
+        attributes_handle: JsValue,
+        options: JsValue,
+        on_progress: Option<js_sys::Function>,
+    ) -> Result<WasmCoreConverter, JsValue> {
+        Ok(Self {
+            options: parse_options(&options)?,
+            input,
+            geometry: geometry_handle,
+            attributes: attributes_handle,
+            on_progress,
+        })
+    }
+
+    /// Converts, flushes and validates by reading the handles back. Returns
+    /// `{ pointCount, blockCount }` (point count as a string: it may exceed 2^53).
+    pub fn convert(&mut self) -> Result<JsValue, JsValue> {
+        let callback = self.on_progress.clone();
+        let mut report = move |progress: ConversionProgress| -> bool {
+            let Some(callback) = &callback else {
+                return true;
+            };
+            let event = js_sys::Object::new();
+            let fields = [
+                ("stage", JsValue::from_str(stage_name(progress.stage))),
+                (
+                    "processedPoints",
+                    JsValue::from_f64(progress.points_processed as f64),
+                ),
+                (
+                    "totalPoints",
+                    JsValue::from_f64(progress.total_points as f64),
+                ),
+            ];
+            for (key, value) in fields {
+                let _ = js_sys::Reflect::set(&event, &JsValue::from_str(key), &value);
+            }
+            callback
+                .call1(&JsValue::NULL, &event)
+                .map_or(true, |keep| keep != JsValue::FALSE)
+        };
+        let factory = LasFactory::new(BlobBytes {
+            blob: self.input.clone(),
+        });
+        let store = MemSpoolStore::new(false);
+        let output = convert_serial(
+            &factory,
+            &store,
+            &NoClock,
+            self.options,
+            OpfsWriter::new(self.geometry.clone())?,
+            OpfsWriter::new(self.attributes.clone())?,
+            &mut report,
+        )
+        .map_err(|error| JsValue::from_str(&format!("conversion failed: {error}")))?;
+        let (mut geometry, mut attributes) = (output.geometry, output.attributes);
+        std::io::Write::flush(&mut geometry)
+            .and_then(|()| std::io::Write::flush(&mut attributes))
+            .map_err(|error| JsValue::from_str(&format!("flushing output: {error}")))?;
+        validate_output_serial(
+            OpfsReader {
+                handle: self.geometry.clone(),
+                position: 0,
+            },
+            OpfsReader {
+                handle: self.attributes.clone(),
+                position: 0,
+            },
+            &output.plan,
+            &mut report,
+        )
+        .map_err(|error| JsValue::from_str(&format!("output validation failed: {error}")))?;
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &result,
+            &"pointCount".into(),
+            &JsValue::from_str(&output.plan.point_count.to_string()),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"blockCount".into(),
+            &JsValue::from_f64(output.plan.block_count as f64),
+        )?;
+        Ok(result.into())
+    }
+}
+
+fn stage_name(stage: ConversionStage) -> &'static str {
+    match stage {
+        ConversionStage::InspectingInput => "inspecting",
+        ConversionStage::PlanningMetadata => "planning-metadata",
+        ConversionStage::PlanningSpatialIndex => "planning",
+        ConversionStage::BuildingSpatialHierarchy => "hierarchy",
+        ConversionStage::ReadingAndWritingBlocks => "writing",
+        ConversionStage::ValidatingOutput => "validating",
+        ConversionStage::PublishingOutput => "publishing",
+        ConversionStage::Complete => "complete",
+    }
+}
