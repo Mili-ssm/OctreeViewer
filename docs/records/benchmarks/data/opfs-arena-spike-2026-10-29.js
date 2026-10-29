@@ -108,6 +108,8 @@ async function runSpike(n, block, mib) {
     result.perWorkerReadMBps = ok.map((r) => +mbps(r.readMs).toFixed(1));
     // Aggregate = total bytes of all workers over the slowest worker's phase time.
     result.aggWriteMBps = +((ok.length * mib * 1.048576) / (Math.max(...ok.map((r) => r.writeMs)) / 1000)).toFixed(1);
+    // Same, counting handle.flush() as part of the write (what a durable append costs).
+    result.aggWriteFlushMBps = +((ok.length * mib * 1.048576) / (Math.max(...ok.map((r) => r.writeMs + r.flushMs)) / 1000)).toFixed(1);
     result.aggReadMBps = +((ok.length * mib * 1.048576) / (Math.max(...ok.map((r) => r.readMs)) / 1000)).toFixed(1);
     result.maxCreateHandleMs = +Math.max(...ok.map((r) => r.createHandleMs)).toFixed(1);
     result.maxFlushMs = +Math.max(...ok.map((r) => r.flushMs)).toFixed(1);

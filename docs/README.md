@@ -31,6 +31,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Evidencia V7](records/benchmarks/format-v7-evidence.md) | Evidencia por incremento del plan V7; datos en [data/](records/benchmarks/data/). | vivo (se amplía) |
 | [V7.3-pre frente a V5](records/benchmarks/STORAGE_V7_V73_VS_V5_2026-10-28.md) | Conversión y lectura completas en Belvedere y Majadas, 3 rondas; disco menor, tiempo/RSS mayores. | fechado |
 | [Referencia CLI web](records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) | SHA de salida del CLI y tiempos Belvedere/Majadas (M0) para la paridad del conversor web. | fechado |
+| [Spike OPFS (arenas)](records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md) | Modelo de pico de arenas frente al nativo y MB/s de OPFS en Chrome/Firefox (HTTP y `file://`). | fechado |
 | [Web](records/benchmarks/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos y limitaciones visuales. | histórico |
 | [Memoria v5](records/benchmarks/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. | histórico |
 | [Vóxeles](records/benchmarks/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta y reutilización de celdas. | histórico |
