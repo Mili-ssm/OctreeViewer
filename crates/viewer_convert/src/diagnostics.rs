@@ -1,4 +1,4 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+pub(crate) use crate::diagnostic_timer::DiagnosticTimer;
 use viewer_format::{GeometryCandidateDiagnostics, OccupancyBuildDiagnostics};
 
 /// Optional aggregate timings for one conversion invocation.
@@ -121,38 +121,4 @@ pub struct DiagnosticWindow {
     pub elapsed_ns: u128,
     pub start_unix_ns: Option<u128>,
     pub end_unix_ns: Option<u128>,
-}
-
-pub(crate) struct DiagnosticTimer {
-    started: Instant,
-    start_unix_ns: Option<u128>,
-}
-
-impl DiagnosticTimer {
-    pub(crate) fn start() -> Self {
-        Self {
-            started: Instant::now(),
-            start_unix_ns: unix_ns(),
-        }
-    }
-
-    pub(crate) fn finish(self) -> DiagnosticWindow {
-        let end_unix_ns = unix_ns();
-        let (start_unix_ns, end_unix_ns) = match (self.start_unix_ns, end_unix_ns) {
-            (Some(start), Some(end)) if end >= start => (Some(start), Some(end)),
-            _ => (None, None),
-        };
-        DiagnosticWindow {
-            elapsed_ns: self.started.elapsed().as_nanos(),
-            start_unix_ns,
-            end_unix_ns,
-        }
-    }
-}
-
-fn unix_ns() -> Option<u128> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_nanos())
 }

@@ -1,7 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Seek, SeekFrom},
-    path::Path,
+    path::{Path, PathBuf},
     sync::mpsc,
     thread,
     time::Instant,
@@ -9,137 +8,74 @@ use std::{
 
 use las::Reader;
 use rayon::prelude::*;
-use viewer_core::las::{LasPreflightError, LazChunkTableLayout};
-use viewer_core::{AttributeDescriptor, BlockId, CoordinateFrame, SpatialBounds};
-use viewer_format::{
-    BlockEncoder, FormatBlockEncoder, FormatMetadata, FormatWriter, FormatWriterOptions,
-    OctreeWriter, PreparedOctreeWriter,
-};
+use viewer_format::{BlockEncoder, OctreeWriter, PreparedOctreeWriter};
 
+use crate::blocks::{
+    ConversionPlan, output_writer, prepare_planned_block, prepare_planned_block_with_diagnostics,
+    write_prepared,
+};
 use crate::checkpoint::{Checkpoint, CheckpointStage, fingerprint_file};
 use crate::diagnostics::DiagnosticTimer;
 use crate::ept;
 use crate::error::ConvertError;
+use crate::executor::ThreadedExecutor;
+use crate::limits::visual_scale_for_bounds;
 use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
+use crate::pipeline::clock::SystemClock;
 use crate::pipeline::node_job::{JobProgress, spool_source};
-use crate::pipeline::point_source::LasPointSource;
+use crate::pipeline::point_source::{ByteSource, LasFactory, LasPointSource};
 use crate::pipeline::spool_store::{FileSpoolStore, SpoolId, SpoolStore};
 use crate::publish::{
     OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
     output_block_ids, publish_output_pair, validate_output_pair, verify_candidate_visual_scale,
-    visual_scale_for_bounds,
 };
 use crate::report::{
     ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats,
     aggregate_geometry_codec_diagnostics, emit_progress,
 };
 use crate::spatial::{
-    PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
+    PlannedBlock, Workspace, build_spatial_plan, build_spatial_plan_from_source,
     emit_source_progress,
 };
 use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions};
 
-pub(crate) struct SourceInfo {
-    pub(crate) bounds: SpatialBounds,
-    pub(crate) frame: CoordinateFrame,
-    pub(crate) point_count: u64,
-    pub(crate) record_length: usize,
-    pub(crate) point_format: las::point::Format,
-    pub(crate) transforms: las::Vector<las::Transform>,
-    pub(crate) has_crs: bool,
+// The pure source helpers live in `source`; these are their old paths.
+#[allow(unused_imports, reason = "old paths of the pure source helpers")]
+pub(crate) use crate::source::{
+    SourceInfo, contain_decoder_panic, contain_decoder_panic_at, fill_points, inspect_source,
+    next_descriptor, omitted_dimensions, open_las_reader_from, seek_points, seek_points_at,
+    source_schema,
+};
+
+/// A local file as input bytes; `len` is the length measured when the file was first opened.
+pub(crate) struct FileBytes {
+    pub(crate) path: PathBuf,
+    pub(crate) len: u64,
 }
 
-pub(crate) struct ConversionPlan {
-    pub(crate) metadata: FormatMetadata,
-    pub(crate) frame: CoordinateFrame,
-    pub(crate) point_count: u64,
-    pub(crate) block_count: u64,
-    pub(crate) blocks: Vec<PlannedBlock>,
-    pub(crate) source_block_ids: Vec<BlockId>,
-    pub(crate) omitted_dimensions: Vec<String>,
-    pub(crate) estimated_peak_memory_bytes: u64,
+impl ByteSource for FileBytes {
+    type Reader = File;
+
+    fn open(&self) -> Result<File, ConvertError> {
+        Ok(File::open(&self.path)?)
+    }
+
+    fn len(&self) -> u64 {
+        self.len
+    }
 }
 
 /// Bounds header-declared allocations by the file length and decoded LAZ chunk
 /// table entries by the header, then opens the reader.
 pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
-    let mut file = File::open(path)?;
-    let file_len = file.metadata()?.len();
-    if let Some(layout) = viewer_core::las::preflight_las_layout(&mut file, file_len)? {
-        check_laz_chunk_table(&mut file, layout)?;
-        file.seek(SeekFrom::Start(0))?;
-    }
-    contain_decoder_panic(|| Reader::new(std::io::BufReader::new(file)))?.map_err(Into::into)
+    open_las_reader_with_len(path).map(|(reader, _)| reader)
 }
 
-/// Runs a call into the `las`/`laz` decoders and turns a panic into an error. Corrupt
-/// arithmetic-coded data trips asserts inside `laz` that no header or chunk-table check can
-/// predict. Keep the closure limited to the decoder call so panics in our own code stay loud.
-/// The reader is left in an unknown state after a panic: callers must propagate the error and
-/// drop it.
-pub(crate) fn contain_decoder_panic<T>(call: impl FnOnce() -> T) -> Result<T, ConvertError> {
-    contain_decoder_panic_at(None, call)
-}
-
-/// [`contain_decoder_panic`] tagging the error with the global index of the failing point.
-pub(crate) fn contain_decoder_panic_at<T>(
-    point_index: Option<u64>,
-    call: impl FnOnce() -> T,
-) -> Result<T, ConvertError> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).map_err(|payload| {
-        let message = payload
-            .downcast_ref::<&str>()
-            .map(|message| (*message).to_owned())
-            .or_else(|| payload.downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "non-string panic payload".to_owned());
-        ConvertError::LasDecoderPanicked {
-            message,
-            point_index,
-        }
-    })
-}
-
-/// `Reader::fill_points` with decoder panics contained.
-pub(crate) fn fill_points(
-    reader: &mut Reader,
-    count: u64,
-    data: &mut las::PointData,
-) -> Result<u64, ConvertError> {
-    Ok(contain_decoder_panic(|| reader.fill_points(count, data))??)
-}
-
-/// `Reader::seek` with decoder panics contained.
-pub(crate) fn seek_points(reader: &mut Reader, index: u64) -> Result<(), ConvertError> {
-    Ok(contain_decoder_panic(|| reader.seek(index))??)
-}
-
-#[cfg_attr(not(test), allow(dead_code, reason = "used by M2 range reads"))]
-/// `Reader::seek` reporting `point_index` if the decoder panics.
-pub(crate) fn seek_points_at(
-    reader: &mut Reader,
-    index: u64,
-    point_index: u64,
-) -> Result<(), ConvertError> {
-    Ok(contain_decoder_panic_at(Some(point_index), || {
-        reader.seek(index)
-    })??)
-}
-
-/// Shared decoded chunk-table check; keeps the dedicated error for rejected entries.
-/// `ChunkTable::read` runs in `contain_decoder_panic` because wasm cannot unwind.
-fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result<(), ConvertError> {
-    match contain_decoder_panic(|| viewer_core::las::check_laz_chunk_table(file, layout))? {
-        Err(LasPreflightError::LazChunkTable {
-            field,
-            value,
-            bound,
-        }) => Err(ConvertError::LazChunkTable {
-            field,
-            value,
-            bound,
-        }),
-        other => other.map_err(Into::into),
-    }
+/// [`open_las_reader`] also returning the file length it measured.
+fn open_las_reader_with_len(path: &Path) -> Result<(Reader, u64), ConvertError> {
+    let file = File::open(path)?;
+    let len = file.metadata()?.len();
+    Ok((open_las_reader_from(file, len)?, len))
 }
 
 /// Plans an LAS/LAZ conversion and reads, without encoding or writing any output, the
@@ -152,16 +88,22 @@ pub(crate) fn plan_sample_blocks(
     leaf_count: usize,
     lod_count: usize,
 ) -> Result<Vec<viewer_format::SourcePointBlock>, ConvertError> {
-    let mut reader = open_las_reader(input_path)?;
+    let (reader, len) = open_las_reader_with_len(input_path)?;
     let source = inspect_source(&reader)?;
     let workspace = Workspace::create(workspace_anchor)?;
     let store = FileSpoolStore::new(workspace.root(), false);
-    let spatial = build_spatial_plan_from_reader(
-        &mut reader,
-        input_path,
+    let factory = LasFactory::new(FileBytes {
+        path: input_path.to_owned(),
+        len,
+    });
+    let spatial = build_spatial_plan_from_source(
+        &mut LasPointSource::full(reader),
+        &factory,
         &source,
         options,
         &store,
+        &SystemClock,
+        &ThreadedExecutor,
         &mut |_| true,
         false,
     )?;
@@ -222,7 +164,7 @@ pub(crate) fn convert_file_inner(
         },
         0,
     )?;
-    let mut reader = open_las_reader(input_path)?;
+    let (mut reader, len) = open_las_reader_with_len(input_path)?;
     let source = inspect_source(&reader)?;
     let expected_visual_scale = visual_scale_for_bounds(source.bounds)?;
     let mut checkpoint = if let Some(mode) = checkpoint_mode {
@@ -389,18 +331,26 @@ pub(crate) fn convert_file_inner(
             &source,
             options,
             &spool_store,
+            &SystemClock,
+            &ThreadedExecutor,
             on_progress,
             diagnostics.is_some(),
             source_spool_bytes_written,
         )?
     } else {
         spool_store = FileSpoolStore::new(workspace.root(), diagnostics.is_some());
-        build_spatial_plan_from_reader(
-            &mut reader,
-            input_path,
+        let factory = LasFactory::new(FileBytes {
+            path: input_path.to_owned(),
+            len,
+        });
+        build_spatial_plan_from_source(
+            &mut LasPointSource::full(reader),
+            &factory,
             &source,
             options,
             &spool_store,
+            &SystemClock,
+            &ThreadedExecutor,
             on_progress,
             diagnostics.is_some(),
         )?
@@ -452,8 +402,6 @@ pub(crate) fn convert_file_inner(
             .write(true)
             .open(&temporary_path)?
     };
-    let writer_options = FormatWriterOptions::new(options.max_quantization_error, 64 * 1024 * 1024)
-        .map_err(ConvertError::Format)?;
     let attributes_file = if let Some(temporary) = temporary.as_mut() {
         temporary
             .attributes
@@ -472,15 +420,7 @@ pub(crate) fn convert_file_inner(
                     .candidate_attributes_path(),
             )?
     };
-    let mut writer = FormatWriter::new_split_for_version(
-        options.format_version(),
-        file,
-        attributes_file,
-        plan.metadata.clone(),
-        writer_options,
-    )?;
-    let encoder =
-        FormatBlockEncoder::new(options.format_version(), &plan.metadata, writer_options)?;
+    let (mut writer, encoder) = output_writer(options, &plan.metadata, file, attributes_file)?;
     let block_preparation = stream_blocks(
         &mut writer,
         &encoder,
@@ -567,53 +507,6 @@ pub(crate) fn convert_file_inner(
     })
 }
 
-pub(crate) fn inspect_source(reader: &Reader) -> Result<SourceInfo, ConvertError> {
-    let header = reader.header();
-    let source_bounds = header.bounds();
-    let min = [
-        source_bounds.min.x,
-        source_bounds.min.y,
-        source_bounds.min.z,
-    ];
-    let max = [
-        source_bounds.max.x,
-        source_bounds.max.y,
-        source_bounds.max.z,
-    ];
-    let bounds = SpatialBounds::new(min, max).map_err(|_| ConvertError::InvalidHeaderBounds)?;
-    Ok(SourceInfo {
-        bounds,
-        frame: CoordinateFrame::new(min)?,
-        point_count: header.number_of_points(),
-        record_length: usize::from(header.point_format().len()).max(1),
-        point_format: *header.point_format(),
-        transforms: *header.transforms(),
-        has_crs: header.has_crs_vlrs(),
-    })
-}
-
-impl ConversionPlan {
-    fn from_spatial(spatial: SpatialPlan, frame: CoordinateFrame) -> Self {
-        let block_count = spatial.blocks.len() as u64;
-        let source_block_ids = spatial
-            .blocks
-            .iter()
-            .filter(|block| block.is_source_points)
-            .map(|block| block.id)
-            .collect();
-        Self {
-            metadata: spatial.metadata,
-            frame,
-            point_count: spatial.point_count,
-            block_count,
-            blocks: spatial.blocks,
-            source_block_ids,
-            omitted_dimensions: spatial.omitted_dimensions,
-            estimated_peak_memory_bytes: spatial.estimated_peak_memory_bytes,
-        }
-    }
-}
-
 pub(crate) struct StreamBlockOptions<'a> {
     temporary_path: &'a Path,
     requested_workers: usize,
@@ -692,9 +585,7 @@ where
             let prepared_with_metrics = batch
                 .par_iter()
                 .map(|block| {
-                    encoder
-                        .prepare_with_diagnostics(block.read(store, plan.frame)?)
-                        .map_err(ConvertError::Format)
+                    prepare_planned_block_with_diagnostics(encoder, block, store, plan.frame)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let (prepared, metrics): (
@@ -705,11 +596,7 @@ where
         } else {
             let prepared = batch
                 .par_iter()
-                .map(|block| {
-                    encoder
-                        .prepare(block.read(store, plan.frame)?)
-                        .map_err(ConvertError::Format)
-                })
+                .map(|block| prepare_planned_block(encoder, block, store, plan.frame))
                 .collect::<Result<Vec<_>, _>>()?;
             (prepared, None)
         };
@@ -765,9 +652,8 @@ where
             block_preparation_ns = block_preparation_ns.saturating_add(batch_preparation_ns);
             let write_started = Instant::now();
             for (block, prepared) in batch.iter().zip(prepared) {
-                writer.write_prepared_block(prepared)?;
                 // The whole batch has finished reading before any shared spool is removed.
-                block.release_spool_after_write(store)?;
+                write_prepared(writer, block, prepared, store)?;
                 if block.is_source_points {
                     processed += block.point_count() as u64;
                 }
@@ -835,41 +721,4 @@ pub(crate) fn process_batches<T: Sync, P: Send>(
         }
         Ok(())
     })
-}
-
-pub(crate) fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {
-    viewer_core::las::las_attribute_schema(format.has_gps_time, format.has_color, format.has_nir)
-}
-
-/// Pairs columns with `las_attribute_schema` by position; the name check makes
-/// a reordered schema fail loudly in tests instead of mislabelling data.
-pub(crate) fn next_descriptor(
-    descriptors: &mut impl Iterator<Item = AttributeDescriptor>,
-    expected: &str,
-) -> AttributeDescriptor {
-    let descriptor = descriptors
-        .next()
-        .expect("LAS attribute schema covers every column");
-    debug_assert_eq!(descriptor.name(), expected);
-    descriptor
-}
-
-pub(crate) fn omitted_dimensions(format: &las::point::Format, has_crs: bool) -> Vec<String> {
-    let mut dimensions = vec![
-        "synthetic/key-point/withheld/overlap flags".to_owned(),
-        "scan direction and flight-line edge flags".to_owned(),
-    ];
-    if format.is_extended {
-        dimensions.push("scanner channel".to_owned());
-    }
-    if format.has_waveform {
-        dimensions.push("waveform data".to_owned());
-    }
-    if format.extra_bytes > 0 {
-        dimensions.push("extra point bytes".to_owned());
-    }
-    if has_crs {
-        dimensions.push("CRS/WKT metadata".to_owned());
-    }
-    dimensions
 }

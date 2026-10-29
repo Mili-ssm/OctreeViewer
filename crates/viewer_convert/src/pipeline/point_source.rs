@@ -1,10 +1,14 @@
-use std::borrow::BorrowMut;
+use std::{
+    borrow::BorrowMut,
+    io::{Cursor, Read, Seek},
+    sync::Arc,
+};
 
 use las::Reader;
 
 use crate::{
     ConvertError,
-    las_source::{contain_decoder_panic_at, seek_points_at},
+    source::{contain_decoder_panic_at, open_las_reader_from, seek_points_at},
 };
 
 /// Half-open range of global point indices.
@@ -98,6 +102,78 @@ impl<R: BorrowMut<Reader>> PointSource for LasPointSource<R> {
         let read = contain_decoder_panic_at(Some(self.next), || reader.fill_points(count, data))??;
         self.next += read;
         Ok(read)
+    }
+}
+
+/// Random-access input bytes that can be opened any number of times.
+pub(crate) trait ByteSource {
+    type Reader: Read + Seek + Send + Sync + 'static;
+    fn open(&self) -> Result<Self::Reader, ConvertError>;
+    fn len(&self) -> u64;
+}
+
+/// In-memory input.
+#[cfg_attr(not(test), allow(dead_code, reason = "used by the serial host loop"))]
+pub(crate) struct MemBytes(pub Arc<[u8]>);
+
+impl ByteSource for MemBytes {
+    type Reader = Cursor<Arc<[u8]>>;
+
+    fn open(&self) -> Result<Self::Reader, ConvertError> {
+        Ok(Cursor::new(Arc::clone(&self.0)))
+    }
+
+    fn len(&self) -> u64 {
+        self.0.len() as u64
+    }
+}
+
+/// Opens the sources the planner needs beyond the first one.
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "split is used by M2 range planning")
+)]
+pub(crate) trait SourceFactory {
+    type Source: PointSource;
+    /// Contiguous ranges in order covering `0..point_count`, at most `parts`.
+    #[allow(dead_code, reason = "used by M2 range planning")]
+    fn split(&self, parts: usize, batch: u64) -> Result<Vec<PointRange>, ConvertError>;
+    /// A fresh source at `range.start`, preflight included.
+    fn open(&self, range: PointRange) -> Result<Self::Source, ConvertError>;
+}
+
+/// LAS/LAZ sources over any [`ByteSource`]; compressed input only opens as a whole.
+pub(crate) struct LasFactory<B: ByteSource> {
+    bytes: B,
+}
+
+impl<B: ByteSource> LasFactory<B> {
+    pub fn new(bytes: B) -> Self {
+        Self { bytes }
+    }
+
+    fn open_reader(&self) -> Result<Reader, ConvertError> {
+        open_las_reader_from(self.bytes.open()?, self.bytes.len())
+    }
+}
+
+impl<B: ByteSource> SourceFactory for LasFactory<B> {
+    type Source = LasPointSource<Reader>;
+
+    /// One range for now: there is no LAZ chunk index to cut compressed input yet.
+    #[cfg_attr(not(test), allow(dead_code, reason = "used by M2 range planning"))]
+    fn split(&self, _parts: usize, _batch: u64) -> Result<Vec<PointRange>, ConvertError> {
+        let end = self.open_reader()?.header().number_of_points();
+        Ok(vec![PointRange { start: 0, end }])
+    }
+
+    fn open(&self, range: PointRange) -> Result<Self::Source, ConvertError> {
+        let reader = self.open_reader()?;
+        if range.start == 0 && range.end == reader.header().number_of_points() {
+            Ok(LasPointSource::full(reader))
+        } else {
+            LasPointSource::records(reader, range)
+        }
     }
 }
 

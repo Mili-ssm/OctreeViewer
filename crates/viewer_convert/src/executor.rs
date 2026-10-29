@@ -1,4 +1,4 @@
-//! Ready-queue scheduler (the only one) for one virtual batch of root children.
+//! `ThreadedExecutor`: ready-queue scheduler (the only native one) for one virtual batch of root children.
 //!
 //! The batch has as many threads as root children (`min(W, k)`, as the old per-branch threads did) and
 //! they take the ready node job with the lowest [`NodePath`]. Only jobs under this batch are
@@ -21,16 +21,21 @@ use std::{
 
 use viewer_core::NodeId;
 
-use super::{BranchOutput, OpenNodeEvent, SpatialBuilder};
 use crate::ConvertError;
-use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::{Clock, SystemClock},
+    executor::BatchPlanner,
     node_job::{
         ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, run_node_job,
     },
     spool_store::PlanStore,
 };
+use crate::spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder};
+
+/// Plans batches on one thread per root child with a ready queue of node jobs.
+pub(crate) struct ThreadedExecutor;
+
+type Builder<'a, 'b, S> = &'a mut SpatialBuilder<'b, S, SystemClock, ThreadedExecutor>;
 
 /// Error phase at one path; the batch budget is checked before any job is dispatched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,7 +77,7 @@ enum CursorEntry {
     /// Leaves the subtree of a committed node of branch `key`: closes its event.
     Exit {
         key: u16,
-        open: Option<OpenNodeEvent>,
+        open: Option<OpenNodeEvent<Instant>>,
     },
 }
 
@@ -239,15 +244,14 @@ impl Batch<'_> {
     }
 }
 
-impl<S: PlanStore> SpatialBuilder<'_, S> {
-    /// Plans the subtrees of one batch of root children and returns their branches in key order,
-    /// ready for `append_branch`.
-    pub(super) fn plan_batch_ready_queue(
-        &mut self,
+impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor {
+    fn plan_batch(
+        &self,
+        builder: &mut SpatialBuilder<'_, S, SystemClock, Self>,
         tasks: Vec<ChildOutput>,
         memory_budget: u64,
     ) -> Result<Vec<(u16, BranchOutput)>, ConvertError> {
-        let collect = self.spool_diagnostics.is_some();
+        let collect = builder.collects_diagnostics();
         let threads = tasks.len();
         let queue = ReadyJobs::default();
         let mut batch = Batch {
@@ -266,19 +270,8 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             });
         }
         for task in tasks {
-            batch.branches.insert(
-                task.key,
-                BranchOutput {
-                    node_records: Vec::new(),
-                    output_blocks: Vec::new(),
-                    next_block_id: 0,
-                    spool_diagnostics: collect.then(SpatialSpoolDiagnostics::default),
-                    spatial_phases: collect.then(SpatialPhaseDiagnostics::default),
-                    spool_written_local: 0,
-                    node_events: Vec::new(),
-                },
-            );
-            let job = self.node_job(
+            batch.branches.insert(task.key, BranchOutput::new(collect));
+            let job = builder.node_job(
                 NodePath(vec![task.key]),
                 1,
                 task.bounds,
@@ -289,8 +282,8 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             batch.enqueue(job);
         }
 
-        let ctx = self.job_context();
-        let store = self.store;
+        let ctx = builder.job_context();
+        let store = builder.store();
         let (sender, receiver) = mpsc::channel();
         let mut channel_error = None;
         thread::scope(|scope| {
@@ -305,7 +298,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 match receiver.recv() {
                     Ok(Message::Progress(progress)) => {
                         if batch.outcome.cancelled.is_none()
-                            && let Err(error) = self.emit_job_progress(progress)
+                            && let Err(error) = builder.emit_job_progress(progress)
                         {
                             batch
                                 .outcome
@@ -314,8 +307,8 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                     }
                     Ok(Message::Finished(finished)) => {
                         batch.pending -= 1;
-                        self.finish_ready_job(&mut batch, *finished);
-                        self.advance_cursor(&mut batch);
+                        finish_ready_job(builder, &mut batch, *finished);
+                        advance_cursor(builder, &mut batch);
                     }
                     Err(_) => {
                         channel_error = Some(ConvertError::Io(io::Error::other(
@@ -334,116 +327,120 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         debug_assert!(batch.cursor.is_empty() && batch.outputs.is_empty());
         Ok(batch.branches.into_iter().collect())
     }
+}
 
-    fn finish_ready_job(&mut self, batch: &mut Batch<'_>, finished: Finished) {
-        let path = finished.job.path.clone();
-        let output = match finished.result {
-            Ok(output) => output,
-            // Only a job aborted by `restrict` is cancelled; a user cancel is already recorded.
-            Err(ConvertError::Cancelled { .. }) => return,
-            Err(error) => {
-                batch.outcome.record(&path, Phase::Job, error);
-                return;
-            }
-        };
-        if let Err(error) = output
-            .release
-            .iter()
-            .try_for_each(|spool| self.store.delete(*spool))
-        {
+fn finish_ready_job<S: PlanStore>(
+    builder: Builder<'_, '_, S>,
+    batch: &mut Batch<'_>,
+    finished: Finished,
+) {
+    let path = finished.job.path.clone();
+    let output = match finished.result {
+        Ok(output) => output,
+        // Only a job aborted by `restrict` is cancelled; a user cancel is already recorded.
+        Err(ConvertError::Cancelled { .. }) => return,
+        Err(error) => {
             batch.outcome.record(&path, Phase::Job, error);
             return;
         }
-        if !batch.outcome.admits(&path) {
-            // Its children stay in the store; the failed plan discards them.
-            return;
-        }
-        for child in &output.children {
-            let job = self.node_job(
-                path.child(child.key),
-                finished.job.level + 1,
-                child.bounds,
-                child.spool,
-                child.point_count,
-                true,
-            );
-            batch.enqueue(job);
-        }
-        batch.outputs.insert(
-            path,
-            Done {
-                job: finished.job,
-                start_seq: finished.start_seq,
-                started: finished.started,
-                elapsed_ns: finished.elapsed_ns,
-                output,
-            },
-        );
+    };
+    if let Err(error) = output
+        .release
+        .iter()
+        .try_for_each(|spool| builder.store().delete(*spool))
+    {
+        batch.outcome.record(&path, Phase::Job, error);
+        return;
     }
+    if !batch.outcome.admits(&path) {
+        // Its children stay in the store; the failed plan discards them.
+        return;
+    }
+    for child in &output.children {
+        let job = builder.node_job(
+            path.child(child.key),
+            finished.job.level + 1,
+            child.bounds,
+            child.spool,
+            child.point_count,
+            true,
+        );
+        batch.enqueue(job);
+    }
+    batch.outputs.insert(
+        path,
+        Done {
+            job: finished.job,
+            start_seq: finished.start_seq,
+            started: finished.started,
+            elapsed_ns: finished.elapsed_ns,
+            output,
+        },
+    );
+}
 
-    /// Commits outputs in preorder while the next expected one has arrived.
-    fn advance_cursor(&mut self, batch: &mut Batch<'_>) {
-        let record_bytes = self.layout.record_bytes() as u64;
-        while batch.outcome.cancelled.is_none() {
-            match batch.cursor.last() {
-                None => return,
-                Some(CursorEntry::Exit { .. }) => {
-                    let Some(CursorEntry::Exit { key, open }) = batch.cursor.pop() else {
-                        unreachable!()
-                    };
-                    let branch = batch.branches.get_mut(&key).expect("one branch per key");
-                    self.with_branch(branch, batch.memory_budget, |builder| {
-                        builder.finish_node_event(open);
-                    });
+/// Commits outputs in preorder while the next expected one has arrived.
+fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'_>) {
+    let record_bytes = builder.layout().record_bytes() as u64;
+    while batch.outcome.cancelled.is_none() {
+        match batch.cursor.last() {
+            None => return,
+            Some(CursorEntry::Exit { .. }) => {
+                let Some(CursorEntry::Exit { key, open }) = batch.cursor.pop() else {
+                    unreachable!()
+                };
+                let branch = batch.branches.get_mut(&key).expect("one branch per key");
+                builder.with_branch(branch, batch.memory_budget, |builder| {
+                    builder.finish_node_event(open);
+                });
+            }
+            Some(CursorEntry::Node { path, .. }) => {
+                if !batch.outcome.admits(path) || !batch.outputs.contains_key(path) {
+                    return;
                 }
-                Some(CursorEntry::Node { path, .. }) => {
-                    if !batch.outcome.admits(path) || !batch.outputs.contains_key(path) {
-                        return;
-                    }
-                    let Some(CursorEntry::Node { path, parent }) = batch.cursor.pop() else {
-                        unreachable!()
-                    };
-                    let done = batch.outputs.remove(&path).expect("checked above");
-                    let key = path.0[0];
-                    let branch = batch.branches.get_mut(&key).expect("one branch per key");
-                    let Done {
-                        job,
+                let Some(CursorEntry::Node { path, parent }) = batch.cursor.pop() else {
+                    unreachable!()
+                };
+                let done = batch.outputs.remove(&path).expect("checked above");
+                let key = path.0[0];
+                let branch = batch.branches.get_mut(&key).expect("one branch per key");
+                let Done {
+                    job,
+                    start_seq,
+                    started,
+                    elapsed_ns,
+                    output,
+                } = done;
+                let mut open = start_seq.map(|start_seq| {
+                    OpenNodeEvent::new(
+                        NodeId::new(branch.node_count()),
+                        parent,
+                        job.level,
+                        job.point_count.saturating_mul(record_bytes),
                         start_seq,
                         started,
-                        elapsed_ns,
-                        output,
-                    } = done;
-                    let mut open = start_seq.map(|start_seq| {
-                        OpenNodeEvent::new(
-                            NodeId::new(branch.node_records.len() as u64),
-                            parent,
-                            job.level,
-                            job.point_count.saturating_mul(record_bytes),
-                            start_seq,
-                            started,
-                        )
-                    });
-                    let committed = self.with_branch(branch, batch.memory_budget, |builder| {
-                        builder.commit_job(&job, output, parent, &mut open)
-                    });
-                    if let Some(open) = open.as_mut() {
-                        open.event.elapsed_ns = elapsed_ns.max(1);
-                    }
-                    match committed {
-                        Ok(children) => {
-                            let id = NodeId::new(branch.node_records.len() as u64 - 1);
-                            batch.cursor.push(CursorEntry::Exit { key, open });
-                            batch.cursor.extend(children.iter().rev().map(|child| {
-                                CursorEntry::Node {
-                                    path: path.child(child.key),
-                                    parent: Some(id),
-                                }
+                    )
+                });
+                let committed = builder.with_branch(branch, batch.memory_budget, |builder| {
+                    builder.commit_job(&job, output, parent, &mut open)
+                });
+                if let Some(open) = open.as_mut() {
+                    open.event.elapsed_ns = elapsed_ns.max(1);
+                }
+                match committed {
+                    Ok(children) => {
+                        let id = NodeId::new(branch.node_count() - 1);
+                        batch.cursor.push(CursorEntry::Exit { key, open });
+                        batch
+                            .cursor
+                            .extend(children.iter().rev().map(|child| CursorEntry::Node {
+                                path: path.child(child.key),
+                                parent: Some(id),
                             }));
-                        }
-                        Err(error) => {
-                            batch.outcome.record(&path, Phase::Commit, error);
-                            return;
-                        }
+                    }
+                    Err(error) => {
+                        batch.outcome.record(&path, Phase::Commit, error);
+                        return;
                     }
                 }
             }

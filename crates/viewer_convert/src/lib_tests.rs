@@ -2049,7 +2049,7 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
     use crate::{
         las_source::{inspect_source, open_las_reader},
         pipeline::spool_store::{FileSpoolStore, MemSpoolStore, SpoolAccounting},
-        spatial::{Workspace, build_spatial_plan_from_reader},
+        spatial::Workspace,
     };
 
     let tmp = test_dir();
@@ -2061,13 +2061,13 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
         .unwrap()
         .with_spatial_workers(1)
         .unwrap();
-    let mut reader = open_las_reader(&input).unwrap();
+    let reader = open_las_reader(&input).unwrap();
     let source = inspect_source(&reader).unwrap();
 
     let workspace = Workspace::create(&tmp.path().join("native.oct")).unwrap();
     let native = FileSpoolStore::new(workspace.root(), true);
-    let native_plan = build_spatial_plan_from_reader(
-        &mut reader,
+    let native_plan = plan_from_reader(
+        reader,
         &input,
         &source,
         options,
@@ -2079,18 +2079,10 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
     let native_phases = native_plan.spatial_phases.unwrap();
     assert!(native_phases.peak_live_spool_bytes > 0);
 
-    let mut reader = open_las_reader(&input).unwrap();
+    let reader = open_las_reader(&input).unwrap();
     let mem = MemSpoolStore::new(true);
-    let mem_plan = build_spatial_plan_from_reader(
-        &mut reader,
-        &input,
-        &source,
-        options,
-        &mem,
-        &mut |_| true,
-        true,
-    )
-    .unwrap();
+    let mem_plan =
+        plan_from_reader(reader, &input, &source, options, &mem, &mut |_| true, true).unwrap();
     assert_eq!(mem.stats().peak_bytes, native_phases.peak_live_spool_bytes);
     assert_eq!(
         mem.ledger_totals().unwrap().written,
@@ -2235,21 +2227,12 @@ fn mem_plan_and_drain(
     use crate::{
         las_source::{inspect_source, open_las_reader},
         pipeline::spool_store::MemSpoolStore,
-        spatial::build_spatial_plan_from_reader,
     };
-    let mut reader = open_las_reader(input).unwrap();
+    let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
     let mem = MemSpoolStore::new(true);
-    let plan = build_spatial_plan_from_reader(
-        &mut reader,
-        input,
-        &source,
-        options,
-        &mem,
-        &mut |_| true,
-        true,
-    )
-    .unwrap();
+    let plan =
+        plan_from_reader(reader, input, &source, options, &mem, &mut |_| true, true).unwrap();
     for block in &plan.blocks {
         block.read(&mem, source.frame).unwrap();
         block.release_spool_after_write(&mem).unwrap();
@@ -2425,28 +2408,47 @@ fn failing_plan(
     use crate::{
         las_source::{inspect_source, open_las_reader},
         pipeline::spool_store::MemSpoolStore,
-        spatial::{SpoolLayout, build_spatial_plan_from_reader},
+        spatial::SpoolLayout,
     };
-    let mut reader = open_las_reader(input).unwrap();
+    let reader = open_las_reader(input).unwrap();
     let source = inspect_source(&reader).unwrap();
     let store = FailingStore {
         inner: MemSpoolStore::new(true),
         record_bytes: SpoolLayout::source(&source).record_bytes() as u64,
         failures: std::sync::Mutex::new(failures.to_vec()),
     };
-    let result = build_spatial_plan_from_reader(
-        &mut reader,
-        input,
-        &source,
-        options,
-        &store,
-        on_progress,
-        true,
-    );
+    let result = plan_from_reader(reader, input, &source, options, &store, on_progress, true);
     let Err(error) = result else {
         panic!("the plan must fail")
     };
     (error, store.inner.stats())
+}
+
+/// Plans from an already opened reader with the native clock and executor.
+fn plan_from_reader<S: crate::pipeline::spool_store::PlanStore>(
+    reader: las::Reader,
+    input: &std::path::Path,
+    source: &crate::source::SourceInfo,
+    options: ConvertOptions,
+    store: &S,
+    on_progress: &mut dyn FnMut(super::ConversionProgress) -> bool,
+    collect: bool,
+) -> Result<crate::spatial::SpatialPlan, ConvertError> {
+    let factory = crate::pipeline::point_source::LasFactory::new(crate::las_source::FileBytes {
+        path: input.to_owned(),
+        len: std::fs::metadata(input).unwrap().len(),
+    });
+    crate::spatial::build_spatial_plan_from_source(
+        &mut crate::pipeline::point_source::LasPointSource::full(reader),
+        &factory,
+        source,
+        options,
+        store,
+        &crate::pipeline::clock::SystemClock,
+        &crate::executor::ThreadedExecutor,
+        on_progress,
+        collect,
+    )
 }
 
 fn cluster_options(workers: usize) -> ConvertOptions {
@@ -2607,5 +2609,67 @@ fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
             failing_plan(&input, options(27_500_000), &[(2001, quick)], &mut |_| true);
         assert_eq!(error.to_string(), commit_only.to_string());
         assert_eq!((stats.live_bytes, stats.live_spools), (0, 0));
+    }
+}
+
+#[test]
+fn the_serial_executor_plans_like_the_ready_queue() {
+    use crate::{
+        las_source::{inspect_source, open_las_reader},
+        pipeline::{
+            clock::SystemClock,
+            executor::SerialExecutor,
+            point_source::{LasFactory, LasPointSource, MemBytes},
+            spool_store::MemSpoolStore,
+        },
+        spatial::build_spatial_plan_from_source,
+    };
+
+    let tmp = test_dir();
+    let input = tmp.path().join("clusters.las");
+    sized_cluster_fixture(&input, [40, 40, 300, 40, 40, 250, 40, 40]);
+    let bytes: std::sync::Arc<[u8]> = std::fs::read(&input).unwrap().into();
+    for workers in [1, 2, 8] {
+        let options = cluster_options(workers);
+        let reader = open_las_reader(&input).unwrap();
+        let source = inspect_source(&reader).unwrap();
+        let queue_store = MemSpoolStore::new(true);
+        let queue = plan_from_reader(
+            reader,
+            &input,
+            &source,
+            options,
+            &queue_store,
+            &mut |_| true,
+            true,
+        )
+        .unwrap();
+
+        let factory = LasFactory::new(MemBytes(bytes.clone()));
+        let mut first = LasPointSource::full(open_las_reader(&input).unwrap());
+        let serial_store = MemSpoolStore::new(true);
+        let serial = build_spatial_plan_from_source(
+            &mut first,
+            &factory,
+            &source,
+            options,
+            &serial_store,
+            &SystemClock,
+            &SerialExecutor,
+            &mut |_| true,
+            true,
+        )
+        .unwrap();
+        let shape = |plan: &crate::spatial::SpatialPlan| {
+            plan.blocks
+                .iter()
+                .map(|block| (block.id, block.point_count(), block.is_source_points))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shape(&serial), shape(&queue), "workers {workers}");
+        assert_eq!(
+            serial.estimated_peak_memory_bytes,
+            queue.estimated_peak_memory_bytes
+        );
     }
 }

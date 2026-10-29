@@ -4,10 +4,9 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
 };
 
-use las::{PointData, Reader};
+use las::PointData;
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, NodeId, SpatialBounds,
     SpatialHierarchy, SpatialNode,
@@ -16,17 +15,18 @@ use viewer_format::{FormatMetadata, SourcePointBlock};
 
 use super::{ConvertError, ConvertOptions};
 use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
-use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
 use crate::pipeline::{
-    clock::{Clock, SystemClock},
+    clock::Clock,
+    executor::BatchPlanner,
     node_job::{
         BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodeJobOutput,
         NodePath, lod_blocks, run_node_job, run_root_partition, spool_source, write_lod,
     },
-    point_source::LasPointSource,
+    point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
 };
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
+use crate::source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
@@ -36,8 +36,6 @@ const PLANNED_NODE_BYTES: u64 = 256;
 const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;
 const HEADER_BOUNDS_RELATIVE_TOLERANCE: f64 = 1.0e-7;
 const HEADER_BOUNDS_MAX_TOLERANCE: f64 = 0.5;
-
-mod ready_queue;
 
 /// All temporary files for a source share these attributes and transforms.
 /// Source coordinates stay on the exact LAS integer grid; generated LOD centers use f64.
@@ -351,10 +349,13 @@ impl Drop for Workspace {
     }
 }
 
-pub(crate) fn build_spatial_plan<S: PlanStore>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_spatial_plan<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     source: &SourceInfo,
     options: ConvertOptions,
     store: &S,
+    clock: &C,
+    executor: &X,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
     source_spool_bytes_written: u64,
@@ -363,47 +364,71 @@ pub(crate) fn build_spatial_plan<S: PlanStore>(
         source,
         options,
         store,
-        SpatialInput::Spool,
+        clock,
+        executor,
+        // `SpoolId::SOURCE` already holds the closed source spool.
+        true,
+        |builder, bounds| {
+            let job = builder.node_job(
+                NodePath(Vec::new()),
+                0,
+                bounds,
+                SpoolId::SOURCE,
+                source.point_count,
+                false,
+            );
+            builder.build_node(job, None).map(|_| ())
+        },
         on_progress,
         collect_spool_diagnostics,
         source_spool_bytes_written,
     )
 }
 
-pub(crate) fn build_spatial_plan_from_reader<S: PlanStore>(
-    reader: &mut Reader,
-    input_path: &Path,
+/// Plans from `first`, a source positioned at the start of the points; `factory` reopens the
+/// input when the root has to be read again.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_spatial_plan_from_source<S, C, F, X>(
+    first: &mut F::Source,
+    factory: &F,
     source: &SourceInfo,
     options: ConvertOptions,
     store: &S,
+    clock: &C,
+    executor: &X,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
-) -> Result<SpatialPlan, ConvertError> {
+) -> Result<SpatialPlan, ConvertError>
+where
+    S: PlanStore,
+    C: Clock,
+    F: SourceFactory,
+    X: BatchPlanner<S, C>,
+{
     build_spatial_plan_inner(
         source,
         options,
         store,
-        SpatialInput::Las { reader, input_path },
+        clock,
+        executor,
+        false,
+        |builder, bounds| builder.build_root_from_source(first, factory, source, bounds),
         on_progress,
         collect_spool_diagnostics,
         0,
     )
 }
 
-enum SpatialInput<'a> {
-    /// `SpoolId::SOURCE` already holds the closed source spool.
-    Spool,
-    Las {
-        reader: &'a mut Reader,
-        input_path: &'a Path,
-    },
-}
-
-fn build_spatial_plan_inner<S: PlanStore>(
+/// `build_root` plans the root node into the builder.
+#[allow(clippy::too_many_arguments)]
+fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     source: &SourceInfo,
     options: ConvertOptions,
     store: &S,
-    input: SpatialInput<'_>,
+    clock: &C,
+    executor: &X,
+    keep_source: bool,
+    build_root: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>, SpatialBounds) -> Result<(), ConvertError>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
     source_spool_bytes_written: u64,
@@ -416,12 +441,13 @@ fn build_spatial_plan_inner<S: PlanStore>(
     )?;
     // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O.
     let spool_ids = AtomicU64::new(1);
-    let keep_source = matches!(input, SpatialInput::Spool);
     let result = plan_spatial(
         source,
         options,
         store,
-        input,
+        clock,
+        executor,
+        build_root,
         on_progress,
         collect_spool_diagnostics,
         source_spool_bytes_written,
@@ -446,11 +472,13 @@ fn discard_spools(store: &impl SpoolStore, next_id: u64, keep_source: bool) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn plan_spatial<S: PlanStore>(
+fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     source: &SourceInfo,
     options: ConvertOptions,
     store: &S,
-    input: SpatialInput<'_>,
+    clock: &C,
+    executor: &X,
+    build_root: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>, SpatialBounds) -> Result<(), ConvertError>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
     source_spool_bytes_written: u64,
@@ -460,6 +488,8 @@ fn plan_spatial<S: PlanStore>(
     let root_bounds = cube_bounds(source.bounds);
     let mut builder = SpatialBuilder {
         store,
+        clock,
+        executor,
         spool_ids,
         point_limit,
         memory_budget: options.max_memory_budget_bytes(),
@@ -481,22 +511,7 @@ fn plan_spatial<S: PlanStore>(
         spool_written_local: 0,
         node_events: Vec::new(),
     };
-    match input {
-        SpatialInput::Spool => {
-            let job = builder.node_job(
-                NodePath(Vec::new()),
-                0,
-                root_bounds,
-                SpoolId::SOURCE,
-                source.point_count,
-                false,
-            );
-            builder.build_node(job, None)?;
-        }
-        SpatialInput::Las { reader, input_path } => {
-            builder.build_root_from_las(reader, input_path, source, root_bounds)?;
-        }
-    }
+    build_root(&mut builder, root_bounds)?;
 
     if let (Some(phases), Some(totals)) = (builder.spatial_phases.as_mut(), store.ledger_totals()) {
         phases.spool_bytes_written = totals.written;
@@ -577,10 +592,6 @@ struct NodeRecord {
     blocks: Vec<BlockId>,
 }
 
-fn elapsed_ns(started: Instant) -> u64 {
-    SystemClock.elapsed_ns(started)
-}
-
 pub(crate) struct ChildSpool {
     layout: SpoolLayout,
     pub(crate) id: SpoolId,
@@ -650,7 +661,8 @@ impl ChildSpool {
     }
 }
 
-struct BranchOutput {
+/// The nodes, blocks and diagnostics one root child contributes, in branch-local ids.
+pub(crate) struct BranchOutput {
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
     next_block_id: u64,
@@ -660,8 +672,29 @@ struct BranchOutput {
     node_events: Vec<NodeSpoolEvent>,
 }
 
-struct SpatialBuilder<'a, S: PlanStore> {
+impl BranchOutput {
+    pub(crate) fn new(collect_diagnostics: bool) -> Self {
+        Self {
+            node_records: Vec::new(),
+            output_blocks: Vec::new(),
+            next_block_id: 0,
+            spool_diagnostics: collect_diagnostics.then(SpatialSpoolDiagnostics::default),
+            spatial_phases: collect_diagnostics.then(SpatialPhaseDiagnostics::default),
+            spool_written_local: 0,
+            node_events: Vec::new(),
+        }
+    }
+
+    /// Nodes committed so far; the next node's branch-local id.
+    pub(crate) fn node_count(&self) -> u64 {
+        self.node_records.len() as u64
+    }
+}
+
+pub(crate) struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     store: &'a S,
+    clock: &'a C,
+    executor: &'a X,
     /// Next unreserved spool id, shared by every branch.
     spool_ids: &'a AtomicU64,
     point_limit: u64,
@@ -685,19 +718,19 @@ struct SpatialBuilder<'a, S: PlanStore> {
 }
 
 /// A node event between `begin_node_event` and `finish_node_event`.
-struct OpenNodeEvent {
-    event: NodeSpoolEvent,
-    started: Instant,
+pub(crate) struct OpenNodeEvent<I> {
+    pub(crate) event: NodeSpoolEvent,
+    started: I,
 }
 
-impl OpenNodeEvent {
-    fn new(
+impl<I> OpenNodeEvent<I> {
+    pub(crate) fn new(
         node_id: NodeId,
         parent: Option<NodeId>,
         depth: u32,
         input_spool_bytes: u64,
         start_seq: u64,
-        started: Instant,
+        started: I,
     ) -> Self {
         Self {
             event: NodeSpoolEvent {
@@ -713,12 +746,26 @@ impl OpenNodeEvent {
     }
 }
 
-impl<S: PlanStore> SpatialBuilder<'_, S> {
-    fn record_lod_write_elapsed(&mut self, started: Option<Instant>) {
+impl<'a, S: PlanStore, C: Clock, X> SpatialBuilder<'a, S, C, X> {
+    pub(crate) fn store(&self) -> &'a S {
+        self.store
+    }
+
+    pub(crate) fn layout(&self) -> SpoolLayout {
+        self.layout
+    }
+
+    pub(crate) fn collects_diagnostics(&self) -> bool {
+        self.spool_diagnostics.is_some()
+    }
+}
+
+impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> {
+    fn record_lod_write_elapsed(&mut self, started: Option<C::Instant>) {
         if let (Some(metrics), Some(started)) = (self.spatial_phases.as_mut(), started) {
             metrics.lod_sample_write_elapsed_ns = metrics
                 .lod_sample_write_elapsed_ns
-                .saturating_add(started.elapsed().as_nanos());
+                .saturating_add(u128::from(self.clock.elapsed_ns(started)));
         }
     }
 
@@ -736,7 +783,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         parent: Option<NodeId>,
         depth: u32,
         input_spool_bytes: u64,
-    ) -> Option<OpenNodeEvent> {
+    ) -> Option<OpenNodeEvent<C::Instant>> {
         let start_seq = self.store.next_event_seq()?;
         Some(OpenNodeEvent::new(
             node_id,
@@ -744,11 +791,11 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             depth,
             input_spool_bytes,
             start_seq,
-            SystemClock.now(),
+            self.clock.now(),
         ))
     }
 
-    fn finish_node_event(&mut self, open: Option<OpenNodeEvent>) {
+    pub(crate) fn finish_node_event(&mut self, open: Option<OpenNodeEvent<C::Instant>>) {
         let Some(mut open) = open else {
             return;
         };
@@ -757,7 +804,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         };
         open.event.end_seq = end_seq;
         if open.event.elapsed_ns == 0 {
-            open.event.elapsed_ns = elapsed_ns(open.started);
+            open.event.elapsed_ns = self.clock.elapsed_ns(open.started);
         }
         self.node_events.push(open.event);
     }
@@ -828,7 +875,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         Ok(())
     }
 
-    fn job_context(&self) -> JobContext {
+    pub(crate) fn job_context(&self) -> JobContext {
         JobContext {
             point_limit: self.point_limit,
             spatial_divisions: self.spatial_divisions,
@@ -839,7 +886,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
     }
 
     /// Builds the job of one node, reserving its output ids only when it will split.
-    fn node_job(
+    pub(crate) fn node_job(
         &self,
         path: NodePath,
         level: u32,
@@ -864,7 +911,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         }
     }
 
-    fn emit_job_progress(&mut self, progress: JobProgress) -> Result<(), ConvertError> {
+    pub(crate) fn emit_job_progress(&mut self, progress: JobProgress) -> Result<(), ConvertError> {
         match progress {
             JobProgress::NodeHeartbeat => self.emit_plan_progress(),
             JobProgress::SourcePoints(processed) => {
@@ -873,10 +920,10 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         }
     }
 
-    fn build_root_from_las(
+    fn build_root_from_source<F: SourceFactory>(
         &mut self,
-        reader: &mut Reader,
-        input_path: &Path,
+        first: &mut F::Source,
+        factory: &F,
         source: &SourceInfo,
         bounds: SpatialBounds,
     ) -> Result<(), ConvertError> {
@@ -885,7 +932,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         let store = self.store;
         if !ctx.splits(source.point_count, 0, bounds) {
             let bytes = spool_source(
-                &mut LasPointSource::full(&mut *reader),
+                &mut *first,
                 source,
                 self.point_limit,
                 store,
@@ -913,9 +960,9 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             source,
             bounds,
             first_output,
-            &mut LasPointSource::full(reader),
+            &mut *first,
             store,
-            &SystemClock,
+            self.clock,
             &mut |progress| self.emit_job_progress(progress),
         )?;
         self.record_job_metrics(partition.metrics.as_ref(), false, &mut open)?;
@@ -929,9 +976,12 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             for spool in partition.release {
                 store.delete(spool)?;
             }
-            let mut source_reader = crate::las_source::open_las_reader(input_path)?;
+            let mut reopened = factory.open(PointRange {
+                start: 0,
+                end: source.point_count,
+            })?;
             let bytes = spool_source(
-                &mut LasPointSource::full(&mut source_reader),
+                &mut reopened,
                 source,
                 self.point_limit,
                 store,
@@ -951,7 +1001,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             return Ok(());
         }
 
-        let lod_write_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
+        let lod_write_started = self.spatial_phases.as_ref().map(|_| self.clock.now());
         let sample_spool =
             SpoolId(first_output.0 + usize::from(self.spatial_divisions).pow(3) as u64);
         let sample_count = write_lod(store, sample_spool, &partition.samples, bounds, self.layout)?;
@@ -978,14 +1028,18 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         )?;
 
         if let Some(open) = open.as_mut() {
-            open.event.elapsed_ns = elapsed_ns(open.started);
+            open.event.elapsed_ns = self.clock.elapsed_ns(open.started);
         }
         self.process_child_tasks(&root_path, root_id, 0, partition.children)?;
         self.finish_node_event(open);
         Ok(())
     }
 
-    fn build_node(&mut self, job: NodeJob, parent: Option<NodeId>) -> Result<NodeId, ConvertError> {
+    pub(crate) fn build_node(
+        &mut self,
+        job: NodeJob,
+        parent: Option<NodeId>,
+    ) -> Result<NodeId, ConvertError> {
         let id = NodeId::new(self.node_records.len() as u64);
         let input_bytes = job
             .point_count
@@ -999,7 +1053,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         &mut self,
         job: NodeJob,
         parent: Option<NodeId>,
-        mut open: Option<OpenNodeEvent>,
+        mut open: Option<OpenNodeEvent<C::Instant>>,
     ) -> Result<NodeId, ConvertError> {
         let id = NodeId::new(self.node_records.len() as u64);
         if let Some(open) = open.as_mut() {
@@ -1016,12 +1070,12 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         &mut self,
         job: NodeJob,
         parent: Option<NodeId>,
-        open: &mut Option<OpenNodeEvent>,
+        open: &mut Option<OpenNodeEvent<C::Instant>>,
     ) -> Result<NodeId, ConvertError> {
         let id = NodeId::new(self.node_records.len() as u64);
         let ctx = self.job_context();
         let store = self.store;
-        let output = run_node_job(&ctx, &job, store, &SystemClock, &mut |progress| {
+        let output = run_node_job(&ctx, &job, store, self.clock, &mut |progress| {
             self.emit_job_progress(progress)
         })?;
         for spool in &output.release {
@@ -1037,12 +1091,12 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
 
     /// Commits a finished job whose `release` was already deleted: metrics, event flags, block
     /// ids and the node record. Returns its children (empty for a leaf), not yet planned.
-    fn commit_job(
+    pub(crate) fn commit_job(
         &mut self,
         job: &NodeJob,
         mut output: NodeJobOutput,
         parent: Option<NodeId>,
-        open: &mut Option<OpenNodeEvent>,
+        open: &mut Option<OpenNodeEvent<C::Instant>>,
     ) -> Result<Vec<ChildOutput>, ConvertError> {
         debug_assert_eq!(output.path, job.path);
         let id = NodeId::new(self.node_records.len() as u64);
@@ -1069,7 +1123,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             output.blocks,
         )?;
         if !is_leaf && let Some(open) = open.as_mut() {
-            open.event.elapsed_ns = elapsed_ns(open.started);
+            open.event.elapsed_ns = self.clock.elapsed_ns(open.started);
         }
         Ok(children)
     }
@@ -1079,7 +1133,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         &mut self,
         metrics: Option<&JobMetrics>,
         input_is_child_spool: bool,
-        open: &mut Option<OpenNodeEvent>,
+        open: &mut Option<OpenNodeEvent<C::Instant>>,
     ) -> Result<(), ConvertError> {
         let Some(metrics) = metrics else {
             return Ok(());
@@ -1196,7 +1250,8 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 self.spatial_divisions,
             )?;
             self.workers_used = self.workers_used.max(batch_count);
-            let outputs = self.plan_batch_ready_queue(batch, worker_memory_budget)?;
+            let executor = self.executor;
+            let outputs = executor.plan_batch(self, batch, worker_memory_budget)?;
             for (_, mut branch) in outputs {
                 self.append_branch(parent_id, &mut branch)?;
             }
@@ -1206,14 +1261,16 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
 
     /// Runs `f` on a branch-local builder that holds `branch` and
     /// reports to this builder's progress callback, then stores the builder back into `branch`.
-    fn with_branch<R>(
+    pub(crate) fn with_branch<R>(
         &mut self,
         branch: &mut BranchOutput,
         memory_budget: u64,
-        f: impl FnOnce(&mut SpatialBuilder<'_, S>) -> R,
+        f: impl FnOnce(&mut SpatialBuilder<'_, S, C, X>) -> R,
     ) -> R {
         let mut builder = SpatialBuilder {
             store: self.store,
+            clock: self.clock,
+            executor: self.executor,
             spool_ids: self.spool_ids,
             point_limit: self.point_limit,
             memory_budget,

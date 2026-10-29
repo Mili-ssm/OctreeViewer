@@ -6,17 +6,22 @@ use std::path::Path;
 
 use las_source::convert_file_inner;
 
+mod blocks;
 mod checkpoint;
+mod diagnostic_timer;
 mod diagnostics;
 mod ept;
 mod ept_checkpoint;
 mod error;
+mod executor;
 mod fs_util;
 mod las_source;
+mod limits;
 mod options;
 mod pipeline;
 mod publish;
 mod report;
+mod source;
 mod spatial;
 
 pub use checkpoint::{CheckpointError, CheckpointMode};
