@@ -1,6 +1,6 @@
 # Referencia del CLI para el conversor web paralelo (29-10-2026)
 
-Registro fechado e inmutable (hito M0, etapa 1 del conversor web paralelo). Fija los SHA de salida del CLI nativo, contra los que se comprobará la paridad byte a byte del navegador (R1), y los tiempos de Belvedere para la no regresión nativa (R7). Datos crudos: [JSON](data/web-converter-baseline-2026-10-29.json). Evidencia cruda (no versionada): `target/m0/`.
+Registro fechado e inmutable (hito M0, etapa 1 del conversor web paralelo). Fija los SHA de salida del CLI nativo, contra los que se comprobará la paridad byte a byte del navegador (R1), y los tiempos de Belvedere para la no regresión nativa (R7). Datos crudos: [JSON](data/web-converter-baseline-2026-10-29.json). Evidencia cruda (no versionada): `target/m0/` (logs y ficheros de SHA citados); es efímera (`cargo clean` la borra), así que la evidencia duradera es este registro y el JSON.
 
 ## Entorno
 
@@ -48,7 +48,7 @@ SHA completos en el [JSON](data/web-converter-baseline-2026-10-29.json). Belvede
 | Pared `/usr/bin/time` (s) | 26,29 | 25,42–26,43 |
 | RSS pico (kB) | 276.076 | 270.616–291.392 |
 
-El modo `convert` no imprime las ventanas `internal_*` (solo `convert-profile`); las fases por etapa (`stage_*`) sí. Los SHA de las rondas se comprobaron solo por prefijo de 12 hex (ver «Comandos»).
+El modo `convert` no imprime las ventanas `internal_*` (solo `convert-profile`); las fases por etapa (`stage_*`) sí. Los SHA de las rondas se comprobaron solo por prefijo de 12 hex (ver «Opciones del bench»).
 
 **Referencia R7:** `real_dataset_bench convert`, total (`conversion_elapsed_ms`), 4 workers, perfil `perf`, mediana de 5 rondas = 26.269 ms (primera fila de la tabla).
 

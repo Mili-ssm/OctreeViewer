@@ -248,3 +248,5 @@ trabajo, si las arenas caben en cuota), enlazado desde `docs/README.md`; `script
 La etapa 2 (M1: traits con arenas dentro de `viewer_convert`, R7 con ≥ 5 rondas A/B alternadas) se
 planifica con los resultados de S0 y S1; los cambios de forma del `SpoolStore` que salgan de S1 se
 incorporan antes a la spec.
+
+S0 con bloques reales de Belvedere (la spec exige identidad de bytes «en fixtures y bloques Belvedere»; el arnés actual usa solo bloques sintéticos) queda **pendiente** para la etapa 2, antes de M3a.

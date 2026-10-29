@@ -611,7 +611,7 @@ impl ChildSpool {
     }
 }
 
-/// Spool byte totals shared by every spatial worker; only touched once per planned node.
+/// Spool byte totals shared by every spatial worker; updated on every 32 KiB spool flush and delete.
 #[derive(Default)]
 struct SpoolLedger {
     written: AtomicU64,

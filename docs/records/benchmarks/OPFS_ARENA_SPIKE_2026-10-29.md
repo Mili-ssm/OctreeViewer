@@ -9,10 +9,10 @@
 
 | Criterio de parada | Resultado |
 | --- | --- |
-| Pico modelado > 1,5 × conjunto vivo nativo | **SE CUMPLE en Belvedere (divisiones por defecto, 2,64×) y en Majadas (6,53×)**; no en Belvedere con divisiones 8 (1,05× con N=4, 1,15× con N=8) |
+| Pico modelado > 1,5 × conjunto vivo nativo | **SE CUMPLE en Belvedere (divisiones por defecto, 2,64×) y en Majadas (6,53×)**; no en el modelo optimista de Belvedere con divisiones 8 (1,05× con N=4, 1,15× con N=8); con arenas retenidas hasta la fase de bloques el rango es ~0,94×–1,88× (ver «Cotas con arenas retenidas») |
 | OPFS no disponible en `file://` en Firefox | No se cumple: Firefox 157 funciona igual en `file://` y en HTTP |
 | OPFS en `file://` en Chrome | **No disponible** (`SecurityError` en el worker, medido en las 6 celdas del `.jsonl`; el hilo principal se comprobó ad hoc, sin fila en el `.jsonl`) |
-| Cuota frente a Majadas | **El conjunto vivo nativo de Majadas (19,2 GiB) ya supera la cuota medida (10 GiB)**: ningún diseño de arenas basta por sí solo |
+| Cuota frente a Majadas | **El conjunto vivo nativo de Majadas con el planificador por defecto (19,2 GiB, pico de una sola ejecución con divisiones 2 y 4 workers) supera la cuota medida (10 GiB)**. Depende del planificador (Belvedere: 4,67 GB con 1 worker, 6,0 GB con 4, 3,29 GiB con divisiones 8; Majadas con divisiones 8 o 1 worker no se midió), así que no se concluye que ningún diseño baste |
 
 ### Decisiones para el propietario
 
@@ -25,8 +25,8 @@
 
 **Hay que replantear `SpoolStore` con el propietario antes de la etapa 2**: con arenas «un fichero por
 trabajo de subárbol raíz» el pico OPFS es, con las divisiones por defecto, entre 2,6 y 6,5 veces el
-nativo (Majadas llegaría a ~125 GiB). Aun con el mejor diseño, el conjunto vivo nativo de Majadas (19,2 GiB)
-supera la cuota de 10 GiB medida. La medida de OPFS en sí no es el problema (ver más abajo): el
+nativo (Majadas llegaría a ~125 GiB). Con el planificador por defecto, el conjunto vivo nativo de Majadas
+(19,2 GiB, una ejecución) supera la cuota de 10 GiB medida; con otro reparto podría ser menor (no medido). La medida de OPFS en sí no es el problema (ver más abajo): el
 problema es que una arena de solo añadido no libera nada hasta que acaba el trabajo.
 
 ---
@@ -55,7 +55,7 @@ problema es que una arena de solo añadido no libera nada hasta que acaba el tra
    problema a la RAM.
 
 **Fórmula:** `pico_modelado = nivel1 + Σ (N mayores root_child_spool_bytes_written)`.
-El conjunto vivo nativo es `peak_live_spool_bytes` (exacto salvo búferes de 32 KiB sin volcar).
+El conjunto vivo nativo es `peak_live_spool_bytes` (exacto salvo búferes de 32 KiB sin volcar) **para una ejecución**: con workers > 1 varía entre ejecuciones por el entrelazado de hilos (Belvedere, 4 workers, divisiones 2: 6,00 frente a 6,13 GB en dos ejecuciones; solo la de 6,13 GB está archivada en el JSON), así que «exacto» no vale para la configuración.
 
 | Conjunto | Hijos raíz no vacíos | Nivel 1 (GiB) | Σ N=4 (GiB) | Σ N=8 (GiB) | Pico vivo nativo (GiB) | Modelo N=4 (GiB) | × nativo | Modelo N=8 (GiB) | × nativo |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -71,13 +71,34 @@ Notas:
   hijo solo baja Belvedere d2 a Σ subárboles / nativo ≈ 11,94/5,71 = **2,09×**, aún > 1,5×.
 - El encargo anticipaba 4, 80 y 7 entradas; en el JSON hay 4, 81 (69 no vacías) y 7 (4 no vacías).
 - Con 4 hijos raíz, N=8 no añade nada: ya están todos en curso.
+- **El 1,05× de divisiones 8 es optimista.** El modelo solo suma los N subárboles en curso, pero según la
+  spec («Spools por arenas de trabajo») una arena con spools hoja/LOD vivos no se puede borrar hasta la
+  fase de bloques, y una arena de solo añadido no libera nada a mitad de trabajo. Todos los spools de
+  subárbol escritos siguen vivos al terminar la fase espacial. Véase «Cotas con arenas retenidas».
 - Con divisiones 8 el modelo cabe porque el reparto es fino (máximo 0,087 GiB por subárbol). Con
   divisiones 2 el subárbol mayor de Majadas escribe 42,9 GiB, que el nativo va borrando por el camino y
   una arena de solo añadido acumularía.
 - Vía a evaluar con el propietario (no decidida aquí): trabajos más finos que el hijo raíz (por nodo de
   nivel 2), o arenas por generación con borrado intermedio; ambas cambian la partición del paralelismo.
-- Incluso en el caso bueno, 3,5–3,8 GiB de pico OPFS caben en la cuota medida (10 GiB), pero 15 GiB y
+- Incluso en el caso optimista, 3,5–3,8 GiB de pico OPFS caben en la cuota medida (10 GiB), pero 15 GiB y
   125 GiB no.
+
+### Cotas con arenas retenidas (Belvedere, divisiones 8)
+
+Datos del JSON (`profile_runs.belvedere_divisions8`): `spool_bytes_written` = 6.660.894.157 B (6,20 GiB),
+carga útil de nivel 1 = `block_stream_source_payload_read_bytes` = 3.348.975.489 B (3,12 GiB), pico vivo
+nativo = 3.535.907.518 B (3,29 GiB). Σ subárboles = 6.660.894.157 − 3.348.975.489 = 3.311.918.668 B (3,08 GiB).
+
+| Escenario | Fórmula | GiB | × nativo |
+| --- | --- | --- | --- |
+| Cota inferior: nivel 1 liberado según se consume; los spools de subárbol quedan vivos hasta la fase de bloques | `Σ subárboles / pico nativo` = 3,08 / 3,29 | 3,08 | **0,94** |
+| Cota superior: la arena de la raíz (nivel 1) se retiene hasta el final | `spool_bytes_written / pico nativo` = 6,20 / 3,29 | 6,20 | **1,88** |
+| Modelo publicado arriba (N=4) | `nivel 1 + Σ 4 mayores` | 3,46 | 1,05 |
+
+Ambas cotas son aproximaciones de la misma ejecución, no medidas con arenas reales. El 1,05× es
+optimista: la cota superior supera el criterio de 1,5×, y la inferior (0,94×) solo lo cumple si el
+nivel 1 se libera a medida que se consume. Por tanto, trabajos más finos por sí solos no garantizan
+pasar el criterio; hace falta además liberación intermedia (arenas por generación) o spools en RAM.
 
 ---
 
@@ -138,7 +159,7 @@ la fase del worker más lento.
 - `removeEntry` de 1 GiB: 16–413 ms según N; es un coste de fin de trabajo, no del camino caliente.
 - Cuota: 10 GiB en Firefox y 11 200–13 248 MiB en Chrome (HTTP), perfiles persistentes nuevos. N=8 × 1 GiB
   cabe, pero los picos modelados de 15 y 125 GiB no cabrían, y el conjunto vivo nativo de Majadas
-  (19,2 GiB) tampoco.
+  (19,2 GiB, planificador por defecto) tampoco.
 
 ## Qué no se midió y por qué
 
@@ -164,6 +185,7 @@ la fase del worker más lento.
 2. **Conflicto con R8**: `file://` en Firefox funciona; en Chrome no (`SecurityError` en el worker). Si
    el paquete se abre con doble clic en Chrome, la conversión OPFS no estará disponible (el visor puede
    servirse por HTTP local). Decisión del propietario.
-3. **Majadas no cabe solo con diseño**: su conjunto vivo nativo (19,2 GiB) ya supera los 10 GiB medidos;
-   haría falta una cuota > ~19 GiB más la pareja de salida (cuota real y `persist()` no medidos).
+3. **Majadas con el planificador por defecto no cabe**: su conjunto vivo nativo (19,2 GiB, una ejecución,
+   divisiones 2 y 4 workers) supera los 10 GiB medidos; haría falta una cuota > ~19 GiB más la pareja de
+   salida (cuota real y `persist()` no medidos). Con otro reparto (divisiones 8, 1 worker) no se midió.
 4. Bloque de añadido ≥ 1 MiB; un handle por trabajo.

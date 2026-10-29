@@ -24,3 +24,11 @@ x86_64. The browser converter must produce the same bytes as the CLI
 Remove the `[patch.crates-io]` entry and `exclude` for `vendor/lz4_flex` from the root `Cargo.toml`,
 delete `vendor/lz4_flex/`, run `cargo update -p lz4_flex`, and drop the "format parity wasm32" step
 from `scripts/check.sh` (or accept that digests differ).
+
+## Known limitation: dictionaries on wasm32
+
+`init_dict` (`src/block/compress.rs`, ~:593) bounds its loop with `size_of::<usize>()` (4 on wasm32),
+while the patched `get_hash_at` reads 8 bytes. With `compress_with_dict` on wasm32 this can read past
+the end of the dictionary and panic. It is unreachable today: `crates/viewer_format/src/codec.rs`
+uses only `block::compress` / `decompress_into`. Anyone using dictionaries must patch `init_dict`
+(bound of 8 bytes) first.
