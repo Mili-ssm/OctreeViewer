@@ -14,8 +14,8 @@ características inestables se adoptan solo con evidencia de benchmark.
 scripts/check.sh
 ```
 
-Es el único punto de entrada (14 pasos hoy): tests y clippy con features por defecto y con
-`--all-features`, clippy `wasm32`, `cargo doc` con `-D warnings`, `fmt`, tests Node, tres suites
+Es el único punto de entrada (22 pasos con el dataset de Belvedere y fuzz; menos sin ellos): tests y clippy con features por defecto y con
+`--all-features`, clippy `wasm32`, el núcleo `viewer_convert_core` para wasm32 (`cargo check`, clippy y `cargo tree` sin `laz-parallel`/`rayon`/`ctrlc`; alias `cargo check-core-web`), paridad wasm32/nativo bajo Node de bloques (`format parity wasm32`, y `format parity real blocks` si existe Belvedere) y de la conversión completa (`convert parity wasm32`, `tools/convert_parity`), `cargo doc` con `-D warnings`, `fmt`, tests Node, tres suites
 Python, comprobación de enlaces (`scripts/check_docs_links.py`, excepciones en
 `scripts/docs-links-allowlist.txt`), literales de versión (`scripts/check_version_literals.sh`) y
 `git diff --check HEAD`. Por defecto usa `--offline`; `CHECK_LOCKED=1` usa `--locked` (así lo

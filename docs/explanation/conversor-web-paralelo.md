@@ -74,13 +74,13 @@ flowchart LR
   CORE --> FMT[viewer_format]
 ```
 
-- **`viewer_convert_core`** (crate nuevo): lógica pura del pipeline. Sin `std::fs`, `std::thread`,
+- **`viewer_convert_core`** (existe desde la etapa 3; M2): lógica pura del pipeline. Sin `std::fs`, `std::thread`,
   `Instant` ni `laz-parallel`; un lint `disallowed-methods` y un `cargo check` wasm32 en
   `scripts/check.sh` lo garantizan. Sin `dyn` ni asignaciones por punto en el bucle caliente.
 - **`viewer_convert`**: shell nativo. Implementa los traits con ficheros e hilos y conserva CLI,
   checkpoints, EPT y publicación.
 - **`viewer_wasm`**: shell del navegador. Expone cada tipo de trabajo como función wasm-bindgen e
-  implementa los traits sobre OPFS y Blob. Sustituye a `browser_convert.rs`, que se elimina.
+  implementa los traits sobre OPFS y Blob. `core_convert.rs` (`WasmCoreConverter`, M3a) ya usa el núcleo, pero `browser_convert.rs` sigue siendo el motor por defecto del host hasta M3b, que lo elimina.
 - **web-host**: un coordinador (worker líder) reparte trabajos a un pool de N workers y es el único
   escritor de la salida.
 
@@ -89,7 +89,7 @@ flowchart LR
 | Trait | Responsabilidad | Nativo | Navegador |
 | --- | --- | --- | --- |
 | `SpoolStore` | Un fichero por spool: crear, añadir, leer y borrar (decisión del 29-10-2026, abajo) | Ficheros en el directorio de trabajo | Segmentos `ArrayBuffer` de JS; al superar el presupuesto, volcado a un fichero OPFS propio por spool (híbrido) |
-| `PointSource` | Leer puntos por rango de chunks LAZ (o rango de registros LAS), con offset global de punto para errores | `las::Reader` con `laz-parallel` | Decodificador secuencial que empieza en el offset de bytes del chunk (sin `Reader::seek` en chunks variables) |
+| `PointSource` | Leer puntos por rango de chunks LAZ (o rango de registros LAS), con offset global de punto para errores | Registros LAS y serie: `las::Reader`; rangos LAZ: el del núcleo | En el núcleo, `LazChunkPointSource` sobre `Read + Seek`: arma en memoria un LAZ mínimo (prefijo de 8 B + subtabla de los chunks del rango) y decodifica desde su inicio, sin `seek` ([S2](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)) |
 | `Clock` | Tiempos de diagnóstico | `Instant` | `performance.now()` |
 | Trabajos | Entradas/salidas serializables de cada fase | Ejecutados por hilos/rayon | Mensajes a workers, búferes transferibles |
 
@@ -113,6 +113,8 @@ mitad de un trabajo: el host lo hace entre trabajos. Leer un spool devuelve los 
 RAM o de OPFS. El pico OPFS es la suma de los ficheros volcados vivos (modelo de la Tarea 1, variante
 c, como cota superior) y el coste es el número de ficheros y handles simultáneos, acotado por el
 presupuesto de RAM; el pico de RAM del híbrido lo mide S10.
+
+> **Decisión del propietario 3 (29-10-2026), tras [S10](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md):** P1/P2 superan el criterio de parada de handles en divisiones 8 (513 por trabajo). Se propone P3: solo el coordinador abre handles y vuelca (segmentos de 1 MiB, contrapresión K = 8). M3b la prueba con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas (tiempo, PSS, ficheros volcados).
 
 ## Flujo de datos
 
@@ -181,7 +183,7 @@ presupuesto de RAM; el pico de RAM del híbrido lo mide S10.
 | Hito | Entrega | Criterio de cierre | Criterio de parada |
 | --- | --- | --- | --- |
 | S0 | Igualdad de bytes nativo/wasm32 en `viewer_format` con `lz4_flex` parcheado; test en `check.sh` | Bytes idénticos en fixtures y bloques Belvedere | Sin igualdad tras 3 días: consultar si los SHA nativos pueden cambiar (choca con R7) |
-| M0 | Referencia: SHA del CLI (LAS pequeño, autzen, LAZ multi-chunk, Belvedere, Belvedere divisiones 8, Majadas) y tiempos Belvedere, perfil `perf`, ≥ 5 rondas alternadas, con tiempo de jerarquía | Registro fechado | — |
+| M0 | Referencia (los SHA los sustituyen las [referencias R1](../records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md) por la decisión 4, ADR 0016; los tiempos siguen siendo los de M0): SHA del CLI (LAS pequeño, autzen, LAZ multi-chunk, Belvedere, Belvedere divisiones 8, Majadas) y tiempos Belvedere, perfil `perf`, ≥ 5 rondas alternadas, con tiempo de jerarquía | Registro fechado | — |
 | S1 | Modelo y medida de arenas OPFS (bytes escritos frente a vivos, handles, añadidos de 32 KiB y 1 MiB) | Modelo validado; forma de `SpoolStore` fijada | Pico modelado > 1,5 × el conjunto vivo, u OPFS no disponible en `file://` en Firefox: replantear `SpoolStore` o volver a R8 con el propietario |
 | M1 | Traits (un fichero por spool; en la web, híbrido RAM/OPFS) extraídos dentro de `viewer_convert`, sin cambio de comportamiento; tests de independencia ampliados | SHA idénticos; R7 | Regresión > 3% tras dos intentos: revertir la extracción |
 | M2 | `viewer_convert_core` separado; compila para wasm32; partición por rangos de chunks ejecutada en nativo con W = 1..8 | SHA iguales para todo W en Belvedere y LAZ multi-chunk; check wasm32 y lint en `check.sh` | El núcleo necesita `dyn` o asignación por punto |
