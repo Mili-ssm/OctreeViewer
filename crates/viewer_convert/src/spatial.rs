@@ -3,12 +3,7 @@ use std::{
     fs,
     io::{self, Read, Write},
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc,
-    },
-    thread,
+    sync::atomic::{AtomicU64, Ordering},
     time::Instant,
 };
 
@@ -22,7 +17,6 @@ use viewer_format::{FormatMetadata, SourcePointBlock};
 use super::{ConvertError, ConvertOptions};
 use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
-use crate::options::SpatialScheduler;
 use crate::pipeline::{
     clock::{Clock, SystemClock},
     node_job::{
@@ -479,7 +473,6 @@ fn plan_spatial<S: PlanStore>(
         source_point_count: source.point_count,
         parallel_workers: options.spatial_workers(),
         workers_used: 1,
-        scheduler: options.spatial_scheduler(),
         spool_diagnostics: collect_spool_diagnostics.then(|| SpatialSpoolDiagnostics {
             source_payload_written_bytes: source_spool_bytes_written,
             ..SpatialSpoolDiagnostics::default()
@@ -667,13 +660,6 @@ struct BranchOutput {
     node_events: Vec<NodeSpoolEvent>,
 }
 
-// `Finished` is sent once per root-child branch, so the size gap costs nothing.
-#[allow(clippy::large_enum_variant)]
-enum BranchMessage {
-    Progress(ConversionProgress),
-    Finished(u16, Result<BranchOutput, ConvertError>),
-}
-
 struct SpatialBuilder<'a, S: PlanStore> {
     store: &'a S,
     /// Next unreserved spool id, shared by every branch.
@@ -690,8 +676,6 @@ struct SpatialBuilder<'a, S: PlanStore> {
     source_point_count: u64,
     parallel_workers: usize,
     workers_used: usize,
-    /// How the root-child batches run; branch builders never batch, so they keep `Recursive`.
-    scheduler: SpatialScheduler,
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     spatial_phases: Option<SpatialPhaseDiagnostics>,
     /// Bytes this builder (not its siblings) has written, for per-root-child accounting.
@@ -1212,139 +1196,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 self.spatial_divisions,
             )?;
             self.workers_used = self.workers_used.max(batch_count);
-            if self.scheduler == SpatialScheduler::ReadyQueue {
-                let outputs = self.plan_batch_ready_queue(batch, worker_memory_budget)?;
-                for (_, mut branch) in outputs {
-                    self.append_branch(parent_id, &mut branch)?;
-                }
-                continue;
-            }
-
-            let cancelled = Arc::new(AtomicBool::new(false));
-            let (sender, receiver) = mpsc::sync_channel::<BranchMessage>(batch_count * 4);
-            let store = self.store;
-            let spool_ids = self.spool_ids;
-            let point_limit = self.point_limit;
-            let frame = self.frame;
-            let layout = self.layout;
-            let spatial_divisions = self.spatial_divisions;
-            let source_point_count = self.source_point_count;
-            let collect_spool_diagnostics = self.spool_diagnostics.is_some();
-            let mut outputs = Vec::with_capacity(batch_count);
-            let mut first_error = None;
-
-            thread::scope(|scope| {
-                for task in batch {
-                    let cancelled = Arc::clone(&cancelled);
-                    let sender = sender.clone();
-                    scope.spawn(move || {
-                        let key = task.key;
-                        let result = (|| {
-                            let mut report_progress = |progress| {
-                                !cancelled.load(Ordering::Relaxed)
-                                    && sender.send(BranchMessage::Progress(progress)).is_ok()
-                                    && !cancelled.load(Ordering::Relaxed)
-                            };
-                            let mut builder = SpatialBuilder {
-                                store,
-                                spool_ids,
-                                point_limit,
-                                memory_budget: worker_memory_budget,
-                                spatial_divisions,
-                                frame,
-                                layout,
-                                node_records: Vec::new(),
-                                output_blocks: Vec::new(),
-                                next_block_id: 0,
-                                on_progress: &mut report_progress,
-                                source_point_count,
-                                parallel_workers: 1,
-                                workers_used: 1,
-                                scheduler: SpatialScheduler::Recursive,
-                                spool_diagnostics: collect_spool_diagnostics
-                                    .then(SpatialSpoolDiagnostics::default),
-                                spatial_phases: collect_spool_diagnostics
-                                    .then(SpatialPhaseDiagnostics::default),
-                                spool_written_local: 0,
-                                node_events: Vec::new(),
-                            };
-                            let job = builder.node_job(
-                                NodePath(vec![task.key]),
-                                1,
-                                task.bounds,
-                                task.spool,
-                                task.point_count,
-                                true,
-                            );
-                            builder.build_node(job, None)?;
-                            Ok(BranchOutput {
-                                node_records: builder.node_records,
-                                output_blocks: builder.output_blocks,
-                                next_block_id: builder.next_block_id,
-                                spool_diagnostics: builder.spool_diagnostics,
-                                spatial_phases: builder.spatial_phases,
-                                spool_written_local: builder.spool_written_local,
-                                node_events: builder.node_events,
-                            })
-                        })();
-                        if result.is_err() {
-                            cancelled.store(true, Ordering::Relaxed);
-                        }
-                        let _ = sender.send(BranchMessage::Finished(key, result));
-                    });
-                }
-                drop(sender);
-
-                let mut finished_workers = 0;
-                while finished_workers < batch_count {
-                    match receiver.recv() {
-                        Ok(BranchMessage::Progress(progress)) => {
-                            if first_error.is_none()
-                                && let Err(error) = emit_progress(self.on_progress, progress, 0)
-                            {
-                                cancelled.store(true, Ordering::Relaxed);
-                                first_error = Some(error);
-                            }
-                        }
-                        Ok(BranchMessage::Finished(key, result)) => {
-                            match result {
-                                Ok(output) => outputs.push((key, output)),
-                                Err(error) if first_error.is_none() => {
-                                    cancelled.store(true, Ordering::Relaxed);
-                                    first_error = Some(error);
-                                }
-                                Err(error @ ConvertError::Cancelled { .. }) => {
-                                    first_error.get_or_insert(error);
-                                }
-                                Err(error) => {
-                                    cancelled.store(true, Ordering::Relaxed);
-                                    if matches!(
-                                        first_error.as_ref(),
-                                        Some(ConvertError::Cancelled { .. })
-                                    ) {
-                                        first_error = Some(error);
-                                    }
-                                }
-                            }
-                            finished_workers += 1;
-                        }
-                        Err(_) => {
-                            cancelled.store(true, Ordering::Relaxed);
-                            first_error.get_or_insert_with(|| {
-                                ConvertError::Io(io::Error::other(
-                                    "spatial worker channel closed unexpectedly",
-                                ))
-                            });
-                            break;
-                        }
-                    }
-                }
-            });
-
-            if let Some(error) = first_error {
-                return Err(error);
-            }
-            outputs.sort_by_key(|(key, _)| *key);
+            let outputs = self.plan_batch_ready_queue(batch, worker_memory_budget)?;
             for (_, mut branch) in outputs {
                 self.append_branch(parent_id, &mut branch)?;
             }
@@ -1375,7 +1227,6 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             source_point_count: self.source_point_count,
             parallel_workers: 1,
             workers_used: 1,
-            scheduler: SpatialScheduler::Recursive,
             spool_diagnostics: branch.spool_diagnostics.take(),
             spatial_phases: branch.spatial_phases.take(),
             spool_written_local: branch.spool_written_local,

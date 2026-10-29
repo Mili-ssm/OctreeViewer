@@ -16,11 +16,7 @@ use super::{
     CheckpointError, CheckpointMode, ConversionStage, ConvertError, ConvertOptions, convert_file,
     convert_file_with_checkpoint, convert_file_with_diagnostics, convert_file_with_progress,
 };
-use crate::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS, SpatialScheduler};
-
-/// Both spatial schedulers; every outcome below must be the same under each.
-const SCHEDULERS: [SpatialScheduler; 2] =
-    [SpatialScheduler::Recursive, SpatialScheduler::ReadyQueue];
+use crate::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
 
 #[test]
 fn visual_scale_normalizes_bounds_without_changing_coordinates() {
@@ -1476,19 +1472,12 @@ fn spool_diagnostics_account_written_and_live_bytes() {
         .unwrap();
 
     let mut written = Vec::new();
-    for (workers, scheduler) in [
-        (1, SpatialScheduler::Recursive),
-        (2, SpatialScheduler::Recursive),
-        (2, SpatialScheduler::ReadyQueue),
-    ] {
-        let output = dir.join(format!("workers-{workers}-{scheduler:?}.oct"));
+    for workers in [1, 2] {
+        let output = dir.join(format!("workers-{workers}.oct"));
         let (_, diagnostics) = convert_file_with_diagnostics(
             &input,
             &output,
-            options
-                .with_spatial_workers(workers)
-                .unwrap()
-                .with_spatial_scheduler(scheduler),
+            options.with_spatial_workers(workers).unwrap(),
             |_| true,
         )
         .unwrap();
@@ -1513,7 +1502,7 @@ fn spool_diagnostics_account_written_and_live_bytes() {
             phases.root_child_spool_bytes_written,
         ));
     }
-    // Totals and per-root-child bytes do not depend on the worker count or the scheduler.
+    // Totals and per-root-child bytes do not depend on the worker count.
     assert!(written.windows(2).all(|pair| pair[0] == pair[1]));
 }
 
@@ -1529,18 +1518,12 @@ fn node_spool_events_match_child_spool_totals() {
         .unwrap();
 
     let mut shapes = Vec::new();
-    for (workers, scheduler) in [1, 2, 4]
-        .into_iter()
-        .flat_map(|workers| SCHEDULERS.map(|scheduler| (workers, scheduler)))
-    {
-        let output = dir.join(format!("events-{workers}-{scheduler:?}.oct"));
+    for workers in [1, 2, 4] {
+        let output = dir.join(format!("events-{workers}.oct"));
         let (_, diagnostics) = convert_file_with_diagnostics(
             &input,
             &output,
-            options
-                .with_spatial_workers(workers)
-                .unwrap()
-                .with_spatial_scheduler(scheduler),
+            options.with_spatial_workers(workers).unwrap(),
             |_| true,
         )
         .unwrap();
@@ -1700,24 +1683,15 @@ fn planner_snapshot_for(
         convert_file(input, &output, options.with_spatial_workers(1).unwrap()).unwrap();
         planner_snapshot(&output)
     };
-    for scheduler in SCHEDULERS {
-        for workers in [2, 4] {
-            let output = dir.join(format!("w{workers}-{scheduler:?}.oct"));
-            convert_file(
-                input,
-                &output,
-                options
-                    .with_spatial_workers(workers)
-                    .unwrap()
-                    .with_spatial_scheduler(scheduler),
-            )
-            .unwrap();
-            assert_eq!(
-                planner_snapshot(&output),
-                reference,
-                "workers={workers} {scheduler:?}"
-            );
-        }
+    for workers in [2, 4] {
+        let output = dir.join(format!("w{workers}.oct"));
+        convert_file(
+            input,
+            &output,
+            options.with_spatial_workers(workers).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(planner_snapshot(&output), reference, "workers={workers}");
     }
     reference
 }
@@ -1814,31 +1788,21 @@ fn planner_budget_outcome(
     budget: u64,
     workers: usize,
 ) -> Option<(u64, u64)> {
-    let mut outcomes = SCHEDULERS.map(|scheduler| {
-        let output = dir.join(format!("budget-{budget}-{workers}-{scheduler:?}.oct"));
-        let options = ConvertOptions::with_memory_budget(64, 0.01, budget)
-            .unwrap()
-            .with_spatial_divisions(4)
-            .unwrap()
-            .with_spatial_workers(workers)
-            .unwrap()
-            .with_spatial_scheduler(scheduler);
-        match convert_file(input, &output, options) {
-            Ok(_) => None,
-            Err(ConvertError::MemoryBudgetExceeded { requested, limit }) => {
-                assert!(!output.exists());
-                Some((requested, limit))
-            }
-            Err(other) => {
-                panic!("budget={budget} workers={workers} {scheduler:?}: unexpected {other:?}")
-            }
+    let output = dir.join(format!("budget-{budget}-{workers}.oct"));
+    let options = ConvertOptions::with_memory_budget(64, 0.01, budget)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap()
+        .with_spatial_workers(workers)
+        .unwrap();
+    match convert_file(input, &output, options) {
+        Ok(_) => None,
+        Err(ConvertError::MemoryBudgetExceeded { requested, limit }) => {
+            assert!(!output.exists());
+            Some((requested, limit))
         }
-    });
-    assert_eq!(
-        outcomes[0], outcomes[1],
-        "budget={budget} workers={workers}: schedulers differ"
-    );
-    outcomes[0].take()
+        Err(other) => panic!("budget={budget} workers={workers}: unexpected {other:?}"),
+    }
 }
 
 #[test]
@@ -1968,20 +1932,15 @@ fn convert_error_at(
     dir: &std::path::Path,
     workers: usize,
 ) -> ConvertError {
-    let [error, ready_queue_error] = SCHEDULERS.map(|scheduler| {
-        let output = dir.join(format!("err-{workers}-{scheduler:?}.oct"));
-        let options = ConvertOptions::new(16, 0.01)
-            .unwrap()
-            .with_spatial_divisions(4)
-            .unwrap()
-            .with_spatial_workers(workers)
-            .unwrap()
-            .with_spatial_scheduler(scheduler);
-        let error = convert_file(input, &output, options).unwrap_err();
-        assert!(!output.exists());
-        error
-    });
-    assert_eq!(error.to_string(), ready_queue_error.to_string());
+    let output = dir.join(format!("err-{workers}.oct"));
+    let options = ConvertOptions::new(16, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap()
+        .with_spatial_workers(workers)
+        .unwrap();
+    let error = convert_file(input, &output, options).unwrap_err();
+    assert!(!output.exists());
     error
 }
 
@@ -2312,18 +2271,15 @@ fn mem_spool_store_lifecycle_holds_for_whole_plans_and_leaves_no_spool() {
     let equal_cluster = dir.join("equal-cluster.las");
     equal_cluster_fixture(&equal_cluster);
     for input in [&dense, &clusters, &equal_cluster] {
-        for scheduler in SCHEDULERS {
-            for workers in [1, 2, 4] {
-                let options = ConvertOptions::new(16, 0.01)
-                    .unwrap()
-                    .with_spatial_divisions(4)
-                    .unwrap()
-                    .with_spatial_workers(workers)
-                    .unwrap()
-                    .with_spatial_scheduler(scheduler);
-                let phases = mem_plan_and_drain(input, options);
-                assert!(!phases.node_spool_events.is_empty());
-            }
+        for workers in [1, 2, 4] {
+            let options = ConvertOptions::new(16, 0.01)
+                .unwrap()
+                .with_spatial_divisions(4)
+                .unwrap()
+                .with_spatial_workers(workers)
+                .unwrap();
+            let phases = mem_plan_and_drain(input, options);
+            assert!(!phases.node_spool_events.is_empty());
         }
     }
 }
@@ -2493,83 +2449,72 @@ fn failing_plan(
     (error, store.inner.stats())
 }
 
-fn cluster_options(workers: usize, scheduler: SpatialScheduler) -> ConvertOptions {
+fn cluster_options(workers: usize) -> ConvertOptions {
     ConvertOptions::new(16, 0.01)
         .unwrap()
         .with_spatial_workers(workers)
         .unwrap()
-        .with_spatial_scheduler(scheduler)
 }
 
 #[test]
-fn a_job_error_leaves_no_live_spool_and_is_the_same_under_both_schedulers() {
+fn a_job_error_leaves_no_live_spool() {
     let tmp = test_dir();
     let input = tmp.path().join("clusters.las");
     sized_cluster_fixture(&input, [40, 40, 40, 40, 40, 300, 40, 40]);
-    for scheduler in SCHEDULERS {
-        for workers in [1, 2, 4, 8] {
-            let (error, stats) = failing_plan(
-                &input,
-                cluster_options(workers, scheduler),
-                &[(300, std::time::Duration::ZERO)],
-                &mut |_| true,
-            );
-            let case = format!("workers={workers} {scheduler:?}");
-            assert_eq!(
-                error.to_string(),
-                "injected read failure (300 points)",
-                "{case}"
-            );
-            assert_eq!((stats.live_bytes, stats.live_spools), (0, 0), "{case}");
-            assert!(stats.peak_spools > 1, "{case}");
-        }
+    for workers in [1, 2, 4, 8] {
+        let (error, stats) = failing_plan(
+            &input,
+            cluster_options(workers),
+            &[(300, std::time::Duration::ZERO)],
+            &mut |_| true,
+        );
+        let case = format!("workers={workers}");
+        assert_eq!(
+            error.to_string(),
+            "injected read failure (300 points)",
+            "{case}"
+        );
+        assert_eq!((stats.live_bytes, stats.live_spools), (0, 0), "{case}");
+        assert!(stats.peak_spools > 1, "{case}");
     }
 }
 
 #[test]
-fn cancelling_a_plan_leaves_no_live_spool_under_both_schedulers() {
+fn cancelling_a_plan_leaves_no_live_spool() {
     let tmp = test_dir();
     let input = tmp.path().join("clusters.las");
     sized_cluster_fixture(&input, [90, 60, 70, 80, 100, 50, 40, 120]);
-    for scheduler in SCHEDULERS {
-        for workers in [1, 2, 4] {
-            let mut updates = 0;
-            let (error, stats) = failing_plan(
-                &input,
-                cluster_options(workers, scheduler),
-                &[],
-                &mut |event| {
-                    if event.stage == ConversionStage::BuildingSpatialHierarchy {
-                        updates += 1;
-                        updates < 12
-                    } else {
-                        true
-                    }
-                },
-            );
-            let case = format!("workers={workers} {scheduler:?}");
-            assert!(
-                matches!(error, ConvertError::Cancelled { .. }),
-                "{case}: {error:?}"
-            );
-            assert_eq!(updates, 12, "{case}: no progress after the cancel");
-            assert_eq!((stats.live_bytes, stats.live_spools), (0, 0), "{case}");
-        }
+    for workers in [1, 2, 4] {
+        let mut updates = 0;
+        let (error, stats) = failing_plan(&input, cluster_options(workers), &[], &mut |event| {
+            if event.stage == ConversionStage::BuildingSpatialHierarchy {
+                updates += 1;
+                updates < 12
+            } else {
+                true
+            }
+        });
+        let case = format!("workers={workers}");
+        assert!(
+            matches!(error, ConvertError::Cancelled { .. }),
+            "{case}: {error:?}"
+        );
+        assert_eq!(updates, 12, "{case}: no progress after the cancel");
+        assert_eq!((stats.live_bytes, stats.live_spools), (0, 0), "{case}");
     }
 }
 
 #[test]
 fn the_ready_queue_returns_the_lowest_preorder_job_error() {
     // Two root children fail in one batch of 8. The serial plan stops at the lowest preorder
-    // one; the ready queue must return the same even when that failure arrives last (R25),
-    // where the recursive threads return the first to arrive.
+    // one; the ready queue must return the same even when that failure arrives last (R25).
     let tmp = test_dir();
     let input = tmp.path().join("clusters.las");
     sized_cluster_fixture(&input, [40, 40, 300, 40, 40, 250, 40, 40]);
     let quick = std::time::Duration::ZERO;
     let (serial, _) = failing_plan(
         &input,
-        cluster_options(1, SpatialScheduler::Recursive),
+        cluster_options(1),
         &[(300, quick), (250, quick)],
         &mut |_| true,
     );
@@ -2582,7 +2527,7 @@ fn the_ready_queue_returns_the_lowest_preorder_job_error() {
     for _ in 0..5 {
         let (error, stats) = failing_plan(
             &input,
-            cluster_options(8, SpatialScheduler::ReadyQueue),
+            cluster_options(8),
             &[
                 (lowest, std::time::Duration::from_millis(100)),
                 (highest, quick),
@@ -2607,8 +2552,7 @@ fn a_panicking_progress_callback_propagates_under_the_ready_queue() {
         .with_spatial_divisions(4)
         .unwrap()
         .with_spatial_workers(2)
-        .unwrap()
-        .with_spatial_scheduler(SpatialScheduler::ReadyQueue);
+        .unwrap();
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let result = std::panic::catch_unwind(|| {
@@ -2644,7 +2588,6 @@ fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
             .unwrap()
             .with_spatial_workers(8)
             .unwrap()
-            .with_spatial_scheduler(SpatialScheduler::ReadyQueue)
     };
     let (job_only, _) = failing_plan(
         &input,

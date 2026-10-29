@@ -25,7 +25,7 @@ pub use diagnostics::{
     ValidationWorkerDiagnostics,
 };
 pub use error::ConvertError;
-pub use options::{ConvertOptions, SpatialScheduler};
+pub use options::ConvertOptions;
 pub use report::{ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats};
 
 /// Converts LAS/LAZ or a local laszip EPT dataset to the native format.

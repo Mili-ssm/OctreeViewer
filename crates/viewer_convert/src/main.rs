@@ -41,7 +41,6 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut spatial_workers = None;
     let mut pipelined_writes = false;
     let mut spatial_divisions = ConvertOptions::default().spatial_divisions();
-    let mut spatial_scheduler = ConvertOptions::default().spatial_scheduler();
     let mut checkpoint_mode = None;
     let mut format_version = ConvertOptions::default().format_version();
     let mut index = 2;
@@ -78,7 +77,6 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
             }
             "--spatial-workers" => spatial_workers = Some(value.to_string_lossy().parse()?),
             "--spatial-divisions" => spatial_divisions = value.to_string_lossy().parse()?,
-            "--spatial-scheduler" => spatial_scheduler = value.to_string_lossy().parse()?,
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;
@@ -88,9 +86,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
             .with_spatial_divisions(spatial_divisions)?
             .with_format_version(format_version)?;
-    options = options
-        .with_pipelined_writes(pipelined_writes)
-        .with_spatial_scheduler(spatial_scheduler);
+    options = options.with_pipelined_writes(pipelined_writes);
     if let Some(workers) = spatial_workers {
         options = options.with_spatial_workers(workers)?;
     }
@@ -177,12 +173,11 @@ fn print_help() {
         .join("/");
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--spatial-scheduler recursive|ready-queue] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
          Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
          Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
-         --spatial-scheduler ready-queue|recursive (LAS/LAZ only; default ready-queue) chooses whether those workers share the node jobs of a batch of root subtrees or each plan one root subtree; the output is the same.\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires one of {checkpoint_versions}.\n\

@@ -1,16 +1,16 @@
 //! Ready-queue scheduler (the default) for one virtual batch of root children
 //! ([`SpatialScheduler::ReadyQueue`](crate::SpatialScheduler::ReadyQueue)).
 //!
-//! The batch has as many threads as root children (`min(W, k)`, as the recursive scheduler) and
+//! The batch has as many threads as root children (`min(W, k)`, as the old per-branch threads did) and
 //! they take the ready node job with the lowest [`NodePath`]. Only jobs under this batch are
 //! dispatched (no lookahead, R16). When a job finishes, the host deletes its `release`, queues its
 //! children and keeps the output until a preorder cursor commits it into the branch-local builder
-//! of its root child; `append_branch` then merges the branches exactly as it merges the recursive
-//! threads, so node and block ids, budget checks and `TooManyBlocks` are the same.
+//! of its root child; `append_branch` then merges the branches in root-child order, so node and
+//! block ids, budget checks and `TooManyBlocks` match the serial plan.
 //!
 //! Errors are ordered by `(NodePath, Phase)` and the lowest wins (A8, R25): once one is known, no
 //! job above it is dispatched and running ones above it abort, while lower jobs and commits go on.
-//! `Cancelled` loses to any other error, as with the recursive threads.
+//! `Cancelled` loses to any other error.
 
 use std::{
     collections::BTreeMap,
