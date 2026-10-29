@@ -6,6 +6,7 @@ members = [
 	"crates/viewer_render_wgpu",
 	"crates/viewer_wasm",
 	"tools/format_parity",
+	"tools/laz_chunk_probe",
 ]
 resolver = "2"
 exclude = ["vendor/lz4_flex"]

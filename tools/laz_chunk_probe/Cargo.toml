@@ -1,0 +1,14 @@
+[package]
+name = "laz_chunk_probe"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+las = { workspace = true }
+# Same version as the lock via `las`; the probe needs `laz`'s chunk-table and decompressor types.
+laz = "0.13"
+thiserror = { workspace = true }
