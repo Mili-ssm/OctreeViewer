@@ -250,7 +250,7 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
   - El presupuesto de cada lote se calcula cuando el cursor llega al inicio del lote, antes de despachar sus trabajos, como hoy (`:1366-1373`). Usa los recuentos globales ya confirmados y el tamaño del lote.
   - Cada subárbol comprueba sus recuentos locales frente a ese presupuesto, como el builder de rama. Con `workers_used` = 1 se usan los recuentos globales frente a `planner_budget`.
   - Resultado: `MemoryBudgetExceeded` (incluidos `requested` y `limit`) es **idéntico al orden serie, y a hoy cuando como mucho una rama por lote falla**. Los tests `lib_tests.rs:500`, `:702`, `:829` y `:975` no cambian.
-- `TooManyBlocks` (R17): se reproduce tal cual. Con `workers_used` > 1 se comprueba dentro del subárbol con el contador local y, al salir de él, con el global, como `append_branch` (`:1518`); con 1, en cada asignación global.
+- `TooManyBlocks` (R17, R20): se reproduce tal cual. Con `workers_used` > 1 se comprueba dentro del subárbol con el contador local; la comprobación con el contador global se hace al final del lote, en orden de clave y solo si ningún trabajo del lote falló, como `append_branch` (`:1518`); con 1, en cada asignación global.
 
 **Errores deterministas (A8).**
 
