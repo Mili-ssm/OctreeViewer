@@ -768,5 +768,360 @@
     "ready_queue": 11.332
    }
   }
- }
+ },
+ "final_rows": [
+  {
+   "kind": "convert",
+   "round": 0,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20511.614",
+   "partition_ns": "",
+   "psi_before": "cpu:1.32 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.17 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 0,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "24068.195",
+   "partition_ns": "",
+   "psi_before": "cpu:0.17 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.01 io:0.00 memory:1.82 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 0,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20005.217",
+   "partition_ns": "9962127486",
+   "psi_before": "cpu:0.01 io:0.00 memory:1.49 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.20 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 0,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "20096.743",
+   "partition_ns": "10049577210",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.20 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.02 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 1,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23373.254",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.02 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.16 ",
+   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f"
+  },
+  {
+   "kind": "convert",
+   "round": 1,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20568.619",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.13 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.01 ",
+   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f"
+  },
+  {
+   "kind": "convert",
+   "round": 2,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20445.874",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.01 ",
+   "psi_after": "cpu:0.03 io:0.04 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 2,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23498.180",
+   "partition_ns": "",
+   "psi_before": "cpu:0.03 io:0.04 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.06 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 3,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23437.244",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.06 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 3,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20624.241",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 4,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20487.384",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 4,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23593.288",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 5,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23233.074",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 5,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20581.215",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 6,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20609.939",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.04 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 6,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23156.477",
+   "partition_ns": "",
+   "psi_before": "cpu:0.04 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 7,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23307.949",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 7,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20652.331",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.03 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 1,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19832.779",
+   "partition_ns": "9876428698",
+   "psi_before": "cpu:0.03 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": "fb90a490f9884239 b5124e84f7c4e12a"
+  },
+  {
+   "kind": "div8",
+   "round": 1,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19647.937",
+   "partition_ns": "9890924962",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.02 memory:0.00 ",
+   "sha": "fb90a490f9884239 b5124e84f7c4e12a"
+  },
+  {
+   "kind": "div8",
+   "round": 2,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19725.596",
+   "partition_ns": "9737545412",
+   "psi_before": "cpu:0.00 io:0.02 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 2,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19733.766",
+   "partition_ns": "9743090049",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 3,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19855.673",
+   "partition_ns": "10083705795",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 3,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20003.101",
+   "partition_ns": "10036628038",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 4,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19586.662",
+   "partition_ns": "9811272664",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 4,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19892.615",
+   "partition_ns": "9914024926",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 5,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19715.259",
+   "partition_ns": "9980477628",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 5,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19864.996",
+   "partition_ns": "10127249069",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 6,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19896.268",
+   "partition_ns": "9865606469",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 6,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19742.267",
+   "partition_ns": "9959779877",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 7,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19840.675",
+   "partition_ns": "9793036839",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 7,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20012.927",
+   "partition_ns": "9860980830",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  }
+ ],
+ "final_note": "final session on 2dd36e6 (arm 'fix' = HEAD) vs base dad2d26; round 0 = warm-up, discarded; kind convert = convert ... 4, div8 = convert-profile ... 4 8; sha on round 1 (.oct .octattrs, 16 hex)"
 }
