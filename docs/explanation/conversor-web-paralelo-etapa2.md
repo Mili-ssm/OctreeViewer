@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 4 espera a la Tarea 5 desde su paso 3.
+**Estado (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha y el paso 3 de la Tarea 4 (nativo) queda desbloqueado; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)).
 
 **Objetivo:** cerrar las tres incógnitas que dejó la etapa 1 (pico de los trabajos por nodo, S0
 con bloques reales, cuota real) y llegar a M1: el pipeline nativo expresado con traits y trabajos
@@ -98,17 +98,19 @@ Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este
 **Archivos:**
 - Crear: `docs/records/benchmarks/OPFS_SPOOL_FILES_<aaaa-mm-dd>.md` y `docs/records/benchmarks/data/opfs-spool-files-<aaaa-mm-dd>.{html,js,jsonl}`, más un driver de Playwright (reutilizar el patrón del driver de la Tarea 3; perfiles bajo `target/` en `/home`, nunca en `/tmp`; limpieza en `finally`).
 
-- [ ] **Paso 1:** página en la que N = 4 y 8 workers `Blob` crean cada uno los ficheros hijos de su trabajo (8 por trabajo con divisiones 2; hasta 81 en la raíz con divisiones 8) con `createSyncAccessHandle` abiertos a la vez, añaden en bloques de 32 KiB y de 1 MiB, cierran, y el host borra cada fichero en cuanto termina su consumidor. Hasta 700 ficheros vivos a la vez. Total de bytes ≤ 8 GiB por ejecución.
-- [ ] **Paso 2:** medir en Chrome y en Firefox de Playwright por http (y Firefox `file://`): ficheros vivos y handles abiertos simultáneos alcanzados, errores (`NoModificationAllowedError`, límites), latencia de `createSyncAccessHandle`, `flush` y `removeEntry` (p50/p95/máx) y rendimiento de escritura frente a la arena única de S1 de la misma sesión (volver a ejecutar la página de S1 como comparación; no copiar sus cifras).
-- [ ] **Paso 3: registro** — tabla por navegador × N; una ejecución por celda es aceptable si se declara.
-- [ ] **Criterio de parada:** si algún navegador falla por debajo de 700 ficheros vivos o de 8 × 81 handles abiertos, o el rendimiento cae más de 2 × frente a la arena única, volver al propietario antes del paso 3 de la Tarea 4.
-- [ ] **Paso 4: commit** — `docs(bench): record OPFS per-spool file spike`.
+- [x] **Paso 1:** página en la que N = 4 y 8 workers `Blob` crean cada uno los ficheros hijos de su trabajo (8 por trabajo con divisiones 2; hasta 81 en la raíz con divisiones 8) con `createSyncAccessHandle` abiertos a la vez, añaden en bloques de 32 KiB y de 1 MiB, cierran, y el host borra cada fichero en cuanto termina su consumidor. Hasta 700 ficheros vivos a la vez. Total de bytes ≤ 8 GiB por ejecución.
+- [x] **Paso 2:** medir en Chrome y en Firefox de Playwright por http (y Firefox `file://`): ficheros vivos y handles abiertos simultáneos alcanzados, errores (`NoModificationAllowedError`, límites), latencia de `createSyncAccessHandle`, `flush` y `removeEntry` (p50/p95/máx) y rendimiento de escritura frente a la arena única de S1 de la misma sesión (volver a ejecutar la página de S1 como comparación; no copiar sus cifras).
+- [x] **Paso 3: registro** — tabla por navegador × N; una ejecución por celda es aceptable si se declara.
+- [x] **Criterio de parada:** si algún navegador falla por debajo de 700 ficheros vivos o de 8 × 81 handles abiertos, o el rendimiento cae más de 2 × frente a la arena única, volver al propietario antes del paso 3 de la Tarea 4.
+- [x] **Paso 4: commit** — `docs(bench): record OPFS per-spool file spike`.
+
+**Estado (29-10-2026):** hecha ([registro](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox (~850 ficheros vivos, 664 handles, 0 errores), pero con un coste fijo por fichero de ~26–40 ms en Firefox y ~2,9–4,4 ms en Chrome (el criterio de 2 × no se cumple). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
 
 ---
 
 ### Tarea 4: M1 — traits y trabajos por nodo dentro de `viewer_convert`
 
-Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 espera a la Tarea 5. La Tarea 1 activó su criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (29-10-2026).
+Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 (nativo) está desbloqueado desde que la Tarea 5 se cerró. La Tarea 1 activó su criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (29-10-2026).
 
 **Archivos:**
 - Modificar: `crates/viewer_convert/src/spatial.rs`, `crates/viewer_convert/src/las_source.rs`, `crates/viewer_convert/src/lib.rs`, `crates/viewer_convert/src/error.rs`, `crates/viewer_convert/src/ept.rs`
@@ -293,7 +295,8 @@ Se planifican con los resultados de las Tareas 1–5, en este orden (spec, «Hit
 | --- | --- | --- |
 | M2 | Crate `viewer_convert_core` sin I/O que compila para wasm32; partición por rangos ejecutada en nativo con W = 1..8 y mismos SHA | Tarea 4 |
 | M3a | Conversión web con un worker sobre el núcleo, LAS pequeño, paridad en Chrome y Firefox | M2, Tarea 2 |
-| M3b | Un worker con ficheros OPFS por spool a escala Belvedere; eliminar `browser_convert.rs`; Chrome `file://` solo RAM (R8) | M3a |
+| S10 | Spike corto: pico de RAM del híbrido segmentos RAM + volcado por spool, con el presupuesto de la spec | Decisión 2 tras S9, Tarea 5 |
+| M3b | Un worker con spools híbridos RAM/OPFS a escala Belvedere; eliminar `browser_convert.rs`; Chrome `file://` solo RAM (R8) | M3a, S10 |
 | M4 | Pool de preparación y escritor ordenado; dimensionado S7 | M3b |
 | M5 | Pool de partición y trabajos por nodo; validación paralela | M4 |
 | M6 | Escala Majadas: preflight de cuota, spools en RAM con volcado, limpieza | M5, Tarea 3 |

@@ -29,7 +29,7 @@ ficheros, o un contador de la suma de `flush`) separaría la forma del árbol de
 | ¿Aguantan ≥ 700 ficheros vivos? | **Sí**: pico de 810–857 en las 24 ejecuciones de S9 (Chrome 156; Firefox 157 por http y por `file://`). |
 | ¿Aguantan 8 × 81 handles síncronos abiertos a la vez? | **Sí**: 664 handles simultáneos (8 trabajos anchos de 81 hijos + LOD + entrada) con N = 8 y d8, sin errores. |
 | ¿Errores (`NoModificationAllowedError`, cuota, límites)? | **Ninguno** en las 36 ejecuciones (12 por navegador y origen: 4 de S1 y 8 de S9). El pico de bytes vivos fue 2,95 GiB (d2) y 5,37 GiB (d8), bajo los 10 GiB de cuota por defecto de Firefox. |
-| ¿Rendimiento frente a la arena única (misma sesión)? | **No cumple el criterio de 2 ×** en extremo a extremo (tabla 1). En Firefox domina un coste fijo por archivo (≈ 26–40 ms de duración por fichero, ≈ 22–25 ms por handle; 3,2–5,9 × con 32 KiB, 18–33 × con 1 MiB por el sesgo de S1) que no depende del tamaño. En Chrome (2,2–3,3 ×; ≈ 2,7–4,4 ms de duración por fichero) la causa no está atribuida a los ficheros (ver arriba). |
+| ¿Rendimiento frente a la arena única (misma sesión)? | **No cumple el criterio de 2 ×** en extremo a extremo (tabla 1). En Firefox domina un coste fijo por archivo (≈ 26–40 ms de duración por fichero, ≈ 22–25 ms por handle; 3,2–5,9 × con 32 KiB, 18–33 × con 1 MiB por el sesgo de S1) que no depende del tamaño. En Chrome (2,2–3,3 ×; ≈ 2,9–4,4 ms de duración por fichero) la causa no está atribuida a los ficheros (ver arriba). |
 
 > Alcance: ejecución única por celda; Firefox 157 de Playwright (no 158); `persist()` no se tocó; el árbol
 > es sintético; los datos son ruido xorshift (incompresible), a diferencia de los ceros de S1. La comparación
@@ -37,7 +37,7 @@ ficheros, o un contador de la suma de `flush`) separaría la forma del árbol de
 > Sesgos conocidos: (1) S1 escribe ceros y S9 ruido; no se cuantificó cuánto del 1 MiB de Firefox es ese efecto. (2) S9 hace de cada hijo, hoja y LOD un
 > fichero propio (9 por trabajo), mientras que la especificación mantiene los spools pequeños como segmentos en RAM con
 > volcado a disco: S9 probablemente sobrestima el número de ficheros de la variante c. (3) Escala: Majadas escribe 134,7 GB de spools
-> y llega a 27,4 GB de pico en la variante c ([M0](WEB_CONVERTER_BASELINE_2026-10-29.md), [modelo](NODE_JOB_ARENA_MODEL_2026-10-29.md)), muy por encima de los 5,37 GiB de pico de S9.
+> y llega a 27,4 GB de pico en la variante c ([M0](WEB_CONVERTER_BASELINE_2026-10-29.md), [modelo](NODE_JOB_ARENA_MODEL_2026-10-29.md)), muy por encima de los 5,37 GiB de pico de S9. La cuota por defecto de Firefox (10 GiB, según [OPFS_QUOTA](OPFS_QUOTA_2026-10-29.md)) queda por debajo de esos 27,4 GB, así que hace falta `persist()`, como ya concluyó ese registro.
 
 ## Método
 
@@ -130,7 +130,7 @@ Tabla 2: latencias por operación en ms (p50 / p95 / máx) y tiempo acumulado de
 - **Chrome**: `getFileHandle`, `createSyncAccessHandle` y `removeEntry` cuestan ≈ 0,2–4 ms (p50 < 4 ms); `flush` es lo más caro (p50 4–9 ms, máx hasta 0,7 s). El e2e es 1,5–2,1 GB/s frente a 4–6 GB/s de S1: 2,2–3,3 ×.
 - **Firefox**: `getFileHandle` p50 12–28 ms, `createSyncAccessHandle` p50 32–92 ms, `removeEntry` p50 20–45 ms y el cierre de los handles ≈ 40–100 ms por fichero; crece con N (los 8 workers se serializan). Resultado: ≈ 150–250 MB/s de e2e **casi independiente del bloque**, es decir, el tiempo lo fija el número de ficheros (≈ 910 por ejecución), no los bytes. Frente a S1 con bloque de 1 MiB (≈ 4–5 GB/s) la razón sube a 18–33 ×; con 32 KiB, donde S1 ya es lento en Firefox (0,7–1,0 GB/s), es 3,2–5,9 ×.
 - `file://` en Firefox no difiere de http dentro del ruido de una ejecución por celda.
-- **Coste por fichero (tiempo de duración, no de worker).** Los 40–100 ms de apertura/cierre de arriba son tiempo de worker bajo contención (se duplican de N = 4 a 8). Dividiendo la duración de la ejecución entre ficheros (874–910): Firefox ≈ 26–40 ms por fichero (≈ 22–25 ms por handle), Chrome ≈ 2,7–4,4 ms por fichero.
+- **Coste por fichero (tiempo de duración, no de worker).** Los 40–100 ms de apertura/cierre de arriba son tiempo de worker bajo contención (se duplican de N = 4 a 8). Dividiendo la duración de la ejecución entre ficheros (874–910): Firefox ≈ 26–40 ms por fichero (≈ 22–25 ms por handle), Chrome ≈ 2,9–4,4 ms por fichero.
 - **Implicación para la Tarea 4** (decisión del propietario): el coste por fichero es el factor a vigilar en Firefox. No se probaron mitigaciones (reutilizar ficheros, agrupar hijos pequeños en una arena, abrir handles bajo demanda).
 - **Proyección a Majadas (inferencia, no medida).** Con 1,3 k–7,5 k ficheros a los costes por fichero anteriores, el sobrecoste sería de ≈ +30–300 s en Firefox y ≈ +4–30 s en Chrome, frente a los 221,96 s del CLI nativo ([M0](WEB_CONVERTER_BASELINE_2026-10-29.md)). Supone que el coste por fichero no cambia con el tamaño ni con el número de ficheros vivos, y los sesgos (1) y (2) de la nota de alcance van en sentidos opuestos.
 
