@@ -24,7 +24,6 @@ pub trait BatchPlanner<S: PlanStore, C: Clock> {
 }
 
 /// Runs everything in order on the calling thread.
-#[cfg_attr(not(test), allow(dead_code, reason = "used by the serial host loop"))]
 pub struct SerialExecutor;
 
 impl<S: PlanStore, C: Clock> BatchPlanner<S, C> for SerialExecutor {

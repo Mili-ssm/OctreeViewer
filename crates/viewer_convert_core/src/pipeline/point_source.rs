@@ -117,7 +117,6 @@ pub trait ByteSource {
 }
 
 /// In-memory input.
-#[cfg_attr(not(test), allow(dead_code, reason = "used by the serial host loop"))]
 pub struct MemBytes(pub Arc<[u8]>);
 
 impl ByteSource for MemBytes {
@@ -133,14 +132,9 @@ impl ByteSource for MemBytes {
 }
 
 /// Opens the sources the planner needs beyond the first one.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "split is used by M2 range planning")
-)]
 pub trait SourceFactory {
     type Source: PointSource;
     /// Contiguous ranges in order covering `0..point_count`, at most `parts`.
-    #[allow(dead_code, reason = "used by M2 range planning")]
     fn split(&self, parts: usize, batch: u64) -> Result<Vec<PointRange>, ConvertError>;
     /// A fresh source at `range.start`, preflight included.
     fn open(&self, range: PointRange) -> Result<Self::Source, ConvertError>;
@@ -165,7 +159,6 @@ impl<B: ByteSource> SourceFactory for LasFactory<B> {
     type Source = LasPointSource<Reader>;
 
     /// One range for now: there is no LAZ chunk index to cut compressed input yet.
-    #[cfg_attr(not(test), allow(dead_code, reason = "used by M2 range planning"))]
     fn split(&self, _parts: usize, _batch: u64) -> Result<Vec<PointRange>, ConvertError> {
         let end = self.open_reader()?.header().number_of_points();
         Ok(vec![PointRange { start: 0, end }])

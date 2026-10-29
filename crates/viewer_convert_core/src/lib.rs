@@ -21,6 +21,8 @@ pub mod pipeline;
 #[doc(hidden)]
 pub mod report;
 #[doc(hidden)]
+pub mod serial;
+#[doc(hidden)]
 pub mod source;
 #[doc(hidden)]
 pub mod spatial;
@@ -35,3 +37,4 @@ pub use pipeline::clock::NoClock;
 pub use pipeline::point_source::{ByteSource, LasFactory, MemBytes, SourceFactory};
 pub use pipeline::spool_store::{MemSpoolStore, SpoolStore};
 pub use report::{ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats};
+pub use serial::{PlanSummary, SerialOutput, convert_serial, validate_output_serial};
