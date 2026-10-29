@@ -3,31 +3,38 @@
 > Registro fechado. Cifras válidas solo para estos navegadores y este equipo (Linux 7.2.11, `/home` en
 > btrfs con `compress=zstd:1`, disco de 953 GB). La cuota depende del disco: no se traslada a otros
 > equipos. Diseño bajo prueba: [conversor-web-paralelo](../../explanation/conversor-web-paralelo.md)
-> (S8; R4). Continúa el hueco «cuota de un perfil real y `persist()` no medidos» de
+> (S8). Continúa el hueco «cuota de un perfil real y `persist()` no medidos» de
 > [OPFS_ARENA_SPIKE_2026-10-29.md](OPFS_ARENA_SPIKE_2026-10-29.md).
 
 ## Conclusión
 
+> Alcance: una ejecución por celda, perfil nuevo de Playwright, `persist()` concedido por preferencias
+> de prueba (sin diálogo real), Firefox 157 (no 158), una sola escritura secuencial de un worker (el
+> pico concurrente de spools no se probó) y datos de ceros, comprimibles. Ninguna ejecución produjo
+> `QuotaExceededError`.
+
 | Pregunta | Respuesta |
 | --- | --- |
-| ¿Cabe Majadas (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB)? | **Sí con `persist()` concedido en Firefox** (cuota declarada 476 GiB, ≥ 40 GiB escritos sin error). **No con la cuota por defecto de Firefox** (10 GiB, o con `persist()` denegado): el error llega a 9,999 GiB. **Chrome: no se encontró el límite**: declara 10 GiB pero aceptó ≥ 40 GiB sin error en los tres estados de `persist()`. |
-| ¿Hay que volver al propietario antes de M6? | Sí, por dos puntos (ver «Decisiones»): Firefox sin `persist()` no basta, y la cuota declarada de Chrome no es fiable como preflight (R4). |
+| ¿Cabe Majadas (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB)? | **Firefox con `persist()` concedido: no falló hasta 40 GiB en estas condiciones** (cuota declarada 476 GiB). **Firefox con la cuota por defecto o con `persist()` denegado: no cabe**; la escritura se corta (`write` devuelve 0) a 10 GiB − 1 MiB exactos, lo que se infiere que es la cuota de 10 GiB declarada. **Chrome: no falló hasta 40 GiB** en los tres estados de `persist()` (headless, perfil nuevo), por encima de la estimación de Majadas aunque declara 10 GiB; ese valor exacto de 10 GiB queda sin explicar. |
+| ¿Hay que volver al propietario antes de M6? | Sí (ver «Decisiones»): Firefox sin `persist()` no basta, y `estimate()` no sirve como preflight de R4 en Chrome. |
 
-**Estimación usada:** la de la spec (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB; véase
-[conversor-web-paralelo](../../explanation/conversor-web-paralelo.md), S8 y M6). El controlador
-actualizará la cifra si el modelo de la Tarea 1 difiere; no se recalculó aquí.
+**Estimación usada:** la de la spec (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB); véase
+[conversor-web-paralelo](../../explanation/conversor-web-paralelo.md) (hito M6 y spike S8 en «Hitos» y
+«Spikes»).
 
 ### Decisiones para el propietario
 
 1. **Firefox**: la conversión de Majadas exige que `persist()` sea concedido. Con 10 GiB no cabe ni el
    modelo. Hay que decidir si el preflight de R4 rechaza (con mensaje) cuando `persist()` es denegado y la
    estimación supera la cuota.
-2. **Chrome**: `estimate().quota` (10 GiB) no coincide con lo escribible (≥ 40 GiB). Un preflight basado
-   en `estimate()` rechazaría Majadas en Chrome sin motivo. No se sabe dónde falla Chrome de verdad
-   (el tope de seguridad de 40 GiB lo impidió); haría falta una prueba mayor o confiar en el aborto por
-   `QuotaExceededError` (R4/R5) en vez de en la estimación.
-3. **Firefox y `QuotaExceededError`**: con `FileSystemSyncAccessHandle.write` el fallo **no lanza
-   excepción**: `write` devuelve 0 bytes (escritura corta). El aborto limpio de R5 debe tratar una
+2. **Chrome**: aceptó escrituras por encima de la estimación de Majadas (≥ 40 GiB) en estas condiciones
+   (headless, perfil nuevo) con `estimate().quota` = 10 GiB, así que `estimate()` es inutilizable como
+   preflight. No se sabe dónde falla Chrome de verdad (el tope de 40 GiB lo impidió) ni por qué declara
+   exactamente 10 GiB; haría falta una prueba mayor o confiar en el aborto ante el fallo de escritura
+   (R4 y R5 de la [spec](../../explanation/conversor-web-paralelo.md#requisitos)) en vez de en la estimación.
+3. **Fallo de cuota en Firefox**: con `FileSystemSyncAccessHandle.write` no se observó
+   `QuotaExceededError`: `write` devolvió 0 bytes (escritura corta) a 10 GiB − 1 MiB (que sea la cuota es
+   una inferencia). El aborto limpio de R5 debe tratar una
    escritura corta como error de cuota.
 
 ---
@@ -39,6 +46,11 @@ actualizará la cifra si el modelo de la Tarea 1 difiere; no se recalculó aquí
   `file://`) añade bloques de 1 MiB con `FileSystemSyncAccessHandle.write` en ficheros de 1 GiB hasta
   `QuotaExceededError`, error de escritura o **tope de seguridad de 40 GiB**; después borra todo
   (`removeEntry` recursivo, también tras un fallo) y vuelve a leer `estimate()`.
+- Driver: [opfs-quota-2026-10-29-driver.mjs](data/opfs-quota-2026-10-29-driver.mjs), desde la raíz del
+  repositorio: `node docs/records/benchmarks/data/opfs-quota-2026-10-29-driver.mjs --out=<fichero>.jsonl`
+  (matriz completa) o con celdas `firefox:http:none`. Crea el perfil en `target/q3-profiles`, aplica
+  `persist()` (CDP / preferencias), registra `findmnt` y `df`, sirve HTTP y, en `finally`, cierra el
+  navegador, mata el servidor y borra el perfil. Los campos `*KiB` del `.jsonl` son KiB y los `*GiB` GiB.
 - Datos crudos: [opfs-quota-2026-10-29.jsonl](data/opfs-quota-2026-10-29.jsonl) (una fila por ejecución,
   con `df` antes/después, sistema de ficheros del perfil y fracción cuota/disco libre).
 - Automatización: Playwright (`playwright-core` 1.64.0-alpha), contexto persistente nuevo por ejecución,
@@ -58,7 +70,7 @@ actualizará la cifra si el modelo de la Tarea 1 difiere; no se recalculó aquí
 ## Resultados
 
 Una ejecución por celda, sin repeticiones. Cuota = `estimate().quota` antes de escribir, con uso 0.
-La fracción es cuota / espacio libre del disco antes de la ejecución (≈ 340–349 GB libres).
+La fracción es cuota / espacio libre del disco antes de la ejecución (≈ 340–349 GiB libres).
 
 | Navegador | Origen | `persist()` | `persisted()` tras | Cuota declarada | Cuota / disco libre | Escrito | Fin |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -80,18 +92,19 @@ Notas:
   por el tope).
 - Firefox falla en 10 GiB − 1 MiB (10 736 369 664 B): el bloque siguiente de 1 MiB ya no cabe.
 - `persist()` en Chrome headless no cambió la cuota declarada ni el comportamiento observado.
-- Borrado: `removeEntry` de 40 GiB tardó 2,1–3,1 s en Chrome y 3,0–3,1 s en Firefox; de 10 GiB, 0,6–1,4 s.
+- Borrado: `removeEntry` de 40 GiB tardó 2,09–2,61 s en Chrome y 3,04–3,13 s en Firefox; de ≈ 10 GiB (Firefox), 0,56–1,43 s.
   `estimate()` tras limpiar devolvió uso 0 (Chrome) y 491 520 B (Firefox, metadatos).
 
 ## Disco y limpieza
 
-- `/home` libre al empezar la tarea: 356 GB; al terminar todas las ejecuciones: 343 GB; las variaciones
-  por ejecución (±3 GB, columnas `freeBeforeKB`/`freeAfterKB` del `.jsonl`) vienen sobre todo de otros
-  procesos del equipo, no de las escrituras: **los datos son casi todo ceros y btrfs comprime con zstd**,
-  así que 40 GiB lógicos casi no ocupan disco. Esta medida es válida para la cuota (que cuenta bytes
-  lógicos), no para el consumo físico de disco.
-- Ninguna ejecución cayó bajo 100 GB libres ni movió el libre más de un 10 %; todos los perfiles estaban
-  en btrfs y se borraron (`profileRemoved` verdadero; `target/q3-profiles` eliminado).
+- Espacio libre de `/home` registrado en el `.jsonl` (`freeBeforeKiB`/`freeAfterKiB`): entre 339,6 y
+  349,1 GiB a lo largo de las 10 ejecuciones. El cambio por ejecución fue de −3,1 a +3,0 GiB, en ambos
+  sentidos (subió en varias, incluidas ejecuciones de 40 GiB): lo causan otros procesos del equipo, no
+  las escrituras. Los datos son casi todo ceros y btrfs comprime con zstd, así que 40 GiB lógicos casi no
+  ocupan disco: la medida vale para la cuota (bytes lógicos), no para el consumo físico.
+- Ninguna ejecución cayó bajo 100 GiB libres; todos los perfiles estaban en btrfs y se borraron
+  (`profileRemoved` verdadero; `target/q3-profiles` vacío al terminar).
+- La ejecución de validación del driver (`firefox:http:none`, 9,999 GiB, misma conducta) no se añadió al `.jsonl`.
 
 ## Qué no se midió
 

@@ -78,9 +78,10 @@ async function main() {
     result.apiError = String(e);
   }
   const runId = Date.now().toString(36);
+  let worker = null;
   try {
     const src = "(" + writerMain.toString() + ")()";
-    const worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
     const t0 = performance.now();
     result.writer = await new Promise((resolve, reject) => {
       worker.onerror = (ev) => reject(new Error("worker error: " + ev.message));
@@ -91,9 +92,10 @@ async function main() {
       worker.postMessage({ capBytes: capGiB * GiB, fileBytes: fileMiB * MiB, runId });
     });
     result.wallMs = performance.now() - t0;
-    worker.terminate();
   } catch (e) {
     result.workerError = String(e);
+  } finally {
+    if (worker) worker.terminate();
   }
   try { result.estimateAfterCleanup = await est(); } catch (e) { result.estimateAfterError = String(e); }
   window.quotaResult = result;
