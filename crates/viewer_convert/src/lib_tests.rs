@@ -2113,6 +2113,222 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
         mem.stats().peak_bytes,
         native_phases.peak_live_spool_bytes
     );
+    // The bound must not be vacuous: some spools die before others are written.
+    assert!(bound < native_phases.spool_bytes_written);
     let drained = mem.stats();
     assert_eq!((drained.live_bytes, drained.live_spools), (0, 0));
+}
+
+/// `count` identical points with the header max X widened, so the root is divisible and
+/// discovers only after its scan that every point is equal (I3).
+fn all_equal_root_fixture(path: &std::path::Path, count: usize) {
+    {
+        let header = Builder::from((1, 2)).into_header().unwrap();
+        let mut writer = Writer::from_path(path, header).unwrap();
+        for index in 0..count {
+            writer
+                .write_point(Point {
+                    x: 10.0,
+                    y: 20.0,
+                    z: 30.0,
+                    intensity: index as u16,
+                    ..Point::default()
+                })
+                .unwrap();
+        }
+    }
+    let mut bytes = fs::read(path).unwrap();
+    bytes[179..187].copy_from_slice(&50.0_f64.to_le_bytes());
+    fs::write(path, bytes).unwrap();
+}
+
+/// 600 identical points in the lowest root octant plus 200 distinct ones in the highest: the low
+/// child is divisible and becomes a leaf after its scan (all points equal).
+fn equal_cluster_fixture(path: &std::path::Path) {
+    let header = Builder::from((1, 2)).into_header().unwrap();
+    let mut writer = Writer::from_path(path, header).unwrap();
+    for index in 0..800usize {
+        let point = if index < 600 {
+            [10.0, 10.0, 10.0]
+        } else {
+            [60.0 + (index - 600) as f64 * 0.15, 90.0, 90.0]
+        };
+        writer
+            .write_point(Point {
+                x: point[0],
+                y: point[1],
+                z: point[2],
+                ..Point::default()
+            })
+            .unwrap();
+    }
+}
+
+/// Preorder ids (a depth-first walk in child-key order visits 0, 1, 2, …), parents before
+/// children, children in ascending key, and block ids ascending in that preorder.
+fn assert_preorder_structure(output: &std::path::Path, divisions: u8) {
+    let reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+    let hierarchy = reader.metadata().hierarchy();
+    let count = hierarchy.stats().node_count as u64;
+    let mut visited = Vec::new();
+    let mut stack = vec![NodeId::new(0)];
+    while let Some(id) = stack.pop() {
+        visited.push(id.get());
+        let node = hierarchy.node(id).unwrap();
+        let children = hierarchy.child_ids(id);
+        let subdivision = viewer_core::SpatialSubdivision::new(node.bounds(), divisions).unwrap();
+        let keys = children
+            .iter()
+            .map(|child| {
+                let child = hierarchy.node(*child).unwrap();
+                assert!(child.parent() == Some(id) && child.id().get() > id.get());
+                let (min, max) = (child.bounds().min(), child.bounds().max());
+                subdivision.cell_index(std::array::from_fn(|axis| (min[axis] + max[axis]) / 2.0))
+            })
+            .collect::<Vec<_>>();
+        assert!(keys.windows(2).all(|pair| pair[0] < pair[1]), "{keys:?}");
+        stack.extend(children.iter().rev().copied());
+    }
+    assert_eq!(visited, (0..count).collect::<Vec<_>>(), "ids are preorder");
+    let blocks = (0..count)
+        .flat_map(|id| hierarchy.node(NodeId::new(id)).unwrap().blocks().to_vec())
+        .map(|block| block.get())
+        .collect::<Vec<_>>();
+    assert_eq!(blocks, (0..blocks.len() as u64).collect::<Vec<_>>());
+}
+
+#[test]
+fn node_jobs_commit_nodes_and_blocks_in_preorder() {
+    let tmp = test_dir();
+    let dir = tmp.path();
+    type WriteFixture = fn(&std::path::Path);
+    let fixtures: [(&str, WriteFixture); 5] = [
+        ("dense.las", |path| fixture(path, false, true, 4_000)),
+        ("clusters.las", eight_cluster_fixture),
+        ("coincident.las", coincident_fixture),
+        ("equal-root.las", |path| all_equal_root_fixture(path, 300)),
+        ("equal-cluster.las", equal_cluster_fixture),
+    ];
+    for (name, write) in fixtures {
+        let input = dir.join(name);
+        write(&input);
+        for divisions in [2, 4, 8] {
+            let options = ConvertOptions::new(16, 0.01)
+                .unwrap()
+                .with_spatial_divisions(divisions)
+                .unwrap();
+            // Every worker count gives the same nodes and bytes (planner_snapshot_for).
+            let case = dir.join(format!("{name}-{divisions}"));
+            fs::create_dir(&case).unwrap();
+            planner_snapshot_for(&input, &case, options);
+            assert_preorder_structure(&case.join("w1.oct"), divisions);
+        }
+    }
+}
+
+/// Plans with a `MemSpoolStore`, reads and releases every block as the block phase does, and
+/// checks the store lifecycle held and no spool is left.
+fn mem_plan_and_drain(
+    input: &std::path::Path,
+    options: ConvertOptions,
+) -> crate::diagnostics::SpatialPhaseDiagnostics {
+    use crate::{
+        las_source::{inspect_source, open_las_reader},
+        pipeline::spool_store::MemSpoolStore,
+        spatial::build_spatial_plan_from_reader,
+    };
+    let mut reader = open_las_reader(input).unwrap();
+    let source = inspect_source(&reader).unwrap();
+    let mem = MemSpoolStore::new(true);
+    let plan = build_spatial_plan_from_reader(
+        &mut reader,
+        input,
+        &source,
+        options,
+        &mem,
+        &mut |_| true,
+        true,
+    )
+    .unwrap();
+    for block in &plan.blocks {
+        block.read(&mem, source.frame).unwrap();
+        block.release_spool_after_write(&mem).unwrap();
+    }
+    let stats = mem.stats();
+    assert_eq!((stats.live_bytes, stats.live_spools), (0, 0));
+    assert!(stats.peak_spools > 0);
+    plan.spatial_phases.unwrap()
+}
+
+#[test]
+fn mem_spool_store_lifecycle_holds_for_whole_plans_and_leaves_no_spool() {
+    let tmp = test_dir();
+    let dir = tmp.path();
+    let dense = dir.join("dense.las");
+    fixture(&dense, false, true, 4_000);
+    let clusters = dir.join("clusters.las");
+    eight_cluster_fixture(&clusters);
+    let equal_cluster = dir.join("equal-cluster.las");
+    equal_cluster_fixture(&equal_cluster);
+    for input in [&dense, &clusters, &equal_cluster] {
+        for workers in [1, 2, 4] {
+            let options = ConvertOptions::new(16, 0.01)
+                .unwrap()
+                .with_spatial_divisions(4)
+                .unwrap()
+                .with_spatial_workers(workers)
+                .unwrap();
+            let phases = mem_plan_and_drain(input, options);
+            assert!(!phases.node_spool_events.is_empty());
+        }
+    }
+}
+
+#[test]
+fn an_all_equal_root_is_respooled_and_planned_as_one_leaf() {
+    let tmp = test_dir();
+    let input = tmp.path().join("equal-root.las");
+    all_equal_root_fixture(&input, 300);
+    let options = ConvertOptions::new(16, 0.01).unwrap();
+    let phases = mem_plan_and_drain(&input, options);
+    let events = &phases.node_spool_events;
+    assert_eq!(events.len(), 1);
+    assert!(events[0].is_leaf && events[0].became_leaf_all_equal);
+    // 300 records stay below one 32 KiB flush in the LAS scan; the rescan of `SOURCE` finishes
+    // (flushes) its children before they are dropped.
+    assert!(!events[0].child_spool_bytes.is_empty());
+
+    let output = tmp.path().join("equal-root.oct");
+    convert_file(&input, &output, options).unwrap();
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    let hierarchy = reader.metadata().hierarchy();
+    assert_eq!(hierarchy.stats().node_count, 1);
+    let root = hierarchy.node(NodeId::new(0)).unwrap();
+    assert_eq!(root.point_count(), 300);
+    assert_eq!(root.blocks().len(), 300_usize.div_ceil(16));
+}
+
+#[test]
+fn a_child_with_all_points_equal_becomes_a_leaf() {
+    let tmp = test_dir();
+    let input = tmp.path().join("equal-cluster.las");
+    equal_cluster_fixture(&input);
+    let options = ConvertOptions::new(16, 0.01).unwrap();
+    let phases = mem_plan_and_drain(&input, options);
+    let equal = phases
+        .node_spool_events
+        .iter()
+        .filter(|event| event.became_leaf_all_equal)
+        .collect::<Vec<_>>();
+    assert_eq!(equal.len(), 1);
+    assert_eq!((equal[0].parent_id, equal[0].depth), (Some(0), 1));
+    assert!(equal[0].is_leaf && equal[0].lod_bytes == 0);
+
+    let output = tmp.path().join("equal-cluster.oct");
+    convert_file(&input, &output, options).unwrap();
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    let hierarchy = reader.metadata().hierarchy();
+    let node = hierarchy.node(NodeId::new(equal[0].node_id)).unwrap();
+    assert_eq!(node.point_count(), 600);
+    assert!(hierarchy.child_ids(node.id()).is_empty());
 }
