@@ -1778,6 +1778,9 @@ fn characterize_planner_structure_for_coincident_points() {
     );
 }
 
+const BUDGET_HINT: &str = "budget literals depend on the estimate_memory constants and the fixture; \
+    a mismatch may mean the estimate changed, not necessarily the planner";
+
 /// `(requested, limit)` of a rejected plan, `None` when the plan was accepted.
 fn planner_budget_outcome(
     input: &std::path::Path,
@@ -1822,7 +1825,7 @@ fn characterize_planner_budget_outcomes_with_one_worker() {
         assert_eq!(
             planner_budget_outcome(&input, tmp.path(), budget, 1),
             expected,
-            "budget={budget}"
+            "{BUDGET_HINT} budget={budget}"
         );
     }
 }
@@ -1850,7 +1853,152 @@ fn characterize_planner_budget_outcomes_with_two_workers() {
         assert_eq!(
             planner_budget_outcome(&input, tmp.path(), budget, 2),
             expected,
-            "budget={budget}"
+            "{BUDGET_HINT} budget={budget}"
         );
     }
+}
+fn eight_cluster_fixture(path: &std::path::Path) {
+    let header = Builder::from((1, 2)).into_header().unwrap();
+    let mut writer = Writer::from_path(path, header).unwrap();
+    for index in 0..800usize {
+        let cluster = index % 8;
+        let jitter = (index / 8) as f64 * 0.01;
+        let corner = |bit: usize| if cluster & bit == 0 { 10.0 } else { 90.0 } + jitter;
+        writer
+            .write_point(Point {
+                x: corner(1),
+                y: corner(2),
+                z: corner(4),
+                ..Point::default()
+            })
+            .unwrap();
+    }
+}
+
+#[test]
+fn characterize_planner_budget_outcomes_with_three_and_four_workers() {
+    let tmp = test_dir();
+    let input = tmp.path().join("source.las");
+    fixture(&input, false, true, 4_000);
+    // W=3 splits the 4 root children into batches of 3 + 1; W=4 is a single batch.
+    let cases = [
+        (3, 26_359_295, Some((26_359_296, 26_359_295))),
+        (3, 26_359_296, Some((19_018_240, 19_017_728))),
+        (3, 26_454_720, Some((19_033_856, 19_033_632))),
+        (3, 26_458_816, None),
+        (4, 29_505_023, Some((29_505_024, 29_505_023))),
+        (4, 29_505_024, Some((19_018_240, 19_017_728))),
+        (4, 29_633_216, Some((19_033_856, 19_033_752))),
+        (4, 29_637_312, None),
+    ];
+    for (workers, budget, expected) in cases {
+        assert_eq!(
+            planner_budget_outcome(&input, tmp.path(), budget, workers),
+            expected,
+            "{BUDGET_HINT} budget={budget} workers={workers}"
+        );
+    }
+}
+
+#[test]
+fn characterize_later_batches_never_fail_the_batch_budget() {
+    // A later batch could only fail its own batch check (`branch_memory_budget` with the
+    // committed counts) in a window where batch 1 passes its batch check and its branch-local
+    // checks. A dense probe (step 64) of the 4000-point fixture above the batch-1 threshold at
+    // W=2 and W=3 found no such window: below the accept threshold batch 1 fails a
+    // branch-local check, at or above it everything passes. The 8-cluster fixture (8 root
+    // children: 4 batches at W=2, 3 at W=3) shows the same shape at a coarse step.
+    let tmp = test_dir();
+    let input = tmp.path().join("clusters.las");
+    eight_cluster_fixture(&input);
+    let cases = [
+        (2, 23_213_567, Some((23_213_568, 23_213_567))),
+        (2, 23_220_000, Some((19_019_776, 19_019_336))),
+        (2, 23_340_000, None),
+        (3, 26_360_000, Some((19_018_240, 19_017_845))),
+        (3, 26_460_000, None),
+    ];
+    for (workers, budget, expected) in cases {
+        assert_eq!(
+            planner_budget_outcome(&input, tmp.path(), budget, workers),
+            expected,
+            "{BUDGET_HINT} budget={budget} workers={workers}"
+        );
+    }
+}
+
+fn convert_error_at(
+    input: &std::path::Path,
+    dir: &std::path::Path,
+    workers: usize,
+) -> ConvertError {
+    let output = dir.join(format!("err-{workers}.oct"));
+    let options = ConvertOptions::new(16, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap()
+        .with_spatial_workers(workers)
+        .unwrap();
+    let error = convert_file(input, &output, options).unwrap_err();
+    assert!(!output.exists());
+    error
+}
+
+#[test]
+fn characterize_input_errors_are_identical_across_worker_counts() {
+    let tmp = test_dir();
+    let dir = tmp.path();
+    // Header max X lowered (offset 179, as in the point_source tests): the first point beyond it
+    // is reported by global index while the source spool is written, before any planner worker,
+    // so branches never see it. No data error is reachable from a planner branch today.
+    let bounds = dir.join("bounds.las");
+    fixture(&bounds, false, false, 1_000);
+    let mut bytes = fs::read(&bounds).unwrap();
+    bytes[179..187].copy_from_slice(&1_000_100.0_f64.to_le_bytes());
+    fs::write(&bounds, bytes).unwrap();
+    // Truncated point data is rejected at preflight, so PointCountMismatch is not reachable
+    // through the public conversion API; the preflight error is pinned instead.
+    let truncated = dir.join("truncated.las");
+    fixture(&truncated, false, false, 1_000);
+    let length = fs::metadata(&truncated).unwrap().len();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&truncated)
+        .unwrap()
+        .set_len(length - 100)
+        .unwrap();
+    for workers in [1, 2, 4] {
+        let error = convert_error_at(&bounds, dir, workers);
+        assert!(
+            matches!(
+                error,
+                ConvertError::PointOutsideHeaderBounds {
+                    point_index: 401,
+                    ..
+                }
+            ),
+            "workers={workers}: {error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "point 401 at [1000100.25, 2000002.0, 51.0] is outside the LAS/LAZ header bounds"
+        );
+        let error = convert_error_at(&truncated, dir, workers);
+        assert!(
+            matches!(error, ConvertError::LasPreflight(_)),
+            "workers={workers}: {error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "unsafe LAS/LAZ header: header point count x point_data_record_length (1000 x 20 B) exceeds the 19900 B after offset_to_point_data"
+        );
+    }
+}
+
+#[test]
+fn sha256_matches_the_two_block_vector() {
+    assert_eq!(
+        sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    );
 }
