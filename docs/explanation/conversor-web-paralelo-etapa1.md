@@ -245,6 +245,8 @@ trabajo, si las arenas caben en cuota), enlazado desde `docs/README.md`; `script
 
 ## Después de la etapa 1
 
+Plan siguiente: [etapa 2](conversor-web-paralelo-etapa2.md).
+
 La etapa 2 (M1: traits con arenas dentro de `viewer_convert`, R7 con ≥ 5 rondas A/B alternadas) se
 planifica con los resultados de S0 y S1; los cambios de forma del `SpoolStore` que salgan de S1 se
 incorporan antes a la spec.
