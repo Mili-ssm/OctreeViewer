@@ -4,7 +4,7 @@ const PARTIAL_PATTERN = /^conversion-.*\.partial$/;
  * Deletes `conversion-*.partial` files left by earlier sessions. Files held open by a live
  * conversion (another tab) refuse removal and are kept.
  */
-export async function removeOrphanPartials(storage, directoryName = "octree-viewer-conversions") {
+async function removeOrphanPartials(storage, directoryName = "octree-viewer-conversions") {
     try {
         const root = await storage.getDirectory();
         const directory = await root.getDirectoryHandle(directoryName);

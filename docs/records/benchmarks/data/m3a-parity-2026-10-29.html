@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- Page of the M3a browser parity run (see m3a-parity-2026-10-29-driver.mjs). Throwaway. -->
+<meta charset="utf-8">
+<title>M3a parity</title>
+<script type="module">
+import { createConverter } from "../../../../examples/web-host/converter-api.mjs";
+
+const hex = async (blob) => {
+    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+const fetchFile = async (url, name) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return new File([await response.blob()], name);
+};
+const partialNames = async () => {
+    const root = await navigator.storage.getDirectory();
+    const directory = await root.getDirectoryHandle("octree-viewer-conversions", { create: true });
+    const names = [];
+    for await (const name of directory.keys()) names.push(name);
+    return names;
+};
+
+const converter = createConverter({ engine: "core" });
+
+// Converts and returns the SHA-256 of the output pair read back from OPFS.
+window.convertCase = async (url, name, options) => {
+    const started = performance.now();
+    const result = await converter.convert(await fetchFile(url, name), { engine: "core", options });
+    return {
+        oct: await hex(result.file),
+        octattrs: await hex(result.attributesFile),
+        octBytes: result.file.size,
+        points: result.points,
+        ms: Math.round(performance.now() - started),
+    };
+};
+
+// Starts a conversion, cancels once the worker announced its files, and lists what stays behind.
+window.cancelCase = async (url, name, options) => {
+    const file = await fetchFile(url, name);
+    let announced;
+    const seen = new Promise((resolve) => { announced = resolve; });
+    // `partial-files` is relayed only internally; progress/status follow it, so wait for either.
+    converter.on("status", () => announced());
+    const pending = converter.convert(file, { engine: "core", options });
+    pending.catch(() => {});
+    await seen;
+    const outcome = await converter.cancel();
+    let cancelled = null;
+    try { await pending; } catch (error) { cancelled = error.name; }
+    return { cancelled, cancelReturned: outcome, partialsAfterCancel: await partialNames() };
+};
+
+window.partialNames = partialNames;
+window.parityReady = true;
+</script>

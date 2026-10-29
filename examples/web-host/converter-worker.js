@@ -2,6 +2,11 @@ import init, { WasmCoreConverter, WasmLasOctConverter } from "../../pkg/viewer_w
 
 let cancelRequested = false;
 
+// One call site: package-local.py swaps it for the embedded-bytes initializer.
+async function initWasm() {
+    await init();
+}
+
 self.addEventListener("message", ({ data }) => {
     if (data?.type === "cancel") {
         cancelRequested = true;
@@ -30,7 +35,7 @@ async function convert(file, formatVersion) {
         if (!navigator.storage?.getDirectory) {
             throw new Error("This browser does not support the Origin Private File System (OPFS).");
         }
-        await init();
+        await initWasm();
         const root = await navigator.storage.getDirectory();
         directory = await root.getDirectoryHandle("octree-viewer-conversions", { create: true });
         const conversionId = crypto.randomUUID();
@@ -169,7 +174,7 @@ async function convertWithCore(file, options) {
         if (!navigator.storage?.getDirectory) {
             throw new Error("This browser does not support the Origin Private File System (OPFS).");
         }
-        await init();
+        await initWasm();
         const root = await navigator.storage.getDirectory();
         directory = await root.getDirectoryHandle(PARTIAL_DIRECTORY, { create: true });
         const id = crypto.randomUUID();
