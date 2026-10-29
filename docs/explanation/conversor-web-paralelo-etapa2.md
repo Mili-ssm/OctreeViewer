@@ -11,8 +11,8 @@ por nodo dentro de `viewer_convert`, con los mismos bytes y sin regresión.
 
 **Arquitectura:** la [spec](conversor-web-paralelo.md) es la autoridad. Decisiones del propietario
 del 29-10-2026 que este plan aplica: **trabajos por nodo** (cada trabajo lee la entrada de un nodo y
-escribe sus hijos en una arena nueva; el host borra la arena del padre cuando todos sus hijos la han
-consumido), **Chrome `file://` solo con spools en RAM** (R8) y **medir la cuota real** antes de M6
+escribe un fichero OPFS por spool de hijo; el host borra cada fichero cuando termina el trabajo que lo
+consume, y LOD y hojas se retienen hasta la fase de bloques: variante c), **Chrome `file://` solo con spools en RAM** (R8) y **medir la cuota real** antes de M6
 (S8). Etapa anterior: [etapa 1](conversor-web-paralelo-etapa1.md); evidencia:
 [referencia M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) y
 [spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md).
@@ -37,7 +37,7 @@ Playwright para los navegadores.
 ## Review Focus
 
 1. **Raíz con todos los puntos iguales o no divisible** con el planificador por nodos → Tarea 4 (tests de la etapa 1 en verde y `coincident_fixture` en la matriz).
-2. **Spools vacíos** (hijos sin puntos) en arenas por nodo: no deben crear arena ni romper el orden de identificadores → Tarea 4.
+2. **Spools vacíos** (hijos sin puntos) con un fichero por spool: no deben crear fichero ni romper el orden de identificadores → Tarea 4.
 3. **Bloques reales con atributos dispersos** (clasificación, retornos, GPS) en S0 → Tarea 2 usa bloques de Belvedere, no sintéticos.
 4. **Cuota denegada o `persist()` rechazado** en S8 → Tarea 3 registra el comportamiento, no solo el caso feliz.
 5. **Errores con índice global de punto** al partir la entrada por rangos de chunks → Tarea 4 compara el mensaje de error de un LAS corrupto entre ejecución en serie y por rangos.

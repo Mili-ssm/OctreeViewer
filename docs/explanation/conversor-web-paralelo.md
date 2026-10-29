@@ -37,7 +37,7 @@ hilos, `Instant::now()` y `PreparedPointBlock` sin forma serializable.
 | --- | --- | --- |
 | **LZ4 distinto en wasm32**: `lz4_flex` 0.14 elige el hash por ancho de puntero (5 B/u64 en 64 bits, 4 B en wasm32). Mismo bloque de 600 KB: 641 978 B nativo, 636 050 B wasm32 | `codec.rs:55`; `lz4_flex-0.14.0/src/block/hashtable.rs:26-50`; sonda reproducible | Spike bloqueante S0: parche de `lz4_flex` para que wasm32 use la ruta de 64 bits; el conversor web actual ya difiere del CLI por esto |
 | **`seek` LAZ incorrecto con chunks variables (COPC)**: `laz` 0.13 calcula `point_idx % chunk.point_count`; con chunks [7,13,5,11,50000,3], 4 de 6 inicios de chunk devuelven el punto equivocado | `laz-0.13.0/src/laszip/sequential/decompression.rs:~203`; sonda | `PointSource` no usa `Reader::seek` en chunks variables: empieza a decodificar en el offset de bytes del chunk (tabla ya validada, ADR 0012) o parchea `laz`; fixture multi-chunk variable |
-| **OPFS no admite un `SpoolStore` síncrono como el nativo**: el nativo crea spools hijos a mitad de escaneo (`spatial.rs:787`, `:954`), reabre en cada vaciado (`:571-578`) y borra en mitad de la recursión (`:1013`, `:1061`); en OPFS abrir, crear handle y borrar son async | código citado | Diseño de spool por arenas de trabajo (abajo), decidido antes de M1 |
+| **OPFS no admite un `SpoolStore` síncrono como el nativo**: el nativo crea spools hijos a mitad de escaneo (`spatial.rs:787`, `:954`), reabre en cada vaciado (`:571-578`) y borra en mitad de la recursión (`:1013`, `:1061`); en OPFS abrir, crear handle y borrar son async | código citado | Diseño de un fichero por spool (abajo), decidido antes de M1 |
 
 El aviso upstream de estos dos fallos de `las`/`laz` se añade al backlog (prioridad 9 del README),
 sin enviarlo.
@@ -49,7 +49,7 @@ sin enviarlo.
 | R1 | Para la misma entrada y las mismas opciones del planificador, cuando la conversión termina en ambos lados, el conversor web producirá `.oct`/`.octattrs` byte a byte iguales a los del CLI, con cualquier número de workers. |
 | R2 | El navegador expondrá las opciones del CLI aplicables a LAS/LAZ (revisión de formato, puntos por bloque, error máximo, divisiones y `planner_budget`), con los mismos valores por defecto y el mismo significado que en el CLI. |
 | R3 | La conversión repartirá decodificación LAZ, partición, subárboles, preparación de bloques y validación entre N workers (cada uno con su instancia wasm32); un único escritor publica en orden. |
-| R4 | Antes de empezar, el conversor pedirá `navigator.storage.persist()`, estimará el pico OPFS con el modelo de arenas y rechazará con mensaje claro si la cuota no alcanza; durante la conversión, un `QuotaExceededError` aborta y limpia como cualquier error (R5). |
+| R4 | Antes de empezar, el conversor pedirá `navigator.storage.persist()`, estimará el pico OPFS con el modelo por nodos (un fichero por spool) y rechazará con mensaje claro si la cuota no alcanza; durante la conversión, un `QuotaExceededError` aborta y limpia como cualquier error (R5). |
 | R5 | Cuando un worker falle (error, trap o cancelación), la conversión abortará entera, terminará los workers y borrará sus temporales OPFS. |
 | R6 | La salida se validará releyéndola completa (en paralelo) antes de entregarla, como el CLI. |
 | R7 | El CLI no perderá rendimiento: SHA idénticos y mediana pareada Belvedere (perfil `perf`, ≥ 5 rondas A/B alternadas) dentro de ±3% de la referencia M0. |
@@ -97,18 +97,18 @@ flowchart LR
 con [ADR 0006](../adr/0006-politica-de-version-solo-en-viewer-format.md): la versión sigue
 decidiéndose solo allí.
 
-### Spools por arenas de trabajo
+### Spools: un fichero por spool
 
 > **Decisión del propietario (29-10-2026), tras el [modelo por nodos de la Tarea 1](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md):** la etapa 2 usa trabajos por nodo y la Tarea 4 sigue con la **variante c**: cada spool de hijo es su propio fichero OPFS, liberado cuando termina el trabajo que lo consume; los extents de LOD y de hojas se retienen hasta la fase de bloques. Antes, un spike (**S9**) mide ~650 ficheros OPFS vivos y handles síncronos concurrentes en Chrome y Firefox con Playwright. Esto sustituye la decisión de arenas por nodo del mismo día; las arenas por trabajo se midieron en 1,9–7,2 × el pico nativo en la Tarea 1 y se descartaron.
 
-Cada trabajo síncrono recibe del host, ya abierta, una **arena**: un fichero OPFS de solo añadido
-con su handle síncrono (en el navegador) o un directorio (en nativo). Todos los spools que el trabajo
-crea son **extensiones** (listas de rangos) dentro de su arena o segmentos `ArrayBuffer` en RAM; el
-núcleo no abre ni borra ficheros a mitad de un trabajo. Al acabar, el trabajo devuelve qué spools
-siguen vivos para fases posteriores; el host borra las arenas de **generaciones** ya consumidas entre
-trabajos. Así, un trabajo usa un handle en vez de hasta 512 (divisiones 8), y el pico OPFS se modela
-como bytes de las generaciones vivas, no como el conjunto vivo nativo. El spike S1 mide ese modelo
-antes de M1 y los traits de M1 lo expresan desde el principio.
+Cada spool de hijo es **un fichero OPFS propio**. El host crea el fichero y abre su handle síncrono
+(en nativo, un fichero en el directorio de trabajo) antes de que empiece el trabajo que lo escribe; el
+trabajo añade bytes y el host cierra el handle al terminar. Cuando termina el trabajo que consume ese
+spool, el host borra el fichero. Los ficheros de LOD y de hojas se retienen hasta la fase de bloques.
+Los spools pueden vivir antes como segmentos `ArrayBuffer` en RAM, volcados a su propio fichero al
+superar el presupuesto. El núcleo no abre ni borra ficheros a mitad de un trabajo: el host lo hace
+entre trabajos. El pico OPFS es la suma de los ficheros vivos (modelo de la Tarea 1, variante c) y el
+coste es el número de ficheros y handles simultáneos (hasta ~650 en Majadas), que mide S9.
 
 ## Flujo de datos
 
@@ -130,7 +130,7 @@ antes de M1 y los traits de M1 lo expresan desde el principio.
   igual en ambos lados; `ram_budget` (R9) es del host y solo decide N y el umbral de spools en RAM.
 - **Spools por niveles (RAM primero, disco al crecer)**: segmentos en `ArrayBuffer` de JS (fuera de
   la memoria wasm, transferibles sin copia) mientras quepan en el presupuesto de spools; al
-  superarlo, se vuelcan a la arena OPFS los spools mayores o los que se consumirán más tarde. Leer un
+  superarlo, se vuelcan a su propio fichero OPFS los spools mayores o los que se consumirán más tarde. Leer un
   spool devuelve los mismos bytes venga de RAM o de OPFS, así que no afecta a R1.
 - La memoria wasm crece bajo demanda y no se libera al sistema: los workers se reciclan entre fases.
 - **Número de workers frente a memoria por worker**: la memoria por trabajo es pequeña y los spools
@@ -179,10 +179,10 @@ antes de M1 y los traits de M1 lo expresan desde el principio.
 | S0 | Igualdad de bytes nativo/wasm32 en `viewer_format` con `lz4_flex` parcheado; test en `check.sh` | Bytes idénticos en fixtures y bloques Belvedere | Sin igualdad tras 3 días: consultar si los SHA nativos pueden cambiar (choca con R7) |
 | M0 | Referencia: SHA del CLI (LAS pequeño, autzen, LAZ multi-chunk, Belvedere, Belvedere divisiones 8, Majadas) y tiempos Belvedere, perfil `perf`, ≥ 5 rondas alternadas, con tiempo de jerarquía | Registro fechado | — |
 | S1 | Modelo y medida de arenas OPFS (bytes escritos frente a vivos, handles, añadidos de 32 KiB y 1 MiB) | Modelo validado; forma de `SpoolStore` fijada | Pico modelado > 1,5 × el conjunto vivo, u OPFS no disponible en `file://` en Firefox: replantear `SpoolStore` o volver a R8 con el propietario |
-| M1 | Traits (con arenas) extraídos dentro de `viewer_convert`, sin cambio de comportamiento; tests de independencia ampliados | SHA idénticos; R7 | Regresión > 3% tras dos intentos: revertir la extracción |
+| M1 | Traits (un fichero por spool) extraídos dentro de `viewer_convert`, sin cambio de comportamiento; tests de independencia ampliados | SHA idénticos; R7 | Regresión > 3% tras dos intentos: revertir la extracción |
 | M2 | `viewer_convert_core` separado; compila para wasm32; partición por rangos de chunks ejecutada en nativo con W = 1..8 | SHA iguales para todo W en Belvedere y LAZ multi-chunk; check wasm32 y lint en `check.sh` | El núcleo necesita `dyn` o asignación por punto |
 | M3a | Conversión web con un worker sobre el núcleo, LAS pequeño | Paridad (N = 1) en Chrome y Firefox | SHA distinto sin explicación tras una semana |
-| M3b | Un worker con arenas OPFS a escala Belvedere; se elimina `browser_convert.rs` | Paridad (N = 1); tiempo registrado | Wasm con un worker > 4 × nativo en Belvedere: replantear |
+| M3b | Un worker con ficheros OPFS por spool a escala Belvedere; se elimina `browser_convert.rs` | Paridad (N = 1); tiempo registrado | Wasm con un worker > 4 × nativo en Belvedere: replantear |
 | M4 | Pool para preparación y escritor ordenado | Paridad N = 1, 2, 4, 8; curva de tiempos; S7 | Escritor > 50% del tiempo con N = 4, o N = 4 < 1,5 × más rápido: revisar ADR 0015 |
 | M5 | Pool para partición raíz y subárboles; validación paralela | Paridad; curva de tiempos; R7 | Aceleración de jerarquía con N = 8 < 1,5 × en Majadas: diseñar división bajo la raíz antes de M6 |
 | M6 | Escala Majadas: preflight de cuota, spool en RAM, limpieza | SHA Majadas = CLI; picos de RAM y OPFS registrados | Pico OPFS > 1,3 × la estimación de R4, o Majadas > 60 min |
@@ -209,8 +209,8 @@ Sus resultados pueden cambiar umbrales y granularidad, nunca R1.
 | --- | --- |
 | LZ4 u otra codificación difiere entre nativo y wasm32 | S0 bloqueante y test permanente en `check.sh` |
 | `seek` de `laz` incorrecto en COPC | `PointSource` arranca en el offset de bytes del chunk; fixture multi-chunk variable |
-| `SpoolStore` síncrono sobre OPFS async obliga a rehacer el núcleo | Arenas por trabajo fijadas en S1 antes de M1 |
-| Pico OPFS por encima de la cuota en Majadas | Modelo de arenas, spool en RAM, rechazo temprano y aborto limpio (R4) |
+| `SpoolStore` síncrono sobre OPFS async obliga a rehacer el núcleo | Un fichero por spool fijado por la Tarea 1 y S9 antes de M1 |
+| Pico OPFS por encima de la cuota en Majadas | Modelo por nodos, spool en RAM, rechazo temprano y aborto limpio (R4) |
 | Subárbol rezagado alarga la jerarquía de Majadas | Medir en M5; dividir bajo la raíz si no escala |
 | R7 medido dentro del ruido | ≥ 5 rondas A/B alternadas y mediana pareada |
 | Regresión nativa por los traits | Despacho estático en el bucle caliente; R7 en cada hito |
