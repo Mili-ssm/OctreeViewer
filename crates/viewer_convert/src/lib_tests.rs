@@ -2003,6 +2003,47 @@ fn sha256_matches_the_two_block_vector() {
     );
 }
 
+/// Live-spool peak of variant c with one worker in `benchmarks/model_node_job_arena.py`, replayed
+/// from the node events of a run: jobs run in `start_seq` order; a job's child spools are counted
+/// in full at its start (each is its own file), its LOD sample joins at its end, and its input
+/// dies at its end. Leaf spools and LOD samples stay live until the block phase. A node that
+/// became a leaf (all points equal) deletes its scratch children at its end. Pure leaves are no
+/// jobs.
+fn variant_c_serial_peak(events: &[crate::diagnostics::NodeSpoolEvent]) -> u64 {
+    let mut jobs = events
+        .iter()
+        .filter(|e| !e.is_leaf || e.became_leaf_all_equal)
+        .collect::<Vec<_>>();
+    jobs.sort_by_key(|e| e.start_seq);
+    let mut live: u64 = events
+        .iter()
+        .filter(|e| e.parent_id.is_none())
+        .map(|e| e.input_spool_bytes)
+        .sum();
+    let mut peak = live;
+    for job in jobs {
+        let children: u64 = if job.is_leaf {
+            job.child_spool_bytes.iter().sum()
+        } else {
+            events
+                .iter()
+                .filter(|e| e.parent_id == Some(job.node_id))
+                .map(|e| e.input_spool_bytes)
+                .sum()
+        };
+        live += children;
+        peak = peak.max(live);
+        if job.is_leaf {
+            live -= children;
+        } else {
+            live += job.lod_bytes;
+            peak = peak.max(live);
+            live -= job.input_spool_bytes;
+        }
+    }
+    peak
+}
+
 #[test]
 fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_phase() {
     use crate::{
@@ -2039,7 +2080,7 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
     assert!(native_phases.peak_live_spool_bytes > 0);
 
     let mut reader = open_las_reader(&input).unwrap();
-    let mem = MemSpoolStore::new();
+    let mem = MemSpoolStore::new(true);
     let mem_plan = build_spatial_plan_from_reader(
         &mut reader,
         &input,
@@ -2065,6 +2106,13 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
         block.read(&mem, source.frame).unwrap();
         block.release_spool_after_write(&mem).unwrap();
     }
+    let bound = variant_c_serial_peak(&native_phases.node_spool_events);
+    assert!(
+        mem.stats().peak_bytes <= bound && native_phases.peak_live_spool_bytes <= bound,
+        "mem {} native {} bound {bound}",
+        mem.stats().peak_bytes,
+        native_phases.peak_live_spool_bytes
+    );
     let drained = mem.stats();
     assert_eq!((drained.live_bytes, drained.live_spools), (0, 0));
 }

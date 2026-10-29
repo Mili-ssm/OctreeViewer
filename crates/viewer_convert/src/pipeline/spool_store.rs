@@ -301,12 +301,20 @@ impl SpoolStore for FileSpoolStore {
         Ok(entry_in(&mut open.entries, id, "len", Phase::Closed, |e| e.phase)?.len)
     }
 
-    /// An extent past the end of the file is not an error here: the reader just ends early and the
-    /// caller reports `PointCountMismatch`, as reads of truncated spools always did.
+    /// The extent is checked against the length recorded by `append` (like `MemSpoolStore`), so
+    /// a planner bug is rejected here; a spool truncated on disk still ends the read early and
+    /// the caller reports `PointCountMismatch`.
     fn reader(&self, id: SpoolId, extent: SpoolExtent) -> Result<Self::Reader, ConvertError> {
         {
             let mut open = lock(&self.open);
-            entry_in(&mut open.entries, id, "read", Phase::Closed, |e| e.phase)?;
+            let entry = entry_in(&mut open.entries, id, "read", Phase::Closed, |e| e.phase)?;
+            if extent
+                .offset
+                .checked_add(extent.len)
+                .is_none_or(|end| end > entry.len)
+            {
+                return Err(lifecycle_error(id, "read", "extent is out of range"));
+            }
         }
         let mut file = File::open(self.path(id))?;
         if extent.offset > 0 {
@@ -360,6 +368,8 @@ struct MemSpools {
     live_spools: usize,
     peak_spools: usize,
     event_seq: u64,
+    /// Whether `SpoolAccounting` reports (the planner's `collect_diagnostics`).
+    accounting: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -380,9 +390,13 @@ pub(crate) struct MemSpoolStore {
 
 #[allow(dead_code)] // Used by tests and by the future web host.
 impl MemSpoolStore {
-    pub fn new() -> Self {
+    /// Bytes and spools are always counted (`stats`); `diagnostics` only gates `SpoolAccounting`.
+    pub fn new(diagnostics: bool) -> Self {
         Self {
-            state: Mutex::new(MemSpools::default()),
+            state: Mutex::new(MemSpools {
+                accounting: diagnostics,
+                ..MemSpools::default()
+            }),
         }
     }
 
@@ -466,14 +480,15 @@ impl SpoolStore for MemSpoolStore {
 impl SpoolAccounting for MemSpoolStore {
     fn next_event_seq(&self) -> Option<u64> {
         let mut state = lock(&self.state);
+        let accounting = state.accounting;
         let seq = state.event_seq;
         state.event_seq += 1;
-        Some(seq)
+        accounting.then_some(seq)
     }
 
     fn ledger_totals(&self) -> Option<LedgerTotals> {
         let state = lock(&self.state);
-        Some(LedgerTotals {
+        state.accounting.then_some(LedgerTotals {
             written: state.written,
             peak_live: state.peak_bytes,
         })
@@ -498,7 +513,7 @@ mod tests {
 
     #[test]
     fn mem_store_round_trips_extents_and_tracks_footprint() {
-        let store = MemSpoolStore::new();
+        let store = MemSpoolStore::new(true);
         let a = closed(&store, 1, b"abcdef");
         let b = closed(&store, 2, b"xy");
         assert_eq!(store.len(a).unwrap(), 6);
@@ -533,21 +548,21 @@ mod tests {
 
     #[test]
     fn mem_store_rejects_append_after_close() {
-        let store = MemSpoolStore::new();
+        let store = MemSpoolStore::new(true);
         let id = closed(&store, 1, b"a");
         assert!(message(store.append(id, b"b")).contains("append"));
     }
 
     #[test]
     fn mem_store_rejects_deleting_an_open_spool() {
-        let store = MemSpoolStore::new();
+        let store = MemSpoolStore::new(true);
         store.create(SpoolId(1)).unwrap();
         assert!(message(store.delete(SpoolId(1))).contains("delete"));
     }
 
     #[test]
     fn mem_store_never_reuses_an_id() {
-        let store = MemSpoolStore::new();
+        let store = MemSpoolStore::new(true);
         let id = closed(&store, 1, b"a");
         assert!(message(store.create(id)).contains("already used"));
         store.delete(id).unwrap();
@@ -557,7 +572,7 @@ mod tests {
 
     #[test]
     fn mem_store_rejects_reads_before_close_and_outside_the_extent() {
-        let store = MemSpoolStore::new();
+        let store = MemSpoolStore::new(true);
         store.create(SpoolId(1)).unwrap();
         let whole = SpoolExtent { offset: 0, len: 0 };
         assert!(message(store.reader(SpoolId(1), whole)).contains("read"));
