@@ -98,7 +98,12 @@ async function convert(file, formatVersion) {
             },
         });
     } catch (error) {
-        converter?.free();
+        try {
+            converter?.free();
+        } catch {
+            // After a WASM trap (`RuntimeError: unreachable`) the instance is untrusted and
+            // free() may trap again; the error message below must still reach the host.
+        }
         converter = null;
         try {
             accessHandle?.close();
