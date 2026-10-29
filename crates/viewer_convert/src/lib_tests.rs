@@ -1566,3 +1566,291 @@ fn node_spool_events_match_child_spool_totals() {
     }
     assert!(shapes.windows(2).all(|pair| pair[0] == pair[1]));
 }
+
+// --- Characterization of the spatial planner (Task 4, stage 2) -------------------------------
+// These pin today's observable behaviour so the per-node-job refactor can prove it changed nothing.
+
+fn sha256_hex(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    let mut padded = data.to_vec();
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&(data.len() as u64 * 8).to_be_bytes());
+    for chunk in padded.chunks(64) {
+        let mut w = [0u32; 64];
+        for (i, word) in chunk.chunks(4).enumerate() {
+            w[i] = u32::from_be_bytes(word.try_into().unwrap());
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let mut v = h;
+        for i in 0..64 {
+            let s1 = v[4].rotate_right(6) ^ v[4].rotate_right(11) ^ v[4].rotate_right(25);
+            let ch = (v[4] & v[5]) ^ (!v[4] & v[6]);
+            let t1 = v[7]
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
+            let s0 = v[0].rotate_right(2) ^ v[0].rotate_right(13) ^ v[0].rotate_right(22);
+            let maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+            let t2 = s0.wrapping_add(maj);
+            v = [
+                t1.wrapping_add(t2),
+                v[0],
+                v[1],
+                v[2],
+                v[3].wrapping_add(t1),
+                v[4],
+                v[5],
+                v[6],
+            ];
+            // Rotate registers: a..h = [t1+t2, a, b, c, d+t1, e, f, g].
+        }
+        for (slot, value) in h.iter_mut().zip(v) {
+            *slot = slot.wrapping_add(value);
+        }
+    }
+    h.iter().map(|word| format!("{word:08x}")).collect()
+}
+
+/// One line per node in id order, plus the SHA-256 of `.oct` followed by its attributes file.
+fn planner_snapshot(output: &std::path::Path) -> (Vec<String>, String) {
+    let mut reader = FormatReader::new(fs::File::open(output).unwrap()).unwrap();
+    reader
+        .attach_attributes(fs::File::open(output_attributes_path(output)).unwrap())
+        .unwrap();
+    let hierarchy = reader.metadata().hierarchy();
+    let nodes = (0..hierarchy.stats().node_count as u64)
+        .map(|id| {
+            let node = hierarchy.node(NodeId::new(id)).unwrap();
+            let blocks = node.blocks().iter().map(|b| b.get()).collect::<Vec<_>>();
+            let parent = node.parent().map(|p| p.get());
+            let children = hierarchy
+                .child_ids(node.id())
+                .iter()
+                .map(|c| c.get())
+                .collect::<Vec<_>>();
+            if let Some(parent) = parent {
+                assert!(parent < id, "parent must precede child");
+            }
+            assert!(
+                children.windows(2).all(|pair| pair[0] < pair[1]) && children.iter().all(|c| *c > id),
+                "children ascend and follow their parent"
+            );
+            format!(
+                "id={id} parent={parent:?} level={} points={} blocks={blocks:?} children={children:?}",
+                node.level(),
+                node.point_count()
+            )
+        })
+        .collect();
+    let mut bytes = fs::read(output).unwrap();
+    bytes.extend(fs::read(output_attributes_path(output)).unwrap());
+    (nodes, sha256_hex(&bytes))
+}
+
+fn planner_snapshot_for(
+    input: &std::path::Path,
+    dir: &std::path::Path,
+    options: ConvertOptions,
+) -> (Vec<String>, String) {
+    let reference = {
+        let output = dir.join("w1.oct");
+        convert_file(input, &output, options.with_spatial_workers(1).unwrap()).unwrap();
+        planner_snapshot(&output)
+    };
+    for workers in [2, 4] {
+        let output = dir.join(format!("w{workers}.oct"));
+        convert_file(
+            input,
+            &output,
+            options.with_spatial_workers(workers).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(planner_snapshot(&output), reference, "workers={workers}");
+    }
+    reference
+}
+
+#[test]
+fn sha256_matches_the_known_vector() {
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}
+
+fn assert_structure(
+    nodes: &[String],
+    sha: &str,
+    expected_count: usize,
+    expected_head: &[&str],
+    expected_listing_sha: &str,
+    expected_output_sha: &str,
+) {
+    assert_eq!(nodes.len(), expected_count);
+    assert_eq!(&nodes[..expected_head.len()], expected_head);
+    for (id, line) in nodes.iter().enumerate() {
+        // Block ids are assigned in node preorder, one block per node here.
+        if expected_count > 1 {
+            assert!(line.contains(&format!("blocks=[{id}]")), "{line}");
+        }
+    }
+    assert_eq!(
+        sha256_hex(nodes.join("\n").as_bytes()),
+        expected_listing_sha
+    );
+    assert_eq!(sha, expected_output_sha);
+}
+
+#[test]
+fn characterize_planner_structure_for_4000_points_with_divisions_4() {
+    let tmp = test_dir();
+    let input = tmp.path().join("source.las");
+    fixture(&input, false, true, 4_000);
+    let options = ConvertOptions::new(64, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap();
+    let (nodes, sha) = planner_snapshot_for(&input, tmp.path(), options);
+    println!(
+        "{}\nL={}\nSHA={sha}",
+        nodes.len(),
+        sha256_hex(nodes.join("\n").as_bytes())
+    );
+    assert_structure(
+        &nodes,
+        &sha,
+        85,
+        &[
+            "id=0 parent=None level=0 points=8 blocks=[0] children=[1, 22, 43, 64]",
+            "id=1 parent=Some(0) level=1 points=8 blocks=[1] children=[2, 7, 12, 17]",
+            "id=2 parent=Some(1) level=2 points=8 blocks=[2] children=[3, 4, 5, 6]",
+            "id=3 parent=Some(2) level=3 points=63 blocks=[3] children=[]",
+        ],
+        "15f90b1c8422ed4e14e21a47e0bf996dab964931fcc1e3a03e5f8f3ec1ef9b24",
+        "8aab7d4add63a113f902367da78aaa77c0ad3b33094dd3726354a07253ebba42",
+    );
+}
+
+#[test]
+fn characterize_planner_structure_for_coincident_points() {
+    let tmp = test_dir();
+    let input = tmp.path().join("coincident.las");
+    coincident_fixture(&input);
+    let options = ConvertOptions::new(2, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap();
+    let (nodes, sha) = planner_snapshot_for(&input, tmp.path(), options);
+    println!("L={}\nSHA={sha}", sha256_hex(nodes.join("\n").as_bytes()));
+    assert_structure(
+        &nodes,
+        &sha,
+        1,
+        &["id=0 parent=None level=0 points=5 blocks=[0, 1, 2] children=[]"],
+        "4b45d9a0f4c2345becff50c73ebf2e64ec214b97e5dfab5ce66b218274090908",
+        "3ab4e637732e6ba996f5613244a97b77b2d03ed80160ddc3b8b46225303c1278",
+    );
+}
+
+/// `(requested, limit)` of a rejected plan, `None` when the plan was accepted.
+fn planner_budget_outcome(
+    input: &std::path::Path,
+    dir: &std::path::Path,
+    budget: u64,
+    workers: usize,
+) -> Option<(u64, u64)> {
+    let output = dir.join(format!("budget-{budget}-{workers}.oct"));
+    let options = ConvertOptions::with_memory_budget(64, 0.01, budget)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap()
+        .with_spatial_workers(workers)
+        .unwrap();
+    match convert_file(input, &output, options) {
+        Ok(_) => None,
+        Err(ConvertError::MemoryBudgetExceeded { requested, limit }) => {
+            assert!(!output.exists());
+            Some((requested, limit))
+        }
+        Err(other) => panic!("budget={budget} workers={workers}: unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn characterize_planner_budget_outcomes_with_one_worker() {
+    let tmp = test_dir();
+    let input = tmp.path().join("source.las");
+    fixture(&input, false, true, 4_000);
+    // (budget, expected). The root check rejects below 19_017_728; between that and
+    // 19_083_007 a later check in the serial plan rejects with a larger `requested`.
+    let cases = [
+        (1, Some((19_017_728, 1))),
+        (19_017_727, Some((19_017_728, 19_017_727))),
+        (19_017_728, Some((19_018_240, 19_017_728))),
+        (19_033_856, Some((19_034_368, 19_033_856))),
+        (19_083_007, Some((19_083_008, 19_083_007))),
+        (19_083_008, None),
+        (23_342_592, None),
+    ];
+    for (budget, expected) in cases {
+        assert_eq!(
+            planner_budget_outcome(&input, tmp.path(), budget, 1),
+            expected,
+            "budget={budget}"
+        );
+    }
+}
+
+#[test]
+fn characterize_planner_budget_outcomes_with_two_workers() {
+    let tmp = test_dir();
+    let input = tmp.path().join("source.las");
+    fixture(&input, false, true, 4_000);
+    // 19_017_728..=23_000_000 fail the batch budget (`requested` is the batch reservation);
+    // 23_342_591 fails a branch-local check, whose error wins over the batch one;
+    // 23_342_592 is the smallest budget that is accepted.
+    let cases = [
+        (1, Some((19_017_728, 1))),
+        (19_017_727, Some((19_017_728, 19_017_727))),
+        (19_017_728, Some((19_018_240, 19_017_728))),
+        (19_033_855, Some((23_213_568, 19_033_855))),
+        (22_228_736, Some((23_213_568, 22_228_736))),
+        (23_000_000, Some((23_213_568, 23_000_000))),
+        (23_342_591, Some((19_033_856, 19_033_855))),
+        (23_342_592, None),
+        (23_342_593, None),
+    ];
+    for (budget, expected) in cases {
+        assert_eq!(
+            planner_budget_outcome(&input, tmp.path(), budget, 2),
+            expected,
+            "budget={budget}"
+        );
+    }
+}
