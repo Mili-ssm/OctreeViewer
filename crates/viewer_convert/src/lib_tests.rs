@@ -1459,3 +1459,48 @@ fn real_files_open() {
     }
     println!("real files opened: {count}");
 }
+
+#[test]
+fn spool_diagnostics_account_written_and_live_bytes() {
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
+    let input = dir.join("source.las");
+    fixture(&input, false, false, 4_000);
+    let options = ConvertOptions::new(64, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap();
+
+    let mut written = Vec::new();
+    for workers in [1, 2] {
+        let output = dir.join(format!("workers-{workers}.oct"));
+        let (_, diagnostics) = convert_file_with_diagnostics(
+            &input,
+            &output,
+            options.with_spatial_workers(workers).unwrap(),
+            |_| true,
+        )
+        .unwrap();
+        let spools = diagnostics.spatial_spools.unwrap();
+        let phases = diagnostics.spatial_phases.unwrap();
+        assert!(phases.spool_bytes_written > 0);
+        assert_eq!(
+            phases.spool_bytes_written,
+            spools.source_payload_written_bytes
+                + spools.child_payload_written_bytes
+                + spools.lod_payload_written_bytes
+        );
+        assert!(phases.peak_live_spool_bytes > 0);
+        assert!(phases.peak_live_spool_bytes <= phases.spool_bytes_written);
+        assert!(!phases.root_child_spool_bytes_written.is_empty());
+        assert!(
+            phases.root_child_spool_bytes_written.iter().sum::<u64>() <= phases.spool_bytes_written
+        );
+        written.push((
+            phases.spool_bytes_written,
+            phases.root_child_spool_bytes_written,
+        ));
+    }
+    // Totals and per-root-child bytes do not depend on the worker count.
+    assert_eq!(written[0], written[1]);
+}

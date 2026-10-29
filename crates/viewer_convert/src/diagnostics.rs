@@ -52,6 +52,18 @@ pub struct SpatialPhaseDiagnostics {
     pub spool_partition_and_sample_elapsed_ns: u128,
     /// Time creating and writing spatial LOD sample spools.
     pub lod_sample_write_elapsed_ns: u128,
+    /// Payload bytes written to any spatial spool (source, child and LOD); equals the sum of the
+    /// three `SpatialSpoolDiagnostics::*_written_bytes` counters.
+    pub spool_bytes_written: u64,
+    /// Maximum payload bytes of spools alive on disk at once during spatial planning. The ledger is
+    /// shared by all root-child workers, so with `spatial_workers > 1` it is the concurrent total.
+    /// It is updated once per planned node (not per point), so it is exact for serial planning and a
+    /// close lower bound under concurrency. LOD and leaf spools stay alive until planning ends.
+    pub peak_live_spool_bytes: u64,
+    /// Bytes written while planning the subtree of each non-empty root child, in child-key order:
+    /// the child's grandchild spools and LOD samples, but not the child's own input spool, which is
+    /// written by the root. Independent of the worker count.
+    pub root_child_spool_bytes_written: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

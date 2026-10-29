@@ -229,6 +229,23 @@ fn convert(
                 "internal_spatial_phase_lod_sample_write_elapsed_ns={}",
                 phases.lod_sample_write_elapsed_ns
             );
+            println!(
+                "internal_spatial_spool_bytes_written={}",
+                phases.spool_bytes_written
+            );
+            println!(
+                "internal_spatial_peak_live_spool_bytes={}",
+                phases.peak_live_spool_bytes
+            );
+            println!(
+                "internal_spatial_root_child_spool_bytes_written={}",
+                phases
+                    .root_child_spool_bytes_written
+                    .iter()
+                    .map(u64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
         }
         if let Some(bytes) = diagnostics.block_stream_source_payload_read_bytes {
             println!("internal_block_stream_source_payload_read_bytes={bytes}");
