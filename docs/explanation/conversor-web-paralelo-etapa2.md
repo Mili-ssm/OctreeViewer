@@ -111,7 +111,7 @@ Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este
 Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 espera a la Tarea 5. La Tarea 1 activó su criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (29-10-2026).
 
 **Archivos:**
-- Modificar: `crates/viewer_convert/src/spatial.rs`, `crates/viewer_convert/src/las_source.rs`, `crates/viewer_convert/src/lib.rs`
+- Modificar: `crates/viewer_convert/src/spatial.rs`, `crates/viewer_convert/src/las_source.rs`, `crates/viewer_convert/src/lib.rs`, `crates/viewer_convert/src/error.rs`, `crates/viewer_convert/src/ept.rs`
 - Crear: `crates/viewer_convert/src/pipeline/` con `spool_store.rs`, `point_source.rs`, `clock.rs`, `node_job.rs`
 
 **Interfaces** (los nombres son los de la spec; las firmas exactas las fija el paso 1 y se anotan aquí antes de implementar):
@@ -129,7 +129,7 @@ Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 espera a la Tare
 
 #### Firmas fijadas en el paso 1 (29-10-2026)
 
-Módulo `crates/viewer_convert/src/pipeline/`, todo `pub(crate)`. Las líneas citadas son de `spatial.rs` en `44d2a9a`.
+Módulo `crates/viewer_convert/src/pipeline/`, todo `pub(crate)`. Las líneas citadas son de `spatial.rs` en `44d2a9a`. Enmendado el mismo día tras la revisión de diseño («aprobar con cambios»; R1 se mantiene en 4a y 4b).
 
 ```rust
 // spool_store.rs
@@ -149,14 +149,25 @@ pub(crate) trait SpoolStore {
     fn reader(&self, id: SpoolId, extent: SpoolExtent) -> Result<Self::Reader, ConvertError>;
     fn delete(&self, id: SpoolId) -> Result<(), ConvertError>;
 }
-pub(crate) struct FileSpoolStore { root: PathBuf, ledger: Option<SpoolLedger> }
+pub(crate) struct FileSpoolStore { root: PathBuf, ledger: Option<SpoolLedger>, open: Mutex<OpenSpools> }
+impl FileSpoolStore {
+    pub fn new(root: &Path, diagnostics: bool) -> Self;
+    /// Checkpoint path: `SOURCE` already exists and is closed; the ledger starts at `source_len`.
+    pub fn with_closed_source(root: &Path, source_len: u64, diagnostics: bool) -> Self;
+}
 pub(crate) struct MemSpoolStore { state: Mutex<MemSpools> } // + fn stats() -> MemSpoolStats
 pub(crate) struct MemSpoolStats { pub live_bytes: u64, pub peak_bytes: u64, pub live_spools: usize, pub peak_spools: usize }
 ```
 
-- **Nativo, mismos bytes:** `SOURCE` → `source.spool` (el nombre del checkpoint, que usa un `FileSpoolStore` sobre su raíz); el resto → `spool-{id}.spool`. `create` = `create_new` vacío; `append` reabre en modo añadir en cada llamada, como cada vaciado de 32 KiB de hoy (`:600`), sin agotar descriptores con 8 trabajos × 512 hijos; `close` solo hace `sync_all` en `SOURCE` (como `spool_source`, `:1758`); `delete` descuenta del `SpoolLedger`, que pasa al store.
+- **Nativo, misma E/S que hoy:** `SOURCE` → `source.spool` (el nombre del checkpoint, que usa un `FileSpoolStore` sobre su raíz); el resto → `spool-{id}.spool`.
+  - `SOURCE` mantiene un único `BufWriter<File>` abierto de `create` a `close`, y `close` hace `sync_all` (como `spool_source`, `:1768-1796`).
+  - En los demás, `create` es perezoso (solo anota el id en `open`); el primer `append` hace `create_new` y los siguientes reabren en modo añadir, como cada vaciado de 32 KiB de hoy (`:600`). Así no se agotan descriptores con 8 trabajos × 512 hijos.
+  - `delete` descuenta del `SpoolLedger`, que pasa al store junto con `event_seq`.
+  - Checkpoint: `with_closed_source` sustituye a `SpoolLedger::with_live` (`:442`) tras el `link_or_copy` de `las_source.rs:342-345`.
+- **Un store compartido (4a):** un solo `S: SpoolStore + Sync` sirve a todas las ramas. Desaparecen los directorios por rama (`:1396`) y el `Arc<SpoolLedger>` (`:703`, `:1422`). La fase de bloques lee cada `PlannedBlock.spool` a través del mismo `&S`.
 - **Spools vacíos (Review Focus 2):** el búfer de hijo crea su spool en el primer vaciado; un hijo sin puntos no llama a `create`, su id queda reservado y se omite.
-- **Ids:** el planificador reserva `divisions³ + 1` ids por trabajo divisible (hijo `k` → base + `k`; LOD → base + `divisions³`). No llegan a la salida.
+- **Ids:** el host reserva `divisions³ + 1` ids por trabajo divisible (hijo `k` → base + `k`; LOD → base + `divisions³`), con un contador atómico propio o con rangos disjuntos por rama; el contador no forma parte de la E/S del trabajo. Los ids no llegan a la salida.
+- **Invariante:** un trabajo solo toca `input` y `first_output..first_output + divisions³`, así que el host puede preabrirlos.
 - **Extents:** `PlannedBlock` cambia `path` por `spool: SpoolId`; `read` y `release_spool_after_write` reciben `&S`. LOD y hojas se retienen hasta la fase de bloques; el nodo lee su entrada entera (`len`) para que un spool largo siga dando `PointCountMismatch`.
 - **En memoria (A10):** `MemSpoolStore` rechaza cualquier llamada fuera del ciclo (añadir tras `close`, leer antes de `close`, borrar abierto, extent fuera de rango, id repetido) y cuenta bytes y spools vivos al añadir. Test: con 4 000 puntos y divisiones 4 en serie, `peak_bytes` = `peak_live_spool_bytes` del ledger nativo y ≤ variante c con N = 1 de `model_node_job_arena.py` sobre los eventos de la misma ejecución; tras la fase de bloques no queda ningún id.
 
@@ -183,7 +194,7 @@ pub(crate) trait Clock { type Instant: Copy; fn now(&self) -> Self::Instant; fn 
 pub(crate) struct SystemClock; // Instant = std::time::Instant
 ```
 
-M1 lee en producción con `full` (un solo rango); `records` existe para los tests de rangos y para M2. Los rangos por chunk LAZ pasan a M2 tras un spike tipo S2 (A9). `batch` = `input_batch_point_limit`: así las llamadas a `fill` de una ejecución por rangos coinciden con las de la serie.
+M1 lee en producción con `full` (un solo rango); `records` existe para los tests de rangos y para M2. Los rangos por chunk LAZ pasan a M2 tras un spike tipo S2 (A9). `batch` = `input_batch_point_limit`: así las llamadas a `fill` de una ejecución por rangos coinciden con las de la serie. **Pendiente de portabilidad en M2:** `header() -> &las::Header` ata el trait al crate `las`; M2 decide si el núcleo lo conserva.
 
 ```rust
 // node_job.rs
@@ -205,7 +216,8 @@ pub(crate) struct NodeJobOutput {
 pub(crate) enum JobProgress { SourcePoints(u64), NodeHeartbeat }
 pub(crate) fn run_node_job<S: SpoolStore, C: Clock>(ctx: &JobContext, job: &NodeJob, store: &S, clock: &C,
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>) -> Result<NodeJobOutput, ConvertError>;
-pub(crate) struct RootPartition { pub children: Vec<ChildOutput>, pub samples: SampleGrid, pub all_points_equal: bool, pub metrics: Option<JobMetrics> }
+pub(crate) struct RootPartition { pub children: Vec<ChildOutput>, pub samples: SampleGrid, pub all_points_equal: bool,
+    pub release: Vec<SpoolId>, pub metrics: Option<JobMetrics> } // release: created children when all points are equal
 pub(crate) fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(ctx: &JobContext, info: &SourceInfo, bounds: SpatialBounds,
     first_output: SpoolId, source: &mut P, store: &S, clock: &C, progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>) -> Result<RootPartition, ConvertError>;
 pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: &SourceInfo, point_limit: u64, store: &S, id: SpoolId,
@@ -213,27 +225,37 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
 ```
 
 - **Nodo interno:** escanea, escribe hijos y LOD (`write_lod`, compartida con la raíz) y cierra sus spools; `release` = [entrada]. **Hoja:** no lee; `blocks` = trozos de `point_limit` del spool de entrada, que se retiene; si tiene 0 puntos, `release` = [entrada] (`:1660`). **Todos los puntos iguales:** hoja con `release` = hijos creados; la entrada se retiene (`:1213-1226`).
-- **Raíz** (`:867`): `SampleGrid` expone los acumuladores LOD (fusionables por rango en M2). No divisible: `spool_source` a `SOURCE` y `NodeJob` hoja. Todos iguales: el host borra los hijos (sin vaciar búferes, como hoy), reabre la fuente, `spool_source` a `SOURCE` y `NodeJob` de la raíz, que vuelve a escanear y queda hoja. Checkpoint: `NodeJob` sobre `SOURCE`.
+- **Raíz** (`:867`): `SampleGrid` expone los acumuladores LOD (fusionables por rango en M2). No divisible: `spool_source` a `SOURCE` y `NodeJob` hoja. Todos iguales (`:957-973`): el trabajo cierra los hijos ya creados **sin vaciar sus búferes**, como hoy, y los devuelve en `release`. Después el host los borra, reabre la fuente, `spool_source` a `SOURCE` y `NodeJob` de la raíz, que vuelve a escanear y queda hoja. Checkpoint: `NodeJob` sobre `SOURCE`.
 - **Commit** (host, en preorden): `id = node_records.len()`; por cada `BlockPlan`, `allocate_block_id` y `PlannedBlock`; luego `ensure_memory`, `NodeRecord` y progreso. Mismo orden y comprobaciones que hoy, así que los ids de nodo y bloque son los de la serie.
 
 **Planificador (A6).**
 
 1. **4a, preorden serial:** `build_node` sigue siendo el driver recursivo: `run_node_job` → el host borra `release` → commit → hijos por clave ascendente. Los hilos por hijo raíz, `append_branch` y los presupuestos de rama no cambian; cada rama usa el mismo driver. Cierre: SHA de M0 (incluidos Belvedere divisiones 8 y autzen), invariantes y barrido de `planner_budget` igual a la base.
-2. **4b, cola de listos:** `NodeScheduler::{RootBranches (por defecto), ReadyQueue}` en `ConvertOptions` (`pub(crate)`). `workers_used` hilos en `thread::scope` (`S: SpoolStore + Sync`) toman el trabajo listo de menor `NodePath`. Al terminar un trabajo, el host borra `release`, encola los hijos y guarda la salida en un `BTreeMap<NodePath, _>`. Un cursor (pila de rutas esperadas) hace commit en preorden en cuanto llega la salida siguiente. `start_seq` se fija al despachar y `end_seq` cuando el cursor sale del subárbol, de modo que el anidamiento del test de eventos se mantiene.
+2. **4b, cola de listos:** `NodeScheduler::{RootBranches (por defecto), ReadyQueue}` en `ConvertOptions` (`pub(crate)`). `workers_used` hilos en `thread::scope` (`S: SpoolStore + Sync`) toman el trabajo listo de menor `NodePath`.
+   - **Sin anticipación (R16):** solo se despachan trabajos bajo el lote virtual cuyo commit está en curso. Dentro del lote los hilos se reparten el trabajo de forma dinámica; el lote siguiente empieza cuando el cursor llega a su inicio. Es la barrera por lote de hoy con el mismo límite `min(W, k)`. La anticipación y los límites por encima de `W` quedan para M5.
+   - El tamaño del lote virtual sale de la opción `spatial_workers`, no del número de hilos, para que M5 pueda usar N ≠ W.
+   - Al terminar un trabajo, el host borra `release`, encola los hijos y guarda la salida en un `BTreeMap<NodePath, _>`. Un cursor (pila de rutas esperadas) hace commit en preorden en cuanto llega la salida siguiente. `start_seq` se fija al despachar y `end_seq` cuando el cursor sale del subárbol, de modo que el anidamiento del test de eventos se mantiene.
 3. **Cambio de valor por defecto** en un commit propio, medido por R7; si falla dos veces, se revierte ese commit. Tras pasar R7 se borran `RootBranches` y `append_branch`.
 
 **Presupuesto y estimación (A7).**
 
 - `workers_used` = `min(W, k)` si `W > 1` y `k > 1`, si no 1 (`W` = `spatial_workers`, `k` = hijos no vacíos de la raíz). Es la del lote mayor de hoy (`:1358`): una función del plan, no una medida. En 4b es además el límite de trabajos concurrentes, así que nunca hay más paralelismo que hoy y el término por worker extra sigue cubriéndolo.
 - `estimated_peak_memory_bytes`: misma fórmula (`:469-484`); también decide los workers de la fase de bloques.
-- `branch_memory_budget` en 4b: lotes virtuales de `workers_used` hijos raíz en orden de clave. Al hacer commit del primer hijo de cada lote se calcula el presupuesto con los recuentos globales ya confirmados y el tamaño del lote. Cada subárbol comprueba sus recuentos locales frente a él, como el builder de rama. Con `workers_used` = 1 se usan los recuentos globales frente a `planner_budget`. Resultado: `MemoryBudgetExceeded` igual (incluidos `requested` y `limit`), y los tests `lib_tests.rs:500`, `:702`, `:829` y `:975` no cambian.
-- `TooManyBlocks`: 4b lo comprueba en cada asignación global, como la serie. Hoy la ruta paralela da otro número (`:1518`), pero solo por encima de 1 000 000 de bloques y sin test; se acepta la diferencia.
+- `branch_memory_budget` en 4b: lotes virtuales de `workers_used` hijos raíz en orden de clave.
+  - El presupuesto de cada lote se calcula cuando el cursor llega al inicio del lote, antes de despachar sus trabajos, como hoy (`:1366-1373`). Usa los recuentos globales ya confirmados y el tamaño del lote.
+  - Cada subárbol comprueba sus recuentos locales frente a ese presupuesto, como el builder de rama. Con `workers_used` = 1 se usan los recuentos globales frente a `planner_budget`.
+  - Resultado: `MemoryBudgetExceeded` (incluidos `requested` y `limit`) es **idéntico al orden serie, y a hoy cuando como mucho una rama por lote falla**. Los tests `lib_tests.rs:500`, `:702`, `:829` y `:975` no cambian.
+- `TooManyBlocks` (R17): se reproduce tal cual. Con `workers_used` > 1 se comprueba dentro del subárbol con el contador local y, al salir de él, con el global, como `append_branch` (`:1518`); con 1, en cada asignación global.
 
 **Errores deterministas (A8).**
 
-- Gana el error del menor `NodePath` (preorden) o del menor `PointRange::start`. El error de commit de un nodo se ordena en su ruta, detrás del error de su trabajo.
+- Orden de errores: `(NodePath, fase)` con `BatchBudget < Job < Commit` (`check_memory_budget`, `:2287`), o menor `PointRange::start`. El presupuesto de lote se ordena en la ruta del primer hijo del lote, antes de cualquier error de trabajo de ese lote (I1).
 - 4b: con un error en `Q`, no se despachan rutas > `Q`; las < `Q` (y sus hijos < `Q`) terminan, y se devuelve el mínimo. `Cancelled` pierde frente a cualquier error real, como hoy.
-- `LasDecoderPanicked { message, point_index: Option<u64> }`: `Some(next_index())` del `fill` o `seek` que falla; `None` al abrir el lector. `PointCountMismatch` no gana campo: en lecturas de la fuente, `expected` = `point_count` de la fuente y `actual` = `range.start + read`, el índice global del primer punto que falta (hoy ya lo es con un solo rango); en spools sigue siendo local al nodo. Review Focus 5: LAS truncado, serie frente a rangos, mismo `Display`.
+- Índices globales (`processed` = puntos ya leídos del rango):
+  - `LasDecoderPanicked { message, point_index: Option<u64> }` (R18): `point_index = Some(range.start + processed)` del `fill` o `seek` que falla. `None` al abrir el lector y en EPT.
+  - `PointCountMismatch` no gana campo. En lecturas de la fuente, `expected` = `point_count` de la fuente y `actual = next_index()` tras el `fill` corto, que es el índice global del primer punto que falta. En spools, el recuento sigue siendo local al nodo.
+  - `PointOutsideHeaderBounds` (`:1866`): `point_index = range.start + processed + index`.
+- Review Focus 5: un LAS truncado y uno con un punto fuera de los límites de la cabecera, en serie frente a rangos, dan el mismo `Display`.
 
 **Lista A10.**
 
@@ -252,10 +274,12 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
 | `reader` | `getFile()` tras cerrar o handle síncrono de lectura en los workers de preparación |
 | Ficheros vivos | Si no se llega a ~650, empaquetar LOD y hojas retenidos en ficheros compartidos (id → fichero + offset) |
 
+Dependencia abierta (R19): si S9 obliga a empaquetar LOD y hojas, cómo se hace se decide cuando S9 informe.
+
 - [x] **Paso 1: diseño de firmas** — un arquitecto (Opus) fija firmas y el flujo de trabajos por nodo a partir de `spatial.rs` (`build_node` `:1067`, `process_child_tasks` `:1320`) y lo anota en este documento (sección anterior); revisión antes de seguir.
 - [ ] **Paso 2: `Clock` y `PointSource`** sin cambio de bytes; tests existentes y SHA M0.
 - [ ] **Paso 3: `SpoolStore` nativo** con un fichero por spool (tras la Tarea 5); SHA M0.
-- [ ] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5.
+- [ ] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5. Antes de 4b, escribir tests de caracterización sobre la ruta actual: serie; W = 2 con comprobaciones locales de rama; y un presupuesto de lote que falla, con `requested` fijado.
 - [ ] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción.
 - [ ] **Paso 6: commits** por paso, convencionales.
 
