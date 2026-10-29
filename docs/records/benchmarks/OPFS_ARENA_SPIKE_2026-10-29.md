@@ -12,7 +12,7 @@
 | Pico modelado > 1,5 × conjunto vivo nativo | **SE CUMPLE en Belvedere (divisiones por defecto, 2,64×) y en Majadas (6,53×)**; no en el modelo optimista de Belvedere con divisiones 8 (1,05× con N=4, 1,15× con N=8); con arenas retenidas hasta la fase de bloques el rango es ~0,94×–1,88× (ver «Cotas con arenas retenidas») |
 | OPFS no disponible en `file://` en Firefox | No se cumple: Firefox 157 funciona igual en `file://` y en HTTP |
 | OPFS en `file://` en Chrome | **No disponible** (`SecurityError` en el worker, medido en las 6 celdas del `.jsonl`; el hilo principal se comprobó ad hoc, sin fila en el `.jsonl`) |
-| Cuota frente a Majadas | **El conjunto vivo nativo de Majadas con el planificador por defecto (19,2 GiB, pico de una sola ejecución con divisiones 2 y 4 workers) supera la cuota medida (10 GiB)**. Depende del planificador (Belvedere: 4,67 GB con 1 worker, 6,0 GB con 4, 3,29 GiB con divisiones 8; Majadas con divisiones 8 o 1 worker no se midió), así que no se concluye que ningún diseño baste |
+| Cuota frente a Majadas | **El conjunto vivo nativo de Majadas con el planificador por defecto (19,2 GiB, pico de una sola ejecución con divisiones 2 y 4 workers) supera la cuota medida (10 GiB)**. Depende del planificador (Belvedere: 4,67 GB con 1 worker y 6,0 GB con 4, observados en ejecuciones de desarrollo y no archivados; 3,29 GiB con divisiones 8, archivado; Majadas con divisiones 8 o 1 worker no se midió), así que no se concluye que ningún diseño baste |
 
 ### Decisiones para el propietario
 

@@ -53,7 +53,7 @@ sin enviarlo.
 | R5 | Cuando un worker falle (error, trap o cancelación), la conversión abortará entera, terminará los workers y borrará sus temporales OPFS. |
 | R6 | La salida se validará releyéndola completa (en paralelo) antes de entregarla, como el CLI. |
 | R7 | El CLI no perderá rendimiento: SHA idénticos y mediana pareada Belvedere (perfil `perf`, ≥ 5 rondas A/B alternadas) dentro de ±3% de la referencia M0. |
-| R8 | Funcionará servido con `python3 -m http.server` y desde el paquete `file://`, sin cabeceras COOP/COEP. |
+| R8 | Funcionará servido con `python3 -m http.server` y desde el paquete `file://`, sin cabeceras COOP/COEP. En Chrome desde `file://` no hay OPFS ([spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md)): ahí la conversión solo usa spools en RAM, limitada a `ram_budget` y con aviso; la escala completa requiere servir por HTTP local. Firefox desde `file://` admite la conversión completa (decisión del propietario, 29-10-2026). |
 | R9 | Un `ram_budget` del host (por defecto 4 GB; máximo aceptado 8 GB) decide N y el umbral de spools en RAM. Es un objetivo de PSS medido, no una garantía: las estimaciones nativas no acotan la RAM real (RSS 606 MiB frente a 163 MB estimados en REAL_DATASET_BENCH). No cambia bytes ni el significado de `planner_budget`. |
 | R10 | Los spools se mantendrán en RAM mientras quepan en su presupuesto y se volcarán a OPFS al superarlo, sin cambiar los bytes de salida. |
 
@@ -98,6 +98,8 @@ con [ADR 0006](../adr/0006-politica-de-version-solo-en-viewer-format.md): la ver
 decidiéndose solo allí.
 
 ### Spools por arenas de trabajo
+
+> **Decisión del propietario (29-10-2026), tras el [spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md):** las arenas de solo añadido por subárbol alcanzan 1,9–6,5× el pico nativo de disco. La etapa 2 usa **trabajos por nodo**: cada trabajo lee la entrada de un nodo y escribe sus hijos en una arena nueva; el host borra la arena del padre cuando todos sus hijos la han consumido. El modelo de pico de este diseño se mide antes de M1.
 
 Cada trabajo síncrono recibe del host, ya abierta, una **arena**: un fichero OPFS de solo añadido
 con su handle síncrono (en el navegador) o un directorio (en nativo). Todos los spools que el trabajo
@@ -197,6 +199,7 @@ Sus resultados pueden cambiar umbrales y granularidad, nunca R1.
 | S4 | Arranque: compilar `WebAssembly.Module` una vez y enviarlo, frente a base64 por worker (`package-local.py`); workers anidados desde un worker `blob:` | M4 |
 | S5 | Cuota real, `persist()`, OPFS y `getFile()` tras cerrar el handle, en `http.server` y `file://`, Chrome y Firefox, a 30 GB | M3b |
 | S7 | Dimensionado: tiempo total, PSS y OPFS para N = 2, 4, 8, 12, 16 con el mismo `ram_budget` (4 y 8 GB) y reparto entre memoria wasm y spools en RAM; Belvedere en Chrome y Firefox | Cierre de M4 |
+| S8 | Cuota OPFS real con `persist()` en perfiles reales de Chrome y Firefox, y si cabe Majadas (≈ 19 GiB de spools vivos más la pareja de salida); decisión del propietario, 29-10-2026 | M6 |
 
 ## Riesgos
 
