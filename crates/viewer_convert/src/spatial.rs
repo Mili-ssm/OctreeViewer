@@ -20,7 +20,7 @@ use viewer_core::{
 use viewer_format::{FormatMetadata, SourcePointBlock};
 
 use super::{ConvertError, ConvertOptions};
-use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
+use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
 
@@ -441,6 +441,7 @@ fn build_spatial_plan_inner(
         spool_ledger: collect_spool_diagnostics
             .then(|| Arc::new(SpoolLedger::with_live(source_spool_bytes_written))),
         spool_written_local: 0,
+        node_events: Vec::new(),
     };
     match input {
         SpatialInput::Spool(path) => {
@@ -461,6 +462,8 @@ fn build_spatial_plan_inner(
     if let (Some(phases), Some(ledger)) = (builder.spatial_phases.as_mut(), &builder.spool_ledger) {
         phases.spool_bytes_written = ledger.written.load(Ordering::Relaxed);
         phases.peak_live_spool_bytes = ledger.peak.load(Ordering::Relaxed);
+        phases.node_spool_events = std::mem::take(&mut builder.node_events);
+        phases.node_spool_events.sort_by_key(|event| event.node_id);
     }
 
     let estimated_peak_memory_bytes = estimate_memory(
@@ -542,6 +545,20 @@ struct RootChildTask {
     bounds: SpatialBounds,
 }
 
+/// Payload bytes of every spool a node created, in child-key order (diagnostics only).
+fn child_payload_bytes(children: &[Option<ChildSpool>]) -> Vec<u64> {
+    children
+        .iter()
+        .flatten()
+        .filter_map(|child| child.payload_written_bytes)
+        .filter(|bytes| *bytes > 0)
+        .collect()
+}
+
+fn elapsed_ns(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
 struct ChildSpool {
     layout: SpoolLayout,
     path: PathBuf,
@@ -617,6 +634,8 @@ struct SpoolLedger {
     written: AtomicU64,
     live: AtomicU64,
     peak: AtomicU64,
+    /// Orders `NodeSpoolEvent` starts and ends across workers.
+    event_seq: AtomicU64,
 }
 
 impl SpoolLedger {
@@ -625,6 +644,7 @@ impl SpoolLedger {
             written: AtomicU64::new(bytes),
             live: AtomicU64::new(bytes),
             peak: AtomicU64::new(bytes),
+            ..Self::default()
         }
     }
 
@@ -654,8 +674,11 @@ struct BranchOutput {
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     spatial_phases: Option<SpatialPhaseDiagnostics>,
     spool_written_local: u64,
+    node_events: Vec<NodeSpoolEvent>,
 }
 
+// `Finished` is sent once per root-child branch, so the size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 enum BranchMessage {
     Progress(ConversionProgress),
     Finished(usize, Result<BranchOutput, ConvertError>),
@@ -680,6 +703,14 @@ struct SpatialBuilder<'a> {
     spool_ledger: Option<Arc<SpoolLedger>>,
     /// Bytes this builder (not its siblings) has written, for per-root-child accounting.
     spool_written_local: u64,
+    /// Node events with this builder's local node ids; `append_branch` rebases a worker's events.
+    node_events: Vec<NodeSpoolEvent>,
+}
+
+/// A node event between `begin_node_event` and `finish_node_event`.
+struct OpenNodeEvent {
+    event: NodeSpoolEvent,
+    started: Instant,
 }
 
 #[derive(Clone, Copy)]
@@ -712,6 +743,39 @@ impl SpatialBuilder<'_> {
             ledger.add(bytes);
             self.spool_written_local = self.spool_written_local.saturating_add(bytes);
         }
+    }
+
+    /// Opens a node event (diagnostics only); `finish_node_event` closes it.
+    fn begin_node_event(
+        &self,
+        node_id: NodeId,
+        parent: Option<NodeId>,
+        depth: u32,
+        input_spool_bytes: u64,
+    ) -> Option<OpenNodeEvent> {
+        let ledger = self.spool_ledger.as_ref()?;
+        Some(OpenNodeEvent {
+            event: NodeSpoolEvent {
+                node_id: node_id.get(),
+                parent_id: parent.map(NodeId::get),
+                depth,
+                input_spool_bytes,
+                start_seq: ledger.event_seq.fetch_add(1, Ordering::Relaxed),
+                ..NodeSpoolEvent::default()
+            },
+            started: Instant::now(),
+        })
+    }
+
+    fn finish_node_event(&mut self, open: Option<OpenNodeEvent>) {
+        let (Some(mut open), Some(ledger)) = (open, self.spool_ledger.as_ref()) else {
+            return;
+        };
+        open.event.end_seq = ledger.event_seq.fetch_add(1, Ordering::Relaxed);
+        if open.event.elapsed_ns == 0 {
+            open.event.elapsed_ns = elapsed_ns(open.started);
+        }
+        self.node_events.push(open.event);
     }
 
     fn note_spool_removed(&self, bytes: u64) {
@@ -828,6 +892,7 @@ impl SpatialBuilder<'_> {
             return Ok(());
         }
 
+        let mut open = self.begin_node_event(root_id, None, 0, 0);
         let child_count = usize::from(self.spatial_divisions).pow(3);
         let mut children = (0..child_count)
             .map(|_| None)
@@ -894,6 +959,12 @@ impl SpatialBuilder<'_> {
             .all(|axis_bounds| axis_bounds[0] == axis_bounds[1])
         {
             self.record_child_spool_writes(&children)?;
+            if let Some(open) = open.as_mut() {
+                open.event.child_spool_bytes = child_payload_bytes(&children);
+                open.event.input_spool_bytes = source
+                    .point_count
+                    .saturating_mul(self.layout.record_bytes() as u64);
+            }
             for child in children.into_iter().flatten() {
                 if child.created {
                     self.note_spool_removed(child.payload_written_bytes.unwrap_or(0));
@@ -913,7 +984,15 @@ impl SpatialBuilder<'_> {
             if let Some(bytes) = bytes {
                 self.add_source_spool_bytes(bytes)?;
             }
-            self.build_node(spool_path, source.point_count, bounds, None, 0, false)?;
+            self.build_node_with_event(
+                spool_path,
+                source.point_count,
+                bounds,
+                None,
+                0,
+                false,
+                open,
+            )?;
             return Ok(());
         }
 
@@ -921,6 +1000,9 @@ impl SpatialBuilder<'_> {
             child.finish()?;
         }
         self.record_child_spool_writes(&children)?;
+        if let Some(open) = open.as_mut() {
+            open.event.child_spool_bytes = child_payload_bytes(&children);
+        }
         let lod_write_started = self.spatial_phases.as_ref().map(|_| Instant::now());
         let sample_path = self.workspace.file("node-0.lod");
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
@@ -942,6 +1024,9 @@ impl SpatialBuilder<'_> {
 
         let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
+        if let Some(open) = open.as_mut() {
+            open.event.lod_bytes = (sample_count * self.layout.lod().record_bytes()) as u64;
+        }
         let sample_block = if sample_count > 0 {
             let block_id = self.allocate_block_id()?;
             self.output_blocks.push(PlannedBlock {
@@ -970,8 +1055,13 @@ impl SpatialBuilder<'_> {
         });
         self.emit_plan_progress()?;
 
+        if let Some(open) = open.as_mut() {
+            open.event.elapsed_ns = elapsed_ns(open.started);
+        }
         let child_tasks = self.child_tasks(bounds, children)?;
-        self.process_child_tasks(root_id, 0, child_tasks)
+        self.process_child_tasks(root_id, 0, child_tasks)?;
+        self.finish_node_event(open);
+        Ok(())
     }
 
     fn build_node(
@@ -984,9 +1074,66 @@ impl SpatialBuilder<'_> {
         input_is_child_spool: bool,
     ) -> Result<NodeId, ConvertError> {
         let id = NodeId::new(self.node_records.len() as u64);
+        let input_bytes = source_count.saturating_mul(self.layout.record_bytes() as u64);
+        let open = self.begin_node_event(id, parent, level, input_bytes);
+        self.build_node_with_event(
+            spool_path,
+            source_count,
+            bounds,
+            parent,
+            level,
+            input_is_child_spool,
+            open,
+        )
+    }
+
+    /// `open` may already hold the child spools of a failed root scan; they are kept in the event.
+    #[allow(clippy::too_many_arguments)]
+    fn build_node_with_event(
+        &mut self,
+        spool_path: PathBuf,
+        source_count: u64,
+        bounds: SpatialBounds,
+        parent: Option<NodeId>,
+        level: u32,
+        input_is_child_spool: bool,
+        mut open: Option<OpenNodeEvent>,
+    ) -> Result<NodeId, ConvertError> {
+        let id = NodeId::new(self.node_records.len() as u64);
+        if let Some(open) = open.as_mut() {
+            debug_assert_eq!(open.event.node_id, id.get());
+        }
+        let result = self.build_node_body(
+            spool_path,
+            source_count,
+            bounds,
+            parent,
+            level,
+            input_is_child_spool,
+            &mut open,
+        );
+        self.finish_node_event(open);
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_node_body(
+        &mut self,
+        spool_path: PathBuf,
+        source_count: u64,
+        bounds: SpatialBounds,
+        parent: Option<NodeId>,
+        level: u32,
+        input_is_child_spool: bool,
+        open: &mut Option<OpenNodeEvent>,
+    ) -> Result<NodeId, ConvertError> {
+        let id = NodeId::new(self.node_records.len() as u64);
         let can_split =
             source_count > self.point_limit && level < MAX_SPATIAL_DEPTH && cube_side(bounds) > 0.0;
         if !can_split {
+            if let Some(open) = open.as_mut() {
+                open.event.is_leaf = true;
+            }
             self.add_leaf(id, spool_path, source_count, bounds, parent, level)?;
             return Ok(id);
         }
@@ -1057,11 +1204,20 @@ impl SpatialBuilder<'_> {
             child.finish()?;
         }
         self.record_child_spool_writes(&children)?;
+        if let Some(open) = open.as_mut() {
+            open.event
+                .child_spool_bytes
+                .extend(child_payload_bytes(&children));
+        }
 
         if source_bounds
             .iter()
             .all(|axis_bounds| axis_bounds[0] == axis_bounds[1])
         {
+            if let Some(open) = open.as_mut() {
+                open.event.is_leaf = true;
+                open.event.became_leaf_all_equal = true;
+            }
             for child in children.into_iter().flatten() {
                 self.note_spool_removed(child.payload_written_bytes.unwrap_or(0));
                 fs::remove_file(child.path)?;
@@ -1090,6 +1246,9 @@ impl SpatialBuilder<'_> {
         self.record_phase_elapsed(lod_write_started, SpatialPhase::LodSampleWrite);
         let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
+        if let Some(open) = open.as_mut() {
+            open.event.lod_bytes = (sample_count * self.layout.lod().record_bytes()) as u64;
+        }
         self.note_spool_removed(source_count.saturating_mul(record_bytes as u64));
         fs::remove_file(&spool_path)?;
 
@@ -1120,6 +1279,9 @@ impl SpatialBuilder<'_> {
         });
         self.emit_plan_progress()?;
 
+        if let Some(open) = open.as_mut() {
+            open.event.elapsed_ns = elapsed_ns(open.started);
+        }
         let child_tasks = self.child_tasks(bounds, children)?;
         self.process_child_tasks(id, level, child_tasks)?;
         Ok(id)
@@ -1259,6 +1421,7 @@ impl SpatialBuilder<'_> {
                                     .then(SpatialPhaseDiagnostics::default),
                                 spool_ledger: spool_ledger.clone(),
                                 spool_written_local: 0,
+                                node_events: Vec::new(),
                             };
                             builder.build_node(
                                 task.path,
@@ -1275,6 +1438,7 @@ impl SpatialBuilder<'_> {
                                 spool_diagnostics: builder.spool_diagnostics,
                                 spatial_phases: builder.spatial_phases,
                                 spool_written_local: builder.spool_written_local,
+                                node_events: builder.node_events,
                             })
                         })();
                         if result.is_err() {
@@ -1395,6 +1559,15 @@ impl SpatialBuilder<'_> {
                 .root_child_spool_bytes_written
                 .push(branch.spool_written_local);
         }
+        for event in &mut branch.node_events {
+            event.node_id += node_offset;
+            event.parent_id = Some(
+                event
+                    .parent_id
+                    .map_or(parent_id.get(), |id| id + node_offset),
+            );
+        }
+        self.node_events.append(&mut branch.node_events);
         self.node_records.append(&mut branch.node_records);
         self.output_blocks.append(&mut branch.output_blocks);
         if let (Some(target), Some(source)) = (

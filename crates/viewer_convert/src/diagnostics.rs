@@ -65,6 +65,34 @@ pub struct SpatialPhaseDiagnostics {
     /// the child's grandchild spools and LOD samples, but not the child's own input spool, which is
     /// written by the root. Independent of the worker count.
     pub root_child_spool_bytes_written: Vec<u64>,
+    /// One event per spatial node in final (preorder) node-id order; empty unless diagnostics are
+    /// collected.
+    pub node_spool_events: Vec<NodeSpoolEvent>,
+}
+
+/// Spool traffic of one spatial node, for modelling per-node jobs. `start_seq`/`end_seq` are
+/// positions in one shared event counter (execution order); `elapsed_ns` is the node's own work
+/// (scan, partition, LOD write) excluding its children, measured wall time with worker overlap.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NodeSpoolEvent {
+    /// Final node id (index in the planned node list).
+    pub node_id: u64,
+    pub parent_id: Option<u64>,
+    pub depth: u32,
+    /// Payload bytes of the spool this node scans; 0 for a root read straight from the LAS file.
+    pub input_spool_bytes: u64,
+    /// Payload bytes of each child spool this node wrote, in child-key order. Also set for a node
+    /// that turned out to be a leaf (`became_leaf_all_equal`): those spools were deleted again.
+    pub child_spool_bytes: Vec<u64>,
+    /// Payload bytes of the `node-{id}.lod` sample extent; 0 for leaves.
+    pub lod_bytes: u64,
+    /// The node's input spool is read as leaf blocks and is kept until the block phase.
+    pub is_leaf: bool,
+    /// Leaf because every scanned point was identical, discovered only after scanning.
+    pub became_leaf_all_equal: bool,
+    pub elapsed_ns: u64,
+    pub start_seq: u64,
+    pub end_seq: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -1505,3 +1505,64 @@ fn spool_diagnostics_account_written_and_live_bytes() {
     // Totals and per-root-child bytes do not depend on the worker count.
     assert_eq!(written[0], written[1]);
 }
+
+#[test]
+fn node_spool_events_match_child_spool_totals() {
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
+    let input = dir.join("source.las");
+    fixture(&input, false, false, 4_000);
+    let options = ConvertOptions::new(64, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap();
+
+    let mut shapes = Vec::new();
+    for workers in [1, 2, 4] {
+        let output = dir.join(format!("events-{workers}.oct"));
+        let (_, diagnostics) = convert_file_with_diagnostics(
+            &input,
+            &output,
+            options.with_spatial_workers(workers).unwrap(),
+            |_| true,
+        )
+        .unwrap();
+        let spools = diagnostics.spatial_spools.unwrap();
+        let events = diagnostics.spatial_phases.unwrap().node_spool_events;
+        assert!(events.len() > 1);
+        assert_eq!(
+            events
+                .iter()
+                .flat_map(|event| event.child_spool_bytes.iter())
+                .sum::<u64>(),
+            spools.child_payload_written_bytes
+        );
+        assert_eq!(
+            events.iter().map(|event| event.lod_bytes).sum::<u64>(),
+            spools.lod_payload_written_bytes
+        );
+        // Final preorder ids: unique, contiguous, and every parent precedes its children.
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event.node_id, index as u64);
+            assert!(event.start_seq < event.end_seq);
+            assert_eq!(event.is_leaf, event.lod_bytes == 0);
+            let Some(parent_id) = event.parent_id else {
+                assert_eq!(event.depth, 0);
+                continue;
+            };
+            assert!(parent_id < event.node_id);
+            let parent = &events[parent_id as usize];
+            assert!(parent.start_seq < event.start_seq && event.end_seq < parent.end_seq);
+            assert_eq!(event.depth, parent.depth + 1);
+            assert!(parent.child_spool_bytes.contains(&event.input_spool_bytes));
+        }
+        // The tree and its byte counts do not depend on the worker count.
+        shapes.push(
+            events
+                .iter()
+                .map(|e| (e.node_id, e.parent_id, e.input_spool_bytes, e.lod_bytes))
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert!(shapes.windows(2).all(|pair| pair[0] == pair[1]));
+}

@@ -246,6 +246,31 @@ fn convert(
                     .collect::<Vec<_>>()
                     .join(",")
             );
+            // One line per node: node,parent|-,depth,input,lod,leaf,all_equal,elapsed_ns,start,end,
+            // child;child;...
+            for event in &phases.node_spool_events {
+                println!(
+                    "internal_spatial_node_event={},{},{},{},{},{},{},{},{},{},{}",
+                    event.node_id,
+                    event
+                        .parent_id
+                        .map_or_else(|| "-".to_owned(), |parent| parent.to_string()),
+                    event.depth,
+                    event.input_spool_bytes,
+                    event.lod_bytes,
+                    u8::from(event.is_leaf),
+                    u8::from(event.became_leaf_all_equal),
+                    event.elapsed_ns,
+                    event.start_seq,
+                    event.end_seq,
+                    event
+                        .child_spool_bytes
+                        .iter()
+                        .map(u64::to_string)
+                        .collect::<Vec<_>>()
+                        .join(";")
+                );
+            }
         }
         if let Some(bytes) = diagnostics.block_stream_source_payload_read_bytes {
             println!("internal_block_stream_source_payload_read_bytes={bytes}");
