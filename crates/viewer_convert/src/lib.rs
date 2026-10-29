@@ -14,6 +14,7 @@ mod error;
 mod fs_util;
 mod las_source;
 mod options;
+mod pipeline;
 mod publish;
 mod report;
 mod spatial;

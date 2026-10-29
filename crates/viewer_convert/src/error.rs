@@ -16,7 +16,11 @@ pub enum ConvertError {
     #[error("LAS/LAZ error: {0}")]
     Las(#[from] las::Error),
     #[error("LAZ decoder panicked on corrupt point data: {message}")]
-    LasDecoderPanicked { message: String },
+    LasDecoderPanicked {
+        message: String,
+        /// Global index of the first point of the failing call; `None` outside source reads.
+        point_index: Option<u64>,
+    },
     #[error("unsafe LAS/LAZ header: {0}")]
     LasPreflight(#[from] viewer_core::las::LasPreflightError),
     #[error("unsafe LAZ chunk table: {field} = {value} is outside the bound {bound}")]

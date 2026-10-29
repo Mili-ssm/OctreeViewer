@@ -22,6 +22,10 @@ use viewer_format::{FormatMetadata, SourcePointBlock};
 use super::{ConvertError, ConvertOptions};
 use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
+use crate::pipeline::{
+    clock::{Clock, SystemClock},
+    point_source::{LasPointSource, PointSource},
+};
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
@@ -556,7 +560,7 @@ fn child_payload_bytes(children: &[Option<ChildSpool>]) -> Vec<u64> {
 }
 
 fn elapsed_ns(started: Instant) -> u64 {
-    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+    SystemClock.elapsed_ns(started)
 }
 
 struct ChildSpool {
@@ -763,7 +767,7 @@ impl SpatialBuilder<'_> {
                 start_seq: ledger.event_seq.fetch_add(1, Ordering::Relaxed),
                 ..NodeSpoolEvent::default()
             },
-            started: Instant::now(),
+            started: SystemClock.now(),
         })
     }
 
@@ -879,7 +883,7 @@ impl SpatialBuilder<'_> {
         if !can_split {
             let spool_path = self.workspace.file("source.spool");
             if let Some(bytes) = spool_source(
-                reader,
+                &mut LasPointSource::full(&mut *reader),
                 source,
                 options,
                 &spool_path,
@@ -905,20 +909,21 @@ impl SpatialBuilder<'_> {
             .expect("converter subdivisions are validated");
         let point_limit =
             crate::options::input_batch_point_limit(self.point_limit, source.record_length);
-        let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
+        let mut points = LasPointSource::full(reader);
+        let mut point_data = PointDataBuilder::new().for_header(points.header()).build();
         let mut processed = 0_u64;
         while processed < source.point_count {
             let requested = point_limit.min(source.point_count - processed);
-            let fill_started = self.spatial_phases.as_ref().map(|_| Instant::now());
-            let read = crate::las_source::fill_points(reader, requested, &mut point_data)?;
+            let fill_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
+            let read = points.fill(requested, &mut point_data)?;
             self.record_phase_elapsed(fill_started, SpatialPhase::RootLasFill);
             if read != requested {
                 return Err(ConvertError::PointCountMismatch {
                     expected: source.point_count,
-                    actual: processed + read,
+                    actual: points.next_index(),
                 });
             }
-            let classify_started = self.spatial_phases.as_ref().map(|_| Instant::now());
+            let classify_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
             visit_source_points(&point_data, source, processed, |point| {
                 for (axis, axis_bounds) in source_bounds.iter_mut().enumerate() {
                     axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
@@ -974,7 +979,7 @@ impl SpatialBuilder<'_> {
             let mut source_reader = crate::las_source::open_las_reader(input_path)?;
             let spool_path = self.workspace.file("source.spool");
             let bytes = spool_source(
-                &mut source_reader,
+                &mut LasPointSource::full(&mut source_reader),
                 source,
                 options,
                 &spool_path,
@@ -1003,7 +1008,7 @@ impl SpatialBuilder<'_> {
         if let Some(open) = open.as_mut() {
             open.event.child_spool_bytes = child_payload_bytes(&children);
         }
-        let lod_write_started = self.spatial_phases.as_ref().map(|_| Instant::now());
+        let lod_write_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
         let sample_path = self.workspace.file("node-0.lod");
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
         for (key, accumulator) in samples
@@ -1157,14 +1162,14 @@ impl SpatialBuilder<'_> {
         let records_per_batch = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
         let mut record_buffer = vec![0; records_per_batch * record_bytes];
         loop {
-            let read_started = self.spatial_phases.as_ref().map(|_| Instant::now());
+            let read_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
             let records = read_records(&mut source_reader, &mut record_buffer, self.layout)?;
             self.record_phase_elapsed(read_started, SpatialPhase::SpoolScanRead);
             if records == 0 {
                 break;
             }
             self.add_scanned_spool_bytes(records, record_bytes, input_is_child_spool)?;
-            let classify_started = self.spatial_phases.as_ref().map(|_| Instant::now());
+            let classify_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
             for bytes in record_buffer[..records * record_bytes].chunks_exact(record_bytes) {
                 let point = decode_point(bytes, self.layout);
                 scanned += 1;
@@ -1226,7 +1231,7 @@ impl SpatialBuilder<'_> {
             return Ok(id);
         }
 
-        let lod_write_started = self.spatial_phases.as_ref().map(|_| Instant::now());
+        let lod_write_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
         let sample_path = self.workspace.file(&format!("node-{}.lod", id.get()));
         let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
         for (key, accumulator) in samples
@@ -1756,7 +1761,7 @@ fn average(sum: u128, count: u64) -> u128 {
 }
 
 pub(crate) fn spool_source(
-    reader: &mut Reader,
+    points: &mut impl PointSource,
     source: &SourceInfo,
     options: ConvertOptions,
     spool_path: &Path,
@@ -1765,20 +1770,21 @@ pub(crate) fn spool_source(
 ) -> Result<Option<u64>, ConvertError> {
     let point_limit =
         crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
+    let range = points.range();
     let mut writer = BufWriter::new(File::create(spool_path)?);
-    let mut point_data = PointDataBuilder::new().for_header(reader.header()).build();
-    let mut processed = 0_u64;
-    while processed < source.point_count {
-        let requested = point_limit.min(source.point_count - processed);
-        let read = crate::las_source::fill_points(reader, requested, &mut point_data)?;
+    let mut point_data = PointDataBuilder::new().for_header(points.header()).build();
+    while points.next_index() < range.end {
+        let first_index = points.next_index();
+        let requested = point_limit.min(range.end - first_index);
+        let read = points.fill(requested, &mut point_data)?;
         if read != requested {
             return Err(ConvertError::PointCountMismatch {
                 expected: source.point_count,
-                actual: processed + read,
+                actual: points.next_index(),
             });
         }
-        write_source_points(&point_data, source, processed, &mut writer)?;
-        processed += read;
+        write_source_points(&point_data, source, first_index, &mut writer)?;
+        let processed = points.next_index() - range.start;
         emit_progress(
             on_progress,
             ConversionProgress {
@@ -1796,8 +1802,7 @@ pub(crate) fn spool_source(
         .sync_all()?;
     if collect_diagnostics {
         Ok(Some(
-            source
-                .point_count
+            (range.end - range.start)
                 .checked_mul(SpoolLayout::source(source).record_bytes() as u64)
                 .ok_or(ConvertError::SizeOverflow)?,
         ))

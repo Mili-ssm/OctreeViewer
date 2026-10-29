@@ -21,6 +21,7 @@ use crate::diagnostics::DiagnosticTimer;
 use crate::ept;
 use crate::error::ConvertError;
 use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
+use crate::pipeline::point_source::LasPointSource;
 use crate::publish::{
     OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
     output_block_ids, publish_output_pair, validate_output_pair, verify_candidate_visual_scale,
@@ -75,13 +76,24 @@ pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
 /// The reader is left in an unknown state after a panic: callers must propagate the error and
 /// drop it.
 pub(crate) fn contain_decoder_panic<T>(call: impl FnOnce() -> T) -> Result<T, ConvertError> {
+    contain_decoder_panic_at(None, call)
+}
+
+/// [`contain_decoder_panic`] tagging the error with the global index of the failing point.
+pub(crate) fn contain_decoder_panic_at<T>(
+    point_index: Option<u64>,
+    call: impl FnOnce() -> T,
+) -> Result<T, ConvertError> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).map_err(|payload| {
         let message = payload
             .downcast_ref::<&str>()
             .map(|message| (*message).to_owned())
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "non-string panic payload".to_owned());
-        ConvertError::LasDecoderPanicked { message }
+        ConvertError::LasDecoderPanicked {
+            message,
+            point_index,
+        }
     })
 }
 
@@ -97,6 +109,18 @@ pub(crate) fn fill_points(
 /// `Reader::seek` with decoder panics contained.
 pub(crate) fn seek_points(reader: &mut Reader, index: u64) -> Result<(), ConvertError> {
     Ok(contain_decoder_panic(|| reader.seek(index))??)
+}
+
+#[cfg_attr(not(test), allow(dead_code, reason = "used by M2 range reads"))]
+/// `Reader::seek` reporting `point_index` if the decoder panics.
+pub(crate) fn seek_points_at(
+    reader: &mut Reader,
+    index: u64,
+    point_index: u64,
+) -> Result<(), ConvertError> {
+    Ok(contain_decoder_panic_at(Some(point_index), || {
+        reader.seek(index)
+    })??)
 }
 
 /// Shared decoded chunk-table check; keeps the dedicated error for rejected entries.
@@ -324,7 +348,7 @@ pub(crate) fn convert_file_inner(
             CheckpointStage::Started => {
                 let path = checkpoint.source_path();
                 source_spool_bytes_written = spool_source(
-                    &mut reader,
+                    &mut LasPointSource::full(&mut reader),
                     &source,
                     options,
                     &path,
