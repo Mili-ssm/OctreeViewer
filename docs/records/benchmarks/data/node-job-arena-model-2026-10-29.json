@@ -1,0 +1,536 @@
+{
+  "belvedere-d2-w1": {
+    "native_peak_live_spool_bytes": 4671716287,
+    "spool_bytes_written": 16165156750,
+    "source_payload_bytes": 3348975489,
+    "nodes": 1343,
+    "leaf_nodes": 1083,
+    "became_leaf_all_equal_nodes": 0,
+    "retained_leaf_and_lod_bytes": 3350241235,
+    "critical_path_ns": 17754855918,
+    "calibration_n1_own_free_lifo": {
+      "peak_bytes": 4671519763,
+      "makespan_ns": 35872211394,
+      "ratio_to_native_peak": 1.0
+    },
+    "modelled": {
+      "a_n4_fifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 19837890522,
+        "ratio_to_native_peak": 3.4602,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n4_lifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 20001137710,
+        "ratio_to_native_peak": 3.4602,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n4_largest": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 19835813792,
+        "ratio_to_native_peak": 3.4602,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n8_fifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 18263087518,
+        "ratio_to_native_peak": 3.4602,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n8_lifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 18530825263,
+        "ratio_to_native_peak": 3.4602,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n8_largest": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 18269740802,
+        "ratio_to_native_peak": 3.4602,
+        "peak_over_source_bytes": 4.8269
+      },
+      "b_n4_fifo": {
+        "peak_bytes": 8009021186,
+        "makespan_ns": 19837890522,
+        "ratio_to_native_peak": 1.7144,
+        "peak_over_source_bytes": 2.3915
+      },
+      "b_n4_lifo": {
+        "peak_bytes": 7640648386,
+        "makespan_ns": 20001137710,
+        "ratio_to_native_peak": 1.6355,
+        "peak_over_source_bytes": 2.2815
+      },
+      "b_n4_largest": {
+        "peak_bytes": 8162331216,
+        "makespan_ns": 19835813792,
+        "ratio_to_native_peak": 1.7472,
+        "peak_over_source_bytes": 2.4373
+      },
+      "b_n8_fifo": {
+        "peak_bytes": 8394186759,
+        "makespan_ns": 18263087518,
+        "ratio_to_native_peak": 1.7968,
+        "peak_over_source_bytes": 2.5065
+      },
+      "b_n8_lifo": {
+        "peak_bytes": 8432742509,
+        "makespan_ns": 18530825263,
+        "ratio_to_native_peak": 1.8051,
+        "peak_over_source_bytes": 2.518
+      },
+      "b_n8_largest": {
+        "peak_bytes": 8415723548,
+        "makespan_ns": 18269740802,
+        "ratio_to_native_peak": 1.8014,
+        "peak_over_source_bytes": 2.5129
+      }
+    }
+  },
+  "belvedere-d2-w4": {
+    "native_peak_live_spool_bytes": 5806739358,
+    "spool_bytes_written": 16165156750,
+    "source_payload_bytes": 3348975489,
+    "nodes": 1343,
+    "leaf_nodes": 1083,
+    "became_leaf_all_equal_nodes": 0,
+    "retained_leaf_and_lod_bytes": 3350241235,
+    "critical_path_ns": 18077183238,
+    "calibration_n1_own_free_lifo": {
+      "peak_bytes": 4671519763,
+      "makespan_ns": 40359892562,
+      "ratio_to_native_peak": 0.8045
+    },
+    "modelled": {
+      "a_n4_fifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 19969808775,
+        "ratio_to_native_peak": 2.7839,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n4_lifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 20195877130,
+        "ratio_to_native_peak": 2.7839,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n4_largest": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 19970341187,
+        "ratio_to_native_peak": 2.7839,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n8_fifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 18494192539,
+        "ratio_to_native_peak": 2.7839,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n8_lifo": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 18488991136,
+        "ratio_to_native_peak": 2.7839,
+        "peak_over_source_bytes": 4.8269
+      },
+      "a_n8_largest": {
+        "peak_bytes": 16165156750,
+        "makespan_ns": 18488191958,
+        "ratio_to_native_peak": 2.7839,
+        "peak_over_source_bytes": 4.8269
+      },
+      "b_n4_fifo": {
+        "peak_bytes": 7733875529,
+        "makespan_ns": 19969808775,
+        "ratio_to_native_peak": 1.3319,
+        "peak_over_source_bytes": 2.3093
+      },
+      "b_n4_lifo": {
+        "peak_bytes": 7687511091,
+        "makespan_ns": 20195877130,
+        "ratio_to_native_peak": 1.3239,
+        "peak_over_source_bytes": 2.2955
+      },
+      "b_n4_largest": {
+        "peak_bytes": 8119141434,
+        "makespan_ns": 19970341187,
+        "ratio_to_native_peak": 1.3982,
+        "peak_over_source_bytes": 2.4244
+      },
+      "b_n8_fifo": {
+        "peak_bytes": 8292245704,
+        "makespan_ns": 18494192539,
+        "ratio_to_native_peak": 1.428,
+        "peak_over_source_bytes": 2.4761
+      },
+      "b_n8_lifo": {
+        "peak_bytes": 8431303970,
+        "makespan_ns": 18488991136,
+        "ratio_to_native_peak": 1.452,
+        "peak_over_source_bytes": 2.5176
+      },
+      "b_n8_largest": {
+        "peak_bytes": 8528304094,
+        "makespan_ns": 18488191958,
+        "ratio_to_native_peak": 1.4687,
+        "peak_over_source_bytes": 2.5465
+      }
+    }
+  },
+  "belvedere-d8-w1": {
+    "native_peak_live_spool_bytes": 3442632020,
+    "spool_bytes_written": 6660894157,
+    "source_payload_bytes": 3348975489,
+    "nodes": 5140,
+    "leaf_nodes": 5070,
+    "became_leaf_all_equal_nodes": 0,
+    "retained_leaf_and_lod_bytes": 3349247856,
+    "critical_path_ns": 12212701582,
+    "calibration_n1_own_free_lifo": {
+      "peak_bytes": 3442893045,
+      "makespan_ns": 17857265844,
+      "ratio_to_native_peak": 1.0001
+    },
+    "modelled": {
+      "a_n4_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 13507035045,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n4_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 13559663021,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n4_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 13497415139,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n8_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 12785357525,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n8_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 12828368138,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n8_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 12764804200,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n4_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 13507035045,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n4_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 13559663021,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n4_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 13497415139,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n8_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 12785357525,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n8_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 12828368138,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n8_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 12764804200,
+        "ratio_to_native_peak": 1.9348,
+        "peak_over_source_bytes": 1.9889
+      }
+    }
+  },
+  "belvedere-d8-w4": {
+    "native_peak_live_spool_bytes": 3535842000,
+    "spool_bytes_written": 6660894157,
+    "source_payload_bytes": 3348975489,
+    "nodes": 5140,
+    "leaf_nodes": 5070,
+    "became_leaf_all_equal_nodes": 0,
+    "retained_leaf_and_lod_bytes": 3349247856,
+    "critical_path_ns": 14668564711,
+    "calibration_n1_own_free_lifo": {
+      "peak_bytes": 3442893045,
+      "makespan_ns": 22394896956,
+      "ratio_to_native_peak": 0.9737
+    },
+    "modelled": {
+      "a_n4_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 16465949206,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n4_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 16520640441,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n4_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 16445991360,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n8_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 15490080482,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n8_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 15517427369,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "a_n8_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 15456181035,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n4_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 16465949206,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n4_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 16520640441,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n4_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 16445991360,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n8_fifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 15490080482,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n8_lifo": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 15517427369,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      },
+      "b_n8_largest": {
+        "peak_bytes": 6660894157,
+        "makespan_ns": 15456181035,
+        "ratio_to_native_peak": 1.8838,
+        "peak_over_source_bytes": 1.9889
+      }
+    }
+  },
+  "majadas-d2-w1": {
+    "native_peak_live_spool_bytes": 18829664481,
+    "spool_bytes_written": 134724002211,
+    "source_payload_bytes": 13710374106,
+    "nodes": 6259,
+    "leaf_nodes": 4990,
+    "became_leaf_all_equal_nodes": 0,
+    "retained_leaf_and_lod_bytes": 13716507966,
+    "critical_path_ns": 92319194591,
+    "calibration_n1_own_free_lifo": {
+      "peak_bytes": 18825939426,
+      "makespan_ns": 248459083778,
+      "ratio_to_native_peak": 0.9998
+    },
+    "modelled": {
+      "a_n4_fifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 107099614126,
+        "ratio_to_native_peak": 7.1549,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n4_lifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 108096847911,
+        "ratio_to_native_peak": 7.1549,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n4_largest": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 107092955665,
+        "ratio_to_native_peak": 7.1549,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n8_fifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 93763804600,
+        "ratio_to_native_peak": 7.1549,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n8_lifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 94315036115,
+        "ratio_to_native_peak": 7.1549,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n8_largest": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 93249974826,
+        "ratio_to_native_peak": 7.1549,
+        "peak_over_source_bytes": 9.8264
+      },
+      "b_n4_fifo": {
+        "peak_bytes": 36008913438,
+        "makespan_ns": 107099614126,
+        "ratio_to_native_peak": 1.9124,
+        "peak_over_source_bytes": 2.6264
+      },
+      "b_n4_lifo": {
+        "peak_bytes": 36008940708,
+        "makespan_ns": 108096847911,
+        "ratio_to_native_peak": 1.9124,
+        "peak_over_source_bytes": 2.6264
+      },
+      "b_n4_largest": {
+        "peak_bytes": 68384675373,
+        "makespan_ns": 107092955665,
+        "ratio_to_native_peak": 3.6318,
+        "peak_over_source_bytes": 4.9878
+      },
+      "b_n8_fifo": {
+        "peak_bytes": 36008940708,
+        "makespan_ns": 93763804600,
+        "ratio_to_native_peak": 1.9124,
+        "peak_over_source_bytes": 2.6264
+      },
+      "b_n8_lifo": {
+        "peak_bytes": 36008940708,
+        "makespan_ns": 94315036115,
+        "ratio_to_native_peak": 1.9124,
+        "peak_over_source_bytes": 2.6264
+      },
+      "b_n8_largest": {
+        "peak_bytes": 38860379985,
+        "makespan_ns": 93249974826,
+        "ratio_to_native_peak": 2.0638,
+        "peak_over_source_bytes": 2.8344
+      }
+    }
+  },
+  "majadas-d2-w4": {
+    "native_peak_live_spool_bytes": 20639155824,
+    "spool_bytes_written": 134724002211,
+    "source_payload_bytes": 13710374106,
+    "nodes": 6259,
+    "leaf_nodes": 4990,
+    "became_leaf_all_equal_nodes": 0,
+    "retained_leaf_and_lod_bytes": 13716507966,
+    "critical_path_ns": 111687727135,
+    "calibration_n1_own_free_lifo": {
+      "peak_bytes": 18825939426,
+      "makespan_ns": 376682580595,
+      "ratio_to_native_peak": 0.9121
+    },
+    "modelled": {
+      "a_n4_fifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 135375391898,
+        "ratio_to_native_peak": 6.5276,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n4_lifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 136799969549,
+        "ratio_to_native_peak": 6.5276,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n4_largest": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 135387784830,
+        "ratio_to_native_peak": 6.5276,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n8_fifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 112004300890,
+        "ratio_to_native_peak": 6.5276,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n8_lifo": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 114271673237,
+        "ratio_to_native_peak": 6.5276,
+        "peak_over_source_bytes": 9.8264
+      },
+      "a_n8_largest": {
+        "peak_bytes": 134724002211,
+        "makespan_ns": 111698891464,
+        "ratio_to_native_peak": 6.5276,
+        "peak_over_source_bytes": 9.8264
+      },
+      "b_n4_fifo": {
+        "peak_bytes": 36008908803,
+        "makespan_ns": 135375391898,
+        "ratio_to_native_peak": 1.7447,
+        "peak_over_source_bytes": 2.6264
+      },
+      "b_n4_lifo": {
+        "peak_bytes": 36008936073,
+        "makespan_ns": 136799969549,
+        "ratio_to_native_peak": 1.7447,
+        "peak_over_source_bytes": 2.6264
+      },
+      "b_n4_largest": {
+        "peak_bytes": 68320631151,
+        "makespan_ns": 135387784830,
+        "ratio_to_native_peak": 3.3102,
+        "peak_over_source_bytes": 4.9831
+      },
+      "b_n8_fifo": {
+        "peak_bytes": 36024795324,
+        "makespan_ns": 112004300890,
+        "ratio_to_native_peak": 1.7455,
+        "peak_over_source_bytes": 2.6276
+      },
+      "b_n8_lifo": {
+        "peak_bytes": 36024795324,
+        "makespan_ns": 114271673237,
+        "ratio_to_native_peak": 1.7455,
+        "peak_over_source_bytes": 2.6276
+      },
+      "b_n8_largest": {
+        "peak_bytes": 36024795324,
+        "makespan_ns": 111698891464,
+        "ratio_to_native_peak": 1.7455,
+        "peak_over_source_bytes": 2.6276
+      }
+    }
+  }
+}
