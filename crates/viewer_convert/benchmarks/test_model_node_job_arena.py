@@ -23,10 +23,16 @@ CHAIN = [
 
 class ModelTests(unittest.TestCase):
     def test_variants_on_hand_computed_chain(self):
-        peaks = {variant: model.simulate(CHAIN, 4, "fifo", variant)["peak_bytes"]
-                 for variant in ("a", "b", "own")}
-        # a: no arena is ever freed (LOD pins it); b and own free consumed spools.
-        self.assertEqual(peaks, {"a": 278, "b": 195, "own": 195})
+        runs = {variant: model.simulate(CHAIN, 4, "fifo", variant)
+                for variant in ("a", "b", "c", "own")}
+        # a: no arena is ever freed (LOD pins it); b, c and own free consumed spools.
+        self.assertEqual({v: r["peak_bytes"] for v, r in runs.items()},
+                         {"a": 278, "b": 195, "c": 195, "own": 195})
+        # Live files: a = three arenas; b = retained + two arenas; c = retained + two spools.
+        self.assertEqual([runs[v]["max_live_files"] for v in "abc"], [3, 3, 3])
+        # r: the one branch (X and Y spools, 180 B) is freed only when Y ends, after the LOD of Y.
+        branch = model.simulate(CHAIN, 4, "fifo", "r")
+        self.assertEqual((branch["peak_bytes"], branch["max_live_files"]), (278, 2))
 
     def test_policies_and_metrics_on_chain(self):
         for policy in model.POLICIES:

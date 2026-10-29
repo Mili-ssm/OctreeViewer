@@ -14,7 +14,8 @@ Registro fechado e inmutable (etapa 2 del conversor web paralelo, Tarea 1). Mide
 - **Variante (a), como está:** el LOD del nodo y los spools de hojas viven en la arena del trabajo, que solo se libera cuando todos sus extents han muerto; como el LOD y las hojas se leen en la fase de bloques, la arena no se libera nunca (el pico es todo lo escrito salvo temporales).
 - **Variante (b):** LOD y spools de hojas van a una arena retenida (vivos hasta la fase de bloques); los spools internos ya consumidos se liberan cuando el último hermano termina. Un nodo que resulta hoja por puntos idénticos (`became_leaf_all_equal`) fijaría la arena; no aparece en estos casos.
 - **Repartos:** FIFO (BFS), LIFO (DFS) y mayor entrada primero. Las duraciones se midieron en una máquina compartida con otras cargas: valen solo como pesos relativos, no se dan tiempos.
-- **Calibración:** el mismo simulador con N = 1, LIFO y cada spool muerto en su propio fin reproduce el pico nativo de 1 worker (0,9998–1,0001 ×; ver columna de la segunda tabla). Con 4 workers el nativo es mayor (concurrencia real), por eso se citan ambos comparadores.
+- **Calibración (validez acotada):** el mismo simulador con N = 1, LIFO y cada spool muerto en su propio fin reproduce el pico nativo de 1 worker (0,9998–1,0001 ×). Eso valida la contabilidad de bytes, los datos de los eventos y el orden DFS; **no** valida la lógica de vida de las arenas (solo la cubre la prueba manual de 5 nodos) ni la concurrencia. Frente al nativo de 4 workers el mismo modelo da 0,76 / 0,97 / 0,92 (Belvedere/2 div., Belvedere/8 div., Majadas; segunda ejecución): el nativo con 4 workers solapa subárboles de raíz (el modelo N = 1 no), así que cae por debajo y no es un error del modelo.
+- **Comparador (matiz):** el nativo con 4 workers paraleliza por hijo de la raíz (hasta 4 ramas a la vez); el modelo reparte por nodo. Los dos «× nativo» no miden la misma concurrencia.
 - **Comparador.** Cada caso se ejecutó con 1 y 4 workers (`w1`, `w4`; mismo árbol y bytes, distinto orden y pico nativo). «× nativo» usa el `peak_live_spool_bytes` de la misma ejecución; el modelado de N = 4/8 no depende apenas del log usado.
 - **Fórmula M6.** `pico_modelado ≈ k × bytes_fuente` con `bytes_fuente` = carga útil de todos los puntos de entrada (3.348.975.489 B Belvedere, 13.710.374.106 B Majadas): variante (b) 2,3–2,6 × (Belvedere/2 divisiones y Majadas), 1,99 × (Belvedere/8); variante (a) 4,8–9,8 ×. Mínimo inevitable (hojas+LOD retenidos) ≈ 1,0 × fuente.
 
@@ -71,9 +72,54 @@ El camino crítico (cadena más larga de duraciones con trabajadores ilimitados)
 - **A3:** ids finales en preorden (reasignados con el desplazamiento de `append_branch`); la prueba corre con 1, 2 y 4 workers y comprueba unicidad, contigüidad y padre antes que hijo.
 - **Interpretación del criterio:** parada solo si ningún reparto de (a) ni de (b) queda en ≤ 1,5 ×. Aquí sí ocurre en Majadas y Belvedere/8 divisiones (y en Belvedere/2 divisiones frente al nativo de 1 worker); solo Belvedere/2 divisiones frente al nativo de 4 workers queda en 1,32–1,47 × (variante b).
 
+## Por qué suben (a) y (b)
+
+- **(a)** pico = todo lo escrito: el LOD de cada nodo comparte arena con sus hijos y se lee en la fase de bloques, así que ninguna arena se libera (Belvedere/2 div. 16,2 GB frente a 4,7 GB nativo).
+- **(b)** una arena de hijos no se libera hasta que termina el último hermano: con 8 divisiones la arena de 81 hijos de la raíz (≈ 3,3 GB) vive mientras todos los hijos escriben las suyas; con 2 divisiones y Majadas, los subárboles grandes abiertos a la vez retienen sus arenas completas.
+
+## Ampliación: variantes c, r y descomposición (segunda ejecución)
+
+Variantes añadidas ([JSON](data/node-job-arena-model-variants-2026-10-29.json)): **por spool** = ninguna arena, cada spool muere al terminar su trabajo (línea base de concurrencia pura); **c** = cada spool de hijo es su propio archivo OPFS, liberado al terminar el trabajo que lo consume (LOD y hojas en la arena retenida, como en b), así que sus bytes son los de «por spool» y aporta el recuento de archivos; **r** = una arena por hijo de la raíz, liberada cuando termina su subárbol (LOD y hojas retenidos).
+
+**Se repitieron las seis ejecuciones nativas** (los registros de la primera no se conservaron): el árbol y los bytes son los mismos, pero `elapsed_ns` y el pico nativo con 4 workers cambian (Belvedere/2 div.: 5,81 → 6,15 GB; el de 1 worker es idéntico), así que los números de a y b de esta sección difieren algo de las tablas anteriores; para a y b valen las anteriores, para la comparación entre variantes, esta sección.
+
+### Descomposición del exceso (× pico nativo de la misma ejecución, mín–máx sobre FIFO/LIFO/mayor primero)
+
+| Caso | nativo | por spool N=4 | por spool N=8 | rama N=4 | rama N=8 | b N=4 | b N=8 | a |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| belvedere-d2-w1 | 1,00 | 1,43 | 1,43 | 2,66–3,23 | 2,68–2,89 | 1,58–1,73 | 1,72 | 3,46 |
+| belvedere-d2-w4 | 1,00 | 1,09 | 1,09 | 2,04–2,62 | 2,09–2,20 | 1,19–1,34 | 1,31 | 2,63 |
+| belvedere-d8-w1 | 1,00 | 1,07–1,08 | 1,15–1,18 | 1,07–1,08 | 1,15–1,18 | 1,93 | 1,93 | 1,93 |
+| belvedere-d8-w4 | 1,00 | 1,05 | 1,12–1,15 | 1,05 | 1,12–1,15 | 1,88 | 1,88 | 1,88 |
+| majadas-d2-w1 | 1,00 | 1,46 | 1,46 | 5,09–7,15 | 3,76–3,83 | 1,91–3,63 | 1,94 | 7,15 |
+| majadas-d2-w4 | 1,00 | 1,33 | 1,33 | 5,63–6,55 | 4,52–5,83 | 1,55–3,34 | 1,80–1,94 | 6,55 |
+
+Lectura: la concurrencia pura (por spool) explica hasta ×1,46; la granularidad de arena añade el resto, y es lo que más pesa en Belvedere/8 div. (b ×1,9 frente a ×1,05–1,18 por spool) y en «rama» (la arena por rama retiene subárboles enteros de las ramas concurrentes). La retención de LOD y hojas dentro de la arena (a frente a b) cuesta ×3,46 → ×1,6–1,7 en Belvedere/2 div. y ×7,15 → ×1,9–3,6 en Majadas (w1). Con 8 divisiones «rama» coincide con «por spool» (5.070 de 5.140 nodos son hojas, hay poco que retener dentro de cada rama).
+
+### Variante c (un archivo por spool de hijo)
+
+| Caso | Pico nativo (B) | N | Pico c (B) mín–máx | × nativo | × fuente | Archivos vivos máx (mín–máx) |
+| --- | --- | --- | --- | --- | --- | --- |
+| belvedere-d2-w1 | 4.671.716.287 | 4 | 6.697.957.338 | 1,43 | 2,00 | 49–141 |
+| belvedere-d2-w1 | 4.671.716.287 | 8 | 6.697.959.935 | 1,43 | 2,00 | 69–141 |
+| belvedere-d2-w4 | 6.145.601.064 | 4 | 6.697.957.338 | 1,09 | 2,00 | 40–145 |
+| belvedere-d2-w4 | 6.145.601.064 | 8 | 6.697.959.935 | 1,09 | 2,00 | 64–142 |
+| belvedere-d8-w1 | 3.442.632.020 | 4 | 3.696.786.973–3.716.712.713 | 1,07–1,08 | 1,10–1,11 | 70 |
+| belvedere-d8-w1 | 3.442.632.020 | 8 | 3.949.921.410–4.061.538.761 | 1,15–1,18 | 1,18–1,21 | 70 |
+| belvedere-d8-w4 | 3.535.787.435 | 4 | 3.696.786.867–3.716.712.713 | 1,05 | 1,10–1,11 | 70 |
+| belvedere-d8-w4 | 3.535.787.435 | 8 | 3.949.921.410–4.061.538.655 | 1,12–1,15 | 1,18–1,21 | 70 |
+| majadas-d2-w1 | 18.829.664.481 | 4 | 27.420.759.618 | 1,46 | 2,00 | 47–642 |
+| majadas-d2-w1 | 18.829.664.481 | 8 | 27.420.759.618 | 1,46 | 2,00 | 55–220 |
+| majadas-d2-w4 | 20.572.047.024 | 4 | 27.420.759.618 | 1,33 | 2,00 | 78–642 |
+| majadas-d2-w4 | 20.572.047.024 | 8 | 27.420.759.618 | 1,33 | 2,00 | 67–398 |
+
+**Con c el criterio de 1,5 × se cumple en los seis casos y con los tres repartos** (máximo 1,46 ×, Majadas con el nativo de 1 worker). El coste es el número de archivos vivos: hasta 145 en Belvedere/2 div. y 642 en Majadas (N = 4, el reparto peor), más 70 con 8 divisiones (un archivo por hijo de la raíz, casi todos hojas retenidas en una arena). Para 2 divisiones el pico de c es ≈ 2,0 × los bytes de la fuente (fórmula M6); para 8 divisiones, 1,10–1,21 ×. Archivos vivos de las otras variantes (mín–máx entre N = 4 y 8, repartos): a 260 (Belvedere/2 div.), 1.269 (Majadas); b 13–59 y 30–442; r 5 (Belvedere/2 div. y Majadas) y 70 (8 div.).
+
 ## Límites
 
 - Una ejecución por celda; perfil `perf`; este equipo; no trasladar las cifras a otras revisiones ni perfiles.
 - Cota superior: la arena de hijos se cuenta entera al empezar el trabajo. Sin esa cota el pico real estaría entre este y el de contar al terminar; no se midió.
+- Veredictos frente a la cota: en (a) y en (b) con 8 divisiones el pico modelado es igual a todo lo escrito, así que no depende de cuándo se cuenta la arena; en (b) con Majadas y 2 divisiones no se midió la otra cota, y su veredicto (> 1,5 ×) queda sin confirmar frente a ella. En c y «por spool» el pico ya incluye el crecimiento completo de la arena al inicio del trabajo (cota superior), luego el margen real es algo mayor.
+- El criterio de parada se lee por caso (cada fila de Belvedere/Majadas, w1 y w4, es un caso): c lo cumple en los seis; a y b no lo cumplen en Majadas ni en Belvedere/8 div.
 - Las duraciones salen de una máquina con carga ajena y de ejecuciones con solape entre workers; el reparto solo usa su orden relativo.
 - Modelo de disco: un spool es una extensión de una arena sin hueco reutilizable; no se modelan fragmentación ni compactación de OPFS.

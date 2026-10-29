@@ -26,7 +26,10 @@ SCALARS = {
 POLICIES = ("fifo", "lifo", "largest")
 # a: leaf/LOD extents share the arena that holds the children, so they pin it.
 # b: leaf/LOD extents go to a retained arena; consumed sibling spools can be freed.
-VARIANTS = ("a", "b")
+# c: like b, but every child spool is its own file, freed when the job that reads it ends.
+# r: one arena per root branch, freed when the branch's subtree ends; leaves/LOD retained.
+# own: no arenas, every spool freed at its job's end (pure concurrency baseline; the bytes of c).
+VARIANTS = ("a", "b", "c", "r", "own")
 
 
 def parse_log(text: str) -> dict[str, Any]:
@@ -75,7 +78,7 @@ def critical_path_ns(events: list[dict]) -> int:
 def simulate(events: list[dict], workers: int, policy: str, variant: str) -> dict[str, int]:
     """Peak live spool bytes and makespan of `workers` concurrent node jobs.
 
-    variant "a"/"b": see VARIANTS. variant "own" is a calibration: every spool dies at its
+    variant "a"/"b"/"c": see VARIANTS. variant "own" is a calibration: every spool dies at its
     own job end (native behaviour); with workers=1 and "lifo" it replays the native order.
     A job's child arena is counted in full when the job starts (upper bound: the real arena
     grows while the job runs). Pure leaves are no jobs: their spool is final.
@@ -90,7 +93,20 @@ def simulate(events: list[dict], workers: int, policy: str, variant: str) -> dic
 
     live = sum(root["input_spool_bytes"] for root in kids[None])
     peak = live
+    # Live files: arenas (a, b) or child spools (c), the retained arena (b, c) and a root spool.
+    files = sum(1 for root in kids[None] if root["input_spool_bytes"]) + (variant in ("b", "c", "r"))
+    max_files = files
     arenas: dict[int, dict] = {}
+    # r: branch (depth-1 ancestor) of every non-root node, jobs left per branch, bytes per branch.
+    branch_of: dict[int, int] = {}
+    jobs_left: dict[int, int] = collections.defaultdict(int)
+    branch_bytes: dict[int, int] = collections.defaultdict(int)
+    branch_pinned: set[int] = set()
+    for event in sorted(events, key=lambda e: e["node_id"]):  # parents precede children
+        if event["parent_id"] is not None:
+            branch_of[event["node_id"]] = (event["node_id"] if event["depth"] == 1
+                                           else branch_of[event["parent_id"]])
+            jobs_left[branch_of[event["node_id"]]] += is_job(event)
     ready: list = []
     counter = 0
 
@@ -102,45 +118,70 @@ def simulate(events: list[dict], workers: int, policy: str, variant: str) -> dic
         heapq.heappush(ready, (key, event["node_id"]))
 
     def start(event: dict) -> None:
-        nonlocal live, peak
+        nonlocal live, peak, files, max_files
         if event["is_leaf"]:  # became a leaf: its scratch child spools are deleted again
             live += sum(event["child_spool_bytes"])
         else:
             children = kids[event["node_id"]]
             size = sum(c["input_spool_bytes"] for c in children)
-            if variant == "own":
+            if variant in ("own", "c"):
                 live += size
+                # c: every non-plain-leaf child spool is its own file (leaves share the retained one).
+                files += sum(1 for c in children if not c["is_leaf"] or c["became_leaf_all_equal"])
+            elif variant == "r":
+                live += size  # leaf spools join the retained arena; the rest joins its branch
+                inner = [c for c in children if not c["is_leaf"] or c["became_leaf_all_equal"]]
+                for child in inner:
+                    key = child["node_id"] if event["parent_id"] is None else branch_of[event["node_id"]]
+                    branch_bytes[key] += child["input_spool_bytes"]
+                    files += event["parent_id"] is None
+                    if child["became_leaf_all_equal"]:
+                        branch_pinned.add(key)
             else:
                 plain_leaves = [c for c in children if c["is_leaf"] and not c["became_leaf_all_equal"]]
                 if variant == "b":
                     live += sum(c["input_spool_bytes"] for c in plain_leaves)
                     size -= sum(c["input_spool_bytes"] for c in plain_leaves)
                 live += size
+                if size:
+                    files += 1
                 arenas[event["node_id"]] = {
                     "bytes": size, "freed": False,
                     "pinned": variant == "a" or any(c["became_leaf_all_equal"] for c in children),
                     "outstanding": sum(1 for c in children if not c["is_leaf"]),
                 }
         peak = max(peak, live)
+        max_files = max(max_files, files)
 
     def maybe_free(node_id: int) -> None:
-        nonlocal live
+        nonlocal live, files
         arena = arenas[node_id]
         if not arena["pinned"] and not arena["outstanding"] and not arena["freed"]:
             arena["freed"] = True
             live -= arena["bytes"]
+            files -= 1 if arena["bytes"] else 0
 
     def finish(event: dict) -> None:
-        nonlocal live, peak
+        nonlocal live, peak, files
         if event["is_leaf"]:
             live -= sum(event["child_spool_bytes"])
         else:
             live += event["lod_bytes"]
             peak = max(peak, live)
-            if variant == "own" or event["parent_id"] is None:
+            if variant in ("own", "c") or event["parent_id"] is None:
                 live -= event["input_spool_bytes"]
+                if variant == "c" and event["input_spool_bytes"]:
+                    files -= 1
+            if variant not in ("own", "c") and event["parent_id"] is None and event["input_spool_bytes"]:
+                files -= 1
         parent = event["parent_id"]
-        if parent is not None and variant != "own" and not event["is_leaf"]:
+        if variant == "r" and parent is not None:
+            key = branch_of[event["node_id"]]
+            jobs_left[key] -= 1
+            if not jobs_left[key] and key not in branch_pinned:
+                live -= branch_bytes[key]
+                files -= 1
+        if parent is not None and variant in ("a", "b") and not event["is_leaf"]:
             arenas[parent]["outstanding"] -= 1
             maybe_free(parent)
         if not event["is_leaf"] and event["node_id"] in arenas:
@@ -165,7 +206,7 @@ def simulate(events: list[dict], workers: int, policy: str, variant: str) -> dic
         now, node_id = heapq.heappop(running)
         free_workers += 1
         finish(by_id[node_id])
-    return {"peak_bytes": peak, "makespan_ns": now}
+    return {"peak_bytes": peak, "makespan_ns": now, "max_live_files": max_files}
 
 
 def model_log(parsed: dict[str, Any]) -> dict[str, Any]:
