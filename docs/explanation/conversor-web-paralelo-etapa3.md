@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8. **Decisión del propietario 3 (29-10-2026):** M3b prueba P3 con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas cuál compensa (tiempo, PSS, ficheros volcados). Firmas de M2 fijadas (Tarea 3). Tarea 4: pasos 0–3 hechos (crate `viewer_convert_core` con lint y check wasm32; `convert_serial` con los bytes del CLI; SHA de M0 y de la fixture iguales; `check.sh` en verde también con `CHECK_LOCKED=1`); puerta 3b superada: instrucciones +0,37 % y R7 corto en divisiones 8 con mediana 0,996 ([registro](../records/benchmarks/M2_R7_2026-10-29.md)). Tareas 5 y 7 en curso en paralelo.
+**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8. **Decisión del propietario 3 (29-10-2026):** M3b prueba P3 con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas cuál compensa (tiempo, PSS, ficheros volcados). Firmas de M2 fijadas (Tarea 3). Tarea 4: pasos 0–3 hechos (crate `viewer_convert_core` con lint y check wasm32; `convert_serial` con los bytes del CLI; SHA de M0 y de la fixture iguales; `check.sh` en verde también con `CHECK_LOCKED=1`); puerta 3b superada: instrucciones +0,37 % y R7 corto en divisiones 8 con mediana 0,996 ([registro](../records/benchmarks/M2_R7_2026-10-29.md)). Tarea 7 (M3a) hecha: paridad wasm32 bajo Node en `check.sh` y en Chrome/Firefox ([registro](../records/benchmarks/M3A_PARITY_2026-10-29.md)), salvo un caso que destapó que `f64::hypot` difiere entre glibc y la libm de wasm32 (Tarea 8). Tareas 5 y 8 en curso.
 
 **Objetivo:** llegar a M3a: un núcleo `viewer_convert_core` sin E/S que compila para wasm32 (M2),
 la partición raíz por rangos de chunks con los mismos bytes en nativo, y una conversión web con un
@@ -28,7 +28,7 @@ Playwright 1.64 vía scripts Node (como los drivers de S8/S9).
 - `scripts/check.sh` en verde (todos los pasos) al cerrar cada tarea.
 - No cambiar la fecha del nightly ni añadir `#![feature]`.
 - `FormatVersion::V<n>` solo en `crates/viewer_format`.
-- R1: los SHA de salida del CLI no cambian; referencia [M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) (LAS pequeño `413858a9…`, Belvedere `6ca0f86d…`, Belvedere divisiones 8 `fb90a490…`, Majadas `74226286…`).
+- R1: los SHA de salida del CLI no cambian; referencia [M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) hasta la Tarea 8, que los sustituye por decisión del propietario 4 (LAS pequeño `413858a9…`, Belvedere `6ca0f86d…`, Belvedere divisiones 8 `fb90a490…`, Majadas `74226286…`).
 - R7: mediana pareada de `real_dataset_bench convert` en Belvedere (4 workers, perfil `perf`), 7–10 pares A/B alternados en máquina en reposo, registrando `/proc/pressure`, governor y perfil de energía; dentro de ±3% de la rama base medida en la misma sesión.
 - El núcleo no usa `std::fs`, `std::thread`, `rayon`, `Instant::now`, `SystemTime::now`, `std::process` ni `laz-parallel`; un lint `disallowed-methods` (denegado) y `cargo check --target wasm32-unknown-unknown` en `check.sh` lo garantizan. Sin `dyn` ni asignación por punto en el bucle caliente (criterio de parada de M2).
 - Registros nuevos fechados con el día de ejecución (`dd-mm-aaaa` en el texto, `<aaaa-mm-dd>` ISO en el nombre), en español; no editar registros ya mergeados; no trasladar cifras entre revisiones, perfiles ni equipos.
@@ -363,10 +363,24 @@ rangos con `thread::scope`.
 Se ejecuta en su propio worktree (B5) y solo toca `viewer_wasm`, el host web y `tools/`: el bucle
 serie ya está en el núcleo (Tarea 4, B2).
 
-- [ ] **Paso 1 (B1):** test Node que falla: SHA de la pareja convertida en wasm32 con el núcleo = SHA del CLI para el LAS pequeño de M0 (`413858a9…`), el LAS pequeño con 4096 puntos por bloque y divisiones 2 y 8, autzen y la fixture multi-chunk variable (SHA de la Tarea 1); cada caso salvo el primero comprueba más de un nodo.
-- [ ] **Paso 2:** implementar hasta verde; tests Node de `converter-api`/`converter-worker` para `engine: "core"` (progreso, error y la cancelación fijada en la Tarea 3, B9).
-- [ ] **Paso 3:** navegador: Chrome y Firefox por HTTP convierten el LAS pequeño con `engine: "core"`; SHA = CLI; registro. Criterio de parada (spec): SHA distinto sin explicación tras una semana.
-- [ ] **Paso 4:** estado en README y este plan; commit.
+- [x] **Paso 1 (B1):** test Node que falla: SHA de la pareja convertida en wasm32 con el núcleo = SHA del CLI para el LAS pequeño de M0 (`413858a9…`), el LAS pequeño con 4096 puntos por bloque y divisiones 2 y 8, autzen y la fixture multi-chunk variable (SHA de la Tarea 1); cada caso salvo el primero comprueba más de un nodo.
+- [x] **Paso 2:** implementar hasta verde; tests Node de `converter-api`/`converter-worker` para `engine: "core"` (progreso, error y la cancelación fijada en la Tarea 3, B9).
+- [x] **Paso 3:** navegador: Chrome y Firefox por HTTP convierten el LAS pequeño con `engine: "core"`; SHA = CLI; registro. Criterio de parada (spec): SHA distinto sin explicación tras una semana.
+- [x] **Paso 4:** estado en README y este plan; commit.
+
+### Tarea 8: error de cuantización portátil (decisión del propietario 4)
+
+M3a mostró 1 ulp de diferencia en el `max_error` por bloque del índice (LAS pequeño, 4096 puntos por
+bloque, divisiones 2): `quantization.rs:164-175` usa `f64::hypot`, que en nativo es glibc 2.43 y en
+wasm32 la libm de `compiler-builtins`; glibc tampoco redondea correctamente (615 de 200 000 casos),
+así que la salida del CLI ya dependía de la versión de glibc. **Decisión del propietario 4
+(29-10-2026):** sustituir `hypot` por una norma escalada con solo operaciones IEEE básicas y `sqrt`;
+los SHA de referencia de R1 cambian y se registran de nuevo. Las coordenadas cuantizadas no cambian.
+
+- [ ] **Paso 1:** tests de `norm3` (valores exactos, sin desbordamiento ni subdesbordamiento) y de la cota `error <= max_error` con ≥ 10 000 posiciones; implementación.
+- [ ] **Paso 2:** lint que prohíbe funciones de libm (`hypot`, `powf`, `exp`, `ln`, trigonométricas, `mul_add`) en `viewer_format` y en el núcleo; el caso divergente de `tools/convert_parity` pasa a igual.
+- [ ] **Paso 3:** SHA de referencia nuevos (LAS pequeño, autzen, Belvedere con divisiones 2 y 8, Majadas, fixture variable) con los payloads de bloque idénticos a M0; registro `R1_REFERENCE_SHA_2026-10-29.md`.
+- [ ] **Paso 4:** ADR 0016 y commit.
 
 ---
 
