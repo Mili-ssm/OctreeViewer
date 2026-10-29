@@ -1,6 +1,6 @@
 # 0015 Paralelismo de conversión web por pool de workers sin memoria compartida
 
-Estado: Propuesta · Fecha: 29-10-2026
+Estado: Aceptada · Fecha: 29-10-2026
 
 ## Contexto
 El visor se sirve con `python3 -m http.server` y como paquete `file://` con workers `blob:`

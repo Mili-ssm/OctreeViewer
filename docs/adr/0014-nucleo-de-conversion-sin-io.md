@@ -1,6 +1,6 @@
 # 0014 Núcleo de conversión sin I/O compartido por CLI y navegador
 
-Estado: Propuesta · Fecha: 29-10-2026
+Estado: Aceptada · Fecha: 29-10-2026
 
 ## Contexto
 Hay dos conversores LAS/LAZ divergentes: `viewer_convert` (octree adaptativo, presupuesto de

@@ -17,5 +17,5 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0011](0011-nightly-obligatorio-con-fecha-fija.md) | Rust nightly obligatorio con fecha fija | Aceptada |
 | [0012](0012-validacion-previa-de-cabeceras-las-laz.md) | Validar cabeceras LAS/LAZ antes de que las crates las parseen | Aceptada |
 | [0013](0013-modulos-experimentales-tras-feature-experimental.md) | Los módulos experimentales van tras la feature `experimental` | Aceptada |
-| [0014](0014-nucleo-de-conversion-sin-io.md) | Núcleo de conversión sin I/O compartido por CLI y navegador | Propuesta |
-| [0015](0015-pool-de-workers-sin-memoria-compartida.md) | Paralelismo de conversión web por pool de workers sin memoria compartida | Propuesta |
+| [0014](0014-nucleo-de-conversion-sin-io.md) | Núcleo de conversión sin I/O compartido por CLI y navegador | Aceptada |
+| [0015](0015-pool-de-workers-sin-memoria-compartida.md) | Paralelismo de conversión web por pool de workers sin memoria compartida | Aceptada |
