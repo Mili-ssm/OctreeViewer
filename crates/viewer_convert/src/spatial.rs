@@ -66,6 +66,7 @@ impl SpoolLayout {
         }
     }
 
+    #[inline]
     pub(crate) fn record_bytes(self) -> usize {
         let coordinates = if self.source_coordinates { 12 } else { 24 };
         coordinates
@@ -75,6 +76,7 @@ impl SpoolLayout {
             + usize::from(self.has_nir) * 2
     }
 
+    #[inline]
     fn position(self, raw: [i32; 3]) -> [f64; 3] {
         [
             self.transforms.x.direct(raw[0]),
@@ -1493,6 +1495,7 @@ impl SampleAccumulator {
 }
 
 impl SpoolPoint {
+    #[inline]
     fn display_color_component(self, axis: usize) -> u8 {
         match axis {
             0 => self.display_color.r,
@@ -1502,6 +1505,7 @@ impl SpoolPoint {
     }
 }
 
+#[inline]
 fn average(sum: u128, count: u64) -> u128 {
     (sum + u128::from(count / 2)) / u128::from(count)
 }
@@ -1692,6 +1696,7 @@ pub(crate) fn visit_source_points(
     Ok(())
 }
 
+#[inline]
 fn outside_header_bounds(position: [f64; 3], bounds: SpatialBounds) -> bool {
     (0..3).any(|axis| {
         let min = bounds.min()[axis];
@@ -1756,6 +1761,7 @@ pub(crate) fn write_point(
     writer.write_all(&record[..offset])
 }
 
+#[inline]
 pub(crate) fn read_records(
     reader: &mut impl Read,
     buffer: &mut [u8],
@@ -1856,12 +1862,14 @@ pub(crate) fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
     }
 }
 
+#[inline]
 fn read_u16(bytes: &[u8], offset: &mut usize) -> u16 {
     let value = u16::from_le_bytes([bytes[*offset], bytes[*offset + 1]]);
     *offset += 2;
     value
 }
 
+#[inline]
 fn read_f64(bytes: &[u8], offset: &mut usize) -> f64 {
     let value = f64::from_le_bytes(bytes[*offset..*offset + 8].try_into().expect("fixed width"));
     *offset += 8;
@@ -1880,6 +1888,7 @@ fn cube_bounds(bounds: SpatialBounds) -> SpatialBounds {
     SpatialBounds::new(min, max).expect("finite source bounds produce finite cube bounds")
 }
 
+#[inline]
 pub(crate) fn cube_side(bounds: SpatialBounds) -> f64 {
     (0..3)
         .map(|axis| bounds.max()[axis] - bounds.min()[axis])
@@ -1901,6 +1910,7 @@ fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBo
         .expect("child index is in range")
 }
 
+#[inline]
 pub(crate) fn sample_index(position: [f64; 3], bounds: SpatialBounds) -> usize {
     let side = cube_side(bounds);
     let mut cell = [0_usize; 3];
@@ -1912,6 +1922,7 @@ pub(crate) fn sample_index(position: [f64; 3], bounds: SpatialBounds) -> usize {
     (cell[0] * SAMPLE_GRID_SIZE + cell[1]) * SAMPLE_GRID_SIZE + cell[2]
 }
 
+#[inline]
 pub(crate) fn voxel_center(index: usize, bounds: SpatialBounds) -> [f64; 3] {
     let cell = [
         index / (SAMPLE_GRID_SIZE * SAMPLE_GRID_SIZE),
