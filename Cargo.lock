@@ -1245,6 +1245,7 @@ version = "0.1.0"
 dependencies = [
  "las",
  "laz",
+ "laz_chunk_probe",
  "thiserror",
  "viewer_core",
  "viewer_format",

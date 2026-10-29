@@ -54,6 +54,8 @@ pub enum ConvertError {
     InvalidSpatialWorkerCount(usize),
     #[error("spatial divisions per axis must be 2, 4, or 8, got {0}")]
     InvalidSpatialDivisions(u8),
+    #[error("root partition ranges must be between 0 and 8, got {0}")]
+    InvalidRootRanges(usize),
     #[error("LAS dimensions do not match the planned output attribute schema")]
     InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]

@@ -15,10 +15,11 @@ use super::{ConvertError, ConvertOptions};
 use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::Clock,
-    executor::BatchPlanner,
+    executor::{BatchPlanner, RangeRunner},
     node_job::{
         BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodeJobOutput,
-        NodePath, lod_blocks, run_node_job, run_root_partition, spool_source, write_lod,
+        NodePath, RangeJob, RootPartition, lod_blocks, merge_root_ranges, run_node_job,
+        run_root_partition, spool_source, write_lod,
     },
     point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
@@ -346,7 +347,7 @@ where
     S: PlanStore,
     C: Clock,
     F: SourceFactory,
-    X: BatchPlanner<S, C>,
+    X: BatchPlanner<S, C> + RangeRunner<S, C, F::Source>,
 {
     build_spatial_plan_inner(
         source,
@@ -445,6 +446,8 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         on_progress,
         source_point_count: source.point_count,
         parallel_workers: options.spatial_workers(),
+        root_ranges: options.root_partition_ranges(),
+        ranges_used: 0,
         workers_used: 1,
         spool_diagnostics: collect_spool_diagnostics.then(|| SpatialSpoolDiagnostics {
             source_payload_written_bytes: source_spool_bytes_written,
@@ -483,6 +486,22 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         estimated_peak_memory_bytes,
         options.max_memory_budget_bytes(),
     )?;
+    // Ranges were admitted against the budget; their working sets are only reported.
+    let estimated_peak_memory_bytes = if builder.ranges_used > 1 {
+        let ranged = estimate_memory(point_limit, 0, 0, options.spatial_divisions())?
+            .checked_add(
+                (builder.ranges_used as u64 - 1)
+                    .checked_mul(range_memory_bytes(
+                        point_limit,
+                        options.spatial_divisions(),
+                    )?)
+                    .ok_or(ConvertError::SizeOverflow)?,
+            )
+            .ok_or(ConvertError::SizeOverflow)?;
+        estimated_peak_memory_bytes.max(ranged)
+    } else {
+        estimated_peak_memory_bytes
+    };
 
     let schema = source_schema(&source.point_format);
     crate::limits::check_reader_attribute_ranges(builder.node_records.len(), schema.len())?;
@@ -651,6 +670,10 @@ pub struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     on_progress: &'a mut dyn FnMut(ConversionProgress) -> bool,
     source_point_count: u64,
     parallel_workers: usize,
+    /// Ranges the root partition may use; 0 scans the root as one stream.
+    root_ranges: usize,
+    /// Ranges the root partition used; 0 when it did not run by ranges.
+    ranges_used: usize,
     workers_used: usize,
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     spatial_phases: Option<SpatialPhaseDiagnostics>,
@@ -863,13 +886,91 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         }
     }
 
+    /// Admitted root ranges: the requested count, reduced so that the extra ranges fit in the
+    /// budget left after the root's own working set (as `memory_limited_workers` does).
+    fn admitted_root_ranges(&self) -> Result<usize, ConvertError> {
+        let base = estimate_memory(self.point_limit, 0, 0, self.spatial_divisions)?;
+        let per_range = range_memory_bytes(self.point_limit, self.spatial_divisions)?;
+        let extra = self.memory_budget.saturating_sub(base) / per_range;
+        Ok(self
+            .root_ranges
+            .min(usize::try_from(extra).map_or(usize::MAX, |extra| extra.saturating_add(1))))
+    }
+
+    /// The root partition by ranges: split, open one source per range, run them, then merge and
+    /// join. A range whose source cannot be opened ends the list as an error after the ranges
+    /// before it, so the lowest-starting failure wins, as in a serial scan.
+    fn partition_root_ranges<F: SourceFactory>(
+        &mut self,
+        factory: &F,
+        source: &SourceInfo,
+        bounds: SpatialBounds,
+        first_output: SpoolId,
+    ) -> Result<RootPartition, ConvertError>
+    where
+        X: RangeRunner<S, C, F::Source>,
+    {
+        let ctx = self.job_context();
+        let children = usize::from(self.spatial_divisions).pow(3) as u64;
+        let ranges = factory.split(self.admitted_root_ranges()?, self.point_limit)?;
+        // Segment (r, k) → `base + r · divisions³ + k`.
+        let base = self.spool_ids.fetch_add(
+            (ranges.len() as u64)
+                .checked_mul(children)
+                .ok_or(ConvertError::SizeOverflow)?,
+            Ordering::Relaxed,
+        );
+        self.ranges_used = ranges.len();
+        let mut sources = Vec::with_capacity(ranges.len());
+        let mut open_error = None;
+        for (index, range) in ranges.into_iter().enumerate() {
+            match factory.open(range) {
+                Ok(opened) => sources.push((opened, SpoolId(base + index as u64 * children))),
+                Err(error) => {
+                    open_error = Some(error);
+                    break;
+                }
+            }
+        }
+        let job = RangeJob {
+            ctx: &ctx,
+            info: source,
+            bounds,
+            batch: self.point_limit,
+        };
+        let (store, clock, executor) = (self.store, self.clock, self.executor);
+        let mut done = vec![0_u64; sources.len()];
+        let mut results = if sources.is_empty() {
+            Vec::new()
+        } else {
+            executor.run_ranges(
+                &job,
+                sources,
+                store,
+                clock,
+                &mut |range, update| match update {
+                    JobProgress::SourcePoints(points) => {
+                        done[range] = points;
+                        self.emit_job_progress(JobProgress::SourcePoints(done.iter().sum()))
+                    }
+                    other => self.emit_job_progress(other),
+                },
+            )
+        };
+        results.extend(open_error.map(Err));
+        merge_root_ranges(&ctx, bounds, first_output, results, store)
+    }
+
     fn build_root_from_source<F: SourceFactory>(
         &mut self,
         first: &mut F::Source,
         factory: &F,
         source: &SourceInfo,
         bounds: SpatialBounds,
-    ) -> Result<(), ConvertError> {
+    ) -> Result<(), ConvertError>
+    where
+        X: RangeRunner<S, C, F::Source>,
+    {
         let ctx = self.job_context();
         let root_path = NodePath(Vec::new());
         let store = self.store;
@@ -898,16 +999,20 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         let root_id = NodeId::new(0);
         let mut open = self.begin_node_event(root_id, None, 0, 0);
         let first_output = SpoolId(self.reserve_node_spools());
-        let partition = run_root_partition(
-            &ctx,
-            source,
-            bounds,
-            first_output,
-            &mut *first,
-            store,
-            self.clock,
-            &mut |progress| self.emit_job_progress(progress),
-        )?;
+        let partition = if self.root_ranges == 0 {
+            run_root_partition(
+                &ctx,
+                source,
+                bounds,
+                first_output,
+                &mut *first,
+                store,
+                self.clock,
+                &mut |progress| self.emit_job_progress(progress),
+            )?
+        } else {
+            self.partition_root_ranges(factory, source, bounds, first_output)?
+        };
         self.record_job_metrics(partition.metrics.as_ref(), false, &mut open)?;
 
         if partition.all_points_equal {
@@ -1226,6 +1331,8 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             on_progress: &mut *self.on_progress,
             source_point_count: self.source_point_count,
             parallel_workers: 1,
+            root_ranges: 0,
+            ranges_used: 0,
             workers_used: 1,
             spool_diagnostics: branch.spool_diagnostics.take(),
             spatial_phases: branch.spatial_phases.take(),
@@ -1419,6 +1526,24 @@ impl SampleAccumulator {
         {
             self.nearest_distance_squared = distance_squared;
             self.nearest_point = Some(*point);
+        }
+    }
+
+    /// Folds in the accumulator of the points that follow this one's in the source order. The
+    /// later nearest point wins only when strictly closer, as in `add`, so ties keep the earlier.
+    pub fn merge(&mut self, later: &Self) {
+        self.count += later.count;
+        for axis in 0..3 {
+            self.display_color[axis] += later.display_color[axis];
+            self.rgb[axis] += later.rgb[axis];
+        }
+        if let Some(point) = later.nearest_point
+            && self
+                .nearest_point
+                .is_none_or(|_| later.nearest_distance_squared < self.nearest_distance_squared)
+        {
+            self.nearest_distance_squared = later.nearest_distance_squared;
+            self.nearest_point = Some(point);
         }
     }
 
@@ -1928,6 +2053,17 @@ fn estimate_memory(
         .and_then(|bytes| bytes.checked_add(sample_accumulators))
         .and_then(|bytes| bytes.checked_add(child_spool_buffers))
         .and_then(|bytes| bytes.checked_add(crate::options::ESTIMATED_FIXED_OVERHEAD_BYTES))
+        .ok_or(ConvertError::SizeOverflow)
+}
+
+/// What each root range beyond the first adds to the root's working set: its decode batch, child
+/// buffers, sample accumulators and fixed overhead.
+fn range_memory_bytes(point_limit: u64, spatial_divisions: u8) -> Result<u64, ConvertError> {
+    point_limit
+        .checked_mul(crate::options::ESTIMATED_WORKING_BYTES_PER_POINT)
+        .and_then(|bytes| bytes.checked_add(child_spool_buffer_bytes(spatial_divisions).ok()?))
+        .and_then(|bytes| bytes.checked_add((SAMPLE_GRID_SIZE.pow(3) as u64).checked_mul(256)?))
+        .and_then(|bytes| bytes.checked_add(SPATIAL_WORKER_OVERHEAD_BYTES))
         .ok_or(ConvertError::SizeOverflow)
 }
 

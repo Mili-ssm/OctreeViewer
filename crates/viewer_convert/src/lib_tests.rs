@@ -2439,7 +2439,9 @@ fn plan_from_reader<S: crate::pipeline::spool_store::PlanStore>(
         len: std::fs::metadata(input).unwrap().len(),
     });
     crate::spatial::build_spatial_plan_from_source(
-        &mut crate::pipeline::point_source::LasPointSource::full(reader),
+        &mut crate::pipeline::point_source::RangeSource::Las(
+            crate::pipeline::point_source::LasPointSource::full(reader),
+        ),
         &factory,
         source,
         options,
@@ -2619,7 +2621,7 @@ fn the_serial_executor_plans_like_the_ready_queue() {
         pipeline::{
             clock::SystemClock,
             executor::SerialExecutor,
-            point_source::{LasFactory, LasPointSource, MemBytes},
+            point_source::{LasFactory, LasPointSource, MemBytes, RangeSource},
             spool_store::MemSpoolStore,
         },
         spatial::build_spatial_plan_from_source,
@@ -2646,7 +2648,7 @@ fn the_serial_executor_plans_like_the_ready_queue() {
         .unwrap();
 
         let factory = LasFactory::new(MemBytes(bytes.clone()));
-        let mut first = LasPointSource::full(open_las_reader(&input).unwrap());
+        let mut first = RangeSource::Las(LasPointSource::full(open_las_reader(&input).unwrap()));
         let serial_store = MemSpoolStore::new(true);
         let serial = build_spatial_plan_from_source(
             &mut first,

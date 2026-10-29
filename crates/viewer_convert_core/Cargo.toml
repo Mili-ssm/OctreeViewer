@@ -16,3 +16,7 @@ viewer_format = { path = "../viewer_format" }
 [lints.clippy]
 disallowed_methods = "deny"
 disallowed_types = "deny"
+
+[dev-dependencies]
+# Reference decoder and generator of the variable-chunk fixture (S2 probe).
+laz_chunk_probe = { path = "../../tools/laz_chunk_probe" }

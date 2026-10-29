@@ -5,8 +5,11 @@
 use crate::ConvertError;
 use crate::pipeline::{
     clock::Clock,
-    node_job::{ChildOutput, NodePath},
-    spool_store::PlanStore,
+    node_job::{
+        ChildOutput, JobProgress, NodePath, RangeJob, RangePartition, run_root_partition_range,
+    },
+    point_source::PointSource,
+    spool_store::{PlanStore, SpoolId},
 };
 use crate::spatial::{BranchOutput, SpatialBuilder};
 
@@ -62,5 +65,55 @@ impl<S: PlanStore, C: Clock> BatchPlanner<S, C> for SerialExecutor {
             branches.push((task.key, branch));
         }
         Ok(branches)
+    }
+}
+
+/// Runs the ranges of one root partition.
+pub trait RangeRunner<S: PlanStore, C: Clock, P: PointSource> {
+    /// One result per source, in range order. An error in range `k` cancels the ranges above it
+    /// (their result is `Cancelled`) and lets the ones below finish; a cancellation reported by
+    /// `progress` stops them all. `progress` runs on the calling thread.
+    fn run_ranges(
+        &self,
+        job: &RangeJob<'_>,
+        sources: Vec<(P, SpoolId)>,
+        store: &S,
+        clock: &C,
+        progress: &mut dyn FnMut(usize, JobProgress) -> Result<(), ConvertError>,
+    ) -> Vec<Result<RangePartition, ConvertError>>;
+}
+
+impl<S: PlanStore, C: Clock, P: PointSource> RangeRunner<S, C, P> for SerialExecutor {
+    /// In range order; once a range fails, the rest are not started.
+    fn run_ranges(
+        &self,
+        job: &RangeJob<'_>,
+        sources: Vec<(P, SpoolId)>,
+        store: &S,
+        clock: &C,
+        progress: &mut dyn FnMut(usize, JobProgress) -> Result<(), ConvertError>,
+    ) -> Vec<Result<RangePartition, ConvertError>> {
+        let mut failed = false;
+        sources
+            .into_iter()
+            .enumerate()
+            .map(|(range, (mut source, first_segment))| {
+                if failed {
+                    return Err(ConvertError::Cancelled {
+                        points_processed: 0,
+                    });
+                }
+                let result = run_root_partition_range(
+                    job,
+                    first_segment,
+                    &mut source,
+                    store,
+                    clock,
+                    &mut |update| progress(range, update),
+                );
+                failed = result.is_err();
+                result
+            })
+            .collect()
     }
 }

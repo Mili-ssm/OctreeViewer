@@ -72,7 +72,6 @@ pub fn seek_points(reader: &mut Reader, index: u64) -> Result<(), ConvertError> 
     Ok(contain_decoder_panic(|| reader.seek(index))??)
 }
 
-#[cfg_attr(not(test), allow(dead_code, reason = "used by M2 range reads"))]
 /// `Reader::seek` reporting `point_index` if the decoder panics.
 pub fn seek_points_at(
     reader: &mut Reader,

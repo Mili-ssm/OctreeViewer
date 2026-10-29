@@ -23,7 +23,7 @@ use crate::limits::visual_scale_for_bounds;
 use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
 use crate::pipeline::clock::SystemClock;
 use crate::pipeline::node_job::{JobProgress, spool_source};
-use crate::pipeline::point_source::{ByteSource, LasFactory, LasPointSource};
+use crate::pipeline::point_source::{ByteSource, LasFactory, LasPointSource, RangeSource};
 use crate::pipeline::spool_store::{FileSpoolStore, SpoolId, SpoolStore};
 use crate::publish::{
     OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
@@ -97,7 +97,7 @@ pub(crate) fn plan_sample_blocks(
         len,
     });
     let spatial = build_spatial_plan_from_source(
-        &mut LasPointSource::full(reader),
+        &mut RangeSource::Las(LasPointSource::full(reader)),
         &factory,
         &source,
         options,
@@ -344,7 +344,7 @@ pub(crate) fn convert_file_inner(
             len,
         });
         build_spatial_plan_from_source(
-            &mut LasPointSource::full(reader),
+            &mut RangeSource::Las(LasPointSource::full(reader)),
             &factory,
             &source,
             options,

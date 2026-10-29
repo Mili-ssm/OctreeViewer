@@ -13,8 +13,13 @@
 
 use std::{
     collections::BTreeMap,
+    fs::File,
     io,
-    sync::{Condvar, Mutex, MutexGuard, PoisonError, mpsc},
+    sync::{
+        Condvar, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc,
+    },
     thread,
     time::Instant,
 };
@@ -24,11 +29,13 @@ use viewer_core::NodeId;
 use crate::ConvertError;
 use crate::pipeline::{
     clock::{Clock, SystemClock},
-    executor::BatchPlanner,
+    executor::{BatchPlanner, RangeRunner},
     node_job::{
-        ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, run_node_job,
+        ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, RangeJob,
+        RangePartition, run_node_job, run_root_partition_range,
     },
-    spool_store::PlanStore,
+    point_source::RangeSource,
+    spool_store::{PlanStore, SpoolId},
 };
 use crate::spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder};
 
@@ -445,5 +452,104 @@ fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'
                 }
             }
         }
+    }
+}
+
+/// A range source moved once into its thread. `las::Reader` boxes a `dyn ReadPoints` without a
+/// `Send` bound, although `las` builds it only from `Send` parts (`BufReader<File>` and decoders
+/// bounded by `Send`); the source is owned by one thread at a time and never shared.
+struct SendSource(RangeSource<File>);
+
+// SAFETY: see the type docs; a `RangeSource<File>` holds nothing thread-bound.
+unsafe impl Send for SendSource {}
+
+/// Progress or result of one root range thread.
+enum RangeMessage {
+    Progress(usize, JobProgress),
+    Finished(usize, Result<RangePartition, ConvertError>),
+}
+
+impl<S: PlanStore> RangeRunner<S, SystemClock, RangeSource<File>> for ThreadedExecutor {
+    /// One thread per range. `abort_above` holds the lowest failed range: ranges above it stop at
+    /// their next progress report, the ones below finish. A cancellation reported by `progress`
+    /// stops every range.
+    fn run_ranges(
+        &self,
+        job: &RangeJob<'_>,
+        sources: Vec<(RangeSource<File>, SpoolId)>,
+        store: &S,
+        clock: &SystemClock,
+        progress: &mut dyn FnMut(usize, JobProgress) -> Result<(), ConvertError>,
+    ) -> Vec<Result<RangePartition, ConvertError>> {
+        let count = sources.len();
+        let abort_above = AtomicUsize::new(usize::MAX);
+        let abort_all = AtomicBool::new(false);
+        let (sender, receiver) = mpsc::channel();
+        let mut results = (0..count).map(|_| None).collect::<Vec<_>>();
+        let mut host_error = None;
+        thread::scope(|scope| {
+            for (range, (source, first_segment)) in sources.into_iter().enumerate() {
+                let mut source = SendSource(source);
+                let sender = sender.clone();
+                let (abort_above, abort_all) = (&abort_above, &abort_all);
+                scope.spawn(move || {
+                    let source = &mut source;
+                    let cancelled = || ConvertError::Cancelled {
+                        points_processed: 0,
+                    };
+                    let result = run_root_partition_range(
+                        job,
+                        first_segment,
+                        &mut source.0,
+                        store,
+                        clock,
+                        &mut |update| {
+                            if abort_all.load(Ordering::Relaxed)
+                                || range > abort_above.load(Ordering::Relaxed)
+                            {
+                                return Err(cancelled());
+                            }
+                            sender
+                                .send(RangeMessage::Progress(range, update))
+                                .map_err(|_| cancelled())
+                        },
+                    );
+                    if matches!(&result, Err(error) if !matches!(error, ConvertError::Cancelled { .. }))
+                    {
+                        abort_above.fetch_min(range, Ordering::Relaxed);
+                    }
+                    let _ = sender.send(RangeMessage::Finished(range, result));
+                });
+            }
+            drop(sender);
+            while let Ok(message) = receiver.recv() {
+                match message {
+                    RangeMessage::Progress(range, update) => {
+                        if let Err(error) = progress(range, update) {
+                            abort_all.store(true, Ordering::Relaxed);
+                            host_error.get_or_insert(error);
+                        }
+                    }
+                    RangeMessage::Finished(range, result) => results[range] = Some(result),
+                }
+            }
+        });
+        let mut results = results
+            .into_iter()
+            .map(|result| {
+                result.unwrap_or(Err(ConvertError::Cancelled {
+                    points_processed: 0,
+                }))
+            })
+            .collect::<Vec<_>>();
+        // The caller's own cancellation replaces the first placeholder one.
+        if let Some(error) = host_error
+            && let Some(slot) = results
+                .iter_mut()
+                .find(|result| matches!(result, Err(ConvertError::Cancelled { .. })))
+        {
+            *slot = Err(error);
+        }
+        results
     }
 }

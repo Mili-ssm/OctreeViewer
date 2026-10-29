@@ -3,12 +3,14 @@
 //! commits: blocks without ids, non-empty children and the spools to release. Jobs see only the
 //! store, spool ids and plain values; ids, budgets and progress forwarding belong to the host.
 
+use std::io::Read;
+
 use las::PointDataBuilder;
 use viewer_core::{CoordinateFrame, SpatialBounds, SpatialSubdivision};
 
 use super::{
     clock::Clock,
-    point_source::PointSource,
+    point_source::{PointRange, PointSource},
     spool_store::{SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
 };
 use crate::ConvertError;
@@ -140,6 +142,19 @@ impl SampleGrid {
     }
 }
 
+impl SampleGrid {
+    /// Folds in the grid of the points that follow this one's in the source order.
+    pub fn merge(&mut self, later: SampleGrid) {
+        for (slot, later) in self.0.iter_mut().zip(later.0) {
+            match (slot.as_mut(), later) {
+                (Some(earlier), Some(later)) => earlier.merge(&later),
+                (None, later) => *slot = later,
+                (Some(_), None) => {}
+            }
+        }
+    }
+}
+
 pub fn run_node_job<S: SpoolStore, C: Clock>(
     ctx: &JobContext,
     job: &NodeJob,
@@ -266,29 +281,57 @@ pub struct RootPartition {
     pub metrics: Option<JobMetrics>,
 } // release: created children when all points are equal
 
-/// Partitions the source points of a divisible root into child spools and LOD accumulators. When
-/// every point is equal the created children are closed without flushing and returned in
-/// `release` (and `children` is empty); the host then spools the source and runs the root as a
-/// `NodeJob`, which rescans it and becomes a leaf.
+/// What every range of one root partition shares.
+pub struct RangeJob<'a> {
+    pub ctx: &'a JobContext,
+    pub info: &'a SourceInfo,
+    pub bounds: SpatialBounds,
+    /// `fill` size of the serial scan (`input_batch_point_limit`); ranges cut their `fill`
+    /// calls at its global multiples.
+    pub batch: u64,
+}
+
+/// The closed spool of one child in one range; never empty.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RangeSegment {
+    pub key: u16,
+    pub spool: SpoolId,
+    pub point_count: u64,
+}
+
+/// One range of the root partition: its closed child segments (ascending key) and the values
+/// `merge_root_ranges` combines in range order.
+pub struct RangePartition {
+    pub range: PointRange,
+    pub segments: Vec<RangeSegment>,
+    pub samples: SampleGrid,
+    pub source_bounds: [[f64; 2]; 3],
+    pub metrics: Option<JobMetrics>,
+}
+
+/// Children, samples and bounds of the points of one range.
+struct RootScan {
+    children: Vec<Option<ChildSpool>>,
+    samples: SampleGrid,
+    source_bounds: [[f64; 2]; 3],
+    metrics: Option<JobMetrics>,
+}
+
+/// Reads `source.range()` into child spools `first_child + key`. Each `fill` is cut at a global
+/// multiple of `batch`, so every range issues the calls the serial scan issues in that stretch.
 #[allow(clippy::too_many_arguments)]
-pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
+fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
     ctx: &JobContext,
     info: &SourceInfo,
     bounds: SpatialBounds,
-    first_output: SpoolId,
+    batch: u64,
+    first_child: SpoolId,
     source: &mut P,
     store: &S,
     clock: &C,
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
-) -> Result<RootPartition, ConvertError> {
-    debug_assert_ne!(first_output, SpoolId::SOURCE);
-    // M1 reads the whole source as one range (A9); `processed` below is a global index.
+) -> Result<RootScan, ConvertError> {
     let range = source.range();
-    assert_eq!(
-        (range.start, range.end),
-        (0, info.point_count),
-        "the root partition reads the full source range"
-    );
     let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
     let mut children = (0..ctx.child_count())
         .map(|_| None)
@@ -297,11 +340,10 @@ pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
-    let point_limit = crate::options::input_batch_point_limit(ctx.point_limit, info.record_length);
     let mut point_data = PointDataBuilder::new().for_header(source.header()).build();
-    let mut processed = 0_u64;
-    while processed < info.point_count {
-        let requested = point_limit.min(info.point_count - processed);
+    let mut processed = range.start;
+    while processed < range.end {
+        let requested = (batch - processed % batch).min(range.end - processed);
         let fill_started = start_phase(clock, &metrics);
         let read = source.fill(requested, &mut point_data)?;
         end_phase(clock, &mut metrics, fill_started, |m| &mut m.las_fill_ns);
@@ -320,7 +362,7 @@ pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
             let child_key = subdivision.cell_index(point.position);
             let child = children[child_key].get_or_insert_with(|| {
                 ChildSpool::new(
-                    SpoolId(first_output.0 + child_key as u64),
+                    SpoolId(first_child.0 + child_key as u64),
                     ctx.layout,
                     ctx.collect_diagnostics,
                 )
@@ -333,8 +375,58 @@ pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
             &mut m.partition_and_sample_ns
         });
         processed += read;
-        progress(JobProgress::SourcePoints(processed))?;
+        progress(JobProgress::SourcePoints(processed - range.start))?;
     }
+    Ok(RootScan {
+        children,
+        samples,
+        source_bounds,
+        metrics,
+    })
+}
+
+/// Partitions the source points of a divisible root into child spools and LOD accumulators. When
+/// every point is equal the created children are closed without flushing and returned in
+/// `release` (and `children` is empty); the host then spools the source and runs the root as a
+/// `NodeJob`, which rescans it and becomes a leaf.
+#[allow(clippy::too_many_arguments)]
+pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
+    ctx: &JobContext,
+    info: &SourceInfo,
+    bounds: SpatialBounds,
+    first_output: SpoolId,
+    source: &mut P,
+    store: &S,
+    clock: &C,
+    progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
+) -> Result<RootPartition, ConvertError> {
+    debug_assert_ne!(first_output, SpoolId::SOURCE);
+    // This path reads the whole source as one range; `processed` in the scan is a global index.
+    let range = source.range();
+    assert_eq!(
+        (range.start, range.end),
+        (0, info.point_count),
+        "the root partition reads the full source range"
+    );
+    let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
+        .expect("converter subdivisions are validated");
+    let batch = crate::options::input_batch_point_limit(ctx.point_limit, info.record_length);
+    let RootScan {
+        mut children,
+        samples,
+        source_bounds,
+        mut metrics,
+    } = scan_root_range(
+        ctx,
+        info,
+        bounds,
+        batch,
+        first_output,
+        source,
+        store,
+        clock,
+        progress,
+    )?;
 
     if all_equal(&source_bounds) {
         if let Some(metrics) = metrics.as_mut() {
@@ -365,6 +457,190 @@ pub fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
         release: Vec::new(),
         metrics,
     })
+}
+
+/// Partitions one range of the root. Unlike [`run_root_partition`] it always flushes and closes
+/// its child spools (`first_segment + key`) and does not decide whether all points are equal:
+/// that needs every range, see [`merge_root_ranges`].
+pub fn run_root_partition_range<P: PointSource, S: SpoolStore, C: Clock>(
+    job: &RangeJob<'_>,
+    first_segment: SpoolId,
+    source: &mut P,
+    store: &S,
+    clock: &C,
+    progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
+) -> Result<RangePartition, ConvertError> {
+    debug_assert_ne!(first_segment, SpoolId::SOURCE);
+    let range = source.range();
+    let RootScan {
+        mut children,
+        samples,
+        source_bounds,
+        mut metrics,
+    } = scan_root_range(
+        job.ctx,
+        job.info,
+        job.bounds,
+        job.batch,
+        first_segment,
+        source,
+        store,
+        clock,
+        progress,
+    )?;
+    for child in children.iter_mut().flatten() {
+        child.finish(store)?;
+    }
+    if let Some(metrics) = metrics.as_mut() {
+        metrics.child_spool_bytes = child_payload_bytes(&children);
+    }
+    let segments = children
+        .iter()
+        .flatten()
+        .filter(|child| child.point_count > 0)
+        .map(|child| RangeSegment {
+            key: u16::try_from(child.id.0 - first_segment.0).expect("at most 8³ children"),
+            spool: child.id,
+            point_count: child.point_count,
+        })
+        .collect();
+    Ok(RangePartition {
+        range,
+        segments,
+        samples,
+        source_bounds,
+        metrics,
+    })
+}
+
+/// Combines the ranges of one root partition, in range order, into what `run_root_partition`
+/// returns. The first real error wins (the range with the lowest start), then the first
+/// cancellation. It cleans nothing up: the host's `discard_spools` covers every segment.
+///
+/// Equal merged bounds give `all_points_equal` with every segment in `release`. Otherwise each
+/// key's segments are joined into `first_output + key`; a child without segments creates nothing.
+pub fn merge_root_ranges<S: SpoolStore>(
+    ctx: &JobContext,
+    bounds: SpatialBounds,
+    first_output: SpoolId,
+    results: Vec<Result<RangePartition, ConvertError>>,
+    store: &S,
+) -> Result<RootPartition, ConvertError> {
+    let mut parts = Vec::with_capacity(results.len());
+    let mut real = None;
+    let mut cancelled = None;
+    for result in results {
+        match result {
+            Ok(part) => parts.push(part),
+            Err(error @ ConvertError::Cancelled { .. }) => {
+                cancelled.get_or_insert(error);
+            }
+            Err(error) => {
+                real.get_or_insert(error);
+            }
+        }
+    }
+    if let Some(error) = real.or(cancelled) {
+        return Err(error);
+    }
+    let mut parts = parts.into_iter();
+    let first = parts.next().expect("a root partition has a range");
+    let mut samples = first.samples;
+    let mut source_bounds = first.source_bounds;
+    let mut metrics = first.metrics;
+    let mut by_key = vec![Vec::new(); ctx.child_count()];
+    let mut add_segments = |segments: Vec<RangeSegment>| {
+        for segment in segments {
+            by_key[usize::from(segment.key)].push(segment);
+        }
+    };
+    add_segments(first.segments);
+    for part in parts {
+        samples.merge(part.samples);
+        for (merged, later) in source_bounds.iter_mut().zip(part.source_bounds) {
+            merged[0] = merged[0].min(later[0]);
+            merged[1] = merged[1].max(later[1]);
+        }
+        if let (Some(total), Some(later)) = (metrics.as_mut(), part.metrics) {
+            total.child_spool_bytes.extend(later.child_spool_bytes);
+            total.las_fill_ns += later.las_fill_ns;
+            total.partition_and_sample_ns += later.partition_and_sample_ns;
+        }
+        add_segments(part.segments);
+    }
+
+    if all_equal(&source_bounds) {
+        return Ok(RootPartition {
+            children: Vec::new(),
+            samples,
+            all_points_equal: true,
+            release: by_key
+                .iter()
+                .flatten()
+                .map(|segment| segment.spool)
+                .collect(),
+            metrics,
+        });
+    }
+    let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
+        .expect("converter subdivisions are validated");
+    let mut children = Vec::new();
+    for (key, segments) in by_key.iter().enumerate() {
+        if segments.is_empty() {
+            continue;
+        }
+        let target = SpoolId(first_output.0 + key as u64);
+        let ids = segments
+            .iter()
+            .map(|segment| segment.spool)
+            .collect::<Vec<_>>();
+        join_segments(store, target, &ids)?;
+        children.push(ChildOutput {
+            key: u16::try_from(key).expect("at most 8³ children"),
+            spool: target,
+            point_count: segments.iter().map(|segment| segment.point_count).sum(),
+            bounds: subdivision
+                .cell_bounds(key)
+                .expect("child index is in range"),
+        });
+    }
+    Ok(RootPartition {
+        children,
+        samples,
+        all_points_equal: false,
+        release: Vec::new(),
+        metrics,
+    })
+}
+
+/// Copies closed `segments` (in range order) into the new spool `target` in 64 KiB chunks and
+/// deletes each right after copying it. Returns the bytes copied. Never called with an empty
+/// slice.
+pub fn join_segments<S: SpoolStore>(
+    store: &S,
+    target: SpoolId,
+    segments: &[SpoolId],
+) -> Result<u64, ConvertError> {
+    debug_assert!(!segments.is_empty());
+    store.create(target)?;
+    let mut buffer = vec![0_u8; SPOOL_IO_BUFFER_BYTES];
+    let mut total = 0_u64;
+    for &segment in segments {
+        let len = store.len(segment)?;
+        let mut reader = store.reader(segment, SpoolExtent { offset: 0, len })?;
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            store.append(target, &buffer[..read])?;
+            total += read as u64;
+        }
+        drop(reader);
+        store.delete(segment)?;
+    }
+    store.close(target)?;
+    Ok(total)
 }
 
 /// Copies the points of `source` into spool `id` (created and closed here) and returns the

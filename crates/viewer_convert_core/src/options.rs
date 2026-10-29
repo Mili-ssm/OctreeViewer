@@ -7,6 +7,7 @@ pub const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
 pub const MAX_SPATIAL_WORKERS: usize = 8;
 pub const DEFAULT_SPATIAL_WORKERS: usize = 4;
+pub const MAX_ROOT_PARTITION_RANGES: usize = 8;
 pub const ALLOWED_SPATIAL_DIVISIONS: [u8; 3] = [2, 4, 8];
 pub const MAX_INPUT_BYTES_PER_BATCH: usize = 8 * 1024 * 1024;
 pub const MAX_BLOCKS: u64 = 1_000_000;
@@ -32,6 +33,7 @@ pub struct ConvertOptions {
     pub(crate) spatial_workers_explicit: bool,
     pub(crate) pipelined_writes: bool,
     pub(crate) spatial_divisions: u8,
+    pub(crate) root_partition_ranges: usize,
     pub(crate) format_version: FormatVersion,
 }
 
@@ -78,6 +80,7 @@ impl ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
+            root_partition_ranges: 0,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         })
     }
@@ -133,6 +136,22 @@ impl ConvertOptions {
     pub const fn spatial_divisions(self) -> u8 {
         self.spatial_divisions
     }
+
+    /// Reads the root in up to `ranges` parts (LAS record ranges, LAZ chunk groups) and joins
+    /// the per-range child spools; 0 (the default) scans it as one stream. Not a stable option.
+    #[doc(hidden)]
+    pub fn with_root_partition_ranges(mut self, ranges: usize) -> Result<Self, ConvertError> {
+        if ranges > MAX_ROOT_PARTITION_RANGES {
+            return Err(ConvertError::InvalidRootRanges(ranges));
+        }
+        self.root_partition_ranges = ranges;
+        Ok(self)
+    }
+
+    #[doc(hidden)]
+    pub const fn root_partition_ranges(self) -> usize {
+        self.root_partition_ranges
+    }
 }
 
 impl Default for ConvertOptions {
@@ -145,6 +164,7 @@ impl Default for ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
+            root_partition_ranges: 0,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         }
     }
