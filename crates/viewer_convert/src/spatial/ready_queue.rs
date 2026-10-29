@@ -1,4 +1,4 @@
-//! Opt-in ready-queue scheduler for one virtual batch of root children
+//! Ready-queue scheduler (the default) for one virtual batch of root children
 //! ([`SpatialScheduler::ReadyQueue`](crate::SpatialScheduler::ReadyQueue)).
 //!
 //! The batch has as many threads as root children (`min(W, k)`, as the recursive scheduler) and
@@ -295,12 +295,13 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         let (sender, receiver) = mpsc::channel();
         let mut channel_error = None;
         thread::scope(|scope| {
+            // Close before spawning: a failed spawn must not leave earlier workers parked forever.
+            let _close = CloseOnDrop(&queue);
             for _ in 0..threads {
                 let (ctx, queue, sender) = (&ctx, &queue, sender.clone());
                 scope.spawn(move || work(ctx, store, queue, sender));
             }
             drop(sender);
-            let _close = CloseOnDrop(&queue);
             while batch.pending > 0 {
                 match receiver.recv() {
                     Ok(Message::Progress(progress)) => {
