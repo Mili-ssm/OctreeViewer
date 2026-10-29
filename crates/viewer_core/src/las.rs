@@ -353,6 +353,7 @@ fn preflight_inner<R: Read + Seek>(
 
     let mut laz_chunk_size = None;
     let mut laz_items_size = 0u64;
+    let mut laz_declared_size = 0u64;
     let mut laz_layer_words: Option<u64> = None;
     let mut pos = header_size;
     for _ in 0..vlr_count {
@@ -385,7 +386,19 @@ fn preflight_inner<R: Read + Seek>(
                 let mut words = 0u64;
                 for item in 0..count {
                     let item_type = read_u16_at(reader, end + 34 + item * 6)?;
-                    let size = u64::from(read_u16_at(reader, end + 34 + item * 6 + 2)?);
+                    let declared = u64::from(read_u16_at(reader, end + 34 + item * 6 + 2)?);
+                    laz_declared_size += declared;
+                    // `laz` sizes some buffers by the declared size and the item decoders by
+                    // their type, so both sums must agree with the record length.
+                    let size = match item_type {
+                        6 => 20,
+                        7 => 8,
+                        8 | 11 => 6,
+                        9 | 13 => 29,
+                        10 => 30,
+                        12 => 8,
+                        _ => declared,
+                    };
                     laz_items_size += size;
                     words += match item_type {
                         10 => 9,
@@ -432,11 +445,13 @@ fn preflight_inner<R: Read + Seek>(
     }
     if let Some(chunk_size) = laz_chunk_size {
         // `las` sizes buffers by the header record length, `laz` by the items; valid files agree.
-        if laz_items_size != record_len {
-            return Err(LasPreflightError::LazRecordLengthMismatch {
-                record_len,
-                items_size: laz_items_size,
-            });
+        for items_size in [laz_declared_size, laz_items_size] {
+            if items_size != record_len {
+                return Err(LasPreflightError::LazRecordLengthMismatch {
+                    record_len,
+                    items_size,
+                });
+            }
         }
         let point_size = record_len.max(laz_items_size);
         let layered = laz_layer_words.map(|layer_words| LayeredChunks {

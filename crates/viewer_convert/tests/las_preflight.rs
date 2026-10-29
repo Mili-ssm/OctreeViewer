@@ -246,3 +246,55 @@ fn laz_without_laszip_items_is_rejected() {
         ))
     ));
 }
+
+// Valid headers, laszip items and chunk table but corrupt arithmetic-coded data: `laz`
+// asserts (`sym < 1 << 16`) inside the decoder. No header check can predict that, so the
+// converter contains the panic and reports it.
+#[test]
+fn laz_decoder_panic_is_contained_as_an_error() {
+    const BYTES: &[u8] = include_bytes!("fixtures/laz_corrupt_arithmetic_data.laz");
+    preflight_las(&mut Cursor::new(BYTES), BYTES.len() as u64)
+        .expect("header preflight alone accepts it");
+    assert!(matches!(
+        convert_bytes(BYTES),
+        Err(ConvertError::LasDecoderPanicked { .. })
+    ));
+}
+
+// Found by fuzzing: the laszip items declare RGB14/RGBNIR14 sizes of 30 and 8 B (sum 38 = the
+// header record length), but `laz` sizes those items by type (6 + 8 B), so it located the
+// layer sizes in the wrong place and allocated a 4 GiB layer.
+#[test]
+fn laz_item_sizes_declared_differently_from_their_type_are_rejected() {
+    const BYTES: &[u8] = include_bytes!("fixtures/laz_item_size_differs_from_type.laz");
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(BYTES), BYTES.len() as u64),
+        Err(LasPreflightError::LazRecordLengthMismatch {
+            record_len: 38,
+            items_size: 14
+        })
+    ));
+    assert!(matches!(
+        convert_bytes(BYTES),
+        Err(ConvertError::LasPreflight(
+            LasPreflightError::LazRecordLengthMismatch { .. }
+        ))
+    ));
+}
+
+// Same class with a GpsTime item: `laz` recursed without bound decoding data laid out for the
+// wrong item size (stack overflow, which `catch_unwind` cannot contain).
+#[test]
+fn laz_gps_item_size_declared_differently_from_its_type_is_rejected() {
+    const BYTES: &[u8] = include_bytes!("fixtures/laz_gps_item_size_differs_from_type.laz");
+    assert!(matches!(
+        preflight_las(&mut Cursor::new(BYTES), BYTES.len() as u64),
+        Err(LasPreflightError::LazRecordLengthMismatch { .. })
+    ));
+    assert!(matches!(
+        convert_bytes(BYTES),
+        Err(ConvertError::LasPreflight(
+            LasPreflightError::LazRecordLengthMismatch { .. }
+        ))
+    ));
+}

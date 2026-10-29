@@ -769,7 +769,7 @@ impl SpatialBuilder<'_> {
         while processed < source.point_count {
             let requested = point_limit.min(source.point_count - processed);
             let fill_started = self.spatial_phases.as_ref().map(|_| Instant::now());
-            let read = reader.fill_points(requested, &mut point_data)?;
+            let read = crate::las_source::fill_points(reader, requested, &mut point_data)?;
             self.record_phase_elapsed(fill_started, SpatialPhase::RootLasFill);
             if read != requested {
                 return Err(ConvertError::PointCountMismatch {
@@ -1499,7 +1499,7 @@ pub(crate) fn spool_source(
     let mut processed = 0_u64;
     while processed < source.point_count {
         let requested = point_limit.min(source.point_count - processed);
-        let read = reader.fill_points(requested, &mut point_data)?;
+        let read = crate::las_source::fill_points(reader, requested, &mut point_data)?;
         if read != requested {
             return Err(ConvertError::PointCountMismatch {
                 expected: source.point_count,

@@ -18,6 +18,12 @@ verifican siempre y los tests de corrupción cubren la comprobación real.
 Un pánico, abort o asignación por encima de los límites de libFuzzer tras un preflight correcto
 es un *bypass* del preflight.
 
+Excepción: `convert_file` contiene los pánicos del decodificador LAZ de terceros (datos
+aritméticos corruptos que ningún preflight de cabecera puede predecir) y los devuelve como
+`ConvertError::LasDecoderPanicked`. Como libfuzzer-sys instala un hook que aborta antes de que
+`catch_unwind` actúe, `fuzz_las_preflight` lo sustituye por uno silencioso; un pánico no
+contenido sigue llegando al `catch_unwind` de libfuzzer-sys y se reporta como crash.
+
 ## Ejecutar
 
 Requiere `cargo install cargo-fuzz` (usa el nightly fijado en `rust-toolchain.toml`).

@@ -26,7 +26,19 @@ fn scratch_stem() -> &'static Path {
 // preflight accepts the input the whole converter entry point runs: chunk-table check, `las`
 // reader (laz + laz-parallel) and conversion. Errors are fine; a panic, abort or allocation
 // above the libFuzzer limits after a successful preflight is a bypass.
+//
+// `convert_file` contains panics raised inside the third-party LAZ decoder and returns them as
+// errors, but libfuzzer-sys installs a panic hook that aborts before `catch_unwind` can run.
+// Replace it once per process with a quiet hook. Invariant: a panic that is *not* caught by
+// our code still unwinds into libfuzzer-sys's own `catch_unwind`, which aborts and reports it,
+// so real bypasses stay visible.
+fn allow_contained_panics() {
+    static HOOK: std::sync::Once = std::sync::Once::new();
+    HOOK.call_once(|| std::panic::set_hook(Box::new(|_| {})));
+}
+
 fuzz_target!(|data: &[u8]| {
+    allow_contained_panics();
     let len = data.len() as u64;
     if preflight_las(&mut Cursor::new(data), len).is_err() {
         return;

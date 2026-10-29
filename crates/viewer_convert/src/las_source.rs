@@ -66,7 +66,37 @@ pub(crate) fn open_las_reader(path: &Path) -> Result<Reader, ConvertError> {
         check_laz_chunk_table(&mut file, layout)?;
         file.seek(SeekFrom::Start(0))?;
     }
-    Ok(Reader::new(std::io::BufReader::new(file))?)
+    contain_decoder_panic(|| Reader::new(std::io::BufReader::new(file)))?.map_err(Into::into)
+}
+
+/// Runs a call into the `las`/`laz` decoders and turns a panic into an error. Corrupt
+/// arithmetic-coded data trips asserts inside `laz` that no header or chunk-table check can
+/// predict. Keep the closure limited to the decoder call so panics in our own code stay loud.
+/// The reader is left in an unknown state after a panic: callers must propagate the error and
+/// drop it.
+pub(crate) fn contain_decoder_panic<T>(call: impl FnOnce() -> T) -> Result<T, ConvertError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)).map_err(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_owned())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_owned());
+        ConvertError::LasDecoderPanicked { message }
+    })
+}
+
+/// `Reader::fill_points` with decoder panics contained.
+pub(crate) fn fill_points(
+    reader: &mut Reader,
+    count: u64,
+    data: &mut las::PointData,
+) -> Result<u64, ConvertError> {
+    Ok(contain_decoder_panic(|| reader.fill_points(count, data))??)
+}
+
+/// `Reader::seek` with decoder panics contained.
+pub(crate) fn seek_points(reader: &mut Reader, index: u64) -> Result<(), ConvertError> {
+    Ok(contain_decoder_panic(|| reader.seek(index))??)
 }
 
 /// The parallel LAZ decompressor sizes buffers from decoded entries (i32

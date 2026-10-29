@@ -643,13 +643,13 @@ pub(super) fn convert(
                 0
             };
             if node_processed > 0 {
-                reader.seek(node_processed)?;
+                crate::las_source::seek_points(&mut reader, node_processed)?;
             }
             let first_block = usize::try_from(node_processed / node.point_limit)
                 .map_err(|_| ConvertError::SizeOverflow)?;
             for block_id in node.block_ids.iter().skip(first_block) {
                 let wanted = (node.point_count - node_processed).min(node.point_limit);
-                let read = reader.fill_points(wanted, &mut data)?;
+                let read = crate::las_source::fill_points(&mut reader, wanted, &mut data)?;
                 if read != wanted {
                     return Err(ConvertError::PointCountMismatch {
                         expected: node.point_count,
