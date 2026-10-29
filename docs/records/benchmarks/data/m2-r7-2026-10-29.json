@@ -196,5 +196,893 @@
   "median_ratio": 0.9961,
   "min": 0.9829,
   "max": 1.0075
+ },
+ "r7_full_task6": {
+  "warm": [
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.47509765625,
+      1.375,
+      0.6728515625
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.0,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:13:53",
+     "waited_s": 50
+    },
+    "rc": 0,
+    "elapsed_ms": 24059.422,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.134,
+     "stage_InspectingInput_ms": 580.636,
+     "stage_PlanningMetadata_ms": 55.89,
+     "stage_PlanningSpatialIndex_ms": 10350.126,
+     "stage_BuildingSpatialHierarchy_ms": 5335.007,
+     "stage_ReadingAndWritingBlocks_ms": 6193.514,
+     "stage_ValidatingOutput_ms": 1331.114,
+     "stage_PublishingOutput_ms": 211.502,
+     "stage_Complete_ms": 1.497
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 1.83056640625,
+    "psi_after": 0.29
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.49169921875,
+      1.40380859375,
+      0.71435546875
+     ],
+     "psi_cpu_some_avg10": 0.07,
+     "psi_io": 1.22,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:14:33",
+     "waited_s": 15
+    },
+    "rc": 0,
+    "elapsed_ms": 22760.618,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.071,
+     "stage_InspectingInput_ms": 8.968,
+     "stage_PlanningMetadata_ms": 46.429,
+     "stage_PlanningSpatialIndex_ms": 10388.452,
+     "stage_BuildingSpatialHierarchy_ms": 5884.803,
+     "stage_ReadingAndWritingBlocks_ms": 5121.631,
+     "stage_ValidatingOutput_ms": 1304.643,
+     "stage_PublishingOutput_ms": 4.691,
+     "stage_Complete_ms": 0.927
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 3.4091796875,
+    "psi_after": 0.56
+   }
+  ],
+  "pairs": [
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.416015625,
+      1.55712890625,
+      0.83544921875
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.57,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:15:51",
+     "waited_s": 55
+    },
+    "rc": 0,
+    "elapsed_ms": 23630.249,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.103,
+     "stage_InspectingInput_ms": 8.106,
+     "stage_PlanningMetadata_ms": 48.336,
+     "stage_PlanningSpatialIndex_ms": 10290.159,
+     "stage_BuildingSpatialHierarchy_ms": 5729.571,
+     "stage_ReadingAndWritingBlocks_ms": 6188.585,
+     "stage_ValidatingOutput_ms": 1359.732,
+     "stage_PublishingOutput_ms": 4.504,
+     "stage_Complete_ms": 1.151
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 1.97119140625,
+    "psi_after": 0.41,
+    "pair": 1,
+    "pos": 1
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.38037109375,
+      1.5615234375,
+      0.88134765625
+     ],
+     "psi_cpu_some_avg10": 0.01,
+     "psi_io": 0.45,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:16:46",
+     "waited_s": 30
+    },
+    "rc": 0,
+    "elapsed_ms": 22568.412,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.089,
+     "stage_InspectingInput_ms": 11.742,
+     "stage_PlanningMetadata_ms": 53.194,
+     "stage_PlanningSpatialIndex_ms": 9896.019,
+     "stage_BuildingSpatialHierarchy_ms": 5999.297,
+     "stage_ReadingAndWritingBlocks_ms": 5068.398,
+     "stage_ValidatingOutput_ms": 1310.55,
+     "stage_PublishingOutput_ms": 228.152,
+     "stage_Complete_ms": 0.971
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 1.86279296875,
+    "psi_after": 0.4,
+    "pair": 1,
+    "pos": 2
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.44970703125,
+      1.57958984375,
+      0.91748046875
+     ],
+     "psi_cpu_some_avg10": 0.09,
+     "psi_io": 0.72,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:17:24",
+     "waited_s": 15
+    },
+    "rc": 0,
+    "elapsed_ms": 22743.877,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.072,
+     "stage_InspectingInput_ms": 8.738,
+     "stage_PlanningMetadata_ms": 47.579,
+     "stage_PlanningSpatialIndex_ms": 10392.601,
+     "stage_BuildingSpatialHierarchy_ms": 5947.749,
+     "stage_ReadingAndWritingBlocks_ms": 5040.333,
+     "stage_ValidatingOutput_ms": 1302.026,
+     "stage_PublishingOutput_ms": 4.077,
+     "stage_Complete_ms": 0.701
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.4169921875,
+    "psi_after": 0.4,
+    "pair": 2,
+    "pos": 1
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.462890625,
+      1.61865234375,
+      0.9736328125
+     ],
+     "psi_cpu_some_avg10": 0.01,
+     "psi_io": 0.2,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:18:23",
+     "waited_s": 35
+    },
+    "rc": 0,
+    "elapsed_ms": 23607.203,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.105,
+     "stage_InspectingInput_ms": 8.483,
+     "stage_PlanningMetadata_ms": 44.334,
+     "stage_PlanningSpatialIndex_ms": 10191.408,
+     "stage_BuildingSpatialHierarchy_ms": 5730.706,
+     "stage_ReadingAndWritingBlocks_ms": 6325.749,
+     "stage_ValidatingOutput_ms": 1301.434,
+     "stage_PublishingOutput_ms": 4.054,
+     "stage_Complete_ms": 0.928
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 2.8564453125,
+    "psi_after": 0.56,
+    "pair": 2,
+    "pos": 2
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.435546875,
+      1.69677734375,
+      1.0546875
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.3,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:19:32",
+     "waited_s": 45
+    },
+    "rc": 0,
+    "elapsed_ms": 22808.117,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.132,
+     "stage_InspectingInput_ms": 8.191,
+     "stage_PlanningMetadata_ms": 46.662,
+     "stage_PlanningSpatialIndex_ms": 9896.589,
+     "stage_BuildingSpatialHierarchy_ms": 5370.451,
+     "stage_ReadingAndWritingBlocks_ms": 6189.741,
+     "stage_ValidatingOutput_ms": 1291.525,
+     "stage_PublishingOutput_ms": 3.874,
+     "stage_Complete_ms": 0.95
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 1.85986328125,
+    "psi_after": 0.33,
+    "pair": 3,
+    "pos": 1
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.44677734375,
+      1.68310546875,
+      1.07861328125
+     ],
+     "psi_cpu_some_avg10": 0.08,
+     "psi_io": 1.61,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:20:11",
+     "waited_s": 15
+    },
+    "rc": 0,
+    "elapsed_ms": 22674.299,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.066,
+     "stage_InspectingInput_ms": 8.97,
+     "stage_PlanningMetadata_ms": 44.564,
+     "stage_PlanningSpatialIndex_ms": 10525.65,
+     "stage_BuildingSpatialHierarchy_ms": 5591.474,
+     "stage_ReadingAndWritingBlocks_ms": 5164.39,
+     "stage_ValidatingOutput_ms": 1332.994,
+     "stage_PublishingOutput_ms": 5.357,
+     "stage_Complete_ms": 0.831
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.5654296875,
+    "psi_after": 0.46,
+    "pair": 3,
+    "pos": 2
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.47705078125,
+      1.73291015625,
+      1.1396484375
+     ],
+     "psi_cpu_some_avg10": 0.01,
+     "psi_io": 0.34,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:21:09",
+     "waited_s": 35
+    },
+    "rc": 0,
+    "elapsed_ms": 23043.994,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.087,
+     "stage_InspectingInput_ms": 8.117,
+     "stage_PlanningMetadata_ms": 44.432,
+     "stage_PlanningSpatialIndex_ms": 10594.615,
+     "stage_BuildingSpatialHierarchy_ms": 6160.866,
+     "stage_ReadingAndWritingBlocks_ms": 4918.754,
+     "stage_ValidatingOutput_ms": 1297.465,
+     "stage_PublishingOutput_ms": 18.978,
+     "stage_Complete_ms": 0.679
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.873046875,
+    "psi_after": 0.32,
+    "pair": 4,
+    "pos": 1
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.416015625,
+      1.771484375,
+      1.20263671875
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 7.09,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:22:23",
+     "waited_s": 50
+    },
+    "rc": 0,
+    "elapsed_ms": 23707.999,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.092,
+     "stage_InspectingInput_ms": 11.774,
+     "stage_PlanningMetadata_ms": 51.09,
+     "stage_PlanningSpatialIndex_ms": 10274.806,
+     "stage_BuildingSpatialHierarchy_ms": 6088.876,
+     "stage_ReadingAndWritingBlocks_ms": 5975.618,
+     "stage_ValidatingOutput_ms": 1298.501,
+     "stage_PublishingOutput_ms": 6.072,
+     "stage_Complete_ms": 1.167
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 4.08837890625,
+    "psi_after": 0.17,
+    "pair": 4,
+    "pos": 2
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.42041015625,
+      1.958984375,
+      1.34130859375
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.25,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:23:53",
+     "waited_s": 65
+    },
+    "rc": 0,
+    "elapsed_ms": 22790.713,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.09,
+     "stage_InspectingInput_ms": 11.895,
+     "stage_PlanningMetadata_ms": 46.122,
+     "stage_PlanningSpatialIndex_ms": 10071.048,
+     "stage_BuildingSpatialHierarchy_ms": 5632.673,
+     "stage_ReadingAndWritingBlocks_ms": 5718.482,
+     "stage_ValidatingOutput_ms": 1304.624,
+     "stage_PublishingOutput_ms": 4.429,
+     "stage_Complete_ms": 1.348
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 3.287109375,
+    "psi_after": 0.39,
+    "pair": 5,
+    "pos": 1
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.38427734375,
+      1.96875,
+      1.40478515625
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.02,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:25:11",
+     "waited_s": 55
+    },
+    "rc": 0,
+    "elapsed_ms": 22510.863,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.07,
+     "stage_InspectingInput_ms": 8.405,
+     "stage_PlanningMetadata_ms": 45.494,
+     "stage_PlanningSpatialIndex_ms": 10413.391,
+     "stage_BuildingSpatialHierarchy_ms": 5587.958,
+     "stage_ReadingAndWritingBlocks_ms": 5182.667,
+     "stage_ValidatingOutput_ms": 1267.204,
+     "stage_PublishingOutput_ms": 4.783,
+     "stage_Complete_ms": 0.888
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 3.96875,
+    "psi_after": 0.52,
+    "pair": 5,
+    "pos": 2
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.4560546875,
+      2.09033203125,
+      1.51318359375
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.01,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:26:35",
+     "waited_s": 60
+    },
+    "rc": 0,
+    "elapsed_ms": 21560.795,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.077,
+     "stage_InspectingInput_ms": 11.722,
+     "stage_PlanningMetadata_ms": 50.994,
+     "stage_PlanningSpatialIndex_ms": 10019.461,
+     "stage_BuildingSpatialHierarchy_ms": 5066.304,
+     "stage_ReadingAndWritingBlocks_ms": 4964.146,
+     "stage_ValidatingOutput_ms": 1276.969,
+     "stage_PublishingOutput_ms": 170.247,
+     "stage_Complete_ms": 0.874
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.54443359375,
+    "psi_after": 0.26,
+    "pair": 6,
+    "pos": 1
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.41748046875,
+      2.03955078125,
+      1.533203125
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.14,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:27:32",
+     "waited_s": 35
+    },
+    "rc": 0,
+    "elapsed_ms": 23970.738,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.108,
+     "stage_InspectingInput_ms": 9.41,
+     "stage_PlanningMetadata_ms": 44.882,
+     "stage_PlanningSpatialIndex_ms": 10342.937,
+     "stage_BuildingSpatialHierarchy_ms": 5998.627,
+     "stage_ReadingAndWritingBlocks_ms": 6272.022,
+     "stage_ValidatingOutput_ms": 1297.477,
+     "stage_PublishingOutput_ms": 3.9,
+     "stage_Complete_ms": 1.372
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 3.2041015625,
+    "psi_after": 0.46,
+    "pair": 6,
+    "pos": 2
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.388671875,
+      2.044921875,
+      1.58349609375
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 7.77,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:28:47",
+     "waited_s": 50
+    },
+    "rc": 0,
+    "elapsed_ms": 22894.296,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.087,
+     "stage_InspectingInput_ms": 12.56,
+     "stage_PlanningMetadata_ms": 50.56,
+     "stage_PlanningSpatialIndex_ms": 9904.882,
+     "stage_BuildingSpatialHierarchy_ms": 5466.755,
+     "stage_ReadingAndWritingBlocks_ms": 6161.078,
+     "stage_ValidatingOutput_ms": 1292.505,
+     "stage_PublishingOutput_ms": 4.588,
+     "stage_Complete_ms": 1.278
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 2.63134765625,
+    "psi_after": 0.45,
+    "pair": 7,
+    "pos": 1
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.4658203125,
+      2.02880859375,
+      1.61083984375
+     ],
+     "psi_cpu_some_avg10": 0.01,
+     "psi_io": 0.16,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:29:45",
+     "waited_s": 35
+    },
+    "rc": 0,
+    "elapsed_ms": 22467.888,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.118,
+     "stage_InspectingInput_ms": 11.601,
+     "stage_PlanningMetadata_ms": 52.144,
+     "stage_PlanningSpatialIndex_ms": 10064.014,
+     "stage_BuildingSpatialHierarchy_ms": 5620.82,
+     "stage_ReadingAndWritingBlocks_ms": 5352.613,
+     "stage_ValidatingOutput_ms": 1352.021,
+     "stage_PublishingOutput_ms": 13.381,
+     "stage_Complete_ms": 1.173
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.8330078125,
+    "psi_after": 0.52,
+    "pair": 7,
+    "pos": 2
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.44482421875,
+      2.01953125,
+      1.6455078125
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.04,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:30:54",
+     "waited_s": 45
+    },
+    "rc": 0,
+    "elapsed_ms": 21698.252,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.078,
+     "stage_InspectingInput_ms": 12.91,
+     "stage_PlanningMetadata_ms": 50.788,
+     "stage_PlanningSpatialIndex_ms": 9815.627,
+     "stage_BuildingSpatialHierarchy_ms": 5410.237,
+     "stage_ReadingAndWritingBlocks_ms": 5127.419,
+     "stage_ValidatingOutput_ms": 1276.652,
+     "stage_PublishingOutput_ms": 3.65,
+     "stage_Complete_ms": 0.889
+    },
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 3.32861328125,
+    "psi_after": 0.49,
+    "pair": 8,
+    "pos": 1
+   },
+   {
+    "arm": "base",
+    "cond": {
+     "loadavg": [
+      1.443359375,
+      2.03515625,
+      1.68603515625
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.02,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:32:06",
+     "waited_s": 50
+    },
+    "rc": 0,
+    "elapsed_ms": 23165.929,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.075,
+     "stage_InspectingInput_ms": 9.455,
+     "stage_PlanningMetadata_ms": 44.638,
+     "stage_PlanningSpatialIndex_ms": 10200.415,
+     "stage_BuildingSpatialHierarchy_ms": 5536.921,
+     "stage_ReadingAndWritingBlocks_ms": 6089.754,
+     "stage_ValidatingOutput_ms": 1278.86,
+     "stage_PublishingOutput_ms": 4.559,
+     "stage_Complete_ms": 1.251
+    },
+    "sha_oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+    "sha_attrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8",
+    "loadavg_after": 2.7646484375,
+    "psi_after": 0.24,
+    "pair": 8,
+    "pos": 2
+   }
+  ],
+  "ranged": [
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.490234375,
+      2.0302734375,
+      1.7138671875
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.08,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:33:10",
+     "waited_s": 40
+    },
+    "rc": 0,
+    "elapsed_ms": 22729.482,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.091,
+     "stage_InspectingInput_ms": 12.275,
+     "stage_PlanningMetadata_ms": 52.623,
+     "stage_PlanningSpatialIndex_ms": 9239.838,
+     "stage_BuildingSpatialHierarchy_ms": 5951.937,
+     "stage_ReadingAndWritingBlocks_ms": 5876.588,
+     "stage_ValidatingOutput_ms": 1581.862,
+     "stage_PublishingOutput_ms": 13.5,
+     "stage_Complete_ms": 0.767
+    },
+    "max_rss_kb": 245484,
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.451171875,
+    "psi_after": 0.44,
+    "root_ranges": 4,
+    "rep": 1
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.43896484375,
+      1.98388671875,
+      1.72509765625
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.04,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:34:19",
+     "waited_s": 45
+    },
+    "rc": 0,
+    "elapsed_ms": 21632.266,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.122,
+     "stage_InspectingInput_ms": 11.588,
+     "stage_PlanningMetadata_ms": 48.18,
+     "stage_PlanningSpatialIndex_ms": 9294.403,
+     "stage_BuildingSpatialHierarchy_ms": 5977.372,
+     "stage_ReadingAndWritingBlocks_ms": 4989.111,
+     "stage_ValidatingOutput_ms": 1306.404,
+     "stage_PublishingOutput_ms": 4.364,
+     "stage_Complete_ms": 0.721
+    },
+    "max_rss_kb": 230132,
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.7392578125,
+    "psi_after": 0.47,
+    "root_ranges": 4,
+    "rep": 2
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.45751953125,
+      1.974609375,
+      1.74560546875
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.1,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:35:27",
+     "waited_s": 45
+    },
+    "rc": 0,
+    "elapsed_ms": 21494.191,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.09,
+     "stage_InspectingInput_ms": 11.614,
+     "stage_PlanningMetadata_ms": 49.294,
+     "stage_PlanningSpatialIndex_ms": 9332.421,
+     "stage_BuildingSpatialHierarchy_ms": 5615.766,
+     "stage_ReadingAndWritingBlocks_ms": 5177.511,
+     "stage_ValidatingOutput_ms": 1286.475,
+     "stage_PublishingOutput_ms": 19.854,
+     "stage_Complete_ms": 1.163
+    },
+    "max_rss_kb": 227964,
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.27587890625,
+    "psi_after": 0.56,
+    "root_ranges": 4,
+    "rep": 3
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.435546875,
+      1.94482421875,
+      1.7529296875
+     ],
+     "psi_cpu_some_avg10": 0.02,
+     "psi_io": 0.19,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:36:19",
+     "waited_s": 30
+    },
+    "rc": 0,
+    "elapsed_ms": 17989.987,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.114,
+     "stage_InspectingInput_ms": 10.488,
+     "stage_PlanningMetadata_ms": 62.339,
+     "stage_PlanningSpatialIndex_ms": 4933.666,
+     "stage_BuildingSpatialHierarchy_ms": 6224.218,
+     "stage_ReadingAndWritingBlocks_ms": 5074.234,
+     "stage_ValidatingOutput_ms": 1670.871,
+     "stage_PublishingOutput_ms": 13.361,
+     "stage_Complete_ms": 0.693
+    },
+    "max_rss_kb": 235268,
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.736328125,
+    "psi_after": 0.6,
+    "root_ranges": 8,
+    "rep": 1
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.45947265625,
+      1.95703125,
+      1.7734375
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.04,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:37:18",
+     "waited_s": 40
+    },
+    "rc": 0,
+    "elapsed_ms": 18021.513,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.076,
+     "stage_InspectingInput_ms": 11.686,
+     "stage_PlanningMetadata_ms": 65.557,
+     "stage_PlanningSpatialIndex_ms": 5322.899,
+     "stage_BuildingSpatialHierarchy_ms": 5986.244,
+     "stage_ReadingAndWritingBlocks_ms": 4939.209,
+     "stage_ValidatingOutput_ms": 1670.302,
+     "stage_PublishingOutput_ms": 24.6,
+     "stage_Complete_ms": 0.937
+    },
+    "max_rss_kb": 241472,
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 3.30419921875,
+    "psi_after": 0.3,
+    "root_ranges": 8,
+    "rep": 2
+   },
+   {
+    "arm": "cand",
+    "cond": {
+     "loadavg": [
+      1.3916015625,
+      1.978515625,
+      1.8046875
+     ],
+     "psi_cpu_some_avg10": 0.0,
+     "psi_io": 0.37,
+     "psi_memory": 0.0,
+     "governor": "powersave",
+     "platform_profile": "balanced",
+     "t": "00:38:32",
+     "waited_s": 55
+    },
+    "rc": 0,
+    "elapsed_ms": 17678.715,
+    "stages": {
+     "stage_BeforeFirstProgress_ms": 0.092,
+     "stage_InspectingInput_ms": 11.718,
+     "stage_PlanningMetadata_ms": 63.333,
+     "stage_PlanningSpatialIndex_ms": 5172.148,
+     "stage_BuildingSpatialHierarchy_ms": 5690.124,
+     "stage_ReadingAndWritingBlocks_ms": 5070.096,
+     "stage_ValidatingOutput_ms": 1664.329,
+     "stage_PublishingOutput_ms": 6.049,
+     "stage_Complete_ms": 0.823
+    },
+    "max_rss_kb": 239480,
+    "sha_oct": "ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad",
+    "sha_attrs": "cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a",
+    "loadavg_after": 2.44970703125,
+    "psi_after": 0.56,
+    "root_ranges": 8,
+    "rep": 3
+   }
+  ],
+  "meta": {
+   "session": "2026-10-30 (after a reboot; earlier timings discarded)",
+   "base": "fb9a3b7",
+   "candidate": "0bd62d2 (code identical to 38a8201)",
+   "kernel": "7.2.13-200.fc44.x86_64",
+   "profile": "perf",
+   "workers": 4,
+   "cmd": "real_dataset_bench convert belv_2009_digital-aerial_pcd_copc.laz OUT.oct 4; ranged: ... 4 2 262144 v5 <ROOT_RANGES>",
+   "order": "2 warm-ups (base, cand) then 8 pairs: B C, C B alternating",
+   "median_ratio": 0.9677,
+   "min_ratio": 0.8995,
+   "max_ratio": 0.9941,
+   "iqr_ratio": 0.0325
+  }
  }
 }
