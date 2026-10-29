@@ -103,11 +103,12 @@ impl<R: BorrowMut<Reader>> PointSource for LasPointSource<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::{fs, io::Read, path::Path};
 
     use las::{Builder, Writer, point::Format};
 
     use super::{LasPointSource, PointRange, PointSource};
+    use crate::pipeline::spool_store::{FileSpoolStore, SpoolExtent, SpoolId, SpoolStore};
     use crate::{
         ConvertError, ConvertOptions,
         las_source::{inspect_source, open_las_reader},
@@ -176,9 +177,10 @@ mod tests {
                 .collect(),
         };
         let dir = tempfile::tempdir().unwrap();
+        let store = FileSpoolStore::new(dir.path(), false);
         let mut bytes = Vec::new();
         for (index, range) in ranges.into_iter().enumerate() {
-            let out = dir.path().join(format!("{index}.spool"));
+            let id = SpoolId(index as u64);
             let reader = open_las_reader(path).unwrap();
             let mut progress = |_: crate::ConversionProgress| true;
             match range {
@@ -186,7 +188,8 @@ mod tests {
                     &mut EndsAt(LasPointSource::full(reader), end),
                     &info,
                     options,
-                    &out,
+                    &store,
+                    id,
                     &mut progress,
                     false,
                 )?,
@@ -194,12 +197,21 @@ mod tests {
                     &mut EndsAt(LasPointSource::records(reader, range)?, end),
                     &info,
                     options,
-                    &out,
+                    &store,
+                    id,
                     &mut progress,
                     false,
                 )?,
             };
-            bytes.extend(fs::read(out).unwrap());
+            let extent = SpoolExtent {
+                offset: 0,
+                len: store.len(id).unwrap(),
+            };
+            store
+                .reader(id, extent)
+                .unwrap()
+                .read_to_end(&mut bytes)
+                .unwrap();
         }
         Ok(bytes)
     }

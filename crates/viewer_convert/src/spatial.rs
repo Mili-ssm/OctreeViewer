@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
-    fs::{self, File, OpenOptions},
-    io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
+    fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -25,11 +25,11 @@ use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_
 use crate::pipeline::{
     clock::{Clock, SystemClock},
     point_source::{LasPointSource, PointSource},
+    spool_store::{PlanStore, SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
 };
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
-const SPOOL_IO_BUFFER_BYTES: usize = 64 * 1024;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
 const SAMPLE_GRID_SIZE: usize = 8;
 const MAX_SPATIAL_DEPTH: u32 = 32;
@@ -104,7 +104,7 @@ struct SpoolPoint {
 
 pub(crate) struct PlannedBlock {
     pub id: BlockId,
-    path: PathBuf,
+    spool: SpoolId,
     offset_points: u64,
     point_count: usize,
     layout: SpoolLayout,
@@ -126,24 +126,29 @@ impl PlannedBlock {
             .ok_or(ConvertError::SizeOverflow)
     }
 
-    pub fn release_spool_after_write(&self) -> Result<(), ConvertError> {
+    pub fn release_spool_after_write(&self, store: &impl SpoolStore) -> Result<(), ConvertError> {
         if self.final_block_in_spool {
-            fs::remove_file(&self.path)?;
+            store.delete(self.spool)?;
         }
         Ok(())
     }
 
-    pub fn read(
+    pub fn read<S: SpoolStore>(
         &self,
+        store: &S,
         frame: viewer_core::CoordinateFrame,
     ) -> Result<SourcePointBlock, ConvertError> {
-        let byte_offset = self
-            .offset_points
-            .checked_mul(self.layout.record_bytes() as u64)
-            .ok_or(ConvertError::SizeOverflow)?;
-        let mut file = File::open(&self.path)?;
-        file.seek(SeekFrom::Start(byte_offset))?;
-        let mut reader = BufReader::with_capacity(SPOOL_IO_BUFFER_BYTES, file);
+        let record_bytes_wide = self.layout.record_bytes() as u64;
+        let extent = SpoolExtent {
+            offset: self
+                .offset_points
+                .checked_mul(record_bytes_wide)
+                .ok_or(ConvertError::SizeOverflow)?,
+            len: (self.point_count as u64)
+                .checked_mul(record_bytes_wide)
+                .ok_or(ConvertError::SizeOverflow)?,
+        };
+        let mut reader = store.reader(self.spool, extent)?;
         let record_bytes = self.layout.record_bytes();
         let batch_capacity = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
         let mut record_buffer = vec![0; batch_capacity * record_bytes];
@@ -328,6 +333,10 @@ impl Workspace {
         self.path.join(name)
     }
 
+    pub(crate) fn root(&self) -> &Path {
+        &self.path
+    }
+
     pub fn create_at(path: &Path) -> Result<Self, ConvertError> {
         if path.exists() {
             fs::remove_dir_all(path)?;
@@ -336,17 +345,6 @@ impl Workspace {
         Ok(Self {
             path: path.to_owned(),
             cleanup_on_drop: true,
-        })
-    }
-
-    fn create_child(path: &Path) -> Result<Self, ConvertError> {
-        if path.exists() {
-            fs::remove_dir_all(path)?;
-        }
-        fs::create_dir(path)?;
-        Ok(Self {
-            path: path.to_owned(),
-            cleanup_on_drop: false,
         })
     }
 }
@@ -359,11 +357,10 @@ impl Drop for Workspace {
     }
 }
 
-pub(crate) fn build_spatial_plan(
+pub(crate) fn build_spatial_plan<S: PlanStore>(
     source: &SourceInfo,
     options: ConvertOptions,
-    workspace: &Workspace,
-    source_path: &Path,
+    store: &S,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
     source_spool_bytes_written: u64,
@@ -371,27 +368,27 @@ pub(crate) fn build_spatial_plan(
     build_spatial_plan_inner(
         source,
         options,
-        workspace,
-        SpatialInput::Spool(source_path),
+        store,
+        SpatialInput::Spool,
         on_progress,
         collect_spool_diagnostics,
         source_spool_bytes_written,
     )
 }
 
-pub(crate) fn build_spatial_plan_from_reader(
+pub(crate) fn build_spatial_plan_from_reader<S: PlanStore>(
     reader: &mut Reader,
     input_path: &Path,
     source: &SourceInfo,
     options: ConvertOptions,
-    workspace: &Workspace,
+    store: &S,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
 ) -> Result<SpatialPlan, ConvertError> {
     build_spatial_plan_inner(
         source,
         options,
-        workspace,
+        store,
         SpatialInput::Las { reader, input_path },
         on_progress,
         collect_spool_diagnostics,
@@ -400,17 +397,18 @@ pub(crate) fn build_spatial_plan_from_reader(
 }
 
 enum SpatialInput<'a> {
-    Spool(&'a Path),
+    /// `SpoolId::SOURCE` already holds the closed source spool.
+    Spool,
     Las {
         reader: &'a mut Reader,
         input_path: &'a Path,
     },
 }
 
-fn build_spatial_plan_inner(
+fn build_spatial_plan_inner<S: PlanStore>(
     source: &SourceInfo,
     options: ConvertOptions,
-    workspace: &Workspace,
+    store: &S,
     input: SpatialInput<'_>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_spool_diagnostics: bool,
@@ -423,8 +421,11 @@ fn build_spatial_plan_inner(
         options.max_memory_budget_bytes(),
     )?;
     let root_bounds = cube_bounds(source.bounds);
+    // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O.
+    let spool_ids = AtomicU64::new(1);
     let mut builder = SpatialBuilder {
-        workspace,
+        store,
+        spool_ids: &spool_ids,
         point_limit,
         memory_budget: options.max_memory_budget_bytes(),
         spatial_divisions: options.spatial_divisions(),
@@ -442,15 +443,13 @@ fn build_spatial_plan_inner(
             ..SpatialSpoolDiagnostics::default()
         }),
         spatial_phases: collect_spool_diagnostics.then(SpatialPhaseDiagnostics::default),
-        spool_ledger: collect_spool_diagnostics
-            .then(|| Arc::new(SpoolLedger::with_live(source_spool_bytes_written))),
         spool_written_local: 0,
         node_events: Vec::new(),
     };
     match input {
-        SpatialInput::Spool(path) => {
+        SpatialInput::Spool => {
             builder.build_node(
-                path.to_owned(),
+                SpoolId::SOURCE,
                 source.point_count,
                 root_bounds,
                 None,
@@ -463,9 +462,9 @@ fn build_spatial_plan_inner(
         }
     }
 
-    if let (Some(phases), Some(ledger)) = (builder.spatial_phases.as_mut(), &builder.spool_ledger) {
-        phases.spool_bytes_written = ledger.written.load(Ordering::Relaxed);
-        phases.peak_live_spool_bytes = ledger.peak.load(Ordering::Relaxed);
+    if let (Some(phases), Some(totals)) = (builder.spatial_phases.as_mut(), store.ledger_totals()) {
+        phases.spool_bytes_written = totals.written;
+        phases.peak_live_spool_bytes = totals.peak_live;
         phases.node_spool_events = std::mem::take(&mut builder.node_events);
         phases.node_spool_events.sort_by_key(|event| event.node_id);
     }
@@ -544,7 +543,7 @@ struct NodeRecord {
 
 struct RootChildTask {
     key: usize,
-    path: PathBuf,
+    spool: SpoolId,
     point_count: u64,
     bounds: SpatialBounds,
 }
@@ -565,109 +564,68 @@ fn elapsed_ns(started: Instant) -> u64 {
 
 struct ChildSpool {
     layout: SpoolLayout,
-    path: PathBuf,
+    id: SpoolId,
     point_count: u64,
     buffer: Vec<u8>,
+    /// The store spool exists: an empty child never creates one.
     created: bool,
     payload_written_bytes: Option<u64>,
-    /// Credited on every flush so the shared live/peak totals include in-progress spools.
-    ledger: Option<Arc<SpoolLedger>>,
 }
 
 impl ChildSpool {
-    fn new(path: PathBuf, layout: SpoolLayout, collect_diagnostics: bool) -> Self {
+    fn new(id: SpoolId, layout: SpoolLayout, collect_diagnostics: bool) -> Self {
         Self {
             layout,
-            path,
+            id,
             point_count: 0,
             buffer: Vec::with_capacity(CHILD_SPOOL_BUFFER_BYTES),
             created: false,
             payload_written_bytes: collect_diagnostics.then_some(0),
-            ledger: None,
         }
     }
 
-    fn with_ledger(mut self, ledger: Option<Arc<SpoolLedger>>) -> Self {
-        self.ledger = ledger;
-        self
-    }
-
-    fn write_point(&mut self, point: &SpoolPoint) -> Result<(), ConvertError> {
+    fn write_point(
+        &mut self,
+        store: &impl SpoolStore,
+        point: &SpoolPoint,
+    ) -> Result<(), ConvertError> {
         if self.buffer.len() + self.layout.record_bytes() > CHILD_SPOOL_BUFFER_BYTES {
-            self.flush()?;
+            self.flush(store)?;
         }
         write_point(&mut self.buffer, point, self.layout)?;
         self.point_count += 1;
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), ConvertError> {
+    fn flush(&mut self, store: &impl SpoolStore) -> Result<(), ConvertError> {
         if self.buffer.is_empty() {
             return Ok(());
         }
-        let mut options = OpenOptions::new();
-        options.write(true);
-        if self.created {
-            options.append(true);
-        } else {
-            options.create_new(true);
+        if !self.created {
+            store.create(self.id)?;
+            self.created = true;
         }
-        let mut file = options.open(&self.path)?;
-        file.write_all(&self.buffer)?;
+        store.append(self.id, &self.buffer)?;
         if let Some(bytes_written) = self.payload_written_bytes.as_mut() {
             *bytes_written = bytes_written
                 .checked_add(self.buffer.len() as u64)
                 .ok_or(ConvertError::SizeOverflow)?;
         }
-        if let Some(ledger) = &self.ledger {
-            ledger.add(self.buffer.len() as u64);
-        }
         self.buffer.clear();
-        self.created = true;
         Ok(())
     }
 
-    fn finish(&mut self) -> Result<(), ConvertError> {
-        self.flush()
+    fn finish(&mut self, store: &impl SpoolStore) -> Result<(), ConvertError> {
+        self.flush(store)?;
+        self.close_created(store)
     }
-}
 
-/// Spool byte totals shared by every spatial worker; updated on every 32 KiB spool flush and delete.
-#[derive(Default)]
-struct SpoolLedger {
-    written: AtomicU64,
-    live: AtomicU64,
-    peak: AtomicU64,
-    /// Orders `NodeSpoolEvent` starts and ends across workers.
-    event_seq: AtomicU64,
-}
-
-impl SpoolLedger {
-    fn with_live(bytes: u64) -> Self {
-        Self {
-            written: AtomicU64::new(bytes),
-            live: AtomicU64::new(bytes),
-            peak: AtomicU64::new(bytes),
-            ..Self::default()
+    /// Closes the spool without flushing the buffer (all-equal root: the children are discarded).
+    fn close_created(&self, store: &impl SpoolStore) -> Result<(), ConvertError> {
+        if self.created {
+            store.close(self.id)?;
         }
-    }
-
-    fn add(&self, bytes: u64) {
-        self.written.fetch_add(bytes, Ordering::Relaxed);
-        let live = self
-            .live
-            .fetch_add(bytes, Ordering::Relaxed)
-            .saturating_add(bytes);
-        self.peak.fetch_max(live, Ordering::Relaxed);
-    }
-
-    fn remove(&self, bytes: u64) {
-        debug_assert!(self.live.load(Ordering::Relaxed) >= bytes);
-        let _ = self
-            .live
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
-                Some(live.saturating_sub(bytes))
-            });
+        Ok(())
     }
 }
 
@@ -688,8 +646,10 @@ enum BranchMessage {
     Finished(usize, Result<BranchOutput, ConvertError>),
 }
 
-struct SpatialBuilder<'a> {
-    workspace: &'a Workspace,
+struct SpatialBuilder<'a, S: PlanStore> {
+    store: &'a S,
+    /// Next unreserved spool id, shared by every branch.
+    spool_ids: &'a AtomicU64,
     point_limit: u64,
     memory_budget: u64,
     spatial_divisions: u8,
@@ -704,7 +664,6 @@ struct SpatialBuilder<'a> {
     workers_used: usize,
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     spatial_phases: Option<SpatialPhaseDiagnostics>,
-    spool_ledger: Option<Arc<SpoolLedger>>,
     /// Bytes this builder (not its siblings) has written, for per-root-child accounting.
     spool_written_local: u64,
     /// Node events with this builder's local node ids; `append_branch` rebases a worker's events.
@@ -725,7 +684,7 @@ enum SpatialPhase {
     LodSampleWrite,
 }
 
-impl SpatialBuilder<'_> {
+impl<S: PlanStore> SpatialBuilder<'_, S> {
     fn record_phase_elapsed(&mut self, started: Option<Instant>, phase: SpatialPhase) {
         let (Some(metrics), Some(started)) = (self.spatial_phases.as_mut(), started) else {
             return;
@@ -742,9 +701,9 @@ impl SpatialBuilder<'_> {
         *target = target.saturating_add(elapsed);
     }
 
+    /// The store credits its ledger on append; this keeps the per-builder count.
     fn note_spool_written(&mut self, bytes: u64) {
-        if let Some(ledger) = &self.spool_ledger {
-            ledger.add(bytes);
+        if self.spool_diagnostics.is_some() {
             self.spool_written_local = self.spool_written_local.saturating_add(bytes);
         }
     }
@@ -757,14 +716,14 @@ impl SpatialBuilder<'_> {
         depth: u32,
         input_spool_bytes: u64,
     ) -> Option<OpenNodeEvent> {
-        let ledger = self.spool_ledger.as_ref()?;
+        let start_seq = self.store.next_event_seq()?;
         Some(OpenNodeEvent {
             event: NodeSpoolEvent {
                 node_id: node_id.get(),
                 parent_id: parent.map(NodeId::get),
                 depth,
                 input_spool_bytes,
-                start_seq: ledger.event_seq.fetch_add(1, Ordering::Relaxed),
+                start_seq,
                 ..NodeSpoolEvent::default()
             },
             started: SystemClock.now(),
@@ -772,20 +731,23 @@ impl SpatialBuilder<'_> {
     }
 
     fn finish_node_event(&mut self, open: Option<OpenNodeEvent>) {
-        let (Some(mut open), Some(ledger)) = (open, self.spool_ledger.as_ref()) else {
+        let Some(mut open) = open else {
             return;
         };
-        open.event.end_seq = ledger.event_seq.fetch_add(1, Ordering::Relaxed);
+        let Some(end_seq) = self.store.next_event_seq() else {
+            return;
+        };
+        open.event.end_seq = end_seq;
         if open.event.elapsed_ns == 0 {
             open.event.elapsed_ns = elapsed_ns(open.started);
         }
         self.node_events.push(open.event);
     }
 
-    fn note_spool_removed(&self, bytes: u64) {
-        if let Some(ledger) = &self.spool_ledger {
-            ledger.remove(bytes);
-        }
+    /// Reserves ids for one divisible node: child `k` → `base + k`, LOD → `base + divisions³`.
+    fn reserve_node_spools(&self) -> u64 {
+        let count = usize::from(self.spatial_divisions).pow(3) as u64 + 1;
+        self.spool_ids.fetch_add(count, Ordering::Relaxed)
     }
 
     fn add_source_spool_bytes(&mut self, bytes: u64) -> Result<(), ConvertError> {
@@ -881,23 +843,24 @@ impl SpatialBuilder<'_> {
             && MAX_SPATIAL_DEPTH > 0;
         let root_id = NodeId::new(0);
         if !can_split {
-            let spool_path = self.workspace.file("source.spool");
             if let Some(bytes) = spool_source(
                 &mut LasPointSource::full(&mut *reader),
                 source,
                 options,
-                &spool_path,
+                self.store,
+                SpoolId::SOURCE,
                 self.on_progress,
                 self.spool_diagnostics.is_some(),
             )? {
                 self.add_source_spool_bytes(bytes)?;
             }
-            self.build_node(spool_path, source.point_count, bounds, None, 0, false)?;
+            self.build_node(SpoolId::SOURCE, source.point_count, bounds, None, 0, false)?;
             return Ok(());
         }
 
         let mut open = self.begin_node_event(root_id, None, 0, 0);
         let child_count = usize::from(self.spatial_divisions).pow(3);
+        let spool_base = self.reserve_node_spools();
         let mut children = (0..child_count)
             .map(|_| None)
             .collect::<Vec<Option<ChildSpool>>>();
@@ -932,14 +895,12 @@ impl SpatialBuilder<'_> {
                 let child_key = subdivision.cell_index(point.position);
                 let child = children[child_key].get_or_insert_with(|| {
                     ChildSpool::new(
-                        self.workspace
-                            .file(&format!("node-{}-child-{child_key}.spool", root_id.get())),
+                        SpoolId(spool_base + child_key as u64),
                         self.layout,
                         self.spool_diagnostics.is_some(),
                     )
-                    .with_ledger(self.spool_ledger.clone())
                 });
-                child.write_point(&point)?;
+                child.write_point(self.store, &point)?;
                 let voxel_key = sample_index(point.position, bounds);
                 let sample = samples[voxel_key].get_or_insert_with(SampleAccumulator::default);
                 sample.add(point, voxel_center(voxel_key, bounds));
@@ -972,17 +933,17 @@ impl SpatialBuilder<'_> {
             }
             for child in children.into_iter().flatten() {
                 if child.created {
-                    self.note_spool_removed(child.payload_written_bytes.unwrap_or(0));
-                    fs::remove_file(child.path)?;
+                    child.close_created(self.store)?;
+                    self.store.delete(child.id)?;
                 }
             }
             let mut source_reader = crate::las_source::open_las_reader(input_path)?;
-            let spool_path = self.workspace.file("source.spool");
             let bytes = spool_source(
                 &mut LasPointSource::full(&mut source_reader),
                 source,
                 options,
-                &spool_path,
+                self.store,
+                SpoolId::SOURCE,
                 self.on_progress,
                 self.spool_diagnostics.is_some(),
             )?;
@@ -990,7 +951,7 @@ impl SpatialBuilder<'_> {
                 self.add_source_spool_bytes(bytes)?;
             }
             self.build_node_with_event(
-                spool_path,
+                SpoolId::SOURCE,
                 source.point_count,
                 bounds,
                 None,
@@ -1002,32 +963,16 @@ impl SpatialBuilder<'_> {
         }
 
         for child in children.iter_mut().flatten() {
-            child.finish()?;
+            child.finish(self.store)?;
         }
         self.record_child_spool_writes(&children)?;
         if let Some(open) = open.as_mut() {
             open.event.child_spool_bytes = child_payload_bytes(&children);
         }
         let lod_write_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
-        let sample_path = self.workspace.file("node-0.lod");
-        let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
-        for (key, accumulator) in samples
-            .iter()
-            .enumerate()
-            .filter_map(|(key, sample)| sample.as_ref().map(|accumulator| (key, accumulator)))
-        {
-            write_point(
-                &mut sample_writer,
-                &accumulator.finish(voxel_center(key, bounds)),
-                self.layout.lod(),
-            )?;
-        }
-        sample_writer
-            .into_inner()
-            .map_err(|error| error.into_error())?;
+        let sample_spool = SpoolId(spool_base + child_count as u64);
+        let sample_count = self.write_lod(sample_spool, &samples, bounds)?;
         self.record_phase_elapsed(lod_write_started, SpatialPhase::LodSampleWrite);
-
-        let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
         if let Some(open) = open.as_mut() {
             open.event.lod_bytes = (sample_count * self.layout.lod().record_bytes()) as u64;
@@ -1036,7 +981,7 @@ impl SpatialBuilder<'_> {
             let block_id = self.allocate_block_id()?;
             self.output_blocks.push(PlannedBlock {
                 id: block_id,
-                path: sample_path,
+                spool: sample_spool,
                 offset_points: 0,
                 point_count: sample_count,
                 layout: self.layout.lod(),
@@ -1071,7 +1016,7 @@ impl SpatialBuilder<'_> {
 
     fn build_node(
         &mut self,
-        spool_path: PathBuf,
+        input: SpoolId,
         source_count: u64,
         bounds: SpatialBounds,
         parent: Option<NodeId>,
@@ -1082,7 +1027,7 @@ impl SpatialBuilder<'_> {
         let input_bytes = source_count.saturating_mul(self.layout.record_bytes() as u64);
         let open = self.begin_node_event(id, parent, level, input_bytes);
         self.build_node_with_event(
-            spool_path,
+            input,
             source_count,
             bounds,
             parent,
@@ -1096,7 +1041,7 @@ impl SpatialBuilder<'_> {
     #[allow(clippy::too_many_arguments)]
     fn build_node_with_event(
         &mut self,
-        spool_path: PathBuf,
+        input: SpoolId,
         source_count: u64,
         bounds: SpatialBounds,
         parent: Option<NodeId>,
@@ -1109,7 +1054,7 @@ impl SpatialBuilder<'_> {
             debug_assert_eq!(open.event.node_id, id.get());
         }
         let result = self.build_node_body(
-            spool_path,
+            input,
             source_count,
             bounds,
             parent,
@@ -1124,7 +1069,7 @@ impl SpatialBuilder<'_> {
     #[allow(clippy::too_many_arguments)]
     fn build_node_body(
         &mut self,
-        spool_path: PathBuf,
+        input: SpoolId,
         source_count: u64,
         bounds: SpatialBounds,
         parent: Option<NodeId>,
@@ -1139,11 +1084,12 @@ impl SpatialBuilder<'_> {
             if let Some(open) = open.as_mut() {
                 open.event.is_leaf = true;
             }
-            self.add_leaf(id, spool_path, source_count, bounds, parent, level)?;
+            self.add_leaf(id, input, source_count, bounds, parent, level)?;
             return Ok(id);
         }
 
         let child_count = usize::from(self.spatial_divisions).pow(3);
+        let spool_base = self.reserve_node_spools();
         let mut children = (0..child_count)
             .map(|_| None)
             .collect::<Vec<Option<ChildSpool>>>();
@@ -1156,8 +1102,14 @@ impl SpatialBuilder<'_> {
         let subdivision = SpatialSubdivision::new(bounds, self.spatial_divisions)
             .expect("converter subdivisions are validated");
         let mut scanned = 0_u64;
-        let mut source_reader =
-            BufReader::with_capacity(SPOOL_IO_BUFFER_BYTES, File::open(&spool_path)?);
+        // The whole input spool is read, so one longer than `source_count` is still a mismatch.
+        let mut source_reader = self.store.reader(
+            input,
+            SpoolExtent {
+                offset: 0,
+                len: self.store.len(input)?,
+            },
+        )?;
         let record_bytes = self.layout.record_bytes();
         let records_per_batch = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
         let mut record_buffer = vec![0; records_per_batch * record_bytes];
@@ -1183,14 +1135,12 @@ impl SpatialBuilder<'_> {
                 let child_key = subdivision.cell_index(point.position);
                 let child = children[child_key].get_or_insert_with(|| {
                     ChildSpool::new(
-                        self.workspace
-                            .file(&format!("node-{}-child-{child_key}.spool", id.get())),
+                        SpoolId(spool_base + child_key as u64),
                         self.layout,
                         self.spool_diagnostics.is_some(),
                     )
-                    .with_ledger(self.spool_ledger.clone())
                 });
-                child.write_point(&point)?;
+                child.write_point(self.store, &point)?;
 
                 let voxel_key = sample_index(point.position, bounds);
                 let center = voxel_center(voxel_key, bounds);
@@ -1206,7 +1156,7 @@ impl SpatialBuilder<'_> {
             });
         }
         for child in children.iter_mut().flatten() {
-            child.finish()?;
+            child.finish(self.store)?;
         }
         self.record_child_spool_writes(&children)?;
         if let Some(open) = open.as_mut() {
@@ -1224,44 +1174,27 @@ impl SpatialBuilder<'_> {
                 open.event.became_leaf_all_equal = true;
             }
             for child in children.into_iter().flatten() {
-                self.note_spool_removed(child.payload_written_bytes.unwrap_or(0));
-                fs::remove_file(child.path)?;
+                self.store.delete(child.id)?;
             }
-            self.add_leaf(id, spool_path, source_count, bounds, parent, level)?;
+            self.add_leaf(id, input, source_count, bounds, parent, level)?;
             return Ok(id);
         }
 
         let lod_write_started = self.spatial_phases.as_ref().map(|_| SystemClock.now());
-        let sample_path = self.workspace.file(&format!("node-{}.lod", id.get()));
-        let mut sample_writer = BufWriter::new(File::create(&sample_path)?);
-        for (key, accumulator) in samples
-            .iter()
-            .enumerate()
-            .filter_map(|(key, sample)| sample.as_ref().map(|accumulator| (key, accumulator)))
-        {
-            write_point(
-                &mut sample_writer,
-                &accumulator.finish(voxel_center(key, bounds)),
-                self.layout.lod(),
-            )?;
-        }
-        sample_writer
-            .into_inner()
-            .map_err(|error| error.into_error())?;
+        let sample_spool = SpoolId(spool_base + child_count as u64);
+        let sample_count = self.write_lod(sample_spool, &samples, bounds)?;
         self.record_phase_elapsed(lod_write_started, SpatialPhase::LodSampleWrite);
-        let sample_count = samples.iter().filter(|sample| sample.is_some()).count();
         self.add_lod_spool_bytes(sample_count, self.layout.lod())?;
         if let Some(open) = open.as_mut() {
             open.event.lod_bytes = (sample_count * self.layout.lod().record_bytes()) as u64;
         }
-        self.note_spool_removed(source_count.saturating_mul(record_bytes as u64));
-        fs::remove_file(&spool_path)?;
+        self.store.delete(input)?;
 
         let sample_block = if sample_count > 0 {
             let block_id = self.allocate_block_id()?;
             self.output_blocks.push(PlannedBlock {
                 id: block_id,
-                path: sample_path,
+                spool: sample_spool,
                 offset_points: 0,
                 point_count: sample_count,
                 layout: self.layout.lod(),
@@ -1292,6 +1225,36 @@ impl SpatialBuilder<'_> {
         Ok(id)
     }
 
+    /// Writes the LOD samples of a node into `id` (no spool when there are none) and returns how
+    /// many there are.
+    fn write_lod(
+        &self,
+        id: SpoolId,
+        samples: &[Option<SampleAccumulator>],
+        bounds: SpatialBounds,
+    ) -> Result<usize, ConvertError> {
+        let mut encoded = Vec::new();
+        let mut count = 0;
+        for (key, accumulator) in samples
+            .iter()
+            .enumerate()
+            .filter_map(|(key, sample)| sample.as_ref().map(|accumulator| (key, accumulator)))
+        {
+            write_point(
+                &mut encoded,
+                &accumulator.finish(voxel_center(key, bounds)),
+                self.layout.lod(),
+            )?;
+            count += 1;
+        }
+        if count > 0 {
+            self.store.create(id)?;
+            self.store.append(id, &encoded)?;
+            self.store.close(id)?;
+        }
+        Ok(count)
+    }
+
     fn child_tasks(
         &self,
         bounds: SpatialBounds,
@@ -1306,13 +1269,13 @@ impl SpatialBuilder<'_> {
             };
             if child.point_count == 0 {
                 if child.created {
-                    fs::remove_file(child.path)?;
+                    self.store.delete(child.id)?;
                 }
                 continue;
             }
             tasks.push(RootChildTask {
                 key: child_key,
-                path: child.path,
+                spool: child.id,
                 point_count: child.point_count,
                 bounds: subdivision
                     .cell_bounds(child_key)
@@ -1334,7 +1297,7 @@ impl SpatialBuilder<'_> {
             for child in child_tasks {
                 let written_before = self.spool_written_local;
                 self.build_node(
-                    child.path,
+                    child.spool,
                     child.point_count,
                     child.bounds,
                     Some(parent_id),
@@ -1380,14 +1343,14 @@ impl SpatialBuilder<'_> {
 
             let cancelled = Arc::new(AtomicBool::new(false));
             let (sender, receiver) = mpsc::sync_channel::<BranchMessage>(batch_count * 4);
-            let workspace = self.workspace;
+            let store = self.store;
+            let spool_ids = self.spool_ids;
             let point_limit = self.point_limit;
             let frame = self.frame;
             let layout = self.layout;
             let spatial_divisions = self.spatial_divisions;
             let source_point_count = self.source_point_count;
             let collect_spool_diagnostics = self.spool_diagnostics.is_some();
-            let spool_ledger = &self.spool_ledger;
             let mut outputs = Vec::with_capacity(batch_count);
             let mut first_error = None;
 
@@ -1398,16 +1361,14 @@ impl SpatialBuilder<'_> {
                     scope.spawn(move || {
                         let key = task.key;
                         let result = (|| {
-                            let branch_workspace = Workspace::create_child(
-                                &workspace.file(&format!("root-branch-{key}")),
-                            )?;
                             let mut report_progress = |progress| {
                                 !cancelled.load(Ordering::Relaxed)
                                     && sender.send(BranchMessage::Progress(progress)).is_ok()
                                     && !cancelled.load(Ordering::Relaxed)
                             };
                             let mut builder = SpatialBuilder {
-                                workspace: &branch_workspace,
+                                store,
+                                spool_ids,
                                 point_limit,
                                 memory_budget: worker_memory_budget,
                                 spatial_divisions,
@@ -1424,12 +1385,11 @@ impl SpatialBuilder<'_> {
                                     .then(SpatialSpoolDiagnostics::default),
                                 spatial_phases: collect_spool_diagnostics
                                     .then(SpatialPhaseDiagnostics::default),
-                                spool_ledger: spool_ledger.clone(),
                                 spool_written_local: 0,
                                 node_events: Vec::new(),
                             };
                             builder.build_node(
-                                task.path,
+                                task.spool,
                                 task.point_count,
                                 task.bounds,
                                 None,
@@ -1635,7 +1595,7 @@ impl SpatialBuilder<'_> {
     fn add_leaf(
         &mut self,
         id: NodeId,
-        spool_path: PathBuf,
+        spool: SpoolId,
         source_count: u64,
         bounds: SpatialBounds,
         parent: Option<NodeId>,
@@ -1653,7 +1613,7 @@ impl SpatialBuilder<'_> {
             node_blocks.push(block_id);
             self.output_blocks.push(PlannedBlock {
                 id: block_id,
-                path: spool_path.clone(),
+                spool,
                 offset_points,
                 point_count: count,
                 layout: self.layout,
@@ -1663,7 +1623,7 @@ impl SpatialBuilder<'_> {
             offset_points += count as u64;
         }
         if source_count == 0 {
-            fs::remove_file(spool_path)?;
+            self.store.delete(spool)?;
         }
         self.ensure_memory(self.node_records.len() + 1, self.output_blocks.len())?;
         self.node_records.push(NodeRecord {
@@ -1764,14 +1724,16 @@ pub(crate) fn spool_source(
     points: &mut impl PointSource,
     source: &SourceInfo,
     options: ConvertOptions,
-    spool_path: &Path,
+    store: &impl SpoolStore,
+    id: SpoolId,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     collect_diagnostics: bool,
 ) -> Result<Option<u64>, ConvertError> {
     let point_limit =
         crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
     let range = points.range();
-    let mut writer = BufWriter::new(File::create(spool_path)?);
+    store.create(id)?;
+    let mut writer = StoreWriter { store, id };
     let mut point_data = PointDataBuilder::new().for_header(points.header()).build();
     while points.next_index() < range.end {
         let first_index = points.next_index();
@@ -1796,10 +1758,7 @@ pub(crate) fn spool_source(
             processed,
         )?;
     }
-    writer
-        .into_inner()
-        .map_err(|error| error.into_error())?
-        .sync_all()?;
+    store.close(id)?;
     if collect_diagnostics {
         Ok(Some(
             (range.end - range.start)
@@ -1808,6 +1767,28 @@ pub(crate) fn spool_source(
         ))
     } else {
         Ok(None)
+    }
+}
+
+/// Appends whatever `write_source_points` hands over; each call is already a ≤ 32 KiB chunk.
+struct StoreWriter<'a, S> {
+    store: &'a S,
+    id: SpoolId,
+}
+
+impl<S: SpoolStore> Write for StoreWriter<'_, S> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.store
+            .append(self.id, bytes)
+            .map_err(|error| match error {
+                ConvertError::Io(error) => error,
+                other => io::Error::other(other),
+            })?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -2300,6 +2281,7 @@ fn check_memory_budget(requested: u64, limit: u64) -> Result<(), ConvertError> {
 #[cfg(test)]
 mod partition_tests {
     use super::*;
+    use crate::pipeline::spool_store::FileSpoolStore;
 
     fn spool_fixture(format_id: u8) -> (SourceInfo, SpoolPoint) {
         let transforms = las::Vector {
@@ -2399,12 +2381,13 @@ mod partition_tests {
         let (source, point) = spool_fixture(3);
         let layout = SpoolLayout::source(&source);
         let temp = tempfile::TempDir::new().unwrap();
-        let workspace = Workspace::create_at(&temp.path().join("workspace")).unwrap();
-        let mut child = ChildSpool::new(workspace.file("child.spool"), layout, true);
+        let store = FileSpoolStore::new(temp.path(), true);
+        let mut child = ChildSpool::new(SpoolId(1), layout, true);
 
-        child.write_point(&point).unwrap();
+        child.write_point(&store, &point).unwrap();
         assert_eq!(child.payload_written_bytes, Some(0));
-        child.flush().unwrap();
+        assert!(!child.created, "an unflushed child has no spool");
+        child.flush(&store).unwrap();
         assert_eq!(
             child.payload_written_bytes,
             Some(layout.record_bytes() as u64)
@@ -2481,7 +2464,8 @@ mod partition_tests {
     #[test]
     fn planned_blocks_seek_using_their_compact_record_layout() {
         let temp = tempfile::TempDir::new().unwrap();
-        let workspace = Workspace::create(&temp.path().join("compact-spool.oct")).unwrap();
+        let store = FileSpoolStore::new(temp.path(), false);
+        let mut next_id = 1;
         for format_id in [0, 2, 3, 8] {
             let (source, fixture) = spool_fixture(format_id);
             let source_layout = SpoolLayout::source(&source);
@@ -2490,21 +2474,24 @@ mod partition_tests {
                 second.raw_position[2] += 123;
                 second.position = layout.position(second.raw_position);
                 second.intensity += 1;
-                let path = workspace.file("points.spool");
-                let mut file = File::create(&path).unwrap();
-                write_point(&mut file, &fixture, layout).unwrap();
-                write_point(&mut file, &second, layout).unwrap();
-                drop(file);
+                let spool = SpoolId(next_id);
+                next_id += 1;
+                let mut bytes = Vec::new();
+                write_point(&mut bytes, &fixture, layout).unwrap();
+                write_point(&mut bytes, &second, layout).unwrap();
+                store.create(spool).unwrap();
+                store.append(spool, &bytes).unwrap();
+                store.close(spool).unwrap();
                 let block = PlannedBlock {
                     id: BlockId::new(0),
-                    path,
+                    spool,
                     offset_points: 1,
                     point_count: 1,
                     layout,
                     is_source_points: layout.source_coordinates,
                     final_block_in_spool: true,
                 }
-                .read(source.frame)
+                .read(&store, source.frame)
                 .unwrap();
                 assert_eq!(
                     block.positions_local(),

@@ -2002,3 +2002,69 @@ fn sha256_matches_the_two_block_vector() {
         "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
     );
 }
+
+#[test]
+fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_phase() {
+    use crate::{
+        las_source::{inspect_source, open_las_reader},
+        pipeline::spool_store::{FileSpoolStore, MemSpoolStore, SpoolAccounting},
+        spatial::{Workspace, build_spatial_plan_from_reader},
+    };
+
+    let tmp = test_dir();
+    let input = tmp.path().join("source.las");
+    fixture(&input, false, true, 4_000);
+    let options = ConvertOptions::new(64, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap()
+        .with_spatial_workers(1)
+        .unwrap();
+    let mut reader = open_las_reader(&input).unwrap();
+    let source = inspect_source(&reader).unwrap();
+
+    let workspace = Workspace::create(&tmp.path().join("native.oct")).unwrap();
+    let native = FileSpoolStore::new(workspace.root(), true);
+    let native_plan = build_spatial_plan_from_reader(
+        &mut reader,
+        &input,
+        &source,
+        options,
+        &native,
+        &mut |_| true,
+        true,
+    )
+    .unwrap();
+    let native_phases = native_plan.spatial_phases.unwrap();
+    assert!(native_phases.peak_live_spool_bytes > 0);
+
+    let mut reader = open_las_reader(&input).unwrap();
+    let mem = MemSpoolStore::new();
+    let mem_plan = build_spatial_plan_from_reader(
+        &mut reader,
+        &input,
+        &source,
+        options,
+        &mem,
+        &mut |_| true,
+        true,
+    )
+    .unwrap();
+    assert_eq!(mem.stats().peak_bytes, native_phases.peak_live_spool_bytes);
+    assert_eq!(
+        mem.ledger_totals().unwrap().written,
+        native_phases.spool_bytes_written
+    );
+    assert_eq!(mem_plan.blocks.len(), native_plan.blocks.len());
+    assert!(
+        mem.stats().live_spools > 0,
+        "leaf and LOD spools are retained"
+    );
+
+    for block in &mem_plan.blocks {
+        block.read(&mem, source.frame).unwrap();
+        block.release_spool_after_write(&mem).unwrap();
+    }
+    let drained = mem.stats();
+    assert_eq!((drained.live_bytes, drained.live_spools), (0, 0));
+}

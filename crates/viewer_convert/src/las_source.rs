@@ -22,6 +22,7 @@ use crate::ept;
 use crate::error::ConvertError;
 use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
 use crate::pipeline::point_source::LasPointSource;
+use crate::pipeline::spool_store::{FileSpoolStore, SpoolId, SpoolStore};
 use crate::publish::{
     OutputValidation, create_temporary_pair, link_or_copy, output_attributes_path,
     output_block_ids, publish_output_pair, validate_output_pair, verify_candidate_visual_scale,
@@ -153,12 +154,13 @@ pub(crate) fn plan_sample_blocks(
     let mut reader = open_las_reader(input_path)?;
     let source = inspect_source(&reader)?;
     let workspace = Workspace::create(workspace_anchor)?;
+    let store = FileSpoolStore::new(workspace.root(), false);
     let spatial = build_spatial_plan_from_reader(
         &mut reader,
         input_path,
         &source,
         options,
-        &workspace,
+        &store,
         &mut |_| true,
         false,
     )?;
@@ -174,7 +176,7 @@ pub(crate) fn plan_sample_blocks(
         .into_iter()
         .take(leaf_count)
         .chain(lods.take(lod_count))
-        .map(|block| block.read(plan.frame))
+        .map(|block| block.read(&store, plan.frame))
         .collect()
 }
 
@@ -343,15 +345,17 @@ pub(crate) fn convert_file_inner(
     };
     let spatial_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
     let mut source_spool_bytes_written = 0;
+    let spool_store;
     let spatial_plan = if let Some(checkpoint) = checkpoint.as_mut() {
         match checkpoint.stage() {
             CheckpointStage::Started => {
-                let path = checkpoint.source_path();
+                // `SOURCE` of a store rooted at the checkpoint is `checkpoint.source_path()`.
                 source_spool_bytes_written = spool_source(
                     &mut LasPointSource::full(&mut reader),
                     &source,
                     options,
-                    &path,
+                    &FileSpoolStore::new(checkpoint.root(), false),
+                    SpoolId::SOURCE,
                     on_progress,
                     diagnostics.is_some(),
                 )?
@@ -367,22 +371,27 @@ pub(crate) fn convert_file_inner(
         if matches!(checkpoint.stage(), CheckpointStage::SourceReady(_)) {
             link_or_copy(&checkpoint.source_path(), &path)?;
         }
+        spool_store = FileSpoolStore::with_closed_source(
+            workspace.root(),
+            source_spool_bytes_written,
+            diagnostics.is_some(),
+        );
         build_spatial_plan(
             &source,
             options,
-            &workspace,
-            &path,
+            &spool_store,
             on_progress,
             diagnostics.is_some(),
             source_spool_bytes_written,
         )?
     } else {
+        spool_store = FileSpoolStore::new(workspace.root(), diagnostics.is_some());
         build_spatial_plan_from_reader(
             &mut reader,
             input_path,
             &source,
             options,
-            &workspace,
+            &spool_store,
             on_progress,
             diagnostics.is_some(),
         )?
@@ -467,6 +476,7 @@ pub(crate) fn convert_file_inner(
         &mut writer,
         &encoder,
         &plan,
+        &spool_store,
         StreamBlockOptions {
             temporary_path: &temporary_path,
             requested_workers: options.spatial_workers(),
@@ -604,14 +614,16 @@ pub(crate) struct StreamBlockOptions<'a> {
     diagnostics: Option<&'a mut ConversionDiagnostics>,
 }
 
-pub(crate) fn stream_blocks<W, E>(
+pub(crate) fn stream_blocks<W, E, S>(
     writer: &mut W,
     encoder: &E,
     plan: &ConversionPlan,
+    store: &S,
     options: StreamBlockOptions<'_>,
 ) -> Result<ConversionWorkerStats, ConvertError>
 where
     E: BlockEncoder,
+    S: SpoolStore + Sync,
     W: PreparedOctreeWriter<Error = viewer_format::FormatError, PreparedBlock = E::PreparedBlock>
         + ?Sized,
 {
@@ -672,7 +684,7 @@ where
                 .par_iter()
                 .map(|block| {
                     encoder
-                        .prepare_with_diagnostics(block.read(plan.frame)?)
+                        .prepare_with_diagnostics(block.read(store, plan.frame)?)
                         .map_err(ConvertError::Format)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -686,7 +698,7 @@ where
                 .par_iter()
                 .map(|block| {
                     encoder
-                        .prepare(block.read(plan.frame)?)
+                        .prepare(block.read(store, plan.frame)?)
                         .map_err(ConvertError::Format)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -746,7 +758,7 @@ where
             for (block, prepared) in batch.iter().zip(prepared) {
                 writer.write_prepared_block(prepared)?;
                 // The whole batch has finished reading before any shared spool is removed.
-                block.release_spool_after_write()?;
+                block.release_spool_after_write(store)?;
                 if block.is_source_points {
                     processed += block.point_count() as u64;
                 }
