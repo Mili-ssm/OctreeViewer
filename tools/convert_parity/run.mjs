@@ -35,13 +35,9 @@ const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
 const autzen = findAutzen();
 // `multi`: the case must produce more than one block, else it would not exercise the planner.
-// `knownDivergent`: the wasm output differs from native by one ulp in a stored `quantization_error`
-// because `viewer_format::quantization` folds errors with `f64::hypot`, a libm call (glibc natively,
-// the bundled libm on wasm32). The case must keep differing in exactly that way until hypot is
-// replaced by a target-independent expression; then drop the flag.
 const cases = [
   { name: "small-default", input: small, ppb: 262144, divisions: 2, multi: false },
-  { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true, knownDivergent: true },
+  { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true },
   { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true },
   { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true },
   { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true },
@@ -111,7 +107,7 @@ function nativeConvert(name, input, ppb, divisions) {
 }
 
 let failed = false;
-for (const { name, input, ppb, divisions, multi, knownDivergent } of cases) {
+for (const { name, input, ppb, divisions, multi } of cases) {
   const native = nativeConvert(name, input, ppb, divisions);
   const wasm = wasmConvert(name, readFileSync(input), ppb, divisions);
   const problems = [];
@@ -119,13 +115,6 @@ for (const { name, input, ppb, divisions, multi, knownDivergent } of cases) {
   if (native.attrs !== wasm.attrs) problems.push("octattrs differs");
   if (native.blocks !== wasm.blocks) problems.push("block count differs");
   if (multi && wasm.blocks <= 1) problems.push("expected more than one block");
-  if (knownDivergent) {
-    // Only the geometry differs in value; sizes and block count must still agree.
-    const diverged = native.oct !== wasm.oct && native.blocks === wasm.blocks;
-    console.log(`${diverged ? "xfail" : "FAIL "} ${name} blocks=${wasm.blocks} wasm=${wasm.oct.slice(0, 12)} native=${native.oct.slice(0, 12)} (known hypot divergence)`);
-    failed ||= !diverged || wasm.blocks <= 1;
-    continue;
-  }
   failed ||= problems.length > 0;
   const detail = problems.length ? ` (${problems.join(", ")})` : "";
   console.log(

@@ -161,17 +161,17 @@ pub fn quantize_local_positions(
             decoded_position[axis] = decoded;
             decoded_f32_position[axis] = f64::from(decoded_f32);
         }
-        let measured_error = (0..3)
-            .map(|axis| (position[axis] - decoded_f32_position[axis]).abs())
-            .fold(0.0_f64, f64::hypot);
+        // `norm3` is within a few ulp of the exact norm, far below `arithmetic_margin`
+        // (8 * EPSILON * (|p| + |d| + 1) per axis), so the bound holds; `f64::hypot` is avoided
+        // because libm differs by an ulp between platforms and the result is stored in the file.
+        let measured_error =
+            norm3([0, 1, 2].map(|axis| (position[axis] - decoded_f32_position[axis]).abs()));
         let arithmetic_margin = if measured_error == 0.0 {
             0.0
         } else {
-            (0..3)
-                .map(|axis| {
-                    f64::EPSILON * (position[axis].abs() + decoded_position[axis].abs() + 1.0) * 8.0
-                })
-                .fold(0.0_f64, f64::hypot)
+            norm3([0, 1, 2].map(|axis| {
+                f64::EPSILON * (position[axis].abs() + decoded_position[axis].abs() + 1.0) * 8.0
+            }))
         };
         let error_bound = measured_error + arithmetic_margin;
         if !error_bound.is_finite() {
@@ -195,6 +195,17 @@ pub fn quantize_local_positions(
     })
 }
 
+/// Euclidean norm from IEEE-754 correctly rounded operations only (`+ * /` and `sqrt`), so it is
+/// bit-identical on every target. Scaling by the largest axis avoids overflow and underflow.
+fn norm3(v: [f64; 3]) -> f64 {
+    let m = v[0].abs().max(v[1].abs()).max(v[2].abs());
+    if m == 0.0 {
+        return 0.0;
+    }
+    let (x, y, z) = (v[0] / m, v[1] / m, v[2] / m);
+    m * (x * x + y * y + z * z).sqrt()
+}
+
 #[derive(Debug, Error, PartialEq)]
 pub enum QuantizationError {
     #[error("maximum quantization error must be finite and non-negative, got {0}")]
@@ -215,7 +226,7 @@ pub enum QuantizationError {
 
 #[cfg(test)]
 mod tests {
-    use super::{QuantizationError, quantize_local_positions};
+    use super::{QuantizationError, norm3, quantize_local_positions};
 
     #[test]
     fn quantizes_each_block_to_u32_and_decodes_local_f32() {
@@ -274,5 +285,68 @@ mod tests {
 
         assert_eq!(encoded.max_error(), 0.0);
         assert_eq!(encoded.decode_local().unwrap(), [[0.0, 1.0, -2.0]]);
+    }
+
+    #[test]
+    fn norm3_is_exact_on_simple_inputs_and_survives_extreme_magnitudes() {
+        assert_eq!(norm3([0.0; 3]), 0.0);
+        for value in [0.0, 1e-300, 7.5, 1e300] {
+            assert_eq!(norm3([value, 0.0, 0.0]), value);
+            assert_eq!(norm3([0.0, value, 0.0]), value);
+            assert_eq!(norm3([0.0, 0.0, value]), value);
+        }
+        assert_eq!(norm3([3.0, 4.0, 12.0]), 13.0);
+        assert_eq!(norm3([12.0, 3.0, 4.0]), 13.0);
+        // Squaring 1e300 overflows and squaring 1e-300 underflows; the scaling must avoid both.
+        assert_eq!(norm3([1e-300, 2e-300, 2e-300]), 3e-300);
+        assert_eq!(norm3([1e300, 2e300, 2e300]), 3e300);
+    }
+
+    #[test]
+    fn error_bound_covers_the_reader_reconstruction_for_random_blocks() {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (state >> 11) as f64 / (1_u64 << 53) as f64
+        };
+        let mut checked = 0;
+        for block in 0..400 {
+            // Offsets from 1e-6 to 1e7 and extents of up to 1e4 around them.
+            let magnitude = 10.0_f64.powi(-6 + (block % 14));
+            let extent = magnitude.min(1e4);
+            let source: Vec<[f64; 3]> = (0..30)
+                .map(|_| {
+                    [0; 3].map(|_| {
+                        let sign = if next() < 0.5 { -1.0 } else { 1.0 };
+                        sign * magnitude + (next() - 0.5) * extent
+                    })
+                })
+                .collect();
+            let encoded = quantize_local_positions(&source, 1e9).unwrap();
+            let decoded = encoded.decode_local().unwrap();
+            for (source, decoded) in source.iter().zip(decoded) {
+                let error = (0..3)
+                    .map(|axis| (source[axis] - f64::from(decoded[axis])).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                assert!(error <= encoded.max_error(), "{source:?}: {error}");
+                checked += 1;
+            }
+        }
+        assert!(checked >= 10_000);
+    }
+
+    #[test]
+    fn max_error_is_zero_when_every_point_is_exactly_representable() {
+        let source = [[0.0, 1.0, -2.0], [4.0, 1.0, 6.0], [0.0, 1.0, 6.0]];
+        let encoded = quantize_local_positions(&source, 0.0).unwrap();
+
+        assert_eq!(encoded.max_error(), 0.0);
+        let decoded = encoded.decode_local().unwrap();
+        for (source, decoded) in source.iter().zip(decoded) {
+            assert_eq!(*source, decoded.map(f64::from));
+        }
     }
 }

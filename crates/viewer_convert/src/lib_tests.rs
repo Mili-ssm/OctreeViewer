@@ -2757,8 +2757,8 @@ fn serial_core_matches_native_on_the_small_las() {
 fn serial_core_matches_native_on_the_variable_chunk_laz() {
     let input = workspace_path("tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
     let expected = [
-        (2, "22ba7b4e6a63", "4a7b92dba322"),
-        (8, "af0aaa75ebe7", "34009eb97e0a"),
+        (2, "0b8a8016cf13", "c8e7008c70e4"),
+        (8, "657f70173571", "d8478842254c"),
     ];
     for (divisions, oct, attrs) in expected {
         let options = ConvertOptions::new(4096, 0.01)
