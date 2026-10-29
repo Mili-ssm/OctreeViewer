@@ -1204,7 +1204,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         Ok(())
     }
 
-    /// Runs `f` on a branch-local builder (as a root-child thread has) that holds `branch` and
+    /// Runs `f` on a branch-local builder that holds `branch` and
     /// reports to this builder's progress callback, then stores the builder back into `branch`.
     fn with_branch<R>(
         &mut self,

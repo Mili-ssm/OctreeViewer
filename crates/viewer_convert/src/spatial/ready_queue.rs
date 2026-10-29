@@ -1,5 +1,4 @@
-//! Ready-queue scheduler (the default) for one virtual batch of root children
-//! ([`SpatialScheduler::ReadyQueue`](crate::SpatialScheduler::ReadyQueue)).
+//! Ready-queue scheduler (the only one) for one virtual batch of root children.
 //!
 //! The batch has as many threads as root children (`min(W, k)`, as the old per-branch threads did) and
 //! they take the ready node job with the lowest [`NodePath`]. Only jobs under this batch are
