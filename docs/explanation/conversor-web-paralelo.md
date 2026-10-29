@@ -4,7 +4,7 @@ Estado: spec aprobada (29-10-2026), con enmiendas del pre-mortem · Decisiones:
 [ADR 0014](../adr/0014-nucleo-de-conversion-sin-io.md),
 [ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md)
 
-Primer subproyecto de «lectura y escritura paralelas en WASM». La lectura paralela tendrá spec
+Primer subproyecto de «lectura y escritura paralelas en WASM». Plan: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia). La lectura paralela tendrá spec
 propia (enfoque async + workers, a concretar) y queda fuera de este documento.
 
 ## Objetivo

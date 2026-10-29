@@ -17,6 +17,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | --- | --- | --- |
 | [Plan V7](explanation/format-v7-plan.md) | Recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | vivo |
 | [Conversor web paralelo](explanation/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas. | vivo |
+| [Conversor web paralelo, etapa 1](explanation/conversor-web-paralelo-etapa1.md) | Plan: independencia de workers, igualdad LZ4 nativo/wasm32, referencia CLI y spike de arenas OPFS. | vivo |
 | [Resolución regional LOD](explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback y regresiones del LOD Replacement. | vivo |
 | [Resúmenes por nodo](explanation/NODE_ATTRIBUTE_SUMMARIES.md) | Contenedores experimentales de resúmenes y diccionario conjunto. | vivo |
 | [Dependencias del renderer](explanation/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, checks y validación parcial de navegador. | vivo |
