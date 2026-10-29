@@ -11,11 +11,22 @@
 | --- | --- |
 | Pico modelado > 1,5 × conjunto vivo nativo | **SE CUMPLE en Belvedere (divisiones por defecto, 2,64×) y en Majadas (6,53×)**; no en Belvedere con divisiones 8 (1,05× con N=4, 1,15× con N=8) |
 | OPFS no disponible en `file://` en Firefox | No se cumple: Firefox 157 funciona igual en `file://` y en HTTP |
-| OPFS en `file://` en Chrome | **No disponible** (`SecurityError` al llamar a `navigator.storage.getDirectory()`, también en el hilo principal) |
+| OPFS en `file://` en Chrome | **No disponible** (`SecurityError` en el worker, medido en las 6 celdas del `.jsonl`; el hilo principal se comprobó ad hoc, sin fila en el `.jsonl`) |
+| Cuota frente a Majadas | **El conjunto vivo nativo de Majadas (19,2 GiB) ya supera la cuota medida (10 GiB)**: ningún diseño de arenas basta por sí solo |
+
+### Decisiones para el propietario
+
+1. **`SpoolStore`** (criterio del 1,5× incumplido con divisiones por defecto): replantear antes de la etapa 2.
+2. **Conflicto con R8**: Chrome no ofrece OPFS desde `file://` (`SecurityError` en el worker). Si R8
+   exige abrir el paquete con doble clic en Chrome, la conversión OPFS no es posible ahí (Firefox sí).
+   Hay que decidir si R8 se relaja (servir por HTTP local) o si Chrome queda sin conversión desde `file://`.
+3. **Cuota para Majadas**: necesita una cuota por encima de ~19 GiB más la pareja de salida. La cuota
+   de un perfil real y `navigator.storage.persist()` no se midieron.
 
 **Hay que replantear `SpoolStore` con el propietario antes de la etapa 2**: con arenas «un fichero por
 trabajo de subárbol raíz» el pico OPFS es, con las divisiones por defecto, entre 2,6 y 6,5 veces el
-nativo (Majadas llegaría a ~125 GiB). La medida de OPFS en sí no es el problema (ver más abajo): el
+nativo (Majadas llegaría a ~125 GiB). Aun con el mejor diseño, el conjunto vivo nativo de Majadas (19,2 GiB)
+supera la cuota de 10 GiB medida. La medida de OPFS en sí no es el problema (ver más abajo): el
 problema es que una arena de solo añadido no libera nada hasta que acaba el trabajo.
 
 ---
@@ -54,6 +65,10 @@ El conjunto vivo nativo es `peak_live_spool_bytes` (exacto salvo búferes de 32 
 
 Notas:
 
+- Los cocientes de divisiones 2 son exactamente `spool_bytes_written / peak_live_spool_bytes`
+  (15,05/5,71 y 125,47/19,20): el caso es degenerado porque N ≥ número de hijos raíz no vacíos, así que
+  el modelo equivale a «nada se libera nunca». Sensibilidad: liberar el nivel 1 según se consume cada
+  hijo solo baja Belvedere d2 a Σ subárboles / nativo ≈ 11,94/5,71 = **2,09×**, aún > 1,5×.
 - El encargo anticipaba 4, 80 y 7 entradas; en el JSON hay 4, 81 (69 no vacías) y 7 (4 no vacías).
 - Con 4 hijos raíz, N=8 no añade nada: ya están todos en curso.
 - Con divisiones 8 el modelo cabe porque el reparto es fino (máximo 0,087 GiB por subárbol). Con
@@ -83,7 +98,7 @@ la fase del worker más lento.
   sistema (no se pudo gobernar sin el protocolo parcheado de Playwright).
 - HTTP: `python3 -m http.server --bind 127.0.0.1 8791` desde la raíz del repositorio; `file://` abriendo
   el HTML directamente. Se probó antes un contexto efímero: la cuota era de ~1,5 GiB en Firefox, así
-  que se pasó a perfil persistente (cuota 10 GiB en ambos).
+  que se pasó a perfil persistente (cuota estimada: 10 GiB en Firefox; 11 200–13 248 MiB en Chrome según la fila, con uso inicial no nulo).
 - Datos crudos: [opfs-arena-spike-2026-10-29.jsonl](data/opfs-arena-spike-2026-10-29.jsonl).
 
 | Navegador | Origen | N | Bloque | Escritura MB/s | Escritura+flush MB/s | Lectura MB/s | `createSyncAccessHandle` máx. ms | `flush` máx. ms | `removeEntry` máx. ms |
@@ -113,7 +128,7 @@ la fase del worker más lento.
 - Los rendimientos superan con mucho al NVMe: son de caché de página del SO (el `flush` de 100–350 ms
   por GiB no equivale a un `fsync` completo medido). Valen como **coste de CPU/IPC de la API**, no
   como velocidad de disco sostenida. No se midió con la caché fría ni con ficheros mayores que la RAM.
-- **Bloque de 1 MiB frente a 32 KiB:** 1 MiB es de 2× a 14× más rápido en escritura, y en Firefox
+- **Bloque de 1 MiB frente a 32 KiB:** 1 MiB es de 1,5× a 13× más rápido en escritura, y en Firefox
   la diferencia es de un orden de magnitud (≈0,8–1,5 GB/s con 32 KiB frente a 10–15 GB/s con 1 MiB).
   Recomendación: **añadir en bloques ≥ 1 MiB** (agrupar los búferes de 32 KiB de los hijos antes de
   escribir).
@@ -121,18 +136,24 @@ la fase del worker más lento.
   ≈ 9 ms con N=1, ≈ 50 ms con N=4 y ≈ 90–100 ms con N=8 (abriendo a la vez). Los 512 ficheros del diseño
   por spool no se midieron; la comparación se basa en el coste por handle, no en una prueba directa.
 - `removeEntry` de 1 GiB: 16–413 ms según N; es un coste de fin de trabajo, no del camino caliente.
-- Cuota: 10 GiB por origen en el perfil persistente de ambos navegadores (estimación de Chrome entre
-  11–13 GiB). N=8 × 1 GiB cabe, pero los picos modelados de 15 y 125 GiB no cabrían.
+- Cuota: 10 GiB en Firefox y 11 200–13 248 MiB en Chrome (HTTP), perfiles persistentes nuevos. N=8 × 1 GiB
+  cabe, pero los picos modelados de 15 y 125 GiB no cabrían, y el conjunto vivo nativo de Majadas
+  (19,2 GiB) tampoco.
 
 ## Qué no se midió y por qué
 
 | Elemento | Motivo |
 | --- | --- |
-| OPFS en Chrome desde `file://` | No disponible: `SecurityError` en hilo principal y en worker (origen opaco). Verificado con una página `file://` en Chrome 156 |
+| OPFS en Chrome desde `file://` | No disponible: `SecurityError` en el worker (medido, 6 celdas del `.jsonl`); hilo principal comprobado ad hoc, sin fila en el `.jsonl` |
 | Firefox 158.0.1 del sistema | Solo se puede gobernar con el Firefox parcheado de Playwright (157.0) |
 | Safari/WebKit | Fuera de alcance del encargo |
 | Caché fría, ficheros mayores que la RAM, repeticiones | Una ejecución por celda; sin varianza |
 | Contención con el escritor único de salida y con lectores `getFile()` | No es objeto del spike |
+| Patrón de datos | Casi todo ceros (un `setUint32` cada 4096 B): en sistemas de ficheros que comprimen (p. ej. btrfs) infla el rendimiento |
+| Patrón de lectura | Solo lectura secuencial del fichero entero; el diseño lee extensiones dispersas |
+| Uso inicial de cuota | No nulo en las filas de Chrome (cuota estimada 11 200–13 248 MiB) |
+| Cuota efímera de Firefox (~1,5 GiB) | Observada en una prueba previa de 64 MiB, sin fila cruda en el `.jsonl` |
+| Firefox 157 | Es la build parcheada de Playwright, no un Firefox de producción |
 | Cuota de un perfil de usuario real (porcentaje del disco libre) | Se usó un perfil nuevo de Playwright |
 
 ## Para la etapa 2
@@ -140,6 +161,9 @@ la fase del worker más lento.
 1. **Replantear el propietario de `SpoolStore`**: el modelo de arena-por-subárbol-raíz no cumple el
    criterio de 1,5× con las divisiones por defecto. Opciones: trabajos más finos o borrado/reciclaje de
    extensiones dentro de una arena.
-2. `file://` en Firefox funciona; en Chrome, no. Si el paquete se abre con doble clic en Chrome, la
-   conversión OPFS no estará disponible (el visor puede servirse por HTTP local).
-3. Bloque de añadido ≥ 1 MiB; un handle por trabajo.
+2. **Conflicto con R8**: `file://` en Firefox funciona; en Chrome no (`SecurityError` en el worker). Si
+   el paquete se abre con doble clic en Chrome, la conversión OPFS no estará disponible (el visor puede
+   servirse por HTTP local). Decisión del propietario.
+3. **Majadas no cabe solo con diseño**: su conjunto vivo nativo (19,2 GiB) ya supera los 10 GiB medidos;
+   haría falta una cuota > ~19 GiB más la pareja de salida (cuota real y `persist()` no medidos).
+4. Bloque de añadido ≥ 1 MiB; un handle por trabajo.
