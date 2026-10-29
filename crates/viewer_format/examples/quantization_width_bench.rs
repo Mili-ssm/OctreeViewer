@@ -62,7 +62,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let quantized = ((value - min[axis]) / scales[axis]).round();
                     (min[axis] + quantized * scales[axis]) as f32
                 };
-                error = error.hypot(value - f64::from(decoded));
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "benchmark-only error estimate; nothing it computes is written to a file"
+                )]
+                let combined = error.hypot(value - f64::from(decoded));
+                error = combined;
             }
             block_max_error = block_max_error.max(error);
             max_candidate_error = max_candidate_error.max(error);

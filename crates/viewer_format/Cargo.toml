@@ -29,3 +29,6 @@ required-features = ["experimental"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+[lints.clippy]
+disallowed_methods = "deny"

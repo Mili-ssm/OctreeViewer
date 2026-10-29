@@ -56,6 +56,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         for x in 0..64 {
             let x_phase = f64::from(x) * 0.19;
             let y_phase = f64::from(y) * 0.16;
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "demo-surface generator, not the conversion output path"
+            )]
             let z = (x_phase.sin() * y_phase.cos() * 2.0) + 2.0;
             positions.push([f64::from(x), f64::from(y), z]);
             intensities.push((x * 1024 + y * 8) as u16);
