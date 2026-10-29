@@ -130,7 +130,196 @@ anota en una sección «Firmas fijadas» de este documento antes de seguir:
 - Cancelación en M3a (B9): API por pasos o `terminate()` más limpieza de huérfanos.
 - Lista exacta de `disallowed-methods` y `disallowed-types` (B10) y funciones que llevan `#[inline]` (B6).
 
-- [ ] **Paso 1:** firmas anotadas aquí; revisión del coordinador antes de la Tarea 4.
+- [x] **Paso 1:** firmas anotadas aquí; revisión del coordinador antes de la Tarea 4 (aprobadas el 29-10-2026 con los tres desvíos señalados).
+
+#### Firmas fijadas en el paso 1 de M2 (29-10-2026)
+
+Líneas citadas de `1cde1a9`; S2 en `37cc81c`. Integra B1–B11 y la receta de S2, con tres desvíos
+motivados: memoria de rangos (B11), redondeo del índice de pánico (B3) y defecto de rangos = 0.
+
+**1. Reparto.** `crates/viewer_convert_core` depende de `las` y `laz` 0.13 sin `parallel`,
+`viewer_core` (`laz`), `viewer_format` y `thiserror`; sin `rayon`, `ctrlc` ni `laz-parallel`.
+
+```text
+src/lib.rs          pub use de la API estable; módulos internos `#[doc(hidden)] pub mod`
+src/error.rs        ConvertError + CheckpointError (copiados tal cual de error.rs y checkpoint.rs:60)
+src/options.rs      ConvertOptions, constantes, input_batch_point_limit
+src/report.rs       ConversionReport/Progress/Stage/WorkerStats, emit_progress, aggregate_geometry_codec_diagnostics
+src/diagnostics.rs  solo structs de datos (DiagnosticTimer y unix_ns se quedan en el shell)
+src/source.rs       SourceInfo, inspect_source/inspect_header, source_schema, next_descriptor, omitted_dimensions,
+                    contain_decoder_panic(_at), fill_points, seek_points(_at), open_las_reader_from,
+                    check_laz_chunk_table (de las_source.rs)
+src/limits.rs       visual_scale_for_bounds, check_reader_attribute_ranges (+ test) (de publish.rs)
+src/pipeline/{clock, point_source, laz_chunks, spool_store, node_job, executor}.rs
+src/spatial.rs      spatial.rs entero salvo Workspace (:297-352) y ready_queue
+src/blocks.rs       ConversionPlan, ruta por bloque compartida, convert_serial, validate_output_serial
+```
+
+- **Shell nativo:** `main.rs`, `convert_file*` de `lib.rs`, `checkpoint.rs`, `ept*.rs`, `fs_util.rs`, `publish.rs` (sin `limits`), `las_source.rs` (`open_las_reader(path)`, `convert_file_inner`, `plan_sample_blocks`, `stream_blocks`, `process_batches`), y nuevos `workspace.rs`, `file_spool_store.rs`, `executor.rs` (`ThreadedExecutor` con el antiguo `ready_queue.rs`); `SystemClock` y `DiagnosticTimer`.
+- **Visibilidad:** lo `pub(crate)` pasa a `pub` dentro de módulos `#[doc(hidden)]`. API estable: lo que `viewer_convert` ya reexporta (`ConvertError`, `CheckpointError`, `ConvertOptions`, informes, diagnósticos) más los traits, `MemSpoolStore`, `NoClock`, `LasFactory`, `MemBytes`, `convert_serial` y `validate_output_serial`.
+- **Reexportes:** `viewer_convert/src/lib.rs` hace `pub use viewer_convert_core::{…}`, así `main.rs`, `real_dataset_bench`, `dump_blocks` y `tests/` no cambian; cada módulo nativo que pierde ítems los reexporta con `pub(crate) use` bajo su ruta antigua (`crate::las_source::SourceInfo`, `crate::spatial::*`, `crate::pipeline::*`, `crate::options::*`).
+- **Tests:** los que usan ficheros o `FileSpoolStore` se quedan en el shell; los demás se mueven con su módulo y cambian el fichero temporal por `las::Writer` sobre `Cursor`, sin cambiar su lógica.
+
+**2. Errores.** `ConvertError` y `CheckpointError` viven en el núcleo, copiados tal cual (`PathBuf`,
+`io::Error` y `las::Error` compilan en wasm32; las variantes solo nativas llevan el comentario
+«solo shell nativo»). `Display` y `match` quedan idénticos por construcción. Descartado: un error
+del núcleo envuelto en uno nativo (rompe decenas de `matches!` y añade `From` en cada `?`). Variante
+nueva: `InvalidRootRanges(usize)` («root partition ranges must be between 0 and 8, got {0}»).
+
+**3. `las` en el núcleo: se mantiene** `PointSource::header() -> &las::Header`; abstraerlo exigiría
+reescribir el bucle caliente (riesgo R7) sin requisito. `las` arrastra `chrono` con sus features por
+defecto y no permite quitarlo: en wasm32 trae imports `__wbindgen_*`; el runner Node usa stubs que
+lanzan (como `tools/laz_chunk_probe/run-wasm.mjs`), de modo que una llamada al reloj falla visible.
+
+**4. Builder, reloj, ejecutores y reapertura sin `Path`.**
+
+```rust
+// pipeline/clock.rs
+pub trait Clock { type Instant: Copy; fn now(&self) -> Self::Instant; fn elapsed_ns(&self, since: Self::Instant) -> u64; }
+pub struct NoClock; // Instant = (), 0 ns: tests y wasm sin imports (Tarea 7)
+// pipeline/point_source.rs (PointRange, PointSource, LasPointSource: firmas de M1, ahora pub)
+pub trait ByteSource { type Reader: Read + Seek + Send + Sync + 'static; fn open(&self) -> Result<Self::Reader, ConvertError>; fn len(&self) -> u64; }
+pub struct MemBytes(pub Arc<[u8]>); // Reader = Cursor<Arc<[u8]>>
+pub trait SourceFactory {
+    type Source: PointSource;
+    /// Contiguous ranges in order covering 0..point_count, at most `parts`.
+    fn split(&self, parts: usize, batch: u64) -> Result<Vec<PointRange>, ConvertError>;
+    /// A fresh source at `range.start`, preflight included (replaces `open_las_reader(input_path)`, spatial.rs:932).
+    fn open(&self, range: PointRange) -> Result<Self::Source, ConvertError>;
+}
+pub struct LasFactory<B: ByteSource> { bytes: B, chunks: Option<Arc<ChunkIndex>> }
+pub enum RangeSource<R: Read + Seek> { Las(LasPointSource<las::Reader>), Laz(LazChunkPointSource<R>) }
+impl<B: ByteSource> SourceFactory for LasFactory<B> { type Source = RangeSource<B::Reader>; /* … */ }
+pub fn open_las_reader_from<R: Read + Seek + Send + Sync + 'static>(input: R, len: u64) -> Result<las::Reader, ConvertError>;
+// pipeline/executor.rs
+pub trait BatchPlanner<S: PlanStore, C: Clock> {
+    fn plan_batch(&self, builder: &mut SpatialBuilder<'_, S, C, Self>, tasks: Vec<ChildOutput>, memory_budget: u64)
+        -> Result<Vec<(u16, BranchOutput<C::Instant>)>, ConvertError> where Self: Sized;
+}
+pub trait RangeRunner<S: PlanStore, C: Clock, P: PointSource> {
+    /// Error in range k: cancel ranges > k, let ranges < k finish. Results in range order.
+    fn run_ranges(&self, job: &RangeJob<'_>, sources: Vec<(P, SpoolId)>, store: &S, clock: &C,
+        progress: &mut dyn FnMut(usize, JobProgress) -> Result<(), ConvertError>) -> Vec<Result<RangePartition, ConvertError>>;
+}
+pub struct SerialExecutor; // both traits, in order on the calling thread
+// spatial.rs
+pub struct SpatialBuilder<'a, S, C, X> { store: &'a S, clock: &'a C, executor: &'a X, /* resto igual */ }
+pub fn build_spatial_plan<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(source: &SourceInfo, options: ConvertOptions,
+    store: &S, clock: &C, executor: &X, on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
+    collect_spool_diagnostics: bool, source_spool_bytes_written: u64) -> Result<SpatialPlan, ConvertError>;
+pub fn build_spatial_plan_from_source<S, C, F, X>(first: &mut F::Source, factory: &F, source: &SourceInfo,
+    options: ConvertOptions, store: &S, clock: &C, executor: &X, on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
+    collect_spool_diagnostics: bool) -> Result<SpatialPlan, ConvertError>
+where S: PlanStore, C: Clock, F: SourceFactory, X: BatchPlanner<S, C> + RangeRunner<S, C, F::Source>;
+```
+
+- **Reloj:** `OpenNodeEvent.started` pasa a `C::Instant`; `:580`, `:717-723`, `:747` y `:954` usan `self.clock`.
+- **Ruta nativa por defecto:** `convert_file_inner` llama a `build_spatial_plan_from_source(&mut RangeSource::Las(LasPointSource::full(reader)), &LasFactory::new(FileBytes{path,len}), …, &SystemClock, &ThreadedExecutor, …)`; `open_las_reader(path)` = `File::open` + `open_las_reader_from(file, len)`: mismas operaciones que hoy.
+- **Cola de listos:** `impl<S: PlanStore> BatchPlanner<S, SystemClock> for ThreadedExecutor`, cuerpo igual salvo accesores. El builder expone como `#[doc(hidden)] pub` `node_job`, `job_context`, `emit_job_progress`, `with_branch`, `commit_job`, `finish_node_event`, `store()`, `layout()`, `collects_diagnostics()`, y `BranchOutput`/`OpenNodeEvent`.
+- **`SerialExecutor::plan_batch`:** por clave, `with_branch(fresh, budget, |b| b.build_node(job, None))` y ramas para `append_branch`; reproduce la semántica de W de la cola (presupuesto por lote, `TooManyBlocks` local, error de menor ruta), así la web planifica con el mismo `spatial_workers` que el CLI (R2) y sirve de oráculo de la cola.
+- **`ConvertOptions::default`** se queda en el núcleo con `default_spatial_workers()` bajo `#[expect(clippy::disallowed_methods, reason = "native default; Err on wasm32 → 1")]`: única excepción a «sin `std::thread`». Descartados: sacar las opciones del núcleo (la web duplicaría la validación de R2) y un 4 fijo (rompe `lib_tests.rs:868`).
+
+**5. Partición raíz por rangos (Tarea 5).**
+
+```rust
+pub struct RangeJob<'a> { pub ctx: &'a JobContext, pub info: &'a SourceInfo, pub bounds: SpatialBounds, pub batch: u64 }
+pub struct RangeSegment { pub key: u16, pub spool: SpoolId, pub point_count: u64 }
+pub struct RangePartition { pub range: PointRange, pub segments: Vec<RangeSegment>, pub samples: SampleGrid,
+    pub source_bounds: [[f64; 2]; 3], pub metrics: Option<JobMetrics> }
+pub fn run_root_partition_range<P: PointSource, S: SpoolStore, C: Clock>(job: &RangeJob<'_>, first_segment: SpoolId,
+    source: &mut P, store: &S, clock: &C, progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>)
+    -> Result<RangePartition, ConvertError>;
+pub fn merge_root_ranges<S: SpoolStore>(ctx: &JobContext, bounds: SpatialBounds, first_output: SpoolId,
+    results: Vec<Result<RangePartition, ConvertError>>, store: &S) -> Result<RootPartition, ConvertError>;
+/// Copies closed `segments` (range order) into the new spool `target` in 64 KiB chunks and
+/// deletes each segment right after copying it. Never called with an empty slice.
+pub fn join_segments<S: SpoolStore>(store: &S, target: SpoolId, segments: &[SpoolId]) -> Result<u64, ConvertError>;
+impl SampleAccumulator { pub fn merge(&mut self, later: &Self); }
+impl SampleGrid { pub fn merge(&mut self, later: SampleGrid); }
+```
+
+- **Bucle compartido:** `run_root_partition` (node_job.rs:274) y la versión por rangos comparten `scan_root_range` (el bucle actual con `processed` desde `range.start`); cada `fill` pide `min(batch - processed % batch, range.end - processed)`, idéntico a hoy en serie. `run_root_partition` conserva su `assert` y el cierre sin vaciar de «todos iguales»; la versión por rangos siempre vacía y cierra sus segmentos y no decide «todos iguales».
+- **`merge`:** suma `count` y sumas `u128`; el más cercano del posterior gana solo con `<` estricto; en empate se queda el del rango anterior (misma regla que `add`, :1416-1418).
+- **`merge_root_ranges`:** gana el primer error real en orden de rango (si solo hay cancelaciones, la primera); no limpia (`discard_spools` cubre los segmentos, que salen del mismo contador). Límites fusionados iguales → `all_points_equal` con `release` = todos los segmentos y el host reabre con `factory.open(full)`. Si no, `join_segments` hacia `first_output + k` por cada clave con segmentos y `ChildOutput` con `cell_bounds(k)`; un hijo sin segmentos no crea nada. Raíz no divisible: sin rangos, `spool_source` desde `first`.
+- **Ids:** tras `first_output = reserve_node_spools()`, el builder reserva `n × d³` ids; el segmento (r, k) es `base + r·d³ + k`.
+- **Memoria (desvío de B11):** cada rango extra cuesta `per_range = point_limit·192 + d³·32 KiB + 512·256 + 1 MiB` (el lote de decodificación pesa más que los búferes de hijo). Antes de dividir, `n = min(root_ranges, 1 + (budget − estimate_memory(point_limit, 0, 0, d)) / per_range)`, como `memory_limited_workers`; `estimated_peak_memory_bytes = max(fórmula actual, raíz + (n−1)·per_range)` solo con rangos, y nunca dispara `MemoryBudgetExceeded`. La copia de `join_segments` usa 64 KiB tras terminar los rangos; en spools vivos el pico sube en el segmento mayor (el libro la cuenta como bytes escritos, solo diagnóstico).
+- **Activación:** `ConvertOptions::with_root_partition_ranges(n)` (`#[doc(hidden)]`, 0..=8); **0 = ruta de hoy** (defecto); con ≥ 1 pasa por `merge` + `join` aunque haya un rango. `real_dataset_bench convert … [FORMAT_VERSION [ROOT_RANGES]]`; sin flag de CLI; no aplica con checkpoint.
+- **Ejecución:** `ThreadedExecutor` implementa `RangeRunner<S, SystemClock, RangeSource<File>>` con `thread::scope`, un hilo por rango y un canal `(r, JobProgress)`; `abort_above: AtomicUsize` guarda el menor rango fallido y los mayores devuelven `Cancelled` en su siguiente `fill`; una cancelación del usuario aborta todo. `SerialExecutor` ejecuta los rangos en orden (Review Focus 1–4 con `MemSpoolStore`, sin hilos).
+- **Rangos:** LAS, `PointRange::split` (inicios múltiplos de `batch`); LAZ, grupos contiguos de chunks enteros cortados por los puntos acumulados más cercanos a `k·total/n`.
+
+```rust
+pub struct ChunkIndex { pub vlr: laz::LazVlr, pub table: laz::laszip::ChunkTable, pub data_start: u64 } // offset_to_point_data + 8
+impl ChunkIndex { pub fn read<R: Read + Seek>(src: &mut R, header: &las::Header, point_data_offset: u64) -> Result<Self, ConvertError>; }
+pub struct LazChunkPointSource<R: Read + Seek> { decoder: LasZipDecompressor<'static, ChunkRangeStream<R>>, header: las::Header, range: PointRange, next: u64, batch: u64 }
+impl<R: Read + Seek + Send + 'static> LazChunkPointSource<R> {
+    pub fn new(input: R, header: las::Header, index: &ChunkIndex, chunks: Range<usize>, batch: u64) -> Result<Self, ConvertError>;
+}
+```
+
+- **Streaming:** `ChunkRangeStream<R>` es un `Read + Seek` virtual `[i64 LE = 8 + bytes][chunks a..b leídos de input][subtabla de ChunkTable::write_to]`; solo prefijo y subtabla (≈ 16 B por chunk) en RAM (el `Vec` del probe retendría cientos de MiB por rango en wasm). Test frente al `RangeDecoder` del probe en las 32 composiciones de `[7,13,5,11,50000,3]`.
+- **Decodificación:** `fill` escribe en `data.resize_for(n)` con `decompress_many`, la ruta de `las`; `new` rechaza `items_size != point_format.len()`.
+- **Errores:** `io::Error` → `ConvertError::Las(las::Error::Io(e))` y `LasZipError` → `ConvertError::Las(las::Error::LasZipError(e))`, como el lector `las`; test con un LAZ truncado en el rango k > 0. `LasDecoderPanicked.point_index = Some(next − next % batch)`: un rango que empieza en `s` dentro del lote `[kb, (k+1)b)` informa `kb`, como la serie (desvío de B3).
+- **Pánicos:** el `message` puede diferir entre `laz-parallel` (serie nativa) y el decodificador secuencial; el test de Review Focus 4 compara con la serie forzada a secuencial o documenta la diferencia.
+
+**6. API serie del núcleo (B2; paso 1b de la Tarea 4).**
+
+```rust
+pub const WRITER_MAX_UNCOMPRESSED_BLOCK_BYTES: usize = 64 * 1024 * 1024; // hoy literal en las_source.rs:375
+pub fn output_writer<W: Write + Seek>(options: ConvertOptions, metadata: &FormatMetadata, geometry: W, attributes: W)
+    -> Result<(FormatWriter<W>, FormatBlockEncoder), ConvertError>;
+#[inline] pub fn prepare_planned_block<E: BlockEncoder, S: SpoolStore>(encoder: &E, block: &PlannedBlock, store: &S,
+    frame: CoordinateFrame) -> Result<E::PreparedBlock, ConvertError>; // + _with_diagnostics
+#[inline] pub fn write_prepared<W: PreparedOctreeWriter<Error = FormatError> + ?Sized, S: SpoolStore>(writer: &mut W,
+    block: &PlannedBlock, prepared: W::PreparedBlock, store: &S) -> Result<(), ConvertError>; // + release_spool_after_write
+pub struct SerialOutput<W> { pub geometry: W, pub attributes: W, pub plan: PlanSummary } // point/block counts, ids, estimate, omitted
+pub fn convert_serial<B: ByteSource, S: PlanStore, C: Clock, W: Write + Seek>(input: &LasFactory<B>, store: &S, clock: &C,
+    options: ConvertOptions, geometry: W, attributes: W, on_progress: &mut dyn FnMut(ConversionProgress) -> bool)
+    -> Result<SerialOutput<W>, ConvertError>;
+pub fn validate_output_serial<R: Read + Seek>(geometry: R, attributes: R, plan: &PlanSummary,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool) -> Result<ConversionWorkerStats, ConvertError>;
+```
+
+- `convert_serial`: `InspectingInput` (`open(full)`, `inspect_header`) → `PlanningMetadata` → `build_spatial_plan_from_source` con `SerialExecutor` → `ConversionPlan::from_spatial` → `output_writer` → por bloque `prepare_planned_block` + `write_prepared` → `processed == point_count` y `finish_pair`.
+- `stream_blocks` llama a las mismas funciones dentro de `par_iter`: bytes iguales por construcción. `bytes_written` del progreso de bloques vale 0 en el núcleo (lo rellena el host); publicar es del host.
+- `validate_output_serial` relee cada bloque con `FormatReader<R>`; la validación paralela (R6) queda para M5.
+- **Cancelación en M3a (B9): `Worker.terminate()` + limpieza de huérfanos OPFS.** Sin `SharedArrayBuffer` el worker no ve mensajes durante una llamada wasm síncrona; una API por nodo exigiría pila explícita en `build_node` (tamaño M5). El host borra los temporales tras `terminate` y los huérfanos al arrancar. Test Playwright: cancelar y reconvertir al mismo nombre.
+
+**7. Lint y `check.sh` (B10).** `Cargo.toml` del núcleo: `[lints.clippy] disallowed_methods = "deny"`,
+`disallowed_types = "deny"`. Un lint no ve features: `laz-parallel`/`rayon`/`ctrlc` los vigila `cargo tree`.
+
+```toml
+# crates/viewer_convert_core/clippy.toml
+disallowed-methods = [
+  "std::fs::read", "std::fs::read_to_string", "std::fs::write", "std::fs::copy", "std::fs::rename",
+  "std::fs::hard_link", "std::fs::metadata", "std::fs::symlink_metadata", "std::fs::read_dir",
+  "std::fs::canonicalize", "std::fs::create_dir", "std::fs::create_dir_all", "std::fs::remove_file",
+  "std::fs::remove_dir", "std::fs::remove_dir_all", "std::fs::File::open", "std::fs::File::create",
+  "std::fs::OpenOptions::new", "std::thread::spawn", "std::thread::scope", "std::thread::sleep",
+  "std::thread::Builder::new", "std::thread::available_parallelism", "std::time::Instant::now",
+  "std::time::Instant::elapsed", "std::time::SystemTime::now", "std::time::SystemTime::elapsed",
+  "std::process::id", "std::process::exit", "std::process::abort", "std::process::Command::new",
+  "std::env::temp_dir", "std::env::current_dir", "std::sync::mpsc::channel", "std::sync::mpsc::sync_channel",
+]
+disallowed-types = [
+  "std::fs::File", "std::fs::OpenOptions", "std::time::Instant", "std::time::SystemTime",
+  "std::thread::JoinHandle", "std::thread::Builder", "std::thread::Scope", "std::sync::Condvar",
+]
+```
+
+```bash
+# scripts/check.sh, tras «clippy wasm32»
+step "core wasm32 check" cargo check -p viewer_convert_core --target wasm32-unknown-unknown $CARGO_MODE
+step "core wasm32 clippy" cargo clippy -p viewer_convert_core --target wasm32-unknown-unknown $CARGO_MODE -- -D warnings
+step "core has no native-only deps" bash -c '! cargo tree -p viewer_convert_core -e features --target wasm32-unknown-unknown $0 | grep -E "laz-parallel|rayon|ctrlc"' "$CARGO_MODE"
+```
+
+Alias en `.cargo/config.toml`: `check-core-web = "check -p viewer_convert_core --target wasm32-unknown-unknown"`.
+
+**8. Riesgos anotados.** `PlanStore: Sync` choca con un store OPFS que guarde `JsValue` (decidir en
+M3b: handles enteros o envoltorio). En modo por rangos el libro de spools, los eventos y los bytes
+de hijos de la raíz difieren de la serie (solo diagnóstico, fuera de R1); la unión reescribe el
+dataset en la raíz: medirla aunque no entre en R7. `thiserror` sin `std::backtrace` en wasm32:
+comprobarlo en el paso 2 de la Tarea 4.
 
 ### Tarea 4: M2 paso 2 — crate `viewer_convert_core`
 
@@ -138,8 +327,11 @@ anota en una sección «Firmas fijadas» de este documento antes de seguir:
 `[lints.clippy] disallowed_methods = "deny"`, `clippy.toml`); modificar `crates/viewer_convert/`,
 `Cargo.toml` del workspace, `scripts/check.sh`, `.cargo/config.toml` (`check-web`).
 
-- [ ] **Paso 1:** mover los módulos puros sin cambiar su lógica; `viewer_convert` reexporta; `#[inline]` en las funciones calientes que pasan a ser entre crates (B6).
-- [ ] **Paso 1b (B2):** bucle host serie en el núcleo; la fase de bloques nativa usa la misma función por bloque. Test: la ruta serie del núcleo produce los mismos bytes que el CLI en las fixtures de `lib_tests.rs`.
+Cada paso cierra con tests en verde y los SHA de M0 (LAS pequeño, autzen, Belvedere por defecto y divisiones 8).
+
+- [ ] **Paso 0 (costuras dentro de `viewer_convert`, aún un crate):** `SpatialBuilder<S, C, X>`, `BatchPlanner` (la cola como `ThreadedExecutor`) y `SerialExecutor`; `ByteSource`/`LasFactory` y `build_spatial_plan_from_source` en lugar de `_from_reader`; reparto de `publish`/`las_source`/`diagnostics` en partes puras y nativas; `#[inline]` en `decode_point`, `write_point`, `read_records`, `read_u16`, `read_f64`, `sample_index`, `voxel_center`, `cube_side`, `outside_header_bounds`, `SpoolLayout::{position, record_bytes}`, `SpoolPoint::display_color_component`, `SampleGrid::add` y `average` (B6).
+- [ ] **Paso 1:** traslado mecánico al crate nuevo con los reexportes; los tests con ficheros se quedan en el shell.
+- [ ] **Paso 1b (B2):** `blocks.rs` y `stream_blocks` sobre la ruta por bloque compartida. Test nativo: `convert_serial(MemSpoolStore, MemBytes)` da el SHA del CLI en el LAS pequeño y en `synthetic_variable_chunks.laz` con 4096 puntos por bloque (SHA de la Tarea 1).
 - [ ] **Paso 2:** `check.sh` añade `cargo check -p viewer_convert_core --target wasm32-unknown-unknown` y clippy con el lint (B10); un uso de prueba de `std::fs::read` en el núcleo debe hacerlo fallar (comprobarlo en el worktree propio y revertirlo).
 - [ ] **Paso 3:** tests existentes en verde; SHA de M0 en LAS pequeño, autzen y Belvedere (defecto y divisiones 8) iguales.
 - [ ] **Paso 3b (B6, sin otros agentes activos):** instrucciones (callgrind) del LAS pequeño, divisiones 8, 2048 puntos por bloque, ≤ +2% frente a `fb9a3b7`, y R7 de 3 rondas en divisiones 8. Criterio de parada arriba.
@@ -164,8 +356,8 @@ rangos con `thread::scope`.
 ### Tarea 7: M3a — conversión web con un worker sobre el núcleo
 
 **Archivos:**
-- Modificar: `crates/viewer_wasm/` (un conversor wasm-bindgen nuevo sobre la API serie del núcleo: `PointSource` sobre `Blob` con `BrowserBlobReader`, `Clock` con `performance.now()`, `MemSpoolStore`, salida a handles OPFS como `OpfsWriter`), `examples/web-host/converter-worker.js` y `converter-api.mjs` (opción `engine: "core"`; el conversor actual sigue por defecto hasta M3b, que lo elimina)
-- Crear: export sin imports en `tools/format_parity` (o un tool hermano) que convierte un LAS en memoria con el núcleo y devuelve los SHA de la pareja; paso en `check.sh`
+- Modificar: `crates/viewer_wasm/` (un conversor wasm-bindgen nuevo sobre `convert_serial` y `validate_output_serial`: `ByteSource` sobre `Blob` con `BrowserBlobReader`, `Clock` con `performance.now()`, `MemSpoolStore`, salida a handles OPFS como `OpfsWriter`; cancelación por `terminate()` y limpieza de huérfanos, firmas §6), `examples/web-host/converter-worker.js` y `converter-api.mjs` (opción `engine: "core"`; el conversor actual sigue por defecto hasta M3b, que lo elimina)
+- Crear: export en `tools/format_parity` (o un tool hermano) que convierte un LAS en memoria con `convert_serial` (`MemBytes`, `NoClock`) y devuelve los SHA de la pareja; runner Node con stubs de `__wbindgen_*` que lanzan (firmas §3); paso en `check.sh`
 - Crear: driver Playwright `docs/records/benchmarks/data/m3a-parity-<aaaa-mm-dd>-driver.mjs` y registro `docs/records/benchmarks/M3A_PARITY_<aaaa-mm-dd>.md`
 
 Se ejecuta en su propio worktree (B5) y solo toca `viewer_wasm`, el host web y `tools/`: el bucle
