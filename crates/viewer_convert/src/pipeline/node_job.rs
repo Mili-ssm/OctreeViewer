@@ -129,6 +129,7 @@ impl SampleGrid {
         )
     }
 
+    // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
     #[inline(always)]
     fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
         let voxel_key = sample_index(point.position, bounds);

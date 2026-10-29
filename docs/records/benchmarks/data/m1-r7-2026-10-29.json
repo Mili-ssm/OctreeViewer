@@ -519,7 +519,8 @@
    "partition_ns": "10366711672",
    "psi_before": "cpu:1.64 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.25 io:0.06 memory:0.00 ",
-   "sha": "fb90a490f9884239 b5124e84f7c4e12a"
+   "sha": "fb90a490f9884239 b5124e84f7c4e12a",
+   "position": 1
   },
   {
    "kind": "div8",
@@ -530,7 +531,8 @@
    "partition_ns": "10074079610",
    "psi_before": "cpu:0.25 io:0.06 memory:0.00 ",
    "psi_after": "cpu:0.03 io:0.00 memory:0.00 ",
-   "sha": "fb90a490f9884239 b5124e84f7c4e12a"
+   "sha": "fb90a490f9884239 b5124e84f7c4e12a",
+   "position": 2
   },
   {
    "kind": "div8",
@@ -541,7 +543,8 @@
    "partition_ns": "9790629723",
    "psi_before": "cpu:0.02 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 1
   },
   {
    "kind": "div8",
@@ -552,7 +555,8 @@
    "partition_ns": "9933374291",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 2
   },
   {
    "kind": "div8",
@@ -563,7 +567,8 @@
    "partition_ns": "9968566935",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 1
   },
   {
    "kind": "div8",
@@ -574,7 +579,8 @@
    "partition_ns": "9840961797",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 2
   },
   {
    "kind": "div8",
@@ -585,7 +591,8 @@
    "partition_ns": "9833098770",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.08 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 1
   },
   {
    "kind": "div8",
@@ -596,7 +603,8 @@
    "partition_ns": "10002492009",
    "psi_before": "cpu:0.00 io:0.06 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 2
   },
   {
    "kind": "div8",
@@ -607,7 +615,8 @@
    "partition_ns": "10020701199",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 1
   },
   {
    "kind": "div8",
@@ -618,7 +627,8 @@
    "partition_ns": "9668971215",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 2
   },
   {
    "kind": "convert",
@@ -629,7 +639,8 @@
    "partition_ns": "",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.02 io:0.00 memory:0.67 ",
-   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f"
+   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f",
+   "position": 1
   },
   {
    "kind": "convert",
@@ -640,7 +651,8 @@
    "partition_ns": "",
    "psi_before": "cpu:0.01 io:0.00 memory:0.55 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.07 ",
-   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f"
+   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f",
+   "position": 2
   },
   {
    "kind": "convert",
@@ -651,7 +663,8 @@
    "partition_ns": "",
    "psi_before": "cpu:0.00 io:0.00 memory:0.07 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 1
   },
   {
    "kind": "convert",
@@ -662,7 +675,8 @@
    "partition_ns": "",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.05 io:0.00 memory:0.00 ",
-   "sha": ""
+   "sha": "",
+   "position": 2
   },
   {
    "kind": "convert",
@@ -673,7 +687,8 @@
    "partition_ns": "",
    "psi_before": "cpu:0.05 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.89 ",
-   "sha": ""
+   "sha": "",
+   "position": 1
   },
   {
    "kind": "convert",
@@ -684,8 +699,74 @@
    "partition_ns": "",
    "psi_before": "cpu:0.00 io:0.00 memory:0.89 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.12 ",
-   "sha": ""
+   "sha": "",
+   "position": 2
   }
  ],
- "fix_note": "arm 'fix' = commit perf(convert): restore inlining in the spatial partition loop (default scheduler ready-queue); kind div8 = convert-profile ... 4 8, kind convert = convert ... 4; sha = first 16 hex of .oct and .octattrs on round 1"
+ "fix_note": "arm 'fix' = commit perf(convert): restore inlining in the spatial partition loop (default scheduler ready-queue); kind div8 = convert-profile ... 4 8, kind convert = convert ... 4; sha = first 16 hex of .oct and .octattrs on round 1",
+ "diagnosis": {
+  "note": "Resumen transcrito de la seccion Diagnostico del registro; los logs crudos no se archivaron.",
+  "callgrind_small_las_1worker_div8_2048ppb": {
+   "total_ir_m": {
+    "base": 914.3,
+    "head_before_fix": 965.8,
+    "inline": 928.6,
+    "inline_always_kept": 923.5
+   },
+   "hot_loop_function_sum_ir_m": {
+    "base": 204.7,
+    "head_before_fix": 251.4,
+    "inline": 214.7,
+    "inline_always_kept": 209.6
+   }
+  },
+  "one_worker_div8_rounds": {
+   "spool_partition_and_sample_s": {
+    "base": [
+     8.98,
+     9.0,
+     8.96
+    ],
+    "ready_queue": [
+     10.2,
+     10.23,
+     10.33
+    ]
+   },
+   "conversion_elapsed_ms": {
+    "base": [
+     29207,
+     29023,
+     28911
+    ],
+    "ready_queue": [
+     30159,
+     30378,
+     30499
+    ]
+   },
+   "user_sys_s_round1": {
+    "base": [
+     46.95,
+     3.79
+    ],
+    "ready_queue": [
+     47.44,
+     3.74
+    ]
+   }
+  },
+  "round14_phase_split_div8_4workers": {
+   "planning_spatial_index_ms": {
+    "base": 11064,
+    "recursive": 11694,
+    "ready_queue": 11944
+   },
+   "spool_partition_and_sample_s": {
+    "base": 9.998,
+    "recursive": 11.308,
+    "ready_queue": 11.332
+   }
+  }
+ }
 }

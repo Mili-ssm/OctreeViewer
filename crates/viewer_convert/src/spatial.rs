@@ -1741,6 +1741,7 @@ fn read_point(reader: &mut impl Read, layout: SpoolLayout) -> Result<SpoolPoint,
         .ok_or_else(|| ConvertError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)))
 }
 
+// Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
 #[inline(always)]
 pub(crate) fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
     let mut offset = 0;
