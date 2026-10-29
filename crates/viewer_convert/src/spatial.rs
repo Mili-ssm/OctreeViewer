@@ -610,6 +610,7 @@ impl ChildSpool {
         }
     }
 
+    #[inline]
     pub(crate) fn write_point(
         &mut self,
         store: &impl SpoolStore,
@@ -623,6 +624,7 @@ impl ChildSpool {
         Ok(())
     }
 
+    #[cold]
     fn flush(&mut self, store: &impl SpoolStore) -> Result<(), ConvertError> {
         if self.buffer.is_empty() {
             return Ok(());
@@ -1549,7 +1551,8 @@ pub(crate) struct SampleAccumulator {
 }
 
 impl SampleAccumulator {
-    pub(crate) fn add(&mut self, point: SpoolPoint, center: [f64; 3]) {
+    #[inline]
+    pub(crate) fn add(&mut self, point: &SpoolPoint, center: [f64; 3]) {
         self.count += 1;
         for axis in 0..3 {
             self.display_color[axis] += u128::from(point.display_color_component(axis));
@@ -1564,7 +1567,7 @@ impl SampleAccumulator {
             .is_none_or(|_| distance_squared < self.nearest_distance_squared)
         {
             self.nearest_distance_squared = distance_squared;
-            self.nearest_point = Some(point);
+            self.nearest_point = Some(*point);
         }
     }
 
@@ -1792,6 +1795,7 @@ fn outside_header_bounds(position: [f64; 3], bounds: SpatialBounds) -> bool {
     })
 }
 
+#[inline]
 pub(crate) fn write_point(
     writer: &mut impl Write,
     point: &SpoolPoint,
@@ -1886,6 +1890,7 @@ fn read_point(reader: &mut impl Read, layout: SpoolLayout) -> Result<SpoolPoint,
         .ok_or_else(|| ConvertError::Io(io::Error::from(io::ErrorKind::UnexpectedEof)))
 }
 
+#[inline(always)]
 pub(crate) fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
     let mut offset = 0;
     let mut raw_position = [0; 3];
@@ -2300,7 +2305,7 @@ mod partition_tests {
             987_654.321_098_765_4,
         ];
         let mut sample = SampleAccumulator::default();
-        sample.add(fixture, center);
+        sample.add(&fixture, center);
         let synthetic = sample.finish(center);
         let mut bytes = Vec::new();
         write_point(&mut bytes, &synthetic, layout).unwrap();

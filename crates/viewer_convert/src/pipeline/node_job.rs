@@ -129,7 +129,8 @@ impl SampleGrid {
         )
     }
 
-    fn add(&mut self, point: SpoolPoint, bounds: SpatialBounds) {
+    #[inline(always)]
+    fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
         let voxel_key = sample_index(point.position, bounds);
         let center = voxel_center(voxel_key, bounds);
         self.0[voxel_key]
@@ -211,7 +212,7 @@ pub(crate) fn run_node_job<S: SpoolStore, C: Clock>(
                 )
             });
             child.write_point(store, &point)?;
-            samples.add(point, job.bounds);
+            samples.add(&point, job.bounds);
         }
         end_phase(clock, &mut metrics, classify_started, |m| {
             &mut m.partition_and_sample_ns
@@ -324,7 +325,7 @@ pub(crate) fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
                 )
             });
             child.write_point(store, &point)?;
-            samples.add(point, bounds);
+            samples.add(&point, bounds);
             Ok(())
         })?;
         end_phase(clock, &mut metrics, classify_started, |m| {
