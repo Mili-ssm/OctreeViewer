@@ -18,6 +18,13 @@
 | ¿Cabe Majadas (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB)? | **Firefox con `persist()` concedido: no falló hasta 40 GiB en estas condiciones** (cuota declarada 476 GiB). **Firefox con la cuota por defecto o con `persist()` denegado: no cabe**; la escritura se corta (`write` devuelve 0) a 10 GiB − 1 MiB exactos, lo que se infiere que es la cuota de 10 GiB declarada. **Chrome: no falló hasta 40 GiB** en los tres estados de `persist()` (headless, perfil nuevo), por encima de la estimación de Majadas aunque declara 10 GiB; ese valor exacto de 10 GiB queda sin explicar. |
 | ¿Hay que volver al propietario antes de M6? | Sí (ver «Decisiones»): Firefox sin `persist()` no basta, y `estimate()` no sirve como preflight de R4 en Chrome. |
 
+**Reconciliación con el modelo de la Tarea 1** ([modelo por nodos](NODE_JOB_ARENA_MODEL_2026-10-29.md)):
+solo la variante c (un archivo OPFS por spool de hijo) cumple 1,5 ×. Su pico para Majadas es 2,00 × los
+bytes de la fuente (cota superior, ≈ 25,5 GiB); con ≈ 7,5 GB de salida son ≈ 32,5 GiB, por debajo de los
+40 GiB probados, así que las respuestas de la tabla valen para c. La variante b (≈ 2,6 × la fuente con
+FIFO/LIFO, más con «mayor primero») supera los 40 GiB con la salida y queda sin probar. Firefox con la
+cuota por defecto (10 GiB) no admite ninguna variante.
+
 **Estimación usada:** la de la spec (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB); véase
 [conversor-web-paralelo](../../explanation/conversor-web-paralelo.md) (hito M6 y spike S8 en «Hitos» y
 «Spikes»).
@@ -51,6 +58,9 @@
   (matriz completa) o con celdas `firefox:http:none`. Crea el perfil en `target/q3-profiles`, aplica
   `persist()` (CDP / preferencias), registra `findmnt` y `df`, sirve HTTP y, en `finally`, cierra el
   navegador, mata el servidor y borra el perfil. Los campos `*KiB` del `.jsonl` son KiB y los `*GiB` GiB.
+  Las 10 filas del `.jsonl` son anteriores a este driver: salieron de una versión previa (llevan un campo
+  `console` que el driver no escribe) y sus `*GiB` están redondeados hacia arriba, mientras que el driver
+  usa `floor`; los `*KiB` son la referencia.
 - Datos crudos: [opfs-quota-2026-10-29.jsonl](data/opfs-quota-2026-10-29.jsonl) (una fila por ejecución,
   con `df` antes/después, sistema de ficheros del perfil y fracción cuota/disco libre).
 - Automatización: Playwright (`playwright-core` 1.64.0-alpha), contexto persistente nuevo por ejecución,
@@ -90,7 +100,9 @@ Notas:
 - Firefox concedido: 476 GiB es ≈ 50 % de los 953 GB del disco, **mayor que el espacio libre** (fracción
   > 1): la cuota declarada no garantiza espacio real. No se midió escribir hasta llenar el disco (prohibido
   por el tope).
-- Firefox falla en 10 GiB − 1 MiB (10 736 369 664 B): el bloque siguiente de 1 MiB ya no cabe.
+- Firefox falla en 10 GiB − 1 MiB (10 736 369 664 B). Inferencia: 10 GiB − 1 MiB + 1 MiB son exactamente
+  10 GiB, así que solo los metadatos (491 520 B tras limpiar) explican que el bloque siguiente de 1 MiB
+  ya no quepa.
 - `persist()` en Chrome headless no cambió la cuota declarada ni el comportamiento observado.
 - Borrado: `removeEntry` de 40 GiB tardó 2,09–2,61 s en Chrome y 3,04–3,13 s en Firefox; de ≈ 10 GiB (Firefox), 0,56–1,43 s.
   `estimate()` tras limpiar devolvió uso 0 (Chrome) y 491 520 B (Firefox, metadatos).

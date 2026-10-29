@@ -11,7 +11,6 @@
     "calibration_n1_own_free_lifo": {
       "peak_bytes": 4671519763,
       "makespan_ns": 26333899170,
-      "max_live_files": 259,
       "ratio_to_native_peak": 1.0
     },
     "modelled": {
@@ -186,42 +185,36 @@
       "own_n4_fifo": {
         "peak_bytes": 6697957338,
         "makespan_ns": 14582221001,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.4337,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_lifo": {
         "peak_bytes": 6697957338,
         "makespan_ns": 14668235956,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.4337,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_largest": {
         "peak_bytes": 6697957338,
         "makespan_ns": 14581178302,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.4337,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_fifo": {
         "peak_bytes": 6697959935,
         "makespan_ns": 13414588377,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.4337,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_lifo": {
         "peak_bytes": 6697959935,
         "makespan_ns": 13755419820,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.4337,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_largest": {
         "peak_bytes": 6697959935,
         "makespan_ns": 13416316464,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.4337,
         "peak_over_source_bytes": 2.0
       }
@@ -239,7 +232,6 @@
     "calibration_n1_own_free_lifo": {
       "peak_bytes": 4671519763,
       "makespan_ns": 30637486629,
-      "max_live_files": 259,
       "ratio_to_native_peak": 0.7601
     },
     "modelled": {
@@ -414,42 +406,36 @@
       "own_n4_fifo": {
         "peak_bytes": 6697957338,
         "makespan_ns": 15469345994,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.0899,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_lifo": {
         "peak_bytes": 6697957338,
         "makespan_ns": 15701304277,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.0899,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_largest": {
         "peak_bytes": 6697957338,
         "makespan_ns": 15455072044,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.0899,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_fifo": {
         "peak_bytes": 6697959935,
         "makespan_ns": 14102316045,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.0899,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_lifo": {
         "peak_bytes": 6697959935,
         "makespan_ns": 14320434540,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.0899,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_largest": {
         "peak_bytes": 6697959935,
         "makespan_ns": 14103819297,
-        "max_live_files": 259,
         "ratio_to_native_peak": 1.0899,
         "peak_over_source_bytes": 2.0
       }
@@ -467,7 +453,6 @@
     "calibration_n1_own_free_lifo": {
       "peak_bytes": 3442893045,
       "makespan_ns": 17037669964,
-      "max_live_files": 69,
       "ratio_to_native_peak": 1.0001
     },
     "modelled": {
@@ -642,42 +627,36 @@
       "own_n4_fifo": {
         "peak_bytes": 3707977136,
         "makespan_ns": 12766416314,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.0771,
         "peak_over_source_bytes": 1.1072
       },
       "own_n4_lifo": {
         "peak_bytes": 3696786973,
         "makespan_ns": 12836576400,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.0738,
         "peak_over_source_bytes": 1.1039
       },
       "own_n4_largest": {
         "peak_bytes": 3716712713,
         "makespan_ns": 12756191162,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.0796,
         "peak_over_source_bytes": 1.1098
       },
       "own_n8_fifo": {
         "peak_bytes": 3949921410,
         "makespan_ns": 12055157255,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.1474,
         "peak_over_source_bytes": 1.1794
       },
       "own_n8_lifo": {
         "peak_bytes": 3969717250,
         "makespan_ns": 12115524008,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.1531,
         "peak_over_source_bytes": 1.1854
       },
       "own_n8_largest": {
         "peak_bytes": 4061538761,
         "makespan_ns": 12038750178,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.1798,
         "peak_over_source_bytes": 1.2128
       }
@@ -695,7 +674,6 @@
     "calibration_n1_own_free_lifo": {
       "peak_bytes": 3442893045,
       "makespan_ns": 17819979845,
-      "max_live_files": 69,
       "ratio_to_native_peak": 0.9737
     },
     "modelled": {
@@ -870,42 +848,36 @@
       "own_n4_fifo": {
         "peak_bytes": 3705126215,
         "makespan_ns": 12737029283,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.0479,
         "peak_over_source_bytes": 1.1063
       },
       "own_n4_lifo": {
         "peak_bytes": 3696786867,
         "makespan_ns": 12779054706,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.0455,
         "peak_over_source_bytes": 1.1039
       },
       "own_n4_largest": {
         "peak_bytes": 3716712713,
         "makespan_ns": 12705873659,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.0512,
         "peak_over_source_bytes": 1.1098
       },
       "own_n8_fifo": {
         "peak_bytes": 3949921410,
         "makespan_ns": 11899468561,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.1171,
         "peak_over_source_bytes": 1.1794
       },
       "own_n8_lifo": {
         "peak_bytes": 3969722444,
         "makespan_ns": 11934959827,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.1227,
         "peak_over_source_bytes": 1.1854
       },
       "own_n8_largest": {
         "peak_bytes": 4061538655,
         "makespan_ns": 11857779143,
-        "max_live_files": 69,
         "ratio_to_native_peak": 1.1487,
         "peak_over_source_bytes": 1.2128
       }
@@ -923,7 +895,6 @@
     "calibration_n1_own_free_lifo": {
       "peak_bytes": 18825939426,
       "makespan_ns": 214582130720,
-      "max_live_files": 1268,
       "ratio_to_native_peak": 0.9998
     },
     "modelled": {
@@ -1098,42 +1069,36 @@
       "own_n4_fifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 85962395099,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.4563,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_lifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 88724379495,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.4563,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_largest": {
         "peak_bytes": 27420759618,
         "makespan_ns": 85954303283,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.4563,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_fifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 72757600400,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.4563,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_lifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 72528781652,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.4563,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_largest": {
         "peak_bytes": 27420759618,
         "makespan_ns": 72444183261,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.4563,
         "peak_over_source_bytes": 2.0
       }
@@ -1151,7 +1116,6 @@
     "calibration_n1_own_free_lifo": {
       "peak_bytes": 18825939426,
       "makespan_ns": 257250080437,
-      "max_live_files": 1268,
       "ratio_to_native_peak": 0.9151
     },
     "modelled": {
@@ -1326,42 +1290,36 @@
       "own_n4_fifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 96626100701,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.3329,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_lifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 97526667429,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.3329,
         "peak_over_source_bytes": 2.0
       },
       "own_n4_largest": {
         "peak_bytes": 27420759618,
         "makespan_ns": 96628287622,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.3329,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_fifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 78567914197,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.3329,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_lifo": {
         "peak_bytes": 27420759618,
         "makespan_ns": 78885894419,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.3329,
         "peak_over_source_bytes": 2.0
       },
       "own_n8_largest": {
         "peak_bytes": 27420759618,
         "makespan_ns": 78122425657,
-        "max_live_files": 1268,
         "ratio_to_native_peak": 1.3329,
         "peak_over_source_bytes": 2.0
       }

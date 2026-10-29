@@ -170,7 +170,7 @@ def simulate(events: list[dict], workers: int, policy: str, variant: str) -> dic
             peak = max(peak, live)
             if variant in ("own", "c") or event["parent_id"] is None:
                 live -= event["input_spool_bytes"]
-                if variant == "c" and event["input_spool_bytes"]:
+                if variant in ("own", "c") and event["input_spool_bytes"]:
                     files -= 1
             if variant not in ("own", "c") and event["parent_id"] is None and event["input_spool_bytes"]:
                 files -= 1

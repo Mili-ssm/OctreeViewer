@@ -30,6 +30,8 @@ class ModelTests(unittest.TestCase):
                          {"a": 278, "b": 195, "c": 195, "own": 195})
         # Live files: a = three arenas; b = retained + two arenas; c = retained + two spools.
         self.assertEqual([runs[v]["max_live_files"] for v in "abc"], [3, 3, 3])
+        # own = c without the retained arena; it frees consumed spools too (the count was cumulative).
+        self.assertEqual(runs["own"]["max_live_files"], runs["c"]["max_live_files"] - 1)
         # r: the one branch (X and Y spools, 180 B) is freed only when Y ends, after the LOD of Y.
         branch = model.simulate(CHAIN, 4, "fifo", "r")
         self.assertEqual((branch["peak_bytes"], branch["max_live_files"]), (278, 2))
