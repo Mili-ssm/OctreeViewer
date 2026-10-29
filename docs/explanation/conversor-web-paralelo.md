@@ -88,7 +88,7 @@ flowchart LR
 
 | Trait | Responsabilidad | Nativo | Navegador |
 | --- | --- | --- | --- |
-| `SpoolStore` | Spools por identificador lógico dentro de la arena de un trabajo (abajo) | Ficheros en el directorio de trabajo | `ArrayBuffer` de JS; volcado a la arena OPFS del trabajo |
+| `SpoolStore` | Un fichero por spool: crear, añadir, leer y borrar (decisión del 29-10-2026, abajo) | Ficheros en el directorio de trabajo | `ArrayBuffer` de JS; volcado a un fichero OPFS propio por spool |
 | `PointSource` | Leer puntos por rango de chunks LAZ (o rango de registros LAS), con offset global de punto para errores | `las::Reader` con `laz-parallel` | Decodificador secuencial que empieza en el offset de bytes del chunk (sin `Reader::seek` en chunks variables) |
 | `Clock` | Tiempos de diagnóstico | `Instant` | `performance.now()` |
 | Trabajos | Entradas/salidas serializables de cada fase | Ejecutados por hilos/rayon | Mensajes a workers, búferes transferibles |
@@ -99,7 +99,7 @@ decidiéndose solo allí.
 
 ### Spools por arenas de trabajo
 
-> **Decisión del propietario (29-10-2026), tras el [spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md):** las arenas de solo añadido por subárbol alcanzan 1,9–6,5× el pico nativo de disco. La etapa 2 usa **trabajos por nodo**: cada trabajo lee la entrada de un nodo y escribe sus hijos en una arena nueva; el host borra la arena del padre cuando todos sus hijos la han consumido. El modelo de pico de este diseño se mide antes de M1.
+> **Decisión del propietario (29-10-2026), tras el [modelo por nodos de la Tarea 1](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md):** la etapa 2 usa trabajos por nodo y la Tarea 4 sigue con la **variante c**: cada spool de hijo es su propio fichero OPFS, liberado cuando termina el trabajo que lo consume; los extents de LOD y de hojas se retienen hasta la fase de bloques. Antes, un spike (**S9**) mide ~650 ficheros OPFS vivos y handles síncronos concurrentes en Chrome y Firefox con Playwright. Esto sustituye la decisión de arenas por nodo del mismo día; las arenas por trabajo se midieron en 1,9–7,2 × el pico nativo en la Tarea 1 y se descartaron.
 
 Cada trabajo síncrono recibe del host, ya abierta, una **arena**: un fichero OPFS de solo añadido
 con su handle síncrono (en el navegador) o un directorio (en nativo). Todos los spools que el trabajo
@@ -140,8 +140,9 @@ antes de M1 y los traits de M1 lo expresan desde el principio.
   muchos pequeños (16 × 500 MB) añaden arranque, copias del plan e instancias sin ganar CPU más allá
   de los núcleos, y el escritor único y la contención OPFS limitan la escala (Amdahl). Lo decide S7.
 - **OPFS**: niveles altos de spool y la pareja de salida (~7,5 GB) pasan por OPFS. El pico nativo
-  de Majadas no se midió con exactitud (se observaron ~26 GB, REAL_DATASET_BENCH); el pico web sale
-  del modelo de arenas de S1 y se mide en M6. La entrada sigue siendo un `File`, sin copiar.
+  de Majadas ya está medido ([M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) y
+  [modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md)); el pico web sale
+  del modelo de la Tarea 1 (variante c) y se mide en M6. La entrada sigue siendo un `File`, sin copiar.
 
 ## Errores
 
@@ -200,6 +201,7 @@ Sus resultados pueden cambiar umbrales y granularidad, nunca R1.
 | S5 | Cuota real, `persist()`, OPFS y `getFile()` tras cerrar el handle, en `http.server` y `file://`, Chrome y Firefox, a 30 GB | M3b |
 | S7 | Dimensionado: tiempo total, PSS y OPFS para N = 2, 4, 8, 12, 16 con el mismo `ram_budget` (4 y 8 GB) y reparto entre memoria wasm y spools en RAM; Belvedere en Chrome y Firefox | Cierre de M4 |
 | S8 | Cuota OPFS real con `persist()` en perfiles reales de Chrome y Firefox, y si cabe Majadas (≈ 19 GiB de spools vivos más la pareja de salida); decisión del propietario, 29-10-2026 | M6 |
+| S9 | Ficheros OPFS por spool: ~650 ficheros vivos y handles síncronos concurrentes (N = 4 y 8) en Chrome y Firefox, latencias y rendimiento frente a la arena única de S1; decisión del propietario, 29-10-2026 | M1 (paso 3 de la etapa 2) |
 
 ## Riesgos
 

@@ -3,6 +3,8 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
+**Estado (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 4 espera a la Tarea 5 desde su paso 3.
+
 **Objetivo:** cerrar las tres incógnitas que dejó la etapa 1 (pico de los trabajos por nodo, S0
 con bloques reales, cuota real) y llegar a M1: el pipeline nativo expresado con traits y trabajos
 por nodo dentro de `viewer_convert`, con los mismos bytes y sin regresión.
@@ -52,11 +54,11 @@ Playwright para los navegadores.
 **Interfaces:**
 - Produce: un registro de eventos por nodo en el orden real de ejecución nativa, con `node_id`, `parent_id`, `depth`, `input_spool_bytes`, `child_spool_bytes: Vec<u64>` (por hijo) y el instante relativo de inicio y fin del nodo (secuencia, no reloj). Solo se emite con `collect_spool_diagnostics`; no cambia bytes de salida.
 
-- [ ] **Paso 1: test del registro** — con la fixture de 4 000 puntos y divisiones 4: la suma de `child_spool_bytes` de todos los eventos es igual a `child_spool_bytes_written` de los diagnósticos actuales, y cada `parent_id` aparece antes como `node_id`.
-- [ ] **Paso 2: implementar el registro** junto a los contadores de la etapa 1 (`SpoolLedger`, `spatial.rs:616`; `build_root_from_las` `:803`, `build_node` `:977`, `process_child_tasks` `:1158`). Comprobar los SHA de LAS pequeño y Belvedere contra M0.
-- [ ] **Paso 3: simulación** — reproducir los eventos con N trabajos concurrentes (N = 4 y 8, reparto en el orden de los eventos): cada trabajo de nodo crea una arena con todos sus hijos; la arena del padre se borra cuando el último hijo termina su trabajo; las arenas hoja viven hasta la fase de bloques. Pico = máximo de la suma de arenas vivas. Ejecutar con Belvedere (divisiones 2 y 8) y Majadas (divisiones 2).
-- [ ] **Paso 4: registro** — tabla pico modelado frente a `peak_live_spool_bytes` nativo de la misma ejecución, con la fórmula y supuestos. Criterio de parada (spec): > 1,5 × → volver al propietario antes de la Tarea 4.
-- [ ] **Paso 5: commits** — `feat(convert): log per-node spool events for arena modelling` y `docs(bench): record per-node job arena model`.
+- [x] **Paso 1: test del registro** — con la fixture de 4 000 puntos y divisiones 4: la suma de `child_spool_bytes` de todos los eventos es igual a `child_spool_bytes_written` de los diagnósticos actuales, y cada `parent_id` aparece antes como `node_id`.
+- [x] **Paso 2: implementar el registro** junto a los contadores de la etapa 1 (`SpoolLedger`, `spatial.rs:616`; `build_root_from_las` `:803`, `build_node` `:977`, `process_child_tasks` `:1158`). Comprobar los SHA de LAS pequeño y Belvedere contra M0.
+- [x] **Paso 3: simulación** — reproducir los eventos con N trabajos concurrentes (N = 4 y 8, reparto en el orden de los eventos): cada trabajo de nodo crea una arena con todos sus hijos; la arena del padre se borra cuando el último hijo termina su trabajo; las arenas hoja viven hasta la fase de bloques. Pico = máximo de la suma de arenas vivas. Ejecutar con Belvedere (divisiones 2 y 8) y Majadas (divisiones 2).
+- [x] **Paso 4: registro** — tabla pico modelado frente a `peak_live_spool_bytes` nativo de la misma ejecución, con la fórmula y supuestos. Criterio de parada (spec): > 1,5 × → volver al propietario antes de la Tarea 4.
+- [x] **Paso 5: commits** — `feat(convert): log per-node spool events for arena modelling` y `docs(bench): record per-node job arena model`.
 
 ---
 
@@ -70,10 +72,10 @@ Playwright para los navegadores.
 - Consume: `parity_digest()` y `format_parity_digest()` de la etapa 1 (`lib.rs:178`, `:193`).
 - Produce: `pub fn parity_digest_of_blocks(serialized: &[u8]) -> u64`; exportaciones wasm `format_parity_alloc(len: usize) -> *mut u8` y `format_parity_digest_blocks(ptr: *const u8, len: usize) -> u64`; `run-wasm.mjs` acepta una ruta opcional y copia el fichero en la memoria wasm.
 
-- [ ] **Paso 1:** volcar 4 bloques de Belvedere (`data/datasets/belv_2009_digital-aerial_pcd_copc.laz`, opciones por defecto del CLI) y comprobar que el digest nativo de esos bloques es estable entre dos ejecuciones.
-- [ ] **Paso 2:** digest wasm32 del mismo fichero bajo node → igual al nativo.
-- [ ] **Paso 3:** paso opcional en `scripts/check.sh` («format parity real blocks»), que se omite con un aviso si no existe el fichero de Belvedere, igual que `FUZZ_CHECK` (`check.sh:39-42`); el paso sintético existente no cambia.
-- [ ] **Paso 4: commit** — `test(format): check native/wasm32 parity on real Belvedere blocks`. Cierra el criterio S0 de la spec.
+- [x] **Paso 1:** volcar 4 bloques de Belvedere (`data/datasets/belv_2009_digital-aerial_pcd_copc.laz`, opciones por defecto del CLI) y comprobar que el digest nativo de esos bloques es estable entre dos ejecuciones.
+- [x] **Paso 2:** digest wasm32 del mismo fichero bajo node → igual al nativo.
+- [x] **Paso 3:** paso opcional en `scripts/check.sh` («format parity real blocks»), que se omite con un aviso si no existe el fichero de Belvedere, igual que `FUZZ_CHECK` (`check.sh:39-42`); el paso sintético existente no cambia.
+- [x] **Paso 4: commit** — `test(format): check native/wasm32 parity on real Belvedere blocks`. Cierra el criterio S0 de la spec.
 
 ---
 
@@ -82,30 +84,52 @@ Playwright para los navegadores.
 **Archivos:**
 - Crear: `docs/records/benchmarks/data/opfs-quota-<aaaa-mm-dd>.{html,js,jsonl}` y `docs/records/benchmarks/OPFS_QUOTA_<aaaa-mm-dd>.md`
 
-- [ ] **Paso 1:** página que llama a `navigator.storage.persisted()`, `persist()` y `estimate()` y escribe en OPFS hasta `QuotaExceededError` (bloques de 1 MiB, borrando al terminar), registrando la cuota declarada, los bytes escritos al fallar y el resultado de `persist()`.
-- [ ] **Paso 2:** ejecutar en Chrome y en el Firefox del sistema (158), con perfil nuevo persistente y con `persist()` concedido y denegado, por `http.server` y por `file://` (en Chrome `file://` se espera `SecurityError`, ya registrado en S1). Si conceder `persist()` exige un diálogo que Playwright no maneja, documentar el paso manual y repetirlo a mano.
-- [ ] **Paso 3: registro** — tabla por navegador × modo × `persist()`; conclusión explícita: ¿cabe Majadas (≈ 19 GiB de spools vivos, según el modelo de la Tarea 1, más ~7,5 GB de salida)? Si no cabe en ningún perfil, volver al propietario antes de M6.
-- [ ] **Paso 4: commit** — `docs(bench): record real OPFS quota per browser`.
+- [x] **Paso 1:** página que llama a `navigator.storage.persisted()`, `persist()` y `estimate()` y escribe en OPFS hasta `QuotaExceededError` (bloques de 1 MiB, borrando al terminar), registrando la cuota declarada, los bytes escritos al fallar y el resultado de `persist()`.
+- [x] **Paso 2:** ejecutar en Chrome y en el Firefox del sistema (158), con perfil nuevo persistente y con `persist()` concedido y denegado, por `http.server` y por `file://` (en Chrome `file://` se espera `SecurityError`, ya registrado en S1). Si conceder `persist()` exige un diálogo que Playwright no maneja, documentar el paso manual y repetirlo a mano.
+- [x] **Paso 3: registro** — tabla por navegador × modo × `persist()`; conclusión explícita: ¿cabe Majadas (≈ 19 GiB de spools vivos, según la spec, más ~7,5 GB de salida)? Si no cabe en ningún perfil, volver al propietario antes de M6.
+- [x] **Paso 4: commit** — `docs(bench): record real OPFS quota per browser`.
+
+---
+
+### Tarea 5: spike S9 — ficheros OPFS por spool
+
+Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este spike comprueba que el navegador aguanta ~650 ficheros OPFS vivos y handles síncronos concurrentes.
+
+**Archivos:**
+- Crear: `docs/records/benchmarks/OPFS_SPOOL_FILES_<aaaa-mm-dd>.md` y `docs/records/benchmarks/data/opfs-spool-files-<aaaa-mm-dd>.{html,js,jsonl}`, más un driver de Playwright (reutilizar el patrón del driver de la Tarea 3; perfiles bajo `target/` en `/home`, nunca en `/tmp`; limpieza en `finally`).
+
+- [ ] **Paso 1:** página en la que N = 4 y 8 workers `Blob` crean cada uno los ficheros hijos de su trabajo (8 por trabajo con divisiones 2; hasta 81 en la raíz con divisiones 8) con `createSyncAccessHandle` abiertos a la vez, añaden en bloques de 32 KiB y de 1 MiB, cierran, y el host borra cada fichero en cuanto termina su consumidor. Hasta 700 ficheros vivos a la vez. Total de bytes ≤ 8 GiB por ejecución.
+- [ ] **Paso 2:** medir en Chrome y en Firefox de Playwright por http (y Firefox `file://`): ficheros vivos y handles abiertos simultáneos alcanzados, errores (`NoModificationAllowedError`, límites), latencia de `createSyncAccessHandle`, `flush` y `removeEntry` (p50/p95/máx) y rendimiento de escritura frente a la arena única de S1 de la misma sesión (volver a ejecutar la página de S1 como comparación; no copiar sus cifras).
+- [ ] **Paso 3: registro** — tabla por navegador × N; una ejecución por celda es aceptable si se declara.
+- [ ] **Criterio de parada:** si algún navegador falla por debajo de 700 ficheros vivos o de 8 × 81 handles abiertos, o el rendimiento cae más de 2 × frente a la arena única, volver al propietario antes del paso 3 de la Tarea 4.
+- [ ] **Paso 4: commit** — `docs(bench): record OPFS per-spool file spike`.
 
 ---
 
 ### Tarea 4: M1 — traits y trabajos por nodo dentro de `viewer_convert`
 
-Empieza solo si la Tarea 1 no activa su criterio de parada.
+Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 espera a la Tarea 5. La Tarea 1 activó su criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (29-10-2026).
 
 **Archivos:**
 - Modificar: `crates/viewer_convert/src/spatial.rs`, `crates/viewer_convert/src/las_source.rs`, `crates/viewer_convert/src/lib.rs`
 - Crear: `crates/viewer_convert/src/pipeline/` con `spool_store.rs`, `point_source.rs`, `clock.rs`, `node_job.rs`
 
 **Interfaces** (los nombres son los de la spec; las firmas exactas las fija el paso 1 y se anotan aquí antes de implementar):
-- `SpoolStore`: crear una arena por trabajo, añadir extensiones de spool, leer un spool lógico (lista de extensiones), liberar una arena; implementación nativa sobre ficheros con los mismos bytes que hoy.
+- `SpoolStore`: un fichero por spool: crear, añadir, leer y borrar, con semántica cercana a la nativa; implementación nativa sobre ficheros con los mismos bytes que hoy. Los extents de LOD y de hojas se retienen hasta la fase de bloques.
 - `PointSource`: leer puntos por rango de chunks LAZ o de registros LAS, con offset global de punto; sin `Reader::seek` en chunks variables (spec, bloqueos comprobados).
 - `Clock`: `Instant` en nativo.
+- Enmiendas del pre-mortem del 29-10-2026 que aplican a esta tarea:
+  - A6: dividir el paso 4 en 4a (NodeJob en preorden serial + SHA de M0, incluidos Belvedere divisiones 8 y autzen, invariantes estructurales, barrido de `planner_budget` igual a la base) y 4b (cola de listos concurrente tras una opción, conservando la ruta antigua hasta que R7 pase).
+  - A7: fijar en el paso 1 el contrato de presupuesto/estimación.
+  - A8: errores deterministas (gana el nodo o rango de menor preorden; índice global en `PointCountMismatch`/`LasDecoderPanicked`).
+  - A9: el `PointSource` de M1 es el Reader actual sobre el rango completo más rangos de registros LAS; los rangos por offset de chunk LAZ pasan a M2 tras un spike tipo S2.
+  - A10: sin `PathBuf`/`File`/`Instant`/tipos de hilo en la E/S de los trabajos; un `SpoolStore` en memoria que imponga la semántica, con su pico comprobado frente al modelo de la Tarea 1 (variante c).
+  - A11: R7 solo en máquina en reposo, 7–10 pares A/B, registrando `/proc/pressure`, el governor y el perfil de energía.
 - `NodeJob`: entrada = nodo e identificador de spool de entrada; salida = hijos (identificadores de spool, recuentos y acumuladores LOD) y bloques planificados; el planificador nativo ejecuta trabajos con `std::thread::scope` y fusiona en preorden como `append_branch`.
 
 - [ ] **Paso 1: diseño de firmas** — un arquitecto (Opus) fija firmas y el flujo de trabajos por nodo a partir de `spatial.rs` (`build_node` `:977`, `process_child_tasks` `:1158`) y lo anota en este documento; revisión antes de seguir.
 - [ ] **Paso 2: `Clock` y `PointSource`** sin cambio de bytes; tests existentes y SHA M0.
-- [ ] **Paso 3: `SpoolStore` nativo** con arenas por trabajo; SHA M0.
+- [ ] **Paso 3: `SpoolStore` nativo** con un fichero por spool (tras la Tarea 5); SHA M0.
 - [ ] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5.
 - [ ] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción.
 - [ ] **Paso 6: commits** por paso, convencionales.
@@ -114,7 +138,7 @@ Empieza solo si la Tarea 1 no activa su criterio de parada.
 
 ## Después de la etapa 2
 
-Se planifican con los resultados de las Tareas 1–4, en este orden (spec, «Hitos»):
+Se planifican con los resultados de las Tareas 1–5, en este orden (spec, «Hitos»):
 
 | Hito | Contenido | Depende de |
 | --- | --- | --- |
