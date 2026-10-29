@@ -22,11 +22,12 @@ use viewer_format::{FormatMetadata, SourcePointBlock};
 use super::{ConvertError, ConvertOptions};
 use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::las_source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
+use crate::options::SpatialScheduler;
 use crate::pipeline::{
     clock::{Clock, SystemClock},
     node_job::{
-        BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodePath, lod_blocks,
-        run_node_job, run_root_partition, spool_source, write_lod,
+        BlockPlan, ChildOutput, JobContext, JobMetrics, JobProgress, NodeJob, NodeJobOutput,
+        NodePath, lod_blocks, run_node_job, run_root_partition, spool_source, write_lod,
     },
     point_source::LasPointSource,
     spool_store::{PlanStore, SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
@@ -41,6 +42,8 @@ const PLANNED_NODE_BYTES: u64 = 256;
 const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;
 const HEADER_BOUNDS_RELATIVE_TOLERANCE: f64 = 1.0e-7;
 const HEADER_BOUNDS_MAX_TOLERANCE: f64 = 0.5;
+
+mod ready_queue;
 
 /// All temporary files for a source share these attributes and transforms.
 /// Source coordinates stay on the exact LAS integer grid; generated LOD centers use f64.
@@ -417,12 +420,53 @@ fn build_spatial_plan_inner<S: PlanStore>(
         estimate_memory(point_limit, 0, 0, options.spatial_divisions())?,
         options.max_memory_budget_bytes(),
     )?;
-    let root_bounds = cube_bounds(source.bounds);
     // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O.
     let spool_ids = AtomicU64::new(1);
+    let keep_source = matches!(input, SpatialInput::Spool);
+    let result = plan_spatial(
+        source,
+        options,
+        store,
+        input,
+        on_progress,
+        collect_spool_diagnostics,
+        source_spool_bytes_written,
+        point_limit,
+        &spool_ids,
+    );
+    if result.is_err() {
+        discard_spools(store, spool_ids.load(Ordering::Relaxed), keep_source);
+    }
+    result
+}
+
+/// Deletes every spool a failed plan may have left (open ones are closed first), so a store
+/// without a workspace directory (`MemSpoolStore`, the web) holds none after an error. Ids that
+/// were never created or are already deleted are rejected by the store and skipped. A checkpoint
+/// `SOURCE` belongs to the caller and is kept.
+fn discard_spools(store: &impl SpoolStore, next_id: u64, keep_source: bool) {
+    for id in (u64::from(keep_source)..next_id).map(SpoolId) {
+        let _ = store.close(id);
+        let _ = store.delete(id);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_spatial<S: PlanStore>(
+    source: &SourceInfo,
+    options: ConvertOptions,
+    store: &S,
+    input: SpatialInput<'_>,
+    on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
+    collect_spool_diagnostics: bool,
+    source_spool_bytes_written: u64,
+    point_limit: u64,
+    spool_ids: &AtomicU64,
+) -> Result<SpatialPlan, ConvertError> {
+    let root_bounds = cube_bounds(source.bounds);
     let mut builder = SpatialBuilder {
         store,
-        spool_ids: &spool_ids,
+        spool_ids,
         point_limit,
         memory_budget: options.max_memory_budget_bytes(),
         spatial_divisions: options.spatial_divisions(),
@@ -435,6 +479,7 @@ fn build_spatial_plan_inner<S: PlanStore>(
         source_point_count: source.point_count,
         parallel_workers: options.spatial_workers(),
         workers_used: 1,
+        scheduler: options.spatial_scheduler(),
         spool_diagnostics: collect_spool_diagnostics.then(|| SpatialSpoolDiagnostics {
             source_payload_written_bytes: source_spool_bytes_written,
             ..SpatialSpoolDiagnostics::default()
@@ -643,6 +688,8 @@ struct SpatialBuilder<'a, S: PlanStore> {
     source_point_count: u64,
     parallel_workers: usize,
     workers_used: usize,
+    /// How the root-child batches run; branch builders never batch, so they keep `Recursive`.
+    scheduler: SpatialScheduler,
     spool_diagnostics: Option<SpatialSpoolDiagnostics>,
     spatial_phases: Option<SpatialPhaseDiagnostics>,
     /// Bytes this builder (not its siblings) has written, for per-root-child accounting.
@@ -968,13 +1015,31 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         let id = NodeId::new(self.node_records.len() as u64);
         let ctx = self.job_context();
         let store = self.store;
-        let mut output = run_node_job(&ctx, &job, store, &SystemClock, &mut |progress| {
+        let output = run_node_job(&ctx, &job, store, &SystemClock, &mut |progress| {
             self.emit_job_progress(progress)
         })?;
-        debug_assert_eq!(output.path, job.path);
         for spool in &output.release {
             store.delete(*spool)?;
         }
+        let children = self.commit_job(&job, output, parent, open)?;
+        debug_assert_eq!(id, NodeId::new(self.node_records.len() as u64 - 1));
+        if !children.is_empty() {
+            self.process_child_tasks(&job.path, id, job.level, children)?;
+        }
+        Ok(id)
+    }
+
+    /// Commits a finished job whose `release` was already deleted: metrics, event flags, block
+    /// ids and the node record. Returns its children (empty for a leaf), not yet planned.
+    fn commit_job(
+        &mut self,
+        job: &NodeJob,
+        mut output: NodeJobOutput,
+        parent: Option<NodeId>,
+        open: &mut Option<OpenNodeEvent>,
+    ) -> Result<Vec<ChildOutput>, ConvertError> {
+        debug_assert_eq!(output.path, job.path);
+        let id = NodeId::new(self.node_records.len() as u64);
         self.record_job_metrics(output.metrics.as_ref(), job.input_is_child_spool, open)?;
         let is_leaf = output.is_leaf();
         if let Some(open) = open.as_mut() {
@@ -997,14 +1062,10 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             },
             output.blocks,
         )?;
-        if is_leaf {
-            return Ok(id);
-        }
-        if let Some(open) = open.as_mut() {
+        if !is_leaf && let Some(open) = open.as_mut() {
             open.event.elapsed_ns = elapsed_ns(open.started);
         }
-        self.process_child_tasks(&job.path, id, job.level, children)?;
-        Ok(id)
+        Ok(children)
     }
 
     /// Adds a job's diagnostics to the builder and to the node event.
@@ -1129,6 +1190,13 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 self.spatial_divisions,
             )?;
             self.workers_used = self.workers_used.max(batch_count);
+            if self.scheduler == SpatialScheduler::ReadyQueue {
+                let outputs = self.plan_batch_ready_queue(batch, worker_memory_budget)?;
+                for (_, mut branch) in outputs {
+                    self.append_branch(parent_id, &mut branch)?;
+                }
+                continue;
+            }
 
             let cancelled = Arc::new(AtomicBool::new(false));
             let (sender, receiver) = mpsc::sync_channel::<BranchMessage>(batch_count * 4);
@@ -1170,6 +1238,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                                 source_point_count,
                                 parallel_workers: 1,
                                 workers_used: 1,
+                                scheduler: SpatialScheduler::Recursive,
                                 spool_diagnostics: collect_spool_diagnostics
                                     .then(SpatialSpoolDiagnostics::default),
                                 spatial_phases: collect_spool_diagnostics
@@ -1259,6 +1328,48 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
             }
         }
         Ok(())
+    }
+
+    /// Runs `f` on a branch-local builder (as a root-child thread has) that holds `branch` and
+    /// reports to this builder's progress callback, then stores the builder back into `branch`.
+    fn with_branch<R>(
+        &mut self,
+        branch: &mut BranchOutput,
+        memory_budget: u64,
+        f: impl FnOnce(&mut SpatialBuilder<'_, S>) -> R,
+    ) -> R {
+        let mut builder = SpatialBuilder {
+            store: self.store,
+            spool_ids: self.spool_ids,
+            point_limit: self.point_limit,
+            memory_budget,
+            spatial_divisions: self.spatial_divisions,
+            frame: self.frame,
+            layout: self.layout,
+            node_records: std::mem::take(&mut branch.node_records),
+            output_blocks: std::mem::take(&mut branch.output_blocks),
+            next_block_id: branch.next_block_id,
+            on_progress: &mut *self.on_progress,
+            source_point_count: self.source_point_count,
+            parallel_workers: 1,
+            workers_used: 1,
+            scheduler: SpatialScheduler::Recursive,
+            spool_diagnostics: branch.spool_diagnostics.take(),
+            spatial_phases: branch.spatial_phases.take(),
+            spool_written_local: branch.spool_written_local,
+            node_events: std::mem::take(&mut branch.node_events),
+        };
+        let result = f(&mut builder);
+        *branch = BranchOutput {
+            node_records: builder.node_records,
+            output_blocks: builder.output_blocks,
+            next_block_id: builder.next_block_id,
+            spool_diagnostics: builder.spool_diagnostics,
+            spatial_phases: builder.spatial_phases,
+            spool_written_local: builder.spool_written_local,
+            node_events: builder.node_events,
+        };
+        result
     }
 
     fn append_branch(

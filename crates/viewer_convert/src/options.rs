@@ -19,6 +19,18 @@ pub(crate) fn default_spatial_workers() -> usize {
         .map_or(1, |workers| workers.get().min(DEFAULT_SPATIAL_WORKERS))
 }
 
+/// How the LAS/LAZ spatial planner runs the node jobs under the root children. Both give the
+/// same output bytes; only scheduling and timing differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpatialScheduler {
+    /// Each root child of a batch is one thread that plans its subtree serially (default).
+    #[default]
+    Recursive,
+    /// Up to `min(workers, root children)` threads take the ready node job with the lowest
+    /// preorder path under the batch being committed (experimental until it is measured).
+    ReadyQueue,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConvertOptions {
     pub(crate) points_per_block: u64,
@@ -28,6 +40,7 @@ pub struct ConvertOptions {
     pub(crate) spatial_workers_explicit: bool,
     pub(crate) pipelined_writes: bool,
     pub(crate) spatial_divisions: u8,
+    pub(crate) spatial_scheduler: SpatialScheduler,
     pub(crate) format_version: FormatVersion,
 }
 
@@ -74,6 +87,7 @@ impl ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
+            spatial_scheduler: SpatialScheduler::Recursive,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         })
     }
@@ -129,6 +143,16 @@ impl ConvertOptions {
     pub const fn spatial_divisions(self) -> u8 {
         self.spatial_divisions
     }
+
+    /// Selects the spatial planner scheduler; the output bytes do not depend on it.
+    pub const fn with_spatial_scheduler(mut self, scheduler: SpatialScheduler) -> Self {
+        self.spatial_scheduler = scheduler;
+        self
+    }
+
+    pub const fn spatial_scheduler(self) -> SpatialScheduler {
+        self.spatial_scheduler
+    }
 }
 
 impl Default for ConvertOptions {
@@ -141,6 +165,7 @@ impl Default for ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
+            spatial_scheduler: SpatialScheduler::Recursive,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         }
     }

@@ -12,8 +12,8 @@ use std::{
 };
 
 use viewer_convert::{
-    ConversionDiagnostics, ConversionProgress, ConvertOptions, convert_file_with_diagnostics,
-    convert_file_with_progress,
+    ConversionDiagnostics, ConversionProgress, ConvertOptions, SpatialScheduler,
+    convert_file_with_diagnostics, convert_file_with_progress,
 };
 use viewer_core::{DatasetSource, Point};
 use viewer_format::{
@@ -28,7 +28,7 @@ use conversion_metrics::ConversionMetrics;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     match arguments.first().and_then(|value| value.to_str()) {
-        Some(command @ ("convert" | "convert-profile")) if (3..=7).contains(&arguments.len()) => {
+        Some(command @ ("convert" | "convert-profile")) if (3..=8).contains(&arguments.len()) => {
             let workers = arguments
                 .get(3)
                 .map(|value| value.to_string_lossy().parse())
@@ -53,6 +53,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .transpose()?
                 .unwrap_or(viewer_format::FormatVersion::V5);
+            let scheduler = match arguments.get(7).map(|value| value.to_string_lossy()) {
+                None => SpatialScheduler::Recursive,
+                Some(value) if value == "recursive" => SpatialScheduler::Recursive,
+                Some(value) if value == "ready-queue" => SpatialScheduler::ReadyQueue,
+                Some(value) => return Err(format!("unknown spatial scheduler {value}").into()),
+            };
             convert(
                 Path::new(&arguments[1]),
                 Path::new(&arguments[2]),
@@ -60,6 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 divisions,
                 points_per_block,
                 format_version,
+                scheduler,
                 command == "convert-profile",
             )
         }
@@ -126,19 +133,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION]]]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
+                "Usage:\n  cargo run --release -p viewer_convert --example real_dataset_bench -- convert INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION [recursive|ready-queue]]]]]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-geometry INPUT.oct [SOURCE.laz]\n  cargo run --release -p viewer_convert --example real_dataset_bench -- read-attribute INPUT.oct SCHEMA_INDEX [SOURCE.laz]"
             );
             eprintln!(
                 "  real_dataset_bench read-random INPUT.oct SEED all|geometry|attribute [SCHEMA_INDEX]\n  real_dataset_bench read-sample INPUT.oct SEED COUNT all|geometry|attribute [SCHEMA_INDEX]"
             );
             eprintln!(
-                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION]]]] (Linux process I/O)"
+                "  real_dataset_bench convert-profile INPUT.laz OUTPUT.oct [SPATIAL_WORKERS [SPATIAL_DIVISIONS [POINTS_PER_BLOCK [FORMAT_VERSION [recursive|ready-queue]]]]] (Linux process I/O)"
             );
             Err("invalid arguments".into())
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn convert(
     input: &Path,
     output: &Path,
@@ -146,6 +154,7 @@ fn convert(
     divisions: u8,
     points_per_block: u64,
     format_version: viewer_format::FormatVersion,
+    scheduler: SpatialScheduler,
     process_io: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input_bytes = fs::metadata(input)?.len();
@@ -158,7 +167,8 @@ fn convert(
     )?
     .with_format_version(format_version)?
     .with_spatial_workers(workers)?
-    .with_spatial_divisions(divisions)?;
+    .with_spatial_divisions(divisions)?
+    .with_spatial_scheduler(scheduler);
     let mut on_progress = |progress: ConversionProgress| {
         if let Err(error) = metrics.observe(progress.stage) {
             metrics_error = Some(error);

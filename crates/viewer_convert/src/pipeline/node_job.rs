@@ -149,6 +149,8 @@ pub(crate) fn run_node_job<S: SpoolStore, C: Clock>(
     if !ctx.splits(job.point_count, job.level, job.bounds) {
         return leaf_output(ctx, job, Vec::new(), metrics);
     }
+    // A leaf job gets `SOURCE` as a placeholder; a splitting one must have reserved ids.
+    debug_assert_ne!(job.first_output, SpoolId::SOURCE, "{:?}", job.path);
 
     let child_count = ctx.child_count();
     let mut children = (0..child_count)
@@ -277,6 +279,14 @@ pub(crate) fn run_root_partition<P: PointSource, S: SpoolStore, C: Clock>(
     clock: &C,
     progress: &mut impl FnMut(JobProgress) -> Result<(), ConvertError>,
 ) -> Result<RootPartition, ConvertError> {
+    debug_assert_ne!(first_output, SpoolId::SOURCE);
+    // M1 reads the whole source as one range (A9); `processed` below is a global index.
+    let range = source.range();
+    assert_eq!(
+        (range.start, range.end),
+        (0, info.point_count),
+        "the root partition reads the full source range"
+    );
     let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
     let mut children = (0..ctx.child_count())
         .map(|_| None)
