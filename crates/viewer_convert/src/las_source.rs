@@ -116,6 +116,44 @@ fn check_laz_chunk_table(file: &mut File, layout: LazChunkTableLayout) -> Result
     }
 }
 
+/// Plans an LAS/LAZ conversion and reads, without encoding or writing any output, the
+/// `leaf_count` largest source-point blocks (largest first) followed by the first `lod_count`
+/// LOD blocks. The planning workspace is created next to `workspace_anchor` and removed on return.
+pub(crate) fn plan_sample_blocks(
+    input_path: &Path,
+    workspace_anchor: &Path,
+    options: ConvertOptions,
+    leaf_count: usize,
+    lod_count: usize,
+) -> Result<Vec<viewer_format::SourcePointBlock>, ConvertError> {
+    let mut reader = open_las_reader(input_path)?;
+    let source = inspect_source(&reader)?;
+    let workspace = Workspace::create(workspace_anchor)?;
+    let spatial = build_spatial_plan_from_reader(
+        &mut reader,
+        input_path,
+        &source,
+        options,
+        &workspace,
+        &mut |_| true,
+        false,
+    )?;
+    let plan = ConversionPlan::from_spatial(spatial, source.frame);
+    let mut leaves = plan
+        .blocks
+        .iter()
+        .filter(|block| block.is_source_points)
+        .collect::<Vec<_>>();
+    leaves.sort_by_key(|block| std::cmp::Reverse(block.point_count()));
+    let lods = plan.blocks.iter().filter(|block| !block.is_source_points);
+    leaves
+        .into_iter()
+        .take(leaf_count)
+        .chain(lods.take(lod_count))
+        .map(|block| block.read(plan.frame))
+        .collect()
+}
+
 pub(crate) fn convert_file_inner(
     input_path: &Path,
     output_path: &Path,

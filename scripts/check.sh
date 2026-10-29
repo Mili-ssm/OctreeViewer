@@ -29,6 +29,17 @@ step "clippy wasm32" cargo clippy -p viewer_wasm --target wasm32-unknown-unknown
 # Each command must succeed on its own and the digest must be non-empty: inside test "$(a)" = "$(b)"
 # a failure of both sides would compare "" = "" and pass.
 step "format parity wasm32" bash -c 'set -euo pipefail; cargo build -q --release -p format_parity --target wasm32-unknown-unknown --lib $0 && n=$(cargo run -q --release -p format_parity --bin native_digest $0) && w=$(node tools/format_parity/run-wasm.mjs) && [ -n "$n" ] && [ "$n" = "$w" ]' "$CARGO_MODE"
+# Optional: needs the git-ignored Belvedere dataset (override the path with FORMAT_PARITY_REAL_INPUT).
+# Dumps 3 large leaf blocks + 1 LOD block (pre-mortem of 29-10-2026: the first planned blocks are
+# too small to reach lz4_flex's 64 KiB large-hash-table path) and compares native vs wasm32.
+real_input="${FORMAT_PARITY_REAL_INPUT:-data/datasets/belv_2009_digital-aerial_pcd_copc.laz}"
+if [ -f "$real_input" ]; then
+  step "format parity real blocks" bash -c 'set -euo pipefail; dump=target/format_parity/belvedere.blocks; cargo build -q --release -p format_parity --target wasm32-unknown-unknown --lib $0 && cargo run -q --release -p format_parity --bin dump_blocks $0 -- "$1" "$dump" && n=$(cargo run -q --release -p format_parity --bin native_digest $0 -- "$dump") && w=$(node tools/format_parity/run-wasm.mjs "$dump") && [ -n "$n" ] && [ "$n" = "$w" ]' "$CARGO_MODE" "$real_input"
+else
+  echo
+  echo "=== format parity real blocks: skipped ($real_input not found) ==="
+  steps+=("skip format parity real blocks (no dataset)")
+fi
 step "cargo doc" cargo doc --workspace --no-deps $CARGO_MODE
 step "node tests" node --test examples/web-host/tests/*.test.mjs
 step "python web-host tests" python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'

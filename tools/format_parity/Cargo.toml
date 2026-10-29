@@ -10,3 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 viewer_core = { path = "../../crates/viewer_core" }
 viewer_format = { path = "../../crates/viewer_format" }
+
+# Only the block dumper needs the converter; the wasm32 lib must not pull it in.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+viewer_convert = { path = "../../crates/viewer_convert" }

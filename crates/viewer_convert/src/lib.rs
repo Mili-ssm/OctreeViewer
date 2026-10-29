@@ -38,6 +38,20 @@ pub fn convert_file(
     convert_file_with_progress(input_path, output_path, options, |_| true)
 }
 
+/// Test support for `tools/format_parity`: the `leaf_count` largest source-point blocks followed
+/// by the first `lod_count` LOD blocks of a LAS/LAZ plan, exactly as the converter would feed them
+/// to the encoder. Not part of the stable API.
+#[doc(hidden)]
+pub fn plan_sample_blocks(
+    input_path: &Path,
+    workspace_anchor: &Path,
+    options: ConvertOptions,
+    leaf_count: usize,
+    lod_count: usize,
+) -> Result<Vec<viewer_format::SourcePointBlock>, ConvertError> {
+    las_source::plan_sample_blocks(input_path, workspace_anchor, options, leaf_count, lod_count)
+}
+
 /// Converts a file and reports progress after each phase and completed block.
 /// Return `false` from the callback to cancel before the output is published.
 pub fn convert_file_with_progress<F>(
