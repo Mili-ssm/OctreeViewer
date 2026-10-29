@@ -69,7 +69,7 @@ fn fixture(path: &std::path::Path, compressed: bool, colored: bool, count: usize
             number_of_returns: 3,
             classification: las::point::Classification::Ground,
             scan_angle: index as f32 - 1.0,
-            user_data: index as u8 + 7,
+            user_data: (index as u8).wrapping_add(7),
             point_source_id: 100 + index as u16,
             ..Point::default()
         };
@@ -567,6 +567,80 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
         fs::read(output_attributes_path(&serial_output)).unwrap(),
         fs::read(output_attributes_path(&parallel_output)).unwrap()
     );
+}
+
+fn output_pair_bytes(output: &std::path::Path) -> (Vec<u8>, Vec<u8>) {
+    (
+        fs::read(output).unwrap(),
+        fs::read(output_attributes_path(output)).unwrap(),
+    )
+}
+
+fn convert_with_workers(
+    input: &std::path::Path,
+    output: &std::path::Path,
+    options: ConvertOptions,
+    workers: usize,
+) -> (Vec<u8>, Vec<u8>) {
+    convert_file(
+        input,
+        output,
+        options.with_spatial_workers(workers).unwrap(),
+    )
+    .unwrap();
+    output_pair_bytes(output)
+}
+
+#[test]
+fn spatial_workers_preserve_output_across_counts_divisions_and_compression() {
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
+    for compressed in [false, true] {
+        let input = dir.join(if compressed {
+            "source.laz"
+        } else {
+            "source.las"
+        });
+        fixture(&input, compressed, true, 4_000);
+        for divisions in [2, 4, 8] {
+            let options = ConvertOptions::new(64, 0.01)
+                .unwrap()
+                .with_spatial_divisions(divisions)
+                .unwrap();
+            let case = format!("{compressed}-{divisions}");
+            let reference =
+                convert_with_workers(&input, &dir.join(format!("ref-{case}.oct")), options, 1);
+            for workers in [2, 4, 8] {
+                let output = dir.join(format!("w{workers}-{case}.oct"));
+                assert_eq!(
+                    convert_with_workers(&input, &output, options, workers),
+                    reference,
+                    "compressed={compressed} divisions={divisions} workers={workers}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn coincident_root_output_is_independent_of_worker_count() {
+    let tmp = test_dir();
+    let dir = tmp.path().to_owned();
+    let input = dir.join("coincident.las");
+    coincident_fixture(&input);
+    let options = ConvertOptions::new(64, 0.01)
+        .unwrap()
+        .with_spatial_divisions(8)
+        .unwrap();
+    let reference = convert_with_workers(&input, &dir.join("reference.oct"), options, 1);
+    for workers in [2, 4, 8] {
+        let output = dir.join(format!("workers-{workers}.oct"));
+        assert_eq!(
+            convert_with_workers(&input, &output, options, workers),
+            reference,
+            "coincident workers={workers}"
+        );
+    }
 }
 
 #[test]
