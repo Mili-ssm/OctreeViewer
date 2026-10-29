@@ -26,6 +26,9 @@ step "fmt" cargo fmt --all -- --check
 step "clippy (default features)" cargo clippy --workspace --all-targets $CARGO_MODE -- -D warnings
 step "clippy (all features)" cargo clippy --workspace --all-targets --all-features $CARGO_MODE -- -D warnings
 step "clippy wasm32" cargo clippy -p viewer_wasm --target wasm32-unknown-unknown $CARGO_MODE -- -D warnings
+step "core wasm32 check" cargo check -p viewer_convert_core --target wasm32-unknown-unknown $CARGO_MODE
+step "core wasm32 clippy" cargo clippy -p viewer_convert_core --target wasm32-unknown-unknown $CARGO_MODE -- -D warnings
+step "core has no native-only deps" bash -c '! cargo tree -p viewer_convert_core -e features --target wasm32-unknown-unknown $0 | grep -E "laz-parallel|rayon|ctrlc"' "$CARGO_MODE"
 # Each command must succeed on its own and the digest must be non-empty: inside test "$(a)" = "$(b)"
 # a failure of both sides would compare "" = "" and pass.
 step "format parity wasm32" bash -c 'set -euo pipefail; cargo build -q --release -p format_parity --target wasm32-unknown-unknown --lib $0 && n=$(cargo run -q --release -p format_parity --bin native_digest $0) && w=$(node tools/format_parity/run-wasm.mjs) && [ -n "$n" ] && [ "$n" = "$w" ]' "$CARGO_MODE"

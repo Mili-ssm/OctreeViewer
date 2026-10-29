@@ -1,5 +1,6 @@
 [alias]
 check-web = "check -p viewer_wasm --target wasm32-unknown-unknown"
+check-core-web = "check -p viewer_convert_core --target wasm32-unknown-unknown"
 test-core = "test -p viewer_core"
 test-fast = "test --workspace --profile fast"
 check-all = "check --workspace --all-targets"
