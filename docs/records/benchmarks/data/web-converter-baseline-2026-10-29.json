@@ -40,31 +40,83 @@
   "cli_runs": {
     "las": {
       "wall_s": 0.05,
-      "rss_kb": 20644
+      "rss_kb": 20644,
+      "command": "target/perf/viewer_convert fs_e430_n4008_18.las OUT.oct",
+      "spatial_workers": 4,
+      "spatial_divisions": 2,
+      "workers_source": "default min(4, parallelism)",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5"
     },
     "copc": {
       "wall_s": 0.01,
-      "rss_kb": 6316
+      "rss_kb": 6316,
+      "command": "target/perf/viewer_convert autzen.copc.laz OUT.oct",
+      "spatial_workers": 4,
+      "spatial_divisions": 2,
+      "workers_source": "default min(4, parallelism)",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5"
     },
     "belv": {
       "wall_s": 28.55,
-      "rss_kb": 286224
+      "rss_kb": 286224,
+      "command": "target/perf/viewer_convert belv_2009_digital-aerial_pcd_copc.laz OUT.oct",
+      "spatial_workers": 4,
+      "spatial_divisions": 2,
+      "workers_source": "default min(4, parallelism)",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5"
     },
     "belv_w1": {
       "wall_s": 44.2,
-      "rss_kb": 94752
+      "rss_kb": 94752,
+      "command": "target/perf/viewer_convert belv_2009_digital-aerial_pcd_copc.laz OUT.oct --spatial-workers 1",
+      "spatial_workers": 1,
+      "spatial_divisions": 2,
+      "workers_source": "explicit",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5",
+      "input": "belv_2009_digital-aerial_pcd_copc.laz"
     },
     "belv_w8": {
       "wall_s": 26.77,
-      "rss_kb": 491656
+      "rss_kb": 491656,
+      "command": "target/perf/viewer_convert belv_2009_digital-aerial_pcd_copc.laz OUT.oct --spatial-workers 8",
+      "spatial_workers": 8,
+      "spatial_divisions": 2,
+      "workers_source": "explicit",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5",
+      "input": "belv_2009_digital-aerial_pcd_copc.laz"
     },
     "belv_d8": {
       "wall_s": 21.27,
-      "rss_kb": 194036
+      "rss_kb": 194036,
+      "command": "target/perf/viewer_convert belv_2009_digital-aerial_pcd_copc.laz OUT.oct --spatial-divisions 8",
+      "spatial_workers": 4,
+      "spatial_divisions": 8,
+      "workers_source": "default min(4, parallelism)",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5",
+      "input": "belv_2009_digital-aerial_pcd_copc.laz"
     },
     "maj": {
       "wall_s": 221.96,
-      "rss_kb": 304164
+      "rss_kb": 304164,
+      "command": "target/perf/viewer_convert SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz OUT.oct",
+      "spatial_workers": 4,
+      "spatial_divisions": 2,
+      "workers_source": "default min(4, parallelism)",
+      "points_per_block": 262144,
+      "max_error": 0.01,
+      "format_version": "v5"
     }
   },
   "belvedere_convert_rounds": {
@@ -158,49 +210,49 @@
     },
     "raw": [
       {
-        "conversion_elapsed_ms": "26280.433",
-        "stage_PlanningSpatialIndex_ms": "10679.412",
-        "stage_BuildingSpatialHierarchy_ms": "8095.592",
-        "stage_ReadingAndWritingBlocks_ms": "6131.933",
-        "stage_ValidatingOutput_ms": "1312.325",
+        "conversion_elapsed_ms": 26280.433,
+        "stage_PlanningSpatialIndex_ms": 10679.412,
+        "stage_BuildingSpatialHierarchy_ms": 8095.592,
+        "stage_ReadingAndWritingBlocks_ms": 6131.933,
+        "stage_ValidatingOutput_ms": 1312.325,
         "wall_s": 26.3,
-        "rss_kb": "273316"
+        "rss_kb": 273316
       },
       {
-        "conversion_elapsed_ms": "26412.790",
-        "stage_PlanningSpatialIndex_ms": "10813.748",
-        "stage_BuildingSpatialHierarchy_ms": "8039.787",
-        "stage_ReadingAndWritingBlocks_ms": "6223.838",
-        "stage_ValidatingOutput_ms": "1269.671",
+        "conversion_elapsed_ms": 26412.79,
+        "stage_PlanningSpatialIndex_ms": 10813.748,
+        "stage_BuildingSpatialHierarchy_ms": 8039.787,
+        "stage_ReadingAndWritingBlocks_ms": 6223.838,
+        "stage_ValidatingOutput_ms": 1269.671,
         "wall_s": 26.43,
-        "rss_kb": "291392"
+        "rss_kb": 291392
       },
       {
-        "conversion_elapsed_ms": "25938.505",
-        "stage_PlanningSpatialIndex_ms": "10706.213",
-        "stage_BuildingSpatialHierarchy_ms": "7797.628",
-        "stage_ReadingAndWritingBlocks_ms": "6122.810",
-        "stage_ValidatingOutput_ms": "1236.863",
+        "conversion_elapsed_ms": 25938.505,
+        "stage_PlanningSpatialIndex_ms": 10706.213,
+        "stage_BuildingSpatialHierarchy_ms": 7797.628,
+        "stage_ReadingAndWritingBlocks_ms": 6122.81,
+        "stage_ValidatingOutput_ms": 1236.863,
         "wall_s": 25.95,
-        "rss_kb": "276076"
+        "rss_kb": 276076
       },
       {
-        "conversion_elapsed_ms": "26268.969",
-        "stage_PlanningSpatialIndex_ms": "10603.971",
-        "stage_BuildingSpatialHierarchy_ms": "8359.890",
-        "stage_ReadingAndWritingBlocks_ms": "5986.908",
-        "stage_ValidatingOutput_ms": "1250.105",
+        "conversion_elapsed_ms": 26268.969,
+        "stage_PlanningSpatialIndex_ms": 10603.971,
+        "stage_BuildingSpatialHierarchy_ms": 8359.89,
+        "stage_ReadingAndWritingBlocks_ms": 5986.908,
+        "stage_ValidatingOutput_ms": 1250.105,
         "wall_s": 26.29,
-        "rss_kb": "290972"
+        "rss_kb": 290972
       },
       {
-        "conversion_elapsed_ms": "25401.205",
-        "stage_PlanningSpatialIndex_ms": "10546.736",
-        "stage_BuildingSpatialHierarchy_ms": "7647.118",
-        "stage_ReadingAndWritingBlocks_ms": "5912.161",
-        "stage_ValidatingOutput_ms": "1235.326",
+        "conversion_elapsed_ms": 25401.205,
+        "stage_PlanningSpatialIndex_ms": 10546.736,
+        "stage_BuildingSpatialHierarchy_ms": 7647.118,
+        "stage_ReadingAndWritingBlocks_ms": 5912.161,
+        "stage_ValidatingOutput_ms": 1235.326,
         "wall_s": 25.42,
-        "rss_kb": "270616"
+        "rss_kb": 270616
       }
     ]
   },
@@ -417,5 +469,16 @@
       "rss_kb": 326760,
       "wall_s": 220.81
     }
-  }
+  },
+  "sha256_provenance": {
+    "full_sha256_from_cli_runs": "las, copc_autzen, belvedere, belvedere_workers1, belvedere_workers8, belvedere_divisions8: sha256sum of CLI outputs, full values printed during the 29-10-2026 session",
+    "majadas": "full sha256 from CLI (maj.sha) and from real_dataset_bench convert-profile (pmaj.sha), both retained in target/m0/ and identical",
+    "bench_vs_cli_belvedere": {
+      "bench_convert_workers4_first_run": "full .oct and .octattrs sha256 equal to CLI (6ca0f86d..., 0afa9c60...)",
+      "bench_convert_5_timed_rounds": "only first 12 hex chars of .oct and .octattrs compared per round (6ca0f86d376c, 0afa9c6041a6); all 5 matched; full values not retained",
+      "bench_convert_profile_belvedere": ".oct prefix 20 hex chars only (6ca0f86d376c79d07022) matched; .octattrs not compared",
+      "bench_convert_profile_divisions8": ".oct prefix 20 hex chars only (fb90a490f988423998cf) matched CLI; .octattrs not compared"
+    }
+  },
+  "r7_reference": "real_dataset_bench convert, conversion_elapsed_ms total, 4 workers, perf profile, median of 5 rounds (belvedere_convert_rounds.stats.total_ms.median)"
 }

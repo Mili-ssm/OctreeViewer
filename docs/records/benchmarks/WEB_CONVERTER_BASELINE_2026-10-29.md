@@ -20,7 +20,7 @@ sha256sum OUT.oct OUT.octattrs
 
 Entradas: `data/samples/fs_e430_n4008_18.las`; `autzen.copc.laz` (de `las-0.11.2/tests/data`); `data/datasets/belv_2009_digital-aerial_pcd_copc.laz`; `data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz`.
 
-**Opciones del bench.** `real_dataset_bench` usa 1 worker por defecto y el CLI `min(4, hilos disponibles)` = 4 aquí; por eso el bench se lanza con `4` explícito. El resto coincide (V5, 2 divisiones, 262144 puntos/bloque, error 0,01). Con eso el bench produce los **mismos SHA** que el CLI (Belvedere, divisiones 8 y Majadas).
+**Opciones del bench.** `real_dataset_bench` usa 1 worker por defecto y el CLI `min(4, hilos disponibles)` = 4 aquí; por eso el bench se lanza con `4` explícito. El resto coincide (V5, 2 divisiones, 262144 puntos/bloque, error 0,01). Comparación bench frente a CLI (lo realmente calculado el 29-10-2026): Belvedere, primera ejecución del bench, SHA-256 completos de `.oct` y `.octattrs` iguales al CLI; las 5 rondas cronometradas, solo los primeros 12 hex de ambos ficheros (iguales); `convert-profile` de Belvedere y de divisiones 8, solo los primeros 20 hex del `.oct` (iguales; `.octattrs` no comparado); Majadas, SHA-256 completos de `convert-profile` y CLI iguales. Los valores completos de las rondas no se conservaron.
 
 ## SHA de referencia (V5, 4 workers por defecto)
 
@@ -31,10 +31,10 @@ Entradas: `data/samples/fs_e430_n4008_18.las`; `autzen.copc.laz` (de `las-0.11.2
 | Belvedere (defecto) | `6ca0f86d376c79d0…` | `0afa9c6041a6ae3f…` |
 | Belvedere, 1 worker | idéntico al defecto | idéntico al defecto |
 | Belvedere, 8 workers | idéntico al defecto | idéntico al defecto |
-| Belvedere, divisiones 8 | `fb90a490f988423998…` | `b5124e84f7c4e12a…` |
+| Belvedere, divisiones 8 | `fb90a490f9884239…` | `b5124e84f7c4e12a…` |
 | Majadas | `742262867c844bb4…` | `d45cd5fd70816d24…` |
 
-SHA completos en el [JSON](data/web-converter-baseline-2026-10-29.json). Belvedere con 1, 4 y 8 workers coincide: confirma a escala real la independencia del número de workers (Tarea 1). Tamaños Belvedere: 1.591.650.185 B (pareja); Majadas: 7.533.781.717 B. El COPC pequeño es un fichero de prueba diminuto (salida de 2,4 kB `.oct`), útil solo como control de forma.
+SHA completos en el [JSON](data/web-converter-baseline-2026-10-29.json). Belvedere con 1, 4 y 8 workers coincide: confirma a escala real la independencia del número de workers ([plan de la etapa 1](../../explanation/conversor-web-paralelo-etapa1.md), Tarea 1). Tamaños Belvedere: 1.591.650.185 B (pareja); Majadas: 7.533.781.717 B. El COPC pequeño es un fichero de prueba diminuto (salida de 2,4 kB `.oct`), útil solo como control de forma.
 
 ## Tiempos Belvedere (`convert`, 4 workers, 5 rondas seguidas; mediana; mín–máx)
 
@@ -48,7 +48,9 @@ SHA completos en el [JSON](data/web-converter-baseline-2026-10-29.json). Belvede
 | Pared `/usr/bin/time` (s) | 26,29 | 25,42–26,43 |
 | RSS pico (kB) | 276.076 | 270.616–291.392 |
 
-El modo `convert` no imprime las ventanas `internal_*` (solo `convert-profile`); las fases por etapa (`stage_*`) sí. Cada ronda reprodujo los SHA de referencia.
+El modo `convert` no imprime las ventanas `internal_*` (solo `convert-profile`); las fases por etapa (`stage_*`) sí. Los SHA de las rondas se comprobaron solo por prefijo de 12 hex (ver «Comandos»).
+
+**Referencia R7:** `real_dataset_bench convert`, total (`conversion_elapsed_ms`), 4 workers, perfil `perf`, mediana de 5 rondas = 26.269 ms (primera fila de la tabla).
 
 ## Perfiles (una ejecución cada uno; contadores de spool para modelar los arenas OPFS)
 
@@ -58,7 +60,7 @@ El modo `convert` no imprime las ventanas `internal_*` (solo `convert-profile`);
 | Belvedere, divisiones 8 | 21.682 | 14,08 | 5,53 | 1,25 | 6.660.894.157 | 3.535.907.518 | 184.504 |
 | Majadas | 220.782 | 180,70 | 32,55 | 6,72 | 134.724.002.211 | 20.619.710.640 | 326.760 |
 
-Spool por hijo de la raíz (`root_child_spool_bytes_written`, tal como lo imprime el bench: 4 entradas en Belvedere, 80 en divisiones 8, 7 en Majadas, algunas a 0), fases del spool y demás contadores: en el JSON. RSS de los CLI en las ejecuciones de SHA: Belvedere 286 MB (4 workers), 95 MB (1), 492 MB (8), 194 MB (divisiones 8); Majadas 304 MB. Pared CLI Belvedere: 28,6 s (4), 44,2 s (1), 26,8 s (8), 21,3 s (div. 8); Majadas 221,96 s.
+Spool por hijo de la raíz (`root_child_spool_bytes_written`, tal como lo imprime el bench: 4 entradas en Belvedere, 81 en divisiones 8, 7 en Majadas, algunas a 0), fases del spool y demás contadores: en el JSON. RSS de los CLI en las ejecuciones de SHA: Belvedere 286 MB (4 workers), 95 MB (1), 492 MB (8), 194 MB (divisiones 8); Majadas 304 MB. Pared CLI Belvedere: 28,6 s (4), 44,2 s (1), 26,8 s (8), 21,3 s (div. 8); Majadas 221,96 s.
 
 ## Límites
 
