@@ -508,5 +508,184 @@
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
    "sha16": "fb90a490f9884239"
   }
- ]
+ ],
+ "fix_rows": [
+  {
+   "kind": "div8",
+   "round": 1,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "20073.551",
+   "partition_ns": "10366711672",
+   "psi_before": "cpu:1.64 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.25 io:0.06 memory:0.00 ",
+   "sha": "fb90a490f9884239 b5124e84f7c4e12a"
+  },
+  {
+   "kind": "div8",
+   "round": 1,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19987.192",
+   "partition_ns": "10074079610",
+   "psi_before": "cpu:0.25 io:0.06 memory:0.00 ",
+   "psi_after": "cpu:0.03 io:0.00 memory:0.00 ",
+   "sha": "fb90a490f9884239 b5124e84f7c4e12a"
+  },
+  {
+   "kind": "div8",
+   "round": 2,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19656.695",
+   "partition_ns": "9790629723",
+   "psi_before": "cpu:0.02 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 2,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19646.983",
+   "partition_ns": "9933374291",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 3,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19966.795",
+   "partition_ns": "9968566935",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 3,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19667.375",
+   "partition_ns": "9840961797",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 4,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19797.596",
+   "partition_ns": "9833098770",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.08 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 4,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19997.923",
+   "partition_ns": "10002492009",
+   "psi_before": "cpu:0.00 io:0.06 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 5,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "19676.909",
+   "partition_ns": "10020701199",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "div8",
+   "round": 5,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "19826.045",
+   "partition_ns": "9668971215",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 1,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23438.618",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.02 io:0.00 memory:0.67 ",
+   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f"
+  },
+  {
+   "kind": "convert",
+   "round": 1,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20410.016",
+   "partition_ns": "",
+   "psi_before": "cpu:0.01 io:0.00 memory:0.55 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.07 ",
+   "sha": "6ca0f86d376c79d0 0afa9c6041a6ae3f"
+  },
+  {
+   "kind": "convert",
+   "round": 2,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20343.888",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.07 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 2,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23411.185",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.05 io:0.00 memory:0.00 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 3,
+   "arm": "base",
+   "rc": 0,
+   "elapsed_ms": "23418.021",
+   "partition_ns": "",
+   "psi_before": "cpu:0.05 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.89 ",
+   "sha": ""
+  },
+  {
+   "kind": "convert",
+   "round": 3,
+   "arm": "fix",
+   "rc": 0,
+   "elapsed_ms": "20496.682",
+   "partition_ns": "",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.89 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.12 ",
+   "sha": ""
+  }
+ ],
+ "fix_note": "arm 'fix' = commit perf(convert): restore inlining in the spatial partition loop (default scheduler ready-queue); kind div8 = convert-profile ... 4 8, kind convert = convert ... 4; sha = first 16 hex of .oct and .octattrs on round 1"
 }
