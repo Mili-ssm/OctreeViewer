@@ -1,0 +1,18 @@
+[package]
+name = "viewer_convert_core"
+version.workspace = true
+edition.workspace = true
+
+# No `laz-parallel`, `rayon` or `ctrlc`: the core builds for wasm32. `cargo tree` watches this
+# (scripts/check.sh); the lints below cover filesystem, thread and wall-clock APIs.
+[dependencies]
+las.workspace = true
+# Same version as the lock via `las`; decodes the chunk table before `las` does.
+laz = { version = "0.13", default-features = false }
+thiserror.workspace = true
+viewer_core = { path = "../viewer_core", features = ["laz"] }
+viewer_format = { path = "../viewer_format" }
+
+[lints.clippy]
+disallowed_methods = "deny"
+disallowed_types = "deny"

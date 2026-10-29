@@ -1,0 +1,15 @@
+disallowed-methods = [
+  "std::fs::read", "std::fs::read_to_string", "std::fs::write", "std::fs::copy", "std::fs::rename",
+  "std::fs::hard_link", "std::fs::metadata", "std::fs::symlink_metadata", "std::fs::read_dir",
+  "std::fs::canonicalize", "std::fs::create_dir", "std::fs::create_dir_all", "std::fs::remove_file",
+  "std::fs::remove_dir", "std::fs::remove_dir_all", "std::fs::File::open", "std::fs::File::create",
+  "std::fs::OpenOptions::new", "std::thread::spawn", "std::thread::scope", "std::thread::sleep",
+  "std::thread::Builder::new", "std::thread::available_parallelism", "std::time::Instant::now",
+  "std::time::Instant::elapsed", "std::time::SystemTime::now", "std::time::SystemTime::elapsed",
+  "std::process::id", "std::process::exit", "std::process::abort", "std::process::Command::new",
+  "std::env::temp_dir", "std::env::current_dir", "std::sync::mpsc::channel", "std::sync::mpsc::sync_channel",
+]
+disallowed-types = [
+  "std::fs::File", "std::fs::OpenOptions", "std::time::Instant", "std::time::SystemTime",
+  "std::thread::JoinHandle", "std::thread::Builder", "std::thread::Scope", "std::sync::Condvar",
+]

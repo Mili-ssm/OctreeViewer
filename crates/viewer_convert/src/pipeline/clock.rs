@@ -1,11 +1,8 @@
-/// Time source for the conversion core; the native one wraps `std::time::Instant`.
-pub(crate) trait Clock {
-    type Instant: Copy;
-    fn now(&self) -> Self::Instant;
-    fn elapsed_ns(&self, since: Self::Instant) -> u64;
-}
+//! Native wall clock; the `Clock` trait lives in the core.
 
-pub(crate) struct SystemClock;
+pub(crate) use viewer_convert_core::pipeline::clock::Clock;
+
+pub struct SystemClock;
 
 impl Clock for SystemClock {
     type Instant = std::time::Instant;

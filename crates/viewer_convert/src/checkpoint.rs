@@ -5,8 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{ConvertOptions, fs_util::sync_parent};
-use thiserror::Error;
+use crate::{CheckpointError, ConvertOptions, fs_util::sync_parent};
+
 use viewer_format::{FormatVersion, HEADER_ENVELOPE_VERSION};
 
 // V5 binds resumable state to the exact output header identity and envelope.
@@ -54,24 +54,6 @@ pub(crate) struct Checkpoint {
     root: PathBuf,
     manifest: Manifest,
     lock: Option<File>,
-}
-
-#[derive(Debug, Error)]
-pub enum CheckpointError {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error("checkpoint already exists at {0}; use --resume to continue it")]
-    AlreadyExists(PathBuf),
-    #[error("no checkpoint exists at {0}; use --checkpoint to start a resumable conversion")]
-    Missing(PathBuf),
-    #[error("checkpoint is invalid: {0}")]
-    Invalid(String),
-    #[error("checkpoint does not match the source or conversion options")]
-    Mismatch,
-    #[error("checkpoint is already being used by another converter")]
-    Locked,
-    #[error("checkpoint cleanup failed at {path}: {source}")]
-    Cleanup { path: PathBuf, source: io::Error },
 }
 
 impl Checkpoint {

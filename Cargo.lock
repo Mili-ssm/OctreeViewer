@@ -1226,6 +1226,18 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "viewer_convert_core",
+ "viewer_core",
+ "viewer_format",
+]
+
+[[package]]
+name = "viewer_convert_core"
+version = "0.1.0"
+dependencies = [
+ "las",
+ "laz",
+ "thiserror",
  "viewer_core",
  "viewer_format",
 ]

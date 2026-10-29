@@ -34,9 +34,9 @@ use crate::report::{
     aggregate_geometry_codec_diagnostics, emit_progress,
 };
 use crate::spatial::{
-    PlannedBlock, Workspace, build_spatial_plan, build_spatial_plan_from_source,
-    emit_source_progress,
+    PlannedBlock, build_spatial_plan, build_spatial_plan_from_source, emit_source_progress,
 };
+use crate::workspace::Workspace;
 use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions};
 
 // The pure source helpers live in `source`; these are their old paths.

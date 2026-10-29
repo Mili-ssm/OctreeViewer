@@ -2049,7 +2049,7 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
     use crate::{
         las_source::{inspect_source, open_las_reader},
         pipeline::spool_store::{FileSpoolStore, MemSpoolStore, SpoolAccounting},
-        spatial::Workspace,
+        workspace::Workspace,
     };
 
     let tmp = test_dir();

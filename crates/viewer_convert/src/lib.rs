@@ -14,6 +14,7 @@ mod ept;
 mod ept_checkpoint;
 mod error;
 mod executor;
+mod file_spool_store;
 mod fs_util;
 mod las_source;
 mod limits;
@@ -23,15 +24,14 @@ mod publish;
 mod report;
 mod source;
 mod spatial;
+mod workspace;
 
-pub use checkpoint::{CheckpointError, CheckpointMode};
-pub use diagnostics::{
-    ConversionDiagnostics, DiagnosticWindow, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics,
-    ValidationWorkerDiagnostics,
+pub use checkpoint::CheckpointMode;
+pub use viewer_convert_core::{
+    CheckpointError, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
+    ConversionWorkerStats, ConvertError, ConvertOptions, DiagnosticWindow, SpatialPhaseDiagnostics,
+    SpatialSpoolDiagnostics, ValidationWorkerDiagnostics,
 };
-pub use error::ConvertError;
-pub use options::ConvertOptions;
-pub use report::{ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats};
 
 /// Converts LAS/LAZ or a local laszip EPT dataset to the native format.
 /// LAS/LAZ output uses replacement hierarchy samples; EPT output preserves its additive hierarchy.

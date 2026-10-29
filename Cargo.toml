@@ -3,6 +3,7 @@ members = [
 	"crates/viewer_core",
 	"crates/viewer_format",
 	"crates/viewer_convert",
+	"crates/viewer_convert_core",
 	"crates/viewer_render_wgpu",
 	"crates/viewer_wasm",
 	"tools/format_parity",
