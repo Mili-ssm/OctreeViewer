@@ -1,0 +1,12 @@
+[package]
+name = "format_parity"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+viewer_core = { path = "../../crates/viewer_core" }
+viewer_format = { path = "../../crates/viewer_format" }

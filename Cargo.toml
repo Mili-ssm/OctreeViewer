@@ -5,6 +5,7 @@ members = [
 	"crates/viewer_convert",
 	"crates/viewer_render_wgpu",
 	"crates/viewer_wasm",
+	"tools/format_parity",
 ]
 resolver = "2"
 
