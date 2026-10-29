@@ -4,7 +4,7 @@ Estado: spec aprobada (29-10-2026), con enmiendas del pre-mortem · Decisiones:
 [ADR 0014](../adr/0014-nucleo-de-conversion-sin-io.md),
 [ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md)
 
-Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8, S9 y M1) y [etapa 3](conversor-web-paralelo-etapa3.md) (S2, S10, M2 y M3a). La lectura paralela tendrá spec
+Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8, S9 y M1) [etapa 3](conversor-web-paralelo-etapa3.md) (S2, S10, M2 y M3a) y [etapa 4](conversor-web-paralelo-etapa4.md) (M3b; decisión del propietario 5: zonas OPFS paginadas). La lectura paralela tendrá spec
 propia (enfoque async + workers, a concretar) y queda fuera de este documento.
 
 ## Objetivo

@@ -19,6 +19,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | [Conversor web paralelo](explanation/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas. | vivo |
 | [Conversor web paralelo, etapa 1](explanation/conversor-web-paralelo-etapa1.md) | Plan: independencia de workers, igualdad LZ4 nativo/wasm32, referencia CLI y spike de arenas OPFS. | vivo |
 | [Conversor web paralelo, etapa 2](explanation/conversor-web-paralelo-etapa2.md) | Plan: modelo de trabajos por nodo, S0 con bloques reales de Belvedere, cuota real (S8), un fichero OPFS por spool (S9) y M1. | vivo |
+| [Conversor web paralelo, etapa 4](explanation/conversor-web-paralelo-etapa4.md) | Plan: M3b, un worker a escala Belvedere con spools en RAM de JS y zonas OPFS paginadas (decisión 5), y retirada del conversor antiguo. | vivo |
 | [Conversor web paralelo, etapa 3](explanation/conversor-web-paralelo-etapa3.md) | Plan: spikes S2 (rangos de chunks LAZ) y S10 (RAM del híbrido), núcleo `viewer_convert_core` (M2) y conversión web con un worker (M3a). | vivo |
 | [Resolución regional LOD](explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback y regresiones del LOD Replacement. | vivo |
 | [Resúmenes por nodo](explanation/NODE_ATTRIBUTE_SUMMARIES.md) | Contenedores experimentales de resúmenes y diccionario conjunto. | vivo |

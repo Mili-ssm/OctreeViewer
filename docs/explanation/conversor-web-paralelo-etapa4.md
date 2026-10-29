@@ -1,0 +1,144 @@
+# Conversor web paralelo — plan de la etapa 4
+
+> **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
+> superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
+
+**Estado (30-10-2026):** plan redactado; ninguna tarea empezada.
+
+**Objetivo:** cerrar M3b: un worker convierte Belvedere en el navegador con spools fuera de la
+memoria wasm (RAM de JS más zonas OPFS), con paridad byte a byte con el CLI en Chrome y Firefox,
+tiempo dentro de 4 × el mismo código nativo, picos de RAM y OPFS medidos con presupuestos de 2 y
+4 GiB, y el conversor antiguo (`browser_convert.rs`) retirado.
+
+**Arquitectura:** la [spec](conversor-web-paralelo.md) es la autoridad; la etapa anterior es la
+[etapa 3](conversor-web-paralelo-etapa3.md). M3a guarda todos los spools en la memoria wasm
+(`MemSpoolStore`, `crates/viewer_wasm/src/core_convert.rs:218`) y el pico modelado con un worker
+(4,35 GiB en divisiones 2, [S10](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)) supera el
+techo de 4 GiB de wasm32, así que M3b saca los spools de wasm. `convert_serial` sigue siendo una
+sola llamada síncrona: un `HybridSpoolStore` del núcleo guarda los spools en segmentos de JS y, por
+encima de un presupuesto, los vuelca de forma síncrona a páginas de zonas OPFS cuyos handles abre
+el worker antes de la llamada. R1 se cumple por construcción (mismo planificador y orden de commit).
+
+**Decisión del propietario 5 (30-10-2026)**, tras el análisis de opciones del arquitecto:
+
+| Id | Decisión | Alternativas descartadas |
+| --- | --- | --- |
+| D1 | **Zonas OPFS paginadas** con handles síncronos abiertos antes de convertir; páginas reutilizables y zonas vacías truncadas. Enmienda las decisiones 2 y 3 («un fichero OPFS por spool volcado»); ADR 0017 | P3 literal con trabajos por pasos (esfuerzo L ahora; Firefox paga 22–40 ms por fichero); pool de handles por spool (542–1 246 handles en Belvedere, ~6 000 en Majadas; S9 probó 664) |
+| D2 | La parada de 4 × se mide contra **`convert_serial` nativo** (mismo código, un hilo), en la misma sesión; el CLI por defecto se informa como contexto | CLI con 1 worker espacial; CLI por defecto |
+| D3 | Chrome `file://` (sin OPFS): **rechazo temprano** si la estimación de spools + salida en RAM supera `ram_budget`, con mensaje que sugiere servir por HTTP | Intentar y abortar |
+| D4 | `engine: "core"` se **acepta sin efecto** y se marca obsoleta; `"legacy"` da un error claro | Eliminar la opción |
+
+Decisión técnica del coordinador: el brazo de 4 GiB de spools se mide con `ram_budget` = 8 GB
+(máximo de R9), porque 4 GiB de spools más wasm y la base del navegador superan el defecto de 4 GB.
+
+**Tecnología:** Rust nightly fijado, `viewer_convert_core`, wasm-bindgen 0.2.129,
+`FileSystemSyncAccessHandle` (`read`/`write` con `at`, `truncate`, `flush`, `close`), Node 22
+(`node:test`), Playwright 1.64 vía scripts Node (como los drivers de S8/S9/M3a).
+
+**Spec:** [conversor-web-paralelo.md](conversor-web-paralelo.md).
+
+## Restricciones globales
+
+- `scripts/check.sh` en verde (todos los pasos) al cerrar cada tarea.
+- No cambiar la fecha del nightly ni añadir `#![feature]`.
+- `FormatVersion::V<n>` solo en `crates/viewer_format`.
+- R1: SHA de [referencia R1](../records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md) (LAS pequeño `176ee42d…`, Belvedere `ecdc4889…`, Belvedere divisiones 8 `3aee2890…`, Majadas `38168777…`).
+- R7 solo si una tarea toca la ruta nativa del CLI: mediana pareada de `real_dataset_bench convert` en Belvedere (4 workers, perfil `perf`), 7–10 pares A/B en máquina en reposo, ±3% frente a la base de la misma sesión.
+- El núcleo sigue sin E/S, hilos, reloj ni funciones de libm (lint de clippy, ADR 0014 y 0016); sin `unsafe` nuevo.
+- R8: funciona con `python3 -m http.server` y desde el paquete `file://` sin COOP/COEP; sin `SharedArrayBuffer`.
+- Registros nuevos fechados con el día de ejecución, en español; no editar registros ya mergeados.
+- Commits convencionales en inglés con la línea `Co-Authored-By` del modelo que los escribe; sin push.
+- Tareas en paralelo con código: worktree y `CARGO_TARGET_DIR` propios; mediciones de tiempo sin otros agentes activos.
+
+## Review Focus
+
+1. **Volcar un spool aún abierto**: los `append` posteriores van a páginas de la zona y la lectura devuelve los mismos bytes que si nunca se hubiera volcado (Tarea 4, test de propiedad con presupuesto diminuto).
+2. **Zona o cuota llena**: una escritura corta en OPFS aborta con un error de cuota claro y limpia parciales y zonas (R4, R5) (Tareas 4 y 5).
+3. **Miles de spools pequeños** (divisiones 8, LOD y hojas retenidos hasta la fase de bloques): la granularidad de los segmentos no multiplica la RAM; los segmentos crecen de forma progresiva (Tareas 2 y 3).
+4. **Cancelar durante la escritura de un dataset grande**: tras `terminate()` los parciales y zonas se borran o se limpian en el siguiente arranque, y una reconversión al mismo nombre funciona (Tarea 7).
+5. **Chrome `file://`**: el LAS pequeño se convierte solo en RAM con aviso; Belvedere se rechaza antes de empezar con mensaje claro (D3) (Tareas 5 y 6).
+
+---
+
+### Tarea 1: spike S5 residual — zonas OPFS
+
+**Pregunta:** ¿soporta OPFS lo que exigen las zonas? Un fichero > 4 GiB con `write`/`read({at})`
+más allá de 2³², `truncate` que libera cuota de verdad, ancho de banda con datos incompresibles y
+tiempo hasta liberar el bloqueo de un handle tras `terminate()`. También: PSS de 4 GiB de
+`ArrayBuffer` en un worker (S10 midió hasta 2 GiB).
+
+**Archivos:** `docs/records/benchmarks/OPFS_ZONES_<aaaa-mm-dd>.md` y `docs/records/benchmarks/data/opfs-zones-<aaaa-mm-dd>.{html,js,-driver.mjs,jsonl}`.
+
+- [ ] **Paso 1:** driver Playwright (convenciones de S9) en Chrome y Firefox por HTTP y Firefox `file://`: fichero de 6 GiB con ruido, lecturas en `at` > 4 GiB verificadas, `truncate(0)` frente a `estimate().usage` y `df`, MB/s de escritura y lectura con páginas de 1 MiB, tiempo de liberación del handle tras `terminate()` y PSS de 4 GiB de segmentos (32 KiB y 1 MiB).
+- [ ] **Paso 2:** registro con decisión (tamaño de zona y de página, reintentos de limpieza) y commit.
+
+### Tarea 2: modelo de la política de volcado y de la granularidad
+
+**Archivos:** `crates/viewer_convert/benchmarks/model_hybrid_spools.py` y su test.
+
+- [ ] **Paso 1:** tests con el árbol manual de 5 nodos para la política «cerrados más antiguos primero, abiertos al final», sin pistas del núcleo.
+- [ ] **Paso 2:** sobre las trazas de S10 (Belvedere divisiones 2 y 8, Majadas), N = 1, presupuestos de 2 y 4 GiB: bytes volcados, máximo de páginas (high-water mark), relecturas desde OPFS (thrashing) frente al orden P3 de S10, y RAM desperdiciada con segmentos fijos de 1 MiB frente a segmentos progresivos (p. ej. 32 KiB → 1 MiB). Decide si hace falta una pista del planificador. Registro nuevo `docs/records/benchmarks/HYBRID_POLICY_<aaaa-mm-dd>.md` (el de S10 no se edita); commit.
+
+### Tarea 3: firmas de M3b (arquitecto)
+
+Con los resultados de las Tareas 1 y 2, un arquitecto (Opus) fija en una sección «Firmas fijadas»
+de este documento: `RamTier`/`PageTier`/`HybridSpoolStore` en el núcleo (puro, `Sync` sin `unsafe`:
+estado Rust con claves `u32`, objetos JS en un objeto host del worker), tamaño y crecimiento de
+segmentos, páginas y zonas, dimensionado de Z a partir de la estimación, política de volcado,
+lector en streaming (sin copiar el extent entero), reglas de error (`StorageFull`/sin memoria con
+variantes existentes y su `Display`), estimación del rechazo temprano de Chrome `file://` (D3),
+lugar de `OpfsWriter`, arnés nativo de la parada de 4 × (D2) y forma de retirar el motor antiguo
+(D4).
+
+- [ ] **Paso 1:** firmas anotadas aquí; revisión del coordinador.
+
+### Tarea 4: `HybridSpoolStore` en el núcleo
+
+**Archivos:** `crates/viewer_convert_core/src/pipeline/hybrid_store.rs` (y lo que fije la Tarea 3).
+
+- [ ] **Paso 1:** tests que fallan: propiedad frente a `MemSpoolStore` con presupuesto de 64 KiB (volcados forzados, también de spools abiertos; Review Focus 1); escritura corta → error de cuota (Review Focus 2); `convert_serial` con tiers en memoria y presupuesto diminuto da los SHA de R1 de las fixtures; ningún id ni página viva al terminar.
+- [ ] **Paso 2:** implementar hasta verde; `check.sh`; commit.
+
+### Tarea 5: tiers wasm, worker y host
+
+**Archivos:** `crates/viewer_wasm/src/` (tiers sobre `ArrayBuffer` y zonas, `core_convert.rs`), `examples/web-host/{converter-worker.js, converter-api.mjs}`, `tools/convert_parity`.
+
+- [ ] **Paso 1:** paridad Node en `tools/convert_parity` con volcado forzado (presupuesto diminuto), en `check.sh`.
+- [ ] **Paso 2:** el worker abre Z zonas antes de convertir y las anuncia como parciales; escritura corta → mensaje de cuota y limpieza (R4, R5); Chrome `file://` sin OPFS → solo RAM con aviso y rechazo temprano por estimación (D3); tests Node.
+- [ ] **Paso 3:** commit.
+
+### Tarea 6: Belvedere con un worker en el navegador
+
+**Archivos:** `docs/records/benchmarks/M3B_BELVEDERE_<aaaa-mm-dd>.md` y driver en `docs/records/benchmarks/data/`.
+
+- [ ] **Paso 1 (sin otros agentes activos):** Chrome y Firefox por HTTP, Belvedere divisiones 2 y 8: SHA = R1 (`ecdc4889…`, `3aee2890…`); Firefox `file://` divisiones 2; Chrome `file://`: LAS pequeño igual y Belvedere rechazado antes de empezar.
+- [ ] **Paso 2:** tiempo frente a `convert_serial` nativo en la misma sesión (D2; criterio de parada: > 4 ×) y CLI por defecto como contexto; pico de PSS (`sample-process-memory.py`), máximo de páginas OPFS y bytes/spools volcados con presupuestos de 2 y 4 GiB (este con `ram_budget` = 8 GB). Registro con la elección entre 2 y 4 GiB (decisión 3) y commit.
+
+### Tarea 7: pendientes de M3a en navegador
+
+- [ ] **Paso 1:** cancelar Belvedere durante la jerarquía y durante la escritura: parciales y zonas borrados o limpiados en el siguiente arranque, y reconversión al mismo nombre (Review Focus 4); `formatVersion` y `maxMemoryMiB` en el navegador, con el mismo `Display` de `MemoryBudgetExceeded` que el CLI. Se añade al registro de la Tarea 6 o a uno propio; commit.
+
+### Tarea 8: retirar el conversor antiguo
+
+**Archivos:** borrar `crates/viewer_wasm/src/browser_convert.rs` (mover `OpfsWriter` donde fije la Tarea 3), `crates/viewer_wasm/src/lib.rs`, `examples/web-host/{converter-worker.js, converter-api.mjs, tests/*, package-local.py}`, `examples/web-host/tests/test_package_local.py`, READMEs.
+
+- [ ] **Paso 1:** el motor del núcleo es el único; `engine: "core"` se acepta sin efecto y obsoleto, `"legacy"` da error claro (D4); tests Node; `check.sh` y el paquete `file://` en verde; commit.
+
+### Tarea 9: interfaz del conversor
+
+**Archivos:** `examples/web-host/main.js` (y `index.html` si hace falta).
+
+- [ ] **Paso 1:** exponer las opciones de R2 y `ram_budget` (R9), aviso de Chrome `file://`, progreso y tiempos por fase.
+- [ ] **Paso 2:** verificación en navegador real con Playwright (`ui-verifier`): progreso, cancelación, error de cuota, escritorio y móvil, teclado y foco; commit.
+
+### Tarea 10: documentación y cierre
+
+- [ ] **Paso 1:** ADR 0017 (zonas paginadas; enmienda las decisiones 2 y 3), spec (decisión 5, S5, M3b), README (fila 7), inventario, READMEs, este plan; `check.sh`; commit.
+
+---
+
+## Después de la etapa 4
+
+M4 (pool de preparación y escritor ordenado, S3/S4/S7), M5 (pool de partición y trabajos por nodo,
+validación paralela; con D1 los spools pasan por el líder y hará falta un conductor del plan por
+pasos) y M6 (Majadas), en el orden de la spec.
