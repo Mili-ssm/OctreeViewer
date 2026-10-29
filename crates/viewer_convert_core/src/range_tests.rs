@@ -188,11 +188,10 @@ fn children_with_points_only_in_the_last_range_or_in_none_create_no_spool() {
         batch: 4096,
     };
     let store = MemSpoolStore::new(false);
-    let sources = vec![
-        (first, SpoolId(100)),
-        (factory.open(ranges[1]).unwrap(), SpoolId(108)),
-    ];
-    let results = SerialExecutor.run_ranges(&job, sources, &store, &NoClock, &mut |_, _| Ok(()));
+    drop(first);
+    let ranges = vec![(ranges[0], SpoolId(100)), (ranges[1], SpoolId(108))];
+    let results =
+        SerialExecutor.run_ranges(&job, &factory, ranges, &store, &NoClock, &mut |_, _| Ok(()));
     let first_range = results[0].as_ref().unwrap();
     assert!(first_range.segments.iter().all(|segment| segment.key != 7));
     for key in 1..7 {

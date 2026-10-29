@@ -347,7 +347,7 @@ where
     S: PlanStore,
     C: Clock,
     F: SourceFactory,
-    X: BatchPlanner<S, C> + RangeRunner<S, C, F::Source>,
+    X: BatchPlanner<S, C> + RangeRunner<S, C, F>,
 {
     build_spatial_plan_inner(
         source,
@@ -897,9 +897,9 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             .min(usize::try_from(extra).map_or(usize::MAX, |extra| extra.saturating_add(1))))
     }
 
-    /// The root partition by ranges: split, open one source per range, run them, then merge and
-    /// join. A range whose source cannot be opened ends the list as an error after the ranges
-    /// before it, so the lowest-starting failure wins, as in a serial scan.
+    /// The root partition by ranges: split, run every range (the runner opens its source), then
+    /// merge and join. A range whose source cannot be opened fails like any other error in that
+    /// range, so the lowest-starting failure wins, as in a serial scan.
     fn partition_root_ranges<F: SourceFactory>(
         &mut self,
         factory: &F,
@@ -908,7 +908,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         first_output: SpoolId,
     ) -> Result<RootPartition, ConvertError>
     where
-        X: RangeRunner<S, C, F::Source>,
+        X: RangeRunner<S, C, F>,
     {
         let ctx = self.job_context();
         let children = usize::from(self.spatial_divisions).pow(3) as u64;
@@ -921,17 +921,6 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             Ordering::Relaxed,
         );
         self.ranges_used = ranges.len();
-        let mut sources = Vec::with_capacity(ranges.len());
-        let mut open_error = None;
-        for (index, range) in ranges.into_iter().enumerate() {
-            match factory.open(range) {
-                Ok(opened) => sources.push((opened, SpoolId(base + index as u64 * children))),
-                Err(error) => {
-                    open_error = Some(error);
-                    break;
-                }
-            }
-        }
         let job = RangeJob {
             ctx: &ctx,
             info: source,
@@ -939,25 +928,22 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             batch: self.point_limit,
         };
         let (store, clock, executor) = (self.store, self.clock, self.executor);
-        let mut done = vec![0_u64; sources.len()];
-        let mut results = if sources.is_empty() {
-            Vec::new()
-        } else {
-            executor.run_ranges(
-                &job,
-                sources,
-                store,
-                clock,
-                &mut |range, update| match update {
+        let ranges = ranges
+            .into_iter()
+            .enumerate()
+            .map(|(index, range)| (range, SpoolId(base + index as u64 * children)))
+            .collect::<Vec<_>>();
+        let mut done = vec![0_u64; ranges.len()];
+        let results =
+            executor.run_ranges(&job, factory, ranges, store, clock, &mut |range, update| {
+                match update {
                     JobProgress::SourcePoints(points) => {
                         done[range] = points;
                         self.emit_job_progress(JobProgress::SourcePoints(done.iter().sum()))
                     }
                     other => self.emit_job_progress(other),
-                },
-            )
-        };
-        results.extend(open_error.map(Err));
+                }
+            });
         merge_root_ranges(&ctx, bounds, first_output, results, store)
     }
 
@@ -969,7 +955,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         bounds: SpatialBounds,
     ) -> Result<(), ConvertError>
     where
-        X: RangeRunner<S, C, F::Source>,
+        X: RangeRunner<S, C, F>,
     {
         let ctx = self.job_context();
         let root_path = NodePath(Vec::new());

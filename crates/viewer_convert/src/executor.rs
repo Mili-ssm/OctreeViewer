@@ -13,7 +13,6 @@
 
 use std::{
     collections::BTreeMap,
-    fs::File,
     io,
     sync::{
         Condvar, Mutex, MutexGuard, PoisonError,
@@ -34,7 +33,7 @@ use crate::pipeline::{
         ChildOutput, JobContext, JobProgress, NodeJob, NodeJobOutput, NodePath, RangeJob,
         RangePartition, run_node_job, run_root_partition_range,
     },
-    point_source::RangeSource,
+    point_source::{PointRange, SourceFactory},
     spool_store::{PlanStore, SpoolId},
 };
 use crate::spatial::{BranchOutput, OpenNodeEvent, SpatialBuilder};
@@ -455,65 +454,65 @@ fn advance_cursor<S: PlanStore>(builder: Builder<'_, '_, S>, batch: &mut Batch<'
     }
 }
 
-/// A range source moved once into its thread. `las::Reader` boxes a `dyn ReadPoints` without a
-/// `Send` bound, although `las` builds it only from `Send` parts (`BufReader<File>` and decoders
-/// bounded by `Send`); the source is owned by one thread at a time and never shared.
-struct SendSource(RangeSource<File>);
-
-// SAFETY: see the type docs; a `RangeSource<File>` holds nothing thread-bound.
-unsafe impl Send for SendSource {}
-
 /// Progress or result of one root range thread.
 enum RangeMessage {
     Progress(usize, JobProgress),
     Finished(usize, Result<RangePartition, ConvertError>),
 }
 
-impl<S: PlanStore> RangeRunner<S, SystemClock, RangeSource<File>> for ThreadedExecutor {
-    /// One thread per range. `abort_above` holds the lowest failed range: ranges above it stop at
-    /// their next progress report, the ones below finish. A cancellation reported by `progress`
-    /// stops every range.
+impl<S: PlanStore, F: SourceFactory + Sync> RangeRunner<S, SystemClock, F> for ThreadedExecutor {
+    /// One thread per range, each opening its own source (`las::Reader` is not `Send`).
+    /// `abort_above` holds the lowest failed range, an open error included: ranges above it stop
+    /// at their next progress report, the ones below finish. A cancellation reported by
+    /// `progress` stops every range.
     fn run_ranges(
         &self,
         job: &RangeJob<'_>,
-        sources: Vec<(RangeSource<File>, SpoolId)>,
+        factory: &F,
+        ranges: Vec<(PointRange, SpoolId)>,
         store: &S,
         clock: &SystemClock,
         progress: &mut dyn FnMut(usize, JobProgress) -> Result<(), ConvertError>,
     ) -> Vec<Result<RangePartition, ConvertError>> {
-        let count = sources.len();
+        let count = ranges.len();
         let abort_above = AtomicUsize::new(usize::MAX);
         let abort_all = AtomicBool::new(false);
         let (sender, receiver) = mpsc::channel();
         let mut results = (0..count).map(|_| None).collect::<Vec<_>>();
         let mut host_error = None;
         thread::scope(|scope| {
-            for (range, (source, first_segment)) in sources.into_iter().enumerate() {
-                let mut source = SendSource(source);
+            for (range, (points, first_segment)) in ranges.into_iter().enumerate() {
                 let sender = sender.clone();
                 let (abort_above, abort_all) = (&abort_above, &abort_all);
                 scope.spawn(move || {
-                    let source = &mut source;
                     let cancelled = || ConvertError::Cancelled {
                         points_processed: 0,
                     };
-                    let result = run_root_partition_range(
-                        job,
-                        first_segment,
-                        &mut source.0,
-                        store,
-                        clock,
-                        &mut |update| {
-                            if abort_all.load(Ordering::Relaxed)
-                                || range > abort_above.load(Ordering::Relaxed)
-                            {
-                                return Err(cancelled());
-                            }
-                            sender
-                                .send(RangeMessage::Progress(range, update))
-                                .map_err(|_| cancelled())
-                        },
-                    );
+                    let aborted = || {
+                        abort_all.load(Ordering::Relaxed)
+                            || range > abort_above.load(Ordering::Relaxed)
+                    };
+                    let result = if aborted() {
+                        Err(cancelled())
+                    } else {
+                        factory.open(points).and_then(|mut source| {
+                            run_root_partition_range(
+                                job,
+                                first_segment,
+                                &mut source,
+                                store,
+                                clock,
+                                &mut |update| {
+                                    if aborted() {
+                                        return Err(cancelled());
+                                    }
+                                    sender
+                                        .send(RangeMessage::Progress(range, update))
+                                        .map_err(|_| cancelled())
+                                },
+                            )
+                        })
+                    };
                     if matches!(&result, Err(error) if !matches!(error, ConvertError::Cancelled { .. }))
                     {
                         abort_above.fetch_min(range, Ordering::Relaxed);
