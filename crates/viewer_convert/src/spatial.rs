@@ -295,7 +295,6 @@ pub(crate) struct SpatialPlan {
 
 pub(crate) struct Workspace {
     path: PathBuf,
-    cleanup_on_drop: bool,
 }
 
 impl Workspace {
@@ -315,10 +314,7 @@ impl Workspace {
             let path = parent.join(name);
             match fs::create_dir(&path) {
                 Ok(()) => {
-                    return Ok(Self {
-                        path,
-                        cleanup_on_drop: true,
-                    });
+                    return Ok(Self { path });
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(ConvertError::Io(error)),
@@ -344,16 +340,13 @@ impl Workspace {
         fs::create_dir(path)?;
         Ok(Self {
             path: path.to_owned(),
-            cleanup_on_drop: true,
         })
     }
 }
 
 impl Drop for Workspace {
     fn drop(&mut self) {
-        if self.cleanup_on_drop {
-            let _ = fs::remove_dir_all(&self.path);
-        }
+        let _ = fs::remove_dir_all(&self.path);
     }
 }
 

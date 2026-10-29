@@ -134,6 +134,8 @@ Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 (nativo) está d
 
 Módulo `crates/viewer_convert/src/pipeline/`, todo `pub(crate)`. Las líneas citadas son de `spatial.rs` en `44d2a9a`. Enmendado el mismo día tras la revisión de diseño («aprobar con cambios»; R1 se mantiene en 4a y 4b).
 
+> Enmienda del 29-10-2026 (revisión del paso 3): junto a `SpoolStore` hay un trait hermano `SpoolAccounting` (`next_event_seq`, `ledger_totals`: el libro de bytes y el contador de eventos viven en el store) y un `PlanStore` (= `SpoolStore + SpoolAccounting + Sync`) como cota del planificador. `SpoolStore` queda tal como está fijado abajo. `MemSpoolStore::new(diagnostics)` activa solo esa contabilidad.
+
 ```rust
 // spool_store.rs
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
