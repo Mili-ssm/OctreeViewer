@@ -2593,3 +2593,76 @@ fn the_ready_queue_returns_the_lowest_preorder_job_error() {
         assert_eq!((stats.live_bytes, stats.live_spools), (0, 0));
     }
 }
+
+#[test]
+fn a_panicking_progress_callback_propagates_under_the_ready_queue() {
+    // The callback runs on the host inside the batch scope; a panic there must close the ready
+    // queue so the parked workers exit and the scope can resume the panic instead of hanging.
+    let tmp = test_dir();
+    let input = tmp.path().join("source.las");
+    fixture(&input, false, true, 4_000);
+    let output = tmp.path().join("panic.oct");
+    let options = ConvertOptions::new(16, 0.01)
+        .unwrap()
+        .with_spatial_divisions(4)
+        .unwrap()
+        .with_spatial_workers(2)
+        .unwrap()
+        .with_spatial_scheduler(SpatialScheduler::ReadyQueue);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = std::panic::catch_unwind(|| {
+            let mut updates = 0;
+            convert_file_with_progress(&input, &output, options, |event| {
+                if event.stage == ConversionStage::BuildingSpatialHierarchy {
+                    updates += 1;
+                    assert!(updates < 5, "injected progress panic");
+                }
+                true
+            })
+        });
+        let _ = sender.send(result.is_err());
+    });
+    let panicked = receiver
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the plan hung after a host panic");
+    assert!(panicked);
+}
+
+#[test]
+fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
+    // Root children 0 and 6 hold 2000 and 2001 points; 27_500_000 passes the batch check of the
+    // single batch of 8 but fails a branch-local commit deep in branch 0 (found by a budget
+    // probe). Branch 6 fails its first read at once (no other node has 2001 points), so its Job
+    // error arrives first; the lower Commit error must still win (A8, R25).
+    let tmp = test_dir();
+    let input = tmp.path().join("clusters.las");
+    sized_cluster_fixture(&input, [2000, 40, 40, 40, 40, 40, 2001, 40]);
+    let quick = std::time::Duration::ZERO;
+    let options = |budget| {
+        ConvertOptions::with_memory_budget(16, 0.01, budget)
+            .unwrap()
+            .with_spatial_workers(8)
+            .unwrap()
+            .with_spatial_scheduler(SpatialScheduler::ReadyQueue)
+    };
+    let (job_only, _) = failing_plan(
+        &input,
+        options(512 * 1024 * 1024),
+        &[(2001, quick)],
+        &mut |_| true,
+    );
+    assert_eq!(job_only.to_string(), "injected read failure (2001 points)");
+    let (commit_only, _) = failing_plan(&input, options(27_500_000), &[], &mut |_| true);
+    assert!(
+        matches!(commit_only, ConvertError::MemoryBudgetExceeded { requested, limit }
+            if requested < 27_500_000 && limit < requested),
+        "{BUDGET_HINT}: {commit_only:?}"
+    );
+    for _ in 0..5 {
+        let (error, stats) =
+            failing_plan(&input, options(27_500_000), &[(2001, quick)], &mut |_| true);
+        assert_eq!(error.to_string(), commit_only.to_string());
+        assert_eq!((stats.live_bytes, stats.live_spools), (0, 0));
+    }
+}

@@ -53,12 +53,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .transpose()?
                 .unwrap_or(viewer_format::FormatVersion::V5);
-            let scheduler = match arguments.get(7).map(|value| value.to_string_lossy()) {
-                None => SpatialScheduler::Recursive,
-                Some(value) if value == "recursive" => SpatialScheduler::Recursive,
-                Some(value) if value == "ready-queue" => SpatialScheduler::ReadyQueue,
-                Some(value) => return Err(format!("unknown spatial scheduler {value}").into()),
-            };
+            let scheduler = arguments
+                .get(7)
+                .map(|value| value.to_string_lossy().parse::<SpatialScheduler>())
+                .transpose()?
+                .unwrap_or_default();
             convert(
                 Path::new(&arguments[1]),
                 Path::new(&arguments[2]),

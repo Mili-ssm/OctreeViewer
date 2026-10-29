@@ -9,8 +9,8 @@ use std::{
 };
 
 use viewer_convert::{
-    CheckpointMode, ConversionStage, ConvertOptions, SpatialScheduler,
-    convert_file_with_checkpoint, convert_file_with_progress,
+    CheckpointMode, ConversionStage, ConvertOptions, convert_file_with_checkpoint,
+    convert_file_with_progress,
 };
 use viewer_format::{FormatVersion, block_checkpoint_versions};
 
@@ -78,13 +78,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
             }
             "--spatial-workers" => spatial_workers = Some(value.to_string_lossy().parse()?),
             "--spatial-divisions" => spatial_divisions = value.to_string_lossy().parse()?,
-            "--spatial-scheduler" => {
-                spatial_scheduler = match value.to_string_lossy().as_ref() {
-                    "recursive" => SpatialScheduler::Recursive,
-                    "ready-queue" => SpatialScheduler::ReadyQueue,
-                    _ => return Err("--spatial-scheduler must be recursive or ready-queue".into()),
-                }
-            }
+            "--spatial-scheduler" => spatial_scheduler = value.to_string_lossy().parse()?,
             _ => return Err(format!("unknown option: {flag}").into()),
         }
         index += 2;

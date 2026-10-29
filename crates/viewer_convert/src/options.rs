@@ -31,6 +31,21 @@ pub enum SpatialScheduler {
     ReadyQueue,
 }
 
+impl std::str::FromStr for SpatialScheduler {
+    type Err = String;
+
+    /// `recursive` or `ready-queue`, as the CLI and the bench spell them.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "recursive" => Ok(Self::Recursive),
+            "ready-queue" => Ok(Self::ReadyQueue),
+            _ => Err(format!(
+                "spatial scheduler must be recursive or ready-queue, not {value:?}"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConvertOptions {
     pub(crate) points_per_block: u64,

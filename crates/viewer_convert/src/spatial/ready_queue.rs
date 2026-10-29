@@ -24,7 +24,7 @@ use viewer_core::NodeId;
 
 use super::{BranchOutput, OpenNodeEvent, SpatialBuilder};
 use crate::ConvertError;
-use crate::diagnostics::{NodeSpoolEvent, SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
+use crate::diagnostics::{SpatialPhaseDiagnostics, SpatialSpoolDiagnostics};
 use crate::pipeline::{
     clock::{Clock, SystemClock},
     node_job::{
@@ -45,6 +45,8 @@ struct Finished {
     job: NodeJob,
     start_seq: Option<u64>,
     started: Instant,
+    /// Job work only, so a node event does not count the wait for the cursor.
+    elapsed_ns: u64,
     result: Result<NodeJobOutput, ConvertError>,
 }
 
@@ -53,6 +55,7 @@ struct Done {
     job: NodeJob,
     start_seq: Option<u64>,
     started: Instant,
+    elapsed_ns: u64,
     output: NodeJobOutput,
 }
 
@@ -170,14 +173,14 @@ impl ReadyJobs {
     }
 }
 
-/// Closes the queue if a worker panics, so the others stop waiting and the host's `recv` ends.
-struct CloseOnPanic<'a>(&'a ReadyJobs);
+/// Closes the queue on every exit of its owner, unwinding included: a worker panic lets the
+/// others stop waiting and the host's `recv` end; a host panic lets the parked workers exit so
+/// `thread::scope` can join them and resume the panic.
+struct CloseOnDrop<'a>(&'a ReadyJobs);
 
-impl Drop for CloseOnPanic<'_> {
+impl Drop for CloseOnDrop<'_> {
     fn drop(&mut self) {
-        if thread::panicking() {
-            self.0.close();
-        }
+        self.0.close();
     }
 }
 
@@ -187,7 +190,7 @@ fn work<S: PlanStore>(
     queue: &ReadyJobs,
     sender: mpsc::Sender<Message>,
 ) {
-    let _close = CloseOnPanic(queue);
+    let _close = CloseOnDrop(queue);
     while let Some(job) = queue.next() {
         let start_seq = store.next_event_seq();
         let started = SystemClock.now();
@@ -207,6 +210,7 @@ fn work<S: PlanStore>(
             job,
             start_seq,
             started,
+            elapsed_ns: SystemClock.elapsed_ns(started),
             result,
         };
         if sender.send(Message::Finished(Box::new(finished))).is_err() {
@@ -296,6 +300,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 scope.spawn(move || work(ctx, store, queue, sender));
             }
             drop(sender);
+            let _close = CloseOnDrop(&queue);
             while batch.pending > 0 {
                 match receiver.recv() {
                     Ok(Message::Progress(progress)) => {
@@ -321,7 +326,6 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 }
                 batch.pending -= batch.queue.restrict(&batch.outcome);
             }
-            batch.queue.close();
         });
 
         if let Some(error) = batch.outcome.into_error().or(channel_error) {
@@ -371,6 +375,7 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                 job: finished.job,
                 start_seq: finished.start_seq,
                 started: finished.started,
+                elapsed_ns: finished.elapsed_ns,
                 output,
             },
         );
@@ -405,22 +410,25 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
                         job,
                         start_seq,
                         started,
+                        elapsed_ns,
                         output,
                     } = done;
-                    let mut open = start_seq.map(|start_seq| OpenNodeEvent {
-                        event: NodeSpoolEvent {
-                            node_id: branch.node_records.len() as u64,
-                            parent_id: parent.map(NodeId::get),
-                            depth: job.level,
-                            input_spool_bytes: job.point_count.saturating_mul(record_bytes),
+                    let mut open = start_seq.map(|start_seq| {
+                        OpenNodeEvent::new(
+                            NodeId::new(branch.node_records.len() as u64),
+                            parent,
+                            job.level,
+                            job.point_count.saturating_mul(record_bytes),
                             start_seq,
-                            ..NodeSpoolEvent::default()
-                        },
-                        started,
+                            started,
+                        )
                     });
                     let committed = self.with_branch(branch, batch.memory_budget, |builder| {
                         builder.commit_job(&job, output, parent, &mut open)
                     });
+                    if let Some(open) = open.as_mut() {
+                        open.event.elapsed_ns = elapsed_ns.max(1);
+                    }
                     match committed {
                         Ok(children) => {
                             let id = NodeId::new(branch.node_records.len() as u64 - 1);

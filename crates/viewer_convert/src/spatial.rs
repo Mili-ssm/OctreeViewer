@@ -704,6 +704,29 @@ struct OpenNodeEvent {
     started: Instant,
 }
 
+impl OpenNodeEvent {
+    fn new(
+        node_id: NodeId,
+        parent: Option<NodeId>,
+        depth: u32,
+        input_spool_bytes: u64,
+        start_seq: u64,
+        started: Instant,
+    ) -> Self {
+        Self {
+            event: NodeSpoolEvent {
+                node_id: node_id.get(),
+                parent_id: parent.map(NodeId::get),
+                depth,
+                input_spool_bytes,
+                start_seq,
+                ..NodeSpoolEvent::default()
+            },
+            started,
+        }
+    }
+}
+
 impl<S: PlanStore> SpatialBuilder<'_, S> {
     fn record_lod_write_elapsed(&mut self, started: Option<Instant>) {
         if let (Some(metrics), Some(started)) = (self.spatial_phases.as_mut(), started) {
@@ -729,17 +752,14 @@ impl<S: PlanStore> SpatialBuilder<'_, S> {
         input_spool_bytes: u64,
     ) -> Option<OpenNodeEvent> {
         let start_seq = self.store.next_event_seq()?;
-        Some(OpenNodeEvent {
-            event: NodeSpoolEvent {
-                node_id: node_id.get(),
-                parent_id: parent.map(NodeId::get),
-                depth,
-                input_spool_bytes,
-                start_seq,
-                ..NodeSpoolEvent::default()
-            },
-            started: SystemClock.now(),
-        })
+        Some(OpenNodeEvent::new(
+            node_id,
+            parent,
+            depth,
+            input_spool_bytes,
+            start_seq,
+            SystemClock.now(),
+        ))
     }
 
     fn finish_node_event(&mut self, open: Option<OpenNodeEvent>) {
