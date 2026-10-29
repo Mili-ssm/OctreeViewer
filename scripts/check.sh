@@ -26,6 +26,7 @@ step "fmt" cargo fmt --all -- --check
 step "clippy (default features)" cargo clippy --workspace --all-targets $CARGO_MODE -- -D warnings
 step "clippy (all features)" cargo clippy --workspace --all-targets --all-features $CARGO_MODE -- -D warnings
 step "clippy wasm32" cargo clippy -p viewer_wasm --target wasm32-unknown-unknown $CARGO_MODE -- -D warnings
+step "format parity wasm32" bash -c 'cargo build -q --release -p format_parity --target wasm32-unknown-unknown --lib && test "$(cargo run -q --release -p format_parity --bin native_digest)" = "$(node tools/format_parity/run-wasm.mjs)"'
 step "cargo doc" cargo doc --workspace --no-deps $CARGO_MODE
 step "node tests" node --test examples/web-host/tests/*.test.mjs
 step "python web-host tests" python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'

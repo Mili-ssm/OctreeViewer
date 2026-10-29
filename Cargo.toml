@@ -8,6 +8,7 @@ members = [
 	"tools/format_parity",
 ]
 resolver = "2"
+exclude = ["vendor/lz4_flex"]
 
 [workspace.package]
 version = "0.1.0"
@@ -34,6 +35,9 @@ web-sys = { version = "0.3", features = [
 	"console",
 ] }
 wgpu = "30"
+
+[patch.crates-io]
+lz4_flex = { path = "vendor/lz4_flex" }
 
 [profile.release]
 opt-level = "s"
