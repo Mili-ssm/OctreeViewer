@@ -309,11 +309,18 @@ fn a_corrupt_laz_chunk_in_a_later_range_fails_like_the_default_scan() {
     let serial = convert(&bytes, options(4096, 2, 0));
     assert!(serial.is_err(), "the corruption must be detected");
     let serial = error_text(serial);
+    // With `laz-parallel` unified in by another crate the default scan decodes chunks in
+    // parallel, and the corrupt data can end as a later error than the sequential decoder's
+    // panic (or the reverse). Both fail with one of the two outcomes of this corruption, and a
+    // panic carries the batch-aligned index of the serial scan.
+    let known = |text: &str| {
+        text == "decoder panic at Some(0)" || text.ends_with("is outside the LAS/LAZ header bounds")
+    };
     for ranges in [2, 3, 8] {
-        assert_eq!(
-            error_text(convert(&bytes, options(4096, 2, ranges))),
-            serial,
-            "ranges {ranges}"
+        let ranged = error_text(convert(&bytes, options(4096, 2, ranges)));
+        assert!(
+            ranged == serial || (known(&ranged) && known(&serial)),
+            "ranges {ranges}: {ranged} vs {serial}"
         );
     }
 }

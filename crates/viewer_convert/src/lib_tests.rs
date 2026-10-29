@@ -70,7 +70,7 @@ fn fixture(path: &std::path::Path, compressed: bool, colored: bool, count: usize
             classification: las::point::Classification::Ground,
             scan_angle: index as f32 - 1.0,
             user_data: (index as u8).wrapping_add(7),
-            point_source_id: 100 + index as u16,
+            point_source_id: 100_u16.wrapping_add(index as u16),
             ..Point::default()
         };
         if colored {
@@ -2881,4 +2881,111 @@ fn serial_validation_reports_progress_and_honours_cancellation() {
     )
     .unwrap_err();
     assert!(matches!(error, ConvertError::Cancelled { .. }));
+}
+
+// --- Root partition by ranges on `ThreadedExecutor` (one thread per range, files) ---
+
+fn ranged(options: ConvertOptions, ranges: usize) -> ConvertOptions {
+    options.with_root_partition_ranges(ranges).unwrap()
+}
+
+fn block_options(divisions: u8) -> ConvertOptions {
+    ConvertOptions::new(4096, 0.01)
+        .unwrap()
+        .with_spatial_divisions(divisions)
+        .unwrap()
+}
+
+fn convert_pair(input: &std::path::Path, options: ConvertOptions) -> (Vec<u8>, Vec<u8>) {
+    let tmp = test_dir();
+    let output = tmp.path().join("out.oct");
+    convert_file(input, &output, options).unwrap();
+    output_pair_bytes(&output)
+}
+
+fn assert_threaded_ranges_match_default(input: &std::path::Path, label: &str) {
+    for divisions in [2, 4, 8] {
+        let expected = convert_pair(input, block_options(divisions));
+        for ranges in 1..=8 {
+            let got = convert_pair(input, ranged(block_options(divisions), ranges));
+            assert!(
+                got == expected,
+                "{label}: divisions {divisions} ranges {ranges} differ"
+            );
+        }
+    }
+}
+
+#[test]
+fn threaded_root_ranges_match_the_default_scan_on_las_and_laz() {
+    let tmp = test_dir();
+    let las = tmp.path().join("ranges.las");
+    fixture(&las, false, true, 20_001);
+    assert_threaded_ranges_match_default(&las, "las");
+    let variable = workspace_path("tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
+    assert_threaded_ranges_match_default(&variable, "variable laz");
+    // 110 007 points: chunks of 50 000, 50 000 and 10 007.
+    let fixed = tmp.path().join("ranges.laz");
+    fixture(&fixed, true, true, 110_007);
+    for divisions in [2, 8] {
+        let expected = convert_pair(&fixed, block_options(divisions));
+        for ranges in [1, 2, 3, 8] {
+            let got = convert_pair(&fixed, ranged(block_options(divisions), ranges));
+            assert!(got == expected, "fixed laz {divisions}/{ranges}");
+        }
+    }
+}
+
+#[test]
+fn threaded_root_ranges_report_the_lowest_start_error_of_two_failing_ranges() {
+    let tmp = test_dir();
+    let input = tmp.path().join("outliers.las");
+    fixture(&input, false, true, 20_000);
+    // Header max X below the points from about index 9 000 on: ranges 1 and 2 (of 3) both fail.
+    let mut bytes = fs::read(&input).unwrap();
+    let max_x: f64 = 1_000_000.0 + 9_000.0 * 0.25 - 1.0;
+    bytes[179..187].copy_from_slice(&max_x.to_le_bytes());
+    fs::write(&input, bytes).unwrap();
+    let message = |options: ConvertOptions| {
+        let output = tmp.path().join("out.oct");
+        let error = convert_file(&input, &output, options).unwrap_err();
+        assert!(!output.exists());
+        error.to_string()
+    };
+    let serial = message(block_options(2));
+    assert!(
+        serial.contains("is outside the LAS/LAZ header bounds"),
+        "{serial}"
+    );
+    for ranges in [2, 3, 8] {
+        for _ in 0..10 {
+            assert_eq!(message(ranged(block_options(2), ranges)), serial);
+        }
+    }
+}
+
+#[test]
+fn threaded_root_ranges_report_a_corrupt_laz_chunk_like_the_default_scan() {
+    let tmp = test_dir();
+    let input = tmp.path().join("corrupt.laz");
+    let mut bytes = fs::read(workspace_path(
+        "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz",
+    ))
+    .unwrap();
+    // Well inside the 50 000-point chunk; the small leading chunks occupy the first ~200 bytes.
+    let at = bytes.len() / 2;
+    for byte in &mut bytes[at..at + 300] {
+        *byte ^= 0xA5;
+    }
+    fs::write(&input, bytes).unwrap();
+    let message = |options: ConvertOptions| {
+        let output = tmp.path().join("out.oct");
+        convert_file(&input, &output, options)
+            .unwrap_err()
+            .to_string()
+    };
+    let serial = message(block_options(2));
+    for ranges in [2, 3, 8] {
+        assert_eq!(message(ranged(block_options(2), ranges)), serial);
+    }
 }

@@ -28,7 +28,7 @@ use conversion_metrics::ConversionMetrics;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
     match arguments.first().and_then(|value| value.to_str()) {
-        Some(command @ ("convert" | "convert-profile")) if (3..=8).contains(&arguments.len()) => {
+        Some(command @ ("convert" | "convert-profile")) if (3..=9).contains(&arguments.len()) => {
             let workers = arguments
                 .get(3)
                 .map(|value| value.to_string_lossy().parse())
@@ -53,6 +53,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .transpose()?
                 .unwrap_or(viewer_format::FormatVersion::V5);
+            let root_ranges = arguments
+                .get(7)
+                .map(|value| value.to_string_lossy().parse())
+                .transpose()?
+                .unwrap_or(0);
             convert(
                 Path::new(&arguments[1]),
                 Path::new(&arguments[2]),
@@ -60,6 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 divisions,
                 points_per_block,
                 format_version,
+                root_ranges,
                 command == "convert-profile",
             )
         }
@@ -139,6 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn convert(
     input: &Path,
     output: &Path,
@@ -146,6 +153,7 @@ fn convert(
     divisions: u8,
     points_per_block: u64,
     format_version: viewer_format::FormatVersion,
+    root_ranges: usize,
     process_io: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let input_bytes = fs::metadata(input)?.len();
@@ -158,7 +166,8 @@ fn convert(
     )?
     .with_format_version(format_version)?
     .with_spatial_workers(workers)?
-    .with_spatial_divisions(divisions)?;
+    .with_spatial_divisions(divisions)?
+    .with_root_partition_ranges(root_ranges)?;
     let mut on_progress = |progress: ConversionProgress| {
         if let Err(error) = metrics.observe(progress.stage) {
             metrics_error = Some(error);
