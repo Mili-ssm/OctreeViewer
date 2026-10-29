@@ -60,7 +60,7 @@ python3 examples/web-host/package-local.py
 
 ## Convenciones
 
-Fuente única de las reglas; [CLAUDE.md](CLAUDE.md) las resume para agentes.
+Fuente única de las reglas.
 
 - Commits: [Conventional Commits](https://www.conventionalcommits.org/) (`docs:`, `build:`, `fix:`…).
 - **V5 predeterminado**: sigue siendo la salida por defecto durante la transición a V7, que
