@@ -108,11 +108,14 @@ mod tests {
     use las::{Builder, Writer, point::Format};
 
     use super::{LasPointSource, PointRange, PointSource};
-    use crate::pipeline::spool_store::{FileSpoolStore, SpoolExtent, SpoolId, SpoolStore};
+    use crate::pipeline::{
+        node_job::spool_source,
+        spool_store::{FileSpoolStore, SpoolExtent, SpoolId, SpoolStore},
+    };
     use crate::{
-        ConvertError, ConvertOptions,
+        ConvertError,
         las_source::{inspect_source, open_las_reader},
-        spatial::spool_source,
+        options::input_batch_point_limit,
     };
 
     const POINTS: u64 = 1000;
@@ -166,9 +169,9 @@ mod tests {
         parts: Option<usize>,
         end: u64,
     ) -> Result<Vec<u8>, ConvertError> {
-        let options = ConvertOptions::new(BATCH, 0.01).unwrap();
         let reader = open_las_reader(path).unwrap();
         let info = inspect_source(&reader).unwrap();
+        let point_limit = input_batch_point_limit(BATCH, info.record_length);
         let ranges = match parts {
             None => vec![None],
             Some(parts) => PointRange::split(info.point_count, BATCH, parts)
@@ -182,25 +185,23 @@ mod tests {
         for (index, range) in ranges.into_iter().enumerate() {
             let id = SpoolId(index as u64);
             let reader = open_las_reader(path).unwrap();
-            let mut progress = |_: crate::ConversionProgress| true;
+            let mut progress = |_| Ok(());
             match range {
                 None => spool_source(
                     &mut EndsAt(LasPointSource::full(reader), end),
                     &info,
-                    options,
+                    point_limit,
                     &store,
                     id,
                     &mut progress,
-                    false,
                 )?,
                 Some(range) => spool_source(
                     &mut EndsAt(LasPointSource::records(reader, range)?, end),
                     &info,
-                    options,
+                    point_limit,
                     &store,
                     id,
                     &mut progress,
-                    false,
                 )?,
             };
             let extent = SpoolExtent {

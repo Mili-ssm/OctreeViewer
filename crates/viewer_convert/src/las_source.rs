@@ -21,6 +21,7 @@ use crate::diagnostics::DiagnosticTimer;
 use crate::ept;
 use crate::error::ConvertError;
 use crate::options::ESTIMATED_WORKING_BYTES_PER_POINT;
+use crate::pipeline::node_job::{JobProgress, spool_source};
 use crate::pipeline::point_source::LasPointSource;
 use crate::pipeline::spool_store::{FileSpoolStore, SpoolId, SpoolStore};
 use crate::publish::{
@@ -34,7 +35,7 @@ use crate::report::{
 };
 use crate::spatial::{
     PlannedBlock, SpatialPlan, Workspace, build_spatial_plan, build_spatial_plan_from_reader,
-    spool_source,
+    emit_source_progress,
 };
 use crate::{CheckpointMode, ConversionDiagnostics, ConvertOptions};
 
@@ -350,16 +351,24 @@ pub(crate) fn convert_file_inner(
         match checkpoint.stage() {
             CheckpointStage::Started => {
                 // `SOURCE` of a store rooted at the checkpoint is `checkpoint.source_path()`.
-                source_spool_bytes_written = spool_source(
+                let bytes = spool_source(
                     &mut LasPointSource::full(&mut reader),
                     &source,
-                    options,
+                    crate::options::input_batch_point_limit(
+                        options.points_per_block(),
+                        source.record_length,
+                    ),
                     &FileSpoolStore::new(checkpoint.root(), false),
                     SpoolId::SOURCE,
-                    on_progress,
-                    diagnostics.is_some(),
-                )?
-                .unwrap_or(0);
+                    &mut |progress| match progress {
+                        JobProgress::SourcePoints(processed) => {
+                            emit_source_progress(on_progress, source.point_count, processed)
+                        }
+                        JobProgress::NodeHeartbeat => Ok(()),
+                    },
+                )?;
+                // Only the diagnostics ledger reads it.
+                source_spool_bytes_written = if diagnostics.is_some() { bytes } else { 0 };
                 checkpoint.commit_source()?;
             }
             CheckpointStage::SourceReady(_) => checkpoint.verify_source()?,
