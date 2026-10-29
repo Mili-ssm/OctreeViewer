@@ -11,7 +11,7 @@
   "platform_profile": "balanced",
   "powerprofilesctl": "not installed"
  },
- "note": "psi_* = cpu/io/memory 'some avg10' before/after each run; sha16 = first 16 hex of .oct SHA-256 (round 1 and div8 only); kind warm = discarded; div8 = convert-profile ... 4 8",
+ "note": "psi_* = cpu/io/memory 'some avg10' before/after each run; sha16 = first 16 hex of .oct SHA-256 (round 1 and div8 only); kind warm = discarded; div8 = convert-profile ... 4 8; div8 rounds 10-14 added in a second block (same session, base worktree rebuilt at dad2d26); round 9 is the first single div8 run",
  "rows": [
   {
    "kind": "warm",
@@ -339,6 +339,171 @@
    "position": 3,
    "rc": 0,
    "elapsed_ms": "20991.794",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 10,
+   "arm": "m1-recursive",
+   "position": 1,
+   "rc": 0,
+   "elapsed_ms": "21203.767",
+   "psi_before": "cpu:1.56 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.28 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 10,
+   "arm": "m1-readyqueue",
+   "position": 2,
+   "rc": 0,
+   "elapsed_ms": "21141.195",
+   "psi_before": "cpu:0.28 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.03 io:0.09 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 10,
+   "arm": "base",
+   "position": 3,
+   "rc": 0,
+   "elapsed_ms": "20092.940",
+   "psi_before": "cpu:0.03 io:0.09 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.01 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 11,
+   "arm": "m1-readyqueue",
+   "position": 1,
+   "rc": 0,
+   "elapsed_ms": "20925.669",
+   "psi_before": "cpu:0.00 io:0.01 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 11,
+   "arm": "base",
+   "position": 2,
+   "rc": 0,
+   "elapsed_ms": "19748.593",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 11,
+   "arm": "m1-recursive",
+   "position": 3,
+   "rc": 0,
+   "elapsed_ms": "20999.464",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 12,
+   "arm": "base",
+   "position": 1,
+   "rc": 0,
+   "elapsed_ms": "20504.483",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 12,
+   "arm": "m1-recursive",
+   "position": 2,
+   "rc": 0,
+   "elapsed_ms": "20875.375",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.18 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 12,
+   "arm": "m1-readyqueue",
+   "position": 3,
+   "rc": 0,
+   "elapsed_ms": "21108.765",
+   "psi_before": "cpu:0.00 io:0.15 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.01 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 13,
+   "arm": "m1-recursive",
+   "position": 1,
+   "rc": 0,
+   "elapsed_ms": "21028.824",
+   "psi_before": "cpu:0.00 io:0.01 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 13,
+   "arm": "m1-readyqueue",
+   "position": 2,
+   "rc": 0,
+   "elapsed_ms": "20908.823",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 13,
+   "arm": "base",
+   "position": 3,
+   "rc": 0,
+   "elapsed_ms": "19800.314",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 14,
+   "arm": "m1-readyqueue",
+   "position": 1,
+   "rc": 0,
+   "elapsed_ms": "21108.562",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 14,
+   "arm": "base",
+   "position": 2,
+   "rc": 0,
+   "elapsed_ms": "19884.163",
+   "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
+   "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
+   "sha16": "fb90a490f9884239"
+  },
+  {
+   "kind": "div8",
+   "round": 14,
+   "arm": "m1-recursive",
+   "position": 3,
+   "rc": 0,
+   "elapsed_ms": "20727.952",
    "psi_before": "cpu:0.00 io:0.00 memory:0.00 ",
    "psi_after": "cpu:0.00 io:0.00 memory:0.00 ",
    "sha16": "fb90a490f9884239"
