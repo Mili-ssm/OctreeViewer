@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8, pendiente de decisión del propietario antes de M3b. Firmas de M2 fijadas (Tarea 3). Tarea 4 en curso.
+**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8. **Decisión del propietario 3 (29-10-2026):** M3b prueba P3 con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas cuál compensa (tiempo, PSS, ficheros volcados). Firmas de M2 fijadas (Tarea 3). Tarea 4 en curso.
 
 **Objetivo:** llegar a M3a: un núcleo `viewer_convert_core` sin E/S que compila para wasm32 (M2),
 la partición raíz por rangos de chunks con los mismos bytes en nativo, y una conversión web con un
@@ -372,6 +372,6 @@ serie ya está en el núcleo (Tarea 4, B2).
 
 ## Después de la etapa 3
 
-M3b (un worker con spools híbridos a escala Belvedere según S10, eliminar `browser_convert.rs`,
+M3b (un worker con spools híbridos P3 a escala Belvedere, comparando presupuestos de 2 y 4 GiB (decisión 3), eliminar `browser_convert.rs`,
 Chrome `file://` solo RAM), M4 (pool de preparación y escritor ordenado, S3/S4/S7), M5 (pool de
 partición y trabajos por nodo, validación paralela) y M6 (Majadas), en el orden de la spec.
