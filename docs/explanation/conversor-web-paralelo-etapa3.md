@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** plan redactado; ninguna tarea empezada.
+**Estado (29-10-2026):** plan redactado y enmendado tras el pre-mortem (abajo); Tareas 1–3 en curso.
 
 **Objetivo:** llegar a M3a: un núcleo `viewer_convert_core` sin E/S que compila para wasm32 (M2),
 la partición raíz por rangos de chunks con los mismos bytes en nativo, y una conversión web con un
@@ -43,6 +43,31 @@ Playwright 1.64 vía scripts Node (como los drivers de S8/S9).
 4. **Errores en un rango posterior**: LAS truncado, punto fuera de la cabecera o pánico del decodificador en el rango k > 0 → mismo `Display` e índice global que la serie; si fallan dos rangos, gana el menor `PointRange::start` (Tarea 5).
 5. **Determinismo de todo el pipeline en wasm32**, no solo del formato: la pareja completa convertida en wasm32 bajo Node tiene el SHA del CLI (Tarea 7).
 
+## Enmiendas del pre-mortem (29-10-2026)
+
+Ya aplicadas en el texto de las tareas; se listan para trazabilidad.
+
+| # | Enmienda | Tareas |
+| --- | --- | --- |
+| B1 | El LAS pequeño (111 190 puntos < 262 144 por bloque) deja la raíz como hoja: la paridad de M3a también usa 4096 puntos por bloque × divisiones {2, 8}, autzen y la fixture multi-chunk variable, con más de un nodo comprobado; SHA de referencia del CLI serie registrados antes de la Tarea 5 | 1, 7 |
+| B2 | El bucle host serie (`inspect_source`, metadatos, plan y fase de bloques serie sobre `Write + Seek`) va al núcleo en la Tarea 4, antes de que las Tareas 5 y 7 se separen; la fase de bloques nativa y la serie comparten la función por bloque | 3, 4, 7 |
+| B3 | El `PointSource` por rangos de chunks vive en el núcleo (genérico en `Read + Seek`); las llamadas a `fill` se cortan en múltiplos globales de `input_batch_point_limit`; con error en el rango k se cancelan solo los rangos > k y gana el de menor inicio; los errores de `laz` dan el mismo `Display` que la serie | 3, 5 |
+| B4 | Las firmas de `PointSource` y de rangos son provisionales hasta el paso 1 de S2 | 3 |
+| B5 | Tareas en paralelo con código: worktree y `CARGO_TARGET_DIR` propios; `git add` solo de rutas propias; el miembro nuevo del workspace (Tarea 1) se integra antes de la Tarea 4 | todas |
+| B6 | `#[inline]` en las funciones calientes que pasan a ser entre crates y puerta de instrucciones (callgrind) + R7 corto antes de la Tarea 5 | 4 |
+| B7 | Mediciones de tiempo (S2 paso 2, R7) sin otros agentes activos, anotado en el registro | 1, 6 |
+| B8 | S10 reserva el peor caso en la admisión, modela 513 handles por trabajo en divisiones 8 y la raíz por rangos (W × d³), y añade P3: solo el coordinador abre handles y vuelca | 2 |
+| B9 | Cancelación en M3a: API por pasos o `terminate()` más limpieza de huérfanos, fijada en la Tarea 3 y probada en la Tarea 7 | 3, 7 |
+| B10 | El lint añade `disallowed-types` (`File`, `OpenOptions`, `Instant`, `SystemTime`, tipos de hilo); el núcleo no depende de rayon, ctrlc ni `laz-parallel` | 4 |
+| B11 | La estimación de memoria suma W × d³ búferes de hijo solo con rangos activos; los tests pasan también W = 1 por la unión de segmentos | 5 |
+
+**Criterios de parada añadidos:** instrucciones del LAS pequeño en divisiones 8 > +2% frente a
+`fb9a3b7` tras B6 → parar antes de la Tarea 5 y rediseñar la frontera del bucle caliente (o revertir);
+S2 necesita parchear `laz` → decide el propietario antes de fijar firmas; SHA por rangos (W > 1)
+distinto tras dos días → rangos desactivados y M2 se cierra sin ellos; S10 con > 1 s de handles por
+trabajo volcado en Firefox en todas las políticas, o > 664 handles simultáneos → replantear los
+spools con el propietario antes de M3b.
+
 ---
 
 ### Tarea 1: spike S2 — rangos de chunks LAZ y decodificador en wasm32
@@ -60,7 +85,8 @@ secuencial en wasm32 que en nativo?
 - Produce: un prototipo `decode_chunk_range(bytes_or_reader, header, chunk_table, chunks: Range<usize>, out: &mut las::PointData) -> Result<u64, _>` y la receta exacta de la API de `laz` 0.13 que usa, para que la Tarea 5 lo convierta en `PointSource`.
 
 - [ ] **Paso 1:** prototipo nativo; test que compara, para cada partición de los chunks en W = 1..8 rangos, la concatenación de puntos decodificados por rango con la lectura secuencial completa: autzen COPC, Belvedere COPC (ignorado si falta el fichero) y una fixture sintética con chunks `[7, 13, 5, 11, 50000, 3]`.
-- [ ] **Paso 2:** coste de arranque por chunk y puntos/s nativo frente a wasm32 bajo Node, sobre los primeros ≥ 64 chunks de Belvedere, 5 rondas; mediana y rango.
+- [ ] **Paso 1b (B1):** SHA de referencia del CLI serie (base de la etapa) para la fixture multi-chunk variable con 4096 puntos por bloque, divisiones 2 y 8; fixture versionada si ocupa < 2 MB o generador con semilla fija.
+- [ ] **Paso 2 (B7, sin otros agentes activos):** coste de arranque por chunk y puntos/s nativo frente a wasm32 bajo Node, sobre los primeros ≥ 64 chunks de Belvedere, 5 rondas alternadas; mediana y rango.
 - [ ] **Paso 3:** registro con método, cifras, límites y decisión: receta para la Tarea 5. Si `laz` 0.13 no lo permite sin parche, el registro compara parche vendorizado (como `vendor/lz4_flex`) frente a otra ruta y **para** antes de la Tarea 5. Si wasm32 > 4 × nativo, se anota como riesgo del criterio de parada de M3b.
 - [ ] **Paso 4:** commit.
 
@@ -74,8 +100,9 @@ Políticas a comparar:
 | Política | Regla |
 | --- | --- |
 | P0 | Solo RAM (cota de RAM, Chrome `file://`) |
-| P1 | Admisión por entrada: un trabajo cuyo `input_spool_bytes` no cabe en el presupuesto libre recibe del host, antes de empezar, handles abiertos para sus `divisions³ + 1` salidas y escribe en ellos; si cabe, solo RAM. Entre trabajos, el host vuelca primero los spools retenidos que se consumen más tarde (LOD, hojas) |
+| P1 | Admisión por entrada: un trabajo cuyo peor caso (`input_spool_bytes` + LOD) no cabe en el presupuesto libre recibe del host, antes de empezar, handles abiertos para sus `divisions³ + 1` salidas y escribe en ellos; si cabe, solo RAM. Entre trabajos, el host vuelca primero los spools retenidos que se consumen más tarde (LOD, hojas). Se modela el coste de 513 handles por trabajo en divisiones 8, la raíz por rangos (W × d³) y los handles que acaban vacíos |
 | P2 | Handles abiertos para todo trabajo (coste de referencia de S9) |
+| P3 | Solo el coordinador toca OPFS: el worker llena segmentos de tamaño fijo y los transfiere; el coordinador lleva el libro de RAM y vuelca spools enteros de forma asíncrona entre mensajes; contrapresión tras K segmentos sin confirmar |
 
 **Archivos:**
 - Crear: `crates/viewer_convert/benchmarks/model_hybrid_spools.py` y `test_model_hybrid_spools.py` (reutiliza los eventos y el simulador de `model_node_job_arena.py`)
@@ -97,9 +124,11 @@ anota en una sección «Firmas fijadas» de este documento antes de seguir:
 - Si `PointSource::header() -> &las::Header` se mantiene (dependencia `las` sin `laz-parallel` en el núcleo).
 - `SpatialBuilder` genérico en `Clock`; `ConvertOptions::default` sin `available_parallelism` en el núcleo.
 - Partición por rangos: `RangePartition` (segmentos por hijo, `SampleGrid` y límites fusionables), `SampleGrid::merge` (sumas; más cercano con `<` estricto y el rango anterior primero), unión de segmentos (`join_segments` genérica sobre `SpoolStore`, borrando cada segmento tras copiarlo), orden de ids, errores (A8) y casos raíz con puntos iguales y no divisible.
-- Cómo se activa en nativo (`ConvertOptions` y `real_dataset_bench`, sin cambiar el defecto) para que R7 no se vea afectado.
-- API serie del núcleo para M3a: plan + fase de bloques serie + escritura en `Write + Seek` genéricos, sin hilos.
-- Lista exacta de `disallowed-methods`.
+- Cómo se activa en nativo (`ConvertOptions` y `real_dataset_bench`, sin cambiar el defecto) para que R7 no se vea afectado; memoria de W × d³ búferes solo con rangos (B11).
+- `PointSource` por rangos de chunks en el núcleo, genérico en `Read + Seek`, con cortes de `fill` en múltiplos globales y la regla de errores de B3; provisional hasta S2 (B4).
+- Bucle host serie del núcleo (B2): `inspect_source`, metadatos, plan y fase de bloques serie sobre `Write + Seek`, con la función por bloque compartida con la fase nativa paralela.
+- Cancelación en M3a (B9): API por pasos o `terminate()` más limpieza de huérfanos.
+- Lista exacta de `disallowed-methods` y `disallowed-types` (B10) y funciones que llevan `#[inline]` (B6).
 
 - [ ] **Paso 1:** firmas anotadas aquí; revisión del coordinador antes de la Tarea 4.
 
@@ -109,18 +138,20 @@ anota en una sección «Firmas fijadas» de este documento antes de seguir:
 `[lints.clippy] disallowed_methods = "deny"`, `clippy.toml`); modificar `crates/viewer_convert/`,
 `Cargo.toml` del workspace, `scripts/check.sh`, `.cargo/config.toml` (`check-web`).
 
-- [ ] **Paso 1:** mover los módulos puros sin cambiar su lógica; `viewer_convert` reexporta.
-- [ ] **Paso 2:** `check.sh` añade `cargo check -p viewer_convert_core --target wasm32-unknown-unknown` y clippy con el lint; un uso de prueba de `std::fs::read` en el núcleo debe hacerlo fallar (comprobarlo y revertirlo).
+- [ ] **Paso 1:** mover los módulos puros sin cambiar su lógica; `viewer_convert` reexporta; `#[inline]` en las funciones calientes que pasan a ser entre crates (B6).
+- [ ] **Paso 1b (B2):** bucle host serie en el núcleo; la fase de bloques nativa usa la misma función por bloque. Test: la ruta serie del núcleo produce los mismos bytes que el CLI en las fixtures de `lib_tests.rs`.
+- [ ] **Paso 2:** `check.sh` añade `cargo check -p viewer_convert_core --target wasm32-unknown-unknown` y clippy con el lint (B10); un uso de prueba de `std::fs::read` en el núcleo debe hacerlo fallar (comprobarlo en el worktree propio y revertirlo).
 - [ ] **Paso 3:** tests existentes en verde; SHA de M0 en LAS pequeño, autzen y Belvedere (defecto y divisiones 8) iguales.
+- [ ] **Paso 3b (B6, sin otros agentes activos):** instrucciones (callgrind) del LAS pequeño, divisiones 8, 2048 puntos por bloque, ≤ +2% frente a `fb9a3b7`, y R7 de 3 rondas en divisiones 8. Criterio de parada arriba.
 - [ ] **Paso 4:** commit.
 
 ### Tarea 5: M2 paso 3 — partición raíz por rangos de chunks en nativo
 
-**Archivos:** los fija la Tarea 3; en el núcleo, la partición y la unión de segmentos; en el shell,
-el `PointSource` por rangos de chunks LAZ (receta de la Tarea 1) y la ejecución de W rangos con
-`thread::scope`.
+**Archivos:** los fija la Tarea 3; en el núcleo, la partición, la unión de segmentos y el
+`PointSource` por rangos de chunks LAZ (receta de la Tarea 1, B3); en el shell, la ejecución de W
+rangos con `thread::scope`.
 
-- [ ] **Paso 1:** tests que fallan: matriz W ∈ {1, …, 8} × LAS/LAZ multi-chunk variable × divisiones {2, 4, 8} igual byte a byte a la serie; Review Focus 1–4 (fronteras, empates, hijos vacíos, errores en el rango k > 0); raíz con todos los puntos iguales y no divisible con W > 1.
+- [ ] **Paso 1:** tests que fallan: matriz W ∈ {1, …, 8} × LAS/LAZ multi-chunk variable × divisiones {2, 4, 8} igual byte a byte a la serie, con W = 1 también por la unión de segmentos (B11); Review Focus 1–4 (fronteras, empates, hijos vacíos, errores en el rango k > 0 con el mismo `Display` e índice global, B3); raíz con todos los puntos iguales y no divisible con W > 1.
 - [ ] **Paso 2:** implementar hasta verde; `MemSpoolStore` no deja ids vivos tras la fase de bloques.
 - [ ] **Paso 3:** SHA de Belvedere (defecto y divisiones 8) con W = 1, 2, 4, 8 rangos iguales a M0. Criterio de parada (spec): el núcleo necesita `dyn` o asignación por punto.
 - [ ] **Paso 4:** commit.
@@ -137,8 +168,11 @@ el `PointSource` por rangos de chunks LAZ (receta de la Tarea 1) y la ejecución
 - Crear: export sin imports en `tools/format_parity` (o un tool hermano) que convierte un LAS en memoria con el núcleo y devuelve los SHA de la pareja; paso en `check.sh`
 - Crear: driver Playwright `docs/records/benchmarks/data/m3a-parity-<aaaa-mm-dd>-driver.mjs` y registro `docs/records/benchmarks/M3A_PARITY_<aaaa-mm-dd>.md`
 
-- [ ] **Paso 1:** test Node que falla: SHA de la pareja convertida en wasm32 con el núcleo = SHA del CLI para el LAS pequeño de M0 (`413858a9…`) y para la fixture multi-chunk variable.
-- [ ] **Paso 2:** implementar hasta verde; tests Node de `converter-api`/`converter-worker` para `engine: "core"` (progreso, error, cancelación).
+Se ejecuta en su propio worktree (B5) y solo toca `viewer_wasm`, el host web y `tools/`: el bucle
+serie ya está en el núcleo (Tarea 4, B2).
+
+- [ ] **Paso 1 (B1):** test Node que falla: SHA de la pareja convertida en wasm32 con el núcleo = SHA del CLI para el LAS pequeño de M0 (`413858a9…`), el LAS pequeño con 4096 puntos por bloque y divisiones 2 y 8, autzen y la fixture multi-chunk variable (SHA de la Tarea 1); cada caso salvo el primero comprueba más de un nodo.
+- [ ] **Paso 2:** implementar hasta verde; tests Node de `converter-api`/`converter-worker` para `engine: "core"` (progreso, error y la cancelación fijada en la Tarea 3, B9).
 - [ ] **Paso 3:** navegador: Chrome y Firefox por HTTP convierten el LAS pequeño con `engine: "core"`; SHA = CLI; registro. Criterio de parada (spec): SHA distinto sin explicación tras una semana.
 - [ ] **Paso 4:** estado en README y este plan; commit.
 
