@@ -6,6 +6,7 @@ members = [
 	"crates/viewer_convert_core",
 	"crates/viewer_render_wgpu",
 	"crates/viewer_wasm",
+	"tools/convert_parity",
 	"tools/format_parity",
 	"tools/laz_chunk_probe",
 ]

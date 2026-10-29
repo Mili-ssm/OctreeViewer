@@ -44,6 +44,9 @@ else
   echo "=== format parity real blocks: skipped ($real_input not found) ==="
   steps+=("skip format parity real blocks (no dataset)")
 fi
+# Converts fixtures with the serial core path on wasm32 (Node) and with the native CLI path and
+# compares the SHA-256 of the .oct/.octattrs pair (M3a). Autzen COPC is used when the cargo registry has it.
+step "convert parity wasm32" bash -c 'set -euo pipefail; cargo build -q --release -p convert_parity --target wasm32-unknown-unknown --lib $0 && cargo build -q --release -p convert_parity --bin native_convert $0 && node tools/convert_parity/run.mjs' "$CARGO_MODE"
 step "cargo doc" cargo doc --workspace --no-deps $CARGO_MODE
 step "node tests" node --test examples/web-host/tests/*.test.mjs
 step "python web-host tests" python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'
