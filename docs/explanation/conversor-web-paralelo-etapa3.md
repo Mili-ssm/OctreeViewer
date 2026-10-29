@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8. **Decisión del propietario 3 (29-10-2026):** M3b prueba P3 con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas cuál compensa (tiempo, PSS, ficheros volcados). Firmas de M2 fijadas (Tarea 3). Tarea 4: paso 0 hecho (SHA de M0 y de la fixture iguales; `check.sh` en verde); pasos 1–3b en curso.
+**Estado (29-10-2026):** Tareas 1–3 hechas. S2 ([registro](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)): los rangos de chunks LAZ se decodifican sin `seek` ni parche de `laz`; wasm32 decodifica a 1,74 × el nativo. S10 ([registro](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md)): P1/P2 activan el criterio de parada en divisiones 8 (513 handles por trabajo); se propone P3 (solo el coordinador vuelca), segmentos de 1 MiB, presupuesto de 2 GiB y contrapresión K = 8. **Decisión del propietario 3 (29-10-2026):** M3b prueba P3 con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas cuál compensa (tiempo, PSS, ficheros volcados). Firmas de M2 fijadas (Tarea 3). Tarea 4: pasos 0–3 hechos (crate `viewer_convert_core` con lint y check wasm32; `convert_serial` con los bytes del CLI; SHA de M0 y de la fixture iguales; `check.sh` en verde también con `CHECK_LOCKED=1`); puerta 3b en curso.
 
 **Objetivo:** llegar a M3a: un núcleo `viewer_convert_core` sin E/S que compila para wasm32 (M2),
 la partición raíz por rangos de chunks con los mismos bytes en nativo, y una conversión web con un
@@ -330,10 +330,10 @@ comprobarlo en el paso 2 de la Tarea 4.
 Cada paso cierra con tests en verde y los SHA de M0 (LAS pequeño, autzen, Belvedere por defecto y divisiones 8).
 
 - [x] **Paso 0 (costuras dentro de `viewer_convert`, aún un crate; `88e458c`, `492efa6`):** `SpatialBuilder<S, C, X>`, `BatchPlanner` (la cola como `ThreadedExecutor`) y `SerialExecutor`; `ByteSource`/`LasFactory` y `build_spatial_plan_from_source` en lugar de `_from_reader`; reparto de `publish`/`las_source`/`diagnostics` en partes puras y nativas; `#[inline]` en `decode_point`, `write_point`, `read_records`, `read_u16`, `read_f64`, `sample_index`, `voxel_center`, `cube_side`, `outside_header_bounds`, `SpoolLayout::{position, record_bytes}`, `SpoolPoint::display_color_component`, `SampleGrid::add` y `average` (B6).
-- [ ] **Paso 1:** traslado mecánico al crate nuevo con los reexportes; los tests con ficheros se quedan en el shell.
-- [ ] **Paso 1b (B2):** `blocks.rs` y `stream_blocks` sobre la ruta por bloque compartida. Test nativo: `convert_serial(MemSpoolStore, MemBytes)` da el SHA del CLI en el LAS pequeño y en `synthetic_variable_chunks.laz` con 4096 puntos por bloque (SHA de la Tarea 1).
-- [ ] **Paso 2:** `check.sh` añade `cargo check -p viewer_convert_core --target wasm32-unknown-unknown` y clippy con el lint (B10); un uso de prueba de `std::fs::read` en el núcleo debe hacerlo fallar (comprobarlo en el worktree propio y revertirlo).
-- [ ] **Paso 3:** tests existentes en verde; SHA de M0 en LAS pequeño, autzen y Belvedere (defecto y divisiones 8) iguales.
+- [x] **Paso 1 (`4c7ed71`):** traslado mecánico al crate nuevo con los reexportes; los tests con ficheros se quedan en el shell.
+- [x] **Paso 1b (B2, `17415ae`):** `blocks.rs` y `stream_blocks` sobre la ruta por bloque compartida. Test nativo: `convert_serial(MemSpoolStore, MemBytes)` da el SHA del CLI en el LAS pequeño y en `synthetic_variable_chunks.laz` con 4096 puntos por bloque (SHA de la Tarea 1).
+- [x] **Paso 2 (`0aa2f1c`, `471a90b`):** `check.sh` añade `cargo check -p viewer_convert_core --target wasm32-unknown-unknown` y clippy con el lint (B10); un uso de prueba de `std::fs::read` en el núcleo debe hacerlo fallar (comprobarlo en el worktree propio y revertirlo).
+- [x] **Paso 3:** tests existentes en verde; SHA de M0 en LAS pequeño, autzen y Belvedere (defecto y divisiones 8) iguales.
 - [ ] **Paso 3b (B6, sin otros agentes activos):** instrucciones (callgrind) del LAS pequeño, divisiones 8, 2048 puntos por bloque, ≤ +2% frente a `fb9a3b7`, y R7 de 3 rondas en divisiones 8. Criterio de parada arriba.
 - [ ] **Paso 4:** commit.
 
