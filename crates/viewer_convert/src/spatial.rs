@@ -549,6 +549,8 @@ struct ChildSpool {
     buffer: Vec<u8>,
     created: bool,
     payload_written_bytes: Option<u64>,
+    /// Credited on every flush so the shared live/peak totals include in-progress spools.
+    ledger: Option<Arc<SpoolLedger>>,
 }
 
 impl ChildSpool {
@@ -560,7 +562,13 @@ impl ChildSpool {
             buffer: Vec::with_capacity(CHILD_SPOOL_BUFFER_BYTES),
             created: false,
             payload_written_bytes: collect_diagnostics.then_some(0),
+            ledger: None,
         }
+    }
+
+    fn with_ledger(mut self, ledger: Option<Arc<SpoolLedger>>) -> Self {
+        self.ledger = ledger;
+        self
     }
 
     fn write_point(&mut self, point: &SpoolPoint) -> Result<(), ConvertError> {
@@ -589,6 +597,9 @@ impl ChildSpool {
             *bytes_written = bytes_written
                 .checked_add(self.buffer.len() as u64)
                 .ok_or(ConvertError::SizeOverflow)?;
+        }
+        if let Some(ledger) = &self.ledger {
+            ledger.add(self.buffer.len() as u64);
         }
         self.buffer.clear();
         self.created = true;
@@ -627,6 +638,7 @@ impl SpoolLedger {
     }
 
     fn remove(&self, bytes: u64) {
+        debug_assert!(self.live.load(Ordering::Relaxed) >= bytes);
         let _ = self
             .live
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
@@ -759,7 +771,8 @@ impl SpatialBuilder<'_> {
             .child_payload_written_bytes
             .checked_add(bytes)
             .ok_or(ConvertError::SizeOverflow)?;
-        self.note_spool_written(bytes);
+        // The shared ledger was already credited at each flush; only the local count is added.
+        self.spool_written_local = self.spool_written_local.saturating_add(bytes);
         Ok(())
     }
 
@@ -854,6 +867,7 @@ impl SpatialBuilder<'_> {
                         self.layout,
                         self.spool_diagnostics.is_some(),
                     )
+                    .with_ledger(self.spool_ledger.clone())
                 });
                 child.write_point(&point)?;
                 let voxel_key = sample_index(point.position, bounds);
@@ -1022,6 +1036,7 @@ impl SpatialBuilder<'_> {
                         self.layout,
                         self.spool_diagnostics.is_some(),
                     )
+                    .with_ledger(self.spool_ledger.clone())
                 });
                 child.write_point(&point)?;
 

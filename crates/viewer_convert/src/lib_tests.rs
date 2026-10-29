@@ -1491,7 +1491,8 @@ fn spool_diagnostics_account_written_and_live_bytes() {
                 + spools.lod_payload_written_bytes
         );
         assert!(phases.peak_live_spool_bytes > 0);
-        assert!(phases.peak_live_spool_bytes <= phases.spool_bytes_written);
+        // Strict: internal nodes delete their input spools, so dropped removals would fail this.
+        assert!(phases.peak_live_spool_bytes < phases.spool_bytes_written);
         assert!(!phases.root_child_spool_bytes_written.is_empty());
         assert!(
             phases.root_child_spool_bytes_written.iter().sum::<u64>() <= phases.spool_bytes_written
