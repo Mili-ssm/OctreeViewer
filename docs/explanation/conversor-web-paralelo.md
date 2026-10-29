@@ -4,7 +4,7 @@ Estado: spec aprobada (29-10-2026), con enmiendas del pre-mortem · Decisiones:
 [ADR 0014](../adr/0014-nucleo-de-conversion-sin-io.md),
 [ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md)
 
-Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8 y M1). La lectura paralela tendrá spec
+Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8, S9 y M1). La lectura paralela tendrá spec
 propia (enfoque async + workers, a concretar) y queda fuera de este documento.
 
 ## Objetivo
@@ -206,7 +206,7 @@ Sus resultados pueden cambiar umbrales y granularidad, nunca R1.
 | S7 | Dimensionado: tiempo total, PSS y OPFS para N = 2, 4, 8, 12, 16 con el mismo `ram_budget` (4 y 8 GB) y reparto entre memoria wasm y spools en RAM; Belvedere en Chrome y Firefox | Cierre de M4 |
 | S8 | Cuota OPFS real con `persist()` en perfiles reales de Chrome y Firefox, y si cabe Majadas (≈ 19 GiB de spools vivos más la pareja de salida); decisión del propietario, 29-10-2026 | M6 |
 | S9 | Ficheros OPFS por spool: ~650 ficheros vivos y handles síncronos concurrentes (N = 4 y 8) en Chrome y Firefox, latencias y rendimiento frente a la arena única de S1; decisión del propietario, 29-10-2026 | M1 (paso 3 de la etapa 2) |
-| S10 | Pico de RAM del híbrido segmentos RAM + volcado por spool, con el presupuesto de la spec; decisión del propietario 2, 29-10-2026, tras S9 | M3b |
+| S10 | Pico de RAM del híbrido segmentos RAM + volcado por spool, con el presupuesto de la spec; decisión del propietario 2, 29-10-2026, tras S9. También decide cuándo se abren los handles de volcado: un volcado puede ocurrir a mitad de trabajo y `createSyncAccessHandle` es asíncrono, mientras que el texto híbrido supone que el host los abre antes | M3b |
 
 ## Riesgos
 

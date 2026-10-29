@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha y el paso 3 de la Tarea 4 (nativo) queda desbloqueado; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)).
+**Estado (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)). Tarea 4 (M1): pasos 1–4 y 6 hechos; R7 pasa con la cola de listos, que es el planificador por defecto; falta la sesión final de R7 (paso 5).
 
 **Objetivo:** cerrar las tres incógnitas que dejó la etapa 1 (pico de los trabajos por nodo, S0
 con bloques reales, cuota real) y llegar a M1: el pipeline nativo expresado con traits y trabajos
@@ -111,7 +111,7 @@ Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este
 
 ### Tarea 4: M1 — traits y trabajos por nodo dentro de `viewer_convert`
 
-Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 (nativo) está desbloqueado desde que la Tarea 5 se cerró. La Tarea 1 activó su criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (29-10-2026).
+Los pasos 1 y 2 fueron en paralelo con la Tarea 5; el paso 3 (nativo) se desbloqueó con la decisión 2 tras S9. La Tarea 1 activó su criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (29-10-2026).
 
 **Archivos:**
 - Modificar: `crates/viewer_convert/src/spatial.rs`, `crates/viewer_convert/src/las_source.rs`, `crates/viewer_convert/src/lib.rs`, `crates/viewer_convert/src/error.rs`, `crates/viewer_convert/src/ept.rs`
@@ -135,6 +135,16 @@ Los pasos 1 y 2 pueden ir en paralelo con la Tarea 5; el paso 3 (nativo) está d
 Módulo `crates/viewer_convert/src/pipeline/`, todo `pub(crate)`. Las líneas citadas son de `spatial.rs` en `44d2a9a`. Enmendado el mismo día tras la revisión de diseño («aprobar con cambios»; R1 se mantiene en 4a y 4b).
 
 > Enmienda del 29-10-2026 (revisión del paso 3): junto a `SpoolStore` hay un trait hermano `SpoolAccounting` (`next_event_seq`, `ledger_totals`: el libro de bytes y el contador de eventos viven en el store) y un `PlanStore` (= `SpoolStore + SpoolAccounting + Sync`) como cota del planificador. `SpoolStore` queda tal como está fijado abajo. `MemSpoolStore::new(diagnostics)` activa solo esa contabilidad.
+
+> **Deriva de la implementación (29-10-2026; pasos 4a, 4b y 5).** Lo no fijado arriba, tal como quedó:
+> 1. Tras R7 hay un solo planificador, la cola de listos (`spatial/ready_queue.rs`); `Recursive` y `SpatialScheduler` se borraron antes de publicarse. Con `--spatial-workers 1` (o un solo hijo raíz) se usa la ruta serie.
+> 2. La cola confirma cada salida en el builder local de su hijo raíz (`with_branch`) y `append_branch` fusiona las ramas al final del lote, así que ambos se conservan.
+> 3. Los hilos de cada lote son el tamaño del lote (`min(W, k)`).
+> 4. Fases de error `Job < Commit`; el presupuesto del lote se calcula antes de despachar (equivale a `BatchBudget` primero).
+> 5. Un plan fallido llama a `discard_spools`: cierra y borra todos los ids reservados, salvo el `SOURCE` del checkpoint, en cualquier store.
+> 6. `point_index` de `LasDecoderPanicked` no aparece en el `Display`.
+> 7. Sin firma fijada: `JobContext::splits`, `NodePath::child`, `NodeJobOutput::is_leaf`, los campos de `JobMetrics` y `OpenNodeEvent`; un trabajo hoja recibe `first_output = SOURCE` como marcador; con la cola, `elapsed_ns` de un evento es solo trabajo. `SpoolAccounting`/`PlanStore`: ver la enmienda anterior.
+> 8. Archivos fuera de la lista: `spatial/ready_queue.rs`, `options.rs`, `main.rs`, `examples/real_dataset_bench.rs`.
 
 ```rust
 // spool_store.rs
@@ -236,11 +246,11 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
 **Planificador (A6).**
 
 1. **4a, preorden serial:** `build_node` sigue siendo el driver recursivo: `run_node_job` → el host borra `release` → commit → hijos por clave ascendente. Los hilos por hijo raíz, `append_branch` y los presupuestos de rama no cambian; cada rama usa el mismo driver. Cierre: SHA de M0 (incluidos Belvedere divisiones 8 y autzen), invariantes y barrido de `planner_budget` igual a la base.
-2. **4b, cola de listos:** `NodeScheduler::{RootBranches (por defecto), ReadyQueue}` en `ConvertOptions` (`pub(crate)`). `workers_used` hilos en `thread::scope` (`S: SpoolStore + Sync`) toman el trabajo listo de menor `NodePath`.
+2. **4b, cola de listos:** `SpatialScheduler::ReadyQueue` (ver la deriva de la implementación en «Firmas fijadas en el paso 1»; tras R7 es el único planificador). `min(W, k)` hilos por lote en `thread::scope` (`S: PlanStore`) toman el trabajo listo de menor `NodePath`.
    - **Sin anticipación (R16):** solo se despachan trabajos bajo el lote virtual cuyo commit está en curso. Dentro del lote los hilos se reparten el trabajo de forma dinámica; el lote siguiente empieza cuando el cursor llega a su inicio. Es la barrera por lote de hoy con el mismo límite `min(W, k)`. La anticipación y los límites por encima de `W` quedan para M5.
    - El tamaño del lote virtual sale de la opción `spatial_workers`, no del número de hilos, para que M5 pueda usar N ≠ W.
    - Al terminar un trabajo, el host borra `release`, encola los hijos y guarda la salida en un `BTreeMap<NodePath, _>`. Un cursor (pila de rutas esperadas) hace commit en preorden en cuanto llega la salida siguiente. `start_seq` se fija al despachar y `end_seq` cuando el cursor sale del subárbol, de modo que el anidamiento del test de eventos se mantiene.
-3. **Cambio de valor por defecto** en un commit propio, medido por R7; si falla dos veces, se revierte ese commit. Tras pasar R7 se borran `RootBranches` y `append_branch`.
+3. **Cambio de valor por defecto** en un commit propio, medido por R7; si falla dos veces, se revierte ese commit. Tras pasar R7 se borra `Recursive` (un hilo por hijo raíz); `append_branch` se queda porque la cola fusiona las ramas con él.
 
 **Presupuesto y estimación (A7).**
 
@@ -268,9 +278,9 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
 - Despacho estático: los `run_*` son genéricos en `S`, `P`, `C` y el cierre de progreso. El bucle por punto (`decode_point`, `cell_index`, escritura en el búfer de hijo, `SampleAccumulator::add`) no tiene `dyn`; el store se llama una vez por vaciado de 32 KiB. `on_progress: &mut dyn FnMut` queda solo en el host.
 - `Sync` va en el planificador nativo, no en el trait: en la web, cada worker tendrá su propio store. La forma serializable (cable) se decide en M2/M3.
 
-**Mapeo OPFS pendiente de S9** (solo cambia la implementación web; el trait síncrono por id se mantiene):
+**Mapeo OPFS** (S9 hecho; decisión 2: híbrido; los detalles los fijan S10 y M3b; el trait síncrono por id se mantiene):
 
-| Aspecto | Opciones que decide S9 |
+| Aspecto | Opciones (S10/M3b) |
 | --- | --- |
 | `create` | Handles abiertos por el host antes del trabajo (hasta `divisions³ + 1`) o segmento `ArrayBuffer` en RAM volcado al cerrar (R10) |
 | `append` | Escritura directa en el handle síncrono o agrupada en bloques de 1 MiB (32 KiB frente a 1 MiB en S9) |
@@ -279,14 +289,14 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
 | `reader` | `getFile()` tras cerrar o handle síncrono de lectura en los workers de preparación |
 | Ficheros vivos | Si no se llega a ~650, empaquetar LOD y hojas retenidos en ficheros compartidos (id → fichero + offset) |
 
-Dependencia abierta (R19): si S9 obliga a empaquetar LOD y hojas, cómo se hace se decide cuando S9 informe.
+R19 cerrada: S9 no encontró límite de ficheros vivos, así que no hace falta empaquetar LOD y hojas por ese motivo.
 
 - [x] **Paso 1: diseño de firmas** — un arquitecto (Opus) fija firmas y el flujo de trabajos por nodo a partir de `spatial.rs` (`build_node` `:1067`, `process_child_tasks` `:1320`) y lo anota en este documento (sección anterior); revisión antes de seguir.
 - [x] **Paso 2: `Clock` y `PointSource`** sin cambio de bytes; tests existentes y SHA M0.
-- [ ] **Paso 3: `SpoolStore` nativo** con un fichero por spool (desbloqueado: decisión 2 tras S9); SHA M0.
-- [ ] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5. Antes de 4b, escribir tests de caracterización sobre la ruta actual: serie; W = 2 con comprobaciones locales de rama; y un presupuesto de lote que falla, con `requested` fijado.
-- [ ] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción.
-- [ ] **Paso 6: commits** por paso, convencionales.
+- [x] **Paso 3: `SpoolStore` nativo** con un fichero por spool (desbloqueado: decisión 2 tras S9); SHA M0.
+- [x] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5. Antes de 4b, escribir tests de caracterización sobre la ruta actual: serie; W = 2 con comprobaciones locales de rama; y un presupuesto de lote que falla, con `requested` fijado.
+- [ ] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción. Puerta pasada con la cola de listos y valor por defecto conmutado ([registro](../records/benchmarks/M1_R7_2026-10-29.md)); tras la corrección de divisiones 8 falta una sesión de 7–10 rondas (A11) sobre el candidato a merge.
+- [x] **Paso 6: commits** por paso, convencionales.
 
 ---
 

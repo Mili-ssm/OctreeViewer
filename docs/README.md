@@ -18,7 +18,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | [Plan V7](explanation/format-v7-plan.md) | Recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | vivo |
 | [Conversor web paralelo](explanation/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas. | vivo |
 | [Conversor web paralelo, etapa 1](explanation/conversor-web-paralelo-etapa1.md) | Plan: independencia de workers, igualdad LZ4 nativo/wasm32, referencia CLI y spike de arenas OPFS. | vivo |
-| [Conversor web paralelo, etapa 2](explanation/conversor-web-paralelo-etapa2.md) | Plan: modelo de trabajos por nodo, S0 con bloques reales de Belvedere, cuota real (S8) y M1. | vivo |
+| [Conversor web paralelo, etapa 2](explanation/conversor-web-paralelo-etapa2.md) | Plan: modelo de trabajos por nodo, S0 con bloques reales de Belvedere, cuota real (S8), un fichero OPFS por spool (S9) y M1. | vivo |
 | [Resolución regional LOD](explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback y regresiones del LOD Replacement. | vivo |
 | [Resúmenes por nodo](explanation/NODE_ATTRIBUTE_SUMMARIES.md) | Contenedores experimentales de resúmenes y diccionario conjunto. | vivo |
 | [Dependencias del renderer](explanation/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, checks y validación parcial de navegador. | vivo |
@@ -32,7 +32,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Evidencia V7](records/benchmarks/format-v7-evidence.md) | Evidencia por incremento del plan V7; datos en [data/](records/benchmarks/data/). | vivo (se amplía) |
 | [V7.3-pre frente a V5](records/benchmarks/STORAGE_V7_V73_VS_V5_2026-10-28.md) | Conversión y lectura completas en Belvedere y Majadas, 3 rondas; disco menor, tiempo/RSS mayores. | fechado |
 | [Referencia CLI web](records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) | SHA de salida del CLI y tiempos Belvedere/Majadas (M0) para la paridad del conversor web. | fechado |
-| [Puerta R7 de M1](records/benchmarks/M1_R7_2026-10-29.md) | Belvedere `convert` (4 workers) del conversor tras M1 frente a la base: `Recursive` y cola de listos, 8 rondas pareadas. | fechado |
+| [Puerta R7 de M1](records/benchmarks/M1_R7_2026-10-29.md) | Belvedere `convert` (4 workers) tras M1 frente a la base: `Recursive` y cola de listos, y divisiones 8 (regresión, diagnóstico y corrección). | fechado |
 | [Spike OPFS (arenas)](records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md) | Modelo de pico de arenas frente al nativo y MB/s de OPFS en Chrome/Firefox (HTTP y `file://`). | fechado |
 | [Modelo de arenas por nodo](records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md) | Pico modelado de los trabajos por nodo frente al nativo (variantes a, b, c) y fórmula para M6. | fechado |
 | [Cuota OPFS](records/benchmarks/OPFS_QUOTA_2026-10-29.md) | Cuota real de OPFS y `persist()` en Chrome y Firefox, y si cabe Majadas. | fechado |
