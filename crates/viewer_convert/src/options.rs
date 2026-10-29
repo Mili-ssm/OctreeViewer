@@ -23,11 +23,11 @@ pub(crate) fn default_spatial_workers() -> usize {
 /// same output bytes; only scheduling and timing differ.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpatialScheduler {
-    /// Each root child of a batch is one thread that plans its subtree serially (default).
-    #[default]
+    /// Each root child of a batch is one thread that plans its subtree serially.
     Recursive,
     /// Up to `min(workers, root children)` threads take the ready node job with the lowest
-    /// preorder path under the batch being committed (experimental until it is measured).
+    /// preorder path under the batch being committed (default; see the M1 R7 record).
+    #[default]
     ReadyQueue,
 }
 
@@ -102,7 +102,7 @@ impl ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
-            spatial_scheduler: SpatialScheduler::Recursive,
+            spatial_scheduler: SpatialScheduler::ReadyQueue,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         })
     }
@@ -180,7 +180,7 @@ impl Default for ConvertOptions {
             spatial_workers_explicit: false,
             pipelined_writes: false,
             spatial_divisions: 2,
-            spatial_scheduler: SpatialScheduler::Recursive,
+            spatial_scheduler: SpatialScheduler::ReadyQueue,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         }
     }
