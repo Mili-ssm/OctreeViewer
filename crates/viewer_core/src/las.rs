@@ -231,16 +231,20 @@ pub fn check_layered_chunk<R: Read + Seek>(
     let count = read_u32_at(reader, start + layered.first_point)?;
     reader.seek(SeekFrom::Start(start + layered.first_point + 4))?;
     let mut sizes = vec![0u8; (layered.layer_words * 4) as usize];
-    reader.read_exact(&mut sizes).map_err(|error| match error.kind() {
-        std::io::ErrorKind::UnexpectedEof => {
-            LasPreflightError::Truncated("LAZ layered chunk header")
-        }
-        _ => error.into(),
-    })?;
+    reader
+        .read_exact(&mut sizes)
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::UnexpectedEof => {
+                LasPreflightError::Truncated("LAZ layered chunk header")
+            }
+            _ => error.into(),
+        })?;
     let available = end - body;
     let sizes: Vec<u64> = sizes
-        .chunks_exact(4)
-        .map(|word| u64::from(u32::from_le_bytes([word[0], word[1], word[2], word[3]])))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|word| u64::from(u32::from_le_bytes(*word)))
         .collect();
     let total: u64 = sizes.iter().sum();
     if let Some(size) = sizes.iter().copied().find(|size| *size > available) {
