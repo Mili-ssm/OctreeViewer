@@ -11,8 +11,9 @@ por nodo dentro de `viewer_convert`, con los mismos bytes y sin regresión.
 
 **Arquitectura:** la [spec](conversor-web-paralelo.md) es la autoridad. Decisiones del propietario
 del 29-10-2026 que este plan aplica: **trabajos por nodo** (cada trabajo lee la entrada de un nodo y
-escribe un fichero OPFS por spool de hijo; el host borra cada fichero cuando termina el trabajo que lo
-consume, y LOD y hojas se retienen hasta la fase de bloques: variante c), **Chrome `file://` solo con spools en RAM** (R8) y **medir la cuota real** antes de M6
+escribe un spool por hijo; el host libera cada spool cuando termina el trabajo que lo consume, y LOD y hojas se
+retienen hasta la fase de bloques: variante c; en nativo, un fichero por spool; en la web, híbrido: segmentos en RAM
+volcados a su propio fichero OPFS al superar un presupuesto, decisión 2 tras S9), **Chrome `file://` solo con spools en RAM** (R8) y **medir la cuota real** antes de M6
 (S8). Etapa anterior: [etapa 1](conversor-web-paralelo-etapa1.md); evidencia:
 [referencia M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) y
 [spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md).
@@ -37,7 +38,7 @@ Playwright para los navegadores.
 ## Review Focus
 
 1. **Raíz con todos los puntos iguales o no divisible** con el planificador por nodos → Tarea 4 (tests de la etapa 1 en verde y `coincident_fixture` en la matriz).
-2. **Spools vacíos** (hijos sin puntos) con un fichero por spool: no deben crear fichero ni romper el orden de identificadores → Tarea 4.
+2. **Spools vacíos** (hijos sin puntos) (un fichero por spool en nativo; en la web, segmento en RAM o fichero volcado): no deben crear fichero ni segmento ni romper el orden de identificadores → Tarea 4.
 3. **Bloques reales con atributos dispersos** (clasificación, retornos, GPS) en S0 → Tarea 2 usa bloques de Belvedere, no sintéticos.
 4. **Cuota denegada o `persist()` rechazado** en S8 → Tarea 3 registra el comportamiento, no solo el caso feliz.
 5. **Errores con índice global de punto** al partir la entrada por rangos de chunks → Tarea 4 compara el mensaje de error de un LAS corrupto entre ejecución en serie y por rangos.
@@ -104,7 +105,7 @@ Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este
 - [x] **Criterio de parada:** si algún navegador falla por debajo de 700 ficheros vivos o de 8 × 81 handles abiertos, o el rendimiento cae más de 2 × frente a la arena única, volver al propietario antes del paso 3 de la Tarea 4.
 - [x] **Paso 4: commit** — `docs(bench): record OPFS per-spool file spike`.
 
-**Estado (29-10-2026):** hecha ([registro](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox (~850 ficheros vivos, 664 handles, 0 errores), pero con un coste fijo por fichero de ~26–40 ms en Firefox y ~2,9–4,4 ms en Chrome (el criterio de 2 × no se cumple). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
+**Estado (29-10-2026):** hecha ([registro](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox sin errores, pero con un coste fijo por fichero que incumple el criterio de 2 × (cifras en el registro). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
 
 ---
 
@@ -279,8 +280,8 @@ pub(crate) fn spool_source<P: PointSource, S: SpoolStore>(source: &mut P, info: 
 Dependencia abierta (R19): si S9 obliga a empaquetar LOD y hojas, cómo se hace se decide cuando S9 informe.
 
 - [x] **Paso 1: diseño de firmas** — un arquitecto (Opus) fija firmas y el flujo de trabajos por nodo a partir de `spatial.rs` (`build_node` `:1067`, `process_child_tasks` `:1320`) y lo anota en este documento (sección anterior); revisión antes de seguir.
-- [ ] **Paso 2: `Clock` y `PointSource`** sin cambio de bytes; tests existentes y SHA M0.
-- [ ] **Paso 3: `SpoolStore` nativo** con un fichero por spool (tras la Tarea 5); SHA M0.
+- [x] **Paso 2: `Clock` y `PointSource`** sin cambio de bytes; tests existentes y SHA M0.
+- [ ] **Paso 3: `SpoolStore` nativo** con un fichero por spool (desbloqueado: decisión 2 tras S9); SHA M0.
 - [ ] **Paso 4: planificador por trabajos de nodo** (sustituye el paralelismo solo en hijos raíz); tests de independencia de la etapa 1 (`lib_tests.rs`) y los casos del Review Focus 1, 2 y 5. Antes de 4b, escribir tests de caracterización sobre la ruta actual: serie; W = 2 con comprobaciones locales de rama; y un presupuesto de lote que falla, con `requested` fijado.
 - [ ] **Paso 5: R7** — ≥ 5 rondas A/B alternadas frente a la rama base en la misma sesión; registro fechado. Criterio de parada (spec): regresión > 3% tras dos intentos → revertir la extracción.
 - [ ] **Paso 6: commits** por paso, convencionales.

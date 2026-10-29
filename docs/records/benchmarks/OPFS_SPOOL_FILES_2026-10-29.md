@@ -37,7 +37,7 @@ ficheros, o un contador de la suma de `flush`) separaría la forma del árbol de
 > Sesgos conocidos: (1) S1 escribe ceros y S9 ruido; no se cuantificó cuánto del 1 MiB de Firefox es ese efecto. (2) S9 hace de cada hijo, hoja y LOD un
 > fichero propio (9 por trabajo), mientras que la especificación mantiene los spools pequeños como segmentos en RAM con
 > volcado a disco: S9 probablemente sobrestima el número de ficheros de la variante c. (3) Escala: Majadas escribe 134,7 GB de spools
-> y llega a 27,4 GB de pico en la variante c ([M0](WEB_CONVERTER_BASELINE_2026-10-29.md), [modelo](NODE_JOB_ARENA_MODEL_2026-10-29.md)), muy por encima de los 5,37 GiB de pico de S9. La cuota por defecto de Firefox (10 GiB, según [OPFS_QUOTA](OPFS_QUOTA_2026-10-29.md)) queda por debajo de esos 27,4 GB, así que hace falta `persist()`, como ya concluyó ese registro.
+> y llega a 27,4 GB (≈ 25,5 GiB) de pico en la variante c ([M0](WEB_CONVERTER_BASELINE_2026-10-29.md), [modelo](NODE_JOB_ARENA_MODEL_2026-10-29.md)), muy por encima de los 5,37 GiB de pico de S9. (Las cifras de Majadas vienen en GB y las de S9 en GiB; aquí se convierten.) La cuota por defecto de Firefox (10 GiB, según [OPFS_QUOTA](OPFS_QUOTA_2026-10-29.md)) queda por debajo de esos ≈ 25,5 GiB, así que hace falta `persist()`, como ya concluyó ese registro.
 
 ## Método
 
