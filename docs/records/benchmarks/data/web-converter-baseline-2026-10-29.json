@@ -1,0 +1,421 @@
+{
+  "date": "29-10-2026",
+  "commit": "74ef00f5b5b8c80768711f76f3aef7f840a81eb3",
+  "profile": "perf",
+  "rustc": "rustc 1.101.0-nightly (41089d07a 2026-10-27)",
+  "kernel": "Linux 7.2.11-200.fc44.x86_64",
+  "cpu": "AMD Ryzen AI 9 365 (20 hilos)",
+  "ram_gb": 30,
+  "cache": "caliente, sin purga",
+  "sha256": {
+    "las": {
+      "oct": "413858a908b4794bc76df6b3117123dddaf4550acc7b415f0c5768beca159da6",
+      "octattrs": "964c89effe7a94ff422492f1aa32c56f18a8b75a19bf285fcfa83f24fe9911d2"
+    },
+    "copc_autzen": {
+      "oct": "5966be999f77397f614badeb520319d3892534b97e32e7b828d1897a3a3d3b75",
+      "octattrs": "3be1310bcf3b3488bd098460efa0517deeeac25ec4201bc8f925a1917de7758a"
+    },
+    "belvedere": {
+      "oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+      "octattrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8"
+    },
+    "belvedere_workers1": {
+      "oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+      "octattrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8"
+    },
+    "belvedere_workers8": {
+      "oct": "6ca0f86d376c79d0702225011c0f746e16cb81be9d10fb847e821ec6c45f62ac",
+      "octattrs": "0afa9c6041a6ae3f3829424d87aef2e8e71a99ed4b295953b7c960a49dae4dc8"
+    },
+    "belvedere_divisions8": {
+      "oct": "fb90a490f988423998cfd499f839c54276550530673719a212051a8d5abe74ec",
+      "octattrs": "b5124e84f7c4e12ac9f3bbbc3ce7e83c2009d1ffc2e5eb6371e6860b09fc055f"
+    },
+    "majadas": {
+      "oct": "742262867c844bb4e876cd4280a648e45ee677624a3cebd1a8d71bbbf6ff6f04",
+      "octattrs": "d45cd5fd70816d24ea29137faaf4ec1ca6cc2a4fcdc8be2dabbefc20f9a543f1"
+    }
+  },
+  "cli_runs": {
+    "las": {
+      "wall_s": 0.05,
+      "rss_kb": 20644
+    },
+    "copc": {
+      "wall_s": 0.01,
+      "rss_kb": 6316
+    },
+    "belv": {
+      "wall_s": 28.55,
+      "rss_kb": 286224
+    },
+    "belv_w1": {
+      "wall_s": 44.2,
+      "rss_kb": 94752
+    },
+    "belv_w8": {
+      "wall_s": 26.77,
+      "rss_kb": 491656
+    },
+    "belv_d8": {
+      "wall_s": 21.27,
+      "rss_kb": 194036
+    },
+    "maj": {
+      "wall_s": 221.96,
+      "rss_kb": 304164
+    }
+  },
+  "belvedere_convert_rounds": {
+    "command": "target/perf/examples/real_dataset_bench convert INPUT OUT.oct 4",
+    "n": 5,
+    "stats": {
+      "total_ms": {
+        "values": [
+          26280.433,
+          26412.79,
+          25938.505,
+          26268.969,
+          25401.205
+        ],
+        "median": 26268.969,
+        "min": 25401.205,
+        "max": 26412.79
+      },
+      "planning_spatial_index_ms": {
+        "values": [
+          10679.412,
+          10813.748,
+          10706.213,
+          10603.971,
+          10546.736
+        ],
+        "median": 10679.412,
+        "min": 10546.736,
+        "max": 10813.748
+      },
+      "building_spatial_hierarchy_ms": {
+        "values": [
+          8095.592,
+          8039.787,
+          7797.628,
+          8359.89,
+          7647.118
+        ],
+        "median": 8039.787,
+        "min": 7647.118,
+        "max": 8359.89
+      },
+      "reading_writing_blocks_ms": {
+        "values": [
+          6131.933,
+          6223.838,
+          6122.81,
+          5986.908,
+          5912.161
+        ],
+        "median": 6122.81,
+        "min": 5912.161,
+        "max": 6223.838
+      },
+      "validating_output_ms": {
+        "values": [
+          1312.325,
+          1269.671,
+          1236.863,
+          1250.105,
+          1235.326
+        ],
+        "median": 1250.105,
+        "min": 1235.326,
+        "max": 1312.325
+      },
+      "wall_s": {
+        "values": [
+          26.3,
+          26.43,
+          25.95,
+          26.29,
+          25.42
+        ],
+        "median": 26.29,
+        "min": 25.42,
+        "max": 26.43
+      },
+      "rss_kb": {
+        "values": [
+          273316,
+          291392,
+          276076,
+          290972,
+          270616
+        ],
+        "median": 276076,
+        "min": 270616,
+        "max": 291392
+      }
+    },
+    "raw": [
+      {
+        "conversion_elapsed_ms": "26280.433",
+        "stage_PlanningSpatialIndex_ms": "10679.412",
+        "stage_BuildingSpatialHierarchy_ms": "8095.592",
+        "stage_ReadingAndWritingBlocks_ms": "6131.933",
+        "stage_ValidatingOutput_ms": "1312.325",
+        "wall_s": 26.3,
+        "rss_kb": "273316"
+      },
+      {
+        "conversion_elapsed_ms": "26412.790",
+        "stage_PlanningSpatialIndex_ms": "10813.748",
+        "stage_BuildingSpatialHierarchy_ms": "8039.787",
+        "stage_ReadingAndWritingBlocks_ms": "6223.838",
+        "stage_ValidatingOutput_ms": "1269.671",
+        "wall_s": 26.43,
+        "rss_kb": "291392"
+      },
+      {
+        "conversion_elapsed_ms": "25938.505",
+        "stage_PlanningSpatialIndex_ms": "10706.213",
+        "stage_BuildingSpatialHierarchy_ms": "7797.628",
+        "stage_ReadingAndWritingBlocks_ms": "6122.810",
+        "stage_ValidatingOutput_ms": "1236.863",
+        "wall_s": 25.95,
+        "rss_kb": "276076"
+      },
+      {
+        "conversion_elapsed_ms": "26268.969",
+        "stage_PlanningSpatialIndex_ms": "10603.971",
+        "stage_BuildingSpatialHierarchy_ms": "8359.890",
+        "stage_ReadingAndWritingBlocks_ms": "5986.908",
+        "stage_ValidatingOutput_ms": "1250.105",
+        "wall_s": 26.29,
+        "rss_kb": "290972"
+      },
+      {
+        "conversion_elapsed_ms": "25401.205",
+        "stage_PlanningSpatialIndex_ms": "10546.736",
+        "stage_BuildingSpatialHierarchy_ms": "7647.118",
+        "stage_ReadingAndWritingBlocks_ms": "5912.161",
+        "stage_ValidatingOutput_ms": "1235.326",
+        "wall_s": 25.42,
+        "rss_kb": "270616"
+      }
+    ]
+  },
+  "profile_runs": {
+    "belvedere": {
+      "internal_spatial_planning_elapsed_ns": 19231087717,
+      "internal_block_stream_elapsed_ns": 5192086739,
+      "internal_output_validation_elapsed_ns": 1223439106,
+      "internal_spatial_phase_root_las_fill_elapsed_ns": 6114708601,
+      "internal_spatial_phase_spool_scan_read_elapsed_ns": 2031790055,
+      "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": 22319564851,
+      "internal_spatial_phase_lod_sample_write_elapsed_ns": 7266421,
+      "internal_block_preparation_elapsed_ns": 4733440358,
+      "internal_ordered_write_and_release_elapsed_ns": 457375605,
+      "internal_finalize_and_sync_elapsed_ns": 621964180,
+      "internal_spatial_spool_child_payload_written_bytes": 16163891004,
+      "internal_spatial_spool_child_payload_scanned_bytes": 12814915515,
+      "internal_spatial_spool_lod_payload_written_bytes": 1265746,
+      "internal_spatial_spool_bytes_written": 16165156750,
+      "internal_spatial_peak_live_spool_bytes": 6126109459,
+      "internal_block_stream_source_payload_read_bytes": 3348975489,
+      "output_bytes": 1591650185,
+      "conversion_blocks": 1343,
+      "source_points": 81682329,
+      "input_bytes": 618390994,
+      "root_child_spool_bytes_written": [
+        5036498718,
+        5118079246,
+        1617300091,
+        1044298913
+      ],
+      "spatial_workers": 4,
+      "spatial_divisions": 2,
+      "stage_ms": {
+        "BeforeFirstProgress": 0.092,
+        "InspectingInput": 9.698,
+        "PlanningMetadata": 43.704,
+        "PlanningSpatialIndex": 10570.317,
+        "BuildingSpatialHierarchy": 8646.679,
+        "ReadingAndWritingBlocks": 5816.369,
+        "ValidatingOutput": 1221.183,
+        "PublishingOutput": 14.164,
+        "Complete": 1.783
+      },
+      "conversion_elapsed_ms": 26324.007,
+      "rss_kb": 273896,
+      "wall_s": 26.34
+    },
+    "belvedere_divisions8": {
+      "internal_spatial_planning_elapsed_ns": 14077310357,
+      "internal_block_stream_elapsed_ns": 5533700208,
+      "internal_output_validation_elapsed_ns": 1254545811,
+      "internal_spatial_phase_root_las_fill_elapsed_ns": 6141358816,
+      "internal_spatial_phase_spool_scan_read_elapsed_ns": 523431209,
+      "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": 11041963982,
+      "internal_spatial_phase_lod_sample_write_elapsed_ns": 1775285,
+      "internal_block_preparation_elapsed_ns": 4850297621,
+      "internal_ordered_write_and_release_elapsed_ns": 681662858,
+      "internal_finalize_and_sync_elapsed_ns": 679568945,
+      "internal_spatial_spool_child_payload_written_bytes": 6660621790,
+      "internal_spatial_spool_child_payload_scanned_bytes": 3311646301,
+      "internal_spatial_spool_lod_payload_written_bytes": 272367,
+      "internal_spatial_spool_bytes_written": 6660894157,
+      "internal_spatial_peak_live_spool_bytes": 3535907518,
+      "internal_block_stream_source_payload_read_bytes": 3348975489,
+      "output_bytes": 1587442377,
+      "conversion_blocks": 5140,
+      "source_points": 81682329,
+      "input_bytes": 618390994,
+      "root_child_spool_bytes_written": [
+        0,
+        93652238,
+        62507823,
+        23902096,
+        82246683,
+        13414931,
+        91174975,
+        0,
+        89084197,
+        0,
+        85091880,
+        11603838,
+        53841600,
+        43379226,
+        47510475,
+        11018322,
+        18314672,
+        76884597,
+        92900450,
+        0,
+        14368854,
+        67139366,
+        29079817,
+        49371535,
+        32448702,
+        45638917,
+        26170382,
+        53246247,
+        90025938,
+        22680026,
+        34700506,
+        75213000,
+        72734717,
+        0,
+        74480258,
+        27966192,
+        35082226,
+        62786127,
+        65657966,
+        66315616,
+        0,
+        25617953,
+        57407621,
+        76492533,
+        65271992,
+        20502330,
+        76432584,
+        10494154,
+        62641729,
+        29332876,
+        46861433,
+        60382113,
+        24938887,
+        69539344,
+        71487466,
+        0,
+        12437098,
+        61846787,
+        44954650,
+        23643559,
+        69677658,
+        17136819,
+        87666448,
+        0,
+        83010023,
+        51635272,
+        16674438,
+        56342849,
+        52961035,
+        22406565,
+        17930492,
+        27374146,
+        0,
+        10796507,
+        24035471,
+        0,
+        0,
+        27878101,
+        38603719,
+        25865328,
+        0
+      ],
+      "spatial_workers": 4,
+      "spatial_divisions": 8,
+      "stage_ms": {
+        "BeforeFirstProgress": 0.11,
+        "InspectingInput": 12.003,
+        "PlanningMetadata": 52.367,
+        "PlanningSpatialIndex": 11195.919,
+        "BuildingSpatialHierarchy": 2829.922,
+        "ReadingAndWritingBlocks": 6223.572,
+        "ValidatingOutput": 1244.33,
+        "PublishingOutput": 119.526,
+        "Complete": 3.886
+      },
+      "conversion_elapsed_ms": 21681.655,
+      "rss_kb": 184504,
+      "wall_s": 21.71
+    },
+    "majadas": {
+      "internal_spatial_planning_elapsed_ns": 180695859240,
+      "internal_block_stream_elapsed_ns": 32547827248,
+      "internal_output_validation_elapsed_ns": 6724410362,
+      "internal_spatial_phase_root_las_fill_elapsed_ns": 22452883382,
+      "internal_spatial_phase_spool_scan_read_elapsed_ns": 29381884689,
+      "internal_spatial_phase_spool_partition_and_sample_elapsed_ns": 203536212903,
+      "internal_spatial_phase_lod_sample_write_elapsed_ns": 50146105,
+      "internal_block_preparation_elapsed_ns": 30723508739,
+      "internal_ordered_write_and_release_elapsed_ns": 1818517672,
+      "internal_finalize_and_sync_elapsed_ns": 477042845,
+      "internal_spatial_spool_child_payload_written_bytes": 134717868351,
+      "internal_spatial_spool_child_payload_scanned_bytes": 121007494245,
+      "internal_spatial_spool_lod_payload_written_bytes": 6133860,
+      "internal_spatial_spool_bytes_written": 134724002211,
+      "internal_spatial_peak_live_spool_bytes": 20619710640,
+      "internal_block_stream_source_payload_read_bytes": 13710374106,
+      "output_bytes": 7533781717,
+      "conversion_blocks": 6259,
+      "source_points": 415465882,
+      "input_bytes": 1343266470,
+      "root_child_spool_bytes_written": [
+        23566443636,
+        0,
+        36527393040,
+        14854448025,
+        0,
+        46065336159,
+        0
+      ],
+      "spatial_workers": 4,
+      "spatial_divisions": 2,
+      "stage_ms": {
+        "BeforeFirstProgress": 0.089,
+        "InspectingInput": 17.127,
+        "PlanningMetadata": 43.225,
+        "PlanningSpatialIndex": 43423.706,
+        "BuildingSpatialHierarchy": 137542.613,
+        "ReadingAndWritingBlocks": 33036.824,
+        "ValidatingOutput": 6712.549,
+        "PublishingOutput": 2.354,
+        "Complete": 3.105
+      },
+      "conversion_elapsed_ms": 220781.607,
+      "rss_kb": 326760,
+      "wall_s": 220.81
+    }
+  }
+}
