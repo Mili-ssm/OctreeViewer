@@ -2773,7 +2773,12 @@ fn serial_core_matches_native_on_the_variable_chunk_laz() {
 }
 
 /// Serial conversion over a `HybridSpoolStore` (RAM budget unlimited) against a `MemSpoolStore`.
-fn assert_hybrid_matches_mem(input: &std::path::Path, options: ConvertOptions, label: &str) {
+fn assert_hybrid_matches_mem(
+    input: &std::path::Path,
+    options: ConvertOptions,
+    budget: u64,
+    label: &str,
+) -> viewer_convert_core::HybridStats {
     use std::io::Cursor;
     use viewer_convert_core::{
         HybridConfig, HybridSpoolStore, LasFactory, MemBytes, NoClock, VecPageTier, VecRamTier,
@@ -2784,7 +2789,7 @@ fn assert_hybrid_matches_mem(input: &std::path::Path, options: ConvertOptions, l
     let store = HybridSpoolStore::new(
         VecRamTier::new(),
         VecPageTier::new(1, None),
-        HybridConfig::web(u64::MAX),
+        HybridConfig::web(budget),
         false,
     )
     .unwrap();
@@ -2809,7 +2814,9 @@ fn assert_hybrid_matches_mem(input: &std::path::Path, options: ConvertOptions, l
     assert_eq!((store.live_ids(), store.segment_count()), (0, 0), "{label}");
     let stats = store.stats();
     assert_eq!((stats.live_payload_bytes, stats.ram_retained_bytes), (0, 0));
+    assert_eq!(stats.pages_in_use, 0, "{label}: pages leaked");
     assert!(stats.ram_peak_bytes > 0, "{label}: nothing was spooled");
+    stats
 }
 
 #[test]
@@ -2824,7 +2831,14 @@ fn hybrid_store_matches_mem_store_on_the_small_las_and_the_variable_chunk_laz() 
                 .unwrap()
                 .with_spatial_divisions(divisions)
                 .unwrap();
-            assert_hybrid_matches_mem(&input, options, &format!("{relative}/{divisions}"));
+            let label = format!("{relative}/{divisions}");
+            let stats = assert_hybrid_matches_mem(&input, options, u64::MAX, &label);
+            assert_eq!(stats.spilled_spools, 0, "{label}");
+            // A tiny budget and none at all both spill and still give the same bytes.
+            for budget in [64 * 1024, 0] {
+                let stats = assert_hybrid_matches_mem(&input, options, budget, &label);
+                assert!(stats.spilled_spools > 0, "{label}/{budget}");
+            }
         }
     }
 }
