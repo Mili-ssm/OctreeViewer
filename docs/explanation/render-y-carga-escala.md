@@ -139,7 +139,7 @@ Con el worker de construcción, la coalescencia «gana la última» ya agrupa ll
 
 ### R1-T1b: modos de px (RF-06, RF-07)
 
-- [ ] Ya no espera a P5 (resuelta): modo fijo progresivo (predeterminado) y dinámico que apunta a 16,7 ms por frame con histéresis ([ADR 0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [requisitos](../requirements.md)).
+- [ ] Pasa a ser la [Tarea 14 del plan de R3](render-r3-cubos-en-gpu.md#tarea-14-modos-de-px-antes-r1-t1b). Ya no espera a P5 (resuelta): modo fijo progresivo (predeterminado) y dinámico que apunta a 16,7 ms por frame con histéresis ([ADR 0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [requisitos](../requirements.md)).
 
 ### R1-T7: medida después de R1
 
@@ -169,7 +169,7 @@ escena desfasada entre B y 2B (B = tiempo de construcción: 0,48 s en Majadas, 2
 
 | Fase | Contenido decidido | ADR | Puertas |
 | --- | --- | --- | --- |
-| R3 | Cubos 3D por nodo, independientes de la vista y residentes en GPU; modos literal (predeterminado) y continuidad por nube; modos de px fijo y dinámico; sustituye a la voxelización CPU por corte (B1) | [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md) | RQ-01, RQ-02, RQ-05 |
+| R3 | Cubos 3D por nodo, independientes de la vista y residentes en GPU; modos literal (predeterminado) y continuidad por nube; modos de px fijo y dinámico; sustituye a la voxelización CPU por corte (B1) | [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md); [plan](render-r3-cubos-en-gpu.md) | RQ-01, RQ-02, RQ-05 |
 | R4 | Pirámide LOD densa (un nivel por ×2 de densidad, hojas ≤ 16–64 k puntos, espaciado por nodo en el índice; absorbe R2b) + rejilla global determinista + CRS: reconversión de datasets (B2) | [0020](../adr/0020-piramide-lod-densa.md), [0021](../adr/0021-rejilla-global-determinista-y-crs.md), [0022](../adr/0022-alcance-y-congelacion-de-v7-final.md) | RQ-02, RQ-07, RQ-09 |
 | R5 | Jerarquía paginada para > 2 M nodos y apertura sin índice completo, local y remota; incluye la antigua R1-T6 | [0023](../adr/0023-fuentes-locales-y-remotas.md) | RQ-04 |
 | V7 final | Congelación del formato cuando se cumpla RQ-07 | [0022](../adr/0022-alcance-y-congelacion-de-v7-final.md) | RQ-07, RQ-11 |
