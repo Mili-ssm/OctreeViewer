@@ -310,3 +310,40 @@ for (const failure of [
         }
     });
 }
+
+for (const scenario of [
+    { name: "by default", options: {}, expected: { url: /\/build-worker\.js$/, type: "module" } },
+    { name: "with a custom buildWorkerUrl", options: { buildWorkerUrl: "blob:custom" }, expected: { url: /^blob:custom$/, type: "module" } },
+    { name: "unless buildWorker is false", options: { buildWorker: false }, expected: null },
+]) {
+    test(`init message carries the build worker options ${scenario.name}`, async () => {
+        const previous = {
+            HTMLCanvasElement: globalThis.HTMLCanvasElement,
+            Worker: globalThis.Worker,
+            ResizeObserver: globalThis.ResizeObserver,
+            window: globalThis.window,
+            requestAnimationFrame: globalThis.requestAnimationFrame,
+            cancelAnimationFrame: globalThis.cancelAnimationFrame,
+        };
+        globalThis.HTMLCanvasElement = FakeCanvas;
+        globalThis.Worker = FakeWorker;
+        globalThis.ResizeObserver = FakeResizeObserver;
+        globalThis.window = { Worker: FakeWorker, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+        globalThis.requestAnimationFrame = () => 1;
+        globalThis.cancelAnimationFrame = () => {};
+        try {
+            const viewer = createViewer(new FakeCanvas(), scenario.options);
+            await viewer.ready;
+            const init = FakeWorker.instance.messages.find((message) => message.type === "init");
+            if (scenario.expected === null) {
+                assert.equal(init.buildWorker, undefined);
+            } else {
+                assert.match(init.buildWorker.url, scenario.expected.url);
+                assert.equal(init.buildWorker.type, scenario.expected.type);
+            }
+            viewer.dispose();
+        } finally {
+            Object.assign(globalThis, previous);
+        }
+    });
+}

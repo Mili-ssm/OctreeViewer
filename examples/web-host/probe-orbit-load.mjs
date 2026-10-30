@@ -5,7 +5,7 @@
 // the reference machine, so functional only):
 //   node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
 //        [--max-load-s=120] [--orbit-s=10] [--pixels] [--force-timing] [--browser=chrome|firefox]
-//        [--build-worker]
+//        [--build-worker | --no-build-worker]
 // It loads the dataset, orbits the camera for a fixed time while loading and (if the target LOD
 // was reached) again afterwards, and records frame-reply intervals, worker busy time, the LOD
 // message log, deterministic counters, adapter evidence and the environment to OUTPUT.json.
@@ -26,11 +26,15 @@ const args = process.argv.slice(2);
 const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [input, output] = positional;
-const buildWorker = args.includes("--build-worker");
-// --build-worker builds scenes in the dedicated build worker (render plan R2) via ?buildWorker=1.
+// The build worker (render plan R2) is the demo default; --no-build-worker requests ?buildWorker=0
+// (the R0 baseline arm). --build-worker is accepted and requests the default explicitly.
+if (args.includes("--build-worker") && args.includes("--no-build-worker")) {
+    throw new Error("--build-worker and --no-build-worker are mutually exclusive");
+}
+const buildWorker = !args.includes("--no-build-worker");
 const url = (() => {
     const base = new URL(option("url", "http://127.0.0.1:8767/examples/web-host/index.html"));
-    if (buildWorker) base.searchParams.set("buildWorker", "1");
+    base.searchParams.set("buildWorker", buildWorker ? "1" : "0");
     return base.href;
 })();
 const targetPixels = Number(option("px", "4"));
@@ -41,7 +45,7 @@ const browser = option("browser", "chrome");
 const CHROME_BIN = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
 const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE ?? "/usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/";
 if (!["chrome", "firefox"].includes(browser) || !input || !output || !Number.isInteger(targetPixels * 2) || targetPixels < 0.5 || targetPixels > 16) {
-    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox] [--build-worker]");
+    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox] [--build-worker|--no-build-worker]");
 }
 const ORBIT_STEP_MS = 16;
 

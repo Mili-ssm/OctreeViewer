@@ -168,7 +168,7 @@ export function createViewer(canvas, options = {}) {
         worker.postMessage({
             type: "init", canvas: offscreen, width, height,
             colorMode: options.colorMode ?? "rgb", depthShading: options.depthShading ?? true,
-            buildWorker: options.buildWorker ? {
+            buildWorker: options.buildWorker !== false ? {
                 url: String(options.buildWorkerUrl ?? new URL("./build-worker.js", import.meta.url)),
                 type: "module",
             } : undefined,

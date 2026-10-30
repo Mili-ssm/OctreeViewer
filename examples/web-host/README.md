@@ -136,7 +136,7 @@ refines through projected voxel stages until the requested detail is reached. Pe
 prioritized against the current camera, and a camera change restarts selection from the coarse
 frontier. Reads do not block the worker: camera commands run while reads are pending, and only
 the insertion of each decoded block is queued with the other commands. Reads whose block is no longer
-wanted are cancelled. With `buildWorker` the reads and scene building move to `build-worker.js`
+wanted are cancelled. With the build worker (default) the reads and scene building move to `build-worker.js`
 (below). `openFormatDataset` in the wasm API is a synchronous reader that this worker does not use.
 The host reports time to the first coarse frame and target LOD frame, plus p50/p95/p99 worker
 `renderFrame()` times over a bounded window of up to 4,096 frames. Real-browser latency and frame-time
@@ -187,12 +187,13 @@ unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
 in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
 
-**`buildWorker` (render plan R2).** Opt-in: `?buildWorker=1` in the demo URL (`main.js`) or
-`buildWorker: { url, type }` in the worker `init` message. Scenes are then built in `build-worker.js`
+**`buildWorker` (render plan R2).** On by default (`createViewer` passes `buildWorker: { url, type }` in
+the worker `init` message unless called with `buildWorker: false`; `buildWorkerUrl` overrides the URL).
+The demo opts out with `?buildWorker=0` (`?buildWorker=1` is accepted and changes nothing). Scenes are built in `build-worker.js`
 instead of the render worker, which keeps frame replies short during loading and orbit (Majadas and
 Belvedere: p95 <= 17.6 ms, time to target -57 to -62 %, see the
-[measurement](../../docs/records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md)). Off by default today;
-it is planned to become the default when `feat/web-converter-stage4` is merged
+[measurement](../../docs/records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md)). Default
+since `feat/web-converter-stage4`
 ([ADR 0018](../../docs/adr/0018-worker-de-construccion-por-defecto.md)). If nested workers are
 unavailable (a Blob worker inside a Blob worker on `file://` in Chrome), the option disables itself,
 the worker posts `buildWorkerUnavailable` and scenes are built in the render worker. Color modes by

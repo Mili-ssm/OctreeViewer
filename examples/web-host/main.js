@@ -584,7 +584,8 @@ function handleWorkerMessage(event) {
     }
 }
 
-// Opt-in (?buildWorker=1): scenes are built in build-worker.js instead of the render worker.
+// On by default: scenes are built in build-worker.js instead of the render worker (render plan R2,
+// ADR 0018). ?buildWorker=0 turns it off; ?buildWorker=1 is accepted and changes nothing.
 const BUILD_WORKER = { url: new URL("./build-worker.js", import.meta.url).href, type: "module" };
 
 function createWorkerViewer() {
@@ -619,7 +620,7 @@ function createWorkerViewer() {
             height: canvas.height,
             colorMode: colorMode.value,
             depthShading: depthShading.checked,
-            buildWorker: new URLSearchParams(location.search).get("buildWorker") === "1" ? BUILD_WORKER : undefined,
+            buildWorker: new URLSearchParams(location.search).get("buildWorker") !== "0" ? BUILD_WORKER : undefined,
         }, [offscreen]);
         reloadButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
