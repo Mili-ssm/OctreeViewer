@@ -2,6 +2,7 @@
 name = "viewer_convert_core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 # No `laz-parallel`, `rayon` or `ctrlc`: the core builds for wasm32. `cargo tree` watches this
 # (scripts/check.sh); the lints below cover filesystem, thread and wall-clock APIs.

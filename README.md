@@ -14,8 +14,8 @@ Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
 - **Decisiones del propietario del 30-10-2026** registradas en [requisitos](docs/requirements.md) y
   los ADR [0018](docs/adr/0018-worker-de-construccion-por-defecto.md)–[0026](docs/adr/0026-api-publica-licencia-y-version-1.md);
   **ninguna está implementada**. Navegadores: Chrome/Edge de escritorio son el objetivo; Firefox, mejor
-  esfuerzo; Safari y móvil, fuera de alcance (CON-01). Licencia decidida: MIT OR Apache-2.0, sin
-  archivos aún ([ADR 0026](docs/adr/0026-api-publica-licencia-y-version-1.md)).
+  esfuerzo; Safari y móvil, fuera de alcance (CON-01). Licencia: MIT OR Apache-2.0
+  ([ADR 0026](docs/adr/0026-api-publica-licencia-y-version-1.md), [abajo](#licencia)).
 
 - **V7 es la única línea de evolución**; V5/V6 se retiran al completarla. `v7.1-pre` hereda
   pre4, `v7.2-pre` reduce la búsqueda de ocupación y `v7.3-pre` limita diccionarios a tuplas de
@@ -135,3 +135,9 @@ render reconstruye posiciones locales `f32`.
 | `examples/web-host` | Demo, API embebible, carga y descarga de archivos. | OPFS/cuota, pérdida de GPU, picking y cancelación requieren validación en navegadores objetivo. |
 
 Mapa de código, herramientas y límites por componente: [inventario](docs/reference/inventory.md).
+
+## Licencia
+
+Doble licencia, a elección de quien lo use: [MIT](LICENSE-MIT) o [Apache-2.0](LICENSE-APACHE).
+`vendor/lz4_flex` conserva su licencia MIT y los datasets de `data/` las suyas
+([datasets](data/datasets/README.md)).
