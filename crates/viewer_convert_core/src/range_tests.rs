@@ -386,3 +386,187 @@ fn ranges_are_admitted_by_the_memory_budget_and_reported_in_the_estimate() {
     };
     assert_eq!(estimate(&bytes, tight(8)), default);
 }
+
+mod spool_hints {
+    use std::{collections::BTreeMap, sync::Mutex};
+
+    use super::*;
+    use crate::{
+        pipeline::spool_store::{LedgerTotals, SpoolAccounting, SpoolExtent},
+        spatial::{MAX_SPATIAL_DEPTH, consume_rank},
+    };
+
+    #[derive(Default)]
+    struct Log {
+        /// Hinted rank of every spool still queued (hinted, not yet read).
+        queued: BTreeMap<SpoolId, u32>,
+        retained: Vec<SpoolId>,
+        deleted: Vec<SpoolId>,
+        /// Ranks at which a queued spool was consumed (scanned, or committed as a leaf block), and the queue minimum at that moment.
+        consumptions: Vec<(u32, u32)>,
+    }
+
+    impl Log {
+        fn consume(&mut self, id: SpoolId) {
+            if let Some(rank) = self.queued.remove(&id) {
+                let minimum = self
+                    .queued
+                    .values()
+                    .copied()
+                    .min()
+                    .map_or(rank, |m| m.min(rank));
+                self.consumptions.push((rank, minimum));
+            }
+        }
+    }
+
+    /// Forwards everything to a `MemSpoolStore` and logs hints and consumptions.
+    struct Recording {
+        inner: MemSpoolStore,
+        log: Mutex<Log>,
+    }
+
+    impl Recording {
+        fn new() -> Self {
+            Self {
+                inner: MemSpoolStore::new(false),
+                log: Mutex::default(),
+            }
+        }
+    }
+
+    impl SpoolStore for Recording {
+        type Reader = <MemSpoolStore as SpoolStore>::Reader;
+        fn create(&self, id: SpoolId) -> Result<(), ConvertError> {
+            self.inner.create(id)
+        }
+        fn append(&self, id: SpoolId, bytes: &[u8]) -> Result<(), ConvertError> {
+            self.inner.append(id, bytes)
+        }
+        fn close(&self, id: SpoolId) -> Result<(), ConvertError> {
+            self.inner.close(id)
+        }
+        fn len(&self, id: SpoolId) -> Result<u64, ConvertError> {
+            self.inner.len(id)
+        }
+        fn reader(&self, id: SpoolId, extent: SpoolExtent) -> Result<Self::Reader, ConvertError> {
+            let mut log = self.log.lock().unwrap();
+            log.consume(id);
+            drop(log);
+            self.inner.reader(id, extent)
+        }
+        fn delete(&self, id: SpoolId) -> Result<(), ConvertError> {
+            let mut log = self.log.lock().unwrap();
+            log.queued.remove(&id);
+            log.deleted.push(id);
+            drop(log);
+            self.inner.delete(id)
+        }
+        fn hint_retained(&self, id: SpoolId) {
+            let mut log = self.log.lock().unwrap();
+            log.retained.push(id);
+            // A leaf child is never scanned: committing it is when the planner reaches it.
+            log.consume(id);
+        }
+        fn hint_consume_rank(&self, id: SpoolId, rank: u32) {
+            assert!(self.log.lock().unwrap().queued.insert(id, rank).is_none());
+        }
+    }
+
+    impl SpoolAccounting for Recording {
+        fn next_event_seq(&self) -> Option<u64> {
+            None
+        }
+        fn ledger_totals(&self) -> Option<LedgerTotals> {
+            None
+        }
+    }
+
+    fn run_recording(bytes: &[u8], options: ConvertOptions) -> (Pair, Recording) {
+        let store = Recording::new();
+        let output = convert_serial(
+            &LasFactory::new(MemBytes(bytes.to_vec().into())),
+            &store,
+            &NoClock,
+            options,
+            Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
+            &mut |_| true,
+        )
+        .unwrap();
+        let pair = (output.geometry.into_inner(), output.attributes.into_inner());
+        (pair, store)
+    }
+
+    fn fixtures() -> Vec<(&'static str, Vec<u8>, ConvertOptions)> {
+        let points = random_points(3_000, 0.0);
+        let bytes = las_bytes(&points, false, |i| i as u16);
+        vec![
+            ("five-ish nodes", bytes.clone(), options(1_000, 2, 0)),
+            ("deep divisions 2", bytes.clone(), options(64, 2, 0)),
+            (
+                "divisions 8",
+                las_bytes(&random_points(20_000, 0.0), false, |i| i as u16),
+                options(8, 8, 0),
+            ),
+        ]
+    }
+
+    #[test]
+    fn consume_rank_orders_deeper_first_then_by_key() {
+        assert!(consume_rank(2, 60_000) < consume_rank(1, 0));
+        assert!(consume_rank(1, 3) < consume_rank(1, 4));
+        assert_eq!(consume_rank(MAX_SPATIAL_DEPTH, 0), 1 << 16);
+    }
+
+    #[test]
+    fn every_block_spool_is_hinted_retained_exactly_once() {
+        for (label, bytes, options) in fixtures() {
+            let (_, store) = run_recording(&bytes, options);
+            let log = store.log.lock().unwrap();
+            let mut unique = log.retained.clone();
+            unique.sort();
+            unique.dedup();
+            assert!(!unique.is_empty(), "{label}: no retained hint");
+            assert_eq!(unique.len(), log.retained.len(), "{label}: duplicate hint");
+            // Block spools are exactly the ones the conversion deletes after planning.
+            assert!(
+                log.retained.iter().all(|id| log.deleted.contains(id)),
+                "{label}: a retained spool was never released"
+            );
+        }
+    }
+
+    #[test]
+    fn each_consumption_takes_the_minimum_rank_among_queued_spools() {
+        for (label, bytes, options) in fixtures() {
+            let (_, store) = run_recording(&bytes, options);
+            let log = store.log.lock().unwrap();
+            assert!(log.consumptions.len() > 4, "{label}: tree too small");
+            assert!(
+                log.consumptions
+                    .iter()
+                    .all(|(rank, minimum)| rank == minimum),
+                "{label}: out-of-order consumption {:?}",
+                log.consumptions
+            );
+            if label != "five-ish nodes" {
+                assert!(
+                    log.consumptions
+                        .iter()
+                        .any(|(rank, _)| rank >> 16 < MAX_SPATIAL_DEPTH),
+                    "{label}: no consumption below depth 1"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hints_do_not_change_output_bytes() {
+        for (label, bytes, options) in fixtures() {
+            let expected = convert(&bytes, options).unwrap();
+            let (got, _) = run_recording(&bytes, options);
+            assert!(got == expected, "{label}: bytes differ");
+        }
+    }
+}

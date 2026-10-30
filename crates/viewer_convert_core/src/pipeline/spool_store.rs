@@ -43,6 +43,14 @@ pub trait SpoolStore {
     fn len(&self, id: SpoolId) -> Result<u64, ConvertError>;
     fn reader(&self, id: SpoolId, extent: SpoolExtent) -> Result<Self::Reader, ConvertError>;
     fn delete(&self, id: SpoolId) -> Result<(), ConvertError>;
+
+    /// The spool is only re-read in the block phase. Advisory and infallible, so a hint can
+    /// neither change control flow nor error precedence; stores that ignore it are correct.
+    fn hint_retained(&self, _id: SpoolId) {}
+
+    /// Consumption order among the queued spools: the larger rank is consumed later. Advisory
+    /// like `hint_retained`.
+    fn hint_consume_rank(&self, _id: SpoolId, _rank: u32) {}
 }
 
 /// Totals the planner reports as diagnostics; `None` when the store does not account.

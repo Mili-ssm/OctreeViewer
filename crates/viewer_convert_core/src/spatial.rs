@@ -31,6 +31,13 @@ const MAX_SPOOL_RECORD_BYTES: usize = 55;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
 pub const SAMPLE_GRID_SIZE: usize = 8;
 pub const MAX_SPATIAL_DEPTH: u32 = 32;
+
+/// Consume-order rank of the child spool `key` at `depth` (>= 1). The depth-first planner
+/// consumes deeper spools first and, at equal depth, the lower key first; the queued spools of
+/// one depth always share a parent, so `key` alone orders them.
+pub fn consume_rank(depth: u32, key: u16) -> u32 {
+    ((MAX_SPATIAL_DEPTH + 1 - depth) << 16) | u32::from(key)
+}
 const PLANNED_NODE_BYTES: u64 = 256;
 const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;
 const HEADER_BOUNDS_RELATIVE_TOLERANCE: f64 = 1.0e-7;
@@ -1064,6 +1071,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         if let Some(open) = open.as_mut() {
             open.event.elapsed_ns = self.clock.elapsed_ns(open.started);
         }
+        self.hint_children(0, &partition.children);
         self.process_child_tasks(&root_path, root_id, 0, partition.children)?;
         self.finish_node_event(open);
         Ok(())
@@ -1144,6 +1152,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 .is_some_and(|metrics| metrics.became_leaf_all_equal);
         }
         let children = std::mem::take(&mut output.children);
+        self.hint_children(job.level, &children);
         self.commit_node(
             NodeRecord {
                 id,
@@ -1206,6 +1215,9 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         plans: Vec<BlockPlan>,
     ) -> Result<(), ConvertError> {
         for plan in plans {
+            if plan.final_block_in_spool {
+                self.store.hint_retained(plan.spool);
+            }
             let block_id = self.allocate_block_id()?;
             record.blocks.push(block_id);
             self.output_blocks.push(PlannedBlock {
@@ -1225,6 +1237,16 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         self.ensure_memory(self.node_records.len() + 1, self.output_blocks.len())?;
         self.node_records.push(record);
         self.emit_plan_progress()
+    }
+
+    /// Tells the store the consume order of the child spools of a node at `level`. Emitted where
+    /// children are born (`commit_job` for both executors, the root scan) rather than in
+    /// `process_child_tasks`, which the threaded ready queue bypasses below the root.
+    fn hint_children(&self, level: u32, children: &[ChildOutput]) {
+        for child in children {
+            self.store
+                .hint_consume_rank(child.spool, consume_rank(level + 1, child.key));
+        }
     }
 
     fn process_child_tasks(
