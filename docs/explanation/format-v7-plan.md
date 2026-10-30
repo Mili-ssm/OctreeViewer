@@ -433,7 +433,7 @@ no basta con cambiar la etiqueta o el default.
 | Ruta actual | Cierre que habrá que comprobar al promover |
 | --- | --- |
 | `viewer_convert::ConvertOptions`, CLI y `viewer_format::{version,layout,reader,writer}` | V7 final como default y único backend operativo. Detección V5/V6 puede conservar un error explícito de regeneración; ningún payload legacy debe seguir necesitando su decoder. |
-| `viewer_wasm/src/browser_convert.rs` y `web-host/converter-worker.js` | Constructor y worker escriben V7 final, abren/reabren su pareja y superan flujos reales de navegador. |
+| `viewer_wasm/src/core_convert.rs` y `web-host/converter-worker.js` (el conversor antiguo `browser_convert.rs` se retiró en la etapa 4 del conversor web) | Constructor y worker escriben V7 final, abren/reabren su pareja y superan flujos reales de navegador. |
 | `create_web_sample`, `web-host/sample*.oct*`, `package-local.py`, `data/samples/*.oct*` y datasets locales activos | Regenerar y validar antes de sustituir. Fuentes: generador sintético, LAS versionados de `data/samples/` y LAZ locales de Belvedere/Albuera/Majadas documentados en `data/datasets/README.md`. El paquete web debe incluir la pareja nueva. |
 | Suites/perfiladores y generadores auxiliares | Herramientas activas aceptan V7; archivar comparaciones antiguas y retirar opciones/backend V5/V6 tras migrar los consumidores. |
 
