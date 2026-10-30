@@ -75,8 +75,9 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 **Archivos:** `examples/web-host/probe-*.mjs` (extender `probe-cache-camera.mjs` o crear `probe-orbit-load.mjs`), `examples/web-host/viewer-worker.js` (contadores e instrumentación), `docs/records/benchmarks/RENDER_BASELINE_<aaaa-mm-dd>.md`.
 
-- [ ] **Paso 0 (E1):** demostrar adaptador hardware en Firefox headless (y Chrome si procede); si no, registrar y parar los tiempos.
-- [ ] **Paso 1 (E2, E3, E5):** instrumentación: intervalo de respuestas de frame y espera en cola, ocupación del worker por tipo de mensaje, tiempo de decodificación async, registro con marca de tiempo de cada mensaje LOD, nodos sin cubrir, píxeles vacíos, expulsiones de pendientes; órbita guionizada de 10 s.
+- [x] **Paso 0 (E1, 30-10-2026):** Firefox 159 headless obtiene un adaptador **software** (`adapter.info` vacío, `gpu_busy` ≤ 3 %): sin tiempos válidos. Chrome 155 con `--use-angle=vulkan` da `{vendor: "amd", architecture: "rdna-3"}` (hardware); sin chromedriver, se conduce con `playwright-core` (paso 1b).
+- [x] **Paso 1 (E2, E3, E5; `46b76dd`, `4cb3ef7`, `ede7e0a`):** instrumentación: intervalo de respuestas de frame y espera en cola, ocupación del worker por tipo de mensaje, tiempo de decodificación async, registro con marca de tiempo de cada mensaje LOD, nodos sin cubrir, píxeles vacíos, expulsiones de pendientes; órbita guionizada de 10 s.
+- [ ] **Paso 1b:** backend de Chrome en `probe-orbit-load.mjs` con adaptador hardware; reconversión de Belvedere y Majadas a `target/render-data/` (los `.oct` de `data/datasets` son de un formato provisional que el visor ya no abre).
 - [ ] **Paso 2:** línea base: Majadas 4 px, Belvedere 8 px y 4 px (tope 300 s), 3 rondas; registro con mediana, rango y SHA de `.wasm` y datasets; commit.
 
 ## Fase R1: mejoras sin decisiones del propietario (orden E12)
