@@ -1,5 +1,5 @@
 import init, { WasmCoreConverter, WasmLasOctConverter } from "../../pkg/viewer_wasm.js";
-import { createSpoolHost } from "./spool-tiers.mjs";
+import { createSpoolHost, removeWithRetry } from "./spool-tiers.mjs";
 
 let cancelRequested = false;
 
@@ -158,36 +158,65 @@ async function convert(file, formatVersion) {
 }
 
 const PARTIAL_DIRECTORY = "octree-viewer-conversions";
+const GB = 1e9;
+
+async function availableSummary() {
+    try {
+        const { quota, usage } = await navigator.storage.estimate();
+        if (Number.isFinite(quota)) return `${(Math.max(0, quota - (usage ?? 0)) / GB).toFixed(1)} GB`;
+    } catch { /* the estimate API is optional */ }
+    return "unknown";
+}
+
+async function quotaMessage(estimate) {
+    const need = (estimate?.spilledPeakBytes ?? 0) + (estimate?.outputBytes ?? 0);
+    return `Not enough browser storage: need about ${(need / GB).toFixed(1)} GB, available ${await availableSummary()}. `
+        + "Free disk space or convert a smaller file.";
+}
+
+function closeAll(handles) {
+    for (const handle of handles) {
+        try { handle.close(); } catch { /* already closed by a failed finalization */ }
+    }
+}
 
 /**
  * Engine "core": one synchronous call over the shared native-equivalent converter. Cancelling is
  * the host's job (it terminates this worker and deletes the partial files named in `partial-files`).
+ * Spill zones are sized from the header estimate; every file is announced before it is created.
  */
 async function convertWithCore(file, options) {
     const startedAt = performance.now();
-    let geometryHandle = null;
-    let attributesHandle = null;
+    const handles = [];
     let converter = null;
+    let spoolHost = null;
     let directory = null;
-    let names = null;
+    let names = [];
+    let estimate = null;
     try {
         if (!file || !/\.la[sz]$/i.test(file.name)) throw new Error("Choose a .las or .laz file.");
         if (!navigator.storage?.getDirectory) {
             throw new Error("This browser does not support the Origin Private File System (OPFS).");
         }
         await initWasm();
+        estimate = WasmCoreConverter.estimate(file, options);
         const root = await navigator.storage.getDirectory();
         directory = await root.getDirectoryHandle(PARTIAL_DIRECTORY, { create: true });
         const id = crypto.randomUUID();
-        names = [`conversion-${id}.oct.partial`, `conversion-${id}.octattrs.partial`];
+        const zoneNames = Array.from({ length: estimate.zones }, (_, i) => `conversion-${id}.zone-${i}.partial`);
+        names = [`conversion-${id}.oct.partial`, `conversion-${id}.octattrs.partial`, ...zoneNames];
         // Announced before the files exist so a cancel can always find what to delete.
         self.postMessage({ type: "partial-files", directory: PARTIAL_DIRECTORY, names });
-        const geometryFile = await directory.getFileHandle(names[0], { create: true });
-        const attributesFile = await directory.getFileHandle(names[1], { create: true });
-        geometryHandle = await geometryFile.createSyncAccessHandle();
-        attributesHandle = await attributesFile.createSyncAccessHandle();
-        geometryHandle.truncate(0);
-        attributesHandle.truncate(0);
+        const files = [];
+        for (const name of names) {
+            const entry = await directory.getFileHandle(name, { create: true });
+            files.push(entry);
+            const handle = await entry.createSyncAccessHandle();
+            handles.push(handle);
+            handle.truncate(0);
+        }
+        const [geometryHandle, attributesHandle, ...zoneHandles] = handles;
+        spoolHost = createSpoolHost({ zones: zoneHandles });
         self.postMessage({ type: "status", message: `Converting ${file.name} locally…` });
         let lastProgressAt = -Infinity;
         const onProgress = (progress) => {
@@ -197,38 +226,38 @@ async function convertWithCore(file, options) {
             self.postMessage({ type: "progress", ...progress, sourceName: file.name });
             return true;
         };
-        // RAM-only spools until the worker opens spill zones (zones: []).
         converter = new WasmCoreConverter(
-            file, geometryHandle, attributesHandle, options, onProgress, createSpoolHost({ zones: [] }),
+            file, geometryHandle, attributesHandle, options, onProgress, spoolHost,
         );
         const summary = converter.convert();
         converter.free();
         converter = null;
         geometryHandle.flush();
-        geometryHandle.close();
-        geometryHandle = null;
         attributesHandle.flush();
-        attributesHandle.close();
-        attributesHandle = null;
+        // Scratch zones go first: removing them releases quota before the output is handed over.
+        closeAll(zoneHandles);
+        spoolHost.dispose();
+        await removeWithRetry(directory, zoneNames).catch(() => {});
+        closeAll([geometryHandle, attributesHandle]);
         const outputName = file.name.replace(/\.(las|laz)$/i, ".oct");
         self.postMessage({
             type: "complete",
-            file: await geometryFile.getFile(),
-            attributesFile: await attributesFile.getFile(),
+            file: await files[0].getFile(),
+            attributesFile: await files[1].getFile(),
             outputName,
             outputAttributesName: outputName.replace(/\.oct$/i, ".octattrs"),
             points: summary.pointCount,
             blocks: summary.blockCount,
+            spool: summary.spool,
             timings: { totalMs: Math.round(performance.now() - startedAt) },
         });
     } catch (error) {
         try { converter?.free(); } catch { /* an untrusted instance may trap again */ }
-        for (const handle of [geometryHandle, attributesHandle]) {
-            try { handle?.close(); } catch { /* already closed by a failed finalization */ }
-        }
-        self.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        for (const name of names ?? []) {
-            try { await directory.removeEntry(name); } catch { /* the entry may be locked briefly */ }
-        }
+        closeAll(handles);
+        const message = error?.name === "QuotaExceededError"
+            ? await quotaMessage(estimate)
+            : error instanceof Error ? error.message : String(error);
+        self.postMessage({ type: "error", message });
+        if (directory) await removeWithRetry(directory, names).catch(() => {});
     }
 }
