@@ -203,13 +203,29 @@ async function orbit(label, durationMs) {
 
 // Returns the camera to `pose` and waits until the scene stops changing: no pending blocks, the
 // target stage reached and the same digest on two polls. Null digest means it never settled.
+// Orbit input is only delivered to the worker with the next `frame` message, and a slow worker
+// (long synchronous scene builds) can still hold some of it when the gesture ends. Setting the pose
+// first would let that backlog move the camera afterwards, so frames are flushed before the pose is
+// set and the pose is verified; the digest is only meaningful for the requested pose.
+let restTrace = null;
+const SAME_POSE_TOLERANCE = 1e-6;
 async function sceneDigestAtRest(pose, timeoutMs = 120_000) {
-    await evalJson(`window.__renderBench.apiCall('setCamera', ${JSON.stringify({ position: Array.from(pose.position), target: Array.from(pose.target) })})`);
     const until = Date.now() + timeoutMs;
+    const frameCount = () => evalJson("window.__renderBench.frameReplies().length");
+    const flushFrom = await frameCount();
+    while (Date.now() < until && (await frameCount()) < flushFrom + 2) {
+        await evaluate("window.__renderBench.wake(); true");
+        await sleep(200);
+    }
+    const trace = { setCamera: await evalJson(`window.__renderBench.apiCall('setCamera', ${JSON.stringify({ position: Array.from(pose.position), target: Array.from(pose.target) })})`), poseRestored: false };
+    restTrace = trace;
     let previous = null;
     while (Date.now() < until) {
         await evaluate("window.__renderBench.wake(); true");
         await sleep(500);
+        const current = await evalJson("window.__renderBench.apiCall('getCamera')");
+        trace.poseRestored = ["position", "target"].every(key => pose[key].every((value, axis) => Math.abs(value - current[key][axis]) < SAME_POSE_TOLERANCE));
+        if (!trace.poseRestored) { previous = null; continue; }
         const lod = (await evalJson("window.__renderBench.apiCall('getStats')"))?.lod;
         const idle = lod && !lod.lodError && !(lod.pendingBlockIds?.length) && lod.lodStagePixels <= lod.targetVoxelPixels;
         const digest = idle ? lod.sceneDigest ?? null : null;
@@ -301,6 +317,7 @@ try {
     result.vulkan = vulkanEvidence();
     // The fitted camera both runs start from; the scene at rest is compared at this pose.
     const initialPose = await evalJson("window.__renderBench.apiCall('getCamera')");
+    result.sceneInputsAtStart = await evalJson("window.__renderBench.apiCall('sceneInputs')");
     phases.push(await orbit("during-load", orbitMs));
     result.vulkanDuringRender = vulkanEvidence();
     let state = await isTarget();
@@ -314,6 +331,10 @@ try {
     if (state.reached) {
         phases.push(await orbit("after-target", orbitMs));
         result.sceneDigestAtRest = await sceneDigestAtRest(initialPose);
+        // Everything the scene at rest was built from, to diff the two modes when digests differ.
+        result.restTrace = restTrace;
+        result.initialPose = initialPose;
+        result.sceneInputsAtRest =await evalJson("window.__renderBench.apiCall('sceneInputs')");
     }
     const endEpoch = await pageEpoch();
     result.loadStartEpoch = loadStartEpoch;

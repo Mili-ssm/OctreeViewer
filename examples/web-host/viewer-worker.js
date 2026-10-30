@@ -284,6 +284,30 @@ function currentSceneDigest() {
     return (buildOptions ? currentLod : viewer?.lodStats?.())?.sceneDigest ?? null;
 }
 
+// Debug dump of what the displayed scene was built from, to compare the in-worker and build-worker
+// paths (`apiCall("sceneInputs")`). The camera is the renderer's current one, which is what the next
+// view would carry; in build-worker mode `lastSentView` is what the build worker last received.
+function sceneInputs() {
+    const lod = currentLodStats();
+    return {
+        buildWorker: buildOptions !== null,
+        camera: Array.from(viewer.cameraTransport()),
+        viewport: Array.from(viewer.viewportSize()),
+        voxelBuildLimits: Array.from(viewer.voxelBuildLimits()),
+        targetPx: targetVoxelPixels,
+        colorMode: currentColorMode,
+        remoteVisualScale: buildOptions ? remoteVisualScale : null,
+        viewEpoch: buildOptions ? viewEpoch : null,
+        appliedEpoch: buildOptions ? appliedEpoch : null,
+        lastSentView: buildOptions && lastSentView ? {
+            camera: Array.from(lastSentView.camera), viewport: lastSentView.viewport, targetPx: lastSentView.targetPx,
+        } : null,
+        attributeRange: lod?.attributeRange ?? null,
+        sceneDigest: currentSceneDigest(),
+        lod,
+    };
+}
+
 function postStats(frameStatus = null) {
     self.postMessage({
         type: "stats",
@@ -818,6 +842,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         break;
                     case "getMetadata":
                         value = currentMetadata;
+                        break;
+                    case "sceneInputs":
+                        value = sceneInputs();
                         break;
                     case "getStats":
                         value = { lod: currentLodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
