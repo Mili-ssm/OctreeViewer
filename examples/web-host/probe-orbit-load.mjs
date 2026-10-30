@@ -285,6 +285,12 @@ try {
     result.wholeRunFrames = await evalJson(`window.__renderBench.summarize(${loadStartEpoch}, ${endEpoch})`);
     result.workerMetrics = await evalJson("window.__renderBench.workerMetrics()");
     result.counters = await evalJson("window.__renderBench.latestLodCounters()");
+    const finalStats = await evalJson("window.__renderBench.apiCall('getStats')");
+    result.lodFinal = finalStats?.lod ? {
+        refinementWork: finalStats.lod.refinementWork ?? null,
+        pendingTargetEvictions: finalStats.lod.pendingTargetEvictions ?? null,
+        cacheCycleDetected: finalStats.lod.cacheCycleDetected ?? null,
+    } : null;
     result.metadata = await evalJson("window.__renderBench.apiCall('getMetadata')");
     result.metadata = { name: result.metadata?.name, bytes: result.metadata?.bytes, nodeCount: result.metadata?.nodeCount, sourcePointCount: result.metadata?.sourcePointCount };
     fs.writeFileSync(`${output}.png`, await backend.screenshot());
