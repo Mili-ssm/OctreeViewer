@@ -298,6 +298,23 @@ pub(super) fn lod_view_stats_to_js(
             "reusedSceneUpdates",
             stats.refinement_work.reused_scene_updates as f64,
         ),
+        ("selections", stats.refinement_work.selections as f64),
+        ("prepares", stats.refinement_work.prepares as f64),
+        // Cumulative selections/prepares over stage evaluations; 1.0 means no redundant work.
+        (
+            "selectionsPerUpdate",
+            per_update(
+                stats.refinement_work.selections,
+                stats.refinement_work.update_calls,
+            ),
+        ),
+        (
+            "preparesPerUpdate",
+            per_update(
+                stats.refinement_work.prepares,
+                stats.refinement_work.update_calls,
+            ),
+        ),
         ("selectionMs", stats.refinement_work.selection_ms),
         ("planningMs", stats.refinement_work.planning_ms),
         ("blockLoadMs", stats.refinement_work.block_load_ms),
@@ -388,4 +405,12 @@ pub(super) fn add_runtime_gpu_stats(
         &JsValue::from_bool(renderer.hzb_active()),
     )?;
     Ok(())
+}
+
+fn per_update(count: u64, update_calls: u64) -> f64 {
+    if update_calls == 0 {
+        0.0
+    } else {
+        count as f64 / update_calls as f64
+    }
 }

@@ -2,9 +2,9 @@ use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 use viewer_core::{
     BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
-    DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelectionConfig,
-    LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId, PointBlock, SpatialBounds,
-    SpatialFrustum, SpatialHierarchy,
+    DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelection,
+    LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
+    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 use viewer_render_wgpu::{
     GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
@@ -27,6 +27,25 @@ pub struct LodDataset {
     /// The next update judges them against its fresh target, as a synchronous load would be.
     arrived_blocks: u64,
     arrival_evictions: Vec<BlockId>,
+    /// Last selection and the inputs it depends on; reused while camera, viewport and stage match.
+    selection_memo: Option<SelectionMemo>,
+    /// Plan prepared by the residency preflight, reusable by the update that follows it.
+    plan_memo: Option<PlanMemo>,
+    /// Bumped on every cache or planner mutation; a plan is valid only for the epoch it saw.
+    state_epoch: u64,
+}
+
+struct SelectionMemo {
+    camera: OrbitCamera,
+    viewport: [u32; 2],
+    error_pixels: f64,
+    selection: Arc<LodSelection>,
+}
+
+struct PlanMemo {
+    selection: Arc<LodSelection>,
+    epoch: u64,
+    plan: LodTransitionPlan,
 }
 
 /// Brent's cycle detection with one exact, normalized LRU checkpoint.
@@ -77,6 +96,10 @@ impl CacheCycleDetector {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LodWorkStats {
     pub update_calls: u64,
+    /// Hierarchy selections actually run (a memoized selection is not counted).
+    pub selections: u64,
+    /// `LodTransitionPlanner::prepare` calls actually run (a reused plan is not counted).
+    pub prepares: u64,
     pub block_load_calls: u64,
     pub loaded_blocks: u64,
     /// Evicted by this load and immediately missing from the requested target cut.
@@ -199,7 +222,82 @@ impl LodDataset {
             cache_cycle: None,
             arrived_blocks: 0,
             arrival_evictions: Vec::new(),
+            selection_memo: None,
+            plan_memo: None,
+            state_epoch: 0,
         }
+    }
+
+    /// Selects the target cut for a view, or returns the previous selection when camera,
+    /// viewport and stage error are identical (the hierarchy is immutable).
+    fn resolve_target(
+        &mut self,
+        camera: &OrbitCamera,
+        viewport: [u32; 2],
+        error_pixels: f64,
+        frustum: &SpatialFrustum,
+        project: impl Fn(&SpatialNode) -> f64,
+    ) -> Result<Arc<LodSelection>, LodSelectionError> {
+        if let Some(memo) = &self.selection_memo
+            && memo.camera == *camera
+            && memo.viewport == viewport
+            && memo.error_pixels == error_pixels
+        {
+            return Ok(Arc::clone(&memo.selection));
+        }
+        // Source points are LOD input, not rendered GPU instances. Bound the output scene later.
+        let config = LodSelectionConfig::new(error_pixels, u64::MAX)?;
+        self.refinement_work.selections += 1;
+        let selection_started = WorkClock::start();
+        let selection = self
+            .metadata
+            .hierarchy()
+            .select_lod_stable_projector(frustum, config, DEFAULT_LOD_PRIORITY_BYTES, project)
+            .map(|(selection, _priority_stats)| Arc::new(selection));
+        self.refinement_work.selection_ms += selection_started.elapsed_ms();
+        let selection = selection?;
+        self.selection_memo = Some(SelectionMemo {
+            camera: *camera,
+            viewport,
+            error_pixels,
+            selection: Arc::clone(&selection),
+        });
+        Ok(selection)
+    }
+
+    /// Resolves a target against the cache, reusing the preflight's plan when nothing changed.
+    fn resolve_plan(&mut self, target: &Arc<LodSelection>) -> LodTransitionPlan {
+        if let Some(memo) = self.plan_memo.take()
+            && memo.epoch == self.state_epoch
+            && Arc::ptr_eq(&memo.selection, target)
+        {
+            return memo.plan;
+        }
+        self.prepare_plan(target)
+    }
+
+    /// Without a cache or planner change since `initial_plan`, preparing again is identical.
+    fn replan_after_load(
+        &mut self,
+        initial_plan: LodTransitionPlan,
+        initial_epoch: u64,
+        target: &LodSelection,
+    ) -> LodTransitionPlan {
+        if self.state_epoch == initial_epoch {
+            initial_plan
+        } else {
+            self.prepare_plan(target)
+        }
+    }
+
+    fn prepare_plan(&mut self, target: &LodSelection) -> LodTransitionPlan {
+        self.refinement_work.prepares += 1;
+        let planning_started = WorkClock::start();
+        let plan = self
+            .planner
+            .prepare(self.metadata.hierarchy(), target, &self.cache);
+        self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        plan
     }
 
     /// Inserts an externally loaded (async) block. The cache-cycle detector is deliberately not
@@ -257,6 +355,7 @@ impl LodDataset {
         if !self.metadata.hierarchy().references_block(id) {
             return Err(LodDatasetError::UnknownBlock(id));
         }
+        self.state_epoch += 1;
         let result = self.cache.insert(block);
         if let Some(reason) = result.rejection() {
             return Err(LodDatasetError::CacheRejected(reason));
@@ -285,6 +384,7 @@ impl LodDataset {
         renderer: &mut SurfaceRenderer<'_>,
     ) -> Result<(), LodDatasetError> {
         renderer.sync_visible_blocks(&[], &self.cache)?;
+        self.state_epoch += 1;
         self.planner.reset(&mut self.cache);
         self.cache.clear();
         self.visible_plan = None;
@@ -359,30 +459,29 @@ impl LodDataset {
         }
         self.refinement_work.update_calls += 1;
         renderer.set_visual_scale(self.visual_scale)?;
-        // Source points are LOD input, not rendered GPU instances. Bound the output scene below.
-        let point_budget = u64::MAX;
-        let config = LodSelectionConfig::new(selection_error_pixels, point_budget)?;
         let frustum = renderer
             .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
-        let selection_started = WorkClock::start();
-        let selection = self
-            .metadata
-            .hierarchy()
-            .select_lod_stable_projector(&frustum, config, DEFAULT_LOD_PRIORITY_BYTES, |node| {
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
+        let selection = self.resolve_target(
+            &build_context.camera,
+            build_context.viewport,
+            selection_error_pixels,
+            &frustum,
+            |node| {
                 // Camera and viewport remain immutable throughout this synchronous selection.
                 renderer.projected_error_pixels(
                     node.bounds(),
                     bounds_side(node.bounds()) / 8.0,
-                    self.metadata.coordinate_frame().origin(),
+                    coordinate_origin,
                 )
-            })
-            .map(|(selection, _priority_stats)| selection);
-        self.refinement_work.selection_ms += selection_started.elapsed_ms();
+            },
+        );
         let target = match selection {
             Ok(target) => target,
             Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
                 renderer.sync_visible_blocks(&[], &self.cache)?;
+                self.state_epoch += 1;
                 self.planner.reset(&mut self.cache);
                 self.visible_plan = None;
                 self.last_successful_build = None;
@@ -397,10 +496,9 @@ impl LodDataset {
                 target.budget_limited().len(),
             ));
         }
+        let initial_plan = self.resolve_plan(&target);
         let planning_started = WorkClock::start();
-        let initial_plan = self
-            .planner
-            .prepare(self.metadata.hierarchy(), &target, &self.cache);
+        let initial_epoch = self.state_epoch;
         let next_block = if let Some(priority_order) = async_priority_order {
             let ordered = prioritized_pending_blocks(
                 self.metadata.hierarchy(),
@@ -447,17 +545,12 @@ impl LodDataset {
                 loaded_block = true;
             }
         }
-        let planning_started = WorkClock::start();
-        let plan = self
-            .planner
-            .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        let plan = self.replan_after_load(initial_plan, initial_epoch, &target);
         let evicted_pending_blocks = evicted_blocks
             .iter()
             .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
             .count() as u64;
         self.refinement_work.evicted_pending_blocks += evicted_pending_blocks;
-        let coordinate_origin = self.metadata.coordinate_frame().origin();
         let local_frustum = renderer
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
@@ -533,6 +626,7 @@ impl LodDataset {
             }
             // Even with identical geometry, publish new pending/coverage information and retain
             // the planner's cache protection. Only voxel construction and upload are omitted.
+            self.state_epoch += 1;
             self.planner.commit(&plan, &mut self.cache);
             self.visible_plan = Some(plan.clone());
             self.last_successful_build = Some(build_context);
@@ -575,34 +669,38 @@ impl LodDataset {
         target_voxel_pixels: f64,
     ) -> Result<bool, LodDatasetError> {
         renderer.set_visual_scale(self.visual_scale)?;
-        let config = LodSelectionConfig::new(target_voxel_pixels, u64::MAX)?;
+        let camera = renderer.camera_snapshot();
+        let viewport = renderer.viewport_size();
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
         let frustum = renderer
-            .spatial_frustum(self.metadata.coordinate_frame().origin())
+            .spatial_frustum(coordinate_origin)
             .ok_or(LodDatasetError::CameraUnavailable)?;
-        let selection_started = WorkClock::start();
-        let selection = self
-            .metadata
-            .hierarchy()
-            .select_lod_stable_projector(&frustum, config, DEFAULT_LOD_PRIORITY_BYTES, |node| {
-                // Camera and viewport remain immutable throughout this synchronous selection.
+        let target =
+            self.resolve_target(&camera, viewport, target_voxel_pixels, &frustum, |node| {
                 renderer.projected_error_pixels(
                     node.bounds(),
                     bounds_side(node.bounds()) / 8.0,
-                    self.metadata.coordinate_frame().origin(),
+                    coordinate_origin,
                 )
-            })
-            .map(|(selection, _priority_stats)| selection);
-        self.refinement_work.selection_ms += selection_started.elapsed_ms();
-        let target = selection?;
+            })?;
         if !target.budget_limited().is_empty() {
             return Ok(false);
         }
-        let planning_started = WorkClock::start();
-        let plan = self
-            .planner
-            .prepare(self.metadata.hierarchy(), &target, &self.cache);
-        self.refinement_work.planning_ms += planning_started.elapsed_ms();
-        Ok(resident_target_plan_is_complete(&target, &plan))
+        Ok(self.preflight_resident(target))
+    }
+
+    /// Whether `target` is fully resident. The update that follows at this stage reuses the
+    /// prepared plan if the cache and planner are untouched in between.
+    #[cfg(any(target_arch = "wasm32", test))]
+    fn preflight_resident(&mut self, target: Arc<LodSelection>) -> bool {
+        let plan = self.prepare_plan(&target);
+        let complete = resident_target_plan_is_complete(&target, &plan);
+        self.plan_memo = Some(PlanMemo {
+            selection: target,
+            epoch: self.state_epoch,
+            plan,
+        });
+        complete
     }
 
     /// Current cache-reset-scoped work counters, including a failed scene update.

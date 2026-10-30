@@ -4,6 +4,8 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 
+use std::sync::Arc;
+
 use super::{
     CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
     next_lod_stage, prefix_extension_points, priority_precedes, resident_target_plan_is_complete,
@@ -1075,23 +1077,18 @@ fn sim_views() -> Vec<SimView> {
     ]
 }
 
-fn pick_target(dataset: &mut LodDataset, view: &SimView, stage: f64) -> LodSelection {
-    let config = LodSelectionConfig::new(stage, u64::MAX).unwrap();
+fn pick_target(dataset: &mut LodDataset, view: &SimView, stage: f64) -> Arc<LodSelection> {
+    let context = build_context(view.id, [100, 100], stage);
     let scale = view.scale;
     dataset
-        .metadata
-        .hierarchy()
-        .select_lod_stable_projector(&view.frustum, config, 1 << 20, |node| {
-            node.geometric_error() * scale
-        })
+        .resolve_target(
+            &context.camera,
+            context.viewport,
+            stage,
+            &view.frustum,
+            move |node| node.geometric_error() * scale,
+        )
         .unwrap()
-        .0
-}
-
-fn plan_for(dataset: &mut LodDataset, target: &LodSelection) -> LodTransitionPlan {
-    dataset
-        .planner
-        .prepare(dataset.metadata.hierarchy(), target, &dataset.cache)
 }
 
 fn ids<T: Copy>(values: &[T], get: impl Fn(T) -> u64) -> String {
@@ -1108,13 +1105,14 @@ fn sim_update(
 ) -> bool {
     let context = build_context(view.id, [100, 100], stage);
     let target = pick_target(dataset, view, stage);
-    let initial = plan_for(dataset, &target);
+    let initial = dataset.resolve_plan(&target);
+    let initial_epoch = dataset.state_epoch;
     let next = initial.pending_blocks().first().copied();
     dataset.arrived_blocks = 0;
     if let (Some(id), false) = (next, async_loads) {
         dataset.cache_block(block(id.get())).unwrap();
     }
-    let plan = plan_for(dataset, &target);
+    let plan = dataset.replan_after_load(initial, initial_epoch, &target);
     let mut decision = "skip";
     if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
         let (same_cut, reusable) = reusable_build_match(
@@ -1165,8 +1163,7 @@ fn simulate_session(async_loads: bool) -> Vec<String> {
             let mut pending = None;
             if stage.is_none() && target_px < 16.0 {
                 let target = pick_target(&mut dataset, view, target_px);
-                let plan = plan_for(&mut dataset, &target);
-                let resident = resident_target_plan_is_complete(&target, &plan);
+                let resident = dataset.preflight_resident(target);
                 log.push(format!("resident={resident}"));
                 if resident {
                     used = target_px;
@@ -1407,3 +1404,28 @@ const ASYNC_GOLDEN: &[&str] = &[
     "view 4",
     "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
 ];
+
+#[test]
+fn a_resident_fine_update_selects_and_prepares_once() {
+    let mut dataset = tree_dataset(8);
+    for id in 11..=17 {
+        dataset.cache_block(block(id)).unwrap();
+    }
+    let view = &sim_views()[1];
+    let target = pick_target(&mut dataset, view, 1.0);
+    assert!(dataset.preflight_resident(target));
+    let mut log = Vec::new();
+    sim_update(&mut dataset, view, 1.0, false, &mut log);
+    // Before reuse this took 2 selections and 3 prepares (preflight, first plan, second plan).
+    assert_eq!(dataset.refinement_work.selections, 1);
+    assert_eq!(dataset.refinement_work.prepares, 1);
+    // Same view and stage again: the selection is memoized; the commit forces one fresh plan.
+    sim_update(&mut dataset, view, 1.0, false, &mut log);
+    assert_eq!(dataset.refinement_work.selections, 1);
+    assert_eq!(dataset.refinement_work.prepares, 2);
+    // A cache change invalidates the plan but never the selection.
+    dataset.cache_block(block(11)).unwrap();
+    sim_update(&mut dataset, view, 1.0, false, &mut log);
+    assert_eq!(dataset.refinement_work.selections, 1);
+    assert_eq!(dataset.refinement_work.prepares, 3);
+}
