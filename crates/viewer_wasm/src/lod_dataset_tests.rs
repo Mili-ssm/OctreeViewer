@@ -8,10 +8,11 @@ use std::sync::Arc;
 
 use super::{
     CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
-    next_lod_stage, prefix_extension_points, priority_precedes, resident_target_plan_is_complete,
+    highest_priority_pending_block, next_lod_stage, node_spacing, prefix_extension_points,
+    prioritized_pending_blocks, priority_precedes, resident_target_plan_is_complete,
     reusable_build_match,
 };
-use viewer_render_wgpu::{OrbitCamera, RenderScene, build_voxel_scene};
+use viewer_render_wgpu::{OrbitCamera, RenderScene, SceneBounds, build_voxel_scene};
 
 fn scene_for_test(
     hierarchy: &SpatialHierarchy,
@@ -1428,4 +1429,68 @@ fn a_resident_fine_update_selects_and_prepares_once() {
     sim_update(&mut dataset, view, 1.0, false, &mut log);
     assert_eq!(dataset.refinement_work.selections, 1);
     assert_eq!(dataset.refinement_work.prepares, 3);
+}
+
+/// Three equal leaves (geometric error 0) at increasing distance from the camera. Block ids
+/// ascend away from the camera, so the old tie-break by `BlockId` would load the farthest first.
+#[test]
+fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
+    let viewport = [800, 600];
+    let leaf = |id: u64, x: f64| {
+        SpatialNode::new(
+            NodeId::new(id),
+            Some(NodeId::new(1)),
+            1,
+            SpatialBounds::new([x, 0.0, 0.0], [x + 10.0, 10.0, 10.0]).unwrap(),
+            1,
+            0.0,
+            vec![BlockId::new(100 + id)],
+        )
+        .unwrap()
+    };
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [100.0, 10.0, 10.0]).unwrap(),
+        1,
+        0.0,
+        vec![BlockId::new(101)],
+    )
+    .unwrap();
+    // The camera sits on the +x side looking toward -x, so the largest x is nearest.
+    let hierarchy = SpatialHierarchy::new(
+        vec![root, leaf(2, 80.0), leaf(3, 40.0), leaf(4, 0.0)],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let mut camera = OrbitCamera::default();
+    // Fitting sets the near plane from the scene, so the leaves are not all clamped to it.
+    assert!(camera.fit(
+        SceneBounds {
+            min: [0.0; 3],
+            max: [100.0, 10.0, 10.0],
+        },
+        viewport
+    ));
+    assert!(camera.set_pose([350.0, 5.0, 5.0], [50.0, 5.0, 5.0]));
+    let frustum = camera.spatial_frustum(viewport).unwrap();
+    let project = |node: &SpatialNode| {
+        camera.projected_error_pixels(
+            node.bounds(),
+            node_spacing(node.bounds()),
+            [0.0; 3],
+            viewport,
+        )
+    };
+    let pending = [BlockId::new(104), BlockId::new(103), BlockId::new(102)];
+    let ordered = prioritized_pending_blocks(&hierarchy, &pending, &frustum, project);
+    let order = ordered.iter().map(|(id, _)| id.get()).collect::<Vec<_>>();
+    assert_eq!(order, [102, 103, 104]);
+    assert!(ordered[0].1 > ordered[1].1 && ordered[1].1 > ordered[2].1);
+    assert_eq!(
+        highest_priority_pending_block(&hierarchy, &pending, &frustum, project),
+        Some(BlockId::new(102))
+    );
 }

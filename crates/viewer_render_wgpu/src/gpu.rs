@@ -1022,11 +1022,11 @@ impl<'window> SurfaceRenderer<'window> {
         viewer_core::SpatialFrustum::new(planes).ok()
     }
 
-    /// Projects dataset-space node error using the current camera and viewport.
+    /// Screen-space error of a node's representative cell (`spacing`, dataset units).
     pub fn projected_error_pixels(
         &self,
         bounds: viewer_core::SpatialBounds,
-        geometric_error: f64,
+        spacing: f64,
         coordinate_origin: [f64; 3],
     ) -> f64 {
         let min = std::array::from_fn(|axis| {
@@ -1040,7 +1040,7 @@ impl<'window> SurfaceRenderer<'window> {
         };
         self.camera.projected_error_pixels(
             bounds,
-            geometric_error * self.visual_scale,
+            spacing * self.visual_scale,
             [0.0; 3],
             [self.surface_config.width, self.surface_config.height],
         )

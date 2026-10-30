@@ -355,38 +355,43 @@ impl OrbitCamera {
         SpatialFrustum::new(planes).ok()
     }
 
-    /// Projects a dataset-space geometric error conservatively into pixels.
+    /// Screen-space error in pixels of a node whose representative cell has edge `spacing`
+    /// (dataset units): the single metric behind LOD selection and pending-block priority.
+    ///
+    /// The cell is assumed to sit at the node's nearest point, so the depth is the minimum
+    /// view-space depth over the eight AABB corners (clamped to the near plane), and the
+    /// off-axis factor bounds the stretch of an edge at the viewport corners. This keeps the
+    /// result an upper bound of `projected_voxel_edge_pixels` for any such cell in the node.
     pub fn projected_error_pixels(
         &self,
         bounds: SpatialBounds,
-        geometric_error: f64,
+        spacing: f64,
         coordinate_origin: [f64; 3],
         viewport: [u32; 2],
     ) -> f64 {
-        if viewport[0] == 0
-            || viewport[1] == 0
-            || !geometric_error.is_finite()
-            || geometric_error < 0.0
-        {
+        if viewport[0] == 0 || viewport[1] == 0 || !spacing.is_finite() || spacing < 0.0 {
             return f64::INFINITY;
         }
         // Hierarchy bounds use dataset coordinates; the renderer camera uses local ones.
-        let min: [f64; 3] =
-            std::array::from_fn(|axis| bounds.min()[axis] - coordinate_origin[axis]);
-        let max: [f64; 3] =
-            std::array::from_fn(|axis| bounds.max()[axis] - coordinate_origin[axis]);
-        let center = DVec3::from_array(std::array::from_fn(|axis| (min[axis] + max[axis]) * 0.5));
-        let half_diagonal =
-            DVec3::from_array(std::array::from_fn(|axis| (max[axis] - min[axis]) * 0.5)).length();
         let (position, forward, _, _) = self.basis();
-        let nearest_depth = ((center - position).dot(forward) - half_diagonal - geometric_error)
+        let nearest_depth = (0..8)
+            .map(|index| {
+                let corner = DVec3::from_array(std::array::from_fn(|axis| {
+                    (if index & (1 << axis) == 0 {
+                        bounds.min()[axis]
+                    } else {
+                        bounds.max()[axis]
+                    }) - coordinate_origin[axis]
+                }));
+                (corner - position).dot(forward)
+            })
+            .fold(f64::INFINITY, f64::min)
             .max(self.clip_distances().0);
         let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
         let tan_vertical = (VERTICAL_FOV * 0.5).tan();
         let tan_horizontal = tan_vertical * aspect;
         let off_axis_scale = (1.0 + tan_vertical.powi(2) + tan_horizontal.powi(2)).sqrt();
-        geometric_error * f64::from(viewport[1]) * off_axis_scale
-            / (2.0 * tan_vertical * nearest_depth)
+        spacing * f64::from(viewport[1]) * off_axis_scale / (2.0 * tan_vertical * nearest_depth)
     }
 
     /// Maximum length of the twelve projected cube edges, in framebuffer pixels.
@@ -828,5 +833,230 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Previous selection metric, kept to prove the new one never selects more points: the
+    /// bounding sphere's nearest depth, minus the error itself.
+    fn legacy_projected_error_pixels(
+        camera: &OrbitCamera,
+        bounds: viewer_core::SpatialBounds,
+        geometric_error: f64,
+        viewport: [u32; 2],
+    ) -> f64 {
+        let center = DVec3::from_array(std::array::from_fn(|axis| {
+            (bounds.min()[axis] + bounds.max()[axis]) * 0.5
+        }));
+        let half_diagonal = DVec3::from_array(std::array::from_fn(|axis| {
+            (bounds.max()[axis] - bounds.min()[axis]) * 0.5
+        }))
+        .length();
+        let (position, forward, _, _) = camera.basis();
+        let nearest_depth = ((center - position).dot(forward) - half_diagonal - geometric_error)
+            .max(camera.clip_distances().0);
+        let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
+        let tan_vertical = (super::VERTICAL_FOV * 0.5).tan();
+        let tan_horizontal = tan_vertical * aspect;
+        let off_axis_scale = (1.0 + tan_vertical.powi(2) + tan_horizontal.powi(2)).sqrt();
+        geometric_error * f64::from(viewport[1]) * off_axis_scale
+            / (2.0 * tan_vertical * nearest_depth)
+    }
+
+    /// Complete octree over `[0, 512]^3`; payload sizes grow with depth so refining adds points.
+    fn octree(depth: u32) -> viewer_core::SpatialHierarchy {
+        use viewer_core::{BlockId, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode};
+        let mut nodes = Vec::new();
+        let mut frontier = vec![(1_u64, None, [0.0; 3], 512.0)];
+        let mut next_id = 2;
+        for level in 0..=depth {
+            let mut children = Vec::new();
+            for (id, parent, min, side) in frontier {
+                let bounds = SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
+                nodes.push(
+                    SpatialNode::new(
+                        NodeId::new(id),
+                        parent.map(NodeId::new),
+                        level,
+                        bounds,
+                        10 * 4_u64.pow(level),
+                        0.0,
+                        vec![BlockId::new(id)],
+                    )
+                    .unwrap(),
+                );
+                for child in 0..8 {
+                    let half = side / 2.0;
+                    let corner = std::array::from_fn(|axis| {
+                        min[axis] + if child & (1 << axis) == 0 { 0.0 } else { half }
+                    });
+                    children.push((next_id, Some(id), corner, half));
+                    next_id += 1;
+                }
+            }
+            frontier = children;
+        }
+        SpatialHierarchy::new(nodes, Vec::new(), None).unwrap()
+    }
+
+    /// Deterministic pseudo-random cameras that look at random points of the scene, so nodes
+    /// land anywhere in the viewport, including its corners.
+    fn random_views(count: usize) -> Vec<(OrbitCamera, [u32; 2])> {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut uniform = move |low: f64, high: f64| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            low + (high - low) * ((state >> 11) as f64 / (1_u64 << 53) as f64)
+        };
+        let viewports = [[800, 600], [1920, 1080], [300, 900], [2000, 500]];
+        (0..count)
+            .map(|index| {
+                let viewport = viewports[index % viewports.len()];
+                let mut camera = OrbitCamera::default();
+                assert!(camera.fit(
+                    SceneBounds {
+                        min: [0.0; 3],
+                        max: [512.0; 3],
+                    },
+                    viewport
+                ));
+                camera.yaw = uniform(-3.1, 3.1);
+                camera.pitch = uniform(-1.4, 1.4);
+                camera.distance = uniform(60.0, 1800.0);
+                camera.target = DVec3::new(
+                    uniform(0.0, 512.0),
+                    uniform(0.0, 512.0),
+                    uniform(0.0, 512.0),
+                );
+                (camera, viewport)
+            })
+            .collect()
+    }
+
+    fn select(
+        hierarchy: &viewer_core::SpatialHierarchy,
+        camera: &OrbitCamera,
+        viewport: [u32; 2],
+        target: f64,
+        legacy: bool,
+    ) -> Option<viewer_core::LodSelection> {
+        let frustum = camera.spatial_frustum(viewport)?;
+        let config = viewer_core::LodSelectionConfig::new(target, u64::MAX / 2).unwrap();
+        hierarchy
+            .select_lod(&frustum, config, |node| {
+                let bounds = node.bounds();
+                let side = (0..3)
+                    .map(|axis| bounds.max()[axis] - bounds.min()[axis])
+                    .fold(0.0, f64::max);
+                if legacy {
+                    legacy_projected_error_pixels(camera, bounds, side / 8.0, viewport)
+                } else {
+                    camera.projected_error_pixels(bounds, side / 8.0, [0.0; 3], viewport)
+                }
+            })
+            .ok()
+    }
+
+    #[test]
+    fn projected_error_bounds_the_edge_of_any_representative_cell_also_off_axis() {
+        use viewer_core::SpatialBounds;
+        let hierarchy = octree(3);
+        let target = 6.0;
+        let mut checked_cells = 0_usize;
+        let mut selected_nodes = 0_usize;
+        for (camera, viewport) in random_views(120) {
+            let Some(selection) = select(&hierarchy, &camera, viewport, target, false) else {
+                continue;
+            };
+            let (position, forward, right, up) = camera.basis();
+            let near = camera.clip_distances().0;
+            let tan_v = (super::VERTICAL_FOV * 0.5).tan();
+            let tan_h = tan_v * f64::from(viewport[0]) / f64::from(viewport[1]);
+            for id in selection.node_ids() {
+                let node = hierarchy.node(*id).unwrap();
+                let bounds = node.bounds();
+                let side = bounds.max()[0] - bounds.min()[0];
+                let spacing = side / 8.0;
+                let error = camera.projected_error_pixels(bounds, spacing, [0.0; 3], viewport);
+                let limited = selection.resolution_limited().contains(id);
+                if !limited {
+                    selected_nodes += 1;
+                    assert!(error <= target, "selected node above target: {error}");
+                }
+                // Cells at the eight corners of the node plus its center.
+                for index in 0..9 {
+                    let cell_min: [f64; 3] = std::array::from_fn(|axis| {
+                        if index == 8 {
+                            (bounds.min()[axis] + bounds.max()[axis] - spacing) * 0.5
+                        } else if index & (1 << axis) == 0 {
+                            bounds.min()[axis]
+                        } else {
+                            bounds.max()[axis] - spacing
+                        }
+                    });
+                    let cell = SpatialBounds::new(cell_min, cell_min.map(|value| value + spacing))
+                        .unwrap();
+                    let depths_and_offsets = (0..8).map(|corner| {
+                        let point = DVec3::from_array(std::array::from_fn(|axis| {
+                            if corner & (1 << axis) == 0 {
+                                cell.min()[axis]
+                            } else {
+                                cell.max()[axis]
+                            }
+                        }));
+                        let offset = point - position;
+                        (offset.dot(forward), offset.dot(right), offset.dot(up))
+                    });
+                    // The off-axis factor is exact inside the view frustum only, and cells
+                    // nearer than the near plane are clipped: neither is drawn by the builder.
+                    let drawn = depths_and_offsets.into_iter().all(|(depth, x, y)| {
+                        depth >= near && x.abs() <= depth * tan_h && y.abs() <= depth * tan_v
+                    });
+                    if !drawn {
+                        continue;
+                    }
+                    let edge = camera.projected_voxel_edge_pixels(cell, [0.0; 3], viewport);
+                    assert!(
+                        edge <= error * (1.0 + 1e-9),
+                        "edge {edge} above metric {error} (viewport {viewport:?})"
+                    );
+                    if !limited {
+                        assert!(edge <= target * (1.0 + 1e-9), "edge {edge} above target");
+                    }
+                    checked_cells += 1;
+                }
+            }
+        }
+        assert!(
+            selected_nodes > 300 && checked_cells > 1000,
+            "{selected_nodes} nodes, {checked_cells} cells"
+        );
+    }
+
+    #[test]
+    fn corner_depth_metric_selects_no_more_points_than_the_bounding_sphere_metric() {
+        let hierarchy = octree(3);
+        let (mut legacy_total, mut new_total, mut strictly_fewer) = (0_u64, 0_u64, 0_usize);
+        for (camera, viewport) in random_views(120) {
+            for target in [2.0, 6.0, 20.0] {
+                let new = select(&hierarchy, &camera, viewport, target, false);
+                let legacy = select(&hierarchy, &camera, viewport, target, true);
+                let (Some(new), Some(legacy)) = (new, legacy) else {
+                    continue;
+                };
+                assert!(
+                    new.point_count() <= legacy.point_count(),
+                    "new {} > legacy {} (target {target}, viewport {viewport:?})",
+                    new.point_count(),
+                    legacy.point_count()
+                );
+                legacy_total += legacy.point_count();
+                new_total += new.point_count();
+                strictly_fewer += usize::from(new.point_count() < legacy.point_count());
+            }
+        }
+        println!(
+            "points selected: legacy {legacy_total}, new {new_total}, fewer in {strictly_fewer}"
+        );
+        assert!(new_total < legacy_total);
     }
 }

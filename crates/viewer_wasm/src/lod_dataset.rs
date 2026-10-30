@@ -472,7 +472,7 @@ impl LodDataset {
                 // Camera and viewport remain immutable throughout this synchronous selection.
                 renderer.projected_error_pixels(
                     node.bounds(),
-                    bounds_side(node.bounds()) / 8.0,
+                    node_spacing(node.bounds()),
                     coordinate_origin,
                 )
             },
@@ -504,8 +504,13 @@ impl LodDataset {
                 self.metadata.hierarchy(),
                 initial_plan.pending_blocks(),
                 &frustum,
-                renderer,
-                self.metadata.coordinate_frame().origin(),
+                |node| {
+                    renderer.projected_error_pixels(
+                        node.bounds(),
+                        node_spacing(node.bounds()),
+                        coordinate_origin,
+                    )
+                },
             );
             priority_order.clear();
             priority_order.extend(ordered.iter().map(|(id, _)| *id));
@@ -515,8 +520,13 @@ impl LodDataset {
                 self.metadata.hierarchy(),
                 initial_plan.pending_blocks(),
                 &frustum,
-                renderer,
-                self.metadata.coordinate_frame().origin(),
+                |node| {
+                    renderer.projected_error_pixels(
+                        node.bounds(),
+                        node_spacing(node.bounds()),
+                        coordinate_origin,
+                    )
+                },
             )
         };
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
@@ -679,7 +689,7 @@ impl LodDataset {
             self.resolve_target(&camera, viewport, target_voxel_pixels, &frustum, |node| {
                 renderer.projected_error_pixels(
                     node.bounds(),
-                    bounds_side(node.bounds()) / 8.0,
+                    node_spacing(node.bounds()),
                     coordinate_origin,
                 )
             })?;
@@ -764,6 +774,11 @@ impl WorkClock {
             Self::Date(started) => (js_sys::Date::now() - started).max(0.0),
         }
     }
+}
+
+/// Representative spacing of a node: one eighth of its side, as the voxel builder subdivides it.
+fn node_spacing(bounds: SpatialBounds) -> f64 {
+    bounds_side(bounds) / 8.0
 }
 
 fn bounds_side(bounds: SpatialBounds) -> f64 {
@@ -874,8 +889,7 @@ fn highest_priority_pending_block(
     hierarchy: &SpatialHierarchy,
     pending: &[BlockId],
     frustum: &SpatialFrustum,
-    renderer: &SurfaceRenderer<'_>,
-    coordinate_origin: [f64; 3],
+    projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Option<BlockId> {
     if pending.is_empty() {
         return None;
@@ -883,11 +897,7 @@ fn highest_priority_pending_block(
     let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
     let mut best = None;
     for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = renderer.projected_error_pixels(
-            node.bounds(),
-            node.geometric_error(),
-            coordinate_origin,
-        );
+        let priority = projected_error_pixels(node);
         for block_id in node.blocks() {
             if pending_ids.contains(block_id) {
                 let candidate = (*block_id, priority);
@@ -905,8 +915,7 @@ fn prioritized_pending_blocks(
     hierarchy: &SpatialHierarchy,
     pending: &[BlockId],
     frustum: &SpatialFrustum,
-    renderer: &SurfaceRenderer<'_>,
-    coordinate_origin: [f64; 3],
+    projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Vec<(BlockId, f64)> {
     if pending.is_empty() {
         return Vec::new();
@@ -914,11 +923,7 @@ fn prioritized_pending_blocks(
     let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
     let mut priorities = std::collections::HashMap::<BlockId, f64>::new();
     for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = renderer.projected_error_pixels(
-            node.bounds(),
-            node.geometric_error(),
-            coordinate_origin,
-        );
+        let priority = projected_error_pixels(node);
         for block_id in node.blocks() {
             if pending_ids.contains(block_id) {
                 priorities
