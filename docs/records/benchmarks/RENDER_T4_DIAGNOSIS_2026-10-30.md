@@ -72,3 +72,53 @@ Recomendación: probar 2 y 3 en la simulación y después en un A/B en vivo. Res
 - Solo cámara inicial de Belvedere; Majadas (+10 %) no se simuló (415 M puntos, 6259 nodos): el mecanismo es el mismo, falta la cifra.
 - Simulación sin retención del planificador, sin lotes asíncronos y con coste = puntos de fuente. `oversizedVoxels` se aproxima con la celda del vértice más cercano (no con el constructor de vóxeles).
 - Orden de la carga asíncrona: el viewer pide en orden de prioridad por lotes (`prioritized_pending_blocks`); aquí se modela la carga secuencial.
+
+## Verificación de la corrección del orden de carga
+
+Medición en vivo de `d4604b7` (prioridad de bloque pendiente = error en pantalla ÷ puntos de fuente; opción 2/D de arriba). Datos crudos: [JSON por ejecución](data/render-t4-fix-2026-10-30/) (`.json`, `.png` final y `.log`).
+
+### Método
+
+- Mismo entorno y sonda que [RENDER_BASELINE_2026-10-30.md](RENDER_BASELINE_2026-10-30.md): Chrome con ANGLE-Vulkan, adaptador `amd` `rdna-3` y `mode: "timing"` en las 18 ejecuciones; sonda `probe-orbit-load.mjs` de HEAD; wasm `--release`.
+- **A = `ede7e0a`** (se vuelve a medir para emparejar; `.wasm` sha `9833061a09a9…`, idéntico al de la línea base) y **C = `d4604b7`** (`0e2a6a8d0b6b…`). Worktrees `target/fix-A` y `target/fix-C` (retirados), puertos 8801 y 8802.
+- Matriz alternando A/C: Majadas 4 px (tope 180 s) 2 rondas y 1 ronda `--pixels` por brazo; Belvedere 8 px (tope 300 s) 3 rondas. `loadavg` de arranque 0,99–1,46 (< 1,5). Las rondas `--pixels` no entran en las medianas.
+- Medianas con [mín–máx]. En Majadas el tiempo a objetivo tiene resolución de 2 s (sondeo), por eso el rango es nulo.
+
+### Resultados
+
+| Escenario | Brazo | Objetivo | `sceneBuilds` | `voxelSourcePoints` (M) | Bloques async | `uncoveredNodes` máx/final |
+| --- | --- | --- | --- | --- | --- | --- |
+| Majadas 4 px (n=2) | A | 56,8 s [56,8–56,8] | 373 [353–393] | 836 [747–924] | 239 | 59 / 0 |
+| Majadas 4 px (n=2) | C | **50,8 s** [50,8–50,8] | 380 [375–384] | **696** [623–769] | 239 | 59 / 0 |
+| Belvedere 8 px (n=3) | A | 253 s [251–257] | 541 [541–542] | 1313 [1308–1315] | 389 | 81 / 0 |
+| Belvedere 8 px (n=3) | C | **158,9 s** [158,9–160,9] | 556 [552–570] | **922** [918–933] | 380 | 81 / 0 |
+
+Para comparar con B (línea base): Majadas B 61,4 s, 1041 M puntos; Belvedere 8 px B sin objetivo a 300 s, 1746 M puntos. C reduce el tiempo a objetivo un 17 % (Majadas, frente a B) y de >300 s a 159 s (Belvedere).
+
+Intervalo entre respuestas de frame (ms).
+
+| Escenario | Brazo | Carga p50 / p95 / máx | Órbita p50 / p95 / máx |
+| --- | --- | --- | --- |
+| Majadas 4 px | A | 67 / 236 [194–278] / 410 [331–489] | 485 / 492 / 499 |
+| Majadas 4 px | C | 82 / 104 [85–124] / 226 [154–298] | 485 / 498 / 514 |
+| Belvedere 8 px | A | 67 / 88 [86–90] / 239 [185–261] | 2713 / 2720 / 2720 |
+| Belvedere 8 px | C | 67 / 84 [83–88] / 144 [140–168] | 67 / 2447 / 2618 |
+
+Contadores de C (A no los expone): `pendingTargetEvictions` 0 y `cacheCycleDetected` false en las 5 ejecuciones; selecciones por actualización 0,61 (Majadas) y 0,57 (Belvedere); preparaciones por actualización 1,28 en ambas. `oversizedVoxels` máximo 0 (Majadas) y 243 (Belvedere), final 0 en A y C. Píxeles vacíos (Majadas, 1 ronda; carga, tras objetivo, final): A 0,766 / 0,780 / 0,778, 0,886 / 0,894 / 0,897, 0,8992; C 0,776 / 0,780 / 0,781, 0,885 / 0,893 / 0,892, 0,8992. `SourceDetailBudgetExceeded` no aparece en ningún estado final ni registro.
+
+### Puertas
+
+| Criterio | Resultado |
+| --- | --- |
+| C no sube `uncoveredNodes` frente a A | **Cumple** (59/0 y 81/0, igual que A y B) |
+| C no sube píxeles vacíos frente a A | **Cumple** (diferencia ≤ 0,01 en la carga, igual en el final; dentro del ruido) |
+| C no sube `pendingTargetEvictions` | **Cumple** (0; `cacheCycleDetected` false) |
+| Sin `SourceDetailBudgetExceeded` | **Cumple** |
+| Tiempo a objetivo de C ≤ A | **Cumple**: Majadas 50,8 s frente a 56,8 s (-11 %); Belvedere 8 px 159 s frente a 253 s (-37 %), rangos sin solaparse |
+
+### Lectura y límites
+
+- C necesita menos puntos de fuente que A (-17 % Majadas, -30 % Belvedere), en el sentido que predecía la simulación (D = 0,55 de A en la etapa 8 px; el vivo da 0,70). `observed`.
+- Observado sin investigar la causa: en Belvedere la órbita tras el objetivo tiene p50 de 67 ms con C (43 respuestas en 10 s, frente a 4 con A) y p95 de 2,4 s; el criterio de p95 < 33 ms sigue sin cumplirse. En Majadas la órbita sigue en 485 ms en ambos brazos. Hace falta repetir y mirar el registro antes de atribuirlo a C.
+- Belvedere C carga 380 bloques async frente a 389 de A (el corte final difiere en 9 bloques); `uncoveredNodes` y `oversizedVoxels` finales son iguales.
+- Majadas n = 2 y tiempos con paso de 2 s: orientativo, aunque el desplazamiento entre brazos supera el rango. Solo se midió 8 px en Belvedere (no 4 px) y una ronda de píxeles por brazo.
