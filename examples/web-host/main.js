@@ -582,6 +582,9 @@ function handleWorkerMessage(event) {
     }
 }
 
+// Opt-in (?buildWorker=1): scenes are built in build-worker.js instead of the render worker.
+const BUILD_WORKER = { url: new URL("./build-worker.js", import.meta.url).href, type: "module" };
+
 function createWorkerViewer() {
     statusRoot.textContent = "Starting renderer worker…";
     if (!HTMLCanvasElement.prototype.transferControlToOffscreen || !window.Worker) {
@@ -614,6 +617,7 @@ function createWorkerViewer() {
             height: canvas.height,
             colorMode: colorMode.value,
             depthShading: depthShading.checked,
+            buildWorker: new URLSearchParams(location.search).get("buildWorker") === "1" ? BUILD_WORKER : undefined,
         }, [offscreen]);
         reloadButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";

@@ -1,0 +1,336 @@
+import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmSceneBuilder } from "../../pkg/viewer_wasm.js";
+
+// Build worker (render plan R2): owns the dataset hierarchy, the block reader and scheduler, the
+// decoded block cache, the LOD planner and the voxel builder (`WasmSceneBuilder`, no GPU). The
+// render worker (viewer-worker.js) sends the camera and draws the instance bytes this worker
+// returns. Self-contained on purpose: package-local.py embeds it without module imports.
+//
+// render -> build: init{wasmBytes?}, open{gen,file,attributes,cacheBytes,limits}, colorMode{gen,mode},
+//                  view{gen,epoch,camera,viewport,visualScale,targetPx}, metrics{reset?}
+// build -> render: opened{gen,opened}, scene{gen,epoch,viewEpoch,buf,count,blockIds,lod,digest},
+//                  lod{gen,epoch,viewEpoch,lod} (scene reused), error{gen,operation,message},
+//                  metrics{metrics}
+// `epoch` counts this worker's builds (strictly increasing within a gen); `viewEpoch` echoes the
+// render worker's view epoch that the build used.
+
+const MAX_ASYNC_LOD_READS = 4;
+let wasmExports = null;
+let generation = 0;
+let builder = null;
+let reader = null;
+let scheduler = null;
+let readBudget = null;
+let asyncHasAttributes = false;
+let asyncAttributeIndices = new Map();
+let currentColorMode = "rgb";
+let latestView = null;
+let viewsSinceBuild = 0;
+let retryFailedNext = false;
+let buildTimer = 0;
+const asyncReadTasks = new Map();
+const failedAsyncBlocks = new Set();
+const asyncReadCancelTokens = new Set();
+
+const workKinds = new Map();
+const asyncBlockTotals = { blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0 };
+const buildTotals = { builds: 0, scenes: 0, reused: 0, buildMs: 0, maxBuildMs: 0, viewsReceived: 0, viewsCoalesced: 0 };
+
+function recordWork(kind, startedAt, endedAt) {
+    let entry = workKinds.get(kind);
+    if (!entry) {
+        entry = { count: 0, busyMs: 0, maxBusyMs: 0 };
+        workKinds.set(kind, entry);
+    }
+    const busy = endedAt - startedAt;
+    entry.count += 1;
+    entry.busyMs += busy;
+    entry.maxBusyMs = Math.max(entry.maxBusyMs, busy);
+}
+
+function metricsSnapshot() {
+    return {
+        timeOrigin: performance.timeOrigin ?? null,
+        busyByMessage: Object.fromEntries(workKinds),
+        asyncBlocks: { ...asyncBlockTotals },
+        build: { ...buildTotals },
+        wasmLinearMemoryBytes: wasmExports?.memory?.buffer.byteLength ?? null,
+    };
+}
+
+function resetMetrics() {
+    workKinds.clear();
+    Object.assign(asyncBlockTotals, {
+        blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0,
+    });
+    Object.assign(buildTotals, {
+        builds: 0, scenes: 0, reused: 0, buildMs: 0, maxBuildMs: 0, viewsReceived: 0, viewsCoalesced: 0,
+    });
+}
+
+function postError(operation, error, requestGeneration = generation) {
+    self.postMessage({ type: "error", gen: requestGeneration, operation, message: String(error) });
+}
+
+function cancelAllAsyncReads() {
+    scheduler?.cancelAll();
+    for (const token of asyncReadCancelTokens) token.cancel();
+    asyncReadCancelTokens.clear();
+}
+
+// A single timer per burst: messages queued meanwhile (views, block arrivals) are handled first,
+// so one build serves all of them with the latest view.
+function requestBuild() {
+    if (buildTimer || !builder || !latestView) return;
+    buildTimer = setTimeout(runBuild, 0);
+}
+
+function runBuild() {
+    buildTimer = 0;
+    if (!builder || !latestView) return;
+    const view = latestView;
+    buildTotals.viewsCoalesced += Math.max(0, viewsSinceBuild - 1);
+    viewsSinceBuild = 0;
+    const startedAt = performance.now();
+    let result;
+    try {
+        result = builder.update(view.camera, view.viewport[0], view.viewport[1], view.visualScale, view.targetPx);
+    } catch (error) {
+        recordWork("build", startedAt, performance.now());
+        postError("build", error);
+        return;
+    }
+    const buildMs = performance.now() - startedAt;
+    recordWork("build", startedAt, startedAt + buildMs);
+    buildTotals.builds += 1;
+    buildTotals.buildMs += buildMs;
+    buildTotals.maxBuildMs = Math.max(buildTotals.maxBuildMs, buildMs);
+    if (result.sceneBuffer) {
+        buildTotals.scenes += 1;
+        self.postMessage({
+            type: "scene",
+            gen: generation,
+            epoch: result.epoch,
+            viewEpoch: view.epoch,
+            buf: result.sceneBuffer,
+            count: result.instanceCount,
+            blockIds: result.blockIds,
+            lod: result.lod,
+            digest: result.digest,
+            buildMs,
+        }, [result.sceneBuffer]);
+    } else {
+        buildTotals.reused += 1;
+        self.postMessage({
+            type: "lod", gen: generation, epoch: result.epoch, viewEpoch: view.epoch, lod: result.lod,
+        });
+    }
+    refreshAsyncReads(retryFailedNext);
+    retryFailedNext = false;
+    if (result.needsRefinement) requestBuild();
+}
+
+// Applies the planner's priority list to the scheduler, then starts reads for free slots.
+function refreshAsyncReads(retryFailed = false) {
+    if (!reader || !builder || !scheduler) return;
+    const cancelledTickets = scheduler.updateBlocks(builder.pendingAsyncLodBlocks());
+    for (const ticket of cancelledTickets) {
+        for (const task of asyncReadTasks.values()) {
+            if (task.ticket === String(ticket)) task.cancelToken.cancel();
+        }
+    }
+    if (retryFailed) {
+        for (const blockId of failedAsyncBlocks) scheduler.retry(blockId);
+        failedAsyncBlocks.clear();
+    }
+    fillAsyncReads();
+}
+
+function fillAsyncReads() {
+    if (!reader || !builder || !scheduler) return;
+    const taskReader = reader;
+    const taskGeneration = generation;
+    const ticketScheduler = scheduler;
+    for (const blockId of ticketScheduler.pendingBlocks()) {
+        if (ticketScheduler.inFlightCount() >= MAX_ASYNC_LOD_READS) break;
+        if (asyncReadTasks.has(String(blockId))) continue;
+
+        const colorMode = currentColorMode;
+        const selectedAttribute = colorMode.startsWith("attribute:")
+            ? Number(colorMode.split(":")[1])
+            : null;
+        const requestedAttribute = selectedAttribute !== null
+            ? selectedAttribute
+            : colorMode === "intensity" ? asyncAttributeIndices.get("intensity")
+                : colorMode === "classification" ? asyncAttributeIndices.get("classification") : null;
+        const geometrySelection = colorMode === "rgb" && selectedAttribute === null
+            ? "geometry" : "positions";
+        const selection = requestedAttribute !== null && asyncHasAttributes
+            ? "positionsAttribute" : geometrySelection;
+        let request;
+        try {
+            request = taskReader.planLodRead(BigInt(blockId), selection, requestedAttribute);
+        } catch (error) {
+            ticketScheduler.fail(String(blockId));
+            failedAsyncBlocks.add(String(blockId));
+            postError("asyncLodRead", error);
+            continue;
+        }
+        // A null result means live reservations currently occupy the shared budget. Leave the
+        // block queued without taking a scheduler slot; lower-priority admitted blocks may proceed.
+        if (!request) continue;
+        const scheduled = ticketScheduler.takeNextAdmitted([String(blockId)]);
+        if (!scheduled) {
+            request.free();
+            break;
+        }
+        const ticket = String(scheduled.ticket);
+        const cancelToken = request.cancelToken();
+        asyncReadCancelTokens.add(cancelToken);
+        asyncReadTasks.set(String(blockId), { request, cancelToken, ticket });
+        void readBlock(taskReader, taskGeneration, ticketScheduler, blockId, ticket, request, cancelToken);
+    }
+}
+
+async function readBlock(taskReader, taskGeneration, ticketScheduler, blockId, ticket, request, cancelToken) {
+    let result = null;
+    let ticketCompleted = false;
+    const stale = () => taskGeneration !== generation || taskReader !== reader
+        || ticketScheduler !== scheduler;
+    try {
+        result = await request.read();
+        const payload = result.value;
+        const readMs = result.readMs ?? 0;
+        const decodeMs = result.decodeMs ?? 0;
+        const insertStartedAt = performance.now();
+        if (stale() || !ticketScheduler.isCurrent(ticket)) {
+            ticketScheduler.complete(ticket, String(blockId), false);
+            ticketCompleted = true;
+            return;
+        }
+        builder.insertAsyncLodBlock(
+            blockId, payload.positions, payload.colors ?? null, payload.attribute ?? null,
+        );
+        ticketScheduler.complete(ticket, String(blockId), true);
+        ticketCompleted = true;
+        const insertMs = performance.now() - insertStartedAt;
+        recordWork("asyncInsert", insertStartedAt, insertStartedAt + insertMs);
+        asyncBlockTotals.blocks += 1;
+        asyncBlockTotals.readMs += readMs;
+        asyncBlockTotals.decodeMs += decodeMs;
+        asyncBlockTotals.maxDecodeMs = Math.max(asyncBlockTotals.maxDecodeMs, decodeMs);
+        asyncBlockTotals.insertMs += insertMs;
+        asyncBlockTotals.maxInsertMs = Math.max(asyncBlockTotals.maxInsertMs, insertMs);
+        requestBuild();
+    } catch (error) {
+        let outcome = null;
+        if (!ticketCompleted) {
+            try {
+                outcome = ticketScheduler.complete(ticket, String(blockId), false);
+            } catch { /* ticket already settled */ }
+            ticketCompleted = true;
+            if (outcome === "failed") failedAsyncBlocks.add(String(blockId));
+        }
+        if (!stale() && outcome !== "discarded") postError("asyncLodRead", error, taskGeneration);
+    } finally {
+        result?.release?.();
+        result?.free?.();
+        request.free();
+        asyncReadCancelTokens.delete(cancelToken);
+        asyncReadTasks.delete(String(blockId));
+        if (!stale()) fillAsyncReads();
+    }
+}
+
+async function openDataset(data) {
+    cancelAllAsyncReads();
+    if (buildTimer) clearTimeout(buildTimer);
+    buildTimer = 0;
+    builder?.free?.();
+    reader?.free?.();
+    builder = null;
+    reader = null;
+    latestView = null;
+    viewsSinceBuild = 0;
+    failedAsyncBlocks.clear();
+    generation = data.gen;
+    currentColorMode = "rgb";
+    asyncHasAttributes = false;
+    asyncAttributeIndices = new Map();
+    const requestGeneration = generation;
+    const [maxVoxels, maxEstimatedBytes] = data.limits;
+    const nextScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
+    scheduler = nextScheduler;
+    readBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
+    const nextReader = await WasmAsyncFormatReader.open(data.file, data.attributes, readBudget.clone());
+    if (requestGeneration !== generation) {
+        nextReader.free();
+        return;
+    }
+    const nextBuilder = new WasmSceneBuilder(maxVoxels, maxEstimatedBytes);
+    const descriptor = nextReader.lodDatasetDescriptor(data.cacheBytes);
+    const root = descriptor.nodes.find(node => node.parent === null);
+    const opened = {
+        ...nextBuilder.openLodDataset(descriptor),
+        nodeCount: descriptor.nodes.length,
+        maxLevel: descriptor.nodes.reduce((max, node) => Math.max(max, node.level), 0),
+        coordinateOrigin: new Float64Array(descriptor.coordinateOrigin),
+        boundsMin: new Float64Array(root.min),
+        boundsMax: new Float64Array(root.max),
+        semantics: descriptor.semantics,
+        attributeSchema: descriptor.attributeSchema,
+        hasAttributes: descriptor.hasAttributes,
+        sourcePointCount: descriptor.sourcePointCount ?? null,
+    };
+    builder = nextBuilder;
+    reader = nextReader;
+    asyncHasAttributes = descriptor.hasAttributes;
+    asyncAttributeIndices = new Map(descriptor.attributeSchema.map(
+        (attribute, index) => [attribute.name, index],
+    ));
+    self.postMessage({ type: "opened", gen: requestGeneration, opened });
+}
+
+async function handleMessage({ data }) {
+    const startedAt = performance.now();
+    try {
+        switch (data.type) {
+            case "init":
+                wasmExports = await init(data.wasmBytes ? { module_or_path: data.wasmBytes } : undefined);
+                break;
+            case "open":
+                await openDataset(data);
+                break;
+            case "view":
+                if (data.gen !== generation) break;
+                latestView = data;
+                viewsSinceBuild += 1;
+                retryFailedNext ||= Boolean(data.retryFailed);
+                buildTotals.viewsReceived += 1;
+                requestBuild();
+                break;
+            case "colorMode":
+                if (data.gen !== generation || !builder) break;
+                builder.setColorMode(data.mode);
+                if (data.mode !== currentColorMode) cancelAllAsyncReads();
+                currentColorMode = data.mode;
+                refreshAsyncReads(true);
+                requestBuild();
+                break;
+            case "metrics":
+                if (data.reset) resetMetrics();
+                else self.postMessage({ type: "metrics", metrics: metricsSnapshot() });
+                break;
+            default:
+                throw new Error(`unknown build worker message: ${data.type}`);
+        }
+    } catch (error) {
+        postError(data.type === "open" ? "openFile" : data.type, error, data.gen ?? generation);
+    } finally {
+        if (data.type !== "metrics") recordWork(data.type, startedAt, performance.now());
+    }
+}
+
+let messageQueue = Promise.resolve();
+self.addEventListener("message", (event) => {
+    messageQueue = messageQueue.then(() => handleMessage(event), () => handleMessage(event));
+});

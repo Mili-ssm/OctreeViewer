@@ -13,6 +13,8 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let fitted = if let Some(dataset) = self.lod_session.as_ref().map(LodSession::dataset) {
             dataset.fit_camera(renderer)
+        } else if let Some(frame) = &self.remote_dataset_frame {
+            renderer.fit_spatial_bounds(frame.bounds, frame.origin)
         } else {
             renderer.fit_scene(self.inner.render_scene())
         };

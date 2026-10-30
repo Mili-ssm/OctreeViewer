@@ -168,6 +168,10 @@ export function createViewer(canvas, options = {}) {
         worker.postMessage({
             type: "init", canvas: offscreen, width, height,
             colorMode: options.colorMode ?? "rgb", depthShading: options.depthShading ?? true,
+            buildWorker: options.buildWorker ? {
+                url: String(options.buildWorkerUrl ?? new URL("./build-worker.js", import.meta.url)),
+                type: "module",
+            } : undefined,
         }, [offscreen]);
         resizeObserver = new ResizeObserver(resize);
         resizeObserver.observe(canvas);

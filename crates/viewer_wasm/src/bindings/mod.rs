@@ -12,6 +12,7 @@ use crate::{
 };
 pub use builder::WasmSceneBuilder;
 use js_marshal::viewer_error_to_js;
+use viewer_core::SpatialBounds;
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{RendererConfig, SurfaceRenderer, VoxelBuildLimits};
 
@@ -41,6 +42,14 @@ pub struct WasmVoxelViewer {
     lod_dirty: bool,
     last_lod_stats: Option<(LodViewStats, BrowserReadStats)>,
     last_lod_error: Option<String>,
+    /// Root bounds and origin of a dataset whose hierarchy lives in a build worker, so `fitScene`
+    /// can frame it without a local `LodDataset`.
+    remote_dataset_frame: Option<RemoteDatasetFrame>,
+}
+
+struct RemoteDatasetFrame {
+    bounds: SpatialBounds,
+    origin: [f64; 3],
 }
 
 pub(super) struct AsyncFormatContext {
@@ -104,6 +113,7 @@ impl WasmVoxelViewer {
             lod_dirty: false,
             last_lod_stats: None,
             last_lod_error: None,
+            remote_dataset_frame: None,
         })
     }
 
@@ -177,6 +187,7 @@ impl WasmVoxelViewer {
     pub fn clear(&mut self) {
         self.inner.clear();
         self.gpu_scene_dirty = true;
+        self.remote_dataset_frame = None;
         self.clear_lod_dataset();
     }
 }

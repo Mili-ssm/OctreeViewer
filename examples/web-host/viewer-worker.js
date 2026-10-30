@@ -38,6 +38,26 @@ const frameQueueWaits = [];
 const lodLog = [];
 let lodLogDropped = 0;
 const asyncBlockTotals = { blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0 };
+
+// Build-worker mode (render plan R2). Off unless `init` carries `buildWorker: { url, type }`: the
+// LOD hierarchy, block reads and scene building then live in build-worker.js and this worker only
+// keeps the camera, the renderer and the last LOD stats. See build-worker.js for the protocol.
+const BUILD_SAMPLE_CAPACITY = 8192;
+const BUILD_METRICS_TIMEOUT_MS = 5000;
+let buildOptions = null;
+let buildWorker = null;
+let buildWorkerUsed = false;
+let buildOpened = false;
+let pendingOpen = null;
+let appliedEpoch = 0;
+let viewEpoch = 0;
+let remoteVisualScale = 1;
+let lastSentView = null;
+let currentLod = null;
+let pendingBuildMetrics = [];
+const viewSentAt = new Map();
+const buildSamples = { sceneAgeMs: [], epochLag: [], sceneApplyMs: [] };
+const buildCounters = { viewsSent: 0, scenesApplied: 0, scenesDropped: 0, spawns: 0 };
 // Epoch milliseconds, comparable with the main thread's timestamps.
 const epochNow = () => (performance.timeOrigin ?? 0) + performance.now();
 
@@ -90,17 +110,49 @@ function recordLodMessage(source, lod) {
     });
 }
 
-function workerMetricsSnapshot() {
-    const ordered = [...frameQueueWaits].sort((a, b) => a - b);
+function summarizeSamples(samples) {
+    const ordered = [...samples].sort((a, b) => a - b);
     const at = fraction => ordered.length
         ? ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * fraction) - 1)] : null;
-    return {
+    return { count: ordered.length, p50: at(0.50), p95: at(0.95), max: at(1) };
+}
+
+function recordBuildSample(name, value) {
+    const samples = buildSamples[name];
+    if (samples.length < BUILD_SAMPLE_CAPACITY) samples.push(value);
+}
+
+function workerMetricsSnapshot(buildMetrics = null) {
+    const snapshot = {
         timeOrigin: performance.timeOrigin ?? null,
         busyByMessage: Object.fromEntries(workKinds),
-        frameQueueWaitMs: { count: ordered.length, p50: at(0.50), p95: at(0.95), max: at(1) },
+        frameQueueWaitMs: summarizeSamples(frameQueueWaits),
         asyncBlocks: { ...asyncBlockTotals },
         lodLog: [...lodLog],
         lodLogDropped,
+        buildWorkerEnabled: buildOptions !== null,
+    };
+    if (buildOptions === null) return snapshot;
+    // The build worker owns reads and decoding, so its totals replace this worker's empty ones.
+    if (buildMetrics) snapshot.asyncBlocks = { ...buildMetrics.asyncBlocks };
+    return {
+        ...snapshot,
+        sceneAgeMs: summarizeSamples(buildSamples.sceneAgeMs),
+        epochLag: summarizeSamples(buildSamples.epochLag),
+        sceneApplyMs: {
+            ...summarizeSamples(buildSamples.sceneApplyMs),
+            totalMs: buildSamples.sceneApplyMs.reduce((sum, value) => sum + value, 0),
+        },
+        viewsSent: buildCounters.viewsSent,
+        viewsCoalesced: buildMetrics?.build.viewsCoalesced ?? null,
+        scenesApplied: buildCounters.scenesApplied,
+        scenesDropped: buildCounters.scenesDropped,
+        buildWorkerSpawns: buildCounters.spawns,
+        wasmLinearMemoryBytes: {
+            render: wasmExports?.memory?.buffer.byteLength ?? null,
+            build: buildMetrics?.wasmLinearMemoryBytes ?? null,
+        },
+        buildWorker: buildMetrics,
     };
 }
 
@@ -111,6 +163,25 @@ function resetWorkerMetrics() {
     lodLogDropped = 0;
     Object.assign(asyncBlockTotals, {
         blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0,
+    });
+    for (const samples of Object.values(buildSamples)) samples.length = 0;
+    Object.assign(buildCounters, { viewsSent: 0, scenesApplied: 0, scenesDropped: 0, spawns: 0 });
+    buildWorker?.postMessage({ type: "metrics", reset: true });
+}
+
+function requestBuildMetrics() {
+    if (!buildWorker) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        const waiter = (metrics) => {
+            clearTimeout(timer);
+            resolve(metrics);
+        };
+        const timer = setTimeout(() => {
+            pendingBuildMetrics = pendingBuildMetrics.filter(entry => entry !== waiter);
+            resolve(null);
+        }, BUILD_METRICS_TIMEOUT_MS);
+        pendingBuildMetrics.push(waiter);
+        buildWorker.postMessage({ type: "metrics" });
     });
 }
 
@@ -197,13 +268,18 @@ function memoryStats() {
     };
 }
 
+// Stats of the last LOD update: the renderer's own, or the build worker's in build-worker mode.
+function currentLodStats() {
+    return buildOptions ? currentLod : viewer.lodStats();
+}
+
 function postStats(frameStatus = null) {
     self.postMessage({
         type: "stats",
         frameStatus,
         frameRenderMs: frameRenderPercentiles(),
         gpu: viewer.gpuStats(),
-        lod: viewer.lodStats(),
+        lod: currentLodStats(),
         viewer: viewer.stats(),
         memory: memoryStats(),
     });
@@ -390,6 +466,181 @@ function scheduleAsyncLodRead(retryFailed = false) {
     }
 }
 
+function spawnBuildWorker() {
+    const worker = new Worker(buildOptions.url, { type: buildOptions.type ?? "module" });
+    worker.addEventListener("message", event => onBuildMessage(worker, event.data));
+    worker.addEventListener("error", (event) => {
+        if (worker !== buildWorker) return;
+        event.preventDefault?.();
+        self.postMessage({ type: "error", operation: "buildWorker", message: event.message || "build worker failed" });
+    });
+    // The packaged file:// worker has the WASM bytes inline; hand them over instead of embedding twice.
+    worker.postMessage({
+        type: "init",
+        wasmBytes: typeof __VIEWER_WASM_BYTES__ !== "undefined" ? __VIEWER_WASM_BYTES__ : undefined,
+    });
+    buildWorker = worker;
+    buildWorkerUsed = false;
+    buildCounters.spawns += 1;
+}
+
+// Cancelling a dataset is terminate() + respawn: it also stops the reads and any build in flight.
+function freshBuildWorker() {
+    if (buildWorker && buildWorkerUsed) {
+        buildWorker.terminate();
+        buildWorker = null;
+        pendingBuildMetrics = [];
+    }
+    if (!buildWorker) spawnBuildWorker();
+    buildWorkerUsed = true;
+    return buildWorker;
+}
+
+function startBuiltDataset(data, requestId = null) {
+    advanceSceneGeneration();
+    datasetGeneration += 1;
+    targetVoxelPixels = data.targetVoxelPixels;
+    datasetOpenedAt = performance.now();
+    currentColorMode = "rgb";
+    appliedEpoch = 0;
+    buildOpened = false;
+    lastSentView = null;
+    currentLod = null;
+    viewSentAt.clear();
+    beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
+    const name = data.name ?? data.file.name;
+    pendingOpen = { requestId, name, bytes: data.file.size, opened: null };
+    self.postMessage({ type: "status", message: `Opening ${name}…` });
+    const [maxVoxels, maxEstimatedBytes] = viewer.voxelBuildLimits();
+    freshBuildWorker().postMessage({
+        type: "open",
+        gen: datasetGeneration,
+        file: data.file,
+        attributes: data.attributes,
+        cacheBytes: data.cacheBytes,
+        limits: [Math.min(maxVoxels, 0xFFFFFFFF), Math.min(maxEstimatedBytes, 0xFFFFFFFF)],
+    });
+}
+
+function sameValues(left, right) {
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return false;
+    }
+    return true;
+}
+
+// Sends the build worker the camera it should build for, at most once per message handled and only
+// when the camera, viewport or pixel target differ from the last one sent (`force` skips the test).
+function syncBuildView(force = false, retryFailed = false) {
+    if (!buildWorker || !buildOpened) return;
+    const camera = viewer.cameraTransport();
+    const viewport = Array.from(viewer.viewportSize());
+    if (!force && lastSentView && lastSentView.targetPx === targetVoxelPixels
+        && sameValues(lastSentView.viewport, viewport) && sameValues(lastSentView.camera, camera)) return;
+    lastSentView = { camera, viewport, targetPx: targetVoxelPixels };
+    viewEpoch += 1;
+    viewSentAt.set(viewEpoch, performance.now());
+    if (viewSentAt.size > 256) viewSentAt.delete(viewSentAt.keys().next().value);
+    buildCounters.viewsSent += 1;
+    buildWorker.postMessage({
+        type: "view",
+        gen: datasetGeneration,
+        epoch: viewEpoch,
+        camera,
+        viewport,
+        visualScale: remoteVisualScale,
+        targetPx: targetVoxelPixels,
+        retryFailed,
+    });
+}
+
+function lodStillLoading(lod) {
+    return !lod.lodError && (lod.pendingBlockIds.length > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
+}
+
+function applyBuiltLod(lod, source) {
+    currentLod = lod;
+    if (pendingOpen) {
+        const { requestId, name, opened } = pendingOpen;
+        pendingOpen = null;
+        if (requestId !== null) {
+            self.postMessage({ type: "apiResult", requestId, value: { opened, lod, name } });
+        } else {
+            self.postMessage({ type: "dataset", opened, lod, name });
+        }
+        recordLodMessage("dataset", lod);
+    } else {
+        self.postMessage({ type: "lod", lod });
+        recordLodMessage(source, lod);
+    }
+    postLodProgress(lod);
+}
+
+function onBuildMessage(worker, data) {
+    if (worker !== buildWorker) return;
+    if (data.type === "metrics") {
+        const waiting = pendingBuildMetrics;
+        pendingBuildMetrics = [];
+        for (const resolve of waiting) resolve(data.metrics);
+        return;
+    }
+    const kind = data.type === "scene" ? "buildScene" : `build:${data.type}`;
+    const task = timed(kind, () => handleBuildMessage(data));
+    void (messageQueue = messageQueue.then(task, task));
+}
+
+function handleBuildMessage(data) {
+    if (data.gen !== datasetGeneration) {
+        if (data.type === "scene") buildCounters.scenesDropped += 1;
+        return;
+    }
+    try {
+        if (data.type === "opened") {
+            const { opened } = data;
+            remoteVisualScale = opened.visualScale;
+            viewer.beginRemoteDataset(
+                opened.visualScale, opened.coordinateOrigin, opened.boundsMin, opened.boundsMax,
+            );
+            const { name, bytes } = pendingOpen;
+            pendingOpen.opened = opened;
+            currentMetadata = { ...opened, name, bytes, hasAttributes: opened.hasAttributes };
+            buildOpened = true;
+            if (pendingOpen.requestId === null) self.postMessage({ type: "datasetOpened", opened, name });
+            syncBuildView(true);
+        } else if (data.type === "scene" || data.type === "lod") {
+            if (data.epoch <= appliedEpoch) {
+                if (data.type === "scene") buildCounters.scenesDropped += 1;
+                return;
+            }
+            appliedEpoch = data.epoch;
+            if (data.type === "scene") {
+                const startedAt = performance.now();
+                viewer.uploadSceneInstances(new Uint8Array(data.buf), data.blockIds);
+                advanceSceneGeneration();
+                const sentAt = viewSentAt.get(data.viewEpoch);
+                recordBuildSample("sceneApplyMs", performance.now() - startedAt);
+                if (sentAt !== undefined) recordBuildSample("sceneAgeMs", performance.now() - sentAt);
+                recordBuildSample("epochLag", viewEpoch - data.viewEpoch);
+                buildCounters.scenesApplied += 1;
+                data.lod.renderedVoxels = data.count;
+            }
+            for (const key of viewSentAt.keys()) {
+                if (key <= data.viewEpoch) viewSentAt.delete(key);
+            }
+            applyBuiltLod(data.lod, data.type === "scene" ? "scene" : "lod");
+            // The host stops requesting frames once the LOD is complete: draw the final scene.
+            if (data.type === "scene" && !lodStillLoading(data.lod)) viewer.renderFrame();
+        } else if (data.type === "error") {
+            const requestId = data.operation === "openFile" ? pendingOpen?.requestId : undefined;
+            if (data.operation === "openFile") pendingOpen = null;
+            self.postMessage({ type: "error", operation: data.operation, requestId, message: data.message });
+        }
+    } catch (error) {
+        self.postMessage({ type: "error", operation: `build:${data.type}`, message: String(error) });
+    }
+}
+
 function startAsyncDataset(data, requestId = null) {
     advanceSceneGeneration();
     cancelAllAsyncReads();
@@ -469,6 +720,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 const sample = samplePointCloud();
                 viewer.replacePoints(sample.positions, sample.colors);
                 viewer.fitScene();
+                buildOptions = data.buildWorker ?? null;
+                // Compile the build worker's WASM now so the first dataset does not wait for it.
+                if (buildOptions) spawnBuildWorker();
                 self.postMessage({ type: "ready" });
                 break;
             }
@@ -477,7 +731,8 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 let deferredResult = false;
                 switch (data.operation) {
                     case "load": {
-                        startAsyncDataset(data, data.requestId);
+                        if (buildOptions) startBuiltDataset(data, data.requestId);
+                        else startAsyncDataset(data, data.requestId);
                         deferredResult = true;
                         break;
                     }
@@ -487,7 +742,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         break;
                     case "renderOnce":
                         value = viewer.renderFrame();
-                        postLodProgress(viewer.lodStats(), true);
+                        postLodProgress(currentLodStats(), true);
                         break;
                     case "getCamera":
                         value = viewer.cameraPose();
@@ -506,7 +761,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = currentMetadata;
                         break;
                     case "getStats":
-                        value = { lod: viewer.lodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
+                        value = { lod: currentLodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
                         break;
                     case "moveCamera":
                         advanceSceneGeneration();
@@ -544,13 +799,22 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
             case "refine": {
                 const startedAt = performance.now();
                 const colorModeChanged = data.colorMode !== currentColorMode;
-                viewer.setColorMode(data.colorMode);
+                if (buildOptions) viewer.setPresentationColorMode(data.colorMode);
+                else viewer.setColorMode(data.colorMode);
                 advanceSceneGeneration();
-                if (colorModeChanged) cancelAllAsyncReads();
+                if (colorModeChanged) {
+                    if (buildOptions) {
+                        buildWorker.postMessage({ type: "colorMode", gen: datasetGeneration, mode: data.colorMode });
+                    } else {
+                        cancelAllAsyncReads();
+                    }
+                }
                 currentColorMode = data.colorMode;
                 targetVoxelPixels = data.targetVoxelPixels;
                 beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
-                if (viewer.lodStats()) {
+                if (buildOptions) {
+                    syncBuildView(true, true);
+                } else if (viewer.lodStats()) {
                     const lod = viewer.updateLod(targetVoxelPixels);
                     self.postMessage({ type: "lod", lod });
                     recordLodMessage("refine", lod);
@@ -564,10 +828,11 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 break;
             case "metrics":
                 if (data.reset) resetWorkerMetrics();
-                else self.postMessage({ type: "metrics", workerMetrics: workerMetricsSnapshot() });
+                else self.postMessage({ type: "metrics", workerMetrics: workerMetricsSnapshot(await requestBuildMetrics()) });
                 break;
             case "openFile": {
-                startAsyncDataset(data);
+                if (buildOptions) startBuiltDataset(data);
+                else startAsyncDataset(data);
                 break;
             }
             case "fit":
@@ -604,12 +869,13 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 if (camera.moveX !== 0 || camera.moveY !== 0 || camera.moveZ !== 0) {
                     viewer.moveCamera(camera.moveX, camera.moveY, camera.moveZ);
                 }
+                syncBuildView();
                 const startedAt = performance.now();
                 const frameStatus = viewer.renderFrame();
                 const renderCallMs = performance.now() - startedAt;
                 recordFrameRenderSample(renderCallMs);
-                postLodProgress(viewer.lodStats(), true);
-                scheduleAsyncLodRead();
+                postLodProgress(currentLodStats(), true);
+                if (!buildOptions) scheduleAsyncLodRead();
                 renderedFrames += 1;
                 if (renderedFrames % 30 === 0) {
                     postStats({ status: frameStatus, renderCallMs });
@@ -621,6 +887,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
             default:
                 throw new Error(`unknown worker message: ${data.type}`);
         }
+        syncBuildView();
     } catch (error) {
         self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
     } finally {

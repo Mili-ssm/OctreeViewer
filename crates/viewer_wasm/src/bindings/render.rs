@@ -1,8 +1,11 @@
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
-use super::WasmVoxelViewer;
 use super::attribute_availability;
+use super::{RemoteDatasetFrame, WasmVoxelViewer};
+use viewer_core::{BlockId, SpatialBounds};
+use viewer_render_wgpu::{ColorMode, InstanceRaw, RenderScene};
+
 use crate::{
     RenderInstanceSnapshot,
     lod_driver::{ColorSelection, resolve_color_selection},
@@ -49,6 +52,127 @@ impl WasmVoxelViewer {
             }
         }
         Ok(())
+    }
+
+    /// Selects how the renderer shades the displayed scene when the LOD hierarchy lives in a
+    /// build worker. `attribute:*` modes are painted into the colours by the builder, so they
+    /// render as `rgb`.
+    #[wasm_bindgen(js_name = setPresentationColorMode)]
+    pub fn set_presentation_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
+        let mode = if mode.starts_with("attribute:") {
+            ColorMode::Rgb
+        } else {
+            ColorMode::parse(&mode).ok_or_else(|| {
+                JsValue::from_str("color mode must be rgb, intensity, elevation, or classification")
+            })?
+        };
+        self.gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .set_color_mode(mode);
+        Ok(())
+    }
+
+    /// Prepares the renderer for a dataset whose hierarchy and blocks live in a build worker:
+    /// drops the previous scene, adopts the dataset's visual scale and frames its root bounds.
+    #[wasm_bindgen(js_name = beginRemoteDataset)]
+    pub fn begin_remote_dataset(
+        &mut self,
+        visual_scale: f64,
+        origin: js_sys::Float64Array,
+        bounds_min: js_sys::Float64Array,
+        bounds_max: js_sys::Float64Array,
+    ) -> Result<bool, JsValue> {
+        let vector = |values: &js_sys::Float64Array, name: &str| -> Result<[f64; 3], JsValue> {
+            if values.length() != 3 {
+                return Err(JsValue::from_str(&format!(
+                    "{name} must have 3 coordinates"
+                )));
+            }
+            let mut out = [0.0; 3];
+            values.copy_to(&mut out);
+            Ok(out)
+        };
+        let origin = vector(&origin, "origin")?;
+        let bounds = SpatialBounds::new(
+            vector(&bounds_min, "boundsMin")?,
+            vector(&bounds_max, "boundsMax")?,
+        )
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        self.clear_lod_dataset();
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        renderer.clear_dataset();
+        renderer.set_color_mode(ColorMode::Rgb);
+        renderer
+            .set_visual_scale(visual_scale)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let fitted = renderer.fit_spatial_bounds(bounds, origin);
+        self.remote_dataset_frame = Some(RemoteDatasetFrame { bounds, origin });
+        self.gpu_scene_dirty = false;
+        Ok(fitted)
+    }
+
+    /// Uploads the `InstanceRaw` bytes a `WasmSceneBuilder` produced as the displayed scene.
+    /// `block_ids` are decimal strings, kept for diagnostics. Returns the bytes written.
+    #[wasm_bindgen(js_name = uploadSceneInstances)]
+    pub fn upload_scene_instances(
+        &mut self,
+        instances: js_sys::Uint8Array,
+        block_ids: Vec<String>,
+    ) -> Result<f64, JsValue> {
+        let stride = std::mem::size_of::<InstanceRaw>();
+        let length = instances.length() as usize;
+        if !length.is_multiple_of(stride) {
+            return Err(JsValue::from_str(
+                "scene bytes are not a whole number of instances",
+            ));
+        }
+        let mut scene = vec![<InstanceRaw as bytemuck::Zeroable>::zeroed(); length / stride];
+        instances.copy_to(bytemuck::cast_slice_mut(&mut scene));
+        let block_ids = block_ids
+            .iter()
+            .map(|id| {
+                id.parse::<u64>()
+                    .map(BlockId::new)
+                    .map_err(|_| JsValue::from_str("block ids must be decimal integers"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        renderer
+            .upload_voxel_cut(&RenderScene::from_instances(scene), &block_ids)
+            .map(|bytes| bytes as f64)
+            .map_err(|error| JsValue::from_str(&error.to_string()))
+    }
+
+    /// Voxel construction limits a `WasmSceneBuilder` must use: `[maxVoxels, maxEstimatedBytes]`,
+    /// already capped by this renderer's GPU instance budget.
+    #[wasm_bindgen(js_name = voxelBuildLimits)]
+    pub fn voxel_build_limits(&self) -> Result<js_sys::Float64Array, JsValue> {
+        let limits = self
+            .gpu_renderer
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .voxel_build_limits();
+        Ok(js_sys::Float64Array::from(
+            [limits.max_voxels as f64, limits.max_estimated_bytes as f64].as_slice(),
+        ))
+    }
+
+    /// The camera in the lossless 11-number form `WasmSceneBuilder.update` takes.
+    #[wasm_bindgen(js_name = cameraTransport)]
+    pub fn camera_transport(&self) -> Result<js_sys::Float64Array, JsValue> {
+        let camera = self
+            .gpu_renderer
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
+            .camera_snapshot();
+        Ok(js_sys::Float64Array::from(camera.to_f64_array().as_slice()))
     }
 
     #[wasm_bindgen(js_name = setDepthShading)]

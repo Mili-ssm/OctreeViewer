@@ -52,6 +52,7 @@ def main() -> None:
     html = (HOST / "index.html").read_text(encoding="utf-8")
     main_js = (HOST / "main.js").read_text(encoding="utf-8")
     worker_js = (HOST / "viewer-worker.js").read_text(encoding="utf-8")
+    build_worker_js = (HOST / "build-worker.js").read_text(encoding="utf-8")
     queue_js = (HOST / "coalesced-command-queue.mjs").read_text(encoding="utf-8")
     metrics_js = (HOST / "benchmark-metrics.mjs").read_text(encoding="utf-8")
     rendering_budget_js = (HOST / "rendering-budget.mjs").read_text(encoding="utf-8")
@@ -61,6 +62,7 @@ def main() -> None:
     spool_tiers_js = (HOST / "spool-tiers.mjs").read_text(encoding="utf-8")
     converter_ui_js = (HOST / "converter-ui.mjs").read_text(encoding="utf-8")
     embed_worker_js = worker_js
+    embed_build_worker_js = build_worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
     embed_wasm_js = wasm_js
     wasm_path = ROOT / "pkg" / "viewer_wasm_bg.wasm"
@@ -97,6 +99,14 @@ def main() -> None:
         + "\n"
         + worker_js
     )
+    # The build worker gets the WASM bytes from the viewer worker (init message), not a second copy.
+    build_worker_js = require_replace(
+        build_worker_js, wasm_import_line(build_worker_js, "build worker WASM import"), "", "build worker WASM import"
+    )
+    build_worker_js = require_replace(
+        build_worker_js, "wasmExports = await init(", "wasmExports = await __wbg_init(", "build worker WASM init"
+    )
+    build_worker_source = wasm_js + "\n" + build_worker_js
     converter_worker_js = require_replace(
         converter_worker_js,
         wasm_import_line(converter_worker_js, "converter WASM import"),
@@ -174,6 +184,12 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
+        'const BUILD_WORKER = { url: new URL("./build-worker.js", import.meta.url).href, type: "module" };',
+        'const BUILD_WORKER = { url: window.__BUILD_WORKER_URL__, type: "classic" };',
+        "build worker URL",
+    )
+    main_js = require_replace(
+        main_js,
         'new Worker(new URL("./viewer-worker.js", import.meta.url), { type: "module" })',
         "new Worker(window.__VIEWER_WORKER_URL__)",
         "worker module URL",
@@ -202,6 +218,9 @@ def main() -> None:
         "(value) => value.charCodeAt(0));\n"
         + "window.__VIEWER_WORKER_URL__ = URL.createObjectURL("
         "new Blob([WORKER_SOURCE], { type: \"text/javascript\" }));\n"
+        + f"const BUILD_WORKER_SOURCE = {inline_json(build_worker_source)};\n"
+        + "window.__BUILD_WORKER_URL__ = URL.createObjectURL("
+        "new Blob([BUILD_WORKER_SOURCE], { type: \"text/javascript\" }));\n"
         + f"const CONVERTER_WORKER_SOURCE = {inline_json(converter_worker_source)};\n"
         + "window.__CONVERTER_WORKER_URL__ = URL.createObjectURL("
         "new Blob([CONVERTER_WORKER_SOURCE], { type: \"text/javascript\" }));\n"
@@ -259,6 +278,13 @@ def main() -> None:
         embed_import.replace('"../../pkg/viewer_wasm.js"', '"./viewer_wasm.js"'),
         "embeddable worker WASM import",
     )
+    embed_build_import = wasm_import_line(embed_build_worker_js, "embeddable build worker WASM import")
+    embed_build_worker_js = require_replace(
+        embed_build_worker_js,
+        embed_build_import,
+        embed_build_import.replace('"../../pkg/viewer_wasm.js"', '"./viewer_wasm.js"'),
+        "embeddable build worker WASM import",
+    )
     embed_converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
     embed_converter_import = wasm_import_line(embed_converter_worker_js, "embeddable converter WASM import")
     embed_converter_worker_js = require_replace(
@@ -274,6 +300,7 @@ def main() -> None:
     (embed_dir / "spool-tiers.mjs").write_text(spool_tiers_js, encoding="utf-8")
     (embed_dir / "converter-worker.js").write_text(embed_converter_worker_js, encoding="utf-8")
     (embed_dir / "viewer-worker.js").write_text(embed_worker_js, encoding="utf-8")
+    (embed_dir / "build-worker.js").write_text(embed_build_worker_js, encoding="utf-8")
     (embed_dir / "rendering-budget.mjs").write_text(rendering_budget_js, encoding="utf-8")
     (embed_dir / "viewer_wasm.js").write_text(embed_wasm_js, encoding="utf-8")
     (embed_dir / "viewer_wasm_bg.wasm").write_bytes(wasm_path.read_bytes())
