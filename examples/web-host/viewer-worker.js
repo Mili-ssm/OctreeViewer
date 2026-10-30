@@ -477,12 +477,34 @@ function scheduleAsyncLodRead(retryFailed = false) {
     }
 }
 
+// Nested workers are not available everywhere (a Blob worker created from another Blob worker is
+// refused on file:// in Chrome). The option then turns itself off and the in-worker path runs.
+function disableBuildWorker(error) {
+    const message = String(error?.message ?? error);
+    console.warn(`build worker unavailable, building scenes in the render worker: ${message}`);
+    buildWorker?.terminate();
+    buildWorker = null;
+    buildOptions = null;
+    self.postMessage({ type: "buildWorkerUnavailable", message });
+}
+
 function spawnBuildWorker() {
-    const worker = new Worker(buildOptions.url, { type: buildOptions.type ?? "module" });
+    let worker;
+    try {
+        worker = new Worker(buildOptions.url, { type: buildOptions.type ?? "module" });
+    } catch (error) {
+        disableBuildWorker(error);
+        return;
+    }
     worker.addEventListener("message", event => onBuildMessage(worker, event.data));
     worker.addEventListener("error", (event) => {
         if (worker !== buildWorker) return;
         event.preventDefault?.();
+        // A worker that fails before any dataset used it never started: fall back instead of failing.
+        if (!buildWorkerUsed) {
+            disableBuildWorker(event.message || "build worker failed to start");
+            return;
+        }
         self.postMessage({ type: "error", operation: "buildWorker", message: event.message || "build worker failed" });
     });
     // The packaged file:// worker has the WASM bytes inline; hand them over instead of embedding twice.
@@ -503,11 +525,17 @@ function freshBuildWorker() {
         pendingBuildMetrics = [];
     }
     if (!buildWorker) spawnBuildWorker();
-    buildWorkerUsed = true;
+    buildWorkerUsed = buildWorker !== null;
     return buildWorker;
 }
 
 function startBuiltDataset(data, requestId = null) {
+    // Replacing a used worker can hit the same restriction as the first spawn.
+    const worker = freshBuildWorker();
+    if (!worker) {
+        startAsyncDataset(data, requestId);
+        return;
+    }
     advanceSceneGeneration();
     datasetGeneration += 1;
     targetVoxelPixels = data.targetVoxelPixels;
@@ -526,7 +554,7 @@ function startBuiltDataset(data, requestId = null) {
     pendingOpen = { requestId, name, bytes: data.file.size, opened: null };
     self.postMessage({ type: "status", message: `Opening ${name}…` });
     const [maxVoxels, maxEstimatedBytes] = viewer.voxelBuildLimits();
-    freshBuildWorker().postMessage({
+    worker.postMessage({
         type: "open",
         gen: datasetGeneration,
         file: data.file,

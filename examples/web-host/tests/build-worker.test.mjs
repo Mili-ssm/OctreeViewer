@@ -170,7 +170,7 @@ test("build worker reports a rejected colour mode as an error and keeps the prev
 
 // ---- Render worker in build-worker mode ------------------------------------------------------
 
-async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" } } = {}) {
+async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" }, failSpawn = 0 } = {}) {
     const messages = [];
     const workers = [];
     const uploads = [];
@@ -196,13 +196,23 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         renderFrame() { renderFrames += 1; return "rendered"; },
         gpuStats: () => ({}), stats: () => ({}),
     };
+    const warnings = [];
+    let spawnFailures = failSpawn;
     class FakeWorker {
         constructor(url, options) {
+            if (spawnFailures > 0) {
+                spawnFailures -= 1;
+                throw new Error("Script cannot be accessed from origin 'null'");
+            }
             this.url = url; this.options = options; this.posted = []; this.terminated = false;
             this.listeners = [];
+            this.errorListeners = [];
             workers.push(this);
         }
-        addEventListener(type, callback) { if (type === "message") this.listeners.push(callback); }
+        addEventListener(type, callback) {
+            if (type === "message") this.listeners.push(callback);
+            if (type === "error") this.errorListeners.push(callback);
+        }
         postMessage(message) {
             this.posted.push(message);
             if (message.type === "metrics" && !message.reset) {
@@ -229,7 +239,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: { createOffscreen: async () => viewer },
         WasmAsyncReadBudget: class {}, WasmBlockRequestScheduler: class {}, WasmAsyncFormatReader: class {},
-        Worker: FakeWorker, Float64Array, Uint8Array, setTimeout, clearTimeout,
+        Worker: FakeWorker, console: { warn: message => warnings.push(message) }, Float64Array, Uint8Array, setTimeout, clearTimeout,
     });
     const send = async (type, fields = {}) => {
         receive({ data: { type, ...fields } });
@@ -243,9 +253,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         camera: { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, ...fields },
     });
     return {
-        messages, workers, uploads, beginCalls, presentationModes, send, open, frame,
+        messages, workers, uploads, beginCalls, presentationModes, warnings, send, open, frame,
         setNow(value) { now = value; },
         setViewerLodStats(value) { viewerLodStats = value; },
+        failNextSpawn() { spawnFailures = 1; },
         renders: () => renderFrames,
         setCamera(value) { camera = value; },
         views: worker => worker.posted.filter(item => item.type === "view"),
@@ -501,4 +512,43 @@ test("in-worker mode reports the viewer's scene digest as sceneDigest", async ()
     await render.send("metrics");
     assert.equal(render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics.sceneDigest,
         "00000000000000dd");
+});
+
+// ---- Fallback when nested workers are refused (file:// in Chrome) ------------------------------
+
+test("render worker falls back to the in-worker path when the build worker cannot be created", async () => {
+    const render = await runRenderWorker({ failSpawn: 1 });
+    assert.equal(render.workers.length, 0);
+    assert.equal(render.messages.at(-1).type, "ready", "init still succeeds");
+    assert.equal(render.messages.filter(item => item.type === "buildWorkerUnavailable").length, 1);
+    assert.match(render.warnings[0], /build worker unavailable/);
+    await render.send("metrics");
+    assert.equal(render.messages.find(item => item.type === "metrics").workerMetrics.buildWorkerEnabled, false);
+    await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
+    assert.deepEqual(render.presentationModes, [], "the in-worker viewer colours, not the presentation mode");
+});
+
+test("render worker falls back when the prewarmed build worker fails to start", async () => {
+    const render = await runRenderWorker();
+    const [worker] = render.workers;
+    for (const listener of worker.errorListeners) listener({ message: "Script load failed", preventDefault() {} });
+    await settle();
+    assert.equal(worker.terminated, true);
+    assert.equal(render.messages.filter(item => item.type === "buildWorkerUnavailable").length, 1);
+    await render.send("metrics");
+    assert.equal(render.messages.find(item => item.type === "metrics").workerMetrics.buildWorkerEnabled, false);
+});
+
+test("render worker opens in-worker when respawning the build worker is refused", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [first] = render.workers;
+    first.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    // The second dataset needs a fresh worker; this time the browser refuses it.
+    render.failNextSpawn();
+    await render.open();
+    assert.equal(first.terminated, true);
+    assert.equal(render.messages.filter(item => item.type === "buildWorkerUnavailable").length, 1);
+    assert.equal(render.workers.length, 1, "no second build worker was created");
 });
