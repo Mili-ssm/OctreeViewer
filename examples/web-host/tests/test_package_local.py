@@ -84,8 +84,21 @@ export { initSync, __wbg_init as default };
                 self.assertNotIn("WasmLasOctConverter", worker)
                 if name == "CONVERTER_WORKER_SOURCE":
                     self.assertIn("function createSpoolHost(", worker)
+            # The build worker is a nested Blob worker; it receives the WASM bytes from the viewer
+            # worker instead of embedding a second copy.
+            self.assertIn('const BUILD_WORKER = { url: window.__BUILD_WORKER_URL__, type: "classic" };', runtime)
+            self.assertIn("window.__BUILD_WORKER_URL__ = URL.createObjectURL(", runtime)
+            match = re.search(r"^const BUILD_WORKER_SOURCE = (.*);$", runtime, re.MULTILINE)
+            self.assertIsNotNone(match)
+            build_worker = json.loads(match[1])
+            self.assertNotIn("import.meta", build_worker)
+            self.assertNotRegex(build_worker, r"(?m)^import ")
+            self.assertNotIn("atob(", build_worker)
+            self.assertIn("await __wbg_init(", build_worker)
+            self.check_script(build_worker)
             # The independently served embedding API remains modular.
             embed = output / "embed"
+            self.assertIn('from "./viewer_wasm.js"', (embed / "build-worker.js").read_text())
             self.assertIn('type: "module",', (embed / "converter-api.mjs").read_text())
             self.assertIn('from "./viewer_wasm.js"', (embed / "viewer-worker.js").read_text())
             self.assertIn("export function createSpoolHost(", (embed / "spool-tiers.mjs").read_text())

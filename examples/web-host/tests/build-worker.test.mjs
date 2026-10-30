@@ -1,0 +1,387 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
+import { test } from "node:test";
+
+const stripImports = source => source.replace(/^import .*\n/, "");
+const viewerSource = stripImports(await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"));
+const buildSource = stripImports(await readFile(new URL("../build-worker.js", import.meta.url), "utf8"));
+const settle = async () => {
+    await new Promise(setImmediate);
+    await new Promise(setImmediate);
+};
+
+const lod = (pending = 0, stage = 4) => ({
+    visiblePoints: "10", coverageComplete: true, pendingBlockIds: new Array(pending).fill("1"),
+    lodStagePixels: stage, targetVoxelPixels: 4, visibleBlocks: 1, lodError: null,
+});
+const opened = () => ({
+    status: "metadata_ready", visualScale: 1, nodeCount: 1, maxLevel: 0,
+    coordinateOrigin: new Float64Array(3), boundsMin: new Float64Array(3), boundsMax: new Float64Array([1, 1, 1]),
+    semantics: "replacement", attributeSchema: [], hasAttributes: false, sourcePointCount: 1,
+});
+
+// ---- Build worker in a vm with a fake WASM binding ------------------------------------------
+
+async function runBuildWorker({ updates = [] } = {}) {
+    const posted = [];
+    const updateCalls = [];
+    const builders = [];
+    let receive;
+    class WasmSceneBuilder {
+        constructor(maxVoxels, maxBytes) { this.limits = [maxVoxels, maxBytes]; builders.push(this); }
+        openLodDataset() { return { status: "metadata_ready", visualScale: 2 }; }
+        pendingAsyncLodBlocks() { return []; }
+        setColorMode(mode) { this.mode = mode; }
+        update(camera, width, height, visualScale, targetPx) {
+            updateCalls.push({ camera, width, height, visualScale, targetPx });
+            const planned = updates[updateCalls.length - 1] ?? {};
+            return {
+                epoch: updateCalls.length, sceneBuffer: planned.scene === false ? null : new ArrayBuffer(8),
+                instanceCount: 1, blockIds: ["7"], digest: "00", needsRefinement: planned.needsRefinement ?? false,
+                lod: lod(),
+            };
+        }
+        free() {}
+    }
+    class Reader {
+        static async open() { return new Reader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+            };
+        }
+        free() {}
+    }
+    class Budget { clone() { return this; } }
+    class Scheduler {
+        updateBlocks() { return []; }
+        pendingBlocks() { return []; }
+        cancelAll() { return []; }
+    }
+    vm.runInNewContext(buildSource, {
+        self: {
+            addEventListener(_name, callback) { receive = callback; },
+            postMessage(message) { posted.push(message); },
+        },
+        performance: { now: () => Date.now() },
+        init: async () => ({ memory: new WebAssembly.Memory({ initial: 2 }) }),
+        WasmSceneBuilder, WasmAsyncFormatReader: Reader, WasmAsyncReadBudget: Budget,
+        WasmBlockRequestScheduler: Scheduler,
+        Float64Array, setTimeout, clearTimeout,
+    });
+    const send = (type, fields = {}) => receive({ data: { type, ...fields } });
+    send("init", {});
+    send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200] });
+    await settle();
+    return { posted, updateCalls, builders, send, settle };
+}
+
+test("build worker opens the dataset and reports its metadata", async () => {
+    const worker = await runBuildWorker();
+    assert.deepEqual(worker.builders[0].limits, [100, 200]);
+    const message = worker.posted.find(item => item.type === "opened");
+    assert.equal(message.gen, 1);
+    assert.equal(message.opened.visualScale, 2);
+    assert.equal(message.opened.nodeCount, 1);
+    assert.deepEqual([...message.opened.boundsMax], [1, 1, 1]);
+});
+
+test("build worker coalesces views queued during a build: latest wins", async () => {
+    const worker = await runBuildWorker();
+    for (const epoch of [1, 2, 3]) {
+        worker.send("view", {
+            gen: 1, epoch, camera: [epoch], viewport: [640, 480], visualScale: 2, targetPx: 4,
+        });
+    }
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(worker.updateCalls.length, 1);
+    assert.deepEqual(worker.updateCalls[0].camera, [3]);
+    assert.equal(worker.updateCalls[0].width, 640);
+    const scenes = worker.posted.filter(item => item.type === "scene");
+    assert.equal(scenes.length, 1);
+    assert.equal(scenes[0].viewEpoch, 3);
+    assert.equal(scenes[0].epoch, 1);
+    assert.deepEqual(scenes[0].blockIds, ["7"]);
+    worker.send("metrics");
+    await worker.settle();
+    const metrics = worker.posted.find(item => item.type === "metrics").metrics;
+    assert.equal(metrics.build.viewsReceived, 3);
+    assert.equal(metrics.build.viewsCoalesced, 2);
+    assert.equal(metrics.build.builds, 1);
+    assert.equal(metrics.busyByMessage.build.count, 1);
+    assert.equal(metrics.wasmLinearMemoryBytes, 2 * 65536);
+});
+
+test("build worker repeats the build while the planner asks for refinement and reuses scenes", async () => {
+    const worker = await runBuildWorker({ updates: [{ needsRefinement: true }, { scene: false }] });
+    worker.send("view", { gen: 1, epoch: 1, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(worker.updateCalls.length, 2);
+    assert.deepEqual(worker.posted.filter(item => item.type === "scene" || item.type === "lod")
+        .map(item => [item.type, item.epoch, item.viewEpoch]), [["scene", 1, 1], ["lod", 2, 1]]);
+});
+
+test("build worker ignores views and color changes for another gen", async () => {
+    const worker = await runBuildWorker();
+    worker.send("view", { gen: 9, epoch: 1, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    worker.send("colorMode", { gen: 9, mode: "intensity" });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(worker.updateCalls.length, 0);
+    assert.equal(worker.builders[0].mode, undefined);
+    worker.send("colorMode", { gen: 1, mode: "intensity" });
+    await worker.settle();
+    assert.equal(worker.builders[0].mode, "intensity");
+});
+
+// ---- Render worker in build-worker mode ------------------------------------------------------
+
+async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" } } = {}) {
+    const messages = [];
+    const workers = [];
+    const uploads = [];
+    const beginCalls = [];
+    let receive;
+    let now = 0;
+    let camera = [0, 0, 0, 10, 0, 0, 1, 0, 0, 0, 1];
+    let viewport = [100, 50];
+    let renderFrames = 0;
+    const viewer = {
+        resize(width, height) { viewport = [width, height]; },
+        setColorMode() {}, setPresentationColorMode() {}, setDepthShading() {}, replacePoints() {},
+        fitScene() {}, orbit() { camera = camera.map((value, index) => (index === 4 ? value + 0.1 : value)); },
+        pan() {}, zoom() {}, moveCamera() {},
+        voxelBuildLimits: () => [500, 600],
+        cameraTransport: () => new Float64Array(camera),
+        viewportSize: () => viewport,
+        beginRemoteDataset(...args) { beginCalls.push(args); return true; },
+        uploadSceneInstances(bytes, blockIds) { uploads.push({ bytes, blockIds }); return bytes.length; },
+        lodStats: () => null,
+        renderFrame() { renderFrames += 1; return "rendered"; },
+        gpuStats: () => ({}), stats: () => ({}),
+    };
+    class FakeWorker {
+        constructor(url, options) {
+            this.url = url; this.options = options; this.posted = []; this.terminated = false;
+            this.listeners = [];
+            workers.push(this);
+        }
+        addEventListener(type, callback) { if (type === "message") this.listeners.push(callback); }
+        postMessage(message) {
+            this.posted.push(message);
+            if (message.type === "metrics" && !message.reset) {
+                queueMicrotask(() => this.emit({
+                    type: "metrics",
+                    metrics: {
+                        asyncBlocks: { blocks: 3, readMs: 12, decodeMs: 6, maxDecodeMs: 4, insertMs: 1, maxInsertMs: 1 },
+                        build: { builds: 2, scenes: 1, reused: 1, viewsReceived: 5, viewsCoalesced: 3 },
+                        busyByMessage: { build: { count: 2, busyMs: 9, maxBusyMs: 5 } },
+                        wasmLinearMemoryBytes: 3 * 65536,
+                    },
+                }));
+            }
+        }
+        terminate() { this.terminated = true; }
+        emit(data) { for (const callback of this.listeners) callback({ data }); }
+    }
+    vm.runInNewContext(viewerSource, {
+        self: {
+            addEventListener(_name, callback) { receive = callback; },
+            postMessage(message) { messages.push(message); },
+        },
+        performance: { now: () => now },
+        init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
+        WasmVoxelViewer: { createOffscreen: async () => viewer },
+        WasmAsyncReadBudget: class {}, WasmBlockRequestScheduler: class {}, WasmAsyncFormatReader: class {},
+        Worker: FakeWorker, Float64Array, Uint8Array, setTimeout, clearTimeout,
+    });
+    const send = async (type, fields = {}) => {
+        receive({ data: { type, ...fields } });
+        await settle();
+    };
+    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker });
+    const open = () => send("openFile", {
+        file: { name: "a.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    const frame = (fields = {}) => send("frame", {
+        camera: { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, ...fields },
+    });
+    return {
+        messages, workers, uploads, beginCalls, send, open, frame, setNow(value) { now = value; },
+        renders: () => renderFrames,
+        setCamera(value) { camera = value; },
+        views: worker => worker.posted.filter(item => item.type === "view"),
+    };
+}
+
+const sceneMessage = (fields = {}) => ({
+    type: "scene", gen: 1, epoch: 1, viewEpoch: 1, buf: new Uint8Array([1, 2, 3, 4]).buffer,
+    count: 1, blockIds: ["5"], lod: lod(1), digest: "ab", ...fields,
+});
+
+test("render worker prewarms the build worker and forwards open without respawning the first time", async () => {
+    const render = await runRenderWorker();
+    assert.equal(render.workers.length, 1);
+    assert.equal(render.workers[0].options.type, "module");
+    assert.equal(render.workers[0].posted[0].type, "init");
+    await render.open();
+    assert.equal(render.workers.length, 1);
+    const open = render.workers[0].posted.find(item => item.type === "open");
+    assert.equal(open.gen, 1);
+    assert.deepEqual([...open.limits], [500, 600]);
+    assert.equal(open.cacheBytes, 1024);
+});
+
+test("render worker sends the first view once the dataset opens and applies scenes", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    render.setNow(100);
+    worker.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    assert.equal(render.beginCalls.length, 1);
+    assert.equal(render.messages.filter(item => item.type === "datasetOpened").length, 1);
+    const [view] = render.views(worker);
+    assert.equal(view.epoch, 1);
+    assert.deepEqual([...view.viewport], [100, 50]);
+    assert.equal(view.targetPx, 4);
+    assert.equal(view.visualScale, 1);
+    assert.equal(view.camera.length, 11);
+
+    render.setNow(130);
+    worker.emit(sceneMessage());
+    await settle();
+    assert.deepEqual([...render.uploads[0].bytes], [1, 2, 3, 4]);
+    assert.deepEqual(render.uploads[0].blockIds, ["5"]);
+    const dataset = render.messages.find(item => item.type === "dataset");
+    assert.equal(dataset.lod.renderedVoxels, 1);
+    assert.equal(render.renders(), 0, "a still-loading LOD leaves drawing to the host frames");
+
+    render.setNow(150);
+    worker.emit(sceneMessage({ epoch: 2, viewEpoch: 1, lod: lod(0, 4) }));
+    await settle();
+    assert.equal(render.renders(), 1, "the final scene is drawn even if the host stopped asking for frames");
+    render.send("metrics");
+    await settle();
+    const metrics = render.messages.find(item => item.type === "metrics").workerMetrics;
+    assert.equal(metrics.sceneAgeMs.count, 1, "age is measured against the view that is still known");
+});
+
+test("render worker drops scenes from an old epoch or another gen", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    worker.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    worker.emit(sceneMessage({ epoch: 5 }));
+    worker.emit(sceneMessage({ epoch: 5 }));
+    worker.emit(sceneMessage({ epoch: 4 }));
+    worker.emit(sceneMessage({ epoch: 9, gen: 7 }));
+    worker.emit(sceneMessage({ epoch: 6 }));
+    await settle();
+    assert.equal(render.uploads.length, 2);
+    render.send("metrics");
+    await settle();
+    const metrics = render.messages.find(item => item.type === "metrics").workerMetrics;
+    assert.equal(metrics.scenesApplied, 2);
+    assert.equal(metrics.scenesDropped, 3);
+});
+
+test("render worker terminates and respawns the build worker when a new dataset opens", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [first] = render.workers;
+    first.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    await render.open();
+    assert.equal(first.terminated, true);
+    assert.equal(render.workers.length, 2);
+    const second = render.workers[1];
+    assert.equal(second.posted.find(item => item.type === "open").gen, 2);
+    // Output the terminated worker had already queued must not reach the new dataset.
+    first.emit(sceneMessage({ gen: 1, epoch: 50 }));
+    first.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    assert.equal(render.uploads.length, 0);
+    second.emit({ type: "opened", gen: 2, opened: opened() });
+    await settle();
+    second.emit(sceneMessage({ gen: 2, epoch: 1, viewEpoch: 2 }));
+    await settle();
+    assert.equal(render.uploads.length, 1);
+});
+
+test("render worker sends a view only when the camera, viewport or pixel target changed", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    worker.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    assert.equal(render.views(worker).length, 1);
+    await render.frame();
+    await render.frame();
+    assert.equal(render.views(worker).length, 1, "static frames send nothing");
+    await render.frame({ orbitX: 0.1 });
+    assert.equal(render.views(worker).length, 2);
+    assert.equal(render.views(worker)[1].epoch, 2);
+    await render.send("resize", { width: 200, height: 80 });
+    assert.deepEqual([...render.views(worker)[2].viewport], [200, 80]);
+    await render.send("refine", { trigger: "detail", colorMode: "rgb", targetVoxelPixels: 2, refinementId: 1 });
+    assert.equal(render.views(worker)[3].targetPx, 2);
+    await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 2, refinementId: 2 });
+    assert.deepEqual(worker.posted.filter(item => item.type === "colorMode")
+        .map(item => [item.gen, item.mode]), [[1, "intensity"]]);
+    assert.equal(render.views(worker).length, 5, "a refine always re-sends the view so the build worker answers");
+});
+
+test("render worker aggregates the build worker's metrics", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    render.setNow(10);
+    worker.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    render.setNow(20);
+    await render.frame({ orbitX: 0.1 });
+    render.setNow(50);
+    worker.emit(sceneMessage({ epoch: 1, viewEpoch: 1 }));
+    await settle();
+    render.setNow(60);
+    worker.emit(sceneMessage({ epoch: 2, viewEpoch: 2, lod: lod(1) }));
+    await settle();
+    await render.send("metrics");
+    const metrics = render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics;
+    assert.equal(metrics.buildWorkerEnabled, true);
+    assert.deepEqual({ ...metrics.sceneAgeMs }, { count: 2, p50: 40, p95: 40, max: 40 });
+    assert.deepEqual({ ...metrics.epochLag }, { count: 2, p50: 0, p95: 1, max: 1 });
+    assert.equal(metrics.sceneApplyMs.count, 2);
+    assert.equal(metrics.viewsSent, 2);
+    assert.equal(metrics.viewsCoalesced, 3);
+    assert.equal(metrics.scenesApplied, 2);
+    assert.equal(metrics.scenesDropped, 0);
+    assert.equal(metrics.asyncBlocks.blocks, 3);
+    assert.equal(metrics.asyncBlocks.readMs, 12);
+    assert.equal(metrics.wasmLinearMemoryBytes.render, 65536);
+    assert.equal(metrics.wasmLinearMemoryBytes.build, 3 * 65536);
+    assert.equal(metrics.buildWorker.busyByMessage.build.count, 2);
+    assert.ok(metrics.busyByMessage.buildScene.count >= 2);
+    await render.send("metrics", { reset: true });
+    await render.send("metrics");
+    const reset = render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics;
+    assert.equal(reset.sceneAgeMs.count, 0);
+    assert.equal(reset.scenesApplied, 0);
+    assert.ok(worker.posted.some(item => item.type === "metrics" && item.reset));
+});
+
+test("with the option off no build worker exists and the open flow is the in-worker one", async () => {
+    const render = await runRenderWorker({ buildWorker: null });
+    assert.equal(render.workers.length, 0);
+    await render.send("metrics");
+    const metrics = render.messages.find(item => item.type === "metrics").workerMetrics;
+    assert.equal(metrics.buildWorkerEnabled, false);
+    assert.equal("sceneAgeMs" in metrics, false);
+    assert.deepEqual(render.messages.map(item => item.type).filter(type => type !== "metrics"), ["ready"]);
+});
