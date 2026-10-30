@@ -4,7 +4,7 @@
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
 **Estado (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
-y enmendado tras su pre-mortem (abajo). R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
+y enmendado tras su pre-mortem (abajo). R1-T3a (parte de `viewer_core`) hecha; R0 en curso. R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
 esperan las [preguntas pendientes](preguntas-propietario.md).
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de
@@ -91,6 +91,8 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 **Archivos:** `crates/viewer_core/src/spatial_lod_priority.rs`, `crates/viewer_core/src/lod_transition.rs`, `crates/viewer_wasm/src/{lod_dataset.rs, bindings/lod.rs}`.
 
+- [x] **Parte de `viewer_core` (`4ce23e8`, `dac3a38`):** tests dorados (2k, 10⁵ en `check.sh`, 10⁶ ignorado; Replacement y Additive; cuatro cámaras; vía de prioridad y alternativa forzada) sin cambios tras el refactor; frontera enlazada O(hijos) por expansión y comprobaciones de descendientes sin anidamiento; selección por prioridad a 10⁶ nodos de 1,4–1,7 s a 0,4–0,6 s (Replacement) y de 45–96 ms a 12–28 ms (Additive). Residual: liberar candidatos bloqueados sigue siendo lineal (para T3b).
+- [ ] **Parte de `viewer_wasm`:** reutilizar la selección entre `target_cut_is_resident` y la actualización.
 - [ ] Test dorado primero: orden exacto de `node_ids` del corte y de pendientes en fixtures y jerarquías sintéticas de 10⁵ y 10⁶ nodos, por la vía de prioridad y por la alternativa; después frontera indexada y selección reutilizada entre `target_cut_is_resident` y la actualización. Benches `#[ignore]` fuera de `check.sh`.
 
 ### R1-T4: métrica de error única (Q6, B7, E9)
