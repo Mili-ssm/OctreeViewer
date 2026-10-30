@@ -75,9 +75,10 @@ impl WasmVoxelViewer {
             self.selected_attribute_range = selected_range;
             renderer.set_color_mode(mode);
             if let Some(dataset) = self.lod_session.as_mut().map(LodSession::dataset_mut) {
-                dataset
-                    .clear_loaded_blocks(renderer)
+                renderer
+                    .sync_visible_blocks(&[], dataset.resident_blocks())
                     .map_err(|error| JsValue::from_str(&error.to_string()))?;
+                dataset.clear_loaded_blocks();
                 self.reset_range_read_stats();
                 self.lod_stage_pixels = Some(16.0);
                 self.lod_dirty = true;

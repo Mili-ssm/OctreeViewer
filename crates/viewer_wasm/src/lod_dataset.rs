@@ -7,8 +7,8 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 use viewer_render_wgpu::{
-    GpuRendererError, OrbitCamera, SurfaceRenderer, VoxelBuildMemoryStats, VoxelSceneBuildError,
-    build_voxel_scene_with_limits,
+    GpuRendererError, OrbitCamera, SurfaceRenderer, ViewProjection, VoxelBuildMemoryStats,
+    VoxelScene, VoxelSceneBuildError, build_voxel_scene_with_limits,
 };
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
@@ -21,6 +21,8 @@ pub struct LodDataset {
     last_successful_build: Option<SuccessfulBuildContext>,
     visible_scene_metrics: (f64, f64, usize),
     visible_voxel_memory: VoxelBuildMemoryStats,
+    /// Instances of the last scene built; the caller uploads it, so this mirrors the GPU cut.
+    visible_instances: usize,
     refinement_work: LodWorkStats,
     cache_cycle: Option<CacheCycleDetector>,
     /// Blocks inserted since the last `update_view*` (async arrivals) and what they evicted.
@@ -134,6 +136,25 @@ struct SuccessfulBuildContext {
     stage_voxel_pixels: f64,
 }
 
+/// A rebuilt scene and the blocks it was built from, ready to upload.
+pub struct LodBuiltScene {
+    pub voxels: VoxelScene,
+    pub block_ids: Vec<BlockId>,
+}
+
+impl LodBuiltScene {
+    /// FNV-64 digest of the instance buffer; equal digests mean identical GPU bytes.
+    pub fn scene_digest(&self) -> u64 {
+        self.voxels.scene.scene_digest()
+    }
+}
+
+/// One view update: its stats and, when the scene was rebuilt, the scene to upload.
+pub struct LodViewUpdate {
+    pub stats: LodViewStats,
+    pub scene: Option<LodBuiltScene>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LodViewStats {
     pub visible_blocks: usize,
@@ -186,6 +207,16 @@ pub enum LodDatasetError {
     VoxelScene(#[from] VoxelSceneBuildError),
 }
 
+impl LodDatasetError {
+    /// The base cut no longer fits: the caller must also release the renderer's visible cut.
+    pub fn is_base_cut_exceeded(&self) -> bool {
+        matches!(
+            self,
+            Self::Selection(LodSelectionError::BaseCutExceedsBudget { .. })
+        )
+    }
+}
+
 impl LodDataset {
     pub fn new(
         coordinate_origin: [f64; 3],
@@ -218,6 +249,7 @@ impl LodDataset {
             last_successful_build: None,
             visible_scene_metrics: (0.0, 0.0, 0),
             visible_voxel_memory: VoxelBuildMemoryStats::default(),
+            visible_instances: 0,
             refinement_work: LodWorkStats::default(),
             cache_cycle: None,
             arrived_blocks: 0,
@@ -378,12 +410,14 @@ impl LodDataset {
         self.metadata.hierarchy().references_block(id)
     }
 
+    /// Decoded blocks, for callers that must release GPU residency before clearing them.
+    pub fn resident_blocks(&self) -> &dyn viewer_core::ResidentBlockSource {
+        &self.cache
+    }
+
     /// Drops decoded blocks and the current scene so a different attribute set can be loaded.
-    pub fn clear_loaded_blocks(
-        &mut self,
-        renderer: &mut SurfaceRenderer<'_>,
-    ) -> Result<(), LodDatasetError> {
-        renderer.sync_visible_blocks(&[], &self.cache)?;
+    /// The caller clears the renderer's cut (`sync_visible_blocks(&[], ..)`) first.
+    pub fn clear_loaded_blocks(&mut self) {
         self.state_epoch += 1;
         self.planner.reset(&mut self.cache);
         self.cache.clear();
@@ -391,11 +425,32 @@ impl LodDataset {
         self.last_successful_build = None;
         self.visible_scene_metrics = (0.0, 0.0, 0);
         self.visible_voxel_memory = VoxelBuildMemoryStats::default();
+        self.visible_instances = 0;
         self.refinement_work = LodWorkStats::default();
         self.cache_cycle = None;
         self.arrived_blocks = 0;
         self.arrival_evictions.clear();
-        Ok(())
+    }
+
+    pub fn visual_scale(&self) -> f64 {
+        self.visual_scale
+    }
+
+    /// Forgets the visible scene after the caller failed to upload it, so the next update
+    /// rebuilds instead of reusing a scene the GPU never received.
+    pub fn discard_visible_scene(&mut self) {
+        self.state_epoch += 1;
+        self.visible_plan = None;
+        self.last_successful_build = None;
+        self.visible_scene_metrics = (0.0, 0.0, 0);
+        self.visible_voxel_memory = VoxelBuildMemoryStats::default();
+        self.visible_instances = 0;
+    }
+
+    /// Accounts for the time the caller spent uploading `stats`' scene.
+    pub fn record_upload_ms(&mut self, stats: &mut LodViewStats, elapsed_ms: f64) {
+        self.refinement_work.upload_ms += elapsed_ms;
+        stats.refinement_work.upload_ms = self.refinement_work.upload_ms;
     }
 
     pub fn fit_camera(&self, renderer: &mut SurfaceRenderer<'_>) -> bool {
@@ -410,20 +465,20 @@ impl LodDataset {
 
     pub fn update_view(
         &mut self,
-        renderer: &mut SurfaceRenderer<'_>,
+        view: &ViewProjection,
         target_voxel_pixels: f64,
-    ) -> Result<LodViewStats, LodDatasetError> {
-        self.update_view_with_loader(renderer, target_voxel_pixels, |_| Ok(None))
+    ) -> Result<LodViewUpdate, LodDatasetError> {
+        self.update_view_with_loader(view, target_voxel_pixels, |_| Ok(None))
     }
 
     pub fn update_view_with_loader(
         &mut self,
-        renderer: &mut SurfaceRenderer<'_>,
+        view: &ViewProjection,
         target_voxel_pixels: f64,
         load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
-    ) -> Result<LodViewStats, LodDatasetError> {
+    ) -> Result<LodViewUpdate, LodDatasetError> {
         self.update_view_progressive(
-            renderer,
+            view,
             target_voxel_pixels,
             target_voxel_pixels,
             target_voxel_pixels,
@@ -432,18 +487,23 @@ impl LodDataset {
         )
     }
 
+    /// Selects, loads at most one block and rebuilds the scene when the cut or view changed.
+    ///
+    /// Needs no GPU: the built scene is returned for the caller to upload (and to call
+    /// `discard_visible_scene` if that fails). `view.visual_scale()` must equal
+    /// `self.visual_scale()`.
     pub fn update_view_progressive(
         &mut self,
-        renderer: &mut SurfaceRenderer<'_>,
+        view: &ViewProjection,
         target_voxel_pixels: f64,
         selection_error_pixels: f64,
         stage_voxel_pixels: f64,
         async_priority_order: Option<&mut Vec<BlockId>>,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
-    ) -> Result<LodViewStats, LodDatasetError> {
+    ) -> Result<LodViewUpdate, LodDatasetError> {
         let build_context = SuccessfulBuildContext {
-            camera: renderer.camera_snapshot(),
-            viewport: renderer.viewport_size(),
+            camera: view.camera(),
+            viewport: view.viewport(),
             stage_voxel_pixels,
         };
         if self.last_successful_build.as_ref() != Some(&build_context)
@@ -458,8 +518,7 @@ impl LodDataset {
             return Err(LodDatasetError::CacheCyclePaused);
         }
         self.refinement_work.update_calls += 1;
-        renderer.set_visual_scale(self.visual_scale)?;
-        let frustum = renderer
+        let frustum = view
             .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
         let coordinate_origin = self.metadata.coordinate_frame().origin();
@@ -470,7 +529,7 @@ impl LodDataset {
             &frustum,
             |node| {
                 // Camera and viewport remain immutable throughout this synchronous selection.
-                renderer.projected_error_pixels(
+                view.projected_error_pixels(
                     node.bounds(),
                     node_spacing(node.bounds()),
                     coordinate_origin,
@@ -480,13 +539,14 @@ impl LodDataset {
         let target = match selection {
             Ok(target) => target,
             Err(error @ LodSelectionError::BaseCutExceedsBudget { .. }) => {
-                renderer.sync_visible_blocks(&[], &self.cache)?;
+                // The caller releases the GPU cut on this error (`is_base_cut_exceeded`).
                 self.state_epoch += 1;
                 self.planner.reset(&mut self.cache);
                 self.visible_plan = None;
                 self.last_successful_build = None;
                 self.visible_scene_metrics = (0.0, 0.0, 0);
                 self.visible_voxel_memory = VoxelBuildMemoryStats::default();
+                self.visible_instances = 0;
                 return Err(LodDatasetError::Selection(error));
             }
             Err(error) => return Err(LodDatasetError::Selection(error)),
@@ -505,7 +565,7 @@ impl LodDataset {
                 initial_plan.pending_blocks(),
                 &frustum,
                 |node| {
-                    renderer.projected_error_pixels(
+                    view.projected_error_pixels(
                         node.bounds(),
                         node_spacing(node.bounds()),
                         coordinate_origin,
@@ -521,7 +581,7 @@ impl LodDataset {
                 initial_plan.pending_blocks(),
                 &frustum,
                 |node| {
-                    renderer.projected_error_pixels(
+                    view.projected_error_pixels(
                         node.bounds(),
                         node_spacing(node.bounds()),
                         coordinate_origin,
@@ -561,9 +621,10 @@ impl LodDataset {
             .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
             .count() as u64;
         self.refinement_work.evicted_pending_blocks += evicted_pending_blocks;
-        let local_frustum = renderer
+        let local_frustum = view
             .spatial_frustum([0.0; 3])
             .ok_or(LodDatasetError::CameraUnavailable)?;
+        let mut built_scene = None;
         if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
             let (same_visible_cut, reusable_scene) = reusable_build_match(
                 self.visible_plan.as_ref().map(LodTransitionPlan::node_ids),
@@ -607,12 +668,12 @@ impl LodDataset {
                     stage_voxel_pixels,
                     &|bounds| {
                         if local_frustum.intersects(&bounds) {
-                            renderer.projected_voxel_edge_pixels(bounds, [0.0; 3])
+                            view.projected_voxel_edge_pixels(bounds, [0.0; 3])
                         } else {
                             0.0
                         }
                     },
-                    renderer.voxel_build_limits(),
+                    view.voxel_build_limits(),
                 );
                 let build_elapsed_ms = build_started.elapsed_ms();
                 self.refinement_work.voxel_build_ms += build_elapsed_ms;
@@ -623,16 +684,17 @@ impl LodDataset {
                     self.refinement_work.prefix_voxel_build_ms += build_elapsed_ms;
                 }
                 let voxel_scene = voxel_scene_result?;
-                let upload_started = WorkClock::start();
-                let upload_result = renderer.upload_voxel_cut(&voxel_scene.scene, plan.block_ids());
-                self.refinement_work.upload_ms += upload_started.elapsed_ms();
-                upload_result?;
+                self.visible_instances = voxel_scene.scene.instance_count();
                 self.visible_voxel_memory = voxel_scene.memory_stats;
                 self.visible_scene_metrics = (
                     voxel_scene.min_edge_pixels,
                     voxel_scene.max_edge_pixels,
                     voxel_scene.oversized_voxels,
                 );
+                built_scene = Some(LodBuiltScene {
+                    voxels: voxel_scene,
+                    block_ids: plan.block_ids().to_vec(),
+                });
             }
             // Even with identical geometry, publish new pending/coverage information and retain
             // the planner's cache protection. Only voxel construction and upload are omitted.
@@ -645,9 +707,9 @@ impl LodDataset {
         let stats = LodViewStats {
             visible_blocks: visible_plan.block_ids().len(),
             visible_points: visible_plan.point_count(),
-            rendered_voxels: renderer.visible_instance_count(),
-            voxel_budget: renderer.voxel_build_limits().max_voxels,
-            voxel_build_budget_bytes: renderer.voxel_build_limits().max_estimated_bytes,
+            rendered_voxels: self.visible_instances,
+            voxel_budget: view.voxel_build_limits().max_voxels,
+            voxel_build_budget_bytes: view.voxel_build_limits().max_estimated_bytes,
             voxel_build_estimated_peak_bytes: self.visible_voxel_memory.estimated_peak_bytes,
             voxel_instance_capacity_bytes: self.visible_voxel_memory.instance_capacity_bytes,
             projection_cache_peak_entries: self.visible_voxel_memory.projection_cache_peak_entries,
@@ -667,7 +729,10 @@ impl LodDataset {
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
             refinement_work: self.refinement_work.clone(),
         };
-        Ok(stats)
+        Ok(LodViewUpdate {
+            stats,
+            scene: built_scene,
+        })
     }
 
     /// Checks whether the target cut can be published using only blocks already in the cache.
@@ -675,19 +740,18 @@ impl LodDataset {
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn target_cut_is_resident(
         &mut self,
-        renderer: &mut SurfaceRenderer<'_>,
+        view: &ViewProjection,
         target_voxel_pixels: f64,
     ) -> Result<bool, LodDatasetError> {
-        renderer.set_visual_scale(self.visual_scale)?;
-        let camera = renderer.camera_snapshot();
-        let viewport = renderer.viewport_size();
+        let camera = view.camera();
+        let viewport = view.viewport();
         let coordinate_origin = self.metadata.coordinate_frame().origin();
-        let frustum = renderer
+        let frustum = view
             .spatial_frustum(coordinate_origin)
             .ok_or(LodDatasetError::CameraUnavailable)?;
         let target =
             self.resolve_target(&camera, viewport, target_voxel_pixels, &frustum, |node| {
-                renderer.projected_error_pixels(
+                view.projected_error_pixels(
                     node.bounds(),
                     node_spacing(node.bounds()),
                     coordinate_origin,

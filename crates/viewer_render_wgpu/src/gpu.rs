@@ -995,77 +995,22 @@ impl<'window> SurfaceRenderer<'window> {
         self.camera.zoom(delta)
     }
 
-    /// Returns the current camera frustum in dataset coordinates.
-    pub fn spatial_frustum(
-        &self,
-        coordinate_origin: [f64; 3],
-    ) -> Option<viewer_core::SpatialFrustum> {
-        let viewport = [self.surface_config.width, self.surface_config.height];
-        let frustum = self.camera.spatial_frustum(viewport)?;
-        let planes = frustum
-            .planes()
-            .iter()
-            .map(|plane| {
-                let normal = plane
-                    .normal()
-                    .map(|component| component * self.visual_scale);
-                viewer_core::FrustumPlane::new(
-                    normal,
-                    plane.offset()
-                        - (0..3)
-                            .map(|axis| normal[axis] * coordinate_origin[axis])
-                            .sum::<f64>(),
-                )
-                .ok()
-            })
-            .collect::<Option<Vec<_>>>()?;
-        viewer_core::SpatialFrustum::new(planes).ok()
+    /// GPU-free snapshot of the view math used by LOD selection and voxel construction.
+    pub fn view_projection(&self) -> crate::ViewProjection {
+        crate::ViewProjection::new(
+            self.camera,
+            self.viewport_size(),
+            self.visual_scale,
+            self.voxel_build_limits(),
+        )
     }
 
-    /// Screen-space error of a node's representative cell (`spacing`, dataset units).
-    pub fn projected_error_pixels(
-        &self,
-        bounds: viewer_core::SpatialBounds,
-        spacing: f64,
-        coordinate_origin: [f64; 3],
-    ) -> f64 {
-        let min = std::array::from_fn(|axis| {
-            (bounds.min()[axis] - coordinate_origin[axis]) * self.visual_scale
-        });
-        let max = std::array::from_fn(|axis| {
-            (bounds.max()[axis] - coordinate_origin[axis]) * self.visual_scale
-        });
-        let Ok(bounds) = viewer_core::SpatialBounds::new(min, max) else {
-            return f64::INFINITY;
-        };
-        self.camera.projected_error_pixels(
-            bounds,
-            spacing * self.visual_scale,
-            [0.0; 3],
-            [self.surface_config.width, self.surface_config.height],
-        )
+    pub fn visual_scale(&self) -> f64 {
+        self.visual_scale
     }
 
     pub fn viewport_size(&self) -> [u32; 2] {
         [self.surface_config.width, self.surface_config.height]
-    }
-
-    pub fn projected_voxel_edge_pixels(
-        &self,
-        bounds: viewer_core::SpatialBounds,
-        coordinate_origin: [f64; 3],
-    ) -> f64 {
-        let min = std::array::from_fn(|axis| {
-            (bounds.min()[axis] - coordinate_origin[axis]) * self.visual_scale
-        });
-        let max = std::array::from_fn(|axis| {
-            (bounds.max()[axis] - coordinate_origin[axis]) * self.visual_scale
-        });
-        let Ok(bounds) = viewer_core::SpatialBounds::new(min, max) else {
-            return f64::INFINITY;
-        };
-        self.camera
-            .projected_voxel_edge_pixels(bounds, [0.0; 3], self.viewport_size())
     }
 
     /// Snapshots resources owned now; replaced resources may still be retained by GPU work.

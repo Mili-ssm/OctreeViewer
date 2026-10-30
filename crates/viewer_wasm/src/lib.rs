@@ -20,7 +20,9 @@ mod lod_session;
 pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
 };
-pub use lod_dataset::{LodDataset, LodDatasetError, LodViewStats, LodWorkStats};
+pub use lod_dataset::{
+    LodBuiltScene, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate, LodWorkStats,
+};
 
 #[cfg(target_arch = "wasm32")]
 mod async_format_reader;

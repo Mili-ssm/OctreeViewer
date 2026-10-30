@@ -16,14 +16,25 @@ use super::{
     },
 };
 use crate::{
-    LodDataset, LodViewStats,
+    LodDataset, LodDatasetError, LodViewStats, LodViewUpdate,
     browser_io::{BrowserBlobReader, BrowserReadStats},
-    lod_dataset::next_lod_stage,
+    lod_dataset::{WorkClock, next_lod_stage},
     lod_metadata::LodDatasetDescriptor,
     lod_session::LodSession,
 };
 use viewer_format::FormatReader;
-use viewer_render_wgpu::{ColorMode, SurfaceRenderer};
+use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
+
+/// Aligns the renderer's visual scale with the dataset's and snapshots its view math.
+fn lod_view_projection(
+    renderer: &mut SurfaceRenderer<'_>,
+    dataset: &LodDataset,
+) -> Result<ViewProjection, JsValue> {
+    renderer
+        .set_visual_scale(dataset.visual_scale())
+        .map_err(|error| JsValue::from_str(&LodDatasetError::Gpu(error).to_string()))?;
+    Ok(renderer.view_projection())
+}
 
 #[wasm_bindgen]
 impl WasmVoxelViewer {
@@ -473,8 +484,9 @@ impl WasmVoxelViewer {
             .as_mut()
             .map(LodSession::dataset_mut)
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let view = lod_view_projection(renderer, dataset)?;
         dataset
-            .target_cut_is_resident(renderer, target_voxel_pixels)
+            .target_cut_is_resident(&view, target_voxel_pixels)
             .map_err(|error| JsValue::from_str(&error.to_string()))
     }
 
@@ -501,8 +513,9 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
         let (dataset, mut format_reader) = session.parts_mut();
         let can_load_blocks = format_reader.is_some() || has_async_reader;
-        let stats = dataset.update_view_progressive(
-            renderer,
+        let view = lod_view_projection(renderer, dataset)?;
+        let update = dataset.update_view_progressive(
+            &view,
             target_voxel_pixels,
             selection_error_pixels,
             stage_pixels,
@@ -528,7 +541,26 @@ impl WasmVoxelViewer {
             },
         );
         self.lod_range_read_stats = lod_range_read_stats;
-        let stats = stats.map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let LodViewUpdate { mut stats, scene } = match update {
+            Ok(update) => update,
+            Err(error) => {
+                if error.is_base_cut_exceeded() {
+                    renderer
+                        .sync_visible_blocks(&[], dataset.resident_blocks())
+                        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+                }
+                return Err(JsValue::from_str(&error.to_string()));
+            }
+        };
+        if let Some(built) = scene {
+            let upload_started = WorkClock::start();
+            let uploaded = renderer.upload_voxel_cut(&built.voxels.scene, &built.block_ids);
+            dataset.record_upload_ms(&mut stats, upload_started.elapsed_ms());
+            if let Err(error) = uploaded {
+                dataset.discard_visible_scene();
+                return Err(JsValue::from_str(&LodDatasetError::Gpu(error).to_string()));
+            }
+        }
         self.pending_async_blocks = async_priority_order;
         self.pending_async_block = self.pending_async_blocks.first().copied();
         (self.lod_stage_pixels, self.lod_dirty) = next_lod_stage(

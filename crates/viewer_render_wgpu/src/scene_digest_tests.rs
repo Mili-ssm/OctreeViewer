@@ -8,7 +8,9 @@ use viewer_core::{
     PointBlock, SpatialBounds, SpatialHierarchy, SpatialNode,
 };
 
-use crate::{OrbitCamera, SceneBounds, build_voxel_scene_with_limits};
+use crate::{
+    OrbitCamera, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
+};
 
 const ORIGIN: [f64; 3] = [1000.0, -2000.0, 50.0];
 const SIDE: f64 = 64.0;
@@ -161,6 +163,9 @@ fn cameras() -> Vec<(&'static str, OrbitCamera)> {
     ]
 }
 
+/// How a test turns a camera into the frustum and projected-edge functions of the build.
+type Build<'a> = &'a dyn Fn(&Fixture, &[NodeId], &OrbitCamera, f64) -> (usize, u64);
+
 /// The build exactly as the LOD update drives it: frustum-gated projected edge, scale 1.
 fn digest(
     fixture: &Fixture,
@@ -188,7 +193,35 @@ fn digest(
     (scene.scene.instance_count(), scene.scene.scene_digest())
 }
 
-fn all_cases() -> Vec<(String, usize, u64)> {
+/// The same build through the GPU-free `ViewProjection`, as `LodDataset` drives it.
+fn digest_via_view(
+    fixture: &Fixture,
+    cut: &[NodeId],
+    camera: &OrbitCamera,
+    target_pixels: f64,
+) -> (usize, u64) {
+    let view = ViewProjection::new(*camera, VIEWPORT, 1.0, VoxelBuildLimits::default());
+    let local_frustum = view.spatial_frustum([0.0; 3]).expect("frustum");
+    let scene = build_voxel_scene_with_limits(
+        &fixture.hierarchy,
+        cut,
+        &fixture.cache,
+        ORIGIN,
+        target_pixels,
+        &|bounds| {
+            if local_frustum.intersects(&bounds) {
+                view.projected_voxel_edge_pixels(bounds, [0.0; 3])
+            } else {
+                0.0
+            }
+        },
+        view.voxel_build_limits(),
+    )
+    .expect("scene");
+    (scene.scene.instance_count(), scene.scene.scene_digest())
+}
+
+fn all_cases(build: Build<'_>) -> Vec<(String, usize, u64)> {
     let replacement = fixture(HierarchySemantics::Replacement);
     let additive = fixture(HierarchySemantics::Additive);
     let cuts: Vec<(&str, &Fixture, Vec<NodeId>)> = vec![
@@ -205,7 +238,7 @@ fn all_cases() -> Vec<(String, usize, u64)> {
     for (cut_name, fixture, cut) in &cuts {
         for (camera_name, camera) in cameras() {
             for target in TARGET_PIXELS {
-                let (count, hash) = digest(fixture, cut, &camera, target);
+                let (count, hash) = build(fixture, cut, &camera, target);
                 cases.push((format!("{cut_name}/{camera_name}/{target}px"), count, hash));
             }
         }
@@ -266,7 +299,15 @@ const GOLDEN: &[(&str, usize, u64)] = &[
 
 #[test]
 fn voxel_scene_digests_match_the_golden_table() {
-    let actual = all_cases();
+    check_golden(&all_cases(&digest));
+}
+
+#[test]
+fn view_projection_reproduces_the_golden_digests() {
+    check_golden(&all_cases(&digest_via_view));
+}
+
+fn check_golden(actual: &[(String, usize, u64)]) {
     let matches = actual.len() == GOLDEN.len()
         && actual
             .iter()

@@ -1,7 +1,7 @@
 use glam::{DVec3, dcamera};
 use viewer_core::{FrustumPlane, SpatialBounds, SpatialFrustum};
 
-use crate::SceneBounds;
+use crate::{SceneBounds, VoxelBuildLimits};
 
 const VERTICAL_FOV: f64 = 45.0_f64.to_radians();
 const MIN_PITCH: f64 = -89.0_f64.to_radians();
@@ -512,6 +512,120 @@ fn projected_bounds_area(
         max_y = max_y.max(y);
     }
     (max_x - min_x) * (max_y - min_y)
+}
+
+/// Everything the LOD and voxel-build path needs from a view, without any GPU state.
+///
+/// The camera lives in local render coordinates (dataset units minus the coordinate origin,
+/// times `visual_scale`); hierarchy bounds and frusta are exposed in dataset or local units as
+/// the callers need. Plain data, so it can be built and sent off the render thread.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewProjection {
+    camera: OrbitCamera,
+    viewport: [u32; 2],
+    visual_scale: f64,
+    build_limits: VoxelBuildLimits,
+}
+
+impl ViewProjection {
+    pub fn new(
+        camera: OrbitCamera,
+        viewport: [u32; 2],
+        visual_scale: f64,
+        build_limits: VoxelBuildLimits,
+    ) -> Self {
+        Self {
+            camera,
+            viewport,
+            visual_scale,
+            build_limits,
+        }
+    }
+
+    pub fn camera(&self) -> OrbitCamera {
+        self.camera
+    }
+
+    pub fn viewport(&self) -> [u32; 2] {
+        self.viewport
+    }
+
+    pub fn visual_scale(&self) -> f64 {
+        self.visual_scale
+    }
+
+    /// Effective voxel construction limits (already capped by the GPU instance budget).
+    pub fn voxel_build_limits(&self) -> VoxelBuildLimits {
+        self.build_limits
+    }
+
+    /// Camera frustum relative to `coordinate_origin` (dataset units); `[0.0; 3]` gives the
+    /// frustum in local scaled units.
+    pub fn spatial_frustum(&self, coordinate_origin: [f64; 3]) -> Option<SpatialFrustum> {
+        let frustum = self.camera.spatial_frustum(self.viewport)?;
+        let planes = frustum
+            .planes()
+            .iter()
+            .map(|plane| {
+                let normal = plane
+                    .normal()
+                    .map(|component| component * self.visual_scale);
+                FrustumPlane::new(
+                    normal,
+                    plane.offset()
+                        - (0..3)
+                            .map(|axis| normal[axis] * coordinate_origin[axis])
+                            .sum::<f64>(),
+                )
+                .ok()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        SpatialFrustum::new(planes).ok()
+    }
+
+    fn local_bounds(
+        &self,
+        bounds: SpatialBounds,
+        coordinate_origin: [f64; 3],
+    ) -> Option<SpatialBounds> {
+        let min = std::array::from_fn(|axis| {
+            (bounds.min()[axis] - coordinate_origin[axis]) * self.visual_scale
+        });
+        let max = std::array::from_fn(|axis| {
+            (bounds.max()[axis] - coordinate_origin[axis]) * self.visual_scale
+        });
+        SpatialBounds::new(min, max).ok()
+    }
+
+    /// Screen-space error of a node's representative cell (`spacing`, dataset units).
+    pub fn projected_error_pixels(
+        &self,
+        bounds: SpatialBounds,
+        spacing: f64,
+        coordinate_origin: [f64; 3],
+    ) -> f64 {
+        let Some(bounds) = self.local_bounds(bounds, coordinate_origin) else {
+            return f64::INFINITY;
+        };
+        self.camera.projected_error_pixels(
+            bounds,
+            spacing * self.visual_scale,
+            [0.0; 3],
+            self.viewport,
+        )
+    }
+
+    pub fn projected_voxel_edge_pixels(
+        &self,
+        bounds: SpatialBounds,
+        coordinate_origin: [f64; 3],
+    ) -> f64 {
+        let Some(bounds) = self.local_bounds(bounds, coordinate_origin) else {
+            return f64::INFINITY;
+        };
+        self.camera
+            .projected_voxel_edge_pixels(bounds, [0.0; 3], self.viewport)
+    }
 }
 
 fn plane(normal: DVec3, point: DVec3) -> Option<FrustumPlane> {
