@@ -106,7 +106,7 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 **Archivos:** `crates/viewer_render_wgpu/src/camera.rs`.
 
-- [ ] Test: cámara a 1 m del suelo de una nube de decenas de km sin recorte de nodos visibles; puntos y bloques seleccionados antes y después comparados; presupuesto de la fuente respetado; picking existente sin regresión.
+- [x] **`29dfdeb`:** plano cercano = max(profundidad del centro − 1,2·radio, far/10⁵) (Depth32Float sin Z invertida); la métrica LOD usa `lod_min_depth()` (la fórmula antigua) y no cambia: a 1 m del suelo de una nube de 41 km el plano baja de 35,5 m a 0,71 m con la misma selección (0 %). Test: cámara a 1 m del suelo de una nube de decenas de km sin recorte de nodos visibles; puntos y bloques seleccionados antes y después comparados; presupuesto de la fuente respetado; picking existente sin regresión.
 
 ### R1-T1a: no reiniciar la etapa al mover (Q1, E6)
 
@@ -152,8 +152,8 @@ hasta que cambie la profundidad terminal). Mismos bytes por construcción: misma
 escena desfasada entre B y 2B (B = tiempo de construcción: 0,48 s en Majadas, 2,6 s en Belvedere
 8 px). La opción queda **apagada por defecto** hasta que el propietario decida P7/P8.
 
-- [ ] **R2-T1, costura y digest:** tests dorados de digest FNV-64 de las instancias (fixtures, Replacement/Additive, 4 cámaras, 3 px); `ViewProjection` en `camera.rs` (sin GPU) a la que delega `SurfaceRenderer`; `update_view_progressive` devuelve la escena y quien llama la sube. Aceptación: digests sin cambios; humo Majadas con `sceneBuilds` y `voxelSourcePoints` ±5 %.
-- [ ] **R2-T2, `WasmSceneBuilder` sin GPU:** binding nuevo; colorización y etapa en funciones compartidas; test de navegador que da la misma secuencia de bloques y vistas a la ruta actual y a la nueva y exige digests idénticos.
+- [x] **R2-T1, costura y digest (`fb18073`–`638eb63`; 48 digests dorados sin cambios; actualización conducible en nativo):** tests dorados de digest FNV-64 de las instancias (fixtures, Replacement/Additive, 4 cámaras, 3 px); `ViewProjection` en `camera.rs` (sin GPU) a la que delega `SurfaceRenderer`; `update_view_progressive` devuelve la escena y quien llama la sube. Aceptación: digests sin cambios; humo Majadas con `sceneBuilds` y `voxelSourcePoints` ±5 %.
+- [x] **R2-T2, `WasmSceneBuilder` sin GPU (`014bd20`, `a546941`; digests idénticos entre visor y constructor en cada paso):** binding nuevo; colorización y etapa en funciones compartidas; test de navegador que da la misma secuencia de bloques y vistas a la ruta actual y a la nueva y exige digests idénticos.
 - [ ] **R2-T3, `build-worker.js` y protocolo:** opción `buildWorker` (apagada por defecto); empaquetado `file://`; métricas nuevas (`sceneAgeMs`, `epochLag`, `viewsCoalesced`, `scenesDropped`, memoria por worker). Aceptación: Majadas 4 px y Belvedere 8 px con p95 de respuestas < 33 ms y máx < 100 ms en carga y órbita; sin subir nodos sin cubrir, expulsiones de pendientes ni `oversized`; digest final en reposo igual a la ruta actual.
 - [ ] **R2-T4, subida en trozos:** solo si `sceneApplyMs` máx > 8 ms.
 - [ ] **R2-T5, registro:** matriz R0 con `sceneAgeMs` y margen de frustum 0/5/10° (parámetro, 0 por defecto); decide R2b.
