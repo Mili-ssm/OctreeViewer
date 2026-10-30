@@ -1521,3 +1521,165 @@ fn pending_priority_is_screen_space_error_per_source_point() {
     // A zero count is treated as one.
     assert_eq!(load_priority(8.0, &empty), 8.0);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Native end-to-end update: no GPU, so the whole select -> load -> build path runs in a test.
+// ---------------------------------------------------------------------------------------------
+
+/// Root (block 11) plus two children split on x (blocks 12, 13); `count` points per block.
+fn native_dataset(count: usize) -> (LodDataset, Vec<PointBlock>) {
+    let node = |id: u64, parent: Option<u64>, level: u32, x: [f64; 2]| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new([x[0], 0.0, 0.0], [x[1], 64.0, 64.0]).unwrap(),
+            count as u64,
+            0.0,
+            vec![BlockId::new(10 + id)],
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            node(1, None, 0, [0.0, 64.0]),
+            node(2, Some(1), 1, [0.0, 32.0]),
+            node(3, Some(1), 1, [32.0, 64.0]),
+        ],
+        Vec::new(),
+        Some(2 * count as u64),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut state = 0x5eed_u64;
+    let mut unit = move || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 40) as f32) / ((1_u64 << 24) as f32)
+    };
+    let mut points_in = |x0: f32, width: f32| -> Vec<Point> {
+        (0..count)
+            .map(|_| {
+                Point::new(
+                    [x0 + unit() * width, unit() * 64.0, unit() * 64.0],
+                    ColorRgb::new(10, 120, 200),
+                )
+            })
+            .collect()
+    };
+    let blocks = vec![
+        PointBlock::new(
+            BlockId::new(11),
+            PointBatch::new(points_in(0.0, 64.0)),
+            vec![],
+        ),
+        PointBlock::new(
+            BlockId::new(12),
+            PointBatch::new(points_in(0.0, 32.0)),
+            vec![],
+        ),
+        PointBlock::new(
+            BlockId::new(13),
+            PointBatch::new(points_in(32.0, 32.0)),
+            vec![],
+        ),
+    ];
+    let cache_bytes = 8 * blocks[0].estimated_memory_bytes();
+    (
+        LodDataset::new([0.0; 3], hierarchy, cache_bytes).unwrap(),
+        blocks,
+    )
+}
+
+fn native_view() -> viewer_render_wgpu::ViewProjection {
+    let viewport = [800, 600];
+    let mut camera = OrbitCamera::default();
+    assert!(camera.fit(
+        SceneBounds {
+            min: [0.0; 3],
+            max: [64.0; 3],
+        },
+        viewport,
+    ));
+    viewer_render_wgpu::ViewProjection::new(
+        camera,
+        viewport,
+        1.0,
+        viewer_render_wgpu::VoxelBuildLimits::default(),
+    )
+}
+
+#[test]
+fn a_native_update_builds_the_scene_without_a_renderer() {
+    let view = native_view();
+    let (mut dataset, blocks) = native_dataset(400);
+    for block in &blocks {
+        dataset.insert_block(block.clone()).unwrap();
+    }
+
+    let first = dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |_| Ok(None))
+        .unwrap();
+    let built = first.scene.expect("first update builds a scene");
+    assert!(first.stats.pending_block_ids.is_empty());
+    assert_eq!(
+        first.stats.rendered_voxels,
+        built.voxels.scene.instance_count()
+    );
+    assert_eq!(first.stats.refinement_work.scene_builds, 1);
+    assert_eq!(built.block_ids, [BlockId::new(12), BlockId::new(13)]);
+    assert_eq!(
+        (built.voxels.scene.instance_count(), built.scene_digest()),
+        NATIVE_UPDATE_GOLDEN
+    );
+
+    // Same view and cut: the scene is reused, so nothing new is handed to the caller.
+    let again = dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |_| Ok(None))
+        .unwrap();
+    assert!(again.scene.is_none());
+    assert_eq!(again.stats.rendered_voxels, first.stats.rendered_voxels);
+    assert_eq!(again.stats.refinement_work.reused_scene_updates, 1);
+}
+
+#[test]
+fn a_native_update_loading_blocks_on_demand_reaches_the_same_digest() {
+    let view = native_view();
+    let (mut dataset, blocks) = native_dataset(400);
+    let mut digest = None;
+    for _ in 0..8 {
+        let update = dataset
+            .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |id| {
+                Ok(blocks.iter().find(|block| block.id() == id).cloned())
+            })
+            .unwrap();
+        if update.stats.pending_block_ids.is_empty() {
+            digest = update.scene.map(|scene| scene.scene_digest());
+            break;
+        }
+    }
+    assert_eq!(digest, Some(NATIVE_UPDATE_GOLDEN.1));
+}
+
+#[test]
+fn a_discarded_scene_is_rebuilt_by_the_next_update() {
+    let view = native_view();
+    let (mut dataset, blocks) = native_dataset(400);
+    for block in &blocks {
+        dataset.insert_block(block.clone()).unwrap();
+    }
+    let first = dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |_| Ok(None))
+        .unwrap();
+    dataset.discard_visible_scene();
+    let rebuilt = dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |_| Ok(None))
+        .unwrap();
+    assert_eq!(
+        rebuilt.scene.map(|scene| scene.scene_digest()),
+        first.scene.map(|scene| scene.scene_digest())
+    );
+}
+
+const NATIVE_UPDATE_GOLDEN: (usize, u64) = (800, 7_206_320_447_428_042_895);
