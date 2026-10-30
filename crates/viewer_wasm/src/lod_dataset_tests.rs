@@ -1,7 +1,7 @@
 use viewer_core::{
-    BlockId, ColorRgb, DecodedBlockCache, FrustumPlane, HierarchySemantics, LodSelectionConfig,
-    LodTransitionPlanner, NodeId, Point, PointBatch, PointBlock, SpatialBounds, SpatialFrustum,
-    SpatialHierarchy, SpatialNode,
+    BlockId, ColorRgb, DecodedBlockCache, FrustumPlane, HierarchySemantics, LodSelection,
+    LodSelectionConfig, LodTransitionPlan, LodTransitionPlanner, NodeId, Point, PointBatch,
+    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 
 use super::{
@@ -1006,3 +1006,404 @@ fn cut_retention_still_protects_target_blocks_from_async_arrivals() {
     assert!(dataset.cache.contains(BlockId::new(10)));
     assert!(!dataset.arrival_evictions.contains(&BlockId::new(10)));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Characterization of the per-update decision path (selection -> plan -> load -> plan -> rebuild
+// decision) across several views and block arrivals. `SurfaceRenderer` needs a GPU surface, so the
+// renderer-free pieces are driven here with a synthetic frustum and projector.
+// ---------------------------------------------------------------------------------------------
+
+/// Three levels, binary: 1 -> {2, 3} -> {4..7}; node `k` owns block `10 + k`.
+fn tree_dataset(cache_blocks: usize) -> LodDataset {
+    let node = |id: u64, parent: Option<u64>, level: u32, x: [f64; 2], error: f64| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new([x[0], 0.0, 0.0], [x[1], 1.0, 1.0]).unwrap(),
+            1,
+            error,
+            vec![BlockId::new(10 + id)],
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            node(1, None, 0, [0.0, 1.0], 8.0),
+            node(2, Some(1), 1, [0.0, 0.5], 4.0),
+            node(3, Some(1), 1, [0.5, 1.0], 4.0),
+            node(4, Some(2), 2, [0.0, 0.25], 2.0),
+            node(5, Some(2), 2, [0.25, 0.5], 2.0),
+            node(6, Some(3), 2, [0.5, 0.75], 2.0),
+            node(7, Some(3), 2, [0.75, 1.0], 2.0),
+        ],
+        Vec::new(),
+        Some(1),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    LodDataset::new(
+        [0.0; 3],
+        hierarchy,
+        cache_blocks * block(10).estimated_memory_bytes(),
+    )
+    .unwrap()
+}
+
+struct SimView {
+    id: f64,
+    frustum: SpatialFrustum,
+    scale: f64,
+}
+
+fn sim_views() -> Vec<SimView> {
+    let half_space = |normal: [f64; 3], offset: f64| {
+        SpatialFrustum::new(vec![FrustumPlane::new(normal, offset).unwrap()]).unwrap()
+    };
+    let view = |id: f64, normal: [f64; 3], offset: f64, scale: f64| SimView {
+        id,
+        frustum: half_space(normal, offset),
+        scale,
+    };
+    vec![
+        view(0.0, [1.0, 0.0, 0.0], 1.0, 2.0),
+        view(1.0, [1.0, 0.0, 0.0], 1.0, 8.0),
+        view(2.0, [1.0, 0.0, 0.0], -0.5, 8.0),
+        view(3.0, [-1.0, 0.0, 0.0], 0.5, 3.0),
+        // Back to the first view: the visible cut and build context are reusable again.
+        view(0.0, [1.0, 0.0, 0.0], 1.0, 2.0),
+    ]
+}
+
+fn pick_target(dataset: &mut LodDataset, view: &SimView, stage: f64) -> LodSelection {
+    let config = LodSelectionConfig::new(stage, u64::MAX).unwrap();
+    let scale = view.scale;
+    dataset
+        .metadata
+        .hierarchy()
+        .select_lod_stable_projector(&view.frustum, config, 1 << 20, |node| {
+            node.geometric_error() * scale
+        })
+        .unwrap()
+        .0
+}
+
+fn plan_for(dataset: &mut LodDataset, target: &LodSelection) -> LodTransitionPlan {
+    dataset
+        .planner
+        .prepare(dataset.metadata.hierarchy(), target, &dataset.cache)
+}
+
+fn ids<T: Copy>(values: &[T], get: impl Fn(T) -> u64) -> String {
+    format!("{:?}", values.iter().map(|v| get(*v)).collect::<Vec<_>>())
+}
+
+/// One stage evaluation, mirroring `update_view_progressive` without the renderer.
+fn sim_update(
+    dataset: &mut LodDataset,
+    view: &SimView,
+    stage: f64,
+    async_loads: bool,
+    log: &mut Vec<String>,
+) -> bool {
+    let context = build_context(view.id, [100, 100], stage);
+    let target = pick_target(dataset, view, stage);
+    let initial = plan_for(dataset, &target);
+    let next = initial.pending_blocks().first().copied();
+    dataset.arrived_blocks = 0;
+    if let (Some(id), false) = (next, async_loads) {
+        dataset.cache_block(block(id.get())).unwrap();
+    }
+    let plan = plan_for(dataset, &target);
+    let mut decision = "skip";
+    if !plan.node_ids().is_empty() || plan.pending_blocks().is_empty() {
+        let (same_cut, reusable) = reusable_build_match(
+            dataset
+                .visible_plan
+                .as_ref()
+                .map(LodTransitionPlan::node_ids),
+            dataset
+                .visible_plan
+                .as_ref()
+                .map(LodTransitionPlan::block_ids),
+            plan.node_ids(),
+            plan.block_ids(),
+            dataset.last_successful_build.as_ref(),
+            &context,
+        );
+        decision = match (reusable, same_cut) {
+            (true, _) => "reuse",
+            (false, true) => "rebuild-same-cut",
+            (false, false) => "build",
+        };
+        dataset.planner.commit(&plan, &mut dataset.cache);
+        dataset.visible_plan = Some(plan.clone());
+        dataset.last_successful_build = Some(context);
+    }
+    log.push(format!(
+        "stage={stage} cut={} pending={} uncovered={} {decision}",
+        ids(plan.node_ids(), |n| n.get()),
+        ids(plan.pending_blocks(), |b| b.get()),
+        plan.uncovered_nodes().len(),
+    ));
+    if async_loads && let Some(id) = plan.pending_blocks().first() {
+        dataset.insert_block(block(id.get())).unwrap();
+    }
+    !plan.pending_blocks().is_empty()
+}
+
+/// Mirrors `update_lod_view`: fine-stage residency preflight, then the staged refinement loop.
+fn simulate_session(async_loads: bool) -> Vec<String> {
+    let target_px = 1.0;
+    let mut dataset = tree_dataset(5);
+    let mut log = Vec::new();
+    for (index, view) in sim_views().iter().enumerate() {
+        let mut stage: Option<f64> = None;
+        for _ in 0..12 {
+            log.push(format!("view {index}"));
+            let mut used = stage.unwrap_or(16.0);
+            let mut pending = None;
+            if stage.is_none() && target_px < 16.0 {
+                let target = pick_target(&mut dataset, view, target_px);
+                let plan = plan_for(&mut dataset, &target);
+                let resident = resident_target_plan_is_complete(&target, &plan);
+                log.push(format!("resident={resident}"));
+                if resident {
+                    used = target_px;
+                    pending = Some(sim_update(&mut dataset, view, used, async_loads, &mut log));
+                }
+            }
+            let pending = pending
+                .unwrap_or_else(|| sim_update(&mut dataset, view, used, async_loads, &mut log));
+            let (next_stage, dirty) = next_lod_stage(Some(used), target_px, pending, true);
+            stage = next_stage;
+            if !dirty {
+                break;
+            }
+        }
+    }
+    log
+}
+
+#[test]
+fn update_decisions_are_pinned_for_synchronous_loads() {
+    let log = simulate_session(false);
+    println!("{log:#?}");
+    assert_eq!(log, SYNC_GOLDEN);
+}
+
+#[test]
+fn update_decisions_are_pinned_for_async_arrivals() {
+    let log = simulate_session(true);
+    println!("{log:#?}");
+    assert_eq!(log, ASYNC_GOLDEN);
+}
+
+const SYNC_GOLDEN: &[&str] = &[
+    "view 0",
+    "resident=false",
+    "stage=16 cut=[1] pending=[] uncovered=0 build",
+    "view 0",
+    "stage=8 cut=[1, 2] pending=[13] uncovered=0 build",
+    "view 0",
+    "stage=8 cut=[2, 3] pending=[] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[2, 3, 4] pending=[15, 16, 17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5] pending=[16, 17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "resident=false",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 2",
+    "resident=false",
+    "stage=16 cut=[3, 5, 7] pending=[16] uncovered=0 build",
+    "view 2",
+    "stage=16 cut=[5, 6, 7] pending=[] uncovered=0 build",
+    "view 2",
+    "stage=8 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 2",
+    "stage=4 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 2",
+    "stage=2 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 2",
+    "stage=1 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 3",
+    "resident=false",
+    "stage=16 cut=[2, 3] pending=[] uncovered=0 build",
+    "view 3",
+    "stage=8 cut=[2, 4, 6] pending=[15] uncovered=0 build",
+    "view 3",
+    "stage=8 cut=[4, 5, 6] pending=[] uncovered=0 build",
+    "view 3",
+    "stage=4 cut=[4, 5, 6] pending=[] uncovered=0 rebuild-same-cut",
+    "view 3",
+    "stage=2 cut=[4, 5, 6] pending=[] uncovered=0 rebuild-same-cut",
+    "view 3",
+    "stage=1 cut=[4, 5, 6] pending=[] uncovered=0 rebuild-same-cut",
+    "view 4",
+    "resident=false",
+    "stage=16 cut=[1] pending=[] uncovered=0 build",
+    "view 4",
+    "stage=8 cut=[1, 2] pending=[13] uncovered=0 build",
+    "view 4",
+    "stage=8 cut=[2, 3] pending=[] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[2, 3, 5, 6] pending=[14, 17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[2, 3, 4, 6] pending=[15, 17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+];
+const ASYNC_GOLDEN: &[&str] = &[
+    "view 0",
+    "resident=false",
+    "stage=16 cut=[] pending=[11] uncovered=1 skip",
+    "view 0",
+    "stage=16 cut=[1] pending=[] uncovered=0 build",
+    "view 0",
+    "stage=8 cut=[1] pending=[12, 13] uncovered=0 rebuild-same-cut",
+    "view 0",
+    "stage=8 cut=[1, 2] pending=[13] uncovered=0 build",
+    "view 0",
+    "stage=8 cut=[2, 3] pending=[] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[2, 3] pending=[14, 15, 16, 17] uncovered=0 rebuild-same-cut",
+    "view 0",
+    "stage=4 cut=[2, 3, 4] pending=[15, 16, 17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5] pending=[16, 17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 0",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "resident=false",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 1",
+    "stage=16 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 2",
+    "resident=false",
+    "stage=16 cut=[3, 5, 6] pending=[17] uncovered=0 build",
+    "view 2",
+    "stage=16 cut=[5, 6, 7] pending=[] uncovered=0 build",
+    "view 2",
+    "stage=8 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 2",
+    "stage=4 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 2",
+    "stage=2 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 2",
+    "stage=1 cut=[5, 6, 7] pending=[] uncovered=0 rebuild-same-cut",
+    "view 3",
+    "resident=false",
+    "stage=16 cut=[2, 3] pending=[] uncovered=0 build",
+    "view 3",
+    "stage=8 cut=[2, 5, 6] pending=[14] uncovered=0 build",
+    "view 3",
+    "stage=8 cut=[2, 4, 6] pending=[15] uncovered=0 build",
+    "view 3",
+    "stage=8 cut=[4, 5, 6] pending=[] uncovered=0 build",
+    "view 3",
+    "stage=4 cut=[4, 5, 6] pending=[] uncovered=0 rebuild-same-cut",
+    "view 3",
+    "stage=2 cut=[4, 5, 6] pending=[] uncovered=0 rebuild-same-cut",
+    "view 3",
+    "stage=1 cut=[4, 5, 6] pending=[] uncovered=0 rebuild-same-cut",
+    "view 4",
+    "resident=false",
+    "stage=16 cut=[4, 5, 6] pending=[11] uncovered=1 rebuild-same-cut",
+    "view 4",
+    "stage=16 cut=[1] pending=[] uncovered=0 build",
+    "view 4",
+    "stage=8 cut=[1, 3] pending=[12] uncovered=0 build",
+    "view 4",
+    "stage=8 cut=[1, 2] pending=[13] uncovered=0 build",
+    "view 4",
+    "stage=8 cut=[2, 3] pending=[] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5] pending=[16, 17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 6] pending=[17] uncovered=0 build",
+    "view 4",
+    "stage=4 cut=[3, 4, 5, 7] pending=[16] uncovered=0 build",
+];
