@@ -83,6 +83,7 @@ export function createConverter(options = {}) {
                 outputAttributesName: data.outputAttributesName,
                 points: data.points,
                 timings: data.timings,
+                ...(data.spool === undefined ? {} : { spool: data.spool }),
             });
         } else if (data.type === "cancelled") {
             const error = new Error(data.message);

@@ -73,8 +73,12 @@ test("engine core passes options to the worker and relays progress, completion a
     assert.equal(worker.messages[0].engine, "core");
     assert.deepEqual(worker.messages[0].options, { pointsPerBlock: 4096, spatialDivisions: 8 });
     worker.dispatch("message", { type: "progress", stage: "writing" });
-    worker.dispatch("message", complete);
-    assert.equal((await first).name, "p.oct");
+    const spool = { spilledBytes: 7, pagesPeak: 1 };
+    worker.dispatch("message", { ...complete, spool, timings: { totalMs: 5 } });
+    const result = await first;
+    assert.equal(result.name, "p.oct");
+    assert.deepEqual(result.spool, spool);
+    assert.deepEqual(result.timings, { totalMs: 5 });
     assert.deepEqual(stages, ["writing"]);
 
     const second = converter.convert(lasFile());

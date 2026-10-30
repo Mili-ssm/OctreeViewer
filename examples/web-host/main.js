@@ -817,7 +817,8 @@ convertButton.addEventListener("click", () => {
         }).catch((error) => {
             convertStatus.textContent = "";
             if (error.name === "AbortError") showConvertNotice("warning", error.message);
-            else showConvertNotice("error", `Conversion failed: ${error.message}`);
+            // The core engine's own message already starts with "conversion failed:".
+            else showConvertNotice("error", `Conversion failed: ${error.message.replace(/^conversion failed:\s*/i, "")}`);
         }).finally(finishConverter);
     } catch (error) {
         showConvertNotice("error", `Conversion could not start: ${error.message}`);
