@@ -36,11 +36,16 @@ function lasFile(name = "points.las") {
     return file;
 }
 
-function fakeStorage(initialNames = []) {
+// `lockedMs` makes removal fail like a terminated worker's sync handle that is not released yet.
+function fakeStorage(initialNames = [], { lockedMs = 0 } = {}) {
     const entries = new Set(initialNames);
+    const lockedUntil = Date.now() + lockedMs;
     const directory = {
         async *keys() { yield* [...entries]; },
         async removeEntry(name) {
+            if (Date.now() < lockedUntil) {
+                throw Object.assign(new Error("locked"), { name: "NoModificationAllowedError" });
+            }
             if (!entries.delete(name)) throw Object.assign(new Error("missing"), { name: "NotFoundError" });
         },
     };
@@ -101,10 +106,26 @@ test("cancelling the core engine terminates the worker and deletes its partial f
     converter.dispose();
 });
 
-test("orphan partial files of earlier sessions are deleted when a converter starts", { concurrency: false }, async () => {
-    const storage = fakeStorage(["conversion-a.oct.partial", "conversion-a.octattrs.partial", "result.oct"]);
+test("cancel keeps retrying removal while the terminated worker still holds its handles", { concurrency: false }, async () => {
+    const names = ["conversion-2.oct.partial", "conversion-2.zone-0.partial"];
+    const storage = fakeStorage(names, { lockedMs: 2000 });
+    const converter = createConverter({ engine: "core", storage });
+    const rejected = assert.rejects(converter.convert(lasFile()), { name: "AbortError" });
+    workers[0].dispatch("message", { type: "partial-files", directory: "octree-viewer-conversions", names });
+    assert.equal(await converter.cancel(), true);
+    await rejected;
+    assert.equal(workers[0].terminated, true);
+    assert.deepEqual([...storage.entries], []);
+    converter.dispose();
+});
+
+test("orphan partial files of earlier sessions, zones included, are deleted when a converter starts", { concurrency: false }, async () => {
+    const storage = fakeStorage([
+        "conversion-a.oct.partial", "conversion-a.octattrs.partial", "conversion-a.zone-0.partial",
+        "conversion-a.zone-12.partial", "result.oct", "conversion-a.zone-0.oct",
+    ]);
     const converter = createConverter({ storage });
     for (let i = 0; i < 10; i++) await new Promise(setImmediate);
-    assert.deepEqual([...storage.entries], ["result.oct"]);
+    assert.deepEqual([...storage.entries].sort(), ["conversion-a.zone-0.oct", "result.oct"]);
     converter.dispose();
 });

@@ -111,6 +111,10 @@ def main() -> None:
     spool_tiers_import = 'import { createSpoolHost } from "./spool-tiers.mjs";\n'
     converter_worker_js = require_replace(converter_worker_js, spool_tiers_import, "", "spool tiers import")
     inline_spool_tiers_js = re.sub(r"^export ", "", spool_tiers_js, flags=re.MULTILINE)
+    # The page script also needs removeWithRetry (cancel cleanup), so converter-api's import goes too.
+    converter_api_js = require_replace(
+        converter_api_js, 'import { removeWithRetry } from "./spool-tiers.mjs";\n\n', "", "converter API spool tiers import"
+    )
     converter_worker_source = (
         f'const __CONVERTER_WASM_BYTES__ = Uint8Array.from(atob("{wasm_bytes}"), '
         "(value) => value.charCodeAt(0));\n"
@@ -198,6 +202,8 @@ def main() -> None:
         + metrics_js.replace("export const ", "const ").replace("export function ", "function ")
         + "\n"
         + rendering_budget_js.replace("export const ", "const ").replace("export function ", "function ")
+        + "\n"
+        + inline_spool_tiers_js
         + "\n"
         + converter_api_js
         + "\n"

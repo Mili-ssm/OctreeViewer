@@ -1,3 +1,5 @@
+import { removeWithRetry } from "./spool-tiers.mjs";
+
 const PARTIAL_PATTERN = /^conversion-.*\.partial$/;
 
 /**
@@ -16,20 +18,11 @@ async function removeOrphanPartials(storage, directoryName = "octree-viewer-conv
     }
 }
 
+// Chrome releases a terminated worker's sync access handles ~2 s later; names still locked after
+// the retry window are left for the next start's orphan cleanup.
 async function removePartials(storage, directoryName, names) {
     const directory = await (await storage.getDirectory()).getDirectoryHandle(directoryName);
-    for (const name of names) {
-        // A terminated worker releases its sync access handles asynchronously.
-        for (let attempt = 0; attempt < 20; attempt++) {
-            try {
-                await directory.removeEntry(name);
-                break;
-            } catch (error) {
-                if (error?.name === "NotFoundError") break;
-                await new Promise((resolve) => setTimeout(resolve, 50));
-            }
-        }
-    }
+    await removeWithRetry(directory, names);
 }
 
 /**
