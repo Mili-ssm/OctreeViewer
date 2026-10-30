@@ -2772,6 +2772,63 @@ fn serial_core_matches_native_on_the_variable_chunk_laz() {
     }
 }
 
+/// Serial conversion over a `HybridSpoolStore` (RAM budget unlimited) against a `MemSpoolStore`.
+fn assert_hybrid_matches_mem(input: &std::path::Path, options: ConvertOptions, label: &str) {
+    use std::io::Cursor;
+    use viewer_convert_core::{
+        HybridConfig, HybridSpoolStore, LasFactory, MemBytes, NoClock, VecPageTier, VecRamTier,
+        convert_serial,
+    };
+    let reference = run_serial(input, options);
+    let factory = LasFactory::new(MemBytes(fs::read(input).unwrap().into()));
+    let store = HybridSpoolStore::new(
+        VecRamTier::new(),
+        VecPageTier::new(1, None),
+        HybridConfig::web(u64::MAX),
+        false,
+    )
+    .unwrap();
+    let output = convert_serial(
+        &factory,
+        &store,
+        &NoClock,
+        options,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        &mut |_| true,
+    )
+    .unwrap();
+    assert!(
+        output.geometry.into_inner() == reference.geometry,
+        "{label}: .oct bytes differ"
+    );
+    assert!(
+        output.attributes.into_inner() == reference.attributes,
+        "{label}: .octattrs bytes differ"
+    );
+    assert_eq!((store.live_ids(), store.segment_count()), (0, 0), "{label}");
+    let stats = store.stats();
+    assert_eq!((stats.live_payload_bytes, stats.ram_retained_bytes), (0, 0));
+    assert!(stats.ram_peak_bytes > 0, "{label}: nothing was spooled");
+}
+
+#[test]
+fn hybrid_store_matches_mem_store_on_the_small_las_and_the_variable_chunk_laz() {
+    for relative in [
+        "data/samples/fs_e430_n4008_18.las",
+        "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz",
+    ] {
+        let input = workspace_path(relative);
+        for divisions in [2, 8] {
+            let options = ConvertOptions::new(4096, 0.01)
+                .unwrap()
+                .with_spatial_divisions(divisions)
+                .unwrap();
+            assert_hybrid_matches_mem(&input, options, &format!("{relative}/{divisions}"));
+        }
+    }
+}
+
 #[test]
 fn serial_core_matches_native_on_synthetic_fixtures_for_each_worker_count() {
     let tmp = test_dir();
