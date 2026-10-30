@@ -46,7 +46,7 @@ else
 fi
 # Converts fixtures with the serial core path on wasm32 (Node) and with the native CLI path and
 # compares the SHA-256 of the .oct/.octattrs pair (M3a). Autzen COPC is used when the cargo registry has it.
-step "convert parity wasm32" bash -c 'set -euo pipefail; cargo build -q --release -p convert_parity --target wasm32-unknown-unknown --lib $0 && cargo build -q --release -p convert_parity --bin native_convert $0 && node tools/convert_parity/run.mjs' "$CARGO_MODE"
+step "convert parity wasm32" bash -c 'set -euo pipefail; cargo build -q --release -p convert_parity --target wasm32-unknown-unknown --lib $0 && cargo build -q --release -p convert_parity --bin native_convert --bin native_hybrid $0 && node tools/convert_parity/run.mjs' "$CARGO_MODE"
 # Runs the real viewer_wasm glue (wasm-bindgen --target web) under Node against the native CLI path
 # with a tiny spool budget. The CLI must match Cargo.lock's wasm-bindgen; CHECK_WASM_BINDINGS=0 skips it.
 wanted_bindgen=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)

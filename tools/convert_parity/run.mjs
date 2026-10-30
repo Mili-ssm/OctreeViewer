@@ -1,7 +1,7 @@
 // Compares the wasm32 serial conversion with the native CLI path, case by case (SHA-256 of the
 // `.oct` and `.octattrs`). Build first:
 //   cargo build --release -p convert_parity --target wasm32-unknown-unknown --lib
-//   cargo build --release -p convert_parity --bin native_convert
+//   cargo build --release -p convert_parity --bin native_convert --bin native_hybrid
 // Exits non-zero on any mismatch, failed conversion or single-block case that must be multi-block.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -13,6 +13,7 @@ import { join } from "node:path";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const wasmPath = join(root, "target/wasm32-unknown-unknown/release/convert_parity.wasm");
 const nativeBin = join(root, "target/release/native_convert");
+const hybridBin = join(root, "target/release/native_hybrid");
 const workDir = join(root, "target/convert_parity");
 mkdirSync(workDir, { recursive: true });
 
@@ -120,5 +121,32 @@ for (const { name, input, ppb, divisions, multi } of cases) {
   console.log(
     `${problems.length ? "FAIL" : "ok  "} ${name} blocks=${wasm.blocks} wasm=${wasm.oct.slice(0, 12)} native=${native.oct.slice(0, 12)} attrs=${wasm.attrs.slice(0, 12)}/${native.attrs.slice(0, 12)}${detail}`,
   );
+}
+// The native 4x harness (`native_hybrid`, file spill zones, one worker) must write the same pair as
+// the CLI whether the budget forces spilling (64 KiB) or not (2 GiB).
+const hybridCases = cases.filter(({ name }) => name === "small-default" || name === "synthetic-4096-d8");
+for (const { name, input, ppb, divisions } of hybridCases) {
+  const native = nativeConvert(name, input, ppb, divisions);
+  for (const [label, budget, spills] of [["64k", 65536, true], ["2g", 2 ** 31, false]]) {
+    const output = join(workDir, `${name}-hybrid-${label}.oct`);
+    const zones = join(workDir, `${name}-zones-${label}`);
+    rmSync(zones, { recursive: true, force: true });
+    const args = [input, output, "--divisions", String(divisions), "--points-per-block", String(ppb),
+      "--spool-budget-bytes", String(budget), "--zones-dir", zones];
+    const run = spawnSync(hybridBin, args, { encoding: "utf8" });
+    if (run.status !== 0) throw new Error(`native_hybrid failed: ${run.stderr}`);
+    const report = JSON.parse(run.stdout);
+    const problems = [];
+    if (report.octSha256 !== native.oct) problems.push("oct differs");
+    if (report.octattrsSha256 !== native.attrs) problems.push("octattrs differs");
+    if (report.blocks !== native.blocks) problems.push("block count differs");
+    if (spills !== report.spilledSpools > 0) problems.push(`spilledSpools=${report.spilledSpools}`);
+    rmSync(zones, { recursive: true, force: true });
+    failed ||= problems.length > 0;
+    const detail = problems.length ? ` (${problems.join(", ")})` : "";
+    console.log(
+      `${problems.length ? "FAIL" : "ok  "} ${name} hybrid-${label} blocks=${report.blocks} spilled=${report.spilledSpools} zones=${report.estimate.zones} ms=${report.elapsedMs} oct=${report.octSha256.slice(0, 12)}${detail}`,
+    );
+  }
 }
 process.exit(failed ? 1 : 0);
