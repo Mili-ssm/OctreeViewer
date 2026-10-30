@@ -22,5 +22,5 @@ This is an experimental opt-in identity, not a promoted default. V5 remains the 
 
 The native/async readers, exact checkpoint recovery and Blob/OPFS WASM paths were exercised with
 small fixtures. See [integration evidence](../../records/benchmarks/data/storage-v7-v73-integration-2026-10-25.json)
-and the [V7 plan](../../explanation/format-v7-plan.md). Full-corpus conversion/size/latency comparisons
+and the [V7 plan](../../plans/format-v7-plan.md). Full-corpus conversion/size/latency comparisons
 remain pending; attribute-only sampling does not certify this revision's end-to-end performance.

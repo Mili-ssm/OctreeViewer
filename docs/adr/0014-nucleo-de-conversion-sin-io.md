@@ -30,4 +30,4 @@ división de la API pública de `viewer_convert` y una forma serializable de los
 El rendimiento nativo empeora más de 3% o los SHA nativo y wasm divergen.
 
 ## Evidencia
-[Spec del conversor web paralelo](../explanation/conversor-web-paralelo.md)
+[Spec del conversor web paralelo](../plans/conversor-web-paralelo.md)

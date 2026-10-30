@@ -3,7 +3,7 @@
 Development identity: major **7**, revision **1**, explicitly selected as `v7.1-pre`.
 Final V7 (revision zero) and unimplemented revisions are rejected. This is a working migration
 baseline, not the final V7 storage design. V5 remains the operational default until the
-[V7 promotion criteria](../../explanation/format-v7-plan.md) are met; V5/V6 are scheduled for retirement.
+[V7 promotion criteria](../../plans/format-v7-plan.md) are met; V5/V6 are scheduled for retirement.
 
 ## Binary contract
 
@@ -65,4 +65,4 @@ cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct \
 
 V7 changes that alter physical interpretation will require another exact development revision;
 the final identity must not be enabled by accepting every major-7 header. See the
-[plan](../../explanation/format-v7-plan.md) for async integration, format candidates and retirement gates.
+[plan](../../plans/format-v7-plan.md) for async integration, format candidates and retirement gates.

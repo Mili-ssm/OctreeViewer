@@ -3,7 +3,7 @@
 > Registro fechado. Cifras válidas solo para esta revisión (`74ef00f` para los contadores nativos),
 > estos navegadores y este equipo (AMD Ryzen AI 9 365, 30 GB de RAM, NVMe, Linux 7.2.11). Diseño bajo
 > prueba: «Spools por arenas de trabajo» en
-> [conversor-web-paralelo](../../explanation/conversor-web-paralelo.md).
+> [conversor-web-paralelo](../../plans/conversor-web-paralelo.md).
 
 ## Conclusión
 

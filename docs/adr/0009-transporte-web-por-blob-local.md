@@ -20,4 +20,4 @@ Sin fuentes remotas; se evita introducir async/concurrencia por extrapolación.
 Requisito de producto de servir datasets remotos.
 
 ## Evidencia
-[Plan V7](../explanation/format-v7-plan.md); [inventario](../reference/inventory.md#límites)
+[Plan V7](../plans/format-v7-plan.md); [inventario](../reference/inventory.md#límites)

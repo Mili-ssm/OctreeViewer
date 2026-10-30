@@ -1,6 +1,6 @@
 # 0027 Celdas por nodo en un pool de GPU paginado con máscaras de cobertura
 
-Estado: Propuesta (se acepta al cerrar las Tareas 4, 5 y 17 del [plan de R3](../explanation/render-r3-cubos-en-gpu.md)) · Fecha: 30-10-2026
+Estado: Propuesta (se acepta al cerrar las Tareas 4, 5 y 17 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)) · Fecha: 30-10-2026
 
 ## Contexto
 - [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md) exige cubos por nodo, independientes de la vista y
@@ -60,5 +60,5 @@ Decisión técnica del coordinador:
 - Algún nodo real no es cúbico y diádico, o la memoria GPU/GTT supera 1 GiB en el equipo de referencia.
 
 ## Evidencia
-[Plan de R3](../explanation/render-r3-cubos-en-gpu.md) · [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md) ·
+[Plan de R3](../plans/render-r3-cubos-en-gpu.md) · [ADR 0019](0019-cubos-por-nodo-residentes-en-gpu.md) ·
 [Contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md) · [Requisitos](../requirements.md)

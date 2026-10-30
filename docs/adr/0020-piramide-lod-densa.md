@@ -15,7 +15,7 @@ Estado: Aceptada · Fecha: 30-10-2026
 | Opción | Descartada porque |
 | --- | --- |
 | Mantener 8³ representantes | Mantiene la lectura por vóxel y el incumplimiento de RQ-03 a escala. |
-| Spike medido antes de decidir | El propietario decidió ahora ([P3](../explanation/preguntas-propietario.md)); la medición real de disco y conversión queda en el criterio de revisión. |
+| Spike medido antes de decidir | El propietario decidió ahora ([P3](../requirements.md#resoluciones-del-30-10-2026)); la medición real de disco y conversión queda en el criterio de revisión. |
 
 ## Consecuencias
 - Disco +15–35 % (estimación, sin medir; RQ-07).
@@ -27,4 +27,4 @@ Estado: Aceptada · Fecha: 30-10-2026
 El disco o el coste de conversión medidos incumplen RQ-07.
 
 ## Evidencia
-[Pregunta P3](../explanation/preguntas-propietario.md) · [Plan de render, R4](../explanation/render-y-carga-escala.md) · [Requisitos RQ-07](../requirements.md)
+[Pregunta P3](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R4](../plans/render-y-carga-escala.md) · [Requisitos RQ-07](../requirements.md)

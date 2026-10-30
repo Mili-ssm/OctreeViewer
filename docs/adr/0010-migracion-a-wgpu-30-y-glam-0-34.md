@@ -20,4 +20,4 @@ Validación de navegador pendiente; readback/SwiftShader no es prueba visual.
 Se reproduce y corrige la pérdida de dispositivo, o wgpu publica cambios incompatibles.
 
 ## Evidencia
-[RENDERER_DEPENDENCIES](../explanation/RENDERER_DEPENDENCIES.md)
+[RENDERER_DEPENDENCIES](../records/archive/RENDERER_DEPENDENCIES.md)

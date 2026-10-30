@@ -30,7 +30,7 @@ la lectura del visor, que tendrá decisión propia.
 La entrega admite cabeceras COOP/COEP, o las medidas muestran que el escritor único domina.
 
 ## Evidencia
-[Spec del conversor web paralelo](../explanation/conversor-web-paralelo.md)
+[Spec del conversor web paralelo](../plans/conversor-web-paralelo.md)
 
 ## Revisión 30-10-2026
 - [ADR 0024](0024-hilos-wasm-opcionales-con-coop-coep.md): si la página está aislada, pueden usarse hilos wasm con memoria compartida; este pool sigue siendo la ruta general.

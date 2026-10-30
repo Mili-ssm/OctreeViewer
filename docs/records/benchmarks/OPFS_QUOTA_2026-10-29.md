@@ -2,7 +2,7 @@
 
 > Registro fechado. Cifras válidas solo para estos navegadores y este equipo (Linux 7.2.11, `/home` en
 > btrfs con `compress=zstd:1`, disco de 953 GB). La cuota depende del disco: no se traslada a otros
-> equipos. Diseño bajo prueba: [conversor-web-paralelo](../../explanation/conversor-web-paralelo.md)
+> equipos. Diseño bajo prueba: [conversor-web-paralelo](../../plans/conversor-web-paralelo.md)
 > (S8). Continúa el hueco «cuota de un perfil real y `persist()` no medidos» de
 > [OPFS_ARENA_SPIKE_2026-10-29.md](OPFS_ARENA_SPIKE_2026-10-29.md).
 
@@ -26,7 +26,7 @@ FIFO/LIFO, más con «mayor primero») supera los 40 GiB con la salida y queda s
 cuota por defecto (10 GiB) no admite ninguna variante.
 
 **Estimación usada:** la de la spec (≈ 19 GiB de spools vivos + ≈ 7,5 GB de salida ≈ 27 GB); véase
-[conversor-web-paralelo](../../explanation/conversor-web-paralelo.md) (hito M6 y spike S8 en «Hitos» y
+[conversor-web-paralelo](../../plans/conversor-web-paralelo.md) (hito M6 y spike S8 en «Hitos» y
 «Spikes»).
 
 ### Decisiones para el propietario
@@ -38,7 +38,7 @@ cuota por defecto (10 GiB) no admite ninguna variante.
    (headless, perfil nuevo) con `estimate().quota` = 10 GiB, así que `estimate()` es inutilizable como
    preflight. No se sabe dónde falla Chrome de verdad (el tope de 40 GiB lo impidió) ni por qué declara
    exactamente 10 GiB; haría falta una prueba mayor o confiar en el aborto ante el fallo de escritura
-   (R4 y R5 de la [spec](../../explanation/conversor-web-paralelo.md#requisitos)) en vez de en la estimación.
+   (R4 y R5 de la [spec](../../plans/conversor-web-paralelo.md#requisitos)) en vez de en la estimación.
 3. **Fallo de cuota en Firefox**: con `FileSystemSyncAccessHandle.write` no se observó
    `QuotaExceededError`: `write` devolvió 0 bytes (escritura corta) a 10 GiB − 1 MiB (que sea la cuota es
    una inferencia). El aborto limpio de R5 debe tratar una

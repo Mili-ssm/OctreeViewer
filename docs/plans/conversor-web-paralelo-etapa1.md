@@ -1,5 +1,7 @@
 # Conversor web paralelo — plan de la etapa 1
 
+Estado: cerrado · 30-10-2026
+
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 

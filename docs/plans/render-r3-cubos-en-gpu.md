@@ -1,5 +1,7 @@
 # R3 — Cubos por nodo residentes en GPU: plan de implementación
 
+Estado: pendiente · 30-10-2026
+
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
@@ -21,9 +23,9 @@ Chrome (arnés R0).
 [ADR 0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (diseño de este plan),
 [requisitos](../requirements.md) RF-03 a RF-08, RQ-01, RQ-02, RQ-05, RQ-09;
 [plan de render](render-y-carga-escala.md) (arnés R0, criterios de parada);
-[contrato de celdas](REGIONAL_VOXEL_LOD.md).
+[contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md).
 
-**Estado (30-10-2026):** redactado tras el análisis del arquitecto y enmendado tras su pre-mortem (abajo).
+**Progreso (30-10-2026):** redactado tras el análisis del arquitecto y enmendado tras su pre-mortem (abajo).
 Ninguna tarea empezada. Requisito previo: R1-T1a cerrada (toca el código ★ de la Tarea 9).
 
 ## Decisiones técnicas del coordinador (30-10-2026)

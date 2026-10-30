@@ -64,7 +64,7 @@ Pasan 354 tests del workspace; cuatro quedan ignorados en esa suite. Los dos tes
 ignorados del renderer pasan por separado con Vulkan/lavapipe. También pasan fmt, Clippy
 workspace/all-targets y Clippy WASM con `-D warnings`, compilación WASM release, generación de
 bindings y paquete local. Los tests del host sin cambios conservan la validación de la
-[migración anterior](RENDERER_DEPENDENCIES.md); esta entrega añade comprobación de sintaxis del
+[migración anterior](../records/archive/RENDERER_DEPENDENCIES.md); esta entrega añade comprobación de sintaxis del
 nuevo probe, sin atribuirle una nueva pasada de todas las suites JS/Python.
 
 [Probe WebGPU](../../examples/web-host/tests/lod-regions.browser.mjs), ejecutado con Playwright MCP:

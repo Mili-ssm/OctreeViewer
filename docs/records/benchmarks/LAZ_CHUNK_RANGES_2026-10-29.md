@@ -4,8 +4,8 @@
 > 7.2.11), `rustc 1.101.0-nightly (41089d07a 2026-10-27)`, Node v22.23.1 y `laz` 0.13.0 / `las` 0.11.2.
 > Commit base: `1cde1a9`. Código: [`tools/laz_chunk_probe`](../../../tools/laz_chunk_probe/). Datos crudos:
 > [JSON](data/laz-chunk-ranges-2026-10-29.json). Contexto: tarea 1 del plan de la
-> [etapa 3](../../explanation/conversor-web-paralelo-etapa3.md) y spec del
-> [conversor web paralelo](../../explanation/conversor-web-paralelo.md).
+> [etapa 3](../../plans/conversor-web-paralelo-etapa3.md) y spec del
+> [conversor web paralelo](../../plans/conversor-web-paralelo.md).
 
 ## Conclusión
 

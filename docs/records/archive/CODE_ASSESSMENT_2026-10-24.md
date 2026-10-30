@@ -28,7 +28,7 @@ relativos de README, documentos activos, especificaciones de formato y guía web
 | `viewer_wasm`: Blob síncrono en worker, un bloque por actualización, LOD progresivo, conversión OPFS en dos pasadas. | `browser_io.rs`, `lod_dataset.rs`, `browser_convert.rs` y `bindings.rs` respaldan el flujo. | Alineado; transición y memoria conjunta sin cierre. |
 | `examples/web-host`: API embebible, cola, cancelación/reinicio, paquete local y métricas. | `viewer-api.mjs`, `converter-api.mjs`, workers y tests Node cubren lógica con dobles. | Contrato general alineado; fuga de recursos en fallo de inicialización. |
 
-La [migración wgpu 30/glam 0.34](../../explanation/RENDERER_DEPENDENCIES.md) está implementada; se corrigió
+La [migración wgpu 30/glam 0.34](RENDERER_DEPENDENCIES.md) está implementada; se corrigió
 «migración pendiente» en el README. El README/inventario aún declaran correctamente las
 omisiones de CRS, flags y Extra Bytes, EPT remoto, transporte remoto del visor y v6 final.
 
@@ -57,7 +57,7 @@ fue `init failed: no GPU adapter supports this surface`; `navigator.gpu` existí
 `requestAdapter()` devolvió `null`. La consola registró un 404 de `favicon.ico` y un aviso
 del adapter. Por ello, esta sesión no valida presentación, cámara, picking, OPFS,
 recuperación ni uso móvil real. El paquete WASM generado local no se verificó byte a byte
-contra HEAD. La [evidencia histórica](../../explanation/RENDERER_DEPENDENCIES.md#navegador-resultado-parcial-y-contraejemplo-independiente)
+contra HEAD. La [evidencia histórica](RENDERER_DEPENDENCIES.md#navegador-resultado-parcial-y-contraejemplo-independiente)
 ya separaba readback de presentación.
 
 ## 3. Problemas y refactorización

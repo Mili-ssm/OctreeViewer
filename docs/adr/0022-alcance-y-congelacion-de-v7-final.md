@@ -3,7 +3,7 @@
 Estado: Aceptada · Fecha: 30-10-2026
 
 ## Contexto
-El [plan V7](../explanation/format-v7-plan.md) (l.21–22) reconocía que no había mínimos de hardware, almacenamiento ni tolerancias acordados antes de congelar el formato. Ahora R4 ([ADR 0020](0020-piramide-lod-densa.md)), R5 y la rejilla global ([ADR 0021](0021-rejilla-global-determinista-y-crs.md)) cambian el formato.
+El [plan V7](../plans/format-v7-plan.md) (l.21–22) reconocía que no había mínimos de hardware, almacenamiento ni tolerancias acordados antes de congelar el formato. Ahora R4 ([ADR 0020](0020-piramide-lod-densa.md)), R5 y la rejilla global ([ADR 0021](0021-rejilla-global-determinista-y-crs.md)) cambian el formato.
 
 ## Decisión
 - R4, R5 (jerarquía paginada) y la rejilla global entran en V7 como nuevas revisiones `v7.N-pre` ([ADR 0005](0005-identidades-exactas-v7n-pre-por-candidato.md)).
@@ -28,4 +28,4 @@ El [plan V7](../explanation/format-v7-plan.md) (l.21–22) reconocía que no hab
 RQ-07 no se cumple con la pirámide densa, o R5 exige un cambio incompatible tras el congelado.
 
 ## Evidencia
-[Plan V7](../explanation/format-v7-plan.md) · [Requisitos RQ-07, RF-24](../requirements.md)
+[Plan V7](../plans/format-v7-plan.md) · [Requisitos RQ-07, RF-24](../requirements.md)

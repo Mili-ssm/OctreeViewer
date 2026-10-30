@@ -17,22 +17,26 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | [Formato V5](reference/format/FORMAT_V5.md) | Especificación del `.oct`/`.octattrs` predeterminado. | vivo |
 | [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md) | Especificaciones de las revisiones V7 experimentales. | vivo |
 
+## Planes y specs
+
+Cada plan lleva en la línea 3 `Estado: activo | pendiente | en pausa | cerrado · dd-mm-aaaa`
+(`grep -n '^Estado:' docs/plans/*.md` da el estado de todos). Los cerrados no se reescriben: el
+trabajo nuevo va en un plan nuevo.
+
+| Documento | Contenido | Estado |
+| --- | --- | --- |
+| [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
+| [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
+| [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | pendiente |
+| [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
+| [Etapa 1](plans/conversor-web-paralelo-etapa1.md), [2](plans/conversor-web-paralelo-etapa2.md), [3](plans/conversor-web-paralelo-etapa3.md), [4](plans/conversor-web-paralelo-etapa4.md) del conversor web | S0/M0/S1; trabajos por nodo, S8, S9 y M1; S2, S10, M2 y M3a; M3b con zonas OPFS y retirada del conversor antiguo. | cerrado |
+
 ## Explicación
 
 | Documento | Contenido | Marca |
 | --- | --- | --- |
-| [Plan V7](explanation/format-v7-plan.md) | Recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | vivo |
-| [Conversor web paralelo](explanation/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas. | vivo |
-| [Conversor web paralelo, etapa 1](explanation/conversor-web-paralelo-etapa1.md) | Plan: independencia de workers, igualdad LZ4 nativo/wasm32, referencia CLI y spike de arenas OPFS. | vivo |
-| [Conversor web paralelo, etapa 2](explanation/conversor-web-paralelo-etapa2.md) | Plan: modelo de trabajos por nodo, S0 con bloques reales de Belvedere, cuota real (S8), un fichero OPFS por spool (S9) y M1. | vivo |
-| [Render y carga a escala](explanation/render-y-carga-escala.md) | Plan: arnés y línea base, mejoras de LOD y carga sin decisiones del propietario (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | vivo |
-| [R3: cubos por nodo en GPU](explanation/render-r3-cubos-en-gpu.md) | Plan: celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | vivo |
-| [Preguntas pendientes](explanation/preguntas-propietario.md) | Decisiones del propietario que bloqueaban fases concretas: resueltas el 30-10-2026; las abiertas, en [requisitos](requirements.md#preguntas-abiertas). | vivo |
-| [Conversor web paralelo, etapa 3](explanation/conversor-web-paralelo-etapa3.md) | Plan: spikes S2 (rangos de chunks LAZ) y S10 (RAM del híbrido), núcleo `viewer_convert_core` (M2) y conversión web con un worker (M3a). | vivo |
-| [Conversor web paralelo, etapa 4](explanation/conversor-web-paralelo-etapa4.md) | Plan: M3b, un worker a escala Belvedere con spools en RAM de JS y zonas OPFS paginadas (decisión 5), y retirada del conversor antiguo. | vivo |
 | [Resolución regional LOD](explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback y regresiones del LOD Replacement. | vivo |
 | [Resúmenes por nodo](explanation/NODE_ATTRIBUTE_SUMMARIES.md) | Contenedores experimentales de resúmenes y diccionario conjunto. | vivo |
-| [Dependencias del renderer](explanation/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, checks y validación parcial de navegador. | vivo |
 
 ## Registros
 
@@ -79,6 +83,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Evaluación 24-10-2026](records/archive/CODE_ASSESSMENT_2026-10-24.md) | Contraste de documentación, checks y próximos pasos. | histórico |
 | [Evaluación de render 30-10-2026](records/archive/RENDER_ASSESSMENT_2026-10-30.md) | Carga y render a escala (cientos de GB, 1–8 px): mapa, hallazgos B1–B7, investigación externa y mejoras Q1–Q8. | histórico |
 | [Evaluación 28-10-2026](records/archive/CODE_ASSESSMENT_2026-10-28.md) | Revisión por áreas, plan de 15 tareas, decisiones, verificación y pendientes. | histórico |
+| [Dependencias del renderer](records/archive/RENDERER_DEPENDENCIES.md) | Migración a wgpu 30/glam 0.34 (14-10-2026), checks y validación parcial de navegador; decisión en el ADR 0010. | histórico |
 | [Historial técnico](records/archive/DEVELOPMENT_HISTORY.md) | Snapshot anterior a v5. | histórico |
 
 ## Decisiones
@@ -88,3 +93,16 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 ## Datos y recursos
 
 [Datasets de escala](../data/datasets/README.md) y [muestras](../data/samples/README.md) (procedencia y preparación); [host web](../examples/web-host/README.md) (API, build, probes; en inglés); [capturas](point-cloud-previews/) de nubes de ejemplo.
+
+## Dónde va cada cosa
+
+| Contenido nuevo | Destino | Regla |
+| --- | --- | --- |
+| Requisito, restricción, supuesto o pregunta abierta para el propietario | [requirements.md](requirements.md) | IDs estables (`RF-`, `RQ-`, `CON-`, `ASM-`, `OQ-`); no se renumeran |
+| Decisión de diseño duradera | [adr/](adr/README.md) | `Estado:` en la línea 3; una aceptada se sustituye o enmienda con un ADR nuevo |
+| Spec o plan de implementación | [plans/](plans/) | `Estado:` en la línea 3; enlazarlo en este índice |
+| Contrato vigente (formato, API, límites) | [reference/](reference/) | Se actualiza en el mismo cambio que el código |
+| Por qué funciona algo así, sin pasos | [explanation/](explanation/) | Vivo; los resultados fechados van a registros |
+| Medida, spike, evaluación o diagnóstico | [records/benchmarks/](records/benchmarks/) | `NOMBRE_dd-mm-aaaa.md`, inmutable; perfil, equipo y revisión dentro |
+| Documento retirado o sustituido | [records/archive/](records/archive/) | Inmutable salvo enlaces rotos |
+| Estado y prioridades activas | [README](../README.md#prioridades-pendientes) | Solo allí |

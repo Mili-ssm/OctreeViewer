@@ -1,6 +1,6 @@
 # M3b: conversión de Belvedere en los navegadores (30-10-2026)
 
-Registro fechado; solo admite añadidos hasta el merge de la rama. Contexto: [plan de la etapa 4](../../explanation/conversor-web-paralelo-etapa4.md) (Tarea 6, decisiones D2 y D3, enmiendas C6 y C9). Referencias SHA: [R1](R1_REFERENCE_SHA_2026-10-29.md). Puerta Node previa: [M3b Node](M3B_NODE_GATE_2026-10-30.md). Datos crudos: [JSONL](data/m3b-belvedere-2026-10-30.jsonl), [driver](data/m3b-belvedere-2026-10-30-driver.mjs), [página](data/m3b-belvedere-2026-10-30.html).
+Registro fechado; solo admite añadidos hasta el merge de la rama. Contexto: [plan de la etapa 4](../../plans/conversor-web-paralelo-etapa4.md) (Tarea 6, decisiones D2 y D3, enmiendas C6 y C9). Referencias SHA: [R1](R1_REFERENCE_SHA_2026-10-29.md). Puerta Node previa: [M3b Node](M3B_NODE_GATE_2026-10-30.md). Datos crudos: [JSONL](data/m3b-belvedere-2026-10-30.jsonl), [driver](data/m3b-belvedere-2026-10-30-driver.mjs), [página](data/m3b-belvedere-2026-10-30.html).
 
 ## Entorno y método
 

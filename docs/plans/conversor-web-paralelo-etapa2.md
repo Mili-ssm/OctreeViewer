@@ -1,9 +1,11 @@
 # Conversor web paralelo — plan de la etapa 2
 
+Estado: cerrado · 30-10-2026
+
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)). Tarea 4 (M1): pasos 1–4 y 6 hechos; R7 pasa con la cola de listos, que es el planificador por defecto, también en la sesión final sobre el candidato a merge (paso 5, [registro](../records/benchmarks/M1_R7_2026-10-29.md#sesión-final-sobre-el-candidato-a-merge)).
+**Progreso (29-10-2026):** Tareas 1–3 hechas ([modelo por nodos](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md), [cuota OPFS](../records/benchmarks/OPFS_QUOTA_2026-10-29.md)); S0 con bloques reales de Belvedere corre en `check.sh`. La Tarea 1 activó el criterio de parada para arenas por trabajo; el propietario decidió seguir con la variante c (un fichero OPFS por spool) tras el spike S9 (Tarea 5). La Tarea 5 está hecha; en la web, S9 llevó al híbrido RAM/OPFS ([decisión 2](#tarea-5-spike-s9--ficheros-opfs-por-spool)). Tarea 4 (M1): pasos 1–4 y 6 hechos; R7 pasa con la cola de listos, que es el planificador por defecto, también en la sesión final sobre el candidato a merge (paso 5, [registro](../records/benchmarks/M1_R7_2026-10-29.md#sesión-final-sobre-el-candidato-a-merge)).
 
 **Objetivo:** cerrar las tres incógnitas que dejó la etapa 1 (pico de los trabajos por nodo, S0
 con bloques reales, cuota real) y llegar a M1: el pipeline nativo expresado con traits y trabajos
@@ -105,7 +107,7 @@ Decisión del propietario (29-10-2026): la Tarea 4 sigue con la variante c; este
 - [x] **Criterio de parada:** si algún navegador falla por debajo de 700 ficheros vivos o de 8 × 81 handles abiertos, o el rendimiento cae más de 2 × frente a la arena única, volver al propietario antes del paso 3 de la Tarea 4.
 - [x] **Paso 4: commit** — `docs(bench): record OPFS per-spool file spike`.
 
-**Estado (29-10-2026):** hecha ([registro](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox sin errores, pero con un coste fijo por fichero que incumple el criterio de 2 × (cifras en el registro). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
+**Progreso (29-10-2026):** hecha ([registro](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md)). Un fichero por spool funciona en Chrome y Firefox sin errores, pero con un coste fijo por fichero que incumple el criterio de 2 × (cifras en el registro). **Decisión del propietario 2:** los spools web siguen el híbrido de la spec (segmentos en RAM que se vuelcan a su propio fichero al superar un presupuesto); el `SpoolStore` nativo no cambia, así que el paso 3 de la Tarea 4 sigue. Un spike S10 mide el pico de RAM del híbrido antes de M3b.
 
 ---
 

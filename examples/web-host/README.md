@@ -228,7 +228,7 @@ converter.dispose();
 
 The host decides whether to download or open `result.file`. Extra Bytes and CRS are omitted.
 `timings.totalMs` is a browser wall-clock measurement. Large-file behaviour and quotas per browser are
-recorded in the [stage 4 plan](../../docs/explanation/conversor-web-paralelo-etapa4.md).
+recorded in the [stage 4 plan](../../docs/plans/conversor-web-paralelo-etapa4.md).
 
 Use the keyboard-accessible **Open built-in sample** button to load the included v5 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
@@ -565,7 +565,7 @@ With fresh bindings, run `tests/async-format-reader.browser.mjs` as a module Wor
 asynchronous `Blob.arrayBuffer()` payload reads, XYZ/RGB and typed U16 materialization, companion
 identity and CRC rejection without a full-file read, plus shared read quota, concurrent calls
 and scheduler tickets/retry. Equivalent V7.3 fixtures passed with fresh bindings ([evidence](../../docs/records/benchmarks/data/storage-v7-v73-integration-2026-10-25.json)). Visual
-LOD publication and navigation measurements remain pending in the [V7 plan](../../docs/explanation/format-v7-plan.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
+LOD publication and navigation measurements remain pending in the [V7 plan](../../docs/plans/format-v7-plan.md#3-reader-lógico-único-concurrencia-y-transporte-asíncrono).
 
 ### Opt-in conversion revisions
 

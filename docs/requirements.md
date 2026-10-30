@@ -117,11 +117,13 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 
 1. Fusionar `feat/web-converter-stage4` en `master` tras `scripts/check.sh` (W1).
 2. Escala: R3 (cubos en GPU) → R4 (pirámide densa y rejilla global) → R5 (jerarquía paginada y
-   remoto) → congelar V7 final ([plan de render](explanation/render-y-carga-escala.md)).
+   remoto) → congelar V7 final ([plan de render](plans/render-y-carga-escala.md)).
 3. API pública y funciones RF-10 a RF-15.
 4. Conversor web: M6 (Majadas) con un worker; M4/M5 solo si M6 supera 60 min o la experiencia lo pide.
 
 ## Resoluciones del 30-10-2026
+
+Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/explanation/preguntas-propietario.md`.
 
 | Pregunta | Resolución | Registro |
 | --- | --- | --- |
@@ -140,8 +142,8 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | Orden de V7 final | Incluye R4, R5 y la rejilla global. | ADR 0022 |
 | LZ4 | Codificador propio. | ADR 0025 |
 | Límite de atributos | El escritor rechaza más de 256. | ADR 0007 |
-| Plan de render | Cancelar R1-T2; R2b absorbida por R4; R1-T6 dentro de R5; R1-T1b pasa a modos de px. | [Plan de render](explanation/render-y-carga-escala.md) |
-| Pool web | Medir M6 con un worker antes de M4/M5. | [Spec](explanation/conversor-web-paralelo.md) |
+| Plan de render | Cancelar R1-T2; R2b absorbida por R4; R1-T6 dentro de R5; R1-T1b pasa a modos de px. | [Plan de render](plans/render-y-carga-escala.md) |
+| Pool web | Medir M6 con un worker antes de M4/M5. | [Spec](plans/conversor-web-paralelo.md) |
 | Potree | Paridad cualitativa; abierta a métricas. | OQ-02 |
 
 ## Preguntas abiertas

@@ -68,6 +68,7 @@ step "python web-host tests" python3 -m unittest discover -s examples/web-host/t
 step "python benchmark tests" python3 -m unittest discover -s crates/viewer_convert/benchmarks -p 'test_*.py'
 step "python scripts tests" python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 step "docs links" python3 scripts/check_docs_links.py
+step "docs index" python3 scripts/check_docs_index.py
 step "version literals" bash scripts/check_version_literals.sh
 # The fuzz crate is outside the workspace; FUZZ_CHECK=0 skips both steps (no nightly/C++ toolchain).
 if [ "${FUZZ_CHECK:-1}" = "0" ]; then

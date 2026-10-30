@@ -36,7 +36,7 @@ Decisión 5 del propietario (30-10-2026):
 | Presupuesto de 4 GiB | Mismo tiempo dentro de la dispersión y 2,3 GiB más de PSS ([M3b](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md)). |
 
 ## Consecuencias
-- Enmienda las decisiones 2 y 3 de la [spec](../explanation/conversor-web-paralelo.md); el SHA no cambia
+- Enmienda las decisiones 2 y 3 de la [spec](../plans/conversor-web-paralelo.md); el SHA no cambia
   porque el planificador y el orden de commit son los mismos (R1).
 - Resultados ([Node](../records/benchmarks/M3B_NODE_GATE_2026-10-30.md), [navegadores](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md)):
   Belvedere con SHA = R1 en Chrome y Firefox, 2,1–2,9 × `native_hybrid`, PSS 3,4–4,5 GiB; en Node 2,8 ×.
@@ -56,5 +56,5 @@ Decisión 5 del propietario (30-10-2026):
 ## Evidencia
 [Zonas OPFS](../records/benchmarks/OPFS_ZONES_2026-10-30.md) ·
 [Política](../records/benchmarks/HYBRID_POLICY_2026-10-30.md) ·
-[Etapa 4](../explanation/conversor-web-paralelo-etapa4.md) ·
+[Etapa 4](../plans/conversor-web-paralelo-etapa4.md) ·
 [ADR 0014](0014-nucleo-de-conversion-sin-io.md) · [ADR 0015](0015-pool-de-workers-sin-memoria-compartida.md)

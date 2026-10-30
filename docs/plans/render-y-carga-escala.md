@@ -1,9 +1,11 @@
 # Render y carga a escala — plan
 
+Estado: activo · 30-10-2026
+
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
+**Progreso (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
 y enmendado tras su pre-mortem (abajo). R0 hecha; R1 parcial (T0, T3a, T4 y T5 hechas); R2 hecha, con el worker de
 construcción encendido por defecto desde esta rama (`?buildWorker=0` / `buildWorker: false` lo apagan, [ADR 0018](../adr/0018-worker-de-construccion-por-defecto.md)).
 Preguntas P1–P8 resueltas el 30-10-2026 ([requisitos](../requirements.md)). Orden acordado: resto de R1 → R3 → R4 → R5 → V7 final.

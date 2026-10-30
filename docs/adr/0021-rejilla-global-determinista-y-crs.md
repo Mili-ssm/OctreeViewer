@@ -30,4 +30,4 @@ Estado: Aceptada · Fecha: 30-10-2026
 Un caso real exige mezclar CRS en el visor, o la rejilla diádica degrada la precisión de algún CRS.
 
 ## Evidencia
-[Requisitos RF-02, RF-22, RF-23](../requirements.md) · [Plan V7](../explanation/format-v7-plan.md)
+[Requisitos RF-02, RF-22, RF-23](../requirements.md) · [Plan V7](../plans/format-v7-plan.md)

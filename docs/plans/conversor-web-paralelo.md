@@ -1,6 +1,6 @@
 # Conversor web paralelo con paridad CLI
 
-Estado (30-10-2026): spec aprobada (29-10-2026), con enmiendas del pre-mortem; etapas 1–4 cerradas y M3b hecha. Siguiente: M6 (Majadas) con un worker; M4/M5 solo si M6 supera 60 min o la experiencia lo pide (propietario, 30-10-2026). El trabajo del conversor va después de la escala (R3–R5, V7 final) y la API pública ([orden de trabajo](../requirements.md#orden-de-trabajo-acordado)) · Decisiones:
+Estado: en pausa · 30-10-2026 — spec aprobada (29-10-2026), con enmiendas del pre-mortem; etapas 1–4 cerradas y M3b hecha. Siguiente: M6 (Majadas) con un worker; M4/M5 solo si M6 supera 60 min o la experiencia lo pide (propietario, 30-10-2026). El trabajo del conversor va después de la escala (R3–R5, V7 final) y la API pública ([orden de trabajo](../requirements.md#orden-de-trabajo-acordado)) · Decisiones:
 [ADR 0014](../adr/0014-nucleo-de-conversion-sin-io.md),
 [ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md) (enmendado por el [ADR 0024](../adr/0024-hilos-wasm-opcionales-con-coop-coep.md)),
 [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)

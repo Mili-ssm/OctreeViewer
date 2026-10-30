@@ -3,7 +3,7 @@
 Estado: Aceptada · Fecha: 30-10-2026 · Enmienda a [0015](0015-pool-de-workers-sin-memoria-compartida.md)
 
 ## Contexto
-La [ADR 0015](0015-pool-de-workers-sin-memoria-compartida.md) descartó los hilos wasm porque `http.server` y `file://` no sirven COOP/COEP. El propietario no exige esas cabeceras, pero un sitio que las sirva podría aprovechar memoria compartida ([P6](../explanation/preguntas-propietario.md)).
+La [ADR 0015](0015-pool-de-workers-sin-memoria-compartida.md) descartó los hilos wasm porque `http.server` y `file://` no sirven COOP/COEP. El propietario no exige esas cabeceras, pero un sitio que las sirva podría aprovechar memoria compartida ([P6](../requirements.md#resoluciones-del-30-10-2026)).
 
 ## Decisión
 - No se exige COOP/COEP.
@@ -24,4 +24,4 @@ La [ADR 0015](0015-pool-de-workers-sin-memoria-compartida.md) descartó los hilo
 El pool sin memoria compartida cumple las puertas de conversión con M6, o el coste de mantener dos rutas supera la ganancia medida.
 
 ## Evidencia
-[Requisitos CON-02, CON-07](../requirements.md) · [Spec del conversor web paralelo](../explanation/conversor-web-paralelo.md)
+[Requisitos CON-02, CON-07](../requirements.md) · [Spec del conversor web paralelo](../plans/conversor-web-paralelo.md)

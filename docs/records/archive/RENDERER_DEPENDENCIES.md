@@ -45,7 +45,7 @@ primaria de [superficie wgpu](https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfa
 | unittest Python del host / benchmarks del conversor | 11 / 23 tests pasan. |
 | `cargo fmt --all -- --check`, `git diff --check` | Pasan. |
 
-Comandos adicionales al [README](../../CONTRIBUTING.md#checks):
+Comandos adicionales al [README](../../../CONTRIBUTING.md#checks):
 
 ```sh
 WGPU_BACKEND=vulkan VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
@@ -90,7 +90,7 @@ No se publican FPS, ahorro de memoria ni mejoras de rendimiento por actualizar d
 
 Con el WASM `release` y los bindings regenerados desde `f6ec9fd`, se sirvió la raíz en
 `http://127.0.0.1:8767` y se ejecutó
-[`presentation.html`](../../examples/web-host/tests/presentation.html) en Firefox 158.0.1
+[`presentation.html`](../../../examples/web-host/tests/presentation.html) en Firefox 158.0.1
 headless, perfil nuevo con `dom.webgpu.enabled` y `dom.webgpu.service.enabled`. A
 1280×800, el probe existente devolvió `result` en ambos workers: el clear leyó el pixel
 BGRA `[0, 0, 255, 255]`; el visor mostró 4.096 vóxeles, picking central con coordenadas

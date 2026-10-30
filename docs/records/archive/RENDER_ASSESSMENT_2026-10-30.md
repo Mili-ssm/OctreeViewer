@@ -4,7 +4,7 @@ Registro fechado. Objetivo del propietario (30-10-2026): cargar nubes de **cient
 dibujarlas con un tamaño de vóxel en pantalla de **1–8 px**, con una carga que se perciba continua y
 natural (sin saltos, huecos ni bloqueos). Fuentes: revisión de arquitectura del código (líneas de
 `c38cf47`), registros ya mergeados e investigación externa. **[E]** = evidencia en código o registro;
-**[I]** = inferencia. Plan derivado: [render y carga a escala](../../explanation/render-y-carga-escala.md).
+**[I]** = inferencia. Plan derivado: [render y carga a escala](../../plans/render-y-carga-escala.md).
 
 ## Conclusión
 
@@ -86,7 +86,7 @@ histéresis publicados para nubes de puntos.
 
 ## Decisiones que requieren al propietario
 
-Recogidas en [preguntas pendientes](../../explanation/preguntas-propietario.md): primitiva de render
+Recogidas en [preguntas pendientes](../../requirements.md#resoluciones-del-30-10-2026): primitiva de render
 (P1), hardware mínimo (P2), reconversión con pirámide densa (P3), huecos frente a continuidad (P4),
 calidad dinámica 8 px → 1–2 px (P5), transporte remoto y cabeceras COOP/COEP (P6).
 

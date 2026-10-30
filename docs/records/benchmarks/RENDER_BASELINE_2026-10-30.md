@@ -1,6 +1,6 @@
 # Línea base de render y primer A/B de R1 (30-10-2026)
 
-Registro fechado de R0-T1 paso 2 del [plan de render y carga a escala](../../explanation/render-y-carga-escala.md). Mide el arnés `probe-orbit-load.mjs` (Chrome, GPU hardware) sobre dos brazos: **A = `ede7e0a`** (instrumentación, antes de T0/T3a/T4) y **B = `87ef649`** (con el detector de thrash, selección única y métrica de error única). Datos crudos: [JSON por ejecución](data/render-baseline-2026-10-30/) (un `.json`, su `.png` final y su `.log` y la serie de PSS `pss-chrome-tree.txt`).
+Registro fechado de R0-T1 paso 2 del [plan de render y carga a escala](../../plans/render-y-carga-escala.md). Mide el arnés `probe-orbit-load.mjs` (Chrome, GPU hardware) sobre dos brazos: **A = `ede7e0a`** (instrumentación, antes de T0/T3a/T4) y **B = `87ef649`** (con el detector de thrash, selección única y métrica de error única). Datos crudos: [JSON por ejecución](data/render-baseline-2026-10-30/) (un `.json`, su `.png` final y su `.log` y la serie de PSS `pss-chrome-tree.txt`).
 
 ## Entorno y método
 

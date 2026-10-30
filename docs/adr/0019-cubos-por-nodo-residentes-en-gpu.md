@@ -4,7 +4,7 @@ Estado: Aceptada · Fecha: 30-10-2026
 
 ## Contexto
 - La voxelización en CPU por vista del corte completo es el cuello de botella B1 de la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md).
-- La recomendación técnica era splats orientados a pantalla ([P1](../explanation/preguntas-propietario.md)); el propietario exige **cubos 3D**.
+- La recomendación técnica era splats orientados a pantalla ([P1](../requirements.md#resoluciones-del-30-10-2026)); el propietario exige **cubos 3D**.
 - Hardware de referencia EQ-REF: iGPU con ~2 GB compartidos y 16 GB de RAM; PSS de la pestaña ≤ 8 GiB (RQ-05).
 
 ## Decisión
@@ -31,4 +31,4 @@ Estado: Aceptada · Fecha: 30-10-2026
 Los cubos a 4 px no cumplen RQ-01 en EQ-REF.
 
 ## Evidencia
-[Preguntas P1, P2, P4, P5](../explanation/preguntas-propietario.md) · [Plan de render, R3](../explanation/render-y-carga-escala.md) · [Requisitos RF-03 a RF-07](../requirements.md)
+[Preguntas P1, P2, P4, P5](../requirements.md#resoluciones-del-30-10-2026) · [Plan de render, R3](../plans/render-y-carga-escala.md) · [Requisitos RF-03 a RF-07](../requirements.md)

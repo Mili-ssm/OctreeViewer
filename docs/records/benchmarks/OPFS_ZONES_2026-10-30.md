@@ -3,7 +3,7 @@
 > Registro fechado. Cifras válidas solo para este equipo (Linux 7.2.13, 30 GB de RAM, `/home` en btrfs
 > con `compress=zstd:1`, NVMe), Chrome 156.0.8078.73 (`/usr/bin/google-chrome`, headless) y Firefox 157.0
 > (Playwright `firefox-1555`). Tres rondas por celda; se da mediana y [rango]. Contexto: Tarea 1 del
-> [plan de la etapa 4](../../explanation/conversor-web-paralelo-etapa4.md) (decisión 5, D1 «zonas OPFS
+> [plan de la etapa 4](../../plans/conversor-web-paralelo-etapa4.md) (decisión 5, D1 «zonas OPFS
 > paginadas»); antecedentes [S9](OPFS_SPOOL_FILES_2026-10-29.md), [S8](OPFS_QUOTA_2026-10-29.md),
 > [S1](OPFS_ARENA_SPIKE_2026-10-29.md) y [S10](HYBRID_SPOOL_RAM_2026-10-29.md). Datos crudos:
 > [JSONL](data/opfs-zones-2026-10-30.jsonl); [HTML](data/opfs-zones-2026-10-30.html),

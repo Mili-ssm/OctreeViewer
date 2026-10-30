@@ -4,7 +4,7 @@
 > (AMD Ryzen AI 9 365, 30 GB de RAM, Linux 7.2.11, `/home` en btrfs), Chrome 156.0.8078.47 y Firefox 157.0 (Playwright
 > `firefox-1555`), base `8c97198`. Contexto: [S9](OPFS_SPOOL_FILES_2026-10-29.md) (coste por fichero), el
 > [modelo por nodos](NODE_JOB_ARENA_MODEL_2026-10-29.md) (eventos y simulador) y la decisión 2 de la spec
-> ([híbrido](../../explanation/conversor-web-paralelo.md)). Datos: [JSON del modelo](data/hybrid-spool-ram-2026-10-29.json),
+> ([híbrido](../../plans/conversor-web-paralelo.md)). Datos: [JSON del modelo](data/hybrid-spool-ram-2026-10-29.json),
 > [JSONL del navegador](data/hybrid-spool-ram-2026-10-29.jsonl), [página](data/hybrid-spool-ram-2026-10-29.html),
 > [worker/página JS](data/hybrid-spool-ram-2026-10-29.js), [driver](data/hybrid-spool-ram-2026-10-29-driver.mjs);
 > simulador [`model_hybrid_spools.py`](../../../crates/viewer_convert/benchmarks/model_hybrid_spools.py).
