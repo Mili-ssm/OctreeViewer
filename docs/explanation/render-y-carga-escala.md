@@ -138,9 +138,25 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 - [ ] Matriz completa de R0 con el mismo arnés; registro con la comparación y los criterios de éxito; commit.
 
-## Fase R2: puerta de decisión sobre el hilo de render (B4, E13)
+## Fase R2: worker de construcción (B1, B4; decidido por E13)
 
-- [ ] Con los datos de R0 (E5): si la decodificación ≥ 20 % del tiempo ocupado del worker, workers de decodificación con transferibles (patrón de ADR 0015); si no, spike de un **worker de construcción** que posee la caché decodificada y transfiere buffers de instancias al worker de render (ataca B1 sin cambiar la estética). Diseño breve (arquitecto) y pre-mortem antes de implementar.
+La línea base fija la puerta E13: la decodificación es el 0,3–0,9 % del tiempo ocupado del worker y
+la voxelización el 98–99,5 %, así que R2 es el **worker de construcción**. Diseño (arquitecto,
+30-10-2026): un segundo worker posee el lector async, la caché decodificada, el planner, la etapa y
+la voxelización; recibe vistas versionadas (`gen` por dataset/color, `epoch` por cámara/viewport/px)
+con «gana la última»; transfiere el `ArrayBuffer` de instancias (40 B/vóxel) al worker de render, que
+dibuja la última escena (los cubos están en coordenadas de mundo: girar sin reconstruir es válido
+hasta que cambie la profundidad terminal). Mismos bytes por construcción: mismas funciones sin GPU
+(`voxel_grid.rs`, `camera.rs`, `viewer_core`) y cámara transferida como `Float64Array`. Coste:
+escena desfasada entre B y 2B (B = tiempo de construcción: 0,48 s en Majadas, 2,6 s en Belvedere
+8 px). La opción queda **apagada por defecto** hasta que el propietario decida P7/P8.
+
+- [ ] **R2-T1, costura y digest:** tests dorados de digest FNV-64 de las instancias (fixtures, Replacement/Additive, 4 cámaras, 3 px); `ViewProjection` en `camera.rs` (sin GPU) a la que delega `SurfaceRenderer`; `update_view_progressive` devuelve la escena y quien llama la sube. Aceptación: digests sin cambios; humo Majadas con `sceneBuilds` y `voxelSourcePoints` ±5 %.
+- [ ] **R2-T2, `WasmSceneBuilder` sin GPU:** binding nuevo; colorización y etapa en funciones compartidas; test de navegador que da la misma secuencia de bloques y vistas a la ruta actual y a la nueva y exige digests idénticos.
+- [ ] **R2-T3, `build-worker.js` y protocolo:** opción `buildWorker` (apagada por defecto); empaquetado `file://`; métricas nuevas (`sceneAgeMs`, `epochLag`, `viewsCoalesced`, `scenesDropped`, memoria por worker). Aceptación: Majadas 4 px y Belvedere 8 px con p95 de respuestas < 33 ms y máx < 100 ms en carga y órbita; sin subir nodos sin cubrir, expulsiones de pendientes ni `oversized`; digest final en reposo igual a la ruta actual.
+- [ ] **R2-T4, subida en trozos:** solo si `sceneApplyMs` máx > 8 ms.
+- [ ] **R2-T5, registro:** matriz R0 con `sceneAgeMs` y margen de frustum 0/5/10° (parámetro, 0 por defecto); decide R2b.
+- [ ] **R2b (después):** caché por nodo de celdas agregadas para descender por celdas en lugar de por puntos (hoy 1 100–2 700 puntos leídos por vóxel); exactitud: fusión en el orden de `node_ids`, sumas exactas, exclusiones alineadas a celdas.
 
 ## Fases que esperan decisiones del propietario
 
