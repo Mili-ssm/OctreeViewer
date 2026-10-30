@@ -4,7 +4,7 @@
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
 **Estado (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
-y enmendado tras su pre-mortem (abajo). R1-T3a (parte de `viewer_core`) hecha; R0 en curso. R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
+y enmendado tras su pre-mortem (abajo). R0 (arnés con Chrome y GPU hardware, datasets reconvertidos), R1-T0, R1-T3a y R1-T4 hechas; línea base en la ventana de medidas. R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
 esperan las [preguntas pendientes](preguntas-propietario.md).
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de
@@ -77,7 +77,7 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 - [x] **Paso 0 (E1, 30-10-2026):** Firefox 159 headless obtiene un adaptador **software** (`adapter.info` vacío, `gpu_busy` ≤ 3 %): sin tiempos válidos. Chrome 155 con `--use-angle=vulkan` da `{vendor: "amd", architecture: "rdna-3"}` (hardware); sin chromedriver, se conduce con `playwright-core` (paso 1b).
 - [x] **Paso 1 (E2, E3, E5; `46b76dd`, `4cb3ef7`, `ede7e0a`):** instrumentación: intervalo de respuestas de frame y espera en cola, ocupación del worker por tipo de mensaje, tiempo de decodificación async, registro con marca de tiempo de cada mensaje LOD, nodos sin cubrir, píxeles vacíos, expulsiones de pendientes; órbita guionizada de 10 s.
-- [ ] **Paso 1b:** backend de Chrome en `probe-orbit-load.mjs` con adaptador hardware; reconversión de Belvedere y Majadas a `target/render-data/` (los `.oct` de `data/datasets` son de un formato provisional que el visor ya no abre).
+- [x] **Paso 1b (`bae9a21`, `671f2da`):** backend de Chrome en `probe-orbit-load.mjs` con adaptador hardware; reconversión de Belvedere y Majadas a `target/render-data/` (los `.oct` de `data/datasets` son de un formato provisional que el visor ya no abre).
 - [ ] **Paso 2:** línea base: Majadas 4 px, Belvedere 8 px y 4 px (tope 300 s), 3 rondas; registro con mediana, rango y SHA de `.wasm` y datasets; commit.
 
 ## Fase R1: mejoras sin decisiones del propietario (orden E12)
@@ -86,21 +86,21 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 **Archivos:** `crates/viewer_wasm/src/lod_dataset.rs` y tests.
 
-- [ ] Test: una secuencia de cargas async que expulsa bloques pendientes del objetivo se detecta igual que en la ruta síncrona (pausa del refinado o contador expuesto en `lod`).
+- [x] **`1981f87`:** el detector observa también las llegadas async (sin reiniciarse en cada inserción); contadores `pendingTargetEvictions` y `cacheCycleDetected`. Test: una secuencia de cargas async que expulsa bloques pendientes del objetivo se detecta igual que en la ruta síncrona (pausa del refinado o contador expuesto en `lod`).
 
 ### R1-T3a: selección sin coste cuadrático, mismo corte (Q3, Q5)
 
 **Archivos:** `crates/viewer_core/src/spatial_lod_priority.rs`, `crates/viewer_core/src/lod_transition.rs`, `crates/viewer_wasm/src/{lod_dataset.rs, bindings/lod.rs}`.
 
 - [x] **Parte de `viewer_core` (`4ce23e8`, `dac3a38`):** tests dorados (2k, 10⁵ en `check.sh`, 10⁶ ignorado; Replacement y Additive; cuatro cámaras; vía de prioridad y alternativa forzada) sin cambios tras el refactor; frontera enlazada O(hijos) por expansión y comprobaciones de descendientes sin anidamiento; selección por prioridad a 10⁶ nodos de 1,4–1,7 s a 0,4–0,6 s (Replacement) y de 45–96 ms a 12–28 ms (Additive). Residual: liberar candidatos bloqueados sigue siendo lineal (para T3b).
-- [ ] **Parte de `viewer_wasm`:** reutilizar la selección entre `target_cut_is_resident` y la actualización.
+- [x] **Parte de `viewer_wasm` (`4321f17`, `48e7524`):** selección y plan una vez por actualización (antes 2 selecciones y 3 `prepare`); decisiones fijadas con un test dorado; contadores `selectionsPerUpdate` y `preparesPerUpdate`.
 - [ ] Test dorado primero: orden exacto de `node_ids` del corte y de pendientes en fixtures y jerarquías sintéticas de 10⁵ y 10⁶ nodos, por la vía de prioridad y por la alternativa; después frontera indexada y selección reutilizada entre `target_cut_is_resident` y la actualización. Benches `#[ignore]` fuera de `check.sh`.
 
 ### R1-T4: métrica de error única (Q6, B7, E9)
 
 **Archivos:** `crates/viewer_wasm/src/lod_dataset.rs`, `crates/viewer_render_wgpu/src/camera.rs`.
 
-- [ ] Una función de error en pantalla para selección y prioridad: espaciado del nodo ÷ profundidad mínima en vista de las 8 esquinas del AABB, con el factor de proyección actual. Tests: arista proyectada ≤ objetivo también fuera de eje en las esquinas del viewport; igual o menos puntos seleccionados que hoy con la misma cámara.
+- [x] **`87ef649`:** `OrbitCamera::projected_error_pixels` única para selección y prioridad (profundidad mínima de las 8 esquinas del AABB; sin `geometric_error`); en 120 cámaras aleatorias nunca selecciona más puntos (menos en 47); arista ≤ objetivo en celdas dentro del frustum (fuera de él el factor fuera de eje puede exceder ~2 %). Una función de error en pantalla para selección y prioridad: espaciado del nodo ÷ profundidad mínima en vista de las 8 esquinas del AABB, con el factor de proyección actual. Tests: arista proyectada ≤ objetivo también fuera de eje en las esquinas del viewport; igual o menos puntos seleccionados que hoy con la misma cámara.
 
 ### R1-T5: plano cercano adaptativo (Q8, E10)
 
