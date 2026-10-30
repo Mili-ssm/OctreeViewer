@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use super::{
     CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
-    highest_priority_pending_block, next_lod_stage, node_spacing, prefix_extension_points,
-    prioritized_pending_blocks, priority_precedes, resident_target_plan_is_complete,
-    reusable_build_match,
+    highest_priority_pending_block, load_priority, next_lod_stage, node_spacing,
+    prefix_extension_points, prioritized_pending_blocks, priority_precedes,
+    resident_target_plan_is_complete, reusable_build_match,
 };
 use viewer_render_wgpu::{OrbitCamera, RenderScene, SceneBounds, build_voxel_scene};
 
@@ -1493,4 +1493,31 @@ fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
         highest_priority_pending_block(&hierarchy, &pending, &frustum, project),
         Some(BlockId::new(102))
     );
+}
+
+/// Same bounds and camera for every node, so only the point count and the error argument vary.
+#[test]
+fn pending_priority_is_screen_space_error_per_source_point() {
+    let node = |id: u64, points: u64| {
+        SpatialNode::new(
+            NodeId::new(id),
+            None,
+            0,
+            SpatialBounds::new([0.0; 3], [10.0; 3]).unwrap(),
+            points,
+            0.0,
+            vec![BlockId::new(id)],
+        )
+        .unwrap()
+    };
+    let (sparse, dense, empty) = (node(1, 1_000), node(2, 100_000), node(3, 0));
+    // Equal error: fewer points first.
+    assert!(load_priority(8.0, &sparse) > load_priority(8.0, &dense));
+    // 8 px / 1_000 = 0.008 versus 64 px / 100_000 = 0.00064 versus 800 px / 100_000 = 0.008.
+    assert!(load_priority(64.0, &dense) < load_priority(8.0, &sparse));
+    assert_eq!(load_priority(800.0, &dense), load_priority(8.0, &sparse));
+    // A much larger error outweighs 100x more points.
+    assert!(load_priority(1_600.0, &dense) > load_priority(8.0, &sparse));
+    // A zero count is treated as one.
+    assert_eq!(load_priority(8.0, &empty), 8.0);
 }

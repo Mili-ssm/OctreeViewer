@@ -885,6 +885,12 @@ pub(crate) fn next_lod_stage(
     (Some(stage_pixels), false)
 }
 
+/// Benefit per cost of loading a node: its unified screen-space error (px) per source point.
+/// Dense leaves cost far more than sparse internal nodes, so equal error loads the cheap one first.
+fn load_priority(error_pixels: f64, node: &SpatialNode) -> f64 {
+    error_pixels / node.point_count().max(1) as f64
+}
+
 fn highest_priority_pending_block(
     hierarchy: &SpatialHierarchy,
     pending: &[BlockId],
@@ -897,7 +903,7 @@ fn highest_priority_pending_block(
     let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
     let mut best = None;
     for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = projected_error_pixels(node);
+        let priority = load_priority(projected_error_pixels(node), node);
         for block_id in node.blocks() {
             if pending_ids.contains(block_id) {
                 let candidate = (*block_id, priority);
@@ -923,7 +929,7 @@ fn prioritized_pending_blocks(
     let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
     let mut priorities = std::collections::HashMap::<BlockId, f64>::new();
     for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = projected_error_pixels(node);
+        let priority = load_priority(projected_error_pixels(node), node);
         for block_id in node.blocks() {
             if pending_ids.contains(block_id) {
                 priorities

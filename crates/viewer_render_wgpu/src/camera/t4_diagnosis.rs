@@ -346,7 +346,7 @@ fn t4_diagnosis() {
         ),
         ("B order (error from side / 8)", &new_metric, false, false),
         (
-            "D order (B error per source point)",
+            "D order (B error per source point, shipped)",
             &new_metric,
             false,
             true,
