@@ -10,7 +10,7 @@
 // message log, deterministic counters, adapter evidence and the environment to OUTPUT.json.
 // Timing is only valid in "timing" mode: the probe falls back to "functional" when a cargo/rustc
 // build or another browser instance is running, or when no hardware WebGPU adapter is evidenced
-// (software/unidentified adapter, or gpu_busy_percent never above 10). --pixels adds opt-in screenshots to count empty pixels.
+// (software or unidentified adapter; gpu_busy_percent is recorded but not required). --pixels adds opt-in screenshots to count empty pixels.
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -308,7 +308,9 @@ try {
     if (!vendor || !architecture || /google|llvmpipe|swiftshader/i.test(`${vendor} ${architecture}`) || result.adapter.isFallbackAdapter) {
         functionalReasons.push("software or unidentified WebGPU adapter");
     }
-    if (!(result.gpuBusy.max > 10)) functionalReasons.push("gpu_busy_percent never above 10 (hardware adapter not evidenced)");
+    // gpu_busy stays informative: the CPU-bound voxel rebuild keeps the iGPU mostly idle even on a
+    // hardware adapter, so a low value does not mean a software one.
+    if (result.gpuBusy.max !== null && !(result.gpuBusy.max > 10)) result.gpuBusyNote = "gpu_busy_percent never above 10";
     result.mode = functionalReasons.length && !args.includes("--force-timing") ? "functional" : "timing";
     result.functionalReasons = functionalReasons;
     result.environment = {
