@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::{
     DecodedBlockCache, HierarchySemantics, LodSelection, NodeId, ResidentBlockSource,
@@ -87,7 +87,7 @@ impl LodTransitionPlanner {
         cache: &S,
     ) -> LodTransitionPlan {
         let target_nodes = target.node_ids().iter().copied().collect::<HashSet<_>>();
-        let retained_nodes = self.retained_nodes.iter().copied().collect::<HashSet<_>>();
+        let retained = RetainedIndex::new(hierarchy, &self.retained_nodes);
         let mut branch_nodes = HashSet::new();
         for target_id in &target_nodes {
             let mut current = Some(*target_id);
@@ -112,7 +112,7 @@ impl LodTransitionPlanner {
                 hierarchy.root_id(),
                 &target_nodes,
                 &branch_nodes,
-                &retained_nodes,
+                &retained,
                 retain_previous,
                 cache,
             )
@@ -120,7 +120,7 @@ impl LodTransitionPlanner {
             resolve_additive(
                 hierarchy,
                 &target_nodes,
-                &retained_nodes,
+                &retained.nodes,
                 retain_previous,
                 cache,
             )
@@ -165,12 +165,22 @@ impl LodTransitionPlanner {
             admitted_blocks.extend(new_blocks);
         }
         let mut uncovered_nodes = result.uncovered_nodes.into_iter().collect::<BTreeSet<_>>();
-        for omitted_id in &budget_omitted_nodes {
+        if !budget_omitted_nodes.is_empty() {
+            // A target is uncovered when it is, contains or lies inside an omitted node.
+            // One ancestor walk per node replaces the targets x omitted pairwise check.
+            let omitted = budget_omitted_nodes.iter().copied().collect::<HashSet<_>>();
+            for omitted_id in &omitted {
+                if target_nodes.contains(omitted_id) {
+                    uncovered_nodes.insert(*omitted_id);
+                }
+                for ancestor in ancestors(hierarchy, *omitted_id) {
+                    if target_nodes.contains(&ancestor) {
+                        uncovered_nodes.insert(ancestor);
+                    }
+                }
+            }
             for target_id in &target_nodes {
-                if *target_id == *omitted_id
-                    || is_descendant_of(hierarchy, *target_id, *omitted_id)
-                    || is_descendant_of(hierarchy, *omitted_id, *target_id)
-                {
+                if ancestors(hierarchy, *target_id).any(|ancestor| omitted.contains(&ancestor)) {
                     uncovered_nodes.insert(*target_id);
                 }
             }
@@ -274,17 +284,17 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
     node_id: NodeId,
     target_nodes: &HashSet<NodeId>,
     branch_nodes: &HashSet<NodeId>,
-    retained_nodes: &HashSet<NodeId>,
+    retained: &RetainedIndex,
     retain_previous: bool,
     cache: &S,
 ) -> ResolvedCut {
     if !branch_nodes.contains(&node_id) {
-        let mut retained = retained_nodes
-            .iter()
+        let mut retained = retained
+            .nodes
+            .get(&node_id)
+            .into_iter()
+            .chain(retained.below(node_id))
             .copied()
-            .filter(|retained_id| {
-                *retained_id == node_id || is_descendant_of(hierarchy, *retained_id, node_id)
-            })
             .filter(|retained_id| {
                 hierarchy.node(*retained_id).is_some_and(|retained| {
                     retained
@@ -323,13 +333,7 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
             .copied()
             .filter(|block_id| !cache.contains(*block_id))
             .collect::<BTreeSet<_>>();
-        let retained_descendants = retained_nodes
-            .iter()
-            .copied()
-            .filter(|active_id| {
-                *active_id != node_id && is_descendant_of(hierarchy, *active_id, node_id)
-            })
-            .collect::<Vec<_>>();
+        let retained_descendants = retained.below(node_id).to_vec();
         let available_descendants = retained_descendants
             .iter()
             .copied()
@@ -368,7 +372,7 @@ fn resolve_replacement<S: ResidentBlockSource + ?Sized>(
                 child_id,
                 target_nodes,
                 branch_nodes,
-                retained_nodes,
+                retained,
                 retain_previous,
                 cache,
             )
@@ -449,6 +453,7 @@ fn resolve_additive<S: ResidentBlockSource + ?Sized>(
         complete: true,
         ..ResolvedCut::default()
     };
+    let mut resolved = HashSet::new();
     for node_id in target_nodes {
         let node = hierarchy
             .node(*node_id)
@@ -461,6 +466,7 @@ fn resolve_additive<S: ResidentBlockSource + ?Sized>(
             .collect::<Vec<_>>();
         if missing.is_empty() {
             result.nodes.push(*node_id);
+            resolved.insert(*node_id);
         } else {
             result.complete = false;
             result.pending_blocks.extend(missing);
@@ -468,7 +474,7 @@ fn resolve_additive<S: ResidentBlockSource + ?Sized>(
         }
     }
     for node_id in retained_nodes.iter().filter(|_| retain_previous) {
-        if result.nodes.contains(node_id) {
+        if resolved.contains(node_id) {
             continue;
         }
         let Some(node) = hierarchy.node(*node_id) else {
@@ -480,6 +486,7 @@ fn resolve_additive<S: ResidentBlockSource + ?Sized>(
             .all(|block_id| cache.contains(*block_id))
         {
             result.nodes.push(*node_id);
+            resolved.insert(*node_id);
         }
     }
     result
@@ -508,13 +515,37 @@ fn combine(results: impl IntoIterator<Item = ResolvedCut>) -> ResolvedCut {
     combined
 }
 
-fn is_descendant_of(hierarchy: &SpatialHierarchy, node_id: NodeId, ancestor_id: NodeId) -> bool {
+/// Strict ancestors of `node_id`, nearest first.
+fn ancestors(hierarchy: &SpatialHierarchy, node_id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
     let mut current = hierarchy.node(node_id).and_then(|node| node.parent());
-    while let Some(id) = current {
-        if id == ancestor_id {
-            return true;
-        }
+    std::iter::from_fn(move || {
+        let id = current?;
         current = hierarchy.node(id).and_then(|node| node.parent());
+        Some(id)
+    })
+}
+
+/// The previous cut plus, per ancestor, its retained strict descendants, so region
+/// queries do not rescan every retained node and walk its ancestry each time.
+/// Each list keeps the iteration order of the retained set.
+struct RetainedIndex {
+    nodes: HashSet<NodeId>,
+    below: HashMap<NodeId, Vec<NodeId>>,
+}
+
+impl RetainedIndex {
+    fn new(hierarchy: &SpatialHierarchy, retained: &[NodeId]) -> Self {
+        let nodes = retained.iter().copied().collect::<HashSet<_>>();
+        let mut below = HashMap::<NodeId, Vec<NodeId>>::new();
+        for node_id in &nodes {
+            for ancestor in ancestors(hierarchy, *node_id) {
+                below.entry(ancestor).or_default().push(*node_id);
+            }
+        }
+        Self { nodes, below }
     }
-    false
+
+    fn below(&self, ancestor: NodeId) -> &[NodeId] {
+        self.below.get(&ancestor).map_or(&[], Vec::as_slice)
+    }
 }

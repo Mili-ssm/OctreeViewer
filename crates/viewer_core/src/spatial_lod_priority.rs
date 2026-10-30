@@ -1,4 +1,8 @@
-use std::{cmp::Ordering, collections::BinaryHeap, mem::size_of};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
+    mem::size_of,
+};
 
 use super::{
     HierarchySemantics, LodSelection, LodSelectionConfig, LodSelectionError, NodeId,
@@ -57,6 +61,79 @@ impl Eq for Candidate {}
 struct Scratch {
     pending: Vec<NodeId>,
     children: Vec<NodeId>,
+}
+
+const NO_SLOT: usize = usize::MAX;
+
+struct Slot {
+    id: NodeId,
+    next: usize,
+    expanded: bool,
+}
+
+/// Selection order as an indexed singly linked list, so expanding a candidate costs
+/// O(children) instead of the O(frontier) `position` + `splice` of a flat vector.
+///
+/// A candidate stays in place as an `expanded` tombstone with its children linked right
+/// after it. Additive output keeps tombstones (parents stay selected); the frontier and
+/// the replacement output skip them. Both equal the flat-vector splices they replace.
+struct Cut {
+    slots: Vec<Slot>,
+    index: HashMap<NodeId, usize>,
+}
+
+impl Cut {
+    fn new(initial: &[NodeId]) -> Self {
+        let mut cut = Self {
+            slots: Vec::with_capacity(initial.len()),
+            index: HashMap::with_capacity(initial.len()),
+        };
+        for (position, id) in initial.iter().enumerate() {
+            cut.slots.push(Slot {
+                id: *id,
+                next: if position + 1 == initial.len() {
+                    NO_SLOT
+                } else {
+                    position + 1
+                },
+                expanded: false,
+            });
+            cut.index.insert(*id, position);
+        }
+        cut
+    }
+
+    fn expand(&mut self, id: NodeId, children: &[NodeId]) {
+        let slot = self.index[&id];
+        self.slots[slot].expanded = true;
+        let mut next = self.slots[slot].next;
+        for child in children.iter().rev() {
+            self.slots.push(Slot {
+                id: *child,
+                next,
+                expanded: false,
+            });
+            next = self.slots.len() - 1;
+            self.index.insert(*child, next);
+        }
+        self.slots[slot].next = next;
+    }
+
+    /// Slots in selection order; slot 0 is always the head (it is never relinked).
+    fn ordered(&self) -> impl Iterator<Item = &Slot> {
+        let mut current = if self.slots.is_empty() { NO_SLOT } else { 0 };
+        std::iter::from_fn(move || {
+            let slot = self.slots.get(current)?;
+            current = slot.next;
+            Some(slot)
+        })
+    }
+
+    fn frontier(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.ordered()
+            .filter(|slot| !slot.expanded)
+            .map(|slot| slot.id)
+    }
 }
 
 struct Priorities<'a> {
@@ -183,7 +260,8 @@ impl SpatialHierarchy {
     /// budgeted by vector capacities; zero disables the optimization. Common traversal/output
     /// allocations, allocator overhead and transient reservation peaks are not bounded here.
     /// Failed reservations or ambiguous validation/overflow restart the original selector after
-    /// dropping the attempt. Splices and blocked retries can still perform linear work.
+    /// dropping the attempt. Expansion is O(children); only releasing blocked candidates after a
+    /// point-count drop still scans them linearly.
     pub fn select_lod_stable_projector(
         &self,
         frustum: &SpatialFrustum,
@@ -230,11 +308,11 @@ impl SpatialHierarchy {
         stats: &mut LodPriorityStats,
     ) -> Result<LodSelection, LodPriorityFallback> {
         let mut scratch = Scratch::default();
-        let mut selected = Vec::new();
-        self.visible_frontier_into([self.root], frustum, &mut scratch.pending, &mut selected);
-        let mut frontier = selected.clone();
+        let mut initial = Vec::new();
+        self.visible_frontier_into([self.root], frustum, &mut scratch.pending, &mut initial);
+        let mut cut = Cut::new(&initial);
         let mut point_count = self
-            .count_points(&selected)
+            .count_points(&initial)
             .map_err(|_| LodPriorityFallback::Validation)?;
         if point_count > config.point_budget {
             return Err(LodPriorityFallback::Validation);
@@ -246,7 +324,7 @@ impl SpatialHierarchy {
             max_growth: 0,
             stats,
         };
-        for id in &frontier {
+        for id in &initial {
             priorities.activate(
                 self,
                 *id,
@@ -271,35 +349,28 @@ impl SpatialHierarchy {
                 priorities.blocked.push(candidate);
                 continue;
             }
-            let index = frontier
-                .iter()
-                .position(|id| *id == candidate.id)
-                .expect("candidate is active");
             self.visible_frontier_into(
                 self.nodes[&candidate.id].children.iter().copied(),
                 frustum,
                 &mut scratch.pending,
                 &mut winner_children,
             );
-            match self.semantics {
-                HierarchySemantics::Replacement => {
-                    selected.splice(index..=index, winner_children.iter().copied());
-                }
-                HierarchySemantics::Additive => {
-                    let selected_index = selected
-                        .iter()
-                        .position(|id| *id == candidate.id)
-                        .expect("active payload is selected");
-                    selected.splice(
-                        selected_index + 1..selected_index + 1,
-                        winner_children.iter().copied(),
-                    );
-                }
-            }
-            frontier.splice(index..=index, winner_children.iter().copied());
+            cut.expand(candidate.id, &winner_children);
             if new_count < point_count {
-                while let Some(blocked) = priorities.blocked.pop() {
-                    priorities.push(blocked)?;
+                // Only candidates that now fit can be selected next; the others would be
+                // popped and re-blocked without effect, so they stay parked. A candidate
+                // whose total overflows is released so the usual validation fallback fires.
+                let mut parked = 0;
+                while parked < priorities.blocked.len() {
+                    let blocked = priorities.blocked[parked];
+                    if candidate_points(self, new_count, blocked)
+                        .is_none_or(|count| count <= config.point_budget)
+                    {
+                        priorities.blocked.swap_remove(parked);
+                        priorities.push(blocked)?;
+                    } else {
+                        parked += 1;
+                    }
                 }
             }
             point_count = new_count;
@@ -318,7 +389,11 @@ impl SpatialHierarchy {
         let mut budget_limited = Vec::new();
         let mut resolution_limited = Vec::new();
         let mut max_error_pixels: f64 = 0.0;
-        for id in frontier {
+        let selected = match self.semantics {
+            HierarchySemantics::Replacement => cut.frontier().collect::<Vec<_>>(),
+            HierarchySemantics::Additive => cut.ordered().map(|slot| slot.id).collect(),
+        };
+        for id in cut.frontier() {
             let error = checked_error(project(&self.nodes[&id].metadata))?;
             max_error_pixels = max_error_pixels.max(error);
             if error <= config.max_error_pixels {
