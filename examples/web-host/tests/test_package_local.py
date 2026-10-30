@@ -69,6 +69,8 @@ export { initSync, __wbg_init as default };
             self.assertIn("new Worker(window.__VIEWER_WORKER_URL__)", runtime)
             self.assertIn('type: "classic",', runtime)
             self.assertNotIn('type: "module",', runtime)
+            self.assertIn("function validateConverterOptions(", runtime)
+            self.assertNotIn("converter-ui.mjs", runtime)
             self.check_script(runtime)
             for name in ["WORKER_SOURCE", "CONVERTER_WORKER_SOURCE"]:
                 match = re.search(rf"^const {name} = (.*);$", runtime, re.MULTILINE)

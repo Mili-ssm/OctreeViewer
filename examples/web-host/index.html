@@ -107,6 +107,59 @@
             color: #cbd5e1;
         }
 
+        .panel summary {
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .panel summary:focus-visible,
+        .notice:focus-visible {
+            outline: 3px solid #38bdf8;
+            outline-offset: 3px;
+        }
+
+        .panel fieldset {
+            border: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        .panel input[aria-invalid="true"] {
+            outline: 2px solid #f87171;
+        }
+
+        .panel small[hidden] {
+            display: none;
+        }
+
+        .panel .field-error,
+        .panel .notice.error {
+            color: #fca5a5;
+        }
+
+        .panel .notice {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid currentColor;
+        }
+
+        .panel .notice.warning {
+            color: #fcd34d;
+        }
+
+        .panel .notice.success {
+            color: #86efac;
+        }
+
         .stats {
             display: grid;
             gap: 8px;
@@ -171,10 +224,40 @@
             <strong>Convert a local LAS/LAZ file</strong>
             <label for="convert-file">Source file</label>
             <input id="convert-file" type="file" accept=".las,.laz,application/octet-stream" />
+            <details id="convert-options">
+                <summary>Options</summary>
+                <fieldset id="convert-options-fields">
+                    <legend class="visually-hidden">Conversion options</legend>
+                    <label for="opt-format-version">Format version</label>
+                    <select id="opt-format-version"></select>
+                    <label for="opt-points-per-block">Points per block</label>
+                    <input id="opt-points-per-block" type="number" inputmode="numeric" min="1" max="1000000" step="1" value="262144" aria-describedby="opt-points-per-block-error" />
+                    <small id="opt-points-per-block-error" class="field-error" hidden></small>
+                    <label for="opt-max-error">Max error</label>
+                    <input id="opt-max-error" type="number" inputmode="decimal" min="0" step="any" value="0.01" aria-describedby="opt-max-error-error" />
+                    <small id="opt-max-error-error" class="field-error" hidden></small>
+                    <label for="opt-spatial-divisions">Spatial divisions</label>
+                    <select id="opt-spatial-divisions">
+                        <option value="2" selected>2</option>
+                        <option value="4">4</option>
+                        <option value="8">8</option>
+                    </select>
+                    <label for="opt-planner-budget">Planner budget (MiB)</label>
+                    <input id="opt-planner-budget" type="number" inputmode="numeric" min="1" max="4096" step="1" value="512" aria-describedby="opt-planner-budget-error" />
+                    <small id="opt-planner-budget-error" class="field-error" hidden></small>
+                    <label for="opt-ram-budget">RAM budget (GB)</label>
+                    <input id="opt-ram-budget" type="number" inputmode="numeric" min="1" max="8" step="1" value="4" aria-describedby="opt-ram-budget-help opt-ram-budget-error" />
+                    <small id="opt-ram-budget-help">Memory the conversion may use before it spills to browser storage (1 to 8 GB). Defaults match the command-line converter.</small>
+                    <small id="opt-ram-budget-error" class="field-error" hidden></small>
+                </fieldset>
+            </details>
             <button id="convert-start" type="button" disabled>Convert to .oct</button>
             <button id="convert-cancel" type="button" hidden>Cancel conversion</button>
             <progress id="convert-progress" value="0" max="1" hidden></progress>
             <small id="convert-status" role="status" aria-live="polite">Choose a LAS/LAZ file. Conversion runs locally in a separate worker and writes to browser storage.</small>
+            <small id="convert-warning" class="notice warning" role="status" hidden></small>
+            <small id="convert-result" class="notice" tabindex="-1" hidden></small>
+            <small id="convert-details" hidden></small>
             <button id="convert-download" type="button" hidden>Download converted .oct</button>
             <button id="convert-download-attributes" type="button" hidden>Download converted .octattrs</button>
             <button id="convert-open" type="button" hidden>Open converted .oct in viewer</button>

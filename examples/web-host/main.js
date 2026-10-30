@@ -4,6 +4,9 @@ import {
 } from "./benchmark-metrics.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
+import {
+    FORMAT_VERSIONS, progressText, spoolText, timingsText, validateConverterOptions,
+} from "./converter-ui.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
@@ -20,6 +23,18 @@ const convertStatus = document.getElementById("convert-status");
 const convertDownloadButton = document.getElementById("convert-download");
 const convertDownloadAttributesButton = document.getElementById("convert-download-attributes");
 const convertOpenButton = document.getElementById("convert-open");
+const convertWarning = document.getElementById("convert-warning");
+const convertResult = document.getElementById("convert-result");
+const convertDetails = document.getElementById("convert-details");
+const convertOptionsFields = document.getElementById("convert-options-fields");
+const optionFields = {
+    formatVersion: document.getElementById("opt-format-version"),
+    pointsPerBlock: document.getElementById("opt-points-per-block"),
+    maxError: document.getElementById("opt-max-error"),
+    spatialDivisions: document.getElementById("opt-spatial-divisions"),
+    plannerBudgetMiB: document.getElementById("opt-planner-budget"),
+    ramBudgetGB: document.getElementById("opt-ram-budget"),
+};
 const statsRoot = document.getElementById("stats");
 const statusRoot = document.getElementById("renderer-status");
 const startBenchmarkButton = document.getElementById("start-benchmark");
@@ -710,9 +725,40 @@ depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
 });
-convertFileInput.addEventListener("change", () => {
-    convertButton.disabled = !convertFileInput.files?.[0] || Boolean(converterApi);
-});
+for (const version of FORMAT_VERSIONS) {
+    optionFields.formatVersion.append(new Option(version, version, false, version === "v5"));
+}
+
+function readConverterOptions() {
+    return validateConverterOptions(Object.fromEntries(
+        Object.entries(optionFields).map(([name, element]) => [name, element.value]),
+    ));
+}
+
+// Shows each field's message next to it (aria-describedby) and returns the options, or null if any is invalid.
+function refreshConverterOptions() {
+    const { errors, options } = readConverterOptions();
+    for (const [name, element] of Object.entries(optionFields)) {
+        const message = document.getElementById(`${element.id}-error`);
+        if (!message) continue;
+        message.textContent = errors[name] ?? "";
+        message.hidden = !errors[name];
+        element.setAttribute("aria-invalid", String(Boolean(errors[name])));
+    }
+    const valid = Object.keys(errors).length === 0;
+    convertButton.disabled = !valid || !convertFileInput.files?.[0] || Boolean(converterApi);
+    return valid ? options : null;
+}
+
+function showConvertNotice(kind, message) {
+    convertResult.className = `notice ${kind}`;
+    convertResult.textContent = message;
+    convertResult.hidden = false;
+    convertResult.focus();
+}
+
+for (const element of Object.values(optionFields)) element.addEventListener("input", refreshConverterOptions);
+convertFileInput.addEventListener("change", refreshConverterOptions);
 convertButton.addEventListener("click", () => {
     const file = convertFileInput.files?.[0];
     if (!file || converterApi) return;
@@ -720,6 +766,8 @@ convertButton.addEventListener("click", () => {
         convertStatus.textContent = "Choose a .las or .laz file.";
         return;
     }
+    const options = refreshConverterOptions();
+    if (!options) return;
     convertedFile = null;
     convertedAttributesFile = null;
     if (convertedDownloadUrl) URL.revokeObjectURL(convertedDownloadUrl);
@@ -729,50 +777,62 @@ convertButton.addEventListener("click", () => {
     convertDownloadButton.hidden = true;
     convertDownloadAttributesButton.hidden = true;
     convertOpenButton.hidden = true;
+    convertWarning.hidden = true;
+    convertResult.hidden = true;
+    convertDetails.hidden = true;
     convertProgress.hidden = false;
     convertProgress.value = 0;
     convertProgress.max = 1;
     convertButton.disabled = true;
     convertFileInput.disabled = true;
+    convertOptionsFields.disabled = true;
     convertCancelButton.hidden = false;
-    convertStatus.textContent = `Preparing local conversion of ${file.name}…`;
+    convertStatus.textContent = `Preparing local conversion of ${file.name}… (Esc cancels)`;
     try {
-        converterApi = createConverter();
+        converterApi = createConverter({ engine: "core" });
         converterApi.on("status", ({ message }) => { convertStatus.textContent = message; });
-        converterApi.on("progress", ({ processedPoints, totalPoints, sourceName, stage }) => {
-            const processed = Number(processedPoints);
-            const total = Number(totalPoints);
-            convertProgress.max = total || 1;
-            convertProgress.value = processed;
-            const phase = stage === "writing" ? "Writing spatial LOD" : "Planning spatial LOD";
-            convertStatus.textContent = `${phase} · ${sourceName}: ${processed.toLocaleString()} / ${total.toLocaleString()} points`;
+        converterApi.on("warning", ({ message }) => {
+            convertWarning.textContent = message;
+            convertWarning.hidden = false;
         });
-        converterApi.convert(file).then(({ file: resultFile, name, attributesFile, outputAttributesName, points, timings }) => {
+        converterApi.on("progress", ({ processedPoints, totalPoints, stage }) => {
+            convertProgress.max = Number(totalPoints) || 1;
+            convertProgress.value = Number(processedPoints);
+            convertStatus.textContent = progressText(stage, processedPoints, totalPoints);
+        });
+        converterApi.convert(file, { options }).then(({ file: resultFile, name, attributesFile, outputAttributesName, points, timings, spool }) => {
             convertedFile = resultFile;
             convertedAttributesFile = attributesFile;
             convertedOutputName = name;
             convertedAttributesOutputName = outputAttributesName;
             convertProgress.value = convertProgress.max;
-            const planning = ((timings?.planningMs ?? 0) / 1_000).toFixed(1);
-            const writing = ((timings?.writingMs ?? 0) / 1_000).toFixed(1);
-            const total = ((timings?.totalMs ?? 0) / 1_000).toFixed(1);
-            convertStatus.textContent = `Converted ${points} points to ${name} · planning ${planning}s · writing ${writing}s · total ${total}s.`;
+            convertStatus.textContent = "";
+            const details = [timingsText(timings), spoolText(spool)].filter(Boolean).join(" · ");
+            convertDetails.textContent = details;
+            convertDetails.hidden = !details;
             convertDownloadButton.hidden = false;
             convertDownloadAttributesButton.hidden = !attributesFile;
             convertOpenButton.hidden = false;
+            showConvertNotice("success", `Converted ${Number(points).toLocaleString("en-US")} points to ${name}.`);
         }).catch((error) => {
-            convertStatus.textContent = error.name === "AbortError"
-                ? error.message : `Conversion failed: ${error.message}`;
+            convertStatus.textContent = "";
+            if (error.name === "AbortError") showConvertNotice("warning", error.message);
+            else showConvertNotice("error", `Conversion failed: ${error.message}`);
         }).finally(finishConverter);
     } catch (error) {
-        convertStatus.textContent = `Conversion could not start: ${error.message}`;
+        showConvertNotice("error", `Conversion could not start: ${error.message}`);
         finishConverter();
     }
 });
-convertCancelButton.addEventListener("click", () => {
-    converterApi?.cancel();
+function requestConvertCancel() {
+    if (!converterApi || convertCancelButton.disabled) return;
+    converterApi.cancel();
     convertCancelButton.disabled = true;
-    convertStatus.textContent = "Cancelling after the current bounded block…";
+    convertStatus.textContent = "Cancelling…";
+}
+convertCancelButton.addEventListener("click", requestConvertCancel);
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && converterApi) requestConvertCancel();
 });
 convertDownloadButton.addEventListener("click", () => {
     if (!convertedFile) return;
@@ -799,8 +859,9 @@ convertOpenButton.addEventListener("click", () => {
 function finishConverter() {
     converterApi?.dispose();
     converterApi = null;
-    convertButton.disabled = !convertFileInput.files?.[0];
     convertFileInput.disabled = false;
+    convertOptionsFields.disabled = false;
+    refreshConverterOptions();
     convertCancelButton.hidden = true;
     convertCancelButton.disabled = false;
 }

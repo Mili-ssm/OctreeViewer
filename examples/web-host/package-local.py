@@ -59,6 +59,7 @@ def main() -> None:
     converter_api_js = (HOST / "converter-api.mjs").read_text(encoding="utf-8")
     converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
     spool_tiers_js = (HOST / "spool-tiers.mjs").read_text(encoding="utf-8")
+    converter_ui_js = (HOST / "converter-ui.mjs").read_text(encoding="utf-8")
     embed_worker_js = worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
     embed_wasm_js = wasm_js
@@ -151,6 +152,13 @@ def main() -> None:
         "converter API import",
     )
     converter_api_js = converter_api_js.replace("export function createConverter", "function createConverter")
+    main_js = require_replace(
+        main_js,
+        'import {\n    FORMAT_VERSIONS, progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
+        "",
+        "converter UI import",
+    )
+    inline_converter_ui_js = re.sub(r"^export ", "", converter_ui_js, flags=re.MULTILINE)
     converter_api_js = require_replace(
         converter_api_js,
         '?? new URL("./converter-worker.js", import.meta.url);',
@@ -206,6 +214,8 @@ def main() -> None:
         + inline_spool_tiers_js
         + "\n"
         + converter_api_js
+        + "\n"
+        + inline_converter_ui_js
         + "\n"
         + main_js
         + "\n</script>"
