@@ -520,6 +520,9 @@ fn plane(normal: DVec3, point: DVec3) -> Option<FrustumPlane> {
 }
 
 #[cfg(test)]
+mod t4_diagnosis;
+
+#[cfg(test)]
 mod tests {
     use glam::{DVec3, Mat4};
 
