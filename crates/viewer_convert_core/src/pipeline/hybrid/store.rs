@@ -212,10 +212,6 @@ pub struct HybridSpoolStore<R, P> {
     inner: Arc<Inner<R, P>>,
 }
 
-fn invalid_config(message: &str) -> ConvertError {
-    ConvertError::Io(io::Error::new(io::ErrorKind::InvalidInput, message))
-}
-
 impl<R: RamTier + Send + Sync, P: PageTier + Send + Sync> HybridSpoolStore<R, P> {
     pub fn new(
         ram: R,
@@ -223,9 +219,6 @@ impl<R: RamTier + Send + Sync, P: PageTier + Send + Sync> HybridSpoolStore<R, P>
         config: HybridConfig,
         diagnostics: bool,
     ) -> Result<Self, ConvertError> {
-        if pages.zone_count() == 0 {
-            return Err(invalid_config("the page tier has no spill zones"));
-        }
         let allocator =
             PageAllocator::new(pages.zone_count(), config.zone_bytes, config.page_bytes)?;
         Ok(Self {
@@ -312,8 +305,12 @@ fn alloc_error(capacity: u32, error: &ConvertError) -> ConvertError {
 }
 
 impl<R: RamTier, P: PageTier> Inner<R, P> {
-    /// Spills victims until the retained RAM fits the budget or none is left.
+    /// Spills victims until the retained RAM fits the budget or none is left. Without zones
+    /// (RAM-only hosts such as Chrome `file://`) nothing spills and the budget stays soft.
     fn spill_over_budget(&self, state: &mut State) -> Result<(), ConvertError> {
+        if self.pages.zone_count() == 0 {
+            return Ok(());
+        }
         while state.ram_retained > state.budget {
             let Some(id) = state.pick_victim() else {
                 break;
@@ -833,6 +830,15 @@ mod tests {
     #[test]
     fn matches_mem_store_on_a_random_operation_sequence() {
         random_sequence(&store(), 0x9E37_79B9_7F4A_7C15);
+    }
+
+    #[test]
+    fn without_zones_nothing_spills_and_the_budget_stays_soft() {
+        let store = spilling_store(0, 0, None, HYBRID_PAGE_BYTES, HYBRID_ZONE_BYTES);
+        random_sequence(&store, 0x2545_F491_4F6C_DD1D);
+        let stats = store.stats();
+        assert_eq!(stats.spilled_spools, 0, "{stats:?}");
+        assert!(stats.over_budget_peak_bytes > 0, "{stats:?}");
     }
 
     #[test]
