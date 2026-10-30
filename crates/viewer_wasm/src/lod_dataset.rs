@@ -23,6 +23,10 @@ pub struct LodDataset {
     visible_voxel_memory: VoxelBuildMemoryStats,
     refinement_work: LodWorkStats,
     cache_cycle: Option<CacheCycleDetector>,
+    /// Blocks inserted since the last `update_view*` (async arrivals) and what they evicted.
+    /// The next update judges them against its fresh target, as a synchronous load would be.
+    arrived_blocks: u64,
+    arrival_evictions: Vec<BlockId>,
 }
 
 /// Brent's cycle detection with one exact, normalized LRU checkpoint.
@@ -77,6 +81,8 @@ pub struct LodWorkStats {
     pub loaded_blocks: u64,
     /// Evicted by this load and immediately missing from the requested target cut.
     pub evicted_pending_blocks: u64,
+    /// Times the cache-cycle detector paused refinement (synchronous and async loads alike).
+    pub cache_cycle_detections: u64,
     pub scene_builds: u64,
     pub voxel_source_points: u64,
     pub selection_ms: f64,
@@ -191,13 +197,59 @@ impl LodDataset {
             visible_voxel_memory: VoxelBuildMemoryStats::default(),
             refinement_work: LodWorkStats::default(),
             cache_cycle: None,
+            arrived_blocks: 0,
+            arrival_evictions: Vec::new(),
         }
     }
 
+    /// Inserts an externally loaded (async) block. The cache-cycle detector is deliberately not
+    /// reset here: a camera/target change resets it in `update_view*`, and the next update
+    /// observes this arrival like a synchronous load.
     pub fn insert_block(&mut self, block: PointBlock) -> Result<usize, LodDatasetError> {
         let result = self.cache_block(block)?;
-        self.cache_cycle = None;
+        self.arrived_blocks += 1;
+        self.arrival_evictions
+            .extend_from_slice(result.evicted_blocks());
         Ok(result.accounted_bytes())
+    }
+
+    /// Whether the detector has ever paused refinement for this dataset's loaded blocks.
+    pub fn cache_cycle_detected(&self) -> bool {
+        self.refinement_work.cache_cycle_detections > 0
+    }
+
+    /// Total blocks of the requested target cut evicted by loads or arrivals.
+    pub fn pending_target_evictions(&self) -> u64 {
+        self.refinement_work.evicted_pending_blocks
+    }
+
+    /// Feeds the detector after a load or async arrival; `Err` means refinement must pause.
+    fn observe_cache_cycle(
+        &mut self,
+        loaded_block: bool,
+        evicted_pending_blocks: u64,
+        reusable_scene: bool,
+        target_is_resident: bool,
+        selection_error_pixels: f64,
+        target_voxel_pixels: f64,
+    ) -> Result<(), LodDatasetError> {
+        if !reusable_scene || target_is_resident {
+            self.cache_cycle = None;
+        } else if loaded_block {
+            if let Some(cycle) = self.cache_cycle.as_mut() {
+                if cycle.observe(&self.cache) {
+                    self.refinement_work.cache_cycle_detections += 1;
+                    return Err(LodDatasetError::CacheCyclePaused);
+                }
+            } else if evicted_pending_blocks > 0 {
+                self.cache_cycle = Some(CacheCycleDetector::new(
+                    &self.cache,
+                    selection_error_pixels,
+                    target_voxel_pixels,
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn cache_block(&mut self, block: PointBlock) -> Result<CacheInsertResult, LodDatasetError> {
@@ -241,6 +293,8 @@ impl LodDataset {
         self.visible_voxel_memory = VoxelBuildMemoryStats::default();
         self.refinement_work = LodWorkStats::default();
         self.cache_cycle = None;
+        self.arrived_blocks = 0;
+        self.arrival_evictions.clear();
         Ok(())
     }
 
@@ -368,8 +422,8 @@ impl LodDataset {
             )
         };
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
-        let mut evicted_blocks = Vec::new();
-        let mut loaded_block = false;
+        let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
+        let mut loaded_block = std::mem::take(&mut self.arrived_blocks) > 0;
         if let Some(requested) = next_block {
             self.refinement_work.block_load_calls += 1;
             let load_started = WorkClock::start();
@@ -387,7 +441,7 @@ impl LodDataset {
                     ..
                 } = self.cache_block(block)?
                 {
-                    evicted_blocks = evicted;
+                    evicted_blocks.extend(evicted);
                 }
                 self.refinement_work.loaded_blocks += 1;
                 loaded_block = true;
@@ -416,21 +470,14 @@ impl LodDataset {
                 self.last_successful_build.as_ref(),
                 &build_context,
             );
-            if !reusable_scene || plan.pending_blocks().is_empty() {
-                self.cache_cycle = None;
-            } else if loaded_block {
-                if let Some(cycle) = self.cache_cycle.as_mut() {
-                    if cycle.observe(&self.cache) {
-                        return Err(LodDatasetError::CacheCyclePaused);
-                    }
-                } else if evicted_pending_blocks > 0 {
-                    self.cache_cycle = Some(CacheCycleDetector::new(
-                        &self.cache,
-                        selection_error_pixels,
-                        target_voxel_pixels,
-                    ));
-                }
-            }
+            self.observe_cache_cycle(
+                loaded_block,
+                evicted_pending_blocks,
+                reusable_scene,
+                plan.pending_blocks().is_empty(),
+                selection_error_pixels,
+                target_voxel_pixels,
+            )?;
             if reusable_scene {
                 self.refinement_work.reused_scene_updates += 1;
                 self.refinement_work.reused_source_points += plan.point_count();

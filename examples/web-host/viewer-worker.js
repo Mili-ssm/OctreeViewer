@@ -85,6 +85,8 @@ function recordLodMessage(source, lod) {
         uncoveredNodes: lod.uncoveredNodes,
         pendingBlocks: lod.pendingBlockIds?.length ?? 0,
         visibleBlocks: lod.visibleBlocks,
+        pendingTargetEvictions: lod.pendingTargetEvictions ?? null,
+        cacheCycleDetected: lod.cacheCycleDetected ?? null,
     });
 }
 

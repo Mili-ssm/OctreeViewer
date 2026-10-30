@@ -386,7 +386,8 @@ fn replacing_visible_payload_invalidates_build_context_only_after_success() {
     assert!(dataset.last_successful_build.is_some());
     dataset.cache_cycle = Some(CacheCycleDetector::new(&dataset.cache, 4.0, 4.0));
     dataset.insert_block(block(10)).unwrap();
-    assert!(dataset.cache_cycle.is_none());
+    // Arrivals feed the detector; only a new target or camera resets it.
+    assert!(dataset.cache_cycle.is_some());
     assert!(dataset.last_successful_build.is_none());
 }
 
@@ -872,4 +873,136 @@ fn fine_local_cells_survive_a_large_geographic_origin() {
             .iter()
             .all(|cell| cell.size < 1.0e-6)
     );
+}
+
+fn multi_block_dataset(block_ids: &[u64], cache_blocks: usize) -> LodDataset {
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap(),
+                1,
+                0.0,
+                block_ids.iter().copied().map(BlockId::new).collect(),
+            )
+            .unwrap(),
+        ],
+        Vec::new(),
+        Some(1),
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    LodDataset::new(
+        [0.0; 3],
+        hierarchy,
+        cache_blocks * block(10).estimated_memory_bytes(),
+    )
+    .unwrap()
+}
+
+/// Mirrors the load accounting of `update_view_progressive` for one arrival: the async path
+/// inserts through `insert_block` and the next update drains the stash; the sync path loads
+/// inside the update. Both end in the same `observe_cache_cycle` call.
+fn load_step(
+    dataset: &mut LodDataset,
+    id: u64,
+    target: &[u64],
+    async_arrival: bool,
+) -> Result<(), LodDatasetError> {
+    let (loaded, evicted) = if async_arrival {
+        dataset.insert_block(block(id)).unwrap();
+        (
+            std::mem::take(&mut dataset.arrived_blocks) > 0,
+            std::mem::take(&mut dataset.arrival_evictions),
+        )
+    } else {
+        let result = dataset.cache_block(block(id)).unwrap();
+        (true, result.evicted_blocks().to_vec())
+    };
+    let evicted_pending = evicted
+        .iter()
+        .filter(|evicted| target.contains(&evicted.get()))
+        .count() as u64;
+    dataset.refinement_work.evicted_pending_blocks += evicted_pending;
+    dataset.observe_cache_cycle(loaded, evicted_pending, true, false, 4.0, 4.0)
+}
+
+fn run_loads(dataset: &mut LodDataset, ids: &[u64], target: &[u64], async_arrival: bool) -> usize {
+    for (step, id) in ids.iter().enumerate() {
+        if load_step(dataset, *id, target, async_arrival).is_err() {
+            return step + 1;
+        }
+    }
+    0
+}
+
+#[test]
+fn async_thrash_evicting_the_target_cut_pauses_refinement_like_the_sync_path() {
+    let target = [10, 11, 12];
+    let arrivals: Vec<u64> = target.iter().copied().cycle().take(60).collect();
+    let mut sync = multi_block_dataset(&target, 2);
+    let mut asynchronous = multi_block_dataset(&target, 2);
+    let sync_stop = run_loads(&mut sync, &arrivals, &target, false);
+    let async_stop = run_loads(&mut asynchronous, &arrivals, &target, true);
+    assert!(sync_stop > 0, "sync path must detect the cycle");
+    assert_eq!(async_stop, sync_stop);
+    for dataset in [&sync, &asynchronous] {
+        assert!(dataset.cache_cycle.as_ref().unwrap().paused);
+        assert!(dataset.cache_cycle_detected());
+        assert_eq!(dataset.refinement_work.cache_cycle_detections, 1);
+    }
+    assert_eq!(
+        asynchronous.pending_target_evictions(),
+        sync.pending_target_evictions()
+    );
+    assert!(asynchronous.pending_target_evictions() > 1);
+    assert!(
+        asynchronous
+            .cache
+            .lru_entries()
+            .eq(sync.cache.lru_entries())
+    );
+}
+
+#[test]
+fn async_load_without_thrash_or_with_churn_outside_the_target_never_fires() {
+    let target = [10, 11, 12];
+    // Cut fits the budget: no eviction of target blocks at all.
+    let mut fits = multi_block_dataset(&[10, 11, 12], 3);
+    assert_eq!(run_loads(&mut fits, &[10, 11, 12], &target, true), 0);
+    assert_eq!(fits.pending_target_evictions(), 0);
+    assert!(!fits.cache_cycle_detected());
+    // LRU churn on blocks outside the target cut is not a target eviction.
+    let mut churn = multi_block_dataset(&[10, 11, 12, 20, 21, 22], 3);
+    let arrivals = [20, 21, 22, 20, 21, 22, 20, 21, 22, 10, 11, 12];
+    assert_eq!(run_loads(&mut churn, &arrivals, &target, true), 0);
+    assert_eq!(churn.pending_target_evictions(), 0);
+    assert!(churn.cache_cycle.is_none());
+    assert!(!churn.cache_cycle_detected());
+}
+
+#[test]
+fn a_new_target_resets_the_async_detector() {
+    let target = [10, 11, 12];
+    let mut dataset = multi_block_dataset(&target, 2);
+    assert_eq!(run_loads(&mut dataset, &[10, 11, 12], &target, true), 0);
+    assert!(dataset.cache_cycle.is_some());
+    // An update whose cut is not reusable (new target/camera) drops the detector.
+    dataset
+        .observe_cache_cycle(false, 0, false, false, 4.0, 4.0)
+        .unwrap();
+    assert!(dataset.cache_cycle.is_none());
+}
+
+#[test]
+fn cut_retention_still_protects_target_blocks_from_async_arrivals() {
+    let mut dataset = multi_block_dataset(&[10, 11, 12], 2);
+    dataset.insert_block(block(10)).unwrap();
+    dataset.cache.set_protected_blocks([BlockId::new(10)]);
+    dataset.insert_block(block(11)).unwrap();
+    dataset.insert_block(block(12)).unwrap();
+    assert!(dataset.cache.contains(BlockId::new(10)));
+    assert!(!dataset.arrival_evictions.contains(&BlockId::new(10)));
 }

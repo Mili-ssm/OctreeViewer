@@ -164,6 +164,16 @@ pub(super) fn add_cache_activity(
         )?;
     }
     js_sys::Reflect::set(value, &"cacheActivity".into(), &activity)?;
+    js_sys::Reflect::set(
+        value,
+        &"pendingTargetEvictions".into(),
+        &JsValue::from_f64(dataset.pending_target_evictions() as f64),
+    )?;
+    js_sys::Reflect::set(
+        value,
+        &"cacheCycleDetected".into(),
+        &JsValue::from_bool(dataset.cache_cycle_detected()),
+    )?;
     Ok(())
 }
 
