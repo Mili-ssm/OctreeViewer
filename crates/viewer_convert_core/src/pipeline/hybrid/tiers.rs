@@ -132,6 +132,7 @@ impl RamTier for VecRamTier {
 pub struct VecPageTier {
     zones: Mutex<Vec<Vec<u8>>>,
     quota: Option<u64>,
+    max_read: AtomicUsize,
 }
 
 impl VecPageTier {
@@ -139,7 +140,12 @@ impl VecPageTier {
         Self {
             zones: Mutex::new(vec![Vec::new(); zone_count as usize]),
             quota,
+            max_read: AtomicUsize::new(0),
         }
+    }
+
+    pub fn max_read_len(&self) -> usize {
+        self.max_read.load(Ordering::Relaxed)
     }
 
     /// Bytes currently held by `zone`.
@@ -181,6 +187,7 @@ impl PageTier for VecPageTier {
     }
 
     fn read(&self, zone: u32, at: u64, out: &mut [u8]) -> Result<(), ConvertError> {
+        self.max_read.fetch_max(out.len(), Ordering::Relaxed);
         let zones = lock(&self.zones);
         let held = zones
             .get(zone as usize)
