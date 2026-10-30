@@ -7,6 +7,7 @@ use web_sys::HtmlCanvasElement;
 use crate::{
     LodViewStats, ViewerConfig, ViewerController,
     browser_io::{BrowserBlobReader, BrowserReadStats},
+    lod_driver::AttributeAvailability,
     lod_session::LodSession,
 };
 use js_marshal::viewer_error_to_js;
@@ -43,6 +44,35 @@ pub struct WasmVoxelViewer {
 struct AsyncFormatContext {
     has_attributes: bool,
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
+}
+
+/// Whether the open dataset can paint `(index, component)`, and the range to normalise it with.
+/// The reader answers for a dataset opened from a Blob, the host-provided context for one
+/// whose blocks arrive asynchronously.
+fn attribute_availability(
+    session: Option<&LodSession<FormatReader<BrowserBlobReader>>>,
+    async_context: Option<&AsyncFormatContext>,
+    index: u32,
+    component: u32,
+) -> Result<Option<AttributeAvailability>, String> {
+    if let Some(reader) = session.and_then(LodSession::reader) {
+        let range = reader
+            .attribute_range(index, component)
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(AttributeAvailability {
+            has_attributes: reader.has_attributes(),
+            range,
+        }));
+    }
+    Ok(async_context.map(|context| AttributeAvailability {
+        has_attributes: context.has_attributes,
+        range: context
+            .attribute_ranges
+            .get(index as usize)
+            .and_then(|components| components.get(component as usize))
+            .copied()
+            .flatten(),
+    }))
 }
 
 #[wasm_bindgen]

@@ -2,8 +2,12 @@ use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
 use super::WasmVoxelViewer;
-use crate::{RenderInstanceSnapshot, lod_session::LodSession};
-use viewer_render_wgpu::ColorMode;
+use super::attribute_availability;
+use crate::{
+    RenderInstanceSnapshot,
+    lod_driver::{ColorSelection, resolve_color_selection},
+    lod_session::LodSession,
+};
 
 const MAX_WASM_TRANSFER_INSTANCES: usize = 16_384;
 
@@ -11,61 +15,21 @@ const MAX_WASM_TRANSFER_INSTANCES: usize = 16_384;
 impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = setColorMode)]
     pub fn set_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
-        let mut selected_range = None;
-        let selected_attribute = if let Some(selection) = mode.strip_prefix("attribute:") {
-            let (index, component) = selection
-                .split_once(':')
-                .ok_or_else(|| JsValue::from_str("expected attribute:index:component"))?;
-            let index = index
-                .parse::<u32>()
-                .map_err(|_| JsValue::from_str("invalid attribute index"))?;
-            let component = component
-                .parse::<u32>()
-                .map_err(|_| JsValue::from_str("invalid attribute component"))?;
-            let session = self
-                .lod_session
-                .as_ref()
-                .ok_or_else(|| JsValue::from_str("no format dataset open"))?;
-            let descriptor = session
-                .dataset()
-                .attribute_schema()
-                .get(index as usize)
-                .ok_or_else(|| JsValue::from_str("invalid attribute index"))?;
-            if component >= descriptor.component_count() {
-                return Err(JsValue::from_str("invalid attribute component"));
-            }
-            let (has_attributes, range) = if let Some(reader) = session.reader() {
-                let range = reader
-                    .attribute_range(index, component)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
-                (reader.has_attributes(), range)
-            } else if let Some(context) = &self.async_format_context {
-                let range = context
-                    .attribute_ranges
-                    .get(index as usize)
-                    .and_then(|components| components.get(component as usize))
-                    .copied()
-                    .flatten();
-                (context.has_attributes, range)
-            } else {
-                return Err(JsValue::from_str("no format dataset open"));
-            };
-            if !has_attributes {
-                return Err(JsValue::from_str("attach the attribute file first"));
-            }
-            selected_range = range;
-            Some((index, component))
-        } else {
-            None
+        let selection = {
+            let session = self.lod_session.as_ref();
+            let async_context = self.async_format_context.as_ref();
+            resolve_color_selection(
+                &mode,
+                session.map(|session| session.dataset().attribute_schema()),
+                |index, component| attribute_availability(session, async_context, index, component),
+            )
+            .map_err(|message| JsValue::from_str(&message))?
         };
-        let mode = if selected_attribute.is_some() {
-            Some(ColorMode::Rgb)
-        } else {
-            ColorMode::parse(&mode)
-        }
-        .ok_or_else(|| {
-            JsValue::from_str("color mode must be rgb, intensity, elevation, or classification")
-        })?;
+        let ColorSelection {
+            mode,
+            attribute: selected_attribute,
+            attribute_range: selected_range,
+        } = selection;
         let renderer = self
             .gpu_renderer
             .as_mut()

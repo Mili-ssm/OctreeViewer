@@ -6,6 +6,8 @@
 mod block_loading;
 mod controller;
 mod lod_dataset;
+#[cfg(any(target_arch = "wasm32", test))]
+mod lod_driver;
 #[cfg(target_arch = "wasm32")]
 mod lod_metadata;
 #[cfg(target_arch = "wasm32")]

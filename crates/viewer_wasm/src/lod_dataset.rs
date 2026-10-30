@@ -737,7 +737,7 @@ impl LodDataset {
 
     /// Checks whether the target cut can be published using only blocks already in the cache.
     /// This preflight does not build a scene or change cache protection.
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", test))]
     pub(crate) fn target_cut_is_resident(
         &mut self,
         view: &ViewProjection,
