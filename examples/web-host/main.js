@@ -789,7 +789,7 @@ convertButton.addEventListener("click", () => {
     convertCancelButton.hidden = false;
     convertStatus.textContent = `Preparing local conversion of ${file.name}… (Esc cancels)`;
     try {
-        converterApi = createConverter({ engine: "core" });
+        converterApi = createConverter();
         converterApi.on("status", ({ message }) => { convertStatus.textContent = message; });
         converterApi.on("warning", ({ message }) => {
             convertWarning.textContent = message;

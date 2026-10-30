@@ -76,8 +76,7 @@ test("validates input and prevents overlapping conversions", { concurrency: fals
     const active = converter.convert(lasFile());
     await assert.rejects(converter.convert(lasFile()), /already in progress/);
     converter.cancel();
-    assert.equal(workers[0].messages.at(-1).type, "cancel");
-    workers[0].dispatch("message", { type: "cancelled", message: "Conversion cancelled." });
+    assert.equal(workers[0].terminated, true);
     await assert.rejects(active, { name: "AbortError" });
     converter.dispose();
 });
@@ -144,16 +143,15 @@ test("a worker error message recycles the worker on the next conversion", { conc
     assert.equal(workers[1].terminated, true);
 });
 
-test("a cancellation keeps the same worker", { concurrency: false }, async () => {
+test("a cancellation respawns the worker for the next conversion", { concurrency: false }, async () => {
     const converter = createConverter();
     const active = converter.convert(lasFile());
     converter.cancel();
-    workers[0].dispatch("message", { type: "cancelled", message: "Conversion cancelled." });
     await assert.rejects(active, { name: "AbortError" });
     const next = converter.convert(lasFile());
-    assert.equal(workers.length, 1);
-    assert.equal(workers[0].terminated, false);
-    workers[0].dispatch("message", { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" });
+    assert.equal(workers.length, 2);
+    assert.equal(workers[0].terminated, true);
+    workers[1].dispatch("message", { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" });
     await next;
     converter.dispose();
 });

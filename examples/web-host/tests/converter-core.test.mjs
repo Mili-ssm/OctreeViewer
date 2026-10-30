@@ -57,10 +57,24 @@ function fakeStorage(initialNames = [], { lockedMs = 0 } = {}) {
 
 const complete = { type: "complete", file: new Blob(["oct"]), outputName: "p.oct", points: "1" };
 
-test("the legacy engine stays the default and sends no options", { concurrency: false }, () => {
+test("the core engine is the default and receives the converter options", { concurrency: false }, () => {
     const converter = createConverter({ converterOptions: { pointsPerBlock: 4096 } });
     void converter.convert(lasFile()).catch(() => {});
-    assert.deepEqual(Object.keys(workers[0].messages[0]), ["type", "file"]);
+    assert.equal(workers[0].messages[0].engine, "core");
+    assert.deepEqual(workers[0].messages[0].options, { pointsPerBlock: 4096 });
+    converter.dispose();
+});
+
+test("engine core is accepted as a no-op and legacy is rejected with a clear message", { concurrency: false }, async () => {
+    const converter = createConverter({ engine: "core" });
+    void converter.convert(lasFile()).catch(() => {});
+    assert.equal(workers[0].messages[0].engine, "core");
+    workers[0].dispatch("message", { type: "error", message: "stop" });
+    await assert.rejects(
+        converter.convert(lasFile(), { engine: "legacy" }),
+        { message: 'the legacy converter was removed; omit `engine` or use "core"' },
+    );
+    await assert.rejects(createConverter({ engine: "legacy" }).convert(lasFile()), /legacy converter was removed/);
     converter.dispose();
 });
 

@@ -261,7 +261,7 @@
             <button id="convert-download" type="button" hidden>Download converted .oct</button>
             <button id="convert-download-attributes" type="button" hidden>Download converted .octattrs</button>
             <button id="convert-open" type="button" hidden>Open converted .oct in viewer</button>
-            <small>This browser path scans the LAS/LAZ twice in bounded blocks: first to plan eight spatial nodes and voxel representatives, then to write them. Color is averaged per voxel; other attributes use the nearest source point. Extra Bytes and CRS are not retained. OPFS quota and large-file performance depend on the device. Successful outputs stay in site storage; remove site data to reclaim space. Closing the tab abruptly can leave an incomplete temporary file.</small>
+            <small>This browser path runs the same conversion pipeline as the command-line converter, spooling intermediate data in RAM and in OPFS zones. Extra Bytes and CRS are not retained. OPFS quota and large-file performance depend on the device. Successful outputs stay in site storage; remove site data to reclaim space. Closing the tab abruptly can leave an incomplete temporary file.</small>
         </section>
         <section class="panel" aria-label="Camera mode">
             <label for="camera-mode">Camera mode</label>

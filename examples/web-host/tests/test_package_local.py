@@ -39,7 +39,7 @@ class LocalPackageTests(unittest.TestCase):
     def test_offline_package_has_no_external_modules_and_embeds_both_workers(self):
         # Minimal binding markers keep this packaging regression independent of a WASM build.
         glue = """export class WasmVoxelViewer {}
-export class WasmLasOctConverter {}
+export class WasmCoreConverter {}
 async function __wbg_init(module_or_path) {
     module_or_path = new URL('viewer_wasm_bg.wasm', import.meta.url);
 }
@@ -71,6 +71,7 @@ export { initSync, __wbg_init as default };
             self.assertNotIn('type: "module",', runtime)
             self.assertIn("function validateConverterOptions(", runtime)
             self.assertNotIn("converter-ui.mjs", runtime)
+            self.assertNotIn("WasmLasOctConverter", runtime)
             self.check_script(runtime)
             for name in ["WORKER_SOURCE", "CONVERTER_WORKER_SOURCE"]:
                 match = re.search(rf"^const {name} = (.*);$", runtime, re.MULTILINE)
@@ -80,6 +81,7 @@ export { initSync, __wbg_init as default };
                 self.assertNotRegex(worker, r"(?m)^import ")
                 self.assertIn("Uint8Array.from(atob(", worker)
                 self.check_script(worker)
+                self.assertNotIn("WasmLasOctConverter", worker)
                 if name == "CONVERTER_WORKER_SOURCE":
                     self.assertIn("function createSpoolHost(", worker)
             # The independently served embedding API remains modular.

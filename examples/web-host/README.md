@@ -92,15 +92,13 @@ También puedes abrir directamente `artifacts/visor-web-local/index.html` con do
 ### Convertir y cargar una nube
 
 1. En **Convert a local LAS/LAZ file**, selecciona el `.las` o `.laz` y pulsa **Convert to .oct**.
-2. La conversión se ejecuta en un worker aparte y escribe bloques en OPFS; cancelar detiene el trabajo
-   entre bloques. El archivo permanece en almacenamiento local del navegador y puede descargarse o
+2. La conversión se ejecuta en un worker aparte con el mismo pipeline que el conversor de línea de
+   comandos (`viewer_convert_core`); cancelar termina el worker y borra los temporales. El archivo permanece en almacenamiento local del navegador y puede descargarse o
    abrirse en el visor. La cuota disponible puede interrumpir una conversión; los temporales incompletos
    se eliminan cuando el navegador permite cerrar el handle. Si cierras la pestaña abruptamente,
    puede quedar un temporal en el almacenamiento del sitio.
 3. Esta ruta web conserva XYZ, intensidad, clasificación, retornos, ángulo, user data, point source ID,
-   GPS time, RGB y NIR cuando están presentes. No conserva Extra Bytes ni CRS. Escribe hasta 4.096
-   representantes voxelizados y organiza la fuente en ocho celdas espaciales tras dos pasadas.
-   No sustituye la jerarquía adaptativa nativa para datasets grandes.
+   GPS time, RGB y NIR cuando están presentes. No conserva Extra Bytes ni CRS.
 4. Para abrir un `.oct` ya convertido, espera a que el estado indique que el renderizador está listo y
    usa **Open project dataset**. El visor muestra primero una vista gruesa y luego refina progresivamente.
    Ajusta **Finest voxel
@@ -181,27 +179,35 @@ in a temporary profile outside the command sandbox; the first small-file benchma
 in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
 
 The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
-`File`, runs in another worker, and returns `{ file, name, attributesFile, outputAttributesName, points, timings }`; progress/status events and
-`cancel()` are available while it runs:
+`File`, runs the core converter (the same pipeline as the CLI) in another worker, and resolves to
+`{ file, name, attributesFile, outputAttributesName, points, timings, spool? }`:
 
 ```js
 import { createConverter } from "./converter-api.mjs";
 
-const converter = createConverter();
+const converter = createConverter({ converterOptions: { pointsPerBlock: 4096 } });
+await converter.ready; // orphan `conversion-*.partial` files from earlier sessions are removed
 converter.on("progress", ({ processedPoints, totalPoints }) => console.log(processedPoints, totalPoints));
-const result = await converter.convert(lasFile);
+converter.on("warning", ({ message }) => console.warn(message));
+const result = await converter.convert(lasFile, { options: { spatialDivisions: 8 } });
 console.log(result.name, result.points, result.file, result.timings);
 converter.dispose();
 ```
 
-The host decides whether to download or open `result.file`. The worker requires OPFS and scans the
-source in two bounded passes: one to plan eight spatial child nodes and representatives, then one to
-write the output blocks. The root contains up to 4,096 representatives at voxel centers, with color
-and RGB averaged per voxel and other attributes copied from the nearest source point. Extra Bytes and
-CRS are omitted. Large-file scale and OPFS quota behavior have not been validated in Chrome/Firefox
-with Albuera. The result includes `timings.planningMs`, `timings.writingMs`, and `timings.totalMs`; these
-are browser wall-clock measurements and still need to be collected on Albuera before choosing whether
-per-node OPFS spools would improve the tradeoff.
+| Item | Behaviour |
+| --- | --- |
+| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion`, `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
+| `ready` | Promise that settles once stale partial files are deleted; `convert()` waits for it on its own, so awaiting it is optional |
+| Events | `on("progress" \| "status" \| "warning" \| "complete" \| "cancelled" \| "error", callback)` returns an unsubscribe function |
+| `warning` | Emitted when OPFS is unavailable (Chrome `file://`): the conversion runs RAM-only and is limited by `ramBudget`; serve the page over `http://localhost` for large files |
+| Quota | Firefox without persistent storage stops at about 10 GiB, so a conversion that cannot fit is rejected up front; the worker asks for `persist()` first. Other browsers are not pre-checked (Chrome allows more than it reports); a `QuotaExceededError` becomes a "Not enough browser storage" error |
+| `cancel()` | Terminates the worker, deletes its partial files and rejects with an `AbortError`; the next `convert()` respawns the worker |
+| `result.spool` | Spool statistics (spilled bytes, peak pages) when the engine reports them |
+| `engine` | **Deprecated.** `"core"` is accepted and does nothing; omitting it uses the core converter. `"legacy"` fails with ``the legacy converter was removed; omit `engine` or use "core"`` |
+
+The host decides whether to download or open `result.file`. Extra Bytes and CRS are omitted.
+`timings.totalMs` is a browser wall-clock measurement. Large-file behaviour and quotas per browser are
+recorded in the [stage 4 plan](../../docs/explanation/conversor-web-paralelo-etapa4.md).
 
 Use the keyboard-accessible **Open built-in sample** button to load the included v5 file, or focus
 the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
@@ -295,8 +301,8 @@ companions fail validation. Conversion returns two downloadable files and opens 
 The worker closes/cleans both OPFS files on ordinary cancellation or failure. Abrupt termination
 can leave partial entries. Successful output remains in site storage until removed by the user.
 
-The native stream format also permits monolithic v5 files for integrations, but both converters
-produce pairs. Previous format versions require reconversion. The current range-progress events
+The native stream format also permits monolithic v5 files for integrations, but the web
+converter produces pairs. Previous format versions require reconversion. The current range-progress events
 count unique reads from the coordinate file; they do not include companion I/O. In contrast,
 `refinementWork.rangeReadBytes` includes repeated Blob-cache fills from both files inside LOD
 callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes}` or `null`;
@@ -543,11 +549,10 @@ LOD publication and navigation measurements remain pending in the [V7 plan](../.
 
 ### Opt-in conversion revisions
 
-Normal conversion stays on final v5. Programmatic callers may use
-`WasmLasOctConverter.createForVersion(file, primaryHandle, attributesHandle, "v7.3-pre")`, or send
-`{ type: "convert", file, formatVersion: "v7.3-pre" }` to the converter worker. Opening a Blob
-automatically selects final v5 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
-and `v7.1-pre`–`v7.3-pre`. Both programmatic entry points accept these exact strings;
+Normal conversion stays on final v5. Programmatic callers may select a revision with the converter
+option `formatVersion`, for example `converter.convert(file, { options: { formatVersion: "v7.3-pre" } })`.
+Opening a Blob automatically selects final v5 or an implemented experimental identity: `v6.1-pre`–`v6.4-pre`
+and `v7.1-pre`–`v7.3-pre`. The option accepts these exact strings;
 paired files must have the exact same identity. Final `v6`, final `v7` and later revisions remain unsupported.
 The demo defaults to v5; this programmatic selection does not add a format selector to its UI.
 

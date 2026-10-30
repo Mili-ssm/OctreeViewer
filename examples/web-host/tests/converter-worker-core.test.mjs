@@ -77,7 +77,7 @@ async function run({
         },
         TextEncoder, Uint8Array, Blob,
         crypto: { randomUUID: () => "core-pair" }, performance, setTimeout, Date, DOMException,
-        init: async () => {}, WasmLasOctConverter: class {}, WasmCoreConverter: CoreConverter,
+        init: async () => {}, WasmCoreConverter: CoreConverter,
     });
     receive({ data: { type: "convert", engine: "core", options, file: { name: "source.las" } } });
     for (let i = 0; i < 20; i++) await new Promise(setImmediate);

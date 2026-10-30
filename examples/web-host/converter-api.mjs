@@ -1,5 +1,6 @@
 import { removeWithRetry } from "./spool-tiers.mjs";
 
+const LEGACY_REMOVED = 'the legacy converter was removed; omit `engine` or use "core"';
 const PARTIAL_PATTERN = /^conversion-.*\.partial$/;
 
 /**
@@ -27,8 +28,9 @@ async function removePartials(storage, directoryName, names) {
 
 /**
  * Creates a local LAS/LAZ converter backed by a dedicated worker and OPFS.
- * `options.engine` is "legacy" (default) or "core"; `options.converterOptions` are the core
- * engine options. Both can be overridden per `convert(file, { engine, options })` call.
+ * `options.converterOptions` are the converter options; they can be overridden per
+ * `convert(file, { options })` call. `engine` is deprecated: "core" is accepted as a no-op and
+ * "legacy" is rejected because that converter was removed.
  */
 export function createConverter(options = {}) {
     if (typeof Worker === "undefined") throw new Error("Web Workers are required");
@@ -129,15 +131,16 @@ export function createConverter(options = {}) {
             active = entry;
             const start = () => {
                 try {
-                    const engine = request.engine ?? options.engine ?? "legacy";
-                    if (engine !== "legacy" && engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
+                    const engine = request.engine ?? options.engine ?? "core";
+                    if (engine === "legacy") throw new TypeError(LEGACY_REMOVED);
+                    if (engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
                     partial = null;
-                    const message = { type: "convert", file };
-                    if (engine === "core") {
-                        message.engine = "core";
-                        message.options = request.options ?? options.converterOptions ?? {};
-                    }
-                    entry.engine = engine;
+                    const message = {
+                        type: "convert",
+                        engine: "core",
+                        file,
+                        options: request.options ?? options.converterOptions ?? {},
+                    };
                     entry.posted = true;
                     ensureWorker().postMessage(message);
                 } catch (error) {
@@ -157,11 +160,7 @@ export function createConverter(options = {}) {
                 settle(error);
                 return true;
             }
-            if (active.engine !== "core") {
-                worker?.postMessage({ type: "cancel" });
-                return true;
-            }
-            // The core engine runs in one synchronous call that cannot observe a message: stop
+            // The converter runs in one synchronous call that cannot observe a message: stop
             // the worker and delete its partial files; the next conversion respawns it.
             const files = partial;
             partial = null;

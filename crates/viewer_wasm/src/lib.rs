@@ -8,10 +8,6 @@ mod controller;
 mod lod_dataset;
 #[cfg(target_arch = "wasm32")]
 mod lod_metadata;
-#[cfg(any(target_arch = "wasm32", test))]
-mod lod_partition;
-#[cfg(any(target_arch = "wasm32", test))]
-mod lod_representatives;
 #[cfg(target_arch = "wasm32")]
 mod lod_request_scheduler;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -29,8 +25,6 @@ mod async_format_reader;
 #[cfg(target_arch = "wasm32")]
 mod bindings;
 #[cfg(target_arch = "wasm32")]
-mod browser_convert;
-#[cfg(target_arch = "wasm32")]
 mod browser_io;
 #[cfg(target_arch = "wasm32")]
 mod core_convert;
@@ -46,8 +40,6 @@ pub use async_format_reader::{
 };
 #[cfg(target_arch = "wasm32")]
 pub use bindings::WasmVoxelViewer;
-#[cfg(target_arch = "wasm32")]
-pub use browser_convert::WasmLasOctConverter;
 #[cfg(target_arch = "wasm32")]
 pub use core_convert::WasmCoreConverter;
 #[cfg(target_arch = "wasm32")]
