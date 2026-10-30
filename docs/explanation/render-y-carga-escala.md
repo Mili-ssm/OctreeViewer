@@ -4,7 +4,7 @@
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
 **Estado (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
-y enmendado tras su pre-mortem (abajo). R0 (arnés con Chrome y GPU hardware, datasets reconvertidos), R1-T0, R1-T3a y R1-T4 hechas; línea base en la ventana de medidas. R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
+y enmendado tras su pre-mortem (abajo). R0 (arnés con Chrome y GPU hardware, datasets reconvertidos), R1-T0, R1-T3a y R1-T4 hechas; línea base tomada (regresión de B en diagnóstico; R2 apunta al worker de construcción). R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
 esperan las [preguntas pendientes](preguntas-propietario.md).
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de
@@ -78,7 +78,7 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 - [x] **Paso 0 (E1, 30-10-2026):** Firefox 159 headless obtiene un adaptador **software** (`adapter.info` vacío, `gpu_busy` ≤ 3 %): sin tiempos válidos. Chrome 155 con `--use-angle=vulkan` da `{vendor: "amd", architecture: "rdna-3"}` (hardware); sin chromedriver, se conduce con `playwright-core` (paso 1b).
 - [x] **Paso 1 (E2, E3, E5; `46b76dd`, `4cb3ef7`, `ede7e0a`):** instrumentación: intervalo de respuestas de frame y espera en cola, ocupación del worker por tipo de mensaje, tiempo de decodificación async, registro con marca de tiempo de cada mensaje LOD, nodos sin cubrir, píxeles vacíos, expulsiones de pendientes; órbita guionizada de 10 s.
 - [x] **Paso 1b (`bae9a21`, `671f2da`):** backend de Chrome en `probe-orbit-load.mjs` con adaptador hardware; reconversión de Belvedere y Majadas a `target/render-data/` (los `.oct` de `data/datasets` son de un formato provisional que el visor ya no abre).
-- [ ] **Paso 2:** línea base: Majadas 4 px, Belvedere 8 px y 4 px (tope 300 s), 3 rondas; registro con mediana, rango y SHA de `.wasm` y datasets; commit.
+- [x] **Paso 2 (`7a6746a`, [registro](../records/benchmarks/RENDER_BASELINE_2026-10-30.md)):** Chrome con adaptador hardware, 18 ejecuciones A (`ede7e0a`) frente a B (`87ef649`). Ninguna rama cumple los criterios de latencia (p95 de respuestas ≈ 1 s en Majadas y 5–7 s en Belvedere durante la carga; en órbita tras el objetivo cada frame reconstruye: 480 ms y 2,6 s); la etapa nunca sube en órbita; sin aumento de nodos sin cubrir ni píxeles vacíos en B. La voxelización ocupa el 98–99,5 % del worker y la decodificación el 0,3–0,9 % (E13 → worker de construcción). **Regresión en B:** más lento hasta el objetivo (Majadas +10 %, Belvedere 8 px sin completar en 300 s) con más puntos por reconstrucción; diagnóstico en curso. Línea base: Majadas 4 px, Belvedere 8 px y 4 px (tope 300 s), 3 rondas; registro con mediana, rango y SHA de `.wasm` y datasets; commit.
 
 ## Fase R1: mejoras sin decisiones del propietario (orden E12)
 
