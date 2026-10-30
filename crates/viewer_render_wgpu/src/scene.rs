@@ -190,6 +190,22 @@ impl RenderScene {
         self.instances.len()
     }
 
+    /// FNV-1a 64-bit digest of the instance count and the raw instance bytes in order.
+    ///
+    /// Two scenes with equal digests upload identical GPU buffers; the build order is fixed by
+    /// the voxel key order, so the digest is stable across platforms and runs.
+    pub fn scene_digest(&self) -> u64 {
+        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+        const PRIME: u64 = 0x0000_0100_0000_01b3;
+        let count = (self.instances.len() as u64).to_le_bytes();
+        count
+            .iter()
+            .chain(bytemuck::cast_slice::<_, u8>(&self.instances))
+            .fold(OFFSET, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(PRIME)
+            })
+    }
+
     pub fn stats(&self) -> RenderStats {
         RenderStats {
             instance_count: self.instance_count(),

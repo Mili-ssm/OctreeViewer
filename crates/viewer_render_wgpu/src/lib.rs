@@ -12,6 +12,8 @@ mod hzb;
 #[cfg(not(target_arch = "wasm32"))]
 pub use headless::{OffscreenImage, render_offscreen};
 mod scene;
+#[cfg(test)]
+mod scene_digest_tests;
 mod voxel_grid;
 
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
