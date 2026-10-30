@@ -40,7 +40,7 @@ Herramientas de paridad wasm32 (miembros del workspace, sin uso en producción; 
 
 ## Límites
 
-Qué no demuestra lo implementado; consultar antes de afirmar capacidades.
+Qué no demuestra lo implementado; consultar antes de afirmar capacidades. Los requisitos y decisiones de producto (aún no implementados) están en [requirements.md](../requirements.md).
 
 | Área | Límite |
 | --- | --- |
@@ -48,7 +48,7 @@ Qué no demuestra lo implementado; consultar antes de afirmar capacidades.
 | Formato | La ocupación codificada es local al bloque, no una grilla física común. El lector predeterminado acota atributos (256), componentes (65 535), cadenas (1 MiB), índice y bloque (256 MiB), nodos y bloques (2 000 000) y rangos de atributo: un total de 2^23 sumados en todos los nodos, no por nodo (`with_max_attribute_ranges`; `FormatReaderLimits::DEFAULT_MAX_ATTRIBUTE_RANGES`) — constantes en `reader_limits.rs`. Un rango `u8` ocupa 6 B en disco y unos 76 B de heap: sin esa cota, un índice de 256 atributos por nodo amplifica ≈12,9× (medido a 4, 32 y 128 MiB con perfil `fast`, `tests/index_amplification.rs`; ~3,3 GB extrapolados a 256 MiB); esquemas mayores requieren `FormatReader::with_limits` y la política por defecto sigue por decidir. Los enteros de 64 bits conservan bits en disco; su proyección a color puede perder precisión. |
 | Conversión | EPT remoto/binary/zstandard no soportados. La identidad de checkpoint EPT usa rutas/tamaño/`mtime`, no hash: puede omitir cambios con metadatos iguales. Publicar `.oct`/`.octattrs` no es atómico (atributos primero). El `fsync` del directorio padre al publicar es solo unix; Windows no falla pero no está probado. COPC se lee como LAS/LAZ secuencial; no se conserva su jerarquía. |
 | Render | Los representantes limitan sus regiones ocupadas; payloads externos con más de ocho regiones por nodo conservan el suelo global. Se dibujan cubos, sin extracción de caras expuestas/agrupadas. Los presupuestos propios no cubren toda la VRAM. |
-| WASM / host | Lectura síncrona en el worker; la lectura BFS paralela del benchmark nativo no está integrada. El transporte revisado es Blob local: las interfaces por rangos no acreditan HTTP Range/remoto. En el navegador, un pánico interno del decodificador LAZ (datos aritméticos corruptos) no se puede capturar y termina el worker de conversión; el host lo informa y lo recrea (en nativo se contiene como error, [ADR 0012](../adr/0012-validacion-previa-de-cabeceras-las-laz.md)). |
+| WASM / host | El worker lee bloques LOD de forma async con scheduler (`WasmAsyncFormatReader`); la lectura de la entrada de conversión sigue siendo síncrona (`FileReaderSync`). La lectura BFS paralela del benchmark nativo no está integrada. El transporte revisado es Blob local: las interfaces por rangos no acreditan HTTP Range/remoto. En el navegador, un pánico interno del decodificador LAZ (datos aritméticos corruptos) no se puede capturar y termina el worker de conversión; el host lo informa y lo recrea (en nativo se contiene como error, [ADR 0012](../adr/0012-validacion-previa-de-cabeceras-las-laz.md)). |
 | Evidencia | Readback/SwiftShader no es prueba visual. No sumar porcentajes de series CPU distintas. Un corpus nativo grande no demuestra escala web. |
 
 ## Contrato de almacenamiento y atributos

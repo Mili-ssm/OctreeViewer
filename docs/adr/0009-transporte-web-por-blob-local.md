@@ -1,6 +1,6 @@
 # 0009 El transporte web es Blob local, sin HTTP Range
 
-Estado: Aceptada · Fecha: 25-10-2026 (decisión confirmada en el plan V7)
+Estado: Sustituida por [0023](0023-fuentes-locales-y-remotas.md) · Fecha: 25-10-2026 (decisión confirmada en el plan V7)
 
 ## Contexto
 El navegador abre archivos locales; la lectura asíncrona usa `Blob.slice(...).arrayBuffer()` con planes de rangos, cuota y prioridad LOD.

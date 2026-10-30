@@ -1,6 +1,6 @@
 # 0015 Paralelismo de conversión web por pool de workers sin memoria compartida
 
-Estado: Aceptada · Fecha: 29-10-2026
+Estado: Aceptada · enmendada por [0024](0024-hilos-wasm-opcionales-con-coop-coep.md) · Fecha: 29-10-2026
 
 ## Contexto
 El visor se sirve con `python3 -m http.server` y como paquete `file://` con workers `blob:`
@@ -31,3 +31,8 @@ La entrega admite cabeceras COOP/COEP, o las medidas muestran que el escritor ú
 
 ## Evidencia
 [Spec del conversor web paralelo](../explanation/conversor-web-paralelo.md)
+
+## Revisión 30-10-2026
+- [ADR 0024](0024-hilos-wasm-opcionales-con-coop-coep.md): si la página está aislada, pueden usarse hilos wasm con memoria compartida; este pool sigue siendo la ruta general.
+- M4/M5 (varios workers) solo si M6 con un worker supera 60 min o la experiencia lo exige ([requisitos, «Orden de trabajo»](../requirements.md)).
+- La lectura del visor se decidió en la [ADR 0018](0018-worker-de-construccion-por-defecto.md).

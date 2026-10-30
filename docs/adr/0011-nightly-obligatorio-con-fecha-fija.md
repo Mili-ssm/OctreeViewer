@@ -22,3 +22,6 @@ Ninguna característica inestable resulta rentable o el mantenimiento del nightl
 
 ## Evidencia
 [rust-toolchain.toml](../../rust-toolchain.toml); [CONTRIBUTING](../../CONTRIBUTING.md#toolchain)
+
+## Revisión 30-10-2026
+El propietario mantiene el nightly con fecha fija (CON-07 de [requisitos](../requirements.md)). Los hilos wasm opcionales ([ADR 0024](0024-hilos-wasm-opcionales-con-coop-coep.md)) necesitan `build-std` con atomics, que exige nightly.

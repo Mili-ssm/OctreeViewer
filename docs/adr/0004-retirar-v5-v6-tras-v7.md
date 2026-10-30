@@ -22,3 +22,6 @@ V7 no alcanza criterios de cierre o aparece un consumidor externo de V5/V6.
 
 ## Evidencia
 [Plan V7](../explanation/format-v7-plan.md#6-validación-promoción-y-retirada); [inventario de retirada](../explanation/format-v7-plan.md#inventario-operativo-para-la-promoción-y-retirada)
+
+## Revisión 30-10-2026
+El alcance y el congelado de V7 final se definen en la [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md). V5 sigue siendo el valor por defecto hasta ese congelado.

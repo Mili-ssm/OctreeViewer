@@ -1,8 +1,8 @@
 # Conversor web paralelo con paridad CLI
 
-Estado: spec aprobada (29-10-2026), con enmiendas del pre-mortem · Decisiones:
+Estado (30-10-2026): spec aprobada (29-10-2026), con enmiendas del pre-mortem; etapas 1–4 cerradas y M3b hecha. Siguiente: M6 (Majadas) con un worker; M4/M5 solo si M6 supera 60 min o la experiencia lo pide (propietario, 30-10-2026). El trabajo del conversor va después de la escala (R3–R5, V7 final) y la API pública ([orden de trabajo](../requirements.md#orden-de-trabajo-acordado)) · Decisiones:
 [ADR 0014](../adr/0014-nucleo-de-conversion-sin-io.md),
-[ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md),
+[ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md) (enmendado por el [ADR 0024](../adr/0024-hilos-wasm-opcionales-con-coop-coep.md)),
 [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)
 
 Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8, S9 y M1) [etapa 3](conversor-web-paralelo-etapa3.md) (S2, S10, M2 y M3a) y [etapa 4](conversor-web-paralelo-etapa4.md) (M3b; decisión del propietario 5: zonas OPFS paginadas; cerrada 30-10-2026). La lectura paralela tendrá spec
@@ -54,7 +54,7 @@ sin enviarlo.
 | R5 | Cuando un worker falle (error, trap o cancelación), la conversión abortará entera, terminará los workers y borrará sus temporales OPFS. |
 | R6 | La salida se validará releyéndola completa (en paralelo) antes de entregarla, como el CLI. |
 | R7 | El CLI no perderá rendimiento: SHA idénticos y mediana pareada Belvedere (perfil `perf`, ≥ 5 rondas A/B alternadas) dentro de ±3% de la referencia M0. |
-| R8 | Funcionará servido con `python3 -m http.server` y desde el paquete `file://`, sin cabeceras COOP/COEP. En Chrome desde `file://` no hay OPFS ([spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md)): ahí la conversión solo usa spools en RAM, limitada a `ram_budget` y con aviso; la escala completa requiere servir por HTTP local. Firefox desde `file://` admite la conversión completa (decisión del propietario, 29-10-2026). |
+| R8 | Funcionará servido con `python3 -m http.server` y desde el paquete `file://`, sin cabeceras COOP/COEP (el [ADR 0024](../adr/0024-hilos-wasm-opcionales-con-coop-coep.md) añade hilos wasm opcionales donde el sitio las sirva; no se exigen). En Chrome desde `file://` no hay OPFS ([spike S1](../records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md)): ahí la conversión solo usa spools en RAM, limitada a `ram_budget` y con aviso; la escala completa requiere servir por HTTP local. Firefox desde `file://` admite la conversión completa (decisión del propietario, 29-10-2026). |
 | R9 | Un `ram_budget` del host (por defecto 4 GB; máximo aceptado 8 GB) decide N y el umbral de spools en RAM. Es un objetivo de PSS medido, no una garantía: las estimaciones nativas no acotan la RAM real (RSS 606 MiB frente a 163 MB estimados en REAL_DATASET_BENCH). No cambia bytes ni el significado de `planner_budget`. |
 | R10 | Los spools se mantendrán en RAM mientras quepan en su presupuesto y se volcarán a OPFS al superarlo, sin cambiar los bytes de salida. |
 
@@ -193,9 +193,9 @@ En nativo, cada spool es un fichero en el directorio de trabajo.
 | M2 | `viewer_convert_core` separado; compila para wasm32; partición por rangos de chunks ejecutada en nativo con W = 1..8 | SHA iguales para todo W en Belvedere y LAZ multi-chunk; check wasm32 y lint en `check.sh` | El núcleo necesita `dyn` o asignación por punto |
 | M3a | Conversión web con un worker sobre el núcleo, LAS pequeño | Paridad (N = 1) en Chrome y Firefox | SHA distinto sin explicación tras una semana |
 | M3b | **Hecho 30-10-2026** ([plan](conversor-web-paralelo-etapa4.md), [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)): un worker con spools híbridos RAM/zonas OPFS a escala Belvedere; conversor anterior eliminado | Paridad (N = 1) y tiempo: SHA = R1 en Chrome y Firefox a 2,1–2,9 × nativo ([navegadores](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md), [Node 2,8 ×](../records/benchmarks/M3B_NODE_GATE_2026-10-30.md)) | Wasm con un worker > 4 × nativo en Belvedere: replantear |
-| M4 | Pool para preparación y escritor ordenado | Paridad N = 1, 2, 4, 8; curva de tiempos; S7 | Escritor > 50% del tiempo con N = 4, o N = 4 < 1,5 × más rápido: revisar ADR 0015 |
-| M5 | Pool para partición raíz y subárboles; validación paralela | Paridad; curva de tiempos; R7 | Aceleración de jerarquía con N = 8 < 1,5 × en Majadas: diseñar división bajo la raíz antes de M6 |
-| M6 | Escala Majadas: preflight de cuota, spool en RAM, limpieza | SHA Majadas = CLI; picos de RAM y OPFS registrados | Pico OPFS > 1,3 × la estimación de R4, o Majadas > 60 min |
+| M4 | **Condicional** (solo si M6 supera 60 min o la experiencia lo pide). Pool para preparación y escritor ordenado | Paridad N = 1, 2, 4, 8; curva de tiempos; S7 | Escritor > 50% del tiempo con N = 4, o N = 4 < 1,5 × más rápido: revisar ADR 0015 |
+| M5 | **Condicional** (misma regla que M4). Pool para partición raíz y subárboles; validación paralela | Paridad; curva de tiempos; R7 | Aceleración de jerarquía con N = 8 < 1,5 × en Majadas: diseñar división bajo la raíz antes de M6 |
+| M6 | **Siguiente, con un worker.** Escala Majadas: preflight de cuota, spool en RAM, limpieza. Chrome/Edge es la puerta; Firefox, mejor esfuerzo (CON-01), y su caso de `persist()` lo resuelve RF-29 (pedir `persist()` con mensaje claro). La UI promete conversión validada hasta Majadas (RF-28) | SHA Majadas = CLI; picos de RAM y OPFS registrados | Pico OPFS > 1,3 × la estimación de R4, o Majadas > 60 min |
 
 ## Spikes
 

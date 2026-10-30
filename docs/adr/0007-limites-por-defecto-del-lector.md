@@ -1,6 +1,6 @@
 # 0007 El lector aplica límites por defecto configurables
 
-Estado: Propuesta · Fecha: fecha no registrada
+Estado: Aceptada (30-10-2026) · Fecha: fecha no registrada
 
 ## Contexto
 Las cabeceras y el índice declaran tamaños controlados por el archivo; sin tope, un archivo corrupto o hostil reserva memoria arbitraria.
@@ -22,3 +22,6 @@ Se decide la política de compatibilidad por defecto, o un corpus real supera al
 
 ## Evidencia
 [reader_limits.rs](../../crates/viewer_format/src/reader_limits.rs); [inventario](../reference/inventory.md#límites)
+
+## Revisión 30-10-2026
+Aceptada por el propietario. Pregunta abierta resuelta: el escritor rechaza esquemas de más de 256 atributos con un mensaje claro (RF-27 de [requisitos](../requirements.md)). **Pendiente:** hoy el escritor los acepta (test `wide_schema_requires_explicit_reader_limits`); hay que cambiar el escritor y ese test. La columna de alternativas conserva su texto original.

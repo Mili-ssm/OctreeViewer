@@ -105,8 +105,13 @@ También puedes abrir directamente `artifacts/visor-web-local/index.html` con do
    detail** para elegir el detalle mínimo que quieres intentar.
 
 La nube y el archivo convertido se procesan localmente en el navegador; no se suben a ningún servicio.
-La conversión requiere WebAssembly, workers y OPFS en un contexto seguro. Los límites de tamaño,
-memoria máxima y tiempo para archivos grandes aún no están validados con Albuera ni en varios navegadores.
+La conversión requiere WebAssembly, workers y OPFS en un contexto seguro. Evidencia (30-10-2026,
+[M3b](../../docs/records/benchmarks/M3B_BELVEDERE_2026-10-30.md)): Belvedere se convirtió con SHA igual al
+CLI en Chrome 156.0.8078.73 y Firefox 157.0 (headless, una máquina) en 77,8-107,5 s (2,1-2,9 × el nativo),
+con PSS pico de 3,4-4,5 GiB y spools de 2 GiB. Albuera y tamaños mayores no están validados. Política
+de soporte ([requisitos](../../docs/requirements.md), CON-01): Chrome/Edge de escritorio son el objetivo;
+Firefox, mejor esfuerzo; Safari y móvil, fuera de alcance. Planificado (RF-28, no implementado): la UI
+anunciará «validado hasta Majadas (~6 GB de LAZ)»; lo mayor se convierte con el CLI.
 
 The target browsers support WebGPU and `OffscreenCanvas`. Firefox 157.0.1 has current v5
 XYZ/RGB/typed-attribute and visual evidence. Chrome 155 passes the small functional flows;
@@ -123,12 +128,16 @@ Both workers time out after 30 seconds if they produce no result. See the
 
 The host transfers the canvas
 with `transferControlToOffscreen()`, then the worker calls
-`WasmVoxelViewer.createOffscreen`. Select a project-format v5 file to call `openFormatDataset` and
-`updateLod`; the worker publishes a coarse visible cut first, then loads at most one missing block
-per `renderFrame()` and refines through projected voxel stages until the requested detail is reached.
-Pending blocks are prioritized against the current camera, and a camera change restarts selection from
-the coarse frontier. The worker can process camera commands between block reads; each individual
-`FileReaderSync` read is still synchronous, so a slow block can delay input until that read completes.
+`WasmVoxelViewer.createOffscreen`. Select a project-format file to open it with
+`WasmAsyncFormatReader` (asynchronous `Blob` range reads) and call `updateLod`; the worker publishes a
+coarse visible cut first, then each `frame` command schedules reads for the pending blocks, at most 4
+in flight (`WasmBlockRequestScheduler`) and within a shared byte budget (`WasmAsyncReadBudget`), and
+refines through projected voxel stages until the requested detail is reached. Pending blocks are
+prioritized against the current camera, and a camera change restarts selection from the coarse
+frontier. Reads do not block the worker: camera commands run while reads are pending, and only
+the insertion of each decoded block is queued with the other commands. Reads whose block is no longer
+wanted are cancelled. With `buildWorker` the reads and scene building move to `build-worker.js`
+(below). `openFormatDataset` in the wasm API is a synchronous reader that this worker does not use.
 The host reports time to the first coarse frame and target LOD frame, plus p50/p95/p99 worker
 `renderFrame()` times over a bounded window of up to 4,096 frames. Real-browser latency and frame-time
 validation remain pending in the [project roadmap](../../README.md#prioridades-pendientes).
@@ -177,6 +186,17 @@ Chrome 155 is now available and the small software-WebGPU flows pass, but pick/d
 unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
 in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
+
+**`buildWorker` (render plan R2).** Opt-in: `?buildWorker=1` in the demo URL (`main.js`) or
+`buildWorker: { url, type }` in the worker `init` message. Scenes are then built in `build-worker.js`
+instead of the render worker, which keeps frame replies short during loading and orbit (Majadas and
+Belvedere: p95 <= 17.6 ms, time to target -57 to -62 %, see the
+[measurement](../../docs/records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md)). Off by default today;
+it is planned to become the default when `feat/web-converter-stage4` is merged
+([ADR 0018](../../docs/adr/0018-worker-de-construccion-por-defecto.md)). If nested workers are
+unavailable (a Blob worker inside a Blob worker on `file://` in Chrome), the option disables itself,
+the worker posts `buildWorkerUnavailable` and scenes are built in the render worker. Color modes by
+attribute are not covered in this mode yet.
 
 The converter is separately embeddable from `converter-api.mjs`. It accepts a local `.las` or `.laz`
 `File`, runs the core converter (the same pipeline as the CLI) in another worker, and resolves to
@@ -248,11 +268,10 @@ pending block count, decoded CPU cache usage/budget, cumulative bytes written to
 the synchronous CPU time spent inside the worker's `renderFrame()`. This does not measure GPU
 execution or display latency. File reads report unique
 bytes fetched in 256 KiB ranges. This is not a completion percentage: the reader seeks through
-metadata and selected blocks, so it may never read the full file. Cancel terminates the synchronous
+metadata and selected blocks, so it may never read the full file. Cancel terminates the
 worker, replaces its transferred canvas, and starts a fresh viewer; select the file again to retry.
 The host keeps at most one worker command of each repeatable kind in flight and replaces its pending
-value with the latest input. It also allows only one frame request in flight; file reads remain
-synchronous inside the worker.
+value with the latest input. It also allows only one frame request in flight.
 
 The browser host caps the render framebuffer at 4,194,304 pixels and 4,096 pixels
 per dimension to limit swapchain, depth, and HZB allocation on high-DPI displays.
@@ -392,7 +411,7 @@ interval and round-trip p50/p95/max per phase (the primary latency metric; `rend
 secondary), worker busy time and queue wait per message type, async read/decode/insert time,
 the timestamped log of every `lod` message, deterministic counters (`sceneBuilds`,
 `voxelSourcePoints`, `evictedPendingBlocks`, `uncoveredNodes`, `oversizedVoxels`; `loadedBlocks`
-only counts the synchronous path, use `workerMetrics.asyncBlocks.blocks`), adapter info,
+is not filled by the asynchronous path, use `workerMetrics.asyncBlocks.blocks`), adapter info,
 Vulkan libraries and DRI fds of the browser processes, `gpu_busy_percent` samples, the SHA-256 of
 the served `.wasm`, dataset size and `loadavg`. `--pixels` (opt-in) screenshots the canvas
 three times per orbit and counts background pixels inside the projected dataset bounds.

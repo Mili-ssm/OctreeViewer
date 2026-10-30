@@ -3,6 +3,12 @@
 Punto de entrada del proyecto: [README](../README.md) (estado y prioridades activas). Marcas:
 **vivo** = se mantiene con el código; **histórico** = registro fechado, no se edita ([política](../CONTRIBUTING.md#convenciones)).
 
+## Requisitos
+
+| Documento | Contenido | Marca |
+| --- | --- | --- |
+| [Requisitos](requirements.md) | Propósito, usuarios, escenarios de escala, requisitos EARS, restricciones, supuestos y preguntas abiertas. | vivo |
+
 ## Referencia
 
 | Documento | Contenido | Marca |
@@ -19,10 +25,10 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | [Conversor web paralelo](explanation/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas. | vivo |
 | [Conversor web paralelo, etapa 1](explanation/conversor-web-paralelo-etapa1.md) | Plan: independencia de workers, igualdad LZ4 nativo/wasm32, referencia CLI y spike de arenas OPFS. | vivo |
 | [Conversor web paralelo, etapa 2](explanation/conversor-web-paralelo-etapa2.md) | Plan: modelo de trabajos por nodo, S0 con bloques reales de Belvedere, cuota real (S8), un fichero OPFS por spool (S9) y M1. | vivo |
-| [Render y carga a escala](explanation/render-y-carga-escala.md) | Plan: arnés y línea base, mejoras de LOD y carga sin decisiones del propietario (R1), decodificación fuera del hilo de render (R2) y fases que esperan decisiones (R3–R5). | vivo |
-| [Preguntas pendientes](explanation/preguntas-propietario.md) | Decisiones del propietario que bloquean fases concretas, con opciones y recomendación. | vivo |
-| [Conversor web paralelo, etapa 4](explanation/conversor-web-paralelo-etapa4.md) | Plan: M3b, un worker a escala Belvedere con spools en RAM de JS y zonas OPFS paginadas (decisión 5), y retirada del conversor antiguo. | vivo |
+| [Render y carga a escala](explanation/render-y-carga-escala.md) | Plan: arnés y línea base, mejoras de LOD y carga sin decisiones del propietario (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | vivo |
+| [Preguntas pendientes](explanation/preguntas-propietario.md) | Decisiones del propietario que bloqueaban fases concretas: resueltas el 30-10-2026; las abiertas, en [requisitos](requirements.md#preguntas-abiertas). | vivo |
 | [Conversor web paralelo, etapa 3](explanation/conversor-web-paralelo-etapa3.md) | Plan: spikes S2 (rangos de chunks LAZ) y S10 (RAM del híbrido), núcleo `viewer_convert_core` (M2) y conversión web con un worker (M3a). | vivo |
+| [Conversor web paralelo, etapa 4](explanation/conversor-web-paralelo-etapa4.md) | Plan: M3b, un worker a escala Belvedere con spools en RAM de JS y zonas OPFS paginadas (decisión 5), y retirada del conversor antiguo. | vivo |
 | [Resolución regional LOD](explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback y regresiones del LOD Replacement. | vivo |
 | [Resúmenes por nodo](explanation/NODE_ATTRIBUTE_SUMMARIES.md) | Contenedores experimentales de resúmenes y diccionario conjunto. | vivo |
 | [Dependencias del renderer](explanation/RENDERER_DEPENDENCIES.md) | Migración wgpu 30/glam 0.34, checks y validación parcial de navegador. | vivo |
@@ -45,6 +51,8 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Puerta Node de M3b](records/benchmarks/M3B_NODE_GATE_2026-10-30.md) | Belvedere a través de los bindings en Node frente a `native_hybrid` y R7 corto de las pistas. | fechado |
 | [M3b en navegadores](records/benchmarks/M3B_BELVEDERE_2026-10-30.md) | Belvedere en Chrome y Firefox: SHA, tiempo frente al nativo, PSS y OPFS con spools de 2 y 4 GiB. | fechado |
 | [Línea base de render](records/benchmarks/RENDER_BASELINE_2026-10-30.md) | Arnés de órbita en Chrome y primer A/B de las mejoras R1 en Majadas y Belvedere. | fechado |
+| [Worker de construcción (R2)](records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md) | Escenas construidas fuera del hilo de render, activado y no: respuestas de frame y tiempo a objetivo en Majadas y Belvedere. | fechado |
+| [Digest del worker de construcción](records/benchmarks/RENDER_BUILD_WORKER_DIGEST_2026-10-30.md) | Digest en reposo distinto entre ambas rutas: la causa es la cámara de la sonda, no el worker. | fechado |
 | [Diagnóstico de T4](records/benchmarks/RENDER_T4_DIAGNOSIS_2026-10-30.md) | Causa de la regresión de T4 en Belvedere: orden de carga de los bloques pendientes. | fechado |
 | [Puerta R7 de M2](records/benchmarks/M2_R7_2026-10-29.md) | Instrucciones (callgrind) y R7 corto en divisiones 8 tras extraer `viewer_convert_core`. | fechado |
 | [Paridad M3a](records/benchmarks/M3A_PARITY_2026-10-29.md) | Motor `core` frente al CLI en Chrome, Firefox y Node; hallazgo de `hypot`. | fechado |

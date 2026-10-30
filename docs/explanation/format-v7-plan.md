@@ -18,9 +18,15 @@ La asincronía solapa esperas; el paralelismo distribuye CPU y puede multiplicar
 La velocidad se medirá junto a los recursos consumidos. No se presupone que permita compensar
 cualquier codec más costoso. El objetivo de más de 500 GB sigue sin demostrarse.
 
-No se han acordado mínimos de hardware, almacenamiento objetivo ni tolerancias numéricas de
-regresión de latencia. Se puede avanzar con comparaciones relativas y corpus local existente;
-cerrar esas decisiones antes de congelar el formato, sin inventar un porcentaje de mejora.
+Objetivos acordados (30-10-2026) en [requisitos](../requirements.md): equipo EQ-REF, PSS del visor RQ-05,
+disco temporal RQ-06 y tolerancias de V7 frente a V5 RQ-07; alcance y congelación en el
+[ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (RSS de conversión ≤ +30 %) y RQ-06
+(temporales ≤ 2 × LAZ) son los objetivos vigentes; las mediciones actuales de §4 y §6 aún no los demuestran.
+
+**Alcance de V7 final:** pirámide densa (R4, [ADR 0020](../adr/0020-piramide-lod-densa.md)), jerarquía
+paginada (R5), rejilla global determinista y CRS ([ADR 0021](../adr/0021-rejilla-global-determinista-y-crs.md)),
+flags LAS y Extra Bytes conservados, escritor que rechaza > 256 atributos ([ADR 0007](../adr/0007-limites-por-defecto-del-lector.md)) y codificador LZ4
+propio ([ADR 0025](../adr/0025-codificador-lz4-propio.md)). Se congela cuando se cumpla RQ-07; hasta entonces V5 sigue por defecto.
 
 ## Base contrastada
 
