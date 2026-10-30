@@ -78,10 +78,13 @@ export { initSync, __wbg_init as default };
                 self.assertNotRegex(worker, r"(?m)^import ")
                 self.assertIn("Uint8Array.from(atob(", worker)
                 self.check_script(worker)
+                if name == "CONVERTER_WORKER_SOURCE":
+                    self.assertIn("function createSpoolHost(", worker)
             # The independently served embedding API remains modular.
             embed = output / "embed"
             self.assertIn('type: "module",', (embed / "converter-api.mjs").read_text())
             self.assertIn('from "./viewer_wasm.js"', (embed / "viewer-worker.js").read_text())
+            self.assertIn("export function createSpoolHost(", (embed / "spool-tiers.mjs").read_text())
 
     def test_inline_json_cannot_close_the_script_tag(self):
         source = 'const a = "</script><script>alert(1)</script>"; // <!-- x'

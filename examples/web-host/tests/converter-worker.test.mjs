@@ -4,7 +4,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = (await readFile(new URL("../converter-worker.js", import.meta.url), "utf8"))
-    .replace(/^import .*\n/, "");
+    .replace(/^import .*\n/gm, "");
 
 async function run(failure = false, cancel = false) {
     const messages = [], removed = [], handles = [];

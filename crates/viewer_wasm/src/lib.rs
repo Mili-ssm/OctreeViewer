@@ -34,6 +34,8 @@ mod browser_io;
 mod core_convert;
 #[cfg(target_arch = "wasm32")]
 mod opfs;
+#[cfg(target_arch = "wasm32")]
+mod spool_host;
 
 #[cfg(target_arch = "wasm32")]
 pub use async_format_reader::{

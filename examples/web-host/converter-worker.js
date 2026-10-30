@@ -1,4 +1,5 @@
 import init, { WasmCoreConverter, WasmLasOctConverter } from "../../pkg/viewer_wasm.js";
+import { createSpoolHost } from "./spool-tiers.mjs";
 
 let cancelRequested = false;
 
@@ -196,7 +197,10 @@ async function convertWithCore(file, options) {
             self.postMessage({ type: "progress", ...progress, sourceName: file.name });
             return true;
         };
-        converter = new WasmCoreConverter(file, geometryHandle, attributesHandle, options, onProgress);
+        // RAM-only spools until the worker opens spill zones (zones: []).
+        converter = new WasmCoreConverter(
+            file, geometryHandle, attributesHandle, options, onProgress, createSpoolHost({ zones: [] }),
+        );
         const summary = converter.convert();
         converter.free();
         converter = null;

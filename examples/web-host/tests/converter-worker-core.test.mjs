@@ -4,7 +4,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = (await readFile(new URL("../converter-worker.js", import.meta.url), "utf8"))
-    .replace(/^import .*\n/, "");
+    .replace(/^import .*\n/gm, "");
 
 async function run({ fail = false } = {}) {
     const messages = [], handles = [], removed = [], seen = {};
@@ -18,9 +18,9 @@ async function run({ fail = false } = {}) {
         async removeEntry(name) { removed.push(name); },
     };
     class CoreConverter {
-        constructor(file, primary, attrs, options, onProgress) {
+        constructor(file, primary, attrs, options, onProgress, spoolHost) {
             assert.notEqual(primary, attrs);
-            Object.assign(seen, { options });
+            Object.assign(seen, { options, spoolHost });
             this.onProgress = onProgress;
         }
         convert() {
@@ -34,7 +34,7 @@ async function run({ fail = false } = {}) {
         self: { addEventListener(_name, callback) { receive = callback; }, postMessage(message) { messages.push(message); } },
         navigator: { storage: { async getDirectory() { return { async getDirectoryHandle() { return directory; } }; } } },
         crypto: { randomUUID: () => "core-pair" }, performance, setTimeout, DOMException,
-        init: async () => {}, WasmLasOctConverter: class {}, WasmCoreConverter: CoreConverter,
+        createSpoolHost: () => ({ zoneCount: 0 }), init: async () => {}, WasmLasOctConverter: class {}, WasmCoreConverter: CoreConverter,
     });
     receive({ data: { type: "convert", engine: "core", options: { pointsPerBlock: 4096 }, file: { name: "source.las" } } });
     for (let i = 0; i < 10; i++) await new Promise(setImmediate);
@@ -46,6 +46,7 @@ const names = ["conversion-core-pair.oct.partial", "conversion-core-pair.octattr
 test("core engine announces its partial files, passes options and closes both handles", async () => {
     const { messages, handles, seen } = await run();
     assert.equal(seen.options.pointsPerBlock, 4096);
+    assert.equal(seen.spoolHost.zoneCount, 0);
     const order = messages.map((message) => message.type);
     assert.ok(order.indexOf("partial-files") < order.indexOf("progress"));
     assert.deepEqual([...messages.find((message) => message.type === "partial-files").names], names);

@@ -1,20 +1,21 @@
 //! Browser converter over the shared `viewer_convert_core` serial path: the same planner and block
 //! writer as the native CLI, with a Blob as input and two OPFS sync access handles as output.
-//! Everything runs in one synchronous call inside a dedicated worker; cancelling means the host
+//! Spools live in the hybrid store (JS RAM segments plus OPFS spill zones). Everything runs in one synchronous call inside a dedicated worker; cancelling means the host
 //! terminates the worker and deletes the partial files.
 
 use std::io;
 
 use viewer_convert_core::{
-    ByteSource, ConversionProgress, ConversionStage, ConvertError, ConvertOptions, LasFactory,
-    MemSpoolStore, NoClock, convert_serial, validate_output_serial,
+    ByteSource, ConversionProgress, ConversionStage, ConvertError, ConvertOptions, HybridConfig,
+    HybridSpoolStore, HybridStats, LasFactory, NoClock, convert_serial, validate_output_serial,
 };
 use viewer_format::FormatVersion;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
 use crate::browser_io::BrowserBlobReader;
 use crate::opfs::{OpfsReader, OpfsWriter};
+use crate::spool_host::{JsPageTier, JsRamTier, SpoolHost};
 
 /// Opens a fresh cached reader per call; `las::Reader` needs `Send + Sync`, which `JsValue` holds
 /// on wasm32 without atomics (the same assumption `WasmLasOctConverter` makes).
@@ -96,12 +97,15 @@ pub struct WasmCoreConverter {
     geometry: JsValue,
     attributes: JsValue,
     options: ConvertOptions,
+    spool_budget: u64,
     on_progress: Option<js_sys::Function>,
+    spool_host: SpoolHost,
 }
 
 #[wasm_bindgen]
 impl WasmCoreConverter {
-    /// `options` is a plain object (see `parse_options`); `on_progress` receives
+    /// `options` is a plain object (see `parse_options`) plus `spoolBudgetBytes`, the RAM the
+    /// spools may retain before spilling to the zones of `spool_host`. `on_progress` receives
     /// `{ stage, processedPoints, totalPoints }` and may return `false` to stop the conversion.
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -110,9 +114,13 @@ impl WasmCoreConverter {
         attributes_handle: JsValue,
         options: JsValue,
         on_progress: Option<js_sys::Function>,
+        spool_host: SpoolHost,
     ) -> Result<WasmCoreConverter, JsValue> {
         Ok(Self {
             options: parse_options(&options)?,
+            spool_budget: number(&options, "spoolBudgetBytes")?
+                .map_or(DEFAULT_SPOOL_BUDGET_BYTES, |bytes| bytes as u64),
+            spool_host,
             input,
             geometry: geometry_handle,
             attributes: attributes_handle,
@@ -121,7 +129,9 @@ impl WasmCoreConverter {
     }
 
     /// Converts, flushes and validates by reading the handles back. Returns
-    /// `{ pointCount, blockCount }` (point count as a string: it may exceed 2^53).
+    /// `{ pointCount, blockCount, spool }` (point count as a string: it may exceed 2^53; `spool`
+    /// holds the `HybridStats` counters). A full output or spill zone throws an `Error` named
+    /// `QuotaExceededError`.
     pub fn convert(&mut self) -> Result<JsValue, JsValue> {
         let callback = self.on_progress.clone();
         let mut report = move |progress: ConversionProgress| -> bool {
@@ -150,7 +160,13 @@ impl WasmCoreConverter {
         let factory = LasFactory::new(BlobBytes {
             blob: self.input.clone(),
         });
-        let store = MemSpoolStore::new(false);
+        let store = HybridSpoolStore::new(
+            JsRamTier(self.spool_host.clone().unchecked_into()),
+            JsPageTier(self.spool_host.clone().unchecked_into()),
+            HybridConfig::web(self.spool_budget),
+            false,
+        )
+        .map_err(|error| conversion_error("spool setup failed", &error))?;
         let output = convert_serial(
             &factory,
             &store,
@@ -160,18 +176,18 @@ impl WasmCoreConverter {
             OpfsWriter::new(self.attributes.clone())?,
             &mut report,
         )
-        .map_err(|error| JsValue::from_str(&format!("conversion failed: {error}")))?;
+        .map_err(|error| conversion_error("conversion failed", &error))?;
         let (mut geometry, mut attributes) = (output.geometry, output.attributes);
         std::io::Write::flush(&mut geometry)
             .and_then(|()| std::io::Write::flush(&mut attributes))
-            .map_err(|error| JsValue::from_str(&format!("flushing output: {error}")))?;
+            .map_err(|error| conversion_error("flushing output", &ConvertError::Io(error)))?;
         validate_output_serial(
             OpfsReader::new(self.geometry.clone()),
             OpfsReader::new(self.attributes.clone()),
             &output.plan,
             &mut report,
         )
-        .map_err(|error| JsValue::from_str(&format!("output validation failed: {error}")))?;
+        .map_err(|error| conversion_error("output validation failed", &error))?;
         let result = js_sys::Object::new();
         js_sys::Reflect::set(
             &result,
@@ -183,8 +199,52 @@ impl WasmCoreConverter {
             &"blockCount".into(),
             &JsValue::from_f64(output.plan.block_count as f64),
         )?;
+        js_sys::Reflect::set(&result, &"spool".into(), &stats_object(store.stats())?)?;
         Ok(result.into())
     }
+}
+
+/// Spool RAM retained before spilling when the host gives no `spoolBudgetBytes`.
+const DEFAULT_SPOOL_BUDGET_BYTES: u64 = 2 << 30;
+
+/// Out-of-space errors are thrown as `QuotaExceededError`, like the browser's own, so the host can
+/// tell a full disk from a bug. The `io::Error` may sit under a format or spool error.
+fn conversion_error(context: &str, error: &ConvertError) -> JsValue {
+    let message = format!("{context}: {error}");
+    let is_full = |io: &io::Error| io.kind() == io::ErrorKind::StorageFull;
+    // `transparent` variants forward `source()`, so `Io` is matched before walking the chain.
+    let mut full = matches!(error, ConvertError::Io(io) if is_full(io));
+    let mut cause = std::error::Error::source(error);
+    while let Some(current) = cause {
+        full |= current.downcast_ref::<io::Error>().is_some_and(is_full);
+        cause = current.source();
+    }
+    if full {
+        let thrown = js_sys::Error::new(&message);
+        thrown.set_name("QuotaExceededError");
+        return thrown.into();
+    }
+    JsValue::from_str(&message)
+}
+
+fn stats_object(stats: HybridStats) -> Result<JsValue, JsValue> {
+    let object = js_sys::Object::new();
+    let fields = [
+        ("livePayloadBytes", stats.live_payload_bytes as f64),
+        ("ramRetainedBytes", stats.ram_retained_bytes as f64),
+        ("ramPeakBytes", stats.ram_peak_bytes as f64),
+        ("overBudgetPeakBytes", stats.over_budget_peak_bytes as f64),
+        ("spilledBytes", stats.spilled_bytes as f64),
+        ("spilledSpools", stats.spilled_spools as f64),
+        ("pageReadBytes", stats.page_read_bytes as f64),
+        ("pagesInUse", f64::from(stats.pages_in_use)),
+        ("pagesPeak", f64::from(stats.pages_peak)),
+        ("zonesReleased", f64::from(stats.zones_released)),
+    ];
+    for (key, value) in fields {
+        js_sys::Reflect::set(&object, &key.into(), &JsValue::from_f64(value))?;
+    }
+    Ok(object.into())
 }
 
 fn stage_name(stage: ConversionStage) -> &'static str {

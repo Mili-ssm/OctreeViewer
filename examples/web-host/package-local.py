@@ -58,6 +58,7 @@ def main() -> None:
     viewer_api_js = (HOST / "viewer-api.mjs").read_text(encoding="utf-8")
     converter_api_js = (HOST / "converter-api.mjs").read_text(encoding="utf-8")
     converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
+    spool_tiers_js = (HOST / "spool-tiers.mjs").read_text(encoding="utf-8")
     embed_worker_js = worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
     embed_wasm_js = wasm_js
@@ -107,10 +108,15 @@ def main() -> None:
         "await __wbg_init(__CONVERTER_WASM_BYTES__);",
         "converter WASM init",
     )
+    spool_tiers_import = 'import { createSpoolHost } from "./spool-tiers.mjs";\n'
+    converter_worker_js = require_replace(converter_worker_js, spool_tiers_import, "", "spool tiers import")
+    inline_spool_tiers_js = re.sub(r"^export ", "", spool_tiers_js, flags=re.MULTILINE)
     converter_worker_source = (
         f'const __CONVERTER_WASM_BYTES__ = Uint8Array.from(atob("{wasm_bytes}"), '
         "(value) => value.charCodeAt(0));\n"
         + wasm_js
+        + "\n"
+        + inline_spool_tiers_js
         + "\n"
         + converter_worker_js
     )
@@ -249,6 +255,7 @@ def main() -> None:
     (embed_dir / "converter-api.mjs").write_text(
         (HOST / "converter-api.mjs").read_text(encoding="utf-8"), encoding="utf-8"
     )
+    (embed_dir / "spool-tiers.mjs").write_text(spool_tiers_js, encoding="utf-8")
     (embed_dir / "converter-worker.js").write_text(embed_converter_worker_js, encoding="utf-8")
     (embed_dir / "viewer-worker.js").write_text(embed_worker_js, encoding="utf-8")
     (embed_dir / "rendering-budget.mjs").write_text(rendering_budget_js, encoding="utf-8")
