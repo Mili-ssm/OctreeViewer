@@ -36,7 +36,8 @@ pub use options::ConvertOptions;
 pub use pipeline::clock::NoClock;
 pub use pipeline::hybrid::{
     HYBRID_PAGE_BYTES, HYBRID_ZONE_BYTES, HybridConfig, HybridReader, HybridSpoolStore,
-    HybridStats, PageAllocator, PageTier, RamTier, SegmentKey, VecPageTier, VecRamTier,
+    HybridStats, PageAllocator, PageTier, RamTier, SegmentKey, SpoolEstimate, VecPageTier,
+    VecRamTier, estimate_spools, inspect_source,
 };
 pub use pipeline::point_source::{ByteSource, LasFactory, MemBytes, SourceFactory};
 pub use pipeline::spool_store::{MemSpoolStore, SpoolStore};

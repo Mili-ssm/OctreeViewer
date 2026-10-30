@@ -13,10 +13,10 @@ use crate::error::ConvertError;
 use crate::options::ConvertOptions;
 use crate::pipeline::clock::Clock;
 use crate::pipeline::executor::SerialExecutor;
-use crate::pipeline::point_source::{ByteSource, LasFactory, PointSource, SourceFactory};
+use crate::pipeline::hybrid::inspect_source;
+use crate::pipeline::point_source::{ByteSource, LasFactory, SourceFactory};
 use crate::pipeline::spool_store::PlanStore;
 use crate::report::{ConversionProgress, ConversionStage, ConversionWorkerStats, emit_progress};
-use crate::source::inspect_header;
 use crate::spatial::build_spatial_plan_from_source;
 
 /// What validating a converted pair needs to know about its plan.
@@ -60,13 +60,13 @@ where
         progress(ConversionStage::InspectingInput, 0, 0),
         0,
     )?;
+    let source = inspect_source(input)?;
     let full = input
         .split(1, 1)?
         .into_iter()
         .next()
         .expect("split returns at least one range");
     let mut first = input.open(full)?;
-    let source = inspect_header(first.header())?;
     emit_progress(
         on_progress,
         progress(ConversionStage::PlanningMetadata, 0, source.point_count),
