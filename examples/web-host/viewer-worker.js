@@ -675,7 +675,11 @@ function handleBuildMessage(data) {
             }
             applyBuiltLod(data.lod, data.type === "scene" ? "scene" : "lod");
             // The host stops requesting frames once the LOD is complete: draw the final scene.
-            if (data.type === "scene" && !lodStillLoading(data.lod)) viewer.renderFrame();
+            if (data.type === "scene" && !lodStillLoading(data.lod)) {
+                viewer.renderFrame();
+                // No host frame follows, so this is where the first-frame and target milestones land.
+                postLodProgress(data.lod, true);
+            }
         } else if (data.type === "colorMode") {
             confirmedColorMode = data.mode;
             buildAttributeRange = data.attributeRange ?? null;

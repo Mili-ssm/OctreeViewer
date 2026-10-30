@@ -310,6 +310,8 @@ test("render worker sends the first view once the dataset opens and applies scen
     worker.emit(sceneMessage({ epoch: 2, viewEpoch: 1, lod: lod(0, 4) }));
     await settle();
     assert.equal(render.renders(), 1, "the final scene is drawn even if the host stopped asking for frames");
+    const progress = render.messages.filter(item => item.type === "lodProgress").at(-1);
+    assert.notEqual(progress.targetLodMs, null, "the target milestone is reported without a host frame");
     render.send("metrics");
     await settle();
     const metrics = render.messages.find(item => item.type === "metrics").workerMetrics;

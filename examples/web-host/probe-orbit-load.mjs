@@ -283,11 +283,21 @@ try {
         await sleep(200);
     }
     const phases = [];
-    const isTarget = async () => evalJson(`(() => {
-        const status = document.querySelector("#renderer-status").textContent;
-        const c = window.__renderBench.latestLodCounters();
-        return { status, reached: /target reached/.test(status), counters: c };
-    })()`);
+    // The status line only says "target reached" until the next LOD message rewrites it, which a
+    // small dataset (reached before the orbit starts) never gets back to; fall back to the stats.
+    const isTarget = async () => {
+        const state = await evalJson(`(() => {
+            const status = document.querySelector("#renderer-status").textContent;
+            const c = window.__renderBench.latestLodCounters();
+            return { status, reached: /target reached/.test(status), counters: c };
+        })()`);
+        if (!state.reached) {
+            const lod = (await evalJson("window.__renderBench.apiCall('getStats')"))?.lod;
+            state.reached = Boolean(lod && !lod.lodError && lod.coverageComplete
+                && !lod.pendingBlockIds?.length && lod.lodStagePixels <= lod.targetVoxelPixels);
+        }
+        return state;
+    };
     result.vulkan = vulkanEvidence();
     // The fitted camera both runs start from; the scene at rest is compared at this pose.
     const initialPose = await evalJson("window.__renderBench.apiCall('getCamera')");
