@@ -6,6 +6,9 @@ use crate::{SceneBounds, VoxelBuildLimits};
 const VERTICAL_FOV: f64 = 45.0_f64.to_radians();
 const MIN_PITCH: f64 = -89.0_f64.to_radians();
 const MAX_PITCH: f64 = 89.0_f64.to_radians();
+/// Largest far/near ratio of the render projection; keeps `Depth32Float` (non-reversed)
+/// resolution usable at the far end.
+const MAX_DEPTH_RATIO: f64 = 1.0e5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraFrame {
@@ -333,13 +336,17 @@ impl OrbitCamera {
 
     /// Builds the current view frustum in local render coordinates.
     pub fn spatial_frustum(&self, viewport: [u32; 2]) -> Option<SpatialFrustum> {
+        self.spatial_frustum_with_near(viewport, self.clip_distances().0)
+    }
+
+    fn spatial_frustum_with_near(&self, viewport: [u32; 2], near: f64) -> Option<SpatialFrustum> {
         if viewport[0] == 0 || viewport[1] == 0 {
             return None;
         }
         let (position, forward, right, up) = self.basis();
         let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
         let horizontal_half_fov = ((VERTICAL_FOV * 0.5).tan() * aspect).atan();
-        let (near, far) = self.clip_distances();
+        let far = self.clip_distances().1;
         let side_planes = [
             forward * horizontal_half_fov.cos() + right * horizontal_half_fov.sin(),
             forward * horizontal_half_fov.cos() - right * horizontal_half_fov.sin(),
@@ -359,7 +366,7 @@ impl OrbitCamera {
     /// (dataset units): the single metric behind LOD selection and pending-block priority.
     ///
     /// The cell is assumed to sit at the node's nearest point, so the depth is the minimum
-    /// view-space depth over the eight AABB corners (clamped to the near plane), and the
+    /// view-space depth over the eight AABB corners (clamped to `lod_min_depth`), and the
     /// off-axis factor bounds the stretch of an edge at the viewport corners. This keeps the
     /// result an upper bound of `projected_voxel_edge_pixels` for any such cell in the node.
     pub fn projected_error_pixels(
@@ -386,7 +393,7 @@ impl OrbitCamera {
                 (corner - position).dot(forward)
             })
             .fold(f64::INFINITY, f64::min)
-            .max(self.clip_distances().0);
+            .max(self.lod_min_depth());
         let aspect = f64::from(viewport[0]) / f64::from(viewport[1]);
         let tan_vertical = (VERTICAL_FOV * 0.5).tan();
         let tan_horizontal = tan_vertical * aspect;
@@ -452,15 +459,25 @@ impl OrbitCamera {
         (position, forward, right, up)
     }
 
+    /// Depth below which the LOD error stops growing. It deliberately ignores the render near
+    /// plane: lowering that one must not make selection refine ~100x more near the camera.
+    fn lod_min_depth(&self) -> f64 {
+        let (position, forward, _, _) = self.basis();
+        let center_depth = (self.scene_center - position).dot(forward);
+        (center_depth - self.radius * 1.2)
+            .max(self.radius * 0.001)
+            .max(0.001)
+    }
+
     fn clip_distances(&self) -> (f64, f64) {
         // Panning/recentering moves the orbit pivot, not the dataset bounds.
         let (position, forward, _, _) = self.basis();
         let center_depth = (self.scene_center - position).dot(forward);
-        let near = (center_depth - self.radius * 1.2)
-            .max(self.radius * 0.001)
-            .max(0.001);
-        let far = (center_depth + self.radius * 2.0).max(near * 2.0);
-        (near, far)
+        // The bounding sphere is the nearest-geometry bound the camera knows; inside it the
+        // near plane drops to the depth-precision floor so ground at ~1 m is not clipped.
+        let far = (center_depth + self.radius * 2.0).max(1.0e-3);
+        let near = (center_depth - self.radius * 1.2).max(far / MAX_DEPTH_RATIO);
+        (near, far.max(near * 2.0))
     }
 
     pub fn is_fitted(&self) -> bool {
@@ -980,9 +997,13 @@ mod tests {
 
     /// Complete octree over `[0, 512]^3`; payload sizes grow with depth so refining adds points.
     fn octree(depth: u32) -> viewer_core::SpatialHierarchy {
+        octree_with_side(depth, 512.0)
+    }
+
+    fn octree_with_side(depth: u32, root_side: f64) -> viewer_core::SpatialHierarchy {
         use viewer_core::{BlockId, NodeId, SpatialBounds, SpatialHierarchy, SpatialNode};
         let mut nodes = Vec::new();
-        let mut frontier = vec![(1_u64, None, [0.0; 3], 512.0)];
+        let mut frontier = vec![(1_u64, None, [0.0; 3], root_side)];
         let mut next_id = 2;
         for level in 0..=depth {
             let mut children = Vec::new();
@@ -1175,5 +1196,79 @@ mod tests {
             "points selected: legacy {legacy_total}, new {new_total}, fewer in {strictly_fewer}"
         );
         assert!(new_total < legacy_total);
+    }
+
+    /// A camera 1 m above the ground of a ~41 km wide cloud: the render near plane must not
+    /// clip the foreground, and the LOD selection must not grow versus the old near plane.
+    #[test]
+    fn near_plane_clears_ground_one_metre_away_without_inflating_selection() {
+        let side = 40_960.0;
+        let hierarchy = octree_with_side(5, side);
+        let viewport = [1280, 720];
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(
+            SceneBounds {
+                min: [0.0; 3],
+                max: [side; 3],
+            },
+            viewport
+        ));
+        assert!(camera.set_pose(
+            [side / 2.0, side / 2.0, 1.0],
+            [side / 2.0, side / 2.0 + 100.0, 1.0]
+        ));
+        let (near, far) = camera.clip_distances();
+        let old_near = camera.lod_min_depth();
+        // Ground seen at the bottom edge of the view is at this depth along the view axis.
+        let nearest_ground = 1.0 / (super::VERTICAL_FOV * 0.5).tan();
+        assert!(far / near <= super::MAX_DEPTH_RATIO * 1.000_001);
+        assert!(near < nearest_ground, "near {near} clips ground");
+        assert!(
+            old_near > nearest_ground,
+            "old near {old_near} did not clip"
+        );
+
+        let (position, forward, _, _) = camera.basis();
+        let config = viewer_core::LodSelectionConfig::new(6.0, u64::MAX / 2).unwrap();
+        let mut results = Vec::new();
+        for plane_near in [old_near, near] {
+            let frustum = camera
+                .spatial_frustum_with_near(viewport, plane_near)
+                .unwrap();
+            let selection = hierarchy
+                .select_lod(&frustum, config, |node| {
+                    let bounds = node.bounds();
+                    let edge = bounds.max()[0] - bounds.min()[0];
+                    camera.projected_error_pixels(bounds, edge / 8.0, [0.0; 3], viewport)
+                })
+                .unwrap();
+            results.push((selection.point_count(), selection.node_ids().len()));
+            if plane_near == near {
+                for node_id in selection.node_ids() {
+                    let bounds = hierarchy.node(*node_id).unwrap().bounds();
+                    let deepest = (0..8)
+                        .map(|i| {
+                            let corner = DVec3::from_array(std::array::from_fn(|axis| {
+                                if i & (1 << axis) == 0 {
+                                    bounds.min()[axis]
+                                } else {
+                                    bounds.max()[axis]
+                                }
+                            }));
+                            (corner - position).dot(forward)
+                        })
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    assert!(deepest > near, "selected node entirely behind near plane");
+                }
+            }
+        }
+        println!(
+            "old near {old_near:.3} new near {near:.3}; (points, nodes=blocks) old/new: {results:?}"
+        );
+        assert!(results[1].0 >= results[0].0, "new near plane lost coverage");
+        assert!(
+            results[1].0 as f64 <= results[0].0 as f64 * 1.10,
+            "selection grew more than 10%: {results:?}"
+        );
     }
 }
