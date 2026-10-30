@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (30-10-2026):** plan redactado; ninguna tarea empezada.
+**Estado (30-10-2026):** plan enmendado tras el pre-mortem (abajo); Tareas 1 y 2 en curso.
 
 **Objetivo:** cerrar M3b: un worker convierte Belvedere en el navegador con spools fuera de la
 memoria wasm (RAM de JS más zonas OPFS), con paridad byte a byte con el CLI en Chrome y Firefox,
@@ -58,6 +58,35 @@ Decisión técnica del coordinador: el brazo de 4 GiB de spools se mide con `ram
 4. **Cancelar durante la escritura de un dataset grande**: tras `terminate()` los parciales y zonas se borran o se limpian en el siguiente arranque, y una reconversión al mismo nombre funciona (Tarea 7).
 5. **Chrome `file://`**: el LAS pequeño se convierte solo en RAM con aviso; Belvedere se rechaza antes de empezar con mensaje claro (D3) (Tareas 5 y 6).
 
+## Enmiendas del pre-mortem (30-10-2026)
+
+Ya aplicadas en el texto de las tareas; se listan para trazabilidad.
+
+| # | Enmienda | Tareas |
+| --- | --- | --- |
+| C1 | Nunca se vuelca un spool con lector vivo (la entrada del trabajo en curso y lo que lee la fase de bloques); test de propiedad que vuelca en cada `append` mientras se particiona la entrada | 2, 3, 4 |
+| C2 | La Tarea 5 se divide: tiers del host como módulo JS con tests Node sobre handles falsos respaldados por `fs` (`at` > 2³², `write` corto); cableado del worker; salida en RAM de Chrome `file://`; preflight R4 y limpieza | 5 |
+| C3 | Nueva puerta antes del navegador: Belvedere en Node a través de los bindings de `viewer_wasm` (shim de `FileReaderSync`, handles sobre `fs`): SHA = R1, `memory.buffer.byteLength` y tiempo frente al nativo | 5e |
+| C4 | Asignación por páginas con desperdicio de cola y política consciente del tamaño (no volcar o empaquetar spools menores que una página); páginas de 64 KiB, 256 KiB y 1 MiB | 1, 2 |
+| C5 | Zonas holgadas: Z = ⌈2 × pico modelado / zona⌉ + 1; test de agotamiento de zonas con error claro | 2, 3, 4 |
+| C6 | Arnés nativo de la parada de 4 × = `convert_serial` sobre el mismo `HybridSpoolStore` con páginas en fichero y el mismo presupuesto; también el tiempo con `MemSpoolStore` | 3, 6 |
+| C7 | Los `append` a un spool abierto ya volcado se acumulan en una cola de 1 MiB; la Tarea 1 mide `write({at})` de 32–256 KiB | 1, 3 |
+| C8 | Segmentos reutilizados por clases de tamaño; bytes por import tipado de wasm-bindgen (`&[u8]`, vista por llamada, nunca retenida), no `Reflect` + `Uint8Array` nuevo; la Tarea 1 mide el churn | 1, 3 |
+| C9 | Lecturas de un tier ≤ `SPOOL_IO_BUFFER_BYTES` (test); la Tarea 6 registra la memoria wasm | 4, 6 |
+| C10 | La Tarea 8 (retirar el motor antiguo) solo tras pasar las Tareas 6 y 7 en ambos navegadores; si fallan, el antiguo queda como alternativa optativa | 8 |
+| C11 | `persist()` y comprobación de cuota de Firefox antes de crear zonas; la limpieza de huérfanos se espera antes de la primera conversión; escritura corta de la salida → mismo error de cuota | 5 |
+| C12 | Tiempos de la Tarea 1 sin otros agentes pesados | 1, 2 |
+| C13 | Si la Tarea 2 pide una pista del planificador, va en una tarea propia con puertas R1 y R7 | 3 |
+
+**Criterios de parada añadidos:** lectura/escritura más allá de 2³² falla o `truncate` no libera
+uso → zonas < 4 GiB y volver al propietario con D1; Firefox escribe datos incompresibles a
+< 100 MB/s o un handle tarda > 5 s en liberarse tras `terminate()` → replantear presupuesto y
+limpieza antes de la Tarea 3; Belvedere en Node con SHA ≠ R1 → parar y bisecar antes del
+navegador; cociente wasm/nativo en Node > 3 × → revisión del propietario; memoria wasm > 1 GiB o
+PSS > `ram_budget` + 1 GiB → parar y localizar qué sigue en wasm; máximo de OPFS > 1,5 × el pico de
+bytes volcados vivos → replantear página y política; Tarea 6 > 4 × en algún navegador → replantear
+según la spec y no ejecutar la Tarea 8.
+
 ---
 
 ### Tarea 1: spike S5 residual — zonas OPFS
@@ -87,8 +116,10 @@ estado Rust con claves `u32`, objetos JS en un objeto host del worker), tamaño 
 segmentos, páginas y zonas, dimensionado de Z a partir de la estimación, política de volcado,
 lector en streaming (sin copiar el extent entero), reglas de error (`StorageFull`/sin memoria con
 variantes existentes y su `Display`), estimación del rechazo temprano de Chrome `file://` (D3),
-lugar de `OpfsWriter`, arnés nativo de la parada de 4 × (D2) y forma de retirar el motor antiguo
-(D4).
+lugar de `OpfsWriter`, arnés nativo de la parada de 4 × (D2, C6) y forma de retirar el motor antiguo
+(D4). Incluye: fijación de spools con lector vivo (C1), Z holgado (C5), cola de 1 MiB para spools
+abiertos volcados (C7), reutilización de segmentos por clases y paso de bytes por import tipado (C8)
+y, si la Tarea 2 pide pista del planificador, una tarea propia (C13).
 
 - [ ] **Paso 1:** firmas anotadas aquí; revisión del coordinador.
 
@@ -96,23 +127,25 @@ lugar de `OpfsWriter`, arnés nativo de la parada de 4 × (D2) y forma de retira
 
 **Archivos:** `crates/viewer_convert_core/src/pipeline/hybrid_store.rs` (y lo que fije la Tarea 3).
 
-- [ ] **Paso 1:** tests que fallan: propiedad frente a `MemSpoolStore` con presupuesto de 64 KiB (volcados forzados, también de spools abiertos; Review Focus 1); escritura corta → error de cuota (Review Focus 2); `convert_serial` con tiers en memoria y presupuesto diminuto da los SHA de R1 de las fixtures; ningún id ni página viva al terminar.
+- [ ] **Paso 1:** tests que fallan: propiedad frente a `MemSpoolStore` con presupuesto de 64 KiB (volcados forzados, también de spools abiertos, y volcado en cada `append` mientras se particiona una entrada fijada; Review Focus 1, C1); escritura corta → error de cuota (Review Focus 2); agotamiento de zonas → error claro (C5); ninguna lectura de un tier mayor que `SPOOL_IO_BUFFER_BYTES` (C9); `convert_serial` con tiers en memoria y presupuesto diminuto da los SHA de R1 de las fixtures; ningún id ni página viva al terminar.
 - [ ] **Paso 2:** implementar hasta verde; `check.sh`; commit.
 
-### Tarea 5: tiers wasm, worker y host
+### Tarea 5: tiers del host, worker y puerta en Node (C2, C3, C11)
 
-**Archivos:** `crates/viewer_wasm/src/` (tiers sobre `ArrayBuffer` y zonas, `core_convert.rs`), `examples/web-host/{converter-worker.js, converter-api.mjs}`, `tools/convert_parity`.
+**Archivos:** `crates/viewer_wasm/src/` (tiers y `core_convert.rs`), `examples/web-host/` (módulo de tiers, `converter-worker.js`, `converter-api.mjs`, tests), `tools/convert_parity`.
 
-- [ ] **Paso 1:** paridad Node en `tools/convert_parity` con volcado forzado (presupuesto diminuto), en `check.sh`.
-- [ ] **Paso 2:** el worker abre Z zonas antes de convertir y las anuncia como parciales; escritura corta → mensaje de cuota y limpieza (R4, R5); Chrome `file://` sin OPFS → solo RAM con aviso y rechazo temprano por estimación (D3); tests Node.
-- [ ] **Paso 3:** commit.
+- [ ] **5a, tiers del host:** módulo JS de segmentos y zonas con tests Node sobre handles falsos respaldados por `fs` (`at` > 2³², `write` que devuelve 0); paridad Node en `tools/convert_parity` con volcado forzado, en `check.sh`; commit.
+- [ ] **5b, worker:** el worker abre Z zonas antes de convertir y las anuncia como parciales; escritura corta → mensaje de cuota y limpieza (R4, R5); tests Node; commit.
+- [ ] **5c, Chrome `file://`:** sin OPFS, solo RAM con aviso; salida en RAM a un `Blob` y validación desde RAM; rechazo temprano por estimación (D3); commit.
+- [ ] **5d, preflight y limpieza:** `persist()` y cuota de Firefox antes de crear zonas; la limpieza de huérfanos termina antes de la primera conversión; commit.
+- [ ] **5e, puerta en Node (sin otros agentes activos):** Belvedere divisiones 2 y 8 a través de los bindings de `viewer_wasm` (shim de `FileReaderSync`, handles sobre `fs`): SHA = R1, `memory.buffer.byteLength` al final y tiempo frente al arnés nativo (C6). Criterios de parada: SHA ≠ R1, cociente > 3 ×, memoria wasm > 1 GiB.
 
 ### Tarea 6: Belvedere con un worker en el navegador
 
 **Archivos:** `docs/records/benchmarks/M3B_BELVEDERE_<aaaa-mm-dd>.md` y driver en `docs/records/benchmarks/data/`.
 
 - [ ] **Paso 1 (sin otros agentes activos):** Chrome y Firefox por HTTP, Belvedere divisiones 2 y 8: SHA = R1 (`ecdc4889…`, `3aee2890…`); Firefox `file://` divisiones 2; Chrome `file://`: LAS pequeño igual y Belvedere rechazado antes de empezar.
-- [ ] **Paso 2:** tiempo frente a `convert_serial` nativo en la misma sesión (D2; criterio de parada: > 4 ×) y CLI por defecto como contexto; pico de PSS (`sample-process-memory.py`), máximo de páginas OPFS y bytes/spools volcados con presupuestos de 2 y 4 GiB (este con `ram_budget` = 8 GB). Registro con la elección entre 2 y 4 GiB (decisión 3) y commit.
+- [ ] **Paso 2:** tiempo frente al arnés nativo de C6 en la misma sesión (D2; criterio de parada: > 4 ×) y CLI por defecto como contexto; memoria wasm (C9); pico de PSS (`sample-process-memory.py`), máximo de páginas OPFS y bytes/spools volcados con presupuestos de 2 y 4 GiB (este con `ram_budget` = 8 GB). Registro con la elección entre 2 y 4 GiB (decisión 3) y commit.
 
 ### Tarea 7: pendientes de M3a en navegador
 
@@ -122,7 +155,7 @@ lugar de `OpfsWriter`, arnés nativo de la parada de 4 × (D2) y forma de retira
 
 **Archivos:** borrar `crates/viewer_wasm/src/browser_convert.rs` (mover `OpfsWriter` donde fije la Tarea 3), `crates/viewer_wasm/src/lib.rs`, `examples/web-host/{converter-worker.js, converter-api.mjs, tests/*, package-local.py}`, `examples/web-host/tests/test_package_local.py`, READMEs.
 
-- [ ] **Paso 1:** el motor del núcleo es el único; `engine: "core"` se acepta sin efecto y obsoleto, `"legacy"` da error claro (D4); tests Node; `check.sh` y el paquete `file://` en verde; commit.
+- [ ] **Paso 1 (solo tras pasar las Tareas 6 y 7 en ambos navegadores, C10):** el motor del núcleo es el único; `engine: "core"` se acepta sin efecto y obsoleto, `"legacy"` da error claro (D4); tests Node; `check.sh` y el paquete `file://` en verde; commit.
 
 ### Tarea 9: interfaz del conversor
 
