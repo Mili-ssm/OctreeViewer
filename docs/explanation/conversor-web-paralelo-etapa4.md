@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (30-10-2026):** Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../records/benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../records/benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 en curso.
+**Estado (30-10-2026):** Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../records/benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../records/benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 hecha (firmas abajo); Tareas 4a y 4b en curso.
 
 **Objetivo:** cerrar M3b: un worker convierte Belvedere en el navegador con spools fuera de la
 memoria wasm (RAM de JS más zonas OPFS), con paridad byte a byte con el CLI en Chrome y Firefox,
@@ -121,7 +121,40 @@ lugar de `OpfsWriter`, arnés nativo de la parada de 4 × (D2, C6) y forma de re
 abiertos volcados (C7), reutilización de segmentos por clases y paso de bytes por import tipado (C8)
 y, si la Tarea 2 pide pista del planificador, una tarea propia (C13).
 
-- [ ] **Paso 1:** firmas anotadas aquí; revisión del coordinador.
+- [x] **Paso 1:** firmas anotadas aquí; revisión del coordinador (aceptadas el 30-10-2026 sin cambios).
+
+#### Firmas fijadas en la Tarea 3 (30-10-2026)
+
+Resumen vinculante (el detalle completo, con firmas Rust/JS, está en el informe del arquitecto
+recogido en este commit; las Tareas 4 y 5 siguen el desglose de la tabla de abajo):
+
+- **Núcleo `crates/viewer_convert_core/src/pipeline/hybrid/`** (`tiers.rs`, `pages.rs`, `store.rs`, `estimate.rs`): `RamTier`/`PageTier` con claves `u32` (sin política); `HybridSpoolStore<R, P>` con política pura; `HybridReader` en streaming (≤ 64 KiB por lectura, C9) que **ancla** el spool mientras vive (C1, guard con `Drop`; `delete` con lector vivo es error); `VecRamTier`/`VecPageTier` para tests y el arnés C6.
+- **Constantes:** páginas de 256 KiB, zonas de 1 GiB, segmentos de 32 KiB que duplican hasta 1 MiB y se recortan al cerrar a múltiplos de 32 KiB; el presupuesto compara **capacidad** retenida.
+- **Volcado (P3 con pistas):** víctimas por orden: cerrados `retained` (mayor primero) → cerrados con rango (mayor rango primero) → cerrados sin pista (más antiguo primero) → abiertos (mayor primero); nunca anclados; presupuesto blando con `over_budget_peak_bytes`. Cola de un spool abierto volcado: **una página** (C7 pasa de 1 MiB a 256 KiB). Páginas libres reutilizadas por el **índice más bajo**; a mitad de conversión solo `truncate(0)` de zonas vacías.
+- **Errores** sin variante nueva (`ConvertError::Io`): `StorageFull` (escritura corta o cuota), `Other` («spill zones exhausted…»), `OutOfMemory` (segmento de JS).
+- **Pistas (Tarea 4a, C13):** `SpoolStore::hint_retained` y `hint_consume_rank` con cuerpo vacío por defecto; llamadas en `spatial.rs` (`process_child_tasks`, `commit_node`); exigen R1 (4 SHA) y R7 corto (5 pares).
+- **Estimación (`estimate.rs`, aritmética entera):** `SpoolEstimate` (vivo, nodos, volcado, zonas, salida, `ram_only`) con las fórmulas de la Tarea 2; Z = ⌈2·volcado/zona⌉ + 1.
+- **wasm:** `spool_host.rs` (import estructural `SpoolHost` con `&[u8]`/`&mut [u8]` por llamada, sin snippets) y `opfs.rs` (`OpfsWriter`/`OpfsReader` movidos; escritura corta → `StorageFull`); `JsValue` es `Send + Sync` sin `atomics`, con aserción de compilación; opción `spoolBudgetBytes` (2 GiB por defecto) fuera de `ConvertOptions`.
+- **Host:** `examples/web-host/spool-tiers.mjs` (`createSpoolHost`, `createMemorySyncHandle`, `removeWithRetry` cada 50 ms hasta 10 s) y falso de Node `tests/support/fs-sync-handle.mjs`.
+- **Arneses:** C6 `tools/convert_parity/src/bin/native_hybrid.rs` (perfil `release` en ambos lados); C3 `tools/convert_parity/run-bindings.mjs` (target `web` + `initSync`, shims de `FileReaderSync` y `Blob`).
+
+| Tarea | Archivos | Aceptación |
+| --- | --- | --- |
+| 4a pistas | `spool_store.rs`, `spatial.rs` | `retained` una vez por spool de bloques; rango mínimo en cada consumo; R1 (4 SHA); R7 corto |
+| 4b tiers y almacén sin volcado | `pipeline/hybrid/{mod,tiers,pages,store}.rs` | propiedad frente a `MemSpoolStore` (B = ∞); crecimiento y recorte; anclaje; asignador |
+| 4c volcado | `store.rs` | propiedad con B = 64 KiB y B = 0 con entrada anclada; cuota → `StorageFull`; Z agotado; SHA de R1 de fixtures; nada vivo al final |
+| 4d estimación y arnés C6 | `estimate.rs`, `serial.rs`, `tools/convert_parity` | cifras de la Tarea 2 como test; caso wasm32 crudo en `check.sh`; `native_hybrid` = SHA del CLI |
+| 5a.1 tiers JS | `spool-tiers.mjs`, falso de Node, tests | `at` > 2³²; escritura corta → 0; pool por clases; vistas no retenidas |
+| 5a.2 bindings | `spool_host.rs`, `opfs.rs`, `core_convert.rs`, `run-bindings.mjs`, `check.sh` | paridad de bindings = `native_convert`; cuota falsa → `QuotaExceededError` |
+| 5b worker | `converter-worker.js`, `converter-api.mjs`, `package-local.py`, tests | zonas anunciadas antes de crearse; cuota → mensaje y limpieza; `removePartials` hasta 10 s (corrige el reintento de 1 s, que deja parciales en Chrome) |
+| 5c Chrome `file://` | `converter-worker.js` | solo RAM, salida a `Blob`, rechazo temprano (D3) |
+| 5d preflight | worker, api | `persist()`; cuota frente a volcado + salida; `ready` espera la limpieza (C11) |
+| 5e puerta Node | `run-bindings.mjs`, registro | Belvedere d2/d8: SHA = R1, memoria wasm ≤ 1 GiB, cociente ≤ 3 × frente a `native_hybrid` |
+
+Riesgos anotados: recorte a 32 KiB (hasta ~0,16 GiB en Belvedere/8, a medir en la Tarea 6);
+estimación empírica (3 trazas); `package-local.py` y un test asumen una sola línea de import;
+`check.sh` más lento por compilar `viewer_wasm` en release (interruptor `CHECK_WASM_BINDINGS=0`);
+pistas y modelo suponen recorrido en profundidad con N = 1 (revisar en M4/M5).
 
 ### Tarea 4: `HybridSpoolStore` en el núcleo
 
