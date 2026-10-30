@@ -21,6 +21,8 @@ Python, comprobación de enlaces (`scripts/check_docs_links.py`, excepciones en
 `git diff --check HEAD`. Por defecto usa `--offline`; `CHECK_LOCKED=1` usa `--locked` (así lo
 ejecuta `.github/workflows/ci.yml`).
 
+`convert parity bindings` ejecuta los bindings reales de `viewer_wasm` (`wasm-bindgen`) en Node contra el CLI; se omite solo si la versión del CLI `wasm-bindgen` difiere de `Cargo.lock` o con `CHECK_WASM_BINDINGS=0`.
+
 No cubre: pruebas GPU ignoradas (requieren adaptador o Vulkan por software), probes de navegador
 (`*.browser.mjs`, requieren bindings recientes y orquestación) ni presentación visual. Para cambios en el host web, comprobar además con
 Playwright los flujos afectados, consola y escritorio/móvil. Readback nativo no es evidencia de

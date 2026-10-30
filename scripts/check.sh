@@ -47,6 +47,21 @@ fi
 # Converts fixtures with the serial core path on wasm32 (Node) and with the native CLI path and
 # compares the SHA-256 of the .oct/.octattrs pair (M3a). Autzen COPC is used when the cargo registry has it.
 step "convert parity wasm32" bash -c 'set -euo pipefail; cargo build -q --release -p convert_parity --target wasm32-unknown-unknown --lib $0 && cargo build -q --release -p convert_parity --bin native_convert $0 && node tools/convert_parity/run.mjs' "$CARGO_MODE"
+# Runs the real viewer_wasm glue (wasm-bindgen --target web) under Node against the native CLI path
+# with a tiny spool budget. The CLI must match Cargo.lock's wasm-bindgen; CHECK_WASM_BINDINGS=0 skips it.
+wanted_bindgen=$(awk '/^name = "wasm-bindgen"$/ {getline; gsub(/[^0-9.]/, "", $0); print; exit}' Cargo.lock)
+have_bindgen=$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)
+if [ "${CHECK_WASM_BINDINGS:-1}" = "0" ]; then
+  echo
+  echo "=== convert parity bindings: skipped (CHECK_WASM_BINDINGS=0) ==="
+  steps+=("skip convert parity bindings (CHECK_WASM_BINDINGS=0)")
+elif [ -z "$have_bindgen" ] || [ "$have_bindgen" != "$wanted_bindgen" ]; then
+  echo
+  echo "=== convert parity bindings: skipped (wasm-bindgen CLI '${have_bindgen:-missing}', Cargo.lock wants $wanted_bindgen) ==="
+  steps+=("skip convert parity bindings (wasm-bindgen CLI mismatch)")
+else
+  step "convert parity bindings" bash -c 'set -euo pipefail; cargo build -q --release -p viewer_wasm --target wasm32-unknown-unknown $0 && rm -rf target/convert_parity/pkg && wasm-bindgen --target web --out-dir target/convert_parity/pkg target/wasm32-unknown-unknown/release/viewer_wasm.wasm && cargo build -q --release -p convert_parity --bin native_convert $0 && node tools/convert_parity/run-bindings.mjs' "$CARGO_MODE"
+fi
 step "cargo doc" cargo doc --workspace --no-deps $CARGO_MODE
 step "node tests" node --test examples/web-host/tests/*.test.mjs
 step "python web-host tests" python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'
