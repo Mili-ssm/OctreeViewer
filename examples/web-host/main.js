@@ -1,5 +1,7 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
-import { FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, measureFrameRate } from "./benchmark-metrics.mjs";
+import {
+    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, measureFrameRate, summarizeFrameReplies,
+} from "./benchmark-metrics.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 
@@ -50,6 +52,7 @@ let frameRequested = false;
 let activityStopTimer = 0;
 let benchmarkStopTimer = 0;
 let framePending = false;
+let frameRequestedAt = 0;
 let ready = false;
 let frameFailed = false;
 let lastFrameStatus = "";
@@ -102,9 +105,33 @@ function formatFrameRenderMs(metrics) {
 }
 
 function recordFrameReply(renderCallMs) {
-    frameSamples.push({ time: performance.now(), renderCallMs });
+    const time = performance.now();
+    const roundTripMs = time - frameRequestedAt;
+    frameSamples.push({ time, renderCallMs, roundTripMs });
     if (frameSamples.length > 2_048) frameSamples.splice(0, 1_024);
+    // Opt-in full log (probe-orbit-load.mjs): epoch-stamped to align with worker LOD messages.
+    if (benchLog && benchLog.length < BENCH_LOG_CAPACITY) {
+        benchLog.push({ time: performance.timeOrigin + time, renderCallMs, roundTripMs });
+    }
 }
+
+// Test/benchmark hook. Frame-reply logging stays off until a probe calls start().
+let benchLog = null;
+const BENCH_LOG_CAPACITY = 100_000;
+let pendingWorkerMetrics = [];
+window.__renderBench = {
+    start() { benchLog = []; },
+    frameReplies: () => (benchLog ?? []).slice(),
+    summarize(from, to) { return summarizeFrameReplies(benchLog ?? [], from, to); },
+    workerMetrics() {
+        return new Promise((resolve) => {
+            pendingWorkerMetrics.push(resolve);
+            worker.postMessage({ type: "metrics" });
+        });
+    },
+    resetWorkerMetrics() { worker.postMessage({ type: "metrics", reset: true }); },
+    latestLodCounters: () => lodCounters(latestLodStats),
+};
 
 function exportBenchmarkRun() {
     if (!benchmarkRun) return;
@@ -141,6 +168,7 @@ function exportBenchmarkRun() {
             targetLodMs: benchmarkRun.targetLodMs,
             uniqueBytesRead: benchmarkRun.uniqueBytesRead,
             refinementWork: lod?.refinementWork ?? null,
+            counters: lodCounters(lod),
         },
         steadyState: {
             warmupAfterBenchmarkStartMs: FRAME_RATE_WARMUP_MS,
@@ -150,6 +178,7 @@ function exportBenchmarkRun() {
             meanFps: fps.meanFps,
             frameReplyIntervalP50Ms: fps.intervalP50Ms,
             frameReplyIntervalP95Ms: fps.intervalP95Ms,
+            frameReplyIntervalMaxMs: fps.intervalMaxMs ?? null,
             workerRenderCallDuringLoadMs: benchmarkRun.frameRenderMs,
             workerRenderCallP50Ms: fps.renderCallP50Ms,
             workerRenderCallP95Ms: fps.renderCallP95Ms,
@@ -279,6 +308,7 @@ function requestFrame() {
     if (benchmarkRun && Object.values(camera).some((value) => value !== 0)) {
         benchmarkRun.cameraChanged = true;
     }
+    frameRequestedAt = performance.now();
     worker.postMessage({ type: "frame", camera });
     if (continuousRendering) animationFrame = requestAnimationFrame(requestFrame);
 }
@@ -490,6 +520,10 @@ function handleWorkerMessage(event) {
             lastFrameStatus = data.frameStatus;
             statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
+    } else if (data.type === "metrics") {
+        const waiting = pendingWorkerMetrics;
+        pendingWorkerMetrics = [];
+        for (const resolve of waiting) resolve(data.workerMetrics);
     } else if (data.type === "pick") {
         pickPending = false;
         if (data.hit) {

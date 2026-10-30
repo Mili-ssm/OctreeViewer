@@ -494,3 +494,28 @@ test("async worker rejects a read plan larger than the configured logical read b
     assert.match(failure.message, /needs 1025 bytes/);
     assert.equal(reads, 0);
 });
+
+test("metrics message reports busy time per message type, frame queue wait and the LOD log", async () => {
+    const worker = await runWorker();
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    await worker.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
+    const camera = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+    await worker.send("frame", { camera });
+    await worker.send("frame", { camera });
+    await worker.send("metrics");
+    const { workerMetrics } = worker.messages.filter(message => message.type === "metrics").at(-1);
+    assert.equal(workerMetrics.busyByMessage.frame.count, 2);
+    assert.equal(workerMetrics.busyByMessage.refine.count, 1);
+    assert.equal(workerMetrics.busyByMessage.asyncOpen.count, 1);
+    assert.equal(workerMetrics.busyByMessage.metrics, undefined);
+    assert.equal(workerMetrics.frameQueueWaitMs.count, 2);
+    assert.deepEqual(Array.from(workerMetrics.lodLog, entry => entry.source), ["dataset", "refine"]);
+    assert.equal(workerMetrics.lodLog[1].stagePx, 8);
+    assert.equal(workerMetrics.lodLogDropped, 0);
+
+    await worker.send("metrics", { reset: true });
+    await worker.send("metrics");
+    const reset = worker.messages.filter(message => message.type === "metrics").at(-1).workerMetrics;
+    assert.equal(Object.keys(reset.busyByMessage).length, 0);
+    assert.equal(reset.lodLog.length, 0);
+});

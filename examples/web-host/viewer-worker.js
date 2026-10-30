@@ -29,6 +29,89 @@ let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
 const coalescedCommands = new Set(["resize", "refine", "depthShading", "fit", "birdView"]);
 
+// Benchmark instrumentation (render plan R0, E2/E3/E5). Aggregates only; read with the "metrics"
+// message. Self-contained on purpose: package-local.py embeds this worker without module imports.
+const QUEUE_WAIT_SAMPLE_CAPACITY = 8192;
+const LOD_LOG_CAPACITY = 4096;
+const workKinds = new Map();
+const frameQueueWaits = [];
+const lodLog = [];
+let lodLogDropped = 0;
+const asyncBlockTotals = { blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0 };
+// Epoch milliseconds, comparable with the main thread's timestamps.
+const epochNow = () => (performance.timeOrigin ?? 0) + performance.now();
+
+function recordWork(kind, queuedAt, startedAt, endedAt) {
+    let entry = workKinds.get(kind);
+    if (!entry) {
+        entry = { count: 0, busyMs: 0, maxBusyMs: 0, queueWaitMs: 0, maxQueueWaitMs: 0 };
+        workKinds.set(kind, entry);
+    }
+    const busy = endedAt - startedAt;
+    const wait = Math.max(0, startedAt - queuedAt);
+    entry.count += 1;
+    entry.busyMs += busy;
+    entry.maxBusyMs = Math.max(entry.maxBusyMs, busy);
+    entry.queueWaitMs += wait;
+    entry.maxQueueWaitMs = Math.max(entry.maxQueueWaitMs, wait);
+    if (kind === "frame" && frameQueueWaits.length < QUEUE_WAIT_SAMPLE_CAPACITY) frameQueueWaits.push(wait);
+}
+
+// Wraps a task chained on messageQueue so its queue wait and busy time are recorded by kind.
+function timed(kind, task) {
+    const queuedAt = performance.now();
+    return () => {
+        const startedAt = performance.now();
+        try {
+            return task();
+        } finally {
+            recordWork(kind, queuedAt, startedAt, performance.now());
+        }
+    };
+}
+
+function recordLodMessage(source, lod) {
+    if (!lod) return;
+    if (lodLog.length >= LOD_LOG_CAPACITY) {
+        lodLogDropped += 1;
+        return;
+    }
+    lodLog.push({
+        time: epochNow(),
+        source,
+        stagePx: lod.lodStagePixels,
+        targetPx: lod.targetVoxelPixels,
+        oversizedVoxels: lod.oversizedVoxels,
+        uncoveredNodes: lod.uncoveredNodes,
+        pendingBlocks: lod.pendingBlockIds?.length ?? 0,
+        visibleBlocks: lod.visibleBlocks,
+    });
+}
+
+function workerMetricsSnapshot() {
+    const ordered = [...frameQueueWaits].sort((a, b) => a - b);
+    const at = fraction => ordered.length
+        ? ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * fraction) - 1)] : null;
+    return {
+        timeOrigin: performance.timeOrigin ?? null,
+        busyByMessage: Object.fromEntries(workKinds),
+        frameQueueWaitMs: { count: ordered.length, p50: at(0.50), p95: at(0.95), max: at(1) },
+        asyncBlocks: { ...asyncBlockTotals },
+        lodLog: [...lodLog],
+        lodLogDropped,
+    };
+}
+
+function resetWorkerMetrics() {
+    workKinds.clear();
+    frameQueueWaits.length = 0;
+    lodLog.length = 0;
+    lodLogDropped = 0;
+    Object.assign(asyncBlockTotals, {
+        blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0,
+    });
+}
+
 function samplePointCloud() {
     const positions = [];
     const colors = [];
@@ -240,7 +323,9 @@ function scheduleAsyncLodRead(retryFailed = false) {
             try {
                 result = await request.read();
                 payload = result.value;
-                await (messageQueue = messageQueue.then(() => {
+                const readMs = result.readMs ?? 0;
+                const decodeMs = result.decodeMs ?? 0;
+                await (messageQueue = messageQueue.then(timed("asyncInsert", () => {
                     if (generation !== datasetGeneration || reader !== asyncFormatReader
                         || ticketScheduler !== asyncLodScheduler) {
                         ticketScheduler.complete(ticket, String(blockId), false);
@@ -252,15 +337,24 @@ function scheduleAsyncLodRead(retryFailed = false) {
                         ticketCompleted = true;
                         return;
                     }
+                    const insertStartedAt = performance.now();
                     viewer.insertAsyncLodBlock(
                         blockId, payload.positions, payload.colors ?? null, payload.attribute ?? null,
                     );
                     ticketScheduler.complete(ticket, String(blockId), true);
                     ticketCompleted = true;
                     const lod = viewer.updateLod(targetVoxelPixels);
+                    const insertMs = performance.now() - insertStartedAt;
+                    asyncBlockTotals.blocks += 1;
+                    asyncBlockTotals.readMs += readMs;
+                    asyncBlockTotals.decodeMs += decodeMs;
+                    asyncBlockTotals.maxDecodeMs = Math.max(asyncBlockTotals.maxDecodeMs, decodeMs);
+                    asyncBlockTotals.insertMs += insertMs;
+                    asyncBlockTotals.maxInsertMs = Math.max(asyncBlockTotals.maxInsertMs, insertMs);
                     self.postMessage({ type: "lod", lod });
+                    recordLodMessage("asyncInsert", lod);
                     postLodProgress(lod);
-                }).catch((error) => {
+                })).catch((error) => {
                     if (!ticketCompleted) {
                         const outcome = ticketScheduler.complete(ticket, String(blockId), false);
                         ticketCompleted = true;
@@ -312,7 +406,7 @@ function startAsyncDataset(data, requestId = null) {
     self.postMessage({ type: "status", message: `Opening ${name}…` });
     asyncReadBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
     void WasmAsyncFormatReader.open(data.file, data.attributes, asyncReadBudget.clone()).then((reader) => {
-        messageQueue = messageQueue.then(() => {
+        messageQueue = messageQueue.then(timed("asyncOpen", () => {
             if (generation !== datasetGeneration) {
                 reader.free();
                 return;
@@ -345,9 +439,10 @@ function startAsyncDataset(data, requestId = null) {
                 self.postMessage({ type: "datasetOpened", opened, name });
                 self.postMessage({ type: "dataset", opened, lod, name });
             }
+            recordLodMessage("dataset", lod);
             postLodProgress(lod);
             scheduleAsyncLodRead();
-        }).catch((error) => {
+        })).catch((error) => {
             if (generation === datasetGeneration) {
                 self.postMessage({ type: "error", operation: "openFile", requestId, message: String(error) });
             }
@@ -359,7 +454,8 @@ function startAsyncDataset(data, requestId = null) {
     });
 }
 
-async function handleMessage({ data }) {
+async function handleMessage({ data }, queuedAt = performance.now()) {
+    const startedAt = performance.now();
     try {
         switch (data.type) {
             case "init": {
@@ -455,6 +551,7 @@ async function handleMessage({ data }) {
                 if (viewer.lodStats()) {
                     const lod = viewer.updateLod(targetVoxelPixels);
                     self.postMessage({ type: "lod", lod });
+                    recordLodMessage("refine", lod);
                     postLodProgress(lod);
                     scheduleAsyncLodRead(true);
                 }
@@ -462,6 +559,10 @@ async function handleMessage({ data }) {
             }
             case "depthShading":
                 viewer.setDepthShading(data.value);
+                break;
+            case "metrics":
+                if (data.reset) resetWorkerMetrics();
+                else self.postMessage({ type: "metrics", workerMetrics: workerMetricsSnapshot() });
                 break;
             case "openFile": {
                 startAsyncDataset(data);
@@ -524,10 +625,17 @@ async function handleMessage({ data }) {
         if (coalescedCommands.has(data.type)) {
             self.postMessage({ type: "commandAck", command: data.type });
         }
+        if (data.type !== "metrics") {
+            recordWork(
+                data.type === "api" ? `api:${data.operation}` : data.type,
+                queuedAt, startedAt, performance.now(),
+            );
+        }
     }
 }
 
 let messageQueue = Promise.resolve();
 self.addEventListener("message", (event) => {
-    messageQueue = messageQueue.then(() => handleMessage(event), () => handleMessage(event));
+    const queuedAt = performance.now();
+    messageQueue = messageQueue.then(() => handleMessage(event, queuedAt), () => handleMessage(event, queuedAt));
 });

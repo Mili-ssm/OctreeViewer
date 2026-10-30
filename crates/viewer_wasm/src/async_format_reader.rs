@@ -12,6 +12,8 @@ use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::Blob;
 
+use crate::lod_dataset::WorkClock;
+
 type Reader = FormatReader<Cursor<Vec<u8>>>;
 const DEFAULT_ASYNC_READ_BUDGET_BYTES: u32 = 256 * 1024 * 1024;
 
@@ -70,6 +72,8 @@ pub struct WasmAsyncReadCancelToken {
 pub struct WasmAsyncLodReadResult {
     value: Option<JsValue>,
     reservation: Option<ReadReservation>,
+    read_ms: f64,
+    decode_ms: f64,
 }
 
 #[wasm_bindgen]
@@ -118,6 +122,18 @@ impl WasmAsyncLodReadResult {
         self.value.clone().unwrap_or(JsValue::NULL)
     }
 
+    /// Wall time awaiting Blob range reads (includes event-loop waits), for benchmarks.
+    #[wasm_bindgen(getter, js_name = readMs)]
+    pub fn read_ms(&self) -> f64 {
+        self.read_ms
+    }
+
+    /// Time spent decoding payloads and building typed arrays, for benchmarks.
+    #[wasm_bindgen(getter, js_name = decodeMs)]
+    pub fn decode_ms(&self) -> f64 {
+        self.decode_ms
+    }
+
     /// Releases the typed arrays and shared quota after insertion or logical discard.
     pub fn release(&mut self) {
         self.value = None;
@@ -141,19 +157,27 @@ impl WasmAsyncLodReadRequest {
             .next()
             .ok_or_else(|| err("LOD read request is empty"))?;
         let first_selection = first.selection();
-        let first_result = read_plan(&self.shared, first, &self.cancelled).await?;
+        let (first_result, mut read_ms, mut decode_ms) =
+            read_plan(&self.shared, first, &self.cancelled).await?;
         let second_result = if let Some(second) = plans.next() {
             if self.cancelled.get() {
                 return Err(err("LOD read request was cancelled"));
             }
-            Some(read_plan(&self.shared, second, &self.cancelled).await?)
+            let (result, read, decode) = read_plan(&self.shared, second, &self.cancelled).await?;
+            read_ms += read;
+            decode_ms += decode;
+            Some(result)
         } else {
             None
         };
+        let clock = WorkClock::start();
         let value = lod_result_to_js(first_selection, first_result, second_result)?;
+        decode_ms += clock.elapsed_ms();
         Ok(WasmAsyncLodReadResult {
             value: Some(value),
             reservation: self.reservation.take(),
+            read_ms,
+            decode_ms,
         })
     }
 }
@@ -498,8 +522,9 @@ async fn read_plan(
     shared: &AsyncReaderShared,
     plan: viewer_format::ReadPlan,
     cancelled: &Cell<bool>,
-) -> Result<SelectedRead, JsValue> {
+) -> Result<(SelectedRead, f64, f64), JsValue> {
     let mut buffers = Vec::with_capacity(plan.ranges().len());
+    let read_clock = WorkClock::start();
     for range in plan.ranges() {
         if cancelled.get() {
             return Err(err("LOD read request was cancelled"));
@@ -509,10 +534,13 @@ async fn read_plan(
     if cancelled.get() {
         return Err(err("LOD read request was cancelled"));
     }
-    shared
+    let read_ms = read_clock.elapsed_ms();
+    let decode_clock = WorkClock::start();
+    let selected = shared
         .reader
         .materialize_selected_from_buffers(plan, buffers)
-        .map_err(format_error)
+        .map_err(format_error)?;
+    Ok((selected, read_ms, decode_clock.elapsed_ms()))
 }
 
 async fn read_range_for(

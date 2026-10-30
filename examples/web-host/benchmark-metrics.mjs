@@ -33,8 +33,60 @@ export function measureFrameRate(frameReplies, benchmarkStartedAt, now = perform
         meanFps: durationMs > 0 ? intervals.length * 1000 / durationMs : null,
         intervalP50Ms: percentile(intervals, 0.50),
         intervalP95Ms: percentile(intervals, 0.95),
+        intervalMaxMs: intervals.at(-1),
         renderCallP50Ms: renderCalls.length ? percentile(renderCalls, 0.50) : null,
         renderCallP95Ms: renderCalls.length ? percentile(renderCalls, 0.95) : null,
         renderCallP99Ms: renderCalls.length ? percentile(renderCalls, 0.99) : null,
+    };
+}
+
+export function summarizeSeries(values) {
+    const ordered = values.filter(Number.isFinite).sort((a, b) => a - b);
+    if (ordered.length === 0) return { count: 0, p50: null, p95: null, max: null };
+    const at = (fraction) => ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * fraction) - 1)];
+    return { count: ordered.length, p50: at(0.50), p95: at(0.95), max: ordered.at(-1) };
+}
+
+/**
+ * Primary latency metric (E2): gaps between consecutive frame replies seen on the main thread,
+ * plus the request-to-reply round trip (queue wait + render). `renderCallMs` stays secondary.
+ * Replies are `{time, renderCallMs, roundTripMs}`; `from`/`to` bound `time` (inclusive).
+ */
+export function summarizeFrameReplies(replies, from = -Infinity, to = Infinity) {
+    const window = replies.filter((reply) => reply.time >= from && reply.time <= to);
+    const intervals = window.slice(1).map((reply, index) => reply.time - window[index].time);
+    return {
+        replies: window.length,
+        intervalMs: summarizeSeries(intervals),
+        roundTripMs: summarizeSeries(window.map((reply) => reply.roundTripMs)),
+        renderCallMs: summarizeSeries(window.map((reply) => reply.renderCallMs)),
+    };
+}
+
+/** Compact timestamped entry for one worker `lod` message (E3). */
+export function lodLogEntry(time, source, lod) {
+    return {
+        time,
+        source,
+        stagePx: lod.lodStagePixels,
+        targetPx: lod.targetVoxelPixels,
+        oversizedVoxels: lod.oversizedVoxels,
+        uncoveredNodes: lod.uncoveredNodes,
+        pendingBlocks: lod.pendingBlockIds?.length ?? 0,
+        visibleBlocks: lod.visibleBlocks,
+    };
+}
+
+/** Deterministic counters (E4) read from a `lodStats()` object. */
+export function lodCounters(lod) {
+    if (!lod) return null;
+    const work = lod.refinementWork ?? {};
+    return {
+        sceneBuilds: work.sceneBuilds ?? null,
+        voxelSourcePoints: work.voxelSourcePoints ?? null,
+        loadedBlocks: work.loadedBlocks ?? null,
+        evictedPendingBlocks: work.evictedPendingBlocks ?? null,
+        uncoveredNodes: lod.uncoveredNodes ?? null,
+        oversizedVoxels: lod.oversizedVoxels ?? null,
     };
 }
