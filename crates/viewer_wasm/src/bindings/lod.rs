@@ -28,17 +28,21 @@ use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
 struct RendererSink<'a, 'r> {
     renderer: &'a mut SurfaceRenderer<'r>,
+    /// Digest of the scene the renderer currently displays; `None` while it shows nothing.
+    digest: &'a mut Option<u64>,
 }
 
 impl SceneSink for RendererSink<'_, '_> {
     fn publish(&mut self, built: LodBuiltScene) -> Result<(), String> {
         self.renderer
             .upload_voxel_cut(&built.voxels.scene, &built.block_ids)
-            .map(drop)
-            .map_err(|error| LodDatasetError::Gpu(error).to_string())
+            .map_err(|error| LodDatasetError::Gpu(error).to_string())?;
+        *self.digest = Some(built.scene_digest());
+        Ok(())
     }
 
     fn base_cut_exceeded(&mut self, dataset: &LodDataset) -> Result<(), String> {
+        *self.digest = None;
         self.renderer
             .sync_visible_blocks(&[], dataset.resident_blocks())
             .map(drop)
@@ -314,6 +318,7 @@ impl WasmVoxelViewer {
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
+        self.last_scene_digest = None;
         self.last_lod_error = None;
         self.gpu_scene_dirty = false;
         Ok(result.into())
@@ -344,6 +349,7 @@ impl WasmVoxelViewer {
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
+        self.last_scene_digest = None;
         self.last_lod_error = None;
         self.gpu_scene_dirty = false;
 
@@ -552,6 +558,7 @@ impl WasmVoxelViewer {
         };
         let mut stage_pixels = self.lod_stage_pixels;
         let mut dirty = self.lod_dirty;
+        let mut scene_digest = self.last_scene_digest;
         let result = update_lod_view(
             dataset,
             &LodStep {
@@ -562,10 +569,14 @@ impl WasmVoxelViewer {
             },
             &mut stage_pixels,
             &mut dirty,
-            &mut RendererSink { renderer },
+            &mut RendererSink {
+                renderer,
+                digest: &mut scene_digest,
+            },
             &mut load_block,
         );
         self.lod_range_read_stats = lod_range_read_stats;
+        self.last_scene_digest = scene_digest;
         self.lod_stage_pixels = stage_pixels;
         self.lod_dirty = dirty;
         let LodStepResult {
@@ -591,6 +602,7 @@ impl WasmVoxelViewer {
         self.lod_stage_pixels = None;
         self.lod_dirty = false;
         self.last_lod_stats = None;
+        self.last_scene_digest = None;
         self.last_lod_error = None;
         self.reset_range_read_stats();
     }

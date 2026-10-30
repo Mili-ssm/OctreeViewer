@@ -10,6 +10,7 @@ use super::{
         accumulate_browser_read_delta, reset_browser_read_stats, snapshot_browser_read_stats,
     },
     lod::{insert_async_block, lod_update_stats_to_js, open_descriptor, open_format},
+    selected_range_to_js,
 };
 use crate::{
     browser_io::{BrowserBlobReader, BrowserReadStats},
@@ -148,6 +149,17 @@ impl WasmSceneBuilder {
             self.range_read_stats = BrowserReadStats::default();
         }
         Ok(())
+    }
+
+    /// `[min, max]` the selected attribute is normalised with, or `null` when no attribute (or
+    /// no range for it) is selected. Lets the render worker show the same legend as the viewer.
+    #[wasm_bindgen(js_name = attributeRange)]
+    pub fn attribute_range(&self) -> JsValue {
+        selected_range_to_js(
+            self.core
+                .as_ref()
+                .and_then(|core| core.selected_attribute().1),
+        )
     }
 
     /// Missing blocks in the order the LOD plan wants them, as decimal id strings.

@@ -41,6 +41,8 @@ pub struct WasmVoxelViewer {
     lod_stage_pixels: Option<f64>,
     lod_dirty: bool,
     last_lod_stats: Option<(LodViewStats, BrowserReadStats)>,
+    /// Digest of the last scene uploaded to the renderer, exposed as `lodStats().sceneDigest`.
+    last_scene_digest: Option<u64>,
     last_lod_error: Option<String>,
     /// Root bounds and origin of a dataset whose hierarchy lives in a build worker, so `fitScene`
     /// can frame it without a local `LodDataset`.
@@ -55,6 +57,13 @@ struct RemoteDatasetFrame {
 pub(super) struct AsyncFormatContext {
     has_attributes: bool,
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
+}
+
+/// `[min, max]` as a JS array, or `null` when the selected attribute has no range.
+pub(super) fn selected_range_to_js(range: Option<[f64; 2]>) -> JsValue {
+    range.map_or(JsValue::NULL, |[min, max]| {
+        js_sys::Array::of2(&JsValue::from_f64(min), &JsValue::from_f64(max)).into()
+    })
 }
 
 /// Whether the open dataset can paint `(index, component)`, and the range to normalise it with.
@@ -112,6 +121,7 @@ impl WasmVoxelViewer {
             lod_stage_pixels: None,
             lod_dirty: false,
             last_lod_stats: None,
+            last_scene_digest: None,
             last_lod_error: None,
             remote_dataset_frame: None,
         })

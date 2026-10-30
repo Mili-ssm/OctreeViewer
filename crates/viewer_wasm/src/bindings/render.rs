@@ -46,6 +46,7 @@ impl WasmVoxelViewer {
                     .sync_visible_blocks(&[], dataset.resident_blocks())
                     .map_err(|error| JsValue::from_str(&error.to_string()))?;
                 dataset.clear_loaded_blocks();
+                self.last_scene_digest = None;
                 self.reset_range_read_stats();
                 self.lod_stage_pixels = Some(16.0);
                 self.lod_dirty = true;

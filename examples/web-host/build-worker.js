@@ -7,7 +7,9 @@ import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestSched
 //
 // render -> build: init{wasmBytes?}, open{gen,file,attributes,cacheBytes,limits}, colorMode{gen,mode},
 //                  view{gen,epoch,camera,viewport,visualScale,targetPx}, metrics{reset?}
-// build -> render: opened{gen,opened}, scene{gen,epoch,viewEpoch,buf,count,blockIds,lod,digest},
+// build -> render: opened{gen,opened}, colorMode{gen,mode,attributeRange} (the mode was accepted;
+//                  a rejected one answers with error{operation:"colorMode"} and changes nothing),
+//                  scene{gen,epoch,viewEpoch,buf,count,blockIds,lod,digest},
 //                  lod{gen,epoch,viewEpoch,lod} (scene reused), error{gen,operation,message},
 //                  metrics{metrics}
 // `epoch` counts this worker's builds (strictly increasing within a gen); `viewEpoch` echoes the
@@ -313,6 +315,10 @@ async function handleMessage({ data }) {
                 builder.setColorMode(data.mode);
                 if (data.mode !== currentColorMode) cancelAllAsyncReads();
                 currentColorMode = data.mode;
+                self.postMessage({
+                    type: "colorMode", gen: generation, mode: data.mode,
+                    attributeRange: builder.attributeRange?.() ?? null,
+                });
                 refreshAsyncReads(true);
                 requestBuild();
                 break;

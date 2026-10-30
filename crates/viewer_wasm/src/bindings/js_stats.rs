@@ -28,6 +28,20 @@ impl WasmVoxelViewer {
                         .as_ref()
                         .map_or(JsValue::NULL, |message| JsValue::from_str(message)),
                 )?;
+                js_sys::Reflect::set(
+                    &value,
+                    &"sceneDigest".into(),
+                    &self.last_scene_digest.map_or(JsValue::NULL, |digest| {
+                        JsValue::from_str(&format!("{digest:016x}"))
+                    }),
+                )?;
+                js_sys::Reflect::set(
+                    &value,
+                    &"attributeRange".into(),
+                    &super::selected_range_to_js(
+                        self.selected_attribute.and(self.selected_attribute_range),
+                    ),
+                )?;
                 Ok(value)
             }
             None => Ok(JsValue::NULL),

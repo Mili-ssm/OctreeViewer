@@ -32,7 +32,12 @@ async function runBuildWorker({ updates = [] } = {}) {
         constructor(maxVoxels, maxBytes) { this.limits = [maxVoxels, maxBytes]; builders.push(this); }
         openLodDataset() { return { status: "metadata_ready", visualScale: 2 }; }
         pendingAsyncLodBlocks() { return []; }
-        setColorMode(mode) { this.mode = mode; }
+        setColorMode(mode) {
+            if (mode === "attribute:9:0") throw new Error("invalid attribute index");
+            this.mode = mode;
+            this.range = mode.startsWith("attribute:") ? [0, 2.5] : null;
+        }
+        attributeRange() { return this.range ?? null; }
         update(camera, width, height, visualScale, targetPx) {
             updateCalls.push({ camera, width, height, visualScale, targetPx });
             const planned = updates[updateCalls.length - 1] ?? {};
@@ -138,6 +143,31 @@ test("build worker ignores views and color changes for another gen", async () =>
     assert.equal(worker.builders[0].mode, "intensity");
 });
 
+test("build worker confirms an accepted colour mode with the attribute range it normalises by", async () => {
+    const worker = await runBuildWorker();
+    worker.send("colorMode", { gen: 1, mode: "attribute:0:1" });
+    await worker.settle();
+    const [reply] = worker.posted.filter(item => item.type === "colorMode");
+    assert.deepEqual({ ...reply, attributeRange: [...reply.attributeRange] },
+        { type: "colorMode", gen: 1, mode: "attribute:0:1", attributeRange: [0, 2.5] });
+    worker.send("colorMode", { gen: 1, mode: "rgb" });
+    await worker.settle();
+    assert.equal(worker.posted.filter(item => item.type === "colorMode").at(-1).attributeRange, null);
+});
+
+test("build worker reports a rejected colour mode as an error and keeps the previous mode", async () => {
+    const worker = await runBuildWorker();
+    worker.send("colorMode", { gen: 1, mode: "intensity" });
+    worker.send("colorMode", { gen: 1, mode: "attribute:9:0" });
+    await worker.settle();
+    assert.equal(worker.builders[0].mode, "intensity");
+    const error = worker.posted.find(item => item.type === "error");
+    assert.equal(error.operation, "colorMode");
+    assert.equal(error.gen, 1);
+    assert.match(error.message, /invalid attribute index/);
+    assert.deepEqual(worker.posted.filter(item => item.type === "colorMode").map(item => item.mode), ["intensity"]);
+});
+
 // ---- Render worker in build-worker mode ------------------------------------------------------
 
 async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" } } = {}) {
@@ -150,9 +180,11 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     let camera = [0, 0, 0, 10, 0, 0, 1, 0, 0, 0, 1];
     let viewport = [100, 50];
     let renderFrames = 0;
+    const presentationModes = [];
+    let viewerLodStats = null;
     const viewer = {
         resize(width, height) { viewport = [width, height]; },
-        setColorMode() {}, setPresentationColorMode() {}, setDepthShading() {}, replacePoints() {},
+        setColorMode() {}, setPresentationColorMode(mode) { presentationModes.push(mode); }, setDepthShading() {}, replacePoints() {},
         fitScene() {}, orbit() { camera = camera.map((value, index) => (index === 4 ? value + 0.1 : value)); },
         pan() {}, zoom() {}, moveCamera() {},
         voxelBuildLimits: () => [500, 600],
@@ -160,7 +192,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         viewportSize: () => viewport,
         beginRemoteDataset(...args) { beginCalls.push(args); return true; },
         uploadSceneInstances(bytes, blockIds) { uploads.push({ bytes, blockIds }); return bytes.length; },
-        lodStats: () => null,
+        lodStats: () => viewerLodStats,
         renderFrame() { renderFrames += 1; return "rendered"; },
         gpuStats: () => ({}), stats: () => ({}),
     };
@@ -211,7 +243,9 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         camera: { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, ...fields },
     });
     return {
-        messages, workers, uploads, beginCalls, send, open, frame, setNow(value) { now = value; },
+        messages, workers, uploads, beginCalls, presentationModes, send, open, frame,
+        setNow(value) { now = value; },
+        setViewerLodStats(value) { viewerLodStats = value; },
         renders: () => renderFrames,
         setCamera(value) { camera = value; },
         views: worker => worker.posted.filter(item => item.type === "view"),
@@ -384,4 +418,87 @@ test("with the option off no build worker exists and the open flow is the in-wor
     assert.equal(metrics.buildWorkerEnabled, false);
     assert.equal("sceneAgeMs" in metrics, false);
     assert.deepEqual(render.messages.map(item => item.type).filter(type => type !== "metrics"), ["ready"]);
+});
+
+// ---- Attribute colours and the scene digest in build mode ----------------------------------------
+
+const openedWithAttributes = () => ({
+    ...opened(), hasAttributes: true, attributeSchema: [{ name: "temperature", componentCount: 1 }],
+});
+
+test("render worker shows attribute modes as rgb and takes the range the build worker confirmed", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    worker.emit({ type: "opened", gen: 1, opened: openedWithAttributes() });
+    await settle();
+    await render.send("refine", { trigger: "color", colorMode: "attribute:0:0", targetVoxelPixels: 4, refinementId: 1 });
+    assert.deepEqual(render.presentationModes, ["attribute:0:0"], "the viewer itself maps attribute:* to rgb");
+    assert.deepEqual(worker.posted.filter(item => item.type === "colorMode")
+        .map(item => [item.gen, item.mode]), [[1, "attribute:0:0"]]);
+    worker.emit({ type: "colorMode", gen: 1, mode: "attribute:0:0", attributeRange: [-1, 3] });
+    worker.emit(sceneMessage({ lod: lod(0, 4) }));
+    await settle();
+    await render.send("api", { operation: "getStats", requestId: 1 });
+    const stats = render.messages.find(item => item.type === "apiResult" && item.requestId === 1).value;
+    assert.deepEqual([...stats.lod.attributeRange], [-1, 3]);
+});
+
+test("render worker returns to the confirmed colour mode when the build worker rejects one", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    worker.emit({ type: "opened", gen: 1, opened: openedWithAttributes() });
+    await settle();
+    await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
+    worker.emit({ type: "colorMode", gen: 1, mode: "intensity", attributeRange: null });
+    await settle();
+    await render.send("refine", { trigger: "color", colorMode: "attribute:9:0", targetVoxelPixels: 4, refinementId: 2 });
+    worker.emit({ type: "error", gen: 1, operation: "colorMode", message: "invalid attribute index" });
+    await settle();
+    assert.deepEqual(render.presentationModes, ["intensity", "attribute:9:0", "intensity"]);
+    const error = render.messages.find(item => item.type === "error");
+    assert.equal(error.operation, "colorMode");
+    // The mode the host asks for next is compared with the confirmed one, so a retry is forwarded.
+    await render.send("refine", { trigger: "color", colorMode: "attribute:9:0", targetVoxelPixels: 4, refinementId: 3 });
+    assert.equal(worker.posted.filter(item => item.type === "colorMode").length, 3);
+});
+
+test("render worker exposes the digest of the applied scene in LOD stats and metrics", async () => {
+    const render = await runRenderWorker();
+    await render.open();
+    const [worker] = render.workers;
+    worker.emit({ type: "opened", gen: 1, opened: opened() });
+    await settle();
+    worker.emit(sceneMessage({ epoch: 1, digest: "00000000000000aa", lod: lod(1) }));
+    await settle();
+    assert.equal(render.messages.find(item => item.type === "dataset").lod.sceneDigest, "00000000000000aa");
+    // A reused scene keeps the digest of what is still on screen.
+    worker.emit({ type: "lod", gen: 1, epoch: 2, viewEpoch: 1, lod: lod(0) });
+    await settle();
+    assert.equal(render.messages.filter(item => item.type === "lod").at(-1).lod.sceneDigest, "00000000000000aa");
+    // A scene dropped for being old does not change what is displayed.
+    worker.emit(sceneMessage({ epoch: 1, digest: "00000000000000bb" }));
+    await settle();
+    await render.send("metrics");
+    assert.equal(render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics.sceneDigest, "00000000000000aa");
+    worker.emit(sceneMessage({ epoch: 3, digest: "00000000000000cc" }));
+    await settle();
+    await render.send("api", { operation: "getStats", requestId: 2 });
+    assert.equal(render.messages.find(item => item.type === "apiResult" && item.requestId === 2).value.lod.sceneDigest,
+        "00000000000000cc");
+    // A new dataset starts without a digest.
+    await render.open();
+    await render.send("metrics");
+    assert.equal(render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics.sceneDigest, null);
+});
+
+test("in-worker mode reports the viewer's scene digest as sceneDigest", async () => {
+    const render = await runRenderWorker({ buildWorker: null });
+    await render.send("metrics");
+    assert.equal(render.messages.find(item => item.type === "metrics").workerMetrics.sceneDigest, null);
+    render.setViewerLodStats({ ...lod(0), sceneDigest: "00000000000000dd" });
+    await render.send("metrics");
+    assert.equal(render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics.sceneDigest,
+        "00000000000000dd");
 });

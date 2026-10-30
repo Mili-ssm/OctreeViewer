@@ -1699,6 +1699,7 @@ mod binding_parity {
         lod_session::LodSession,
         scene_builder::{SceneBuilderCore, camera_from_transport},
     };
+    use viewer_core::{AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues};
     use viewer_render_wgpu::{ColorMode, ViewProjection, VoxelBuildLimits};
 
     /// What a consumer of one update observes.
@@ -1715,8 +1716,54 @@ mod binding_parity {
 
     enum Op {
         Insert(u64),
-        Update { camera: usize, target: f64 },
+        /// Inserts a block with a `temperature` column, painted when an attribute is selected.
+        InsertAttributed(u64),
+        Update {
+            camera: usize,
+            target: f64,
+        },
         Color(&'static str),
+        /// Selects `attribute:0:0` of `attribute_schema()` with the range the dataset reports.
+        Attribute,
+    }
+
+    const ATTRIBUTE_RANGE: [f64; 2] = [0.0, 1.0];
+
+    fn attribute_schema() -> Vec<AttributeDescriptor> {
+        vec![AttributeDescriptor::new("temperature", AttributeDataType::F32, 1).unwrap()]
+    }
+
+    /// One value per point, spread across (and slightly beyond) the dataset range.
+    fn temperature_column(point_count: usize) -> AttributeColumn {
+        let values = (0..point_count)
+            .map(|row| row as f32 / point_count as f32 * 1.2 - 0.1)
+            .collect();
+        AttributeColumn::new(
+            attribute_schema().remove(0),
+            AttributeValues::F32(values),
+            point_count,
+        )
+        .unwrap()
+    }
+
+    /// The block a host would cache for the current colour selection.
+    fn attributed_block(
+        source: &PointBlock,
+        selected: Option<(u32, u32)>,
+        range: Option<[f64; 2]>,
+    ) -> PointBlock {
+        let points = source.points().clone();
+        let column = temperature_column(points.len());
+        assemble_async_block(
+            source.id(),
+            points,
+            Some(column),
+            &attribute_schema(),
+            selected,
+            range,
+            usize::MAX,
+        )
+        .unwrap()
     }
 
     fn update(camera: usize, target: f64) -> Op {
@@ -1769,6 +1816,7 @@ mod binding_parity {
         reader: Option<Vec<PointBlock>>,
         mode: ColorMode,
         attribute: Option<(u32, u32)>,
+        attribute_range: Option<[f64; 2]>,
         target: Option<f64>,
         stage: Option<f64>,
         dirty: bool,
@@ -1819,6 +1867,7 @@ mod binding_parity {
             if self.mode != selection.mode || self.attribute != selection.attribute {
                 self.mode = selection.mode;
                 self.attribute = selection.attribute;
+                self.attribute_range = selection.attribute_range;
                 self.dataset.clear_loaded_blocks();
                 self.stage = Some(16.0);
                 self.dirty = true;
@@ -1857,6 +1906,7 @@ mod binding_parity {
             reader: session_reads_blocks.then(|| blocks.clone()),
             mode: ColorMode::Rgb,
             attribute: None,
+            attribute_range: None,
             target: None,
             stage: None,
             dirty: false,
@@ -1883,6 +1933,35 @@ mod binding_parity {
                     let dataset = builder.session_mut().dataset_mut();
                     dataset.insert_block(block).unwrap();
                     builder.block_inserted();
+                }
+                Op::InsertAttributed(id) => {
+                    let source = blocks.iter().find(|b| b.id().get() == *id).unwrap();
+                    let block = attributed_block(source, viewer.attribute, viewer.attribute_range);
+                    viewer.dataset.insert_block(block).unwrap();
+                    viewer.dirty = viewer.target.is_some();
+                    let (selected, range) = builder.selected_attribute();
+                    let block = attributed_block(source, selected, range);
+                    builder
+                        .session_mut()
+                        .dataset_mut()
+                        .insert_block(block)
+                        .unwrap();
+                    builder.block_inserted();
+                }
+                Op::Attribute => {
+                    let schema = attribute_schema();
+                    let selection =
+                        resolve_color_selection("attribute:0:0", Some(&schema), |_, _| {
+                            Ok(Some(AttributeAvailability {
+                                has_attributes: true,
+                                range: Some(ATTRIBUTE_RANGE),
+                            }))
+                        })
+                        .unwrap();
+                    viewer.color(selection);
+                    builder.set_color_selection(selection);
+                    assert_eq!(builder.selected_attribute().0, viewer.attribute);
+                    assert_eq!(builder.selected_attribute().1, viewer.attribute_range);
                 }
                 Op::Color(mode) => {
                     let selection =
@@ -1953,6 +2032,48 @@ mod binding_parity {
         ];
         let seen = run_parity(&ops, true);
         assert!(seen.iter().filter(|o| o.digest.is_some()).count() >= 3);
+    }
+
+    #[test]
+    fn builder_matches_the_viewer_when_colouring_by_attribute() {
+        let insert_all = |ops: &mut Vec<Op>| {
+            ops.extend([Op::InsertAttributed(11), Op::InsertAttributed(12)]);
+            ops.extend([Op::InsertAttributed(13)]);
+        };
+        let settle = |ops: &mut Vec<Op>| ops.extend((0..4).map(|_| update(0, 4.0)));
+        let mut ops = Vec::new();
+        insert_all(&mut ops);
+        settle(&mut ops);
+        let plain_end = ops.len();
+        // Selecting the attribute drops the cached blocks, which the host then delivers again.
+        ops.push(Op::Attribute);
+        insert_all(&mut ops);
+        settle(&mut ops);
+        let painted_end = ops.len();
+        ops.push(Op::Color("rgb"));
+        insert_all(&mut ops);
+        settle(&mut ops);
+        let seen = run_parity(&ops, false);
+        let last_digest = |range: std::ops::Range<usize>| {
+            // `seen` only holds updates, so map the op range onto it.
+            let first = ops[..range.start]
+                .iter()
+                .filter(|op| matches!(op, Op::Update { .. }))
+                .count();
+            let count = ops[range]
+                .iter()
+                .filter(|op| matches!(op, Op::Update { .. }))
+                .count();
+            seen[first..first + count]
+                .iter()
+                .rev()
+                .find_map(|o| o.digest)
+                .unwrap()
+        };
+        let rgb = last_digest(0..plain_end);
+        let attribute = last_digest(plain_end..painted_end);
+        assert_ne!(attribute, rgb, "the attribute colours reach the scene");
+        assert_eq!(last_digest(painted_end..ops.len()), rgb);
     }
 
     #[test]

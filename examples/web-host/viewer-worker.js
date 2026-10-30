@@ -54,6 +54,11 @@ let viewEpoch = 0;
 let remoteVisualScale = 1;
 let lastSentView = null;
 let currentLod = null;
+// What the build worker last confirmed (`colorMode` reply), so a rejected mode can be undone here.
+let confirmedColorMode = "rgb";
+let buildAttributeRange = null;
+// Digest of the scene displayed from a build worker; the in-worker path reads it from the viewer.
+let appliedSceneDigest = null;
 let pendingBuildMetrics = [];
 const viewSentAt = new Map();
 const buildSamples = { sceneAgeMs: [], epochLag: [], sceneApplyMs: [] };
@@ -131,6 +136,7 @@ function workerMetricsSnapshot(buildMetrics = null) {
         lodLog: [...lodLog],
         lodLogDropped,
         buildWorkerEnabled: buildOptions !== null,
+        sceneDigest: currentSceneDigest(),
     };
     if (buildOptions === null) return snapshot;
     // The build worker owns reads and decoding, so its totals replace this worker's empty ones.
@@ -271,6 +277,11 @@ function memoryStats() {
 // Stats of the last LOD update: the renderer's own, or the build worker's in build-worker mode.
 function currentLodStats() {
     return buildOptions ? currentLod : viewer.lodStats();
+}
+
+// Hex digest of the scene on screen (`null` while nothing is displayed), identical in both modes.
+function currentSceneDigest() {
+    return (buildOptions ? currentLod : viewer?.lodStats?.())?.sceneDigest ?? null;
 }
 
 function postStats(frameStatus = null) {
@@ -502,6 +513,9 @@ function startBuiltDataset(data, requestId = null) {
     targetVoxelPixels = data.targetVoxelPixels;
     datasetOpenedAt = performance.now();
     currentColorMode = "rgb";
+    confirmedColorMode = "rgb";
+    buildAttributeRange = null;
+    appliedSceneDigest = null;
     appliedEpoch = 0;
     buildOpened = false;
     lastSentView = null;
@@ -560,6 +574,8 @@ function lodStillLoading(lod) {
 }
 
 function applyBuiltLod(lod, source) {
+    lod.sceneDigest = appliedSceneDigest;
+    lod.attributeRange = buildAttributeRange;
     currentLod = lod;
     if (pendingOpen) {
         const { requestId, name, opened } = pendingOpen;
@@ -617,6 +633,7 @@ function handleBuildMessage(data) {
             if (data.type === "scene") {
                 const startedAt = performance.now();
                 viewer.uploadSceneInstances(new Uint8Array(data.buf), data.blockIds);
+                appliedSceneDigest = data.digest ?? null;
                 advanceSceneGeneration();
                 const sentAt = viewSentAt.get(data.viewEpoch);
                 recordBuildSample("sceneApplyMs", performance.now() - startedAt);
@@ -631,7 +648,17 @@ function handleBuildMessage(data) {
             applyBuiltLod(data.lod, data.type === "scene" ? "scene" : "lod");
             // The host stops requesting frames once the LOD is complete: draw the final scene.
             if (data.type === "scene" && !lodStillLoading(data.lod)) viewer.renderFrame();
+        } else if (data.type === "colorMode") {
+            confirmedColorMode = data.mode;
+            buildAttributeRange = data.attributeRange ?? null;
+            if (currentLod) currentLod.attributeRange = buildAttributeRange;
         } else if (data.type === "error") {
+            if (data.operation === "colorMode") {
+                // The build worker kept its previous mode: show the same one, as the in-worker
+                // path does when the viewer rejects a mode.
+                currentColorMode = confirmedColorMode;
+                viewer.setPresentationColorMode(confirmedColorMode);
+            }
             const requestId = data.operation === "openFile" ? pendingOpen?.requestId : undefined;
             if (data.operation === "openFile") pendingOpen = null;
             self.postMessage({ type: "error", operation: data.operation, requestId, message: data.message });
