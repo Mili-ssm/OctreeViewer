@@ -147,13 +147,15 @@ window.__renderBench = {
         });
     },
     resetWorkerMetrics() { worker.postMessage({ type: "metrics", reset: true }); },
-    apiCall(operation) {
+    apiCall(operation, args = {}) {
         return new Promise((resolve) => {
             const requestId = nextBenchApiId++;
             pendingBenchApi.set(requestId, resolve);
-            worker.postMessage({ type: "api", operation, requestId });
+            worker.postMessage({ type: "api", ...args, operation, requestId });
         });
     },
+    // Runs frames for a moment, as camera input would, so an idle scene keeps refining.
+    wake: () => wakeRendering(),
     latestLodCounters: () => lodCounters(latestLodStats),
 };
 

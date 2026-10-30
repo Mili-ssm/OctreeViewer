@@ -201,6 +201,24 @@ async function orbit(label, durationMs) {
     return { label, startEpoch, endEpoch: await pageEpoch(), requestedMs: durationMs, stepMs: ORBIT_STEP_MS, emptyPixelCaptures: captures };
 }
 
+// Returns the camera to `pose` and waits until the scene stops changing: no pending blocks, the
+// target stage reached and the same digest on two polls. Null digest means it never settled.
+async function sceneDigestAtRest(pose, timeoutMs = 120_000) {
+    await evalJson(`window.__renderBench.apiCall('setCamera', ${JSON.stringify({ position: Array.from(pose.position), target: Array.from(pose.target) })})`);
+    const until = Date.now() + timeoutMs;
+    let previous = null;
+    while (Date.now() < until) {
+        await evaluate("window.__renderBench.wake(); true");
+        await sleep(500);
+        const lod = (await evalJson("window.__renderBench.apiCall('getStats')"))?.lod;
+        const idle = lod && !lod.lodError && !(lod.pendingBlockIds?.length) && lod.lodStagePixels <= lod.targetVoxelPixels;
+        const digest = idle ? lod.sceneDigest ?? null : null;
+        if (digest !== null && digest === previous) return digest;
+        previous = digest;
+    }
+    return null;
+}
+
 let boundsCache = null;
 async function captureEmptyPixels() {
     boundsCache ??= await evalJson("window.__renderBench.apiCall('getMetadata')");
@@ -231,7 +249,7 @@ const wasmUrl = new URL("/pkg/viewer_wasm_bg.wasm", url);
 const wasmSha256 = crypto.createHash("sha256").update(Buffer.from(await (await fetch(wasmUrl)).arrayBuffer())).digest("hex");
 const datasetPath = path.resolve(input);
 const attributesPath = `${datasetPath}attrs`;
-const result = { schemaVersion: 2, startedAt, probe: "probe-orbit-load", targetPixels, orbitMs, maxLoadMs, buildWorker };
+const result = { schemaVersion: 3, startedAt, probe: "probe-orbit-load", targetPixels, orbitMs, maxLoadMs, buildWorker };
 try {
     result.browser = browser;
     await backend.navigate(url);
@@ -271,6 +289,8 @@ try {
         return { status, reached: /target reached/.test(status), counters: c };
     })()`);
     result.vulkan = vulkanEvidence();
+    // The fitted camera both runs start from; the scene at rest is compared at this pose.
+    const initialPose = await evalJson("window.__renderBench.apiCall('getCamera')");
     phases.push(await orbit("during-load", orbitMs));
     result.vulkanDuringRender = vulkanEvidence();
     let state = await isTarget();
@@ -281,7 +301,10 @@ try {
     result.targetReached = state.reached;
     result.finalStatus = state.status;
     result.loadElapsedMs = Date.now() - loadStartedMs;
-    if (state.reached) phases.push(await orbit("after-target", orbitMs));
+    if (state.reached) {
+        phases.push(await orbit("after-target", orbitMs));
+        result.sceneDigestAtRest = await sceneDigestAtRest(initialPose);
+    }
     const endEpoch = await pageEpoch();
     result.loadStartEpoch = loadStartEpoch;
     result.endEpoch = endEpoch;
