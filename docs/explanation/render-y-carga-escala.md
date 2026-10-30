@@ -3,39 +3,69 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md);
-la fase R1 no necesita decisiones del propietario; R3–R5 esperan las
-[preguntas pendientes](preguntas-propietario.md) P1–P6.
+**Estado (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
+y enmendado tras su pre-mortem (abajo). R0–R2 avanzan sin decisiones del propietario; R1-T1b y R3–R5
+esperan las [preguntas pendientes](preguntas-propietario.md).
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de
 1–8 px en pantalla, con una carga que se perciba continua: sin saltos a grueso al mover la cámara,
 sin huecos y sin bloqueos de frame.
 
+**Criterios de éxito medibles** (fijados por el coordinador; se revisan con la línea base): intervalo
+entre respuestas de frame del worker al hilo principal con **p95 < 33 ms y máximo < 100 ms** durante
+la carga y durante una órbita de 10 s; la etapa LOD publicada nunca sube durante una órbita; sin
+aumento de nodos sin cubrir ni de píxeles vacíos frente a la línea base.
+
 **Arquitectura de partida:** un worker de visor lee bloques del `.oct` local, selecciona un corte
 LOD por error en pantalla, voxeliza en CPU todo el corte para la vista actual y sube las instancias
-a la GPU (cubos instanciados). La evaluación identifica dos bloqueos estructurales (voxelización por
-vista en CPU, B1; pirámide LOD sin densidades intermedias, B2) y varios problemas acotados (B3–B7).
-Este plan los ataca de menor a mayor compromiso: primero lo que no cambia contratos (R0–R2), después
-lo que necesita decisiones del propietario (R3–R5).
+a la GPU (cubos instanciados). Todos los mensajes pasan por una cola serie del worker
+(`viewer-worker.js:530-533`), así que un rebuild de 1 s retrasa la respuesta del frame siguiente
+aunque no ocurra dentro de `renderFrame`. Bloqueos estructurales: voxelización por vista en CPU (B1)
+y pirámide LOD sin densidades intermedias (B2); problemas acotados: B3–B7.
 
 ## Restricciones globales
 
 - `scripts/check.sh` en verde al cerrar cada tarea; sin cambiar el nightly ni añadir `#![feature]`.
-- Sin cambios de formato ni de salida del conversor en R0–R2 (R1 del conversor intacto).
-- Cada mejora se mide **antes y después con el mismo escenario y el mismo arnés** (fase R0); si una
-  métrica empeora más allá del ruido registrado, la tarea no se cierra.
-- Los cambios de selección LOD conservan el contrato visible: ningún vóxel por encima del objetivo
-  de píxeles salvo los ya permitidos por la densidad de la fuente (`REGIONAL_VOXEL_LOD.md`).
-- Registros nuevos fechados con el día de ejecución, en español; commits convencionales en inglés con
-  `Co-Authored-By`; sin push. Mediciones de tiempo sin otros agentes pesados activos.
+- Sin cambios de formato ni de salida del conversor en R0–R2.
+- Contrato visible: ningún vóxel por encima del objetivo de píxeles salvo lo permitido por la densidad de la fuente (`REGIONAL_VOXEL_LOD.md`); la retención del último corte completo se conserva.
+- **Puertas por contadores deterministas** (`sceneBuilds`, `voxelSourcePoints`, bloques cargados, nodos sin cubrir, expulsiones de pendientes, ms de selección en bench nativo); el tiempo de pared es orientativo con n = 3. Matriz completa solo en R0 y en la medida final; por tarea, una ejecución de humo en Majadas.
+- **Serie sobre `lod_dataset.rs`/`bindings/lod.rs`**: una tarea cada vez en ese código (orden abajo). El host sirve la raíz del worktree que se mide; cada registro anota el SHA del `.wasm` y del dataset.
+- Antes de cronometrar: ningún `cargo`, `rustc` ni otro navegador activo (`pgrep`) y `loadavg` anotado.
+- Registros nuevos fechados con el día de ejecución, en español; commits convencionales en inglés con `Co-Authored-By`; sin push.
 
 ## Review Focus
 
-1. **Órbita continua durante la carga**: el corte visible nunca vuelve a una etapa más gruesa (R1-T1).
-2. **Llegada masiva de bloques**: ningún frame espera a una reconstrucción completa (R1-T2).
-3. **Jerarquías grandes**: selección y prioridad con 10⁵–10⁶ nodos sintéticos sin coste cuadrático (R1-T3).
-4. **Cámara cerca del suelo**: el plano cercano no recorta primeros planos (R1-T5).
-5. **Fallos de lectura y expulsiones**: las optimizaciones conservan la retención del último corte completo (todas).
+1. **Órbita continua durante la carga**: el corte visible nunca vuelve a una etapa más gruesa (R1-T1a).
+2. **Regiones recién expuestas al girar**: no quedan vacías mientras se reconstruye (R1-T2, margen de frustum).
+3. **Jerarquías grandes**: selección y prioridad con 10⁵–10⁶ nodos sin coste cuadrático, con el mismo corte (R1-T3a).
+4. **Cámara cerca del suelo**: el plano cercano no recorta y la selección no explota (R1-T5).
+5. **Thrash en la ruta async**: las expulsiones de bloques pendientes se miden y no aumentan (R0, R1-T0).
+
+## Enmiendas del pre-mortem (30-10-2026)
+
+| # | Enmienda | Tareas |
+| --- | --- | --- |
+| E1 | Paso 0 de R0: demostrar adaptador hardware (librerías Vulkan mapeadas, `adapter.info`, `gpu_busy_percent`); Chrome solo si da adaptador hardware; driver BiDi existente | R0 |
+| E2 | Métrica principal: intervalo entre respuestas de frame (p95/máx) y espera en cola; `renderCallMs` secundaria | R0, R1-T2 |
+| E3 | Registro con marca de tiempo de cada mensaje LOD (etapa, vóxeles sobredimensionados, nodos sin cubrir) y captura de píxeles vacíos; órbita guionizada de 10 s | R0 |
+| E4 | Puertas por contadores deterministas; humo en Majadas por tarea | todas |
+| E5 | Tiempo de decodificación en la ruta async y ocupación del worker por mensaje | R0 |
+| E6 | R1-T1 se divide: T1a sin reinicio de etapa al mover (corte retenido y prioridad a regiones sin cubrir); T1b histéresis tras P5 | R1-T1 |
+| E7 | R1-T2 = agrupar llegadas y menos reconstrucciones; mantener la escena anterior y ampliar el frustum de construcción con margen | R1-T2 |
+| E8 | R1-T3 se divide: T3a refactor con test dorado del orden exacto de `node_ids` (vía prioridad y vía alternativa) a 10⁵ y 10⁶; T3b reordenación intencional medida aparte | R1-T3 |
+| E9 | Q6 con la profundidad mínima en vista sobre las 8 esquinas del AABB; test fuera de eje en las esquinas del viewport | R1-T4 |
+| E10 | R1-T5 medido aparte tras T4; compara puntos y bloques seleccionados a 1 m y respeta el presupuesto | R1-T5 |
+| E11 | Detector de thrash en la ruta async (o métrica de expulsiones de pendientes por minuto) antes de T3b y T1a | R1-T0 |
+| E12 | Orden serie: T0 → T3a → T4 → T5 → T1a → T2 → T3b → T6 | proceso |
+| E13 | R2 es una puerta de decisión: si la decodificación es < 20 % del tiempo ocupado del worker, se sustituye por un spike de worker de construcción que posee la caché y transfiere buffers de instancias (ataca B1 sin decisión del propietario) | R2 |
+| E14 | Tests de integración en navegador (`lod-reuse`, `lod-session`) con `pkg` recién construido en la lista de cada tarea R1 | R1 |
+
+**Criterios de parada:** adaptador llvmpipe, swiftshader o desconocido → sin tiempos, solo
+resultados funcionales; rango entre rondas > 30 % en humo → más rondas o solo contadores; tras T2 el
+p95 de respuestas no cambia aunque baje `renderCallMs` → no se declara mejora de latencia y se pasa a
+E13; tras T1a/T4/T5 suben nodos sin cubrir, píxeles vacíos, expulsiones de pendientes o aparece
+`SourceDetailBudgetExceeded` → revertir esa tarea; el test dorado de T3a difiere → parar; R0 > 2 días
+de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 ---
 
@@ -43,61 +73,71 @@ lo que necesita decisiones del propietario (R3–R5).
 
 ### R0-T1: arnés reproducible de carga y órbita
 
-**Archivos:** `examples/web-host/probe-*.mjs` (extender `probe-cache-camera.mjs` o crear `probe-orbit-load.mjs`), `docs/records/benchmarks/RENDER_BASELINE_<aaaa-mm-dd>.md`.
+**Archivos:** `examples/web-host/probe-*.mjs` (extender `probe-cache-camera.mjs` o crear `probe-orbit-load.mjs`), `examples/web-host/viewer-worker.js` (contadores e instrumentación), `docs/records/benchmarks/RENDER_BASELINE_<aaaa-mm-dd>.md`.
 
-- [ ] **Paso 1:** escenario fijo por dataset (Majadas 4 px, Belvedere 8 px y 4 px con tope de 300 s): primer frame, tiempo hasta el objetivo, pendientes al tope, p95/máx de la llamada de render durante la carga y durante una órbita de 10 s, `lodStagePixels` a lo largo de la órbita, ms de selección/plan/construcción, nº de reconstrucciones, PSS del árbol del navegador. Firefox headless con WebGPU (como los registros previos) y Chrome con GPU si está disponible.
-- [ ] **Paso 2:** 3 rondas por celda; registro con mediana y rango; commit.
+- [ ] **Paso 0 (E1):** demostrar adaptador hardware en Firefox headless (y Chrome si procede); si no, registrar y parar los tiempos.
+- [ ] **Paso 1 (E2, E3, E5):** instrumentación: intervalo de respuestas de frame y espera en cola, ocupación del worker por tipo de mensaje, tiempo de decodificación async, registro con marca de tiempo de cada mensaje LOD, nodos sin cubrir, píxeles vacíos, expulsiones de pendientes; órbita guionizada de 10 s.
+- [ ] **Paso 2:** línea base: Majadas 4 px, Belvedere 8 px y 4 px (tope 300 s), 3 rondas; registro con mediana, rango y SHA de `.wasm` y datasets; commit.
 
-## Fase R1: mejoras sin decisiones del propietario
+## Fase R1: mejoras sin decisiones del propietario (orden E12)
 
-### R1-T1: no reiniciar la etapa LOD al mover la cámara (Q1)
+### R1-T0: detector de thrash en la ruta async (E11)
 
-**Archivos:** `crates/viewer_wasm/src/bindings/{camera.rs, lod.rs}`, `crates/viewer_wasm/src/lod_dataset.rs` y sus tests.
+**Archivos:** `crates/viewer_wasm/src/lod_dataset.rs` y tests.
 
-- [ ] Test: tras una secuencia de órbitas con el objetivo no residente, la etapa publicada nunca sube; el corte visible se conserva y se refina desde él. Implementar con histéresis simple (refinar al objetivo, no simplificar hasta 2 × el objetivo). Medida R0: `lodStagePixels` monótono en órbita.
+- [ ] Test: una secuencia de cargas async que expulsa bloques pendientes del objetivo se detecta igual que en la ruta síncrona (pausa del refinado o contador expuesto en `lod`).
 
-### R1-T2: reconstrucción agrupada y fuera de `renderFrame` (Q2)
-
-**Archivos:** `examples/web-host/viewer-worker.js`, `crates/viewer_wasm/src/bindings/render.rs`, `crates/viewer_wasm/src/lod_dataset.rs`.
-
-- [ ] Test: N llegadas seguidas producen una sola reconstrucción por ventana de tiempo; `renderFrame` dibuja la última escena construida sin reconstruir. Medida R0: nº de reconstrucciones y p95 de la llamada de render en carga.
-
-### R1-T3: selección y prioridad sin coste cuadrático (Q3, Q4, Q5)
+### R1-T3a: selección sin coste cuadrático, mismo corte (Q3, Q5)
 
 **Archivos:** `crates/viewer_core/src/spatial_lod_priority.rs`, `crates/viewer_core/src/lod_transition.rs`, `crates/viewer_wasm/src/{lod_dataset.rs, bindings/lod.rs}`.
 
-- [ ] Tests de caracterización primero (mismo corte, mismo orden de pendientes que hoy en fixtures y jerarquías sintéticas); después: frontera indexada (O(F log F)), selección reutilizada entre `target_cut_is_resident` y la actualización, prioridad calculada solo sobre bloques pendientes con la métrica de selección. Bench con 10⁵ y 10⁶ nodos sintéticos.
+- [ ] Test dorado primero: orden exacto de `node_ids` del corte y de pendientes en fixtures y jerarquías sintéticas de 10⁵ y 10⁶ nodos, por la vía de prioridad y por la alternativa; después frontera indexada y selección reutilizada entre `target_cut_is_resident` y la actualización. Benches `#[ignore]` fuera de `check.sh`.
 
-### R1-T4: métrica de error única y punto más cercano del AABB (Q6, B7)
+### R1-T4: métrica de error única (Q6, B7, E9)
 
-**Archivos:** `crates/viewer_wasm/src/lod_dataset.rs`, `crates/viewer_render_wgpu/src/camera.rs`, `crates/viewer_core` (si la métrica pasa allí).
+**Archivos:** `crates/viewer_wasm/src/lod_dataset.rs`, `crates/viewer_render_wgpu/src/camera.rs`.
 
-- [ ] Una función de error en pantalla compartida por selección y prioridad: espaciado del nodo ÷ distancia al punto más cercano del AABB, con el factor de proyección actual. Tests: con la misma cámara, el máximo de arista proyectada sigue ≤ objetivo y se seleccionan igual o menos puntos que hoy.
+- [ ] Una función de error en pantalla para selección y prioridad: espaciado del nodo ÷ profundidad mínima en vista de las 8 esquinas del AABB, con el factor de proyección actual. Tests: arista proyectada ≤ objetivo también fuera de eje en las esquinas del viewport; igual o menos puntos seleccionados que hoy con la misma cámara.
 
-### R1-T5: plano cercano adaptativo (Q8)
+### R1-T5: plano cercano adaptativo (Q8, E10)
 
 **Archivos:** `crates/viewer_render_wgpu/src/camera.rs`.
 
-- [ ] Test: con la cámara a 1 m del suelo de una nube de decenas de km, ningún nodo visible queda recortado por el plano cercano; precisión de profundidad suficiente (sin z-fighting en el test de picking existente).
+- [ ] Test: cámara a 1 m del suelo de una nube de decenas de km sin recorte de nodos visibles; puntos y bloques seleccionados antes y después comparados; presupuesto de la fuente respetado; picking existente sin regresión.
+
+### R1-T1a: no reiniciar la etapa al mover (Q1, E6)
+
+**Archivos:** `crates/viewer_wasm/src/bindings/{camera.rs, lod.rs}`, `crates/viewer_wasm/src/lod_dataset.rs`.
+
+- [ ] Función pura (p. ej. `next_lod_stage`) con tests: tras órbitas con el objetivo no residente, la etapa publicada nunca sube; las regiones sin cubrir tienen prioridad de carga. Sin histéresis (eso es T1b).
+
+### R1-T2: menos reconstrucciones y bordes cubiertos (Q2, E7)
+
+**Archivos:** `examples/web-host/viewer-worker.js`, `crates/viewer_wasm/src/{bindings/render.rs, lod_dataset.rs}`.
+
+- [ ] Llegadas agrupadas: una reconstrucción por ventana de tiempo; en un cambio de cámara se dibuja la escena anterior hasta la nueva; el frustum de construcción se amplía con un margen para que el giro no deje bordes vacíos. Medida: `sceneBuilds` y p95 de respuestas de frame (si no baja, criterio de parada → E13).
+
+### R1-T3b: prioridad solo sobre pendientes (Q4)
+
+- [ ] Reordenación intencional (métrica de selección, cálculo solo sobre bloques pendientes) medida por separado: tiempo hasta el objetivo y expulsiones de pendientes.
 
 ### R1-T6: jerarquía construida en wasm desde el reader (Q7, B6 parcial)
 
 **Archivos:** `crates/viewer_wasm/src/{async_format_reader.rs, lod_metadata.rs, lod_dataset.rs}`, `examples/web-host/viewer-worker.js`.
 
-- [ ] Sin descriptor JS por nodo: el reader entrega la jerarquía a `SpatialHierarchy` dentro de wasm. Test con 1 M nodos sintéticos: ms de apertura y memoria JS/wasm frente a hoy.
+- [ ] Sin descriptor JS por nodo; test con 1 M nodos sintéticos: ms de apertura y memoria JS/wasm frente a hoy.
+
+### R1-T1b (espera a P5): histéresis
+
+- [ ] Solo tras la respuesta del propietario a P5 (rango de píxeles dinámico o fijo).
 
 ### R1-T7: medida después de R1
 
-- [ ] Mismo arnés y escenarios que R0; registro con la comparación; commit.
+- [ ] Matriz completa de R0 con el mismo arnés; registro con la comparación y los criterios de éxito; commit.
 
-## Fase R2: decodificación fuera del hilo de render (B4)
+## Fase R2: puerta de decisión sobre el hilo de render (B4, E13)
 
-### R2-T1: workers de decodificación con transferibles
-
-Patrón de ADR 0015 (sin memoria compartida): el worker de visor reparte lecturas y decodificación a
-K workers y recibe columnas listas como `ArrayBuffer` transferidos. Sin decisión del propietario.
-
-- [ ] Diseño breve (arquitecto) y pre-mortem antes de implementar; medida R0 antes y después (tiempo hasta el objetivo y p95 de render en carga).
+- [ ] Con los datos de R0 (E5): si la decodificación ≥ 20 % del tiempo ocupado del worker, workers de decodificación con transferibles (patrón de ADR 0015); si no, spike de un **worker de construcción** que posee la caché decodificada y transfiere buffers de instancias al worker de render (ataca B1 sin cambiar la estética). Diseño breve (arquitecto) y pre-mortem antes de implementar.
 
 ## Fases que esperan decisiones del propietario
 
@@ -107,6 +147,5 @@ K workers y recibe columnas listas como `ArrayBuffer` transferidos. Sin decisió
 | R4 | Contrato de densidad de la pirámide LOD (un nivel por ×2 de densidad, hojas ≤ 16–64 k puntos, espaciado por nodo en el índice) en V7: reconversión de datasets (B2) | P3, P4 |
 | R5 | Jerarquía paginada (al estilo de las páginas de COPC) para > 2 M nodos y apertura sin índice completo; transporte remoto si lo hay | P3, P6 |
 
-Borradores de ADR para R3 y R4 en la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
-y en el informe del arquitecto; se numeran al aceptarse (0017 queda reservada para las zonas OPFS de la
-[etapa 4](conversor-web-paralelo-etapa4.md)).
+Borradores de ADR para R3 y R4 en la evaluación; se numeran al aceptarse (0017 queda reservada para
+las zonas OPFS de la [etapa 4](conversor-web-paralelo-etapa4.md)).
