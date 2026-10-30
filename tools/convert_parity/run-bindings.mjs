@@ -8,9 +8,16 @@
 //   cargo build --release -p convert_parity --bin native_convert
 // Exits non-zero on any mismatch, unexpected failure, run that never spilled or a quota error
 // that is not named `QuotaExceededError`.
+//
+// Single-input mode (the Node gate of the web converter, no native comparison, one JSON line):
+//   node run-bindings.mjs --input FILE --divisions D [--points-per-block P] \
+//     [--spool-budget-bytes B] [--work-dir DIR]
+// Defaults: P = 262144, B = 2 GiB, DIR = target/convert_parity/single. The zone count comes from
+// `WasmCoreConverter.estimate`, like the web host. Prints the elapsed `convert()` time, the SHA-256
+// of both outputs, `exports.memory.buffer.byteLength`, the spool counters and the process RSS.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync } from "node:fs";
+import { closeSync, createReadStream, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -20,7 +27,19 @@ import { openFsSyncHandle } from "../../examples/web-host/tests/support/fs-sync-
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const pkg = join(root, "target/convert_parity/pkg");
 const nativeBin = join(root, "target/release/native_convert");
-const workDir = join(root, "target/convert_parity/bindings");
+const cli = (() => {
+  const values = {};
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i += 2) {
+    if (!argv[i].startsWith("--") || argv[i + 1] === undefined) throw new Error(`bad argument ${argv[i]}`);
+    values[argv[i].slice(2)] = argv[i + 1];
+  }
+  return values;
+})();
+const singleInput = cli.input !== undefined;
+const workDir = singleInput
+  ? join(root, cli["work-dir"] ?? "target/convert_parity/single")
+  : join(root, "target/convert_parity/bindings");
 rmSync(workDir, { recursive: true, force: true });
 mkdirSync(workDir, { recursive: true });
 
@@ -53,7 +72,53 @@ globalThis.FileReaderSync = class {
 
 const { initSync, WasmCoreConverter } = await import(pathToFileURL(join(pkg, "viewer_wasm.js")).href);
 if (readdirSync(pkg).includes("snippets")) throw new Error("wasm-bindgen generated snippets");
-initSync({ module: readFileSync(join(pkg, "viewer_wasm_bg.wasm")) });
+const wasmExports = initSync({ module: readFileSync(join(pkg, "viewer_wasm_bg.wasm")) });
+
+async function sha256Stream(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+if (singleInput) {
+  const ppb = Number(cli["points-per-block"] ?? 262144);
+  const divisions = Number(cli.divisions);
+  const budget = Number(cli["spool-budget-bytes"] ?? 2 * 1024 ** 3);
+  if (!Number.isInteger(divisions)) throw new Error("--divisions is required");
+  const options = { pointsPerBlock: ppb, spatialDivisions: divisions, maxError: 0.01, spoolBudgetBytes: budget };
+  const fd = openSync(cli.input, "r");
+  const paths = ["single.oct", "single.octattrs"].map((file) => join(workDir, file));
+  const estimate = WasmCoreConverter.estimate(fdBlob(fd), options);
+  const handles = paths.map((path) => openFsSyncHandle(path));
+  const zones = Array.from({ length: estimate.zones }, (_, i) => openFsSyncHandle(join(workDir, `zone${i}`)));
+  const converter = new WasmCoreConverter(fdBlob(fd), handles[0], handles[1], options, undefined, createSpoolHost({ zones }));
+  const started = performance.now();
+  const summary = converter.convert();
+  const elapsedMs = performance.now() - started;
+  const wasmMemoryBytes = wasmExports.memory.buffer.byteLength;
+  converter.free();
+  closeSync(fd);
+  for (const handle of [...handles, ...zones]) handle.close();
+  const status = readFileSync("/proc/self/status", "utf8");
+  const kb = (key) => Number(status.match(new RegExp(`${key}:\\s+(\\d+) kB`))[1]) * 1024;
+  console.log(
+    JSON.stringify({
+      side: "wasm",
+      elapsedMs: Math.round(elapsedMs * 10) / 10,
+      blocks: summary.blockCount,
+      pointCount: summary.pointCount,
+      wasmMemoryBytes,
+      rssBytes: kb("VmRSS"),
+      peakRssBytes: kb("VmHWM"),
+      zones: estimate.zones,
+      estimate,
+      spool: summary.spool,
+      octSha256: await sha256Stream(paths[0]),
+      octattrsSha256: await sha256Stream(paths[1]),
+    }),
+  );
+  process.exit(0);
+}
 
 const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
