@@ -119,6 +119,8 @@ function recordFrameReply(renderCallMs) {
 let benchLog = null;
 const BENCH_LOG_CAPACITY = 100_000;
 let pendingWorkerMetrics = [];
+let nextBenchApiId = 1_000_000;
+const pendingBenchApi = new Map();
 window.__renderBench = {
     start() { benchLog = []; },
     frameReplies: () => (benchLog ?? []).slice(),
@@ -130,6 +132,13 @@ window.__renderBench = {
         });
     },
     resetWorkerMetrics() { worker.postMessage({ type: "metrics", reset: true }); },
+    apiCall(operation) {
+        return new Promise((resolve) => {
+            const requestId = nextBenchApiId++;
+            pendingBenchApi.set(requestId, resolve);
+            worker.postMessage({ type: "api", operation, requestId });
+        });
+    },
     latestLodCounters: () => lodCounters(latestLodStats),
 };
 
@@ -520,6 +529,9 @@ function handleWorkerMessage(event) {
             lastFrameStatus = data.frameStatus;
             statusRoot.textContent = `Renderer: ${lastFrameStatus}`;
         }
+    } else if (data.type === "apiResult") {
+        pendingBenchApi.get(data.requestId)?.(data.value);
+        pendingBenchApi.delete(data.requestId);
     } else if (data.type === "metrics") {
         const waiting = pendingWorkerMetrics;
         pendingWorkerMetrics = [];

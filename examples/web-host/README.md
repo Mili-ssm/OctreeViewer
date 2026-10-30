@@ -362,6 +362,30 @@ from any FPS claim. Each phase ends on a detector pause, target completion, 120 
 without counter changes, or a 600-second cap. An observation cap is an incomplete result.
 A paused retained cut can have complete coverage while the requested target remains pending.
 
+### Scripted load + orbit probe (render benchmark, R0)
+
+With the same Firefox and server setup:
+
+```bash
+node examples/web-host/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct target/orbit-load.json \
+  [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels]
+```
+
+It starts loading, orbits the camera with one pointer move every 16 ms for `--orbit-s` seconds
+during loading and, if the target LOD is reached, once more afterwards. `OUTPUT.json` holds: frame-reply
+interval and round-trip p50/p95/max per phase (the primary latency metric; `renderCallMs` is
+secondary), worker busy time and queue wait per message type, async read/decode/insert time,
+the timestamped log of every `lod` message, deterministic counters (`sceneBuilds`,
+`voxelSourcePoints`, `evictedPendingBlocks`, `uncoveredNodes`, `oversizedVoxels`; `loadedBlocks`
+only counts the synchronous path, use `workerMetrics.asyncBlocks.blocks`), adapter info,
+Vulkan libraries and DRI fds of the browser processes, `gpu_busy_percent` samples, the SHA-256 of
+the served `.wasm`, dataset size and `loadavg`. `--pixels` (opt-in) screenshots the canvas
+three times per orbit and counts background pixels inside the projected dataset bounds.
+`mode` is `functional` (no wall-clock claims) when `cargo`/`rustc` or a second browser is running
+or `gpu_busy_percent` never exceeds 10 %, so a software adapter cannot produce timings.
+The page hook `window.__renderBench` (`start`, `summarize`, `workerMetrics`, `apiCall`) backs it;
+frame logging is off until `start()`.
+
 Each 10-second sample awaits the exact newly exported Blob and saves both its counters and
 the visible panel. `captureWallTimeMs` brackets that export for comparison with the process
 sampler's wall-clock timestamp; neither is an atomic joint memory snapshot.
