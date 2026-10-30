@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- Page of the M3b Belvedere browser run (see m3b-belvedere-2026-10-30-driver.mjs). Throwaway. -->
+<meta charset="utf-8">
+<title>M3b Belvedere</title>
+<input id="f" type="file">
+<script type="module">
+import { createConverter } from "../../../../examples/web-host/converter-api.mjs";
+
+const DIR = "octree-viewer-conversions";
+const converter = createConverter({ engine: "core" });
+let trace = [];
+let poller = null;
+
+async function sample() {
+    const rec = { t: Math.round(performance.now()) };
+    try { rec.usage = (await navigator.storage.estimate()).usage; } catch {}
+    try {
+        const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(DIR, { create: true });
+        const names = [];
+        for await (const name of dir.keys()) names.push(name);
+        rec.files = names.length;
+        rec.zones = names.filter((n) => n.includes(".zone-")).length;
+    } catch {}
+    trace.push(rec);
+}
+
+window.convertCase = async (options) => {
+    const file = document.getElementById("f").files[0];
+    const warnings = [];
+    const off = [converter.on("warning", (w) => warnings.push(w.message))];
+    let spool = null, workerTimings = null;
+    off.push(converter.on("complete", (d) => { spool = d.spool; workerTimings = d.timings; }));
+    trace = [];
+    await sample();
+    const baseline = trace[0];
+    poller = setInterval(sample, 1000);
+    const wallStart = Date.now();
+    const started = performance.now();
+    window.convertWallStart = wallStart;
+    try {
+        const result = await converter.convert(file, { engine: "core", options });
+        const ms = Math.round(performance.now() - started);
+        clearInterval(poller);
+        await sample();
+        window.lastResult = result;
+        const maxUsage = Math.max(...trace.map((r) => r.usage ?? 0));
+        return {
+            ms, wallStart, wallEnd: Date.now(), workerTimings, spool, warnings, points: result.points,
+            octBytes: result.file.size, attrsBytes: result.attributesFile.size, baselineUsage: baseline.usage,
+            usagePeak: maxUsage, zonesPeak: Math.max(...trace.map((r) => r.zones ?? 0)),
+            zonesAtEnd: trace[trace.length - 1].zones, filesAtEnd: trace[trace.length - 1].files, samples: trace.length,
+            persisted: await navigator.storage.persisted?.(),
+        };
+    } catch (error) {
+        clearInterval(poller);
+        return { error: String(error.message ?? error), ms: Math.round(performance.now() - started), warnings };
+    } finally { off.forEach((f) => f()); }
+};
+// Clicks an anchor so the browser saves the blob to disk (Node hashes it from there).
+window.downloadOf = (which) => {
+    const blob = which === "oct" ? window.lastResult.file : window.lastResult.attributesFile;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${which}.bin`;
+    document.body.append(a);
+    a.click();
+};
+window.leftover = async () => {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(DIR, { create: true });
+    const names = [];
+    for await (const name of dir.keys()) names.push(name);
+    return names;
+};
+window.ready = true;
+</script>
