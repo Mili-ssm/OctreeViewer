@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (30-10-2026):** Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../records/benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../records/benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 hecha (firmas abajo); Tareas 4a y 4b en curso.
+**Estado (30-10-2026):** Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../records/benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../records/benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 hecha (firmas abajo). Tarea 4 hecha: pistas del planificador (`c704de1`, SHA de R1 intactos), almacén híbrido (`767c811`), volcado a zonas paginadas (`91e73c3`; mismos bytes que en memoria con presupuestos de 64 KiB y 0), estimación (`819adcc`; 13/10/49 zonas como el modelo), arnés nativo C6 `native_hybrid` (`5a39ca0`) y modo solo RAM sin zonas (`3155d5c`). Tarea 5a hecha: tiers JS y bindings reales con paridad en Node y `QuotaExceededError` (`check.sh`, 23 pasos). Tarea 5b en curso.
 
 **Objetivo:** cerrar M3b: un worker convierte Belvedere en el navegador con spools fuera de la
 memoria wasm (RAM de JS más zonas OPFS), con paridad byte a byte con el CLI en Chrome y Firefox,
@@ -160,14 +160,14 @@ pistas y modelo suponen recorrido en profundidad con N = 1 (revisar en M4/M5).
 
 **Archivos:** `crates/viewer_convert_core/src/pipeline/hybrid_store.rs` (y lo que fije la Tarea 3).
 
-- [ ] **Paso 1:** tests que fallan: propiedad frente a `MemSpoolStore` con presupuesto de 64 KiB (volcados forzados, también de spools abiertos, y volcado en cada `append` mientras se particiona una entrada fijada; Review Focus 1, C1); escritura corta → error de cuota (Review Focus 2); agotamiento de zonas → error claro (C5); ninguna lectura de un tier mayor que `SPOOL_IO_BUFFER_BYTES` (C9); `convert_serial` con tiers en memoria y presupuesto diminuto da los SHA de R1 de las fixtures; ningún id ni página viva al terminar.
-- [ ] **Paso 2:** implementar hasta verde; `check.sh`; commit.
+- [x] **Paso 1:** tests que fallan: propiedad frente a `MemSpoolStore` con presupuesto de 64 KiB (volcados forzados, también de spools abiertos, y volcado en cada `append` mientras se particiona una entrada fijada; Review Focus 1, C1); escritura corta → error de cuota (Review Focus 2); agotamiento de zonas → error claro (C5); ninguna lectura de un tier mayor que `SPOOL_IO_BUFFER_BYTES` (C9); `convert_serial` con tiers en memoria y presupuesto diminuto da los SHA de R1 de las fixtures; ningún id ni página viva al terminar.
+- [x] **Paso 2:** implementar hasta verde; `check.sh`; commit.
 
 ### Tarea 5: tiers del host, worker y puerta en Node (C2, C3, C11)
 
 **Archivos:** `crates/viewer_wasm/src/` (tiers y `core_convert.rs`), `examples/web-host/` (módulo de tiers, `converter-worker.js`, `converter-api.mjs`, tests), `tools/convert_parity`.
 
-- [ ] **5a, tiers del host:** módulo JS de segmentos y zonas con tests Node sobre handles falsos respaldados por `fs` (`at` > 2³², `write` que devuelve 0); paridad Node en `tools/convert_parity` con volcado forzado, en `check.sh`; commit.
+- [x] **5a, tiers del host (`e8b4b73`, `b90f93f`–`85f1b1e`):** módulo JS de segmentos y zonas con tests Node sobre handles falsos respaldados por `fs` (`at` > 2³², `write` que devuelve 0); paridad Node en `tools/convert_parity` con volcado forzado, en `check.sh`; commit.
 - [ ] **5b, worker:** el worker abre Z zonas antes de convertir y las anuncia como parciales; escritura corta → mensaje de cuota y limpieza (R4, R5); tests Node; commit.
 - [ ] **5c, Chrome `file://`:** sin OPFS, solo RAM con aviso; salida en RAM a un `Blob` y validación desde RAM; rechazo temprano por estimación (D3); commit.
 - [ ] **5d, preflight y limpieza:** `persist()` y cuota de Firefox antes de crear zonas; la limpieza de huérfanos termina antes de la primera conversión; commit.
