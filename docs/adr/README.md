@@ -20,3 +20,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0014](0014-nucleo-de-conversion-sin-io.md) | Núcleo de conversión sin I/O compartido por CLI y navegador | Aceptada |
 | [0015](0015-pool-de-workers-sin-memoria-compartida.md) | Paralelismo de conversión web por pool de workers sin memoria compartida | Aceptada |
 | [0016](0016-norma-portatil-en-el-error-de-cuantizacion.md) | Norma portátil en el error de cuantización (sin libm en la salida) | Aceptada |
+| [0017](0017-zonas-opfs-paginadas-para-spools-web.md) | Los spools del conversor web van en segmentos de JS y zonas OPFS paginadas | Aceptada |

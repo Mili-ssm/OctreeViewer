@@ -2,9 +2,10 @@
 
 Estado: spec aprobada (29-10-2026), con enmiendas del pre-mortem · Decisiones:
 [ADR 0014](../adr/0014-nucleo-de-conversion-sin-io.md),
-[ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md)
+[ADR 0015](../adr/0015-pool-de-workers-sin-memoria-compartida.md),
+[ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)
 
-Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8, S9 y M1) [etapa 3](conversor-web-paralelo-etapa3.md) (S2, S10, M2 y M3a) y [etapa 4](conversor-web-paralelo-etapa4.md) (M3b; decisión del propietario 5: zonas OPFS paginadas). La lectura paralela tendrá spec
+Primer subproyecto de «lectura y escritura paralelas en WASM». Planes: [etapa 1](conversor-web-paralelo-etapa1.md) (S0, M0, S1 y tests de independencia; cerrada) y [etapa 2](conversor-web-paralelo-etapa2.md) (modelo por nodos, S0 con bloques reales, S8, S9 y M1) [etapa 3](conversor-web-paralelo-etapa3.md) (S2, S10, M2 y M3a) y [etapa 4](conversor-web-paralelo-etapa4.md) (M3b; decisión del propietario 5: zonas OPFS paginadas; cerrada 30-10-2026). La lectura paralela tendrá spec
 propia (enfoque async + workers, a concretar) y queda fuera de este documento.
 
 ## Objetivo
@@ -15,11 +16,11 @@ RAM disponible (4–8 GB en total) para reducir tráfico a disco, hasta datasets
 
 ## Situación de partida (29-10-2026)
 
-| Aspecto | CLI (`viewer_convert`) | Navegador (`viewer_wasm/src/browser_convert.rs`) |
+| Aspecto | CLI (`viewer_convert`) | Navegador (motor anterior, retirado en M3b) |
 | --- | --- | --- |
-| Plan espacial | Octree adaptativo, divisiones 2/4/8 | Rejilla fija 2×2×2, jerarquía de 9 nodos (`:19-20`) |
-| Puntos por bloque | 262 144 (`options.rs:5`) | 16 384 (`:17`) |
-| Límite de bloque del writer | 64 MiB (`las_source.rs:375`) | 8 MiB (`:506`); cambia la codificación |
+| Plan espacial | Octree adaptativo, divisiones 2/4/8 | Rejilla fija 2×2×2, jerarquía de 9 nodos |
+| Puntos por bloque | 262 144 (`options.rs:5`) | 16 384 |
+| Límite de bloque del writer | 64 MiB (`las_source.rs:375`) | 8 MiB; cambia la codificación |
 | Paralelismo | rayon en preparación, `thread::scope` en subárboles raíz | Un worker, un hilo |
 | Presupuesto de memoria | 512 MiB por defecto | Ninguno |
 | Medidas | Belvedere y Majadas registrados | Solo pruebas funcionales (111 190 puntos) |
@@ -49,7 +50,7 @@ sin enviarlo.
 | R1 | Para la misma entrada y las mismas opciones del planificador, cuando la conversión termina en ambos lados, el conversor web producirá `.oct`/`.octattrs` byte a byte iguales a los del CLI, con cualquier número de workers. |
 | R2 | El navegador expondrá las opciones del CLI aplicables a LAS/LAZ (revisión de formato, puntos por bloque, error máximo, divisiones y `planner_budget`), con los mismos valores por defecto y el mismo significado que en el CLI. |
 | R3 | La conversión repartirá decodificación LAZ, partición, subárboles, preparación de bloques y validación entre N workers (cada uno con su instancia wasm32); un único escritor publica en orden. |
-| R4 | Antes de empezar, el conversor pedirá `navigator.storage.persist()`, estimará el pico OPFS con el modelo por nodos (un fichero por spool volcado) y rechazará con mensaje claro si la cuota no alcanza; durante la conversión, un `QuotaExceededError` aborta y limpia como cualquier error (R5). |
+| R4 | Antes de empezar, el conversor pedirá `navigator.storage.persist()`, estimará el pico OPFS (modelo por nodos; en la web, páginas de zonas, decisión 5) y rechazará con mensaje claro si la cuota no alcanza; durante la conversión, un `QuotaExceededError` aborta y limpia como cualquier error (R5). |
 | R5 | Cuando un worker falle (error, trap o cancelación), la conversión abortará entera, terminará los workers y borrará sus temporales OPFS. |
 | R6 | La salida se validará releyéndola completa (en paralelo) antes de entregarla, como el CLI. |
 | R7 | El CLI no perderá rendimiento: SHA idénticos y mediana pareada Belvedere (perfil `perf`, ≥ 5 rondas A/B alternadas) dentro de ±3% de la referencia M0. |
@@ -80,7 +81,7 @@ flowchart LR
 - **`viewer_convert`**: shell nativo. Implementa los traits con ficheros e hilos y conserva CLI,
   checkpoints, EPT y publicación.
 - **`viewer_wasm`**: shell del navegador. Expone cada tipo de trabajo como función wasm-bindgen e
-  implementa los traits sobre OPFS y Blob. `core_convert.rs` (`WasmCoreConverter`, M3a) ya usa el núcleo, pero `browser_convert.rs` sigue siendo el motor por defecto del host hasta M3b, que lo elimina.
+  implementa los traits sobre OPFS y Blob. `core_convert.rs` (`WasmCoreConverter`) es el único motor de conversión desde M3b, que eliminó el anterior (`browser_convert.rs`); `spool_host.rs` y `opfs.rs` conectan los spools con el host.
 - **web-host**: un coordinador (worker líder) reparte trabajos a un pool de N workers y es el único
   escritor de la salida.
 
@@ -88,7 +89,7 @@ flowchart LR
 
 | Trait | Responsabilidad | Nativo | Navegador |
 | --- | --- | --- | --- |
-| `SpoolStore` | Un fichero por spool: crear, añadir, leer y borrar (decisión del 29-10-2026, abajo) | Ficheros en el directorio de trabajo | Segmentos `ArrayBuffer` de JS; al superar el presupuesto, volcado a un fichero OPFS propio por spool (híbrido) |
+| `SpoolStore` | Spool por clave: crear, añadir, leer y borrar (decisión del 29-10-2026, abajo) | Un fichero por spool en el directorio de trabajo | `HybridSpoolStore`: segmentos de JS; al superar el presupuesto, volcado a páginas de zonas OPFS (decisión 5, ADR 0017) |
 | `PointSource` | Leer puntos por rango de chunks LAZ (o rango de registros LAS), con offset global de punto para errores | Registros LAS y serie: `las::Reader`; rangos LAZ: el del núcleo | En el núcleo, `LazChunkPointSource` sobre `Read + Seek`: arma en memoria un LAZ mínimo (prefijo de 8 B + subtabla de los chunks del rango) y decodifica desde su inicio, sin `seek` ([S2](../records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md)) |
 | `Clock` | Tiempos de diagnóstico | `Instant` | `performance.now()` |
 | Trabajos | Entradas/salidas serializables de cada fase | Ejecutados por hilos/rayon | Mensajes a workers, búferes transferibles |
@@ -97,24 +98,27 @@ flowchart LR
 con [ADR 0006](../adr/0006-politica-de-version-solo-en-viewer-format.md): la versión sigue
 decidiéndose solo allí.
 
-### Spools: un fichero por spool (híbrido en la web)
+### Spools: un fichero por spool en nativo, zonas paginadas en la web
 
-> **(Sustituida en la web por la decisión 2, abajo.) Decisión del propietario (29-10-2026), tras el [modelo por nodos de la Tarea 1](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md):** la etapa 2 usa trabajos por nodo y la Tarea 4 sigue con la **variante c**: cada spool de hijo es su propio fichero OPFS, liberado cuando termina el trabajo que lo consume; los extents de LOD y de hojas se retienen hasta la fase de bloques. Antes, un spike (**S9**) mide ~650 ficheros OPFS vivos y handles síncronos concurrentes en Chrome y Firefox con Playwright. Esto sustituye la decisión de arenas por nodo del mismo día; las arenas por trabajo se midieron en 1,9–7,2 × el pico nativo en la Tarea 1 y se descartaron.
+> **Historial: la decisión 5 (abajo, [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)) enmienda las decisiones 2 y 3 en la web; se conservan como registro de lo que se midió y descartó.** Antes, la decisión 2 la había sustituido en la web por un híbrido.
+>
+> **Decisión del propietario (29-10-2026), tras el [modelo por nodos de la Tarea 1](../records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md):** la etapa 2 usa trabajos por nodo y la Tarea 4 sigue con la **variante c**: cada spool de hijo es su propio fichero OPFS, liberado cuando termina el trabajo que lo consume; los extents de LOD y de hojas se retienen hasta la fase de bloques. Antes, un spike (**S9**) mide ~650 ficheros OPFS vivos y handles síncronos concurrentes en Chrome y Firefox con Playwright. Esto sustituye la decisión de arenas por nodo del mismo día; las arenas por trabajo se midieron en 1,9–7,2 × el pico nativo en la Tarea 1 y se descartaron.
 
 > **Decisión del propietario 2 (29-10-2026), tras el [spike S9](../records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md):** S9 muestra que un fichero OPFS por spool funciona en Chrome y Firefox sin errores, pero con un coste fijo por fichero que, extrapolado a Majadas, es un sobrecoste relevante frente al CLI nativo (cifras en el registro). Por eso los spools web siguen el **híbrido** de esta spec: los spools pequeños son segmentos en RAM y se vuelcan a su propio fichero OPFS al superar un presupuesto. Antes de M3b, un spike corto (**S10**) mide el pico de RAM del híbrido con el presupuesto de la spec. El `SpoolStore` nativo y su trait no cambian.
 
-En nativo, cada spool es un fichero en el directorio de trabajo. En la web, un spool nace como
-segmento(s) `ArrayBuffer` en RAM y, al superar el presupuesto de spools, se vuelca a **un fichero OPFS
-propio** (un fichero por spool volcado). El host crea el fichero y abre su handle síncrono antes de
-que empiece el trabajo que lo escribe; el trabajo añade bytes y el host cierra el handle al terminar.
-Cuando termina el trabajo que consume ese spool, el host libera el segmento o borra el fichero. Los
-spools de LOD y de hojas se retienen hasta la fase de bloques. El núcleo no abre ni borra ficheros a
-mitad de un trabajo: el host lo hace entre trabajos. Leer un spool devuelve los mismos bytes venga de
-RAM o de OPFS. El pico OPFS es la suma de los ficheros volcados vivos (modelo de la Tarea 1, variante
-c, como cota superior) y el coste es el número de ficheros y handles simultáneos, acotado por el
-presupuesto de RAM; el pico de RAM del híbrido lo mide S10.
+En nativo, cada spool es un fichero en el directorio de trabajo.
+
+**Web (decisión 5, 30-10-2026, [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)).** Con una sola llamada wasm síncrona y sin `SharedArrayBuffer`, el núcleo no puede abrir handles OPFS (asíncronos) a mitad de la conversión, y un fichero por spool cuesta 22–40 ms por fichero en Firefox. En su lugar:
+
+- Un spool nace en segmentos de JS (32 KiB que duplican hasta 1 MiB, recortados al cerrar y reutilizados por clases de tamaño), fuera de la memoria wasm.
+- Por encima del presupuesto de spools (2 GiB por defecto), `HybridSpoolStore` vuelca de forma síncrona a **páginas de 256 KiB** de **zonas OPFS de 1 GiB** cuyos handles abrió el worker antes de la llamada. Número de zonas: ⌈2 · volcado estimado / zona⌉ + 1.
+- Orden de volcado (P3 con pistas del planificador): cerrados retenidos, cerrados por rango de consumo, cerrados sin pista, abiertos. Un spool con lector vivo está anclado y no se vuelca. Las páginas libres se reutilizan y las zonas vacías se truncan a mitad de conversión.
+- Leer un spool devuelve los mismos bytes venga de RAM o de OPFS. El pico OPFS es el máximo de páginas en uso (zonas anunciadas como parciales para su limpieza); el pico de RAM lo acota el presupuesto.
+- Chrome `file://` no tiene OPFS: solo RAM, con rechazo temprano si la estimación de spools + salida supera `ram_budget`.
 
 > **Decisión del propietario 3 (29-10-2026), tras [S10](../records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md):** P1/P2 superan el criterio de parada de handles en divisiones 8 (513 por trabajo). Se propone P3: solo el coordinador abre handles y vuelca (segmentos de 1 MiB, contrapresión K = 8). M3b la prueba con presupuesto de spools de 2 GiB y de 4 GiB y elige con las medidas (tiempo, PSS, ficheros volcados).
+
+> **Decisión del propietario 5 (30-10-2026), tras el análisis de opciones del arquitecto ([plan de la etapa 4](conversor-web-paralelo-etapa4.md)):** enmienda las decisiones 2 y 3 («un fichero OPFS por spool volcado» y P3 literal). D1: zonas OPFS paginadas con handles síncronos abiertos antes de convertir (alternativas descartadas: P3 con trabajos por pasos; pool de handles por spool). D2: la parada de 4 × se mide contra `convert_serial` nativo (`native_hybrid`) en la misma sesión. D3: Chrome `file://` rechaza antes de empezar. D4: `engine: "core"` se acepta sin efecto y `"legacy"` da error. **Resultado y cierre de la decisión 3:** Belvedere en Chrome y Firefox con SHA = R1 a 2,1–2,9 × nativo y PSS 3,4–4,5 GiB con 2 GiB de spools; 4 GiB no gana tiempo dentro de la dispersión y cuesta 2,3 GiB más de PSS, así que **2 GiB queda por defecto** ([M3b](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md), [Node](../records/benchmarks/M3B_NODE_GATE_2026-10-30.md)).
 
 ## Flujo de datos
 
@@ -136,7 +140,7 @@ presupuesto de RAM; el pico de RAM del híbrido lo mide S10.
   igual en ambos lados; `ram_budget` (R9) es del host y solo decide N y el umbral de spools en RAM.
 - **Spools por niveles (RAM primero, disco al crecer)**: segmentos en `ArrayBuffer` de JS (fuera de
   la memoria wasm, transferibles sin copia) mientras quepan en el presupuesto de spools; al
-  superarlo, se vuelcan a su propio fichero OPFS los spools mayores o los que se consumirán más tarde. Leer un
+  superarlo, se vuelcan a páginas de zonas OPFS los spools cerrados que se consumirán más tarde o los mayores (decisión 5). Leer un
   spool devuelve los mismos bytes venga de RAM o de OPFS, así que no afecta a R1.
 - La memoria wasm crece bajo demanda y no se libera al sistema: los workers se reciclan entre fases.
 - **Número de workers frente a memoria por worker**: la memoria por trabajo es pequeña y los spools
@@ -188,7 +192,7 @@ presupuesto de RAM; el pico de RAM del híbrido lo mide S10.
 | M1 | Traits (un fichero por spool; en la web, híbrido RAM/OPFS) extraídos dentro de `viewer_convert`, sin cambio de comportamiento; tests de independencia ampliados | SHA idénticos; R7 | Regresión > 3% tras dos intentos: revertir la extracción |
 | M2 | `viewer_convert_core` separado; compila para wasm32; partición por rangos de chunks ejecutada en nativo con W = 1..8 | SHA iguales para todo W en Belvedere y LAZ multi-chunk; check wasm32 y lint en `check.sh` | El núcleo necesita `dyn` o asignación por punto |
 | M3a | Conversión web con un worker sobre el núcleo, LAS pequeño | Paridad (N = 1) en Chrome y Firefox | SHA distinto sin explicación tras una semana |
-| M3b | Un worker con spools híbridos RAM/OPFS a escala Belvedere (tras S10); se elimina `browser_convert.rs` | Paridad (N = 1); tiempo registrado | Wasm con un worker > 4 × nativo en Belvedere: replantear |
+| M3b | **Hecho 30-10-2026** ([plan](conversor-web-paralelo-etapa4.md), [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)): un worker con spools híbridos RAM/zonas OPFS a escala Belvedere; conversor anterior eliminado | Paridad (N = 1) y tiempo: SHA = R1 en Chrome y Firefox a 2,1–2,9 × nativo ([navegadores](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md), [Node 2,8 ×](../records/benchmarks/M3B_NODE_GATE_2026-10-30.md)) | Wasm con un worker > 4 × nativo en Belvedere: replantear |
 | M4 | Pool para preparación y escritor ordenado | Paridad N = 1, 2, 4, 8; curva de tiempos; S7 | Escritor > 50% del tiempo con N = 4, o N = 4 < 1,5 × más rápido: revisar ADR 0015 |
 | M5 | Pool para partición raíz y subárboles; validación paralela | Paridad; curva de tiempos; R7 | Aceleración de jerarquía con N = 8 < 1,5 × en Majadas: diseñar división bajo la raíz antes de M6 |
 | M6 | Escala Majadas: preflight de cuota, spool en RAM, limpieza | SHA Majadas = CLI; picos de RAM y OPFS registrados | Pico OPFS > 1,3 × la estimación de R4, o Majadas > 60 min |
@@ -204,7 +208,7 @@ Sus resultados pueden cambiar umbrales y granularidad, nunca R1.
 | S2 | Velocidad del decodificador LAZ secuencial en wasm frente a nativo; arranque en offset de chunk; COPC con chunks variables | M3a |
 | S3 | Coste de transferir `PreparedWire` y clonar el `Blob` por trabajo | M4 |
 | S4 | Arranque: compilar `WebAssembly.Module` una vez y enviarlo, frente a base64 por worker (`package-local.py`); workers anidados desde un worker `blob:` | M4 |
-| S5 | Cuota real, `persist()`, OPFS y `getFile()` tras cerrar el handle, en `http.server` y `file://`, Chrome y Firefox, a 30 GB | M3b |
+| S5 | Cuota real, `persist()`, OPFS y `getFile()` tras cerrar el handle, en `http.server` y `file://`, Chrome y Firefox, a 30 GB. **Respondido 30-10-2026** (residual: zonas, `truncate`, handles) en [OPFS_ZONES](../records/benchmarks/OPFS_ZONES_2026-10-30.md); la cuota, en [S8](../records/benchmarks/OPFS_QUOTA_2026-10-29.md) | M3b |
 | S7 | Dimensionado: tiempo total, PSS y OPFS para N = 2, 4, 8, 12, 16 con el mismo `ram_budget` (4 y 8 GB) y reparto entre memoria wasm y spools en RAM; Belvedere en Chrome y Firefox | Cierre de M4 |
 | S8 | Cuota OPFS real con `persist()` en perfiles reales de Chrome y Firefox, y si cabe Majadas (≈ 19 GiB de spools vivos más la pareja de salida); decisión del propietario, 29-10-2026 | M6 |
 | S9 | Ficheros OPFS por spool: ~650 ficheros vivos y handles síncronos concurrentes (N = 4 y 8) en Chrome y Firefox, latencias y rendimiento frente a la arena única de S1; decisión del propietario, 29-10-2026 | M1 (paso 3 de la etapa 2) |
@@ -216,7 +220,7 @@ Sus resultados pueden cambiar umbrales y granularidad, nunca R1.
 | --- | --- |
 | LZ4 u otra codificación difiere entre nativo y wasm32 | S0 bloqueante y test permanente en `check.sh` |
 | `seek` de `laz` incorrecto en COPC | `PointSource` arranca en el offset de bytes del chunk; fixture multi-chunk variable |
-| `SpoolStore` síncrono sobre OPFS async obliga a rehacer el núcleo | Un fichero por spool fijado por la Tarea 1 y S9 antes de M1; híbrido RAM/OPFS en la web (decisión 2) |
+| `SpoolStore` síncrono sobre OPFS async obliga a rehacer el núcleo | Un fichero por spool fijado por la Tarea 1 y S9 antes de M1; en la web, híbrido RAM/zonas OPFS paginadas con handles abiertos antes de la llamada (decisiones 2 y 5, ADR 0017) |
 | Pico OPFS por encima de la cuota en Majadas | Modelo por nodos, spool en RAM, rechazo temprano y aborto limpio (R4) |
 | Subárbol rezagado alarga la jerarquía de Majadas | Medir en M5; dividir bajo la raíz si no escala |
 | R7 medido dentro del ruido | ≥ 5 rondas A/B alternadas y mediana pareada |

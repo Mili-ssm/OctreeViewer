@@ -22,6 +22,8 @@ Contexto: [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md) y
 
 ## Conversor web paralelo (30-10-2026)
 
+> Decisión 3 (presupuesto de spools de 2 o 4 GiB) resuelta con la medición de M3b: 2 GiB por defecto ([registro](../records/benchmarks/M3B_BELVEDERE_2026-10-30.md), [ADR 0017](../adr/0017-zonas-opfs-paginadas-para-spools-web.md)).
+
 | Id | Pregunta | Opciones | Recomendación | Bloquea |
 | --- | --- | --- | --- | --- |
 | W1 | Fusionar `feat/web-converter-stage4` en `master` al cerrar M3b | Fusionar · revisar antes | Fusionar tras `check.sh` y las puertas de las Tareas 6 y 7 | Cierre de la etapa 4 |

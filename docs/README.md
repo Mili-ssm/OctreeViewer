@@ -40,6 +40,12 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Referencias SHA R1](records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md) | SHA del CLI tras la norma portátil (ADR 0016); sustituyen a los de M0, cuyos tiempos siguen vigentes. | fechado |
 | [S2: rangos de chunks LAZ](records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md) | Decodificación por rangos de chunks sin `seek`, fixture de chunks variables y velocidad en wasm32 frente a nativo. | fechado |
 | [S10: RAM del híbrido](records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md) | Pico de RAM y handles de spools híbridos RAM/OPFS; propuesta P3. | fechado |
+| [Zonas OPFS (S5 residual)](records/benchmarks/OPFS_ZONES_2026-10-30.md) | Ficheros > 4 GiB, `truncate`, liberación de handles tras `terminate()` y RAM de JS en Chrome y Firefox; base del ADR 0017. | fechado |
+| [Política del almacén híbrido](records/benchmarks/HYBRID_POLICY_2026-10-30.md) | Modelo de volcado y granularidad de segmentos y páginas sobre las trazas de S10. | fechado |
+| [Puerta Node de M3b](records/benchmarks/M3B_NODE_GATE_2026-10-30.md) | Belvedere a través de los bindings en Node frente a `native_hybrid` y R7 corto de las pistas. | fechado |
+| [M3b en navegadores](records/benchmarks/M3B_BELVEDERE_2026-10-30.md) | Belvedere en Chrome y Firefox: SHA, tiempo frente al nativo, PSS y OPFS con spools de 2 y 4 GiB. | fechado |
+| [Línea base de render](records/benchmarks/RENDER_BASELINE_2026-10-30.md) | Arnés de órbita en Chrome y primer A/B de las mejoras R1 en Majadas y Belvedere. | fechado |
+| [Diagnóstico de T4](records/benchmarks/RENDER_T4_DIAGNOSIS_2026-10-30.md) | Causa de la regresión de T4 en Belvedere: orden de carga de los bloques pendientes. | fechado |
 | [Puerta R7 de M2](records/benchmarks/M2_R7_2026-10-29.md) | Instrucciones (callgrind) y R7 corto en divisiones 8 tras extraer `viewer_convert_core`. | fechado |
 | [Paridad M3a](records/benchmarks/M3A_PARITY_2026-10-29.md) | Motor `core` frente al CLI en Chrome, Firefox y Node; hallazgo de `hypot`. | fechado |
 | [Spike OPFS (arenas)](records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md) | Modelo de pico de arenas frente al nativo y MB/s de OPFS en Chrome/Firefox (HTTP y `file://`). | fechado |
@@ -68,7 +74,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 
 ## Decisiones
 
-[ADR](adr/README.md): decisiones de formato, versiones, límites, toolchain y seguridad, con alternativas y condiciones de revisión (vivo).
+[ADR](adr/README.md): decisiones de formato, versiones, límites, toolchain, seguridad y conversión web, con alternativas y condiciones de revisión (vivo).
 
 ## Datos y recursos
 
