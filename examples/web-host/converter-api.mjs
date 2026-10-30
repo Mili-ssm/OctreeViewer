@@ -42,7 +42,11 @@ export function createConverter(options = {}) {
     let partial = null;
     const storage = options.storage ?? globalThis.navigator?.storage;
     // Sessions that were closed mid-conversion leave partial files behind.
-    if (storage?.getDirectory) void removeOrphanPartials(storage);
+    // `ready` settles once that cleanup is done; convert() waits for it so new files never race it.
+    let readyDone = !storage?.getDirectory;
+    const ready = readyDone
+        ? Promise.resolve()
+        : removeOrphanPartials(storage).then(() => { readyDone = true; });
 
     function emit(type, value) {
         for (const callback of listeners.get(type) ?? []) {
@@ -68,7 +72,7 @@ export function createConverter(options = {}) {
     }
     function onMessage(source, { data }) {
         if (source !== worker) return;
-        if (data.type === "progress" || data.type === "status") emit(data.type, data);
+        if (data.type === "progress" || data.type === "status" || data.type === "warning") emit(data.type, data);
         else if (data.type === "partial-files") partial = { directory: data.directory, names: data.names };
         else if (data.type === "complete") {
             emit("complete", data);
@@ -119,25 +123,39 @@ export function createConverter(options = {}) {
             if (!(file instanceof Blob) || !/\.(las|laz)$/i.test(file.name ?? "")) {
                 return Promise.reject(new TypeError("file must be a .las or .laz Blob"));
             }
-            const result = new Promise((resolve, reject) => { active = { resolve, reject }; });
-            try {
-                const engine = request.engine ?? options.engine ?? "legacy";
-                if (engine !== "legacy" && engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
-                partial = null;
-                const message = { type: "convert", file };
-                if (engine === "core") {
-                    message.engine = "core";
-                    message.options = request.options ?? options.converterOptions ?? {};
+            const entry = {};
+            const result = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
+            active = entry;
+            const start = () => {
+                try {
+                    const engine = request.engine ?? options.engine ?? "legacy";
+                    if (engine !== "legacy" && engine !== "core") throw new TypeError(`unknown engine: ${engine}`);
+                    partial = null;
+                    const message = { type: "convert", file };
+                    if (engine === "core") {
+                        message.engine = "core";
+                        message.options = request.options ?? options.converterOptions ?? {};
+                    }
+                    entry.engine = engine;
+                    entry.posted = true;
+                    ensureWorker().postMessage(message);
+                } catch (error) {
+                    settle(error);
                 }
-                active.engine = engine;
-                ensureWorker().postMessage(message);
-            } catch (error) {
-                settle(error);
-            }
+            };
+            if (readyDone) start();
+            else ready.then(() => { if (active === entry && !disposed) start(); });
             return result;
         },
         cancel() {
             if (!active || disposed) return false;
+            if (!active.posted) {
+                // Still waiting for the orphan cleanup: nothing reached the worker yet.
+                const error = new DOMException("Conversion cancelled.", "AbortError");
+                emit("cancelled", error);
+                settle(error);
+                return true;
+            }
             if (active.engine !== "core") {
                 worker?.postMessage({ type: "cancel" });
                 return true;
@@ -155,6 +173,7 @@ export function createConverter(options = {}) {
             }
             return true;
         },
+        ready,
         on(type, callback) {
             if (typeof callback !== "function") throw new TypeError("callback must be a function");
             const callbacks = listeners.get(type) ?? new Set();

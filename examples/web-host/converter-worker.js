@@ -182,6 +182,8 @@ function closeAll(handles) {
 
 const DEFAULT_RAM_BUDGET = 4 * GB;
 const MAX_RAM_BUDGET = 8 * GB;
+// Firefox without persistent storage stops writing at 10 GiB - 1 MiB (OPFS_QUOTA_2026-10-29).
+const FIREFOX_TEMPORARY_LIMIT = 10 * 2 ** 30 - 2 ** 20;
 const RAM_WARNING = "Running without browser storage: the conversion is limited to RAM. "
     + "Serve the page over http://localhost for large files.";
 
@@ -190,6 +192,44 @@ function ramBudgetOf(options) {
     if (value === undefined || value === null) return DEFAULT_RAM_BUDGET;
     if (!Number.isFinite(value) || value <= 0) throw new Error("option ramBudget must be a positive number of bytes");
     return Math.min(value, MAX_RAM_BUDGET);
+}
+
+async function requestPersistence() {
+    try {
+        return (await navigator.storage.persist?.()) === true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Storage preflight (R4, C11). Only a case that is certain to fail is rejected up front:
+ *  - Firefox without persistent storage hard-stops at ~10 GiB (short writes) whatever `estimate()`
+ *    says, so `need` is checked against min(reported quota, 10 GiB - 1 MiB) - usage.
+ *  - Firefox with `persist()` granted allows far more (476 GiB measured) and reports it honestly,
+ *    so the reported free space is used.
+ *  - Every other browser is never rejected here: Chrome enforces a larger quota than it reports
+ *    (40 GiB+ written with a 10 GiB estimate), so a conversion it would allow must not be refused.
+ *    A real shortage still surfaces as a QuotaExceededError and becomes the same message.
+ */
+async function checkStorageQuota(estimate, persisted) {
+    if (!/\bFirefox\//.test(navigator.userAgent ?? "")) return;
+    let quota, usage;
+    try {
+        ({ quota, usage } = await navigator.storage.estimate());
+    } catch {
+        return; // no estimate: let the write fail if it must
+    }
+    if (!Number.isFinite(quota)) return;
+    const effective = persisted ? quota : Math.min(quota, FIREFOX_TEMPORARY_LIMIT);
+    const free = Math.max(0, effective - (usage ?? 0));
+    const need = (estimate.spilledPeakBytes ?? 0) + (estimate.outputBytes ?? 0);
+    if (need > free) {
+        throw new Error(
+            `Not enough browser storage: need about ${(need / GB).toFixed(1)} GB, available ${(free / GB).toFixed(1)} GB. `
+            + "Allow persistent storage for this site (it lifts Firefox's 10 GiB limit), free disk space or convert a smaller file.",
+        );
+    }
 }
 
 async function openOpfsFiles(directory, names, handles, files) {
@@ -241,6 +281,8 @@ async function convertWithCore(file, options) {
             attributesHandle = createMemorySyncHandle();
             spoolHost = createSpoolHost({ zones: [] });
         } else {
+            const persisted = await requestPersistence();
+            await checkStorageQuota(estimate, persisted);
             directory = await root.getDirectoryHandle(PARTIAL_DIRECTORY, { create: true });
             const id = crypto.randomUUID();
             zoneNames = Array.from({ length: estimate.zones }, (_, i) => `conversion-${id}.zone-${i}.partial`);

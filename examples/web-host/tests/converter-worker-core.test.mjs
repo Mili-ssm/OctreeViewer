@@ -159,3 +159,35 @@ test("ramBudget comes from the options and is capped at 8 GB", async () => {
     const capped = await run({ opfs: false, estimate: { ramOnlyBytes: 9e9 }, options: { ramBudget: 64e9 } });
     assert.match(capped.messages.find((message) => message.type === "error").message, /limit is 8\.0 GB/);
 });
+
+// Quota rule (R4, C11): only Firefox without persist() is rejected up front (hard stop at 10 GiB - 1 MiB
+// while estimate() may report more); Chrome enforces far more than it reports, so it is never rejected.
+const need15 = { spilledPeakBytes: 12 * GiB, outputBytes: 3 * GiB };
+
+test("Firefox without persistent storage is rejected when the need exceeds the 10 GiB limit", async () => {
+    const { messages, seen, events } = await run({
+        userAgent: "Mozilla/5.0 Gecko/20100101 Firefox/130.0", persist: false,
+        quota: { quota: 100 * GiB, usage: 1 * GiB }, estimate: need15,
+    });
+    assert.equal(seen.constructed, undefined);
+    assert.ok(!events.some((event) => event.startsWith("create:")));
+    const error = messages.find((message) => message.type === "error");
+    assert.match(error.message, /need about 16\.1 GB, available 9\.7 GB.*persistent storage/s);
+});
+
+test("Firefox with persistent storage granted uses the reported free space", async () => {
+    const firefox = "Mozilla/5.0 Gecko/20100101 Firefox/130.0";
+    const ok = await run({ userAgent: firefox, persist: true, quota: { quota: 476 * GiB, usage: 0 }, estimate: need15 });
+    assert.ok(ok.messages.some((message) => message.type === "complete"));
+    assert.ok(ok.events.indexOf("persist") < ok.events.findIndex((event) => event.startsWith("create:")));
+});
+
+test("Chrome reporting 10 GiB is not rejected for a 15 GiB need", async () => {
+    const { messages, events } = await run({
+        userAgent: "Mozilla/5.0 Chrome/130.0 Safari/537.36", persist: false,
+        quota: { quota: 10 * GiB, usage: 0 }, estimate: need15,
+    });
+    assert.ok(events.includes("persist"));
+    assert.ok(messages.some((message) => message.type === "complete"));
+    assert.ok(!messages.some((message) => message.type === "error"));
+});

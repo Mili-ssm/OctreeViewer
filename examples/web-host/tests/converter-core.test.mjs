@@ -91,6 +91,7 @@ test("cancelling the core engine terminates the worker and deletes its partial f
     const converter = createConverter({ engine: "core", storage });
     const cancelled = [];
     converter.on("cancelled", (error) => cancelled.push(error.name));
+    await converter.ready;
     const active = converter.convert(lasFile());
     workers[0].dispatch("message", { type: "partial-files", directory: "octree-viewer-conversions", names });
     assert.equal(await converter.cancel(), true);
@@ -110,6 +111,7 @@ test("cancel keeps retrying removal while the terminated worker still holds its 
     const names = ["conversion-2.oct.partial", "conversion-2.zone-0.partial"];
     const storage = fakeStorage(names, { lockedMs: 2000 });
     const converter = createConverter({ engine: "core", storage });
+    await converter.ready;
     const rejected = assert.rejects(converter.convert(lasFile()), { name: "AbortError" });
     workers[0].dispatch("message", { type: "partial-files", directory: "octree-viewer-conversions", names });
     assert.equal(await converter.cancel(), true);
@@ -127,5 +129,66 @@ test("orphan partial files of earlier sessions, zones included, are deleted when
     const converter = createConverter({ storage });
     for (let i = 0; i < 10; i++) await new Promise(setImmediate);
     assert.deepEqual([...storage.entries].sort(), ["conversion-a.zone-0.oct", "result.oct"]);
+    converter.dispose();
+});
+
+test("convert waits for the orphan cleanup, so new zones never race it", { concurrency: false }, async () => {
+    const storage = fakeStorage(["conversion-a.zone-0.partial"]);
+    const order = [];
+    const removeEntry = (await (await storage.getDirectory()).getDirectoryHandle()).removeEntry;
+    // Slow removal: the cleanup is still running when convert() is called.
+    const slow = {
+        ...storage,
+        async getDirectory() {
+            const root = await storage.getDirectory();
+            return {
+                async getDirectoryHandle(...args) {
+                    const directory = await root.getDirectoryHandle(...args);
+                    return {
+                        keys: () => directory.keys(),
+                        async removeEntry(name) {
+                            await new Promise((resolve) => setTimeout(resolve, 30));
+                            await removeEntry(name);
+                            order.push(`removed:${name}`);
+                        },
+                    };
+                },
+            };
+        },
+    };
+    const converter = createConverter({ engine: "core", storage: slow });
+    const result = converter.convert(lasFile());
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(workers[0].messages.length, 0, "nothing is posted while the cleanup runs");
+    await converter.ready;
+    order.push("ready");
+    await new Promise(setImmediate);
+    assert.deepEqual(order, ["removed:conversion-a.zone-0.partial", "ready"]);
+    assert.equal(workers[0].messages.length, 1);
+    workers[0].dispatch("message", complete);
+    await result;
+    converter.dispose();
+});
+
+test("cancelling while the cleanup runs never reaches the worker", { concurrency: false }, async () => {
+    const converter = createConverter({ engine: "core", storage: fakeStorage(["conversion-a.oct.partial"]) });
+    const rejected = assert.rejects(converter.convert(lasFile()), { name: "AbortError" });
+    assert.equal(converter.cancel(), true);
+    await rejected;
+    await converter.ready;
+    await new Promise(setImmediate);
+    assert.equal(workers[0].messages.length, 0);
+    converter.dispose();
+});
+
+test("warnings from the worker are relayed to listeners", { concurrency: false }, async () => {
+    const converter = createConverter({ engine: "core" });
+    const warnings = [];
+    converter.on("warning", (value) => warnings.push(value.message));
+    const result = converter.convert(lasFile());
+    workers[0].dispatch("message", { type: "warning", message: "RAM only" });
+    workers[0].dispatch("message", complete);
+    await result;
+    assert.deepEqual(warnings, ["RAM only"]);
     converter.dispose();
 });
