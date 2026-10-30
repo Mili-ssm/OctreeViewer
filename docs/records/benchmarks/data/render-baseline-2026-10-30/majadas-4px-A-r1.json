@@ -1,0 +1,4160 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-10-30T02:51:59.405Z",
+  "probe": "probe-orbit-load",
+  "targetPixels": 4,
+  "orbitMs": 10000,
+  "maxLoadMs": 180000,
+  "browser": "chrome",
+  "adapter": {
+    "vendor": "amd",
+    "architecture": "rdna-3",
+    "device": "",
+    "description": ""
+  },
+  "vulkan": [
+    {
+      "pid": 726424,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726438,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726439,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726467,
+      "libvulkanRadeon": true,
+      "libvulkanLvp": true,
+      "libLLVM": true,
+      "driFds": 2
+    },
+    {
+      "pid": 726470,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726484,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726514,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726525,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726527,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    }
+  ],
+  "vulkanDuringRender": [
+    {
+      "pid": 726424,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726438,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726439,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726467,
+      "libvulkanRadeon": true,
+      "libvulkanLvp": true,
+      "libLLVM": true,
+      "driFds": 2
+    },
+    {
+      "pid": 726470,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726484,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726514,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726525,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 726527,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    }
+  ],
+  "targetReached": true,
+  "finalStatus": "first coarse frame 207 ms · target reached 55783 ms · stage 4 px",
+  "loadElapsedMs": 56797,
+  "loadStartEpoch": 1793328720339.0999,
+  "endEpoch": 1793328787588.5,
+  "phases": [
+    {
+      "label": "during-load",
+      "startEpoch": 1793328720628.0999,
+      "endEpoch": 1793328731057.3,
+      "requestedMs": 10000,
+      "stepMs": 16,
+      "emptyPixelCaptures": [],
+      "summary": {
+        "replies": 116,
+        "intervalMs": {
+          "count": 115,
+          "p50": 82.199951171875,
+          "p95": 232.39990234375,
+          "max": 376.5
+        },
+        "roundTripMs": {
+          "count": 116,
+          "p50": 66.90000000037253,
+          "p95": 224.59999999962747,
+          "max": 364.1000000014901
+        },
+        "renderCallMs": {
+          "count": 116,
+          "p50": 66.5,
+          "p95": 69.20000000111759,
+          "max": 91.40000000037253
+        }
+      }
+    },
+    {
+      "label": "after-target",
+      "startEpoch": 1793328777172.8,
+      "endEpoch": 1793328787588,
+      "requestedMs": 10000,
+      "stepMs": 16,
+      "emptyPixelCaptures": [],
+      "summary": {
+        "replies": 22,
+        "intervalMs": {
+          "count": 21,
+          "p50": 490.699951171875,
+          "p95": 499.400146484375,
+          "max": 520.300048828125
+        },
+        "roundTripMs": {
+          "count": 22,
+          "p50": 479,
+          "p95": 493,
+          "max": 510.90000000037253
+        },
+        "renderCallMs": {
+          "count": 22,
+          "p50": 478.7000000011176,
+          "p95": 492.69999999925494,
+          "max": 510.5
+        }
+      }
+    }
+  ],
+  "wholeRunFrames": {
+    "replies": 215,
+    "intervalMs": {
+      "count": 214,
+      "p50": 84.7001953125,
+      "p95": 975.2001953125,
+      "max": 1503.800048828125
+    },
+    "roundTripMs": {
+      "count": 215,
+      "p50": 69,
+      "p95": 968.5999999996275,
+      "max": 1490.7999999988824
+    },
+    "renderCallMs": {
+      "count": 215,
+      "p50": 65.89999999850988,
+      "p95": 479.2000000011176,
+      "max": 510.5
+    }
+  },
+  "workerMetrics": {
+    "timeOrigin": 1793328719481.9,
+    "busyByMessage": {
+      "init": {
+        "count": 1,
+        "busyMs": 82.30000000074506,
+        "maxBusyMs": 82.30000000074506,
+        "queueWaitMs": 0.5,
+        "maxQueueWaitMs": 0.5
+      },
+      "resize": {
+        "count": 2,
+        "busyMs": 1.199999999254942,
+        "maxBusyMs": 1.199999999254942,
+        "queueWaitMs": 0.09999999962747097,
+        "maxQueueWaitMs": 0.09999999962747097
+      },
+      "frame": {
+        "count": 247,
+        "busyMs": 18553.39999999106,
+        "maxBusyMs": 510.69999999925494,
+        "queueWaitMs": 4.100000005215406,
+        "maxQueueWaitMs": 0.2000000011175871
+      },
+      "openFile": {
+        "count": 1,
+        "busyMs": 0.6999999992549419,
+        "maxBusyMs": 0.6999999992549419,
+        "queueWaitMs": 0.09999999962747097,
+        "maxQueueWaitMs": 0.09999999962747097
+      },
+      "asyncOpen": {
+        "count": 1,
+        "busyMs": 109.30000000074506,
+        "maxBusyMs": 109.30000000074506,
+        "queueWaitMs": 0.09999999962747097,
+        "maxQueueWaitMs": 0.09999999962747097
+      },
+      "asyncInsert": {
+        "count": 239,
+        "busyMs": 45889.39999997802,
+        "maxBusyMs": 530.5,
+        "queueWaitMs": 0.599999999627471,
+        "maxQueueWaitMs": 0.10000000149011612
+      }
+    },
+    "frameQueueWaitMs": {
+      "count": 247,
+      "p50": 0,
+      "p95": 0.09999999962747097,
+      "max": 0.2000000011175871
+    },
+    "asyncBlocks": {
+      "blocks": 239,
+      "readMs": 139254.5000000093,
+      "decodeMs": 542.3000000137836,
+      "maxDecodeMs": 24.300000000745058,
+      "insertMs": 45850.79999998771,
+      "maxInsertMs": 530.1999999992549
+    },
+    "lodLog": [
+      {
+        "time": 1793328720548,
+        "source": "dataset",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 59,
+        "pendingBlocks": 59,
+        "visibleBlocks": 0
+      },
+      {
+        "time": 1793328720563.2998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 58,
+        "pendingBlocks": 58,
+        "visibleBlocks": 1
+      },
+      {
+        "time": 1793328720568.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 57,
+        "pendingBlocks": 57,
+        "visibleBlocks": 2
+      },
+      {
+        "time": 1793328720573.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 56,
+        "pendingBlocks": 56,
+        "visibleBlocks": 3
+      },
+      {
+        "time": 1793328720578.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 55,
+        "pendingBlocks": 55,
+        "visibleBlocks": 4
+      },
+      {
+        "time": 1793328720587.7,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 54,
+        "pendingBlocks": 54,
+        "visibleBlocks": 5
+      },
+      {
+        "time": 1793328720593.0999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 53,
+        "pendingBlocks": 53,
+        "visibleBlocks": 6
+      },
+      {
+        "time": 1793328720598.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 52,
+        "pendingBlocks": 52,
+        "visibleBlocks": 7
+      },
+      {
+        "time": 1793328720606.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 51,
+        "pendingBlocks": 51,
+        "visibleBlocks": 8
+      },
+      {
+        "time": 1793328720612.2,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 50,
+        "pendingBlocks": 50,
+        "visibleBlocks": 9
+      },
+      {
+        "time": 1793328720621,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 49,
+        "pendingBlocks": 49,
+        "visibleBlocks": 10
+      },
+      {
+        "time": 1793328720626.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 48,
+        "pendingBlocks": 48,
+        "visibleBlocks": 11
+      },
+      {
+        "time": 1793328720635.0999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 47,
+        "pendingBlocks": 47,
+        "visibleBlocks": 12
+      },
+      {
+        "time": 1793328720641.2998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 46,
+        "pendingBlocks": 46,
+        "visibleBlocks": 13
+      },
+      {
+        "time": 1793328720647,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 45,
+        "pendingBlocks": 45,
+        "visibleBlocks": 14
+      },
+      {
+        "time": 1793328720652.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 44,
+        "pendingBlocks": 44,
+        "visibleBlocks": 15
+      },
+      {
+        "time": 1793328720661.7,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 43,
+        "pendingBlocks": 43,
+        "visibleBlocks": 16
+      },
+      {
+        "time": 1793328720667.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 42,
+        "pendingBlocks": 42,
+        "visibleBlocks": 17
+      },
+      {
+        "time": 1793328720673.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 41,
+        "pendingBlocks": 41,
+        "visibleBlocks": 18
+      },
+      {
+        "time": 1793328720681.2,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 40,
+        "pendingBlocks": 40,
+        "visibleBlocks": 19
+      },
+      {
+        "time": 1793328720698.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 39,
+        "pendingBlocks": 39,
+        "visibleBlocks": 20
+      },
+      {
+        "time": 1793328720713.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 38,
+        "pendingBlocks": 38,
+        "visibleBlocks": 21
+      },
+      {
+        "time": 1793328720726.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 37,
+        "pendingBlocks": 37,
+        "visibleBlocks": 22
+      },
+      {
+        "time": 1793328720750.0999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 36,
+        "pendingBlocks": 36,
+        "visibleBlocks": 23
+      },
+      {
+        "time": 1793328720763.0999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 35,
+        "pendingBlocks": 35,
+        "visibleBlocks": 24
+      },
+      {
+        "time": 1793328720788.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 34,
+        "pendingBlocks": 34,
+        "visibleBlocks": 25
+      },
+      {
+        "time": 1793328720802.7,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 33,
+        "pendingBlocks": 33,
+        "visibleBlocks": 26
+      },
+      {
+        "time": 1793328720817.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 32,
+        "pendingBlocks": 32,
+        "visibleBlocks": 27
+      },
+      {
+        "time": 1793328720848,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 31,
+        "pendingBlocks": 31,
+        "visibleBlocks": 28
+      },
+      {
+        "time": 1793328720866.7,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 30,
+        "pendingBlocks": 30,
+        "visibleBlocks": 29
+      },
+      {
+        "time": 1793328720906.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 29,
+        "pendingBlocks": 29,
+        "visibleBlocks": 30
+      },
+      {
+        "time": 1793328720957.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 28,
+        "pendingBlocks": 28,
+        "visibleBlocks": 31
+      },
+      {
+        "time": 1793328721002.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 27,
+        "pendingBlocks": 27,
+        "visibleBlocks": 32
+      },
+      {
+        "time": 1793328721025,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 26,
+        "pendingBlocks": 26,
+        "visibleBlocks": 33
+      },
+      {
+        "time": 1793328721083.2,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 25,
+        "pendingBlocks": 25,
+        "visibleBlocks": 34
+      },
+      {
+        "time": 1793328721160.0999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 24,
+        "pendingBlocks": 24,
+        "visibleBlocks": 35
+      },
+      {
+        "time": 1793328721263.2,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 23,
+        "pendingBlocks": 23,
+        "visibleBlocks": 36
+      },
+      {
+        "time": 1793328721324.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 22,
+        "pendingBlocks": 22,
+        "visibleBlocks": 37
+      },
+      {
+        "time": 1793328721380.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 21,
+        "pendingBlocks": 21,
+        "visibleBlocks": 38
+      },
+      {
+        "time": 1793328721434.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 20,
+        "pendingBlocks": 20,
+        "visibleBlocks": 39
+      },
+      {
+        "time": 1793328721521.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 19,
+        "pendingBlocks": 19,
+        "visibleBlocks": 40
+      },
+      {
+        "time": 1793328721574,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 18,
+        "pendingBlocks": 18,
+        "visibleBlocks": 41
+      },
+      {
+        "time": 1793328721619.5,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 17,
+        "pendingBlocks": 17,
+        "visibleBlocks": 42
+      },
+      {
+        "time": 1793328721693.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 16,
+        "pendingBlocks": 16,
+        "visibleBlocks": 43
+      },
+      {
+        "time": 1793328721840,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 15,
+        "pendingBlocks": 15,
+        "visibleBlocks": 44
+      },
+      {
+        "time": 1793328722028.7998,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 14,
+        "pendingBlocks": 14,
+        "visibleBlocks": 45
+      },
+      {
+        "time": 1793328722117.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 13,
+        "pendingBlocks": 13,
+        "visibleBlocks": 46
+      },
+      {
+        "time": 1793328722209.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 12,
+        "pendingBlocks": 12,
+        "visibleBlocks": 47
+      },
+      {
+        "time": 1793328722398.7,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 11,
+        "pendingBlocks": 11,
+        "visibleBlocks": 48
+      },
+      {
+        "time": 1793328722494.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 10,
+        "pendingBlocks": 10,
+        "visibleBlocks": 49
+      },
+      {
+        "time": 1793328722561.4,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 9,
+        "pendingBlocks": 9,
+        "visibleBlocks": 50
+      },
+      {
+        "time": 1793328722698.2,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 8,
+        "pendingBlocks": 8,
+        "visibleBlocks": 51
+      },
+      {
+        "time": 1793328722764.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 7,
+        "pendingBlocks": 7,
+        "visibleBlocks": 52
+      },
+      {
+        "time": 1793328722897.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 6,
+        "pendingBlocks": 6,
+        "visibleBlocks": 53
+      },
+      {
+        "time": 1793328722965.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 5,
+        "pendingBlocks": 5,
+        "visibleBlocks": 54
+      },
+      {
+        "time": 1793328723100.5999,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 4,
+        "pendingBlocks": 4,
+        "visibleBlocks": 55
+      },
+      {
+        "time": 1793328723167.9,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 3,
+        "pendingBlocks": 3,
+        "visibleBlocks": 56
+      },
+      {
+        "time": 1793328723236,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 2,
+        "pendingBlocks": 2,
+        "visibleBlocks": 57
+      },
+      {
+        "time": 1793328723303.7,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 1,
+        "pendingBlocks": 1,
+        "visibleBlocks": 58
+      },
+      {
+        "time": 1793328723440.2,
+        "source": "asyncInsert",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 0,
+        "visibleBlocks": 59
+      },
+      {
+        "time": 1793328731321,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 67,
+        "visibleBlocks": 60
+      },
+      {
+        "time": 1793328731409.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 66,
+        "visibleBlocks": 61
+      },
+      {
+        "time": 1793328731500.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 65,
+        "visibleBlocks": 62
+      },
+      {
+        "time": 1793328731589.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 64,
+        "visibleBlocks": 63
+      },
+      {
+        "time": 1793328731680.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 63,
+        "visibleBlocks": 64
+      },
+      {
+        "time": 1793328731771.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 62,
+        "visibleBlocks": 65
+      },
+      {
+        "time": 1793328731861,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 61,
+        "visibleBlocks": 66
+      },
+      {
+        "time": 1793328731951.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 60,
+        "visibleBlocks": 67
+      },
+      {
+        "time": 1793328732046.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 59,
+        "visibleBlocks": 68
+      },
+      {
+        "time": 1793328732137.7,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 58,
+        "visibleBlocks": 69
+      },
+      {
+        "time": 1793328732230.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 57,
+        "visibleBlocks": 70
+      },
+      {
+        "time": 1793328732321.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 56,
+        "visibleBlocks": 71
+      },
+      {
+        "time": 1793328732413.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 55,
+        "visibleBlocks": 72
+      },
+      {
+        "time": 1793328732503.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 54,
+        "visibleBlocks": 73
+      },
+      {
+        "time": 1793328732593.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 53,
+        "visibleBlocks": 73
+      },
+      {
+        "time": 1793328732686.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 52,
+        "visibleBlocks": 74
+      },
+      {
+        "time": 1793328732779.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 51,
+        "visibleBlocks": 75
+      },
+      {
+        "time": 1793328732870.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 50,
+        "visibleBlocks": 76
+      },
+      {
+        "time": 1793328732961.4,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 49,
+        "visibleBlocks": 76
+      },
+      {
+        "time": 1793328733057,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 48,
+        "visibleBlocks": 77
+      },
+      {
+        "time": 1793328733188,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 47,
+        "visibleBlocks": 78
+      },
+      {
+        "time": 1793328733280.7,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 46,
+        "visibleBlocks": 79
+      },
+      {
+        "time": 1793328733373,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 45,
+        "visibleBlocks": 80
+      },
+      {
+        "time": 1793328733468.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 44,
+        "visibleBlocks": 81
+      },
+      {
+        "time": 1793328733560.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 43,
+        "visibleBlocks": 82
+      },
+      {
+        "time": 1793328733652.7,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 42,
+        "visibleBlocks": 83
+      },
+      {
+        "time": 1793328733747.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 41,
+        "visibleBlocks": 84
+      },
+      {
+        "time": 1793328733840.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 40,
+        "visibleBlocks": 85
+      },
+      {
+        "time": 1793328733960.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 39,
+        "visibleBlocks": 86
+      },
+      {
+        "time": 1793328734101.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 38,
+        "visibleBlocks": 87
+      },
+      {
+        "time": 1793328734218.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 37,
+        "visibleBlocks": 88
+      },
+      {
+        "time": 1793328734348.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 36,
+        "visibleBlocks": 89
+      },
+      {
+        "time": 1793328734497.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 35,
+        "visibleBlocks": 90
+      },
+      {
+        "time": 1793328734631.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 34,
+        "visibleBlocks": 91
+      },
+      {
+        "time": 1793328734763.4,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 33,
+        "visibleBlocks": 92
+      },
+      {
+        "time": 1793328734895.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 32,
+        "visibleBlocks": 93
+      },
+      {
+        "time": 1793328735033.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 31,
+        "visibleBlocks": 94
+      },
+      {
+        "time": 1793328735175.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 30,
+        "visibleBlocks": 95
+      },
+      {
+        "time": 1793328735326.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 29,
+        "visibleBlocks": 96
+      },
+      {
+        "time": 1793328735468.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 28,
+        "visibleBlocks": 97
+      },
+      {
+        "time": 1793328735615.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 27,
+        "visibleBlocks": 98
+      },
+      {
+        "time": 1793328735762.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 26,
+        "visibleBlocks": 98
+      },
+      {
+        "time": 1793328735917.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 25,
+        "visibleBlocks": 98
+      },
+      {
+        "time": 1793328736071.7,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 24,
+        "visibleBlocks": 99
+      },
+      {
+        "time": 1793328736221.7998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 23,
+        "visibleBlocks": 100
+      },
+      {
+        "time": 1793328736390.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 22,
+        "visibleBlocks": 101
+      },
+      {
+        "time": 1793328736551.7,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 21,
+        "visibleBlocks": 101
+      },
+      {
+        "time": 1793328736718.4,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 20,
+        "visibleBlocks": 101
+      },
+      {
+        "time": 1793328736879.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 19,
+        "visibleBlocks": 102
+      },
+      {
+        "time": 1793328737038.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 18,
+        "visibleBlocks": 103
+      },
+      {
+        "time": 1793328737198.9,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 17,
+        "visibleBlocks": 104
+      },
+      {
+        "time": 1793328737357.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 16,
+        "visibleBlocks": 105
+      },
+      {
+        "time": 1793328737518.2998,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 15,
+        "visibleBlocks": 105
+      },
+      {
+        "time": 1793328737681.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 14,
+        "visibleBlocks": 106
+      },
+      {
+        "time": 1793328737849.4,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 13,
+        "visibleBlocks": 107
+      },
+      {
+        "time": 1793328738043.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 12,
+        "visibleBlocks": 107
+      },
+      {
+        "time": 1793328738221.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 11,
+        "visibleBlocks": 108
+      },
+      {
+        "time": 1793328738399.4,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 10,
+        "visibleBlocks": 109
+      },
+      {
+        "time": 1793328738578.7,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 9,
+        "visibleBlocks": 110
+      },
+      {
+        "time": 1793328738767,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 8,
+        "visibleBlocks": 111
+      },
+      {
+        "time": 1793328738947.0999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 7,
+        "visibleBlocks": 112
+      },
+      {
+        "time": 1793328739130.5,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 6,
+        "visibleBlocks": 112
+      },
+      {
+        "time": 1793328739312.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 5,
+        "visibleBlocks": 113
+      },
+      {
+        "time": 1793328739495,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 4,
+        "visibleBlocks": 113
+      },
+      {
+        "time": 1793328739677.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 3,
+        "visibleBlocks": 113
+      },
+      {
+        "time": 1793328739857.2,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 2,
+        "visibleBlocks": 114
+      },
+      {
+        "time": 1793328740042,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 1,
+        "visibleBlocks": 115
+      },
+      {
+        "time": 1793328740220.5999,
+        "source": "asyncInsert",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 0,
+        "visibleBlocks": 115
+      },
+      {
+        "time": 1793328740700.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 111,
+        "visibleBlocks": 116
+      },
+      {
+        "time": 1793328740938.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 110,
+        "visibleBlocks": 117
+      },
+      {
+        "time": 1793328741174.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 109,
+        "visibleBlocks": 118
+      },
+      {
+        "time": 1793328741413,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 108,
+        "visibleBlocks": 119
+      },
+      {
+        "time": 1793328741654.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 107,
+        "visibleBlocks": 120
+      },
+      {
+        "time": 1793328741894.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 106,
+        "visibleBlocks": 121
+      },
+      {
+        "time": 1793328742132.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 105,
+        "visibleBlocks": 122
+      },
+      {
+        "time": 1793328742371.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 104,
+        "visibleBlocks": 123
+      },
+      {
+        "time": 1793328742611.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 103,
+        "visibleBlocks": 124
+      },
+      {
+        "time": 1793328742849.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 102,
+        "visibleBlocks": 125
+      },
+      {
+        "time": 1793328743090.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 101,
+        "visibleBlocks": 126
+      },
+      {
+        "time": 1793328743328.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 100,
+        "visibleBlocks": 126
+      },
+      {
+        "time": 1793328743572.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 99,
+        "visibleBlocks": 127
+      },
+      {
+        "time": 1793328743819.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 98,
+        "visibleBlocks": 128
+      },
+      {
+        "time": 1793328744061.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 97,
+        "visibleBlocks": 129
+      },
+      {
+        "time": 1793328744304.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 96,
+        "visibleBlocks": 130
+      },
+      {
+        "time": 1793328744549.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 95,
+        "visibleBlocks": 131
+      },
+      {
+        "time": 1793328744790.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 94,
+        "visibleBlocks": 132
+      },
+      {
+        "time": 1793328745038,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 93,
+        "visibleBlocks": 133
+      },
+      {
+        "time": 1793328745279.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 92,
+        "visibleBlocks": 133
+      },
+      {
+        "time": 1793328745524.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 91,
+        "visibleBlocks": 134
+      },
+      {
+        "time": 1793328745766.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 90,
+        "visibleBlocks": 135
+      },
+      {
+        "time": 1793328746009.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 89,
+        "visibleBlocks": 136
+      },
+      {
+        "time": 1793328746251.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 88,
+        "visibleBlocks": 137
+      },
+      {
+        "time": 1793328746497.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 87,
+        "visibleBlocks": 138
+      },
+      {
+        "time": 1793328746741.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 86,
+        "visibleBlocks": 139
+      },
+      {
+        "time": 1793328746987,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 85,
+        "visibleBlocks": 140
+      },
+      {
+        "time": 1793328747230,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 84,
+        "visibleBlocks": 140
+      },
+      {
+        "time": 1793328747475.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 83,
+        "visibleBlocks": 141
+      },
+      {
+        "time": 1793328747716.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 82,
+        "visibleBlocks": 141
+      },
+      {
+        "time": 1793328747957.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 81,
+        "visibleBlocks": 142
+      },
+      {
+        "time": 1793328748200.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 80,
+        "visibleBlocks": 143
+      },
+      {
+        "time": 1793328748442.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 79,
+        "visibleBlocks": 144
+      },
+      {
+        "time": 1793328748684.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 78,
+        "visibleBlocks": 145
+      },
+      {
+        "time": 1793328748930,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 77,
+        "visibleBlocks": 146
+      },
+      {
+        "time": 1793328749174.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 76,
+        "visibleBlocks": 146
+      },
+      {
+        "time": 1793328749416,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 75,
+        "visibleBlocks": 147
+      },
+      {
+        "time": 1793328749663.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 74,
+        "visibleBlocks": 148
+      },
+      {
+        "time": 1793328749909.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 73,
+        "visibleBlocks": 149
+      },
+      {
+        "time": 1793328750155,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 72,
+        "visibleBlocks": 150
+      },
+      {
+        "time": 1793328750398.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 71,
+        "visibleBlocks": 151
+      },
+      {
+        "time": 1793328750646,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 70,
+        "visibleBlocks": 152
+      },
+      {
+        "time": 1793328750906.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 69,
+        "visibleBlocks": 153
+      },
+      {
+        "time": 1793328751150.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 68,
+        "visibleBlocks": 153
+      },
+      {
+        "time": 1793328751393.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 67,
+        "visibleBlocks": 154
+      },
+      {
+        "time": 1793328751635.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 66,
+        "visibleBlocks": 155
+      },
+      {
+        "time": 1793328751880.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 65,
+        "visibleBlocks": 156
+      },
+      {
+        "time": 1793328752126.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 64,
+        "visibleBlocks": 157
+      },
+      {
+        "time": 1793328752371.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 63,
+        "visibleBlocks": 158
+      },
+      {
+        "time": 1793328752613.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 62,
+        "visibleBlocks": 158
+      },
+      {
+        "time": 1793328752858.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 61,
+        "visibleBlocks": 159
+      },
+      {
+        "time": 1793328753100.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 60,
+        "visibleBlocks": 160
+      },
+      {
+        "time": 1793328753340.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 59,
+        "visibleBlocks": 161
+      },
+      {
+        "time": 1793328753586.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 58,
+        "visibleBlocks": 162
+      },
+      {
+        "time": 1793328753828.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 57,
+        "visibleBlocks": 163
+      },
+      {
+        "time": 1793328754070.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 56,
+        "visibleBlocks": 163
+      },
+      {
+        "time": 1793328754309.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 55,
+        "visibleBlocks": 164
+      },
+      {
+        "time": 1793328754551.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 54,
+        "visibleBlocks": 165
+      },
+      {
+        "time": 1793328754795.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 53,
+        "visibleBlocks": 166
+      },
+      {
+        "time": 1793328755038.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 52,
+        "visibleBlocks": 166
+      },
+      {
+        "time": 1793328755284.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 51,
+        "visibleBlocks": 167
+      },
+      {
+        "time": 1793328755535.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 50,
+        "visibleBlocks": 168
+      },
+      {
+        "time": 1793328755793.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 49,
+        "visibleBlocks": 169
+      },
+      {
+        "time": 1793328756052,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 48,
+        "visibleBlocks": 170
+      },
+      {
+        "time": 1793328756307.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 47,
+        "visibleBlocks": 171
+      },
+      {
+        "time": 1793328756567.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 46,
+        "visibleBlocks": 172
+      },
+      {
+        "time": 1793328756839.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 45,
+        "visibleBlocks": 173
+      },
+      {
+        "time": 1793328757122.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 44,
+        "visibleBlocks": 174
+      },
+      {
+        "time": 1793328757429.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 43,
+        "visibleBlocks": 175
+      },
+      {
+        "time": 1793328757741.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 42,
+        "visibleBlocks": 175
+      },
+      {
+        "time": 1793328758052.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 41,
+        "visibleBlocks": 176
+      },
+      {
+        "time": 1793328758421.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 40,
+        "visibleBlocks": 177
+      },
+      {
+        "time": 1793328758759.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 39,
+        "visibleBlocks": 178
+      },
+      {
+        "time": 1793328759106.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 38,
+        "visibleBlocks": 179
+      },
+      {
+        "time": 1793328759454,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 37,
+        "visibleBlocks": 180
+      },
+      {
+        "time": 1793328759811.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 36,
+        "visibleBlocks": 181
+      },
+      {
+        "time": 1793328760168.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 35,
+        "visibleBlocks": 182
+      },
+      {
+        "time": 1793328760534.5,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 34,
+        "visibleBlocks": 183
+      },
+      {
+        "time": 1793328760921.7998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 33,
+        "visibleBlocks": 184
+      },
+      {
+        "time": 1793328761313.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 32,
+        "visibleBlocks": 185
+      },
+      {
+        "time": 1793328761692.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 31,
+        "visibleBlocks": 186
+      },
+      {
+        "time": 1793328762103.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 30,
+        "visibleBlocks": 187
+      },
+      {
+        "time": 1793328762506.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 29,
+        "visibleBlocks": 188
+      },
+      {
+        "time": 1793328762924.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 28,
+        "visibleBlocks": 189
+      },
+      {
+        "time": 1793328763355.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 27,
+        "visibleBlocks": 190
+      },
+      {
+        "time": 1793328763796.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 26,
+        "visibleBlocks": 191
+      },
+      {
+        "time": 1793328764235,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 25,
+        "visibleBlocks": 192
+      },
+      {
+        "time": 1793328764665.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 24,
+        "visibleBlocks": 193
+      },
+      {
+        "time": 1793328765111.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 23,
+        "visibleBlocks": 193
+      },
+      {
+        "time": 1793328765588.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 22,
+        "visibleBlocks": 193
+      },
+      {
+        "time": 1793328766059.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 21,
+        "visibleBlocks": 193
+      },
+      {
+        "time": 1793328766525.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 20,
+        "visibleBlocks": 194
+      },
+      {
+        "time": 1793328766991.2998,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 19,
+        "visibleBlocks": 195
+      },
+      {
+        "time": 1793328767453.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 18,
+        "visibleBlocks": 196
+      },
+      {
+        "time": 1793328767912.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 17,
+        "visibleBlocks": 196
+      },
+      {
+        "time": 1793328768384.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 16,
+        "visibleBlocks": 196
+      },
+      {
+        "time": 1793328768860.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 15,
+        "visibleBlocks": 197
+      },
+      {
+        "time": 1793328769347.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 14,
+        "visibleBlocks": 197
+      },
+      {
+        "time": 1793328769835,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 13,
+        "visibleBlocks": 198
+      },
+      {
+        "time": 1793328770315.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 12,
+        "visibleBlocks": 199
+      },
+      {
+        "time": 1793328770804.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 11,
+        "visibleBlocks": 200
+      },
+      {
+        "time": 1793328771285.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 10,
+        "visibleBlocks": 200
+      },
+      {
+        "time": 1793328771783,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 9,
+        "visibleBlocks": 201
+      },
+      {
+        "time": 1793328772258.5999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 8,
+        "visibleBlocks": 201
+      },
+      {
+        "time": 1793328772789.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 7,
+        "visibleBlocks": 201
+      },
+      {
+        "time": 1793328773271.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 6,
+        "visibleBlocks": 201
+      },
+      {
+        "time": 1793328773749.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 5,
+        "visibleBlocks": 201
+      },
+      {
+        "time": 1793328774233.7,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 4,
+        "visibleBlocks": 201
+      },
+      {
+        "time": 1793328774713.9,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 3,
+        "visibleBlocks": 202
+      },
+      {
+        "time": 1793328775197.4,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 2,
+        "visibleBlocks": 202
+      },
+      {
+        "time": 1793328775678.0999,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 1,
+        "visibleBlocks": 202
+      },
+      {
+        "time": 1793328776158.2,
+        "source": "asyncInsert",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 0,
+        "visibleBlocks": 202
+      }
+    ],
+    "lodLogDropped": 0
+  },
+  "counters": {
+    "sceneBuilds": 371,
+    "voxelSourcePoints": "855597289",
+    "loadedBlocks": 0,
+    "evictedPendingBlocks": 0,
+    "uncoveredNodes": 0,
+    "oversizedVoxels": 0
+  },
+  "lodFinal": {
+    "refinementWork": {
+      "updateCalls": 453,
+      "blockLoadCalls": 328,
+      "loadedBlocks": 0,
+      "evictedPendingBlocks": 0,
+      "sceneBuilds": 378,
+      "prefixRebuilds": 3,
+      "prefixVoxelBuildMs": 4.700000001117587,
+      "reusedSceneUpdates": 73,
+      "selectionMs": 96.99999998696148,
+      "planningMs": 821.9999999795109,
+      "blockLoadMs": 0.09999999962747097,
+      "rangeReadMs": 0,
+      "decodeAndOtherCpuMs": 0.09999999962747097,
+      "voxelBuildMs": 63246.00000002794,
+      "uploadMs": 78.60000000335276,
+      "unchangedCutBuilds": 139,
+      "reusableSceneBuilds": 0,
+      "reusableVoxelBuildMs": 0,
+      "rangeReadCalls": 0,
+      "rangeReadBytes": "0",
+      "voxelSourcePoints": "904705432",
+      "reusableVoxelSourcePoints": "0",
+      "reusedSourcePoints": "228327707",
+      "prefixRetainedSourcePoints": "1870",
+      "prefixAddedSourcePoints": "125"
+    },
+    "pendingTargetEvictions": null,
+    "cacheCycleDetected": null
+  },
+  "metadata": {
+    "name": "majadas.oct",
+    "bytes": 4214687109,
+    "nodeCount": 6259,
+    "sourcePointCount": "415465882"
+  },
+  "idleGpuBusyPercent": [
+    0,
+    2,
+    3,
+    3
+  ],
+  "gpuBusy": {
+    "files": [
+      "/sys/class/drm/card1/device/gpu_busy_percent"
+    ],
+    "sampleCount": 275,
+    "max": 4,
+    "mean": 0.5272727272727272,
+    "samples": [
+      {
+        "t": 1793328719203,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328719454,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328719704,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328719953,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328720205,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328720454,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328720704,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328720955,
+        "card": "card1",
+        "percent": 4
+      },
+      {
+        "t": 1793328721205,
+        "card": "card1",
+        "percent": 4
+      },
+      {
+        "t": 1793328721454,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328721705,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328721956,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793328722205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328722455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328722705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328722955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328723205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328723455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328723705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328723955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328724205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328724455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328724705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328724955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328725205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328725455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328725705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328725955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328726205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328726455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328726705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328726955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328727205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328727455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328727705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328727955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328728205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328728455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328728705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328728955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328729205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328729455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328729705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328729955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328730205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328730455,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328730705,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328730955,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328731205,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328731456,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793328731707,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328731958,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328732209,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328732460,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328732712,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328732963,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328733214,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328733466,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328733718,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328733968,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328734220,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328734472,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328734724,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328734975,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328735226,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328735476,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328735728,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328735980,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328736231,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328736483,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328736735,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328736986,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328737237,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328737489,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328737741,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328737993,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328738244,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328738495,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328738747,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328738998,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328739249,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328739501,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328739753,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328740003,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328740254,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328740506,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328740758,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328741009,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328741260,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328741511,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328741763,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328742015,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328742266,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328742517,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328742768,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328743019,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328743270,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328743522,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328743774,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328744026,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328744278,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328744530,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328744781,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328745032,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328745283,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328745534,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328745785,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328746036,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328746287,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328746538,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328746789,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328747040,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328747291,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328747543,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328747793,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328748044,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328748296,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328748546,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328748796,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328749047,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328749298,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328749550,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328749802,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328750054,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328750305,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328750556,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328750808,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328751059,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328751311,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328751563,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328751815,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328752067,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328752319,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328752569,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328752821,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328753072,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328753324,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328753576,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328753829,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328754080,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328754332,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328754584,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328754836,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328755088,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328755340,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328755592,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328755843,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328756095,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328756347,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328756599,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328756851,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328757103,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328757355,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328757607,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328757859,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328758111,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328758363,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328758615,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328758867,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328759119,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328759371,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328759622,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328759873,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328760125,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328760377,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328760629,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328760881,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328761133,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328761385,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328761636,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328761888,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328762139,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328762391,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328762642,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328762893,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328763144,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328763395,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328763646,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328763897,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328764148,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328764399,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328764650,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328764901,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328765151,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328765402,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328765653,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328765904,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328766155,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328766406,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328766657,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328766908,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328767158,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328767409,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328767660,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328767911,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328768162,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328768413,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328768664,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328768915,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328769165,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328769416,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328769667,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328769918,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328770169,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328770420,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328770671,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328770922,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328771172,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328771424,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328771675,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328771925,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328772177,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328772427,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328772678,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328772930,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328773180,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328773432,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328773683,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328773934,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328774185,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328774435,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328774687,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328774938,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328775187,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328775439,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328775690,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328775942,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328776194,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328776446,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328776699,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328776951,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328777201,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328777452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328777702,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328777952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328778202,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328778452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328778702,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328778952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328779202,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328779452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328779702,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328779952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328780202,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328780452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328780702,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328780952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328781202,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328781452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328781702,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328781952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328782203,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328782452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328782702,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328782952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328783202,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328783452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328783702,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328783952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328784202,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328784452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328784702,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328784952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328785202,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328785452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328785702,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328785952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328786202,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328786452,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328786702,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328786952,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328787203,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793328787453,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328787704,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793328787955,
+        "card": "card1",
+        "percent": 0
+      }
+    ]
+  },
+  "gpuBusyNote": "gpu_busy_percent never above 10",
+  "mode": "timing",
+  "functionalReasons": [],
+  "environment": {
+    "loadavgStart": [
+      1.05,
+      1.17,
+      1.58
+    ],
+    "loadavgEnd": [
+      1.25,
+      1.23,
+      1.57
+    ],
+    "cpus": 20,
+    "node": "v22.23.1",
+    "wasmUrl": "http://127.0.0.1:8801/pkg/viewer_wasm_bg.wasm",
+    "wasmSha256": "9833061a09a902c98239cead99c8782ec6be77025999acbc4e05810ef452596d",
+    "dataset": {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/render-data/majadas.oct",
+      "bytes": 4214687109,
+      "attributesBytes": 3319094608
+    }
+  },
+  "consoleErrors": [
+    {
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ]
+}
