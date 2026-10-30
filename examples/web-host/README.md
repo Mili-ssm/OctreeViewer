@@ -364,12 +364,21 @@ A paused retained cut can have complete coverage while the requested target rema
 
 ### Scripted load + orbit probe (render benchmark, R0)
 
-With the same Firefox and server setup:
+Serve the repository root (with `pkg/`) on any port, pass it as `--url`, and pick the browser:
 
 ```bash
+python3 -m http.server 8791 --bind 127.0.0.1 &
 node examples/web-host/probe-orbit-load.mjs data/samples/fs_e430_n4008_18.oct target/orbit-load.json \
-  [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels]
+  --url=http://127.0.0.1:8791/examples/web-host/index.html \
+  [--browser=chrome|firefox] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels]
 ```
+
+`--browser=chrome` (default) launches `/usr/bin/google-chrome` (`CHROME_BIN`) through playwright-core
+(`PLAYWRIGHT_CORE` = its directory) with `--headless=new --enable-unsafe-webgpu
+--enable-features=Vulkan --use-angle=vulkan`; on the reference machine that reports
+`{vendor:"amd", architecture:"rdna-3"}`, a hardware adapter. `--browser=firefox` needs the Firefox
+with WebGPU and `--remote-debugging-port 9222` described above; headless Firefox there gets a
+software adapter (empty `adapter.info`), so its runs are always `functional`.
 
 It starts loading, orbits the camera with one pointer move every 16 ms for `--orbit-s` seconds
 during loading and, if the target LOD is reached, once more afterwards. `OUTPUT.json` holds: frame-reply
@@ -381,8 +390,9 @@ only counts the synchronous path, use `workerMetrics.asyncBlocks.blocks`), adapt
 Vulkan libraries and DRI fds of the browser processes, `gpu_busy_percent` samples, the SHA-256 of
 the served `.wasm`, dataset size and `loadavg`. `--pixels` (opt-in) screenshots the canvas
 three times per orbit and counts background pixels inside the projected dataset bounds.
-`mode` is `functional` (no wall-clock claims) when `cargo`/`rustc` or a second browser is running
-or `gpu_busy_percent` never exceeds 10 %, so a software adapter cannot produce timings.
+`mode` is `functional` (no wall-clock claims) when `cargo`/`rustc` or another browser is running,
+the adapter is software or unidentified (`google`/`llvmpipe`/`swiftshader`, empty `architecture`), or
+`gpu_busy_percent` never exceeds 10 %, so a software adapter cannot produce timings.
 The page hook `window.__renderBench` (`start`, `summarize`, `workerMetrics`, `apiCall`) backs it;
 frame logging is off until `start()`.
 

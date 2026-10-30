@@ -1,18 +1,23 @@
-// Scripted load + orbit probe (render plan R0-T1). Run from the repository root against a fresh
-// Firefox started with WebGPU enabled and --remote-debugging-port 9222, serving the worktree root:
+// Scripted load + orbit probe (render plan R0-T1). Run from the repository root while a static server
+// serves the worktree root (with pkg/). Default backend: Chrome launched by playwright-core with the
+// ANGLE-Vulkan WebGPU flags (hardware adapter). --browser=firefox instead drives a fresh Firefox
+// with WebGPU enabled and --remote-debugging-port 9222 over raw WebDriver BiDi (software adapter on
+// the reference machine, so functional only):
 //   node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
-//        [--max-load-s=120] [--orbit-s=10] [--pixels] [--force-timing]
+//        [--max-load-s=120] [--orbit-s=10] [--pixels] [--force-timing] [--browser=chrome|firefox]
 // It loads the dataset, orbits the camera for a fixed time while loading and (if the target LOD
 // was reached) again afterwards, and records frame-reply intervals, worker busy time, the LOD
 // message log, deterministic counters, adapter evidence and the environment to OUTPUT.json.
 // Timing is only valid in "timing" mode: the probe falls back to "functional" when a cargo/rustc
 // build or another browser instance is running, or when no hardware WebGPU adapter is evidenced
-// (gpu_busy_percent never rises). --pixels adds opt-in screenshots to count empty pixels.
+// (software/unidentified adapter, or gpu_busy_percent never above 10). --pixels adds opt-in screenshots to count empty pixels.
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+import { createRequire } from "node:module";
 
 import { countEmptyPixels, convexHull, decodePng, projectBounds } from "./pixel-metrics.mjs";
 
@@ -25,8 +30,11 @@ const targetPixels = Number(option("px", "4"));
 const maxLoadMs = Number(option("max-load-s", "120")) * 1000;
 const orbitMs = Number(option("orbit-s", "10")) * 1000;
 const capturePixels = args.includes("--pixels");
-if (!input || !output || !Number.isInteger(targetPixels * 2) || targetPixels < 0.5 || targetPixels > 16) {
-    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels]");
+const browser = option("browser", "chrome");
+const CHROME_BIN = process.env.CHROME_BIN ?? "/usr/bin/google-chrome";
+const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE ?? "/usr/local/lib/node_modules/@playwright/cli/node_modules/playwright-core/";
+if (!["chrome", "firefox"].includes(browser) || !input || !output || !Number.isInteger(targetPixels * 2) || targetPixels < 0.5 || targetPixels > 16) {
+    throw new Error("Usage: node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4] [--max-load-s=120] [--orbit-s=10] [--pixels] [--browser=chrome|firefox]");
 }
 const ORBIT_STEP_MS = 16;
 
@@ -36,8 +44,9 @@ const pids = (name) => {
 };
 const functionalReasons = [];
 if (pids("cargo").length || pids("rustc").length) functionalReasons.push("cargo/rustc running");
-if (pids("firefox").length > 1) functionalReasons.push("more than one firefox instance");
-if (pids("chrome").length) functionalReasons.push("chrome running");
+// The probe's own browser is started later, so anything already running is foreign load.
+if (pids("firefox").length > (browser === "firefox" ? 1 : 0)) functionalReasons.push("other firefox instance running");
+if (pids("chrome").length) functionalReasons.push("chrome already running");
 
 function vulkanEvidence() {
     const processes = [];
@@ -68,36 +77,95 @@ const gpuTimer = setInterval(() => {
     }
 }, 250);
 
-const socket = new WebSocket("ws://127.0.0.1:9222/session");
-const pending = new Map();
 const errors = [];
-let nextId = 0;
-socket.onmessage = ({ data }) => {
-    const message = JSON.parse(data);
-    if (message.method === "log.entryAdded" && message.params.level === "error") errors.push(message.params);
-    const request = pending.get(message.id);
-    if (!request) return;
-    clearTimeout(request.timer);
-    pending.delete(message.id);
-    if (message.type === "error") request.reject(new Error(JSON.stringify(message)));
-    else request.resolve(message.result);
-};
-await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-function send(method, params, timeoutMs = 60_000) {
-    return new Promise((resolve, reject) => {
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Browser backend: the probe logic below only uses this small surface.
+//   evaluate(expr) -> { value }   navigate(url)   setViewport(w, h)   setDatasetFile(path)
+//   gesture(label, moves, ms)     screenshot(clip?) -> PNG Buffer     close()
+async function firefoxBackend() {
+    const socket = new WebSocket("ws://127.0.0.1:9222/session");
+    const pending = new Map();
+    let nextId = 0;
+    socket.onmessage = ({ data }) => {
+        const message = JSON.parse(data);
+        if (message.method === "log.entryAdded" && message.params.level === "error") errors.push(message.params);
+        const request = pending.get(message.id);
+        if (!request) return;
+        clearTimeout(request.timer);
+        pending.delete(message.id);
+        if (message.type === "error") request.reject(new Error(JSON.stringify(message)));
+        else request.resolve(message.result);
+    };
+    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+    const send = (method, params, timeoutMs = 60_000) => new Promise((resolve, reject) => {
         const id = ++nextId;
         const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timeout`)); }, timeoutMs);
         pending.set(id, { resolve, reject, timer });
         socket.send(JSON.stringify({ id, method, params }));
     });
+    await send("session.new", { capabilities: {} });
+    const context = (await send("browsingContext.getTree", {})).contexts[0].context;
+    await send("session.subscribe", { events: ["log.entryAdded"] });
+    const evaluate = async (expression) => {
+        const result = await send("script.evaluate", { expression, target: { context }, awaitPromise: true });
+        if (result.type !== "success") throw new Error(JSON.stringify(result));
+        return result.result;
+    };
+    return {
+        evaluate,
+        navigate: url => send("browsingContext.navigate", { context, url, wait: "complete" }),
+        setViewport: (width, height) => send("browsingContext.setViewport", { context, viewport: { width, height }, devicePixelRatio: 1 }),
+        async setDatasetFile(file) {
+            const element = await evaluate('document.querySelector("#dataset-file")');
+            await send("input.setFiles", { context, element: { sharedId: element.sharedId }, files: [file] });
+        },
+        gesture: (label, moves, durationMs) => send("input.performActions", { context, actions: [{
+            type: "pointer", id: `orbit-${label}`, parameters: { pointerType: "mouse" },
+            actions: [{ type: "pointerMove", x: 640, y: 360 }, { type: "pointerDown", button: 2 },
+                ...moves.map(m => ({ type: "pointerMove", ...m, duration: ORBIT_STEP_MS })), { type: "pointerUp", button: 2 }],
+        }] }, durationMs + 60_000),
+        async screenshot(clip) {
+            const shot = await send("browsingContext.captureScreenshot", { context, origin: "viewport", ...(clip ? { clip: { type: "box", ...clip } } : {}) });
+            return Buffer.from(shot.data, "base64");
+        },
+        async close() { await send("browser.close", {}).catch(() => {}); socket.close(); },
+    };
 }
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-let context;
-async function evaluate(expression) {
-    const result = await send("script.evaluate", { expression, target: { context }, awaitPromise: true });
-    if (result.type !== "success") throw new Error(JSON.stringify(result));
-    return result.result;
+
+// Chrome headless with ANGLE on Vulkan exposes the GPU as a real WebGPU adapter.
+async function chromeBackend() {
+    const { chromium } = createRequire(PLAYWRIGHT_CORE)("playwright-core");
+    const instance = await chromium.launch({
+        executablePath: CHROME_BIN,
+        headless: true,
+        args: ["--headless=new", "--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-angle=vulkan"],
+    });
+    const page = await (await instance.newContext({ viewport: { width: 1688, height: 768 }, deviceScaleFactor: 1 })).newPage();
+    page.on("console", message => { if (message.type() === "error") errors.push({ text: message.text() }); });
+    page.on("pageerror", error => errors.push({ text: String(error) }));
+    return {
+        evaluate: async expression => ({ value: await page.evaluate(expression) }),
+        navigate: url => page.goto(url, { waitUntil: "load" }),
+        setViewport: (width, height) => page.setViewportSize({ width, height }),
+        setDatasetFile: file => page.setInputFiles("#dataset-file", file),
+        async gesture(_label, moves) {
+            // Same fixed cadence as the BiDi action chain: one move per step on an absolute schedule.
+            await page.mouse.move(640, 360);
+            await page.mouse.down({ button: "right" });
+            const t0 = Date.now();
+            for (const [i, move] of moves.entries()) {
+                await page.mouse.move(move.x, move.y);
+                await sleep(Math.max(0, t0 + (i + 1) * ORBIT_STEP_MS - Date.now()));
+            }
+            await page.mouse.up({ button: "right" });
+        },
+        screenshot: clip => page.screenshot({ type: "png", ...(clip ? { clip } : {}) }),
+        close: () => instance.close().catch(() => {}),
+    };
 }
+const backend = await (browser === "chrome" ? chromeBackend() : firefoxBackend());
+const evaluate = expression => backend.evaluate(expression);
 // Evaluates an async expression and returns its JSON value (typed arrays become plain arrays).
 async function evalJson(expression) {
     const result = await evaluate(`(async () => JSON.stringify(await (${expression}),
@@ -111,15 +179,10 @@ async function orbit(label, durationMs) {
     const steps = Math.round(durationMs / ORBIT_STEP_MS);
     // Fixed-rate back-and-forth sweep: one pointer move per step for the whole duration.
     const moves = Array.from({ length: steps }, (_, i) => ({
-        type: "pointerMove",
         x: Math.round(640 + 300 * Math.sin(i * 0.05)),
         y: Math.round(360 + 80 * Math.sin(i * 0.031)),
-        duration: ORBIT_STEP_MS,
     }));
-    const gesture = send("input.performActions", { context, actions: [{
-        type: "pointer", id: `orbit-${label}`, parameters: { pointerType: "mouse" },
-        actions: [{ type: "pointerMove", x: 640, y: 360 }, { type: "pointerDown", button: 2 }, ...moves, { type: "pointerUp", button: 2 }],
-    }] }, durationMs + 60_000);
+    const gesture = backend.gesture(label, moves, durationMs);
     const captures = [];
     if (capturePixels) {
         for (const fraction of [0.25, 0.5, 0.75]) {
@@ -137,8 +200,7 @@ async function captureEmptyPixels() {
     if (!boundsCache?.boundsMin) { boundsCache = null; return { epoch: await pageEpoch(), error: "metadata not ready" }; }
     const pose = await evalJson("window.__renderBench.apiCall('getCamera')");
     const rect = await evalJson(`(() => { const r = document.querySelector("canvas").getBoundingClientRect(); return {x: r.x, y: r.y, width: r.width, height: r.height}; })()`);
-    const shot = await send("browsingContext.captureScreenshot", { context, origin: "viewport", clip: { type: "box", ...rect } });
-    const image = decodePng(Buffer.from(shot.data, "base64"));
+    const image = decodePng(await backend.screenshot(rect));
     // Node bounds and camera poses are both in source dataset coordinates.
     const min = Array.from(Object.values(boundsCache.boundsMin));
     const max = Array.from(Object.values(boundsCache.boundsMax));
@@ -164,11 +226,9 @@ const datasetPath = path.resolve(input);
 const attributesPath = `${datasetPath}attrs`;
 const result = { schemaVersion: 1, startedAt, probe: "probe-orbit-load", targetPixels, orbitMs, maxLoadMs };
 try {
-    await send("session.new", { capabilities: {} });
-    context = (await send("browsingContext.getTree", {})).contexts[0].context;
-    await send("session.subscribe", { events: ["log.entryAdded"] });
-    await send("browsingContext.navigate", { context, url, wait: "complete" });
-    await send("browsingContext.setViewport", { context, viewport: { width: 1688, height: 768 }, devicePixelRatio: 1 });
+    result.browser = browser;
+    await backend.navigate(url);
+    await backend.setViewport(1688, 768);
     const readyUntil = Date.now() + 120_000;
     while ((await evaluate('document.querySelector("#dataset-file").disabled')).value) {
         if (Date.now() > readyUntil) throw new Error("Viewer startup timeout");
@@ -188,9 +248,8 @@ try {
         window.__renderBench.start(); true`);
     await sleep(500);
     const idleGpu = gpuBusySamples.slice(-4).map(s => s.percent);
-    const element = await evaluate('document.querySelector("#dataset-file")');
     const loadStartEpoch = await pageEpoch();
-    await send("input.setFiles", { context, element: { sharedId: element.sharedId }, files: [datasetPath] });
+    await backend.setDatasetFile(datasetPath);
     const loadStartedMs = Date.now();
     // Orbit only once the first LOD message exists, so the gesture overlaps real loading.
     const statusText = async () => (await evaluate('document.querySelector("#renderer-status").textContent')).value;
@@ -228,8 +287,7 @@ try {
     result.counters = await evalJson("window.__renderBench.latestLodCounters()");
     result.metadata = await evalJson("window.__renderBench.apiCall('getMetadata')");
     result.metadata = { name: result.metadata?.name, bytes: result.metadata?.bytes, nodeCount: result.metadata?.nodeCount, sourcePointCount: result.metadata?.sourcePointCount };
-    const screenshot = await send("browsingContext.captureScreenshot", { context, origin: "viewport" });
-    fs.writeFileSync(`${output}.png`, Buffer.from(screenshot.data, "base64"));
+    fs.writeFileSync(`${output}.png`, await backend.screenshot());
     if (capturePixels) result.finalEmptyPixels = await captureEmptyPixels();
     result.idleGpuBusyPercent = idleGpu;
 } catch (error) {
@@ -246,6 +304,10 @@ try {
         samples: gpuBusySamples,
     };
     // Hardware evidence needed before any wall-clock number is trusted (plan E1).
+    const { vendor, architecture } = result.adapter ?? {};
+    if (!vendor || !architecture || /google|llvmpipe|swiftshader/i.test(`${vendor} ${architecture}`) || result.adapter.isFallbackAdapter) {
+        functionalReasons.push("software or unidentified WebGPU adapter");
+    }
     if (!(result.gpuBusy.max > 10)) functionalReasons.push("gpu_busy_percent never above 10 (hardware adapter not evidenced)");
     result.mode = functionalReasons.length && !args.includes("--force-timing") ? "functional" : "timing";
     result.functionalReasons = functionalReasons;
@@ -257,7 +319,6 @@ try {
     result.consoleErrors = errors;
     fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
     fs.writeFileSync(output, JSON.stringify(result, null, 2) + "\n");
-    await send("browser.close", {}).catch(() => {});
-    socket.close();
+    await backend.close();
     console.log(JSON.stringify({ mode: result.mode, reasons: functionalReasons, targetReached: result.targetReached, error: result.error ?? null }));
 }
