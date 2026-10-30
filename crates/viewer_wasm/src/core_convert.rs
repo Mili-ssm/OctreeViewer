@@ -7,7 +7,8 @@ use std::io;
 
 use viewer_convert_core::{
     ByteSource, ConversionProgress, ConversionStage, ConvertError, ConvertOptions, HybridConfig,
-    HybridSpoolStore, HybridStats, LasFactory, NoClock, convert_serial, validate_output_serial,
+    HybridSpoolStore, HybridStats, LasFactory, NoClock, SpoolEstimate, convert_serial,
+    estimate_spools, inspect_source, validate_output_serial,
 };
 use viewer_format::FormatVersion;
 use wasm_bindgen::{JsCast, prelude::*};
@@ -118,14 +119,27 @@ impl WasmCoreConverter {
     ) -> Result<WasmCoreConverter, JsValue> {
         Ok(Self {
             options: parse_options(&options)?,
-            spool_budget: number(&options, "spoolBudgetBytes")?
-                .map_or(DEFAULT_SPOOL_BUDGET_BYTES, |bytes| bytes as u64),
+            spool_budget: spool_budget(&options)?,
             spool_host,
             input,
             geometry: geometry_handle,
             attributes: attributes_handle,
             on_progress,
         })
+    }
+
+    /// Reads the LAS/LAZ header of `input` and returns the spool estimate for `options` as
+    /// `{ sourceSpoolBytes, livePeakBytes, nodes, spilledPeakBytes, zones, outputBytes,
+    /// ramOnlyBytes }`, so the host can open `zones` spill zones before converting.
+    pub fn estimate(input: Blob, options: JsValue) -> Result<JsValue, JsValue> {
+        let parsed = parse_options(&options)?;
+        let budget = spool_budget(&options)?;
+        let factory = LasFactory::new(BlobBytes { blob: input });
+        let source = inspect_source(&factory)
+            .map_err(|error| conversion_error("reading the source header failed", &error))?;
+        let estimate = estimate_spools(&source, parsed, HybridConfig::web(budget))
+            .map_err(|error| conversion_error("spool estimate failed", &error))?;
+        estimate_object(estimate)
     }
 
     /// Converts, flushes and validates by reading the handles back. Returns
@@ -206,6 +220,28 @@ impl WasmCoreConverter {
 
 /// Spool RAM retained before spilling when the host gives no `spoolBudgetBytes`.
 const DEFAULT_SPOOL_BUDGET_BYTES: u64 = 2 << 30;
+
+fn spool_budget(options: &JsValue) -> Result<u64, JsValue> {
+    Ok(number(options, "spoolBudgetBytes")?
+        .map_or(DEFAULT_SPOOL_BUDGET_BYTES, |bytes| bytes as u64))
+}
+
+fn estimate_object(estimate: SpoolEstimate) -> Result<JsValue, JsValue> {
+    let object = js_sys::Object::new();
+    let fields = [
+        ("sourceSpoolBytes", estimate.source_spool_bytes as f64),
+        ("livePeakBytes", estimate.live_peak_bytes as f64),
+        ("nodes", estimate.nodes as f64),
+        ("spilledPeakBytes", estimate.spilled_peak_bytes as f64),
+        ("zones", f64::from(estimate.zones)),
+        ("outputBytes", estimate.output_bytes as f64),
+        ("ramOnlyBytes", estimate.ram_only_bytes as f64),
+    ];
+    for (key, value) in fields {
+        js_sys::Reflect::set(&object, &key.into(), &JsValue::from_f64(value))?;
+    }
+    Ok(object.into())
+}
 
 /// Out-of-space errors are thrown as `QuotaExceededError`, like the browser's own, so the host can
 /// tell a full disk from a bug. The `io::Error` may sit under a format or spool error.
