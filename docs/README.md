@@ -19,6 +19,8 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | [Conversor web paralelo](explanation/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas. | vivo |
 | [Conversor web paralelo, etapa 1](explanation/conversor-web-paralelo-etapa1.md) | Plan: independencia de workers, igualdad LZ4 nativo/wasm32, referencia CLI y spike de arenas OPFS. | vivo |
 | [Conversor web paralelo, etapa 2](explanation/conversor-web-paralelo-etapa2.md) | Plan: modelo de trabajos por nodo, S0 con bloques reales de Belvedere, cuota real (S8), un fichero OPFS por spool (S9) y M1. | vivo |
+| [Render y carga a escala](explanation/render-y-carga-escala.md) | Plan: arnés y línea base, mejoras de LOD y carga sin decisiones del propietario (R1), decodificación fuera del hilo de render (R2) y fases que esperan decisiones (R3–R5). | vivo |
+| [Preguntas pendientes](explanation/preguntas-propietario.md) | Decisiones del propietario que bloquean fases concretas, con opciones y recomendación. | vivo |
 | [Conversor web paralelo, etapa 4](explanation/conversor-web-paralelo-etapa4.md) | Plan: M3b, un worker a escala Belvedere con spools en RAM de JS y zonas OPFS paginadas (decisión 5), y retirada del conversor antiguo. | vivo |
 | [Conversor web paralelo, etapa 3](explanation/conversor-web-paralelo-etapa3.md) | Plan: spikes S2 (rangos de chunks LAZ) y S10 (RAM del híbrido), núcleo `viewer_convert_core` (M2) y conversión web con un worker (M3a). | vivo |
 | [Resolución regional LOD](explanation/REGIONAL_VOXEL_LOD.md) | Contrato de celdas, fallback y regresiones del LOD Replacement. | vivo |
@@ -60,6 +62,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [V6 pre1](records/archive/FORMAT_V6_PRE1.md), [pre2](records/archive/FORMAT_V6_PRE2.md), [pre3](records/archive/FORMAT_V6_PRE3.md), [pre4](records/archive/FORMAT_V6_PRE4.md), [V4](records/archive/FORMAT_V4.md) | Especificaciones de formatos retirados o en retirada. | histórico |
 | [Entregas 14-10-2026](records/archive/DELIVERIES_2026-10-14.md) | Implementaciones y experimentos cerrados, con checks históricos. | histórico |
 | [Evaluación 24-10-2026](records/archive/CODE_ASSESSMENT_2026-10-24.md) | Contraste de documentación, checks y próximos pasos. | histórico |
+| [Evaluación de render 30-10-2026](records/archive/RENDER_ASSESSMENT_2026-10-30.md) | Carga y render a escala (cientos de GB, 1–8 px): mapa, hallazgos B1–B7, investigación externa y mejoras Q1–Q8. | histórico |
 | [Evaluación 28-10-2026](records/archive/CODE_ASSESSMENT_2026-10-28.md) | Revisión por áreas, plan de 15 tareas, decisiones, verificación y pendientes. | histórico |
 | [Historial técnico](records/archive/DEVELOPMENT_HISTORY.md) | Snapshot anterior a v5. | histórico |
 

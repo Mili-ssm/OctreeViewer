@@ -3,7 +3,7 @@
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
 
-**Estado (30-10-2026):** plan enmendado tras el pre-mortem (abajo); Tareas 1 y 2 en curso.
+**Estado (30-10-2026):** Tareas 1 y 2 hechas. Zonas OPFS viables en Chrome y Firefox, sin criterio de parada ([registro](../records/benchmarks/OPFS_ZONES_2026-10-30.md)): `at` > 2³² correcto, escritura de 256 KiB ≥ 3,6 GB/s en Firefox; Chrome solo libera cuota al cerrar el handle y tarda ~2 s en liberar un handle tras `terminate()`. Política y granularidad ([registro](../records/benchmarks/HYBRID_POLICY_2026-10-30.md)): segmentos progresivos recortados al cerrar, lectores fijados sin romper el presupuesto, páginas de 1 MiB a 1,98 × el pico vivo volcado frente a ≤ 1,18 × con 256 KiB. **Decisiones del coordinador:** páginas de 256 KiB, zonas de 1 GiB, segmentos de JS en clases de tamaño reutilizadas, orden de volcado P3 con dos pistas del planificador. Tarea 3 en curso.
 
 **Objetivo:** cerrar M3b: un worker convierte Belvedere en el navegador con spools fuera de la
 memoria wasm (RAM de JS más zonas OPFS), con paridad byte a byte con el CLI en Chrome y Firefox,
@@ -98,15 +98,15 @@ tiempo hasta liberar el bloqueo de un handle tras `terminate()`. También: PSS d
 
 **Archivos:** `docs/records/benchmarks/OPFS_ZONES_<aaaa-mm-dd>.md` y `docs/records/benchmarks/data/opfs-zones-<aaaa-mm-dd>.{html,js,-driver.mjs,jsonl}`.
 
-- [ ] **Paso 1:** driver Playwright (convenciones de S9) en Chrome y Firefox por HTTP y Firefox `file://`: fichero de 6 GiB con ruido, lecturas en `at` > 4 GiB verificadas, `truncate(0)` frente a `estimate().usage` y `df`, MB/s de escritura y lectura con páginas de 1 MiB, tiempo de liberación del handle tras `terminate()` y PSS de 4 GiB de segmentos (32 KiB y 1 MiB).
-- [ ] **Paso 2:** registro con decisión (tamaño de zona y de página, reintentos de limpieza) y commit.
+- [x] **Paso 1:** driver Playwright (convenciones de S9) en Chrome y Firefox por HTTP y Firefox `file://`: fichero de 6 GiB con ruido, lecturas en `at` > 4 GiB verificadas, `truncate(0)` frente a `estimate().usage` y `df`, MB/s de escritura y lectura con páginas de 1 MiB, tiempo de liberación del handle tras `terminate()` y PSS de 4 GiB de segmentos (32 KiB y 1 MiB).
+- [x] **Paso 2:** registro con decisión (tamaño de zona y de página, reintentos de limpieza) y commit.
 
 ### Tarea 2: modelo de la política de volcado y de la granularidad
 
 **Archivos:** `crates/viewer_convert/benchmarks/model_hybrid_spools.py` y su test.
 
-- [ ] **Paso 1:** tests con el árbol manual de 5 nodos para la política «cerrados más antiguos primero, abiertos al final», sin pistas del núcleo.
-- [ ] **Paso 2:** sobre las trazas de S10 (Belvedere divisiones 2 y 8, Majadas), N = 1, presupuestos de 2 y 4 GiB: bytes volcados, máximo de páginas (high-water mark), relecturas desde OPFS (thrashing) frente al orden P3 de S10, y RAM desperdiciada con segmentos fijos de 1 MiB frente a segmentos progresivos (p. ej. 32 KiB → 1 MiB). Decide si hace falta una pista del planificador. Registro nuevo `docs/records/benchmarks/HYBRID_POLICY_<aaaa-mm-dd>.md` (el de S10 no se edita); commit.
+- [x] **Paso 1:** tests con el árbol manual de 5 nodos para la política «cerrados más antiguos primero, abiertos al final», sin pistas del núcleo.
+- [x] **Paso 2:** sobre las trazas de S10 (Belvedere divisiones 2 y 8, Majadas), N = 1, presupuestos de 2 y 4 GiB: bytes volcados, máximo de páginas (high-water mark), relecturas desde OPFS (thrashing) frente al orden P3 de S10, y RAM desperdiciada con segmentos fijos de 1 MiB frente a segmentos progresivos (p. ej. 32 KiB → 1 MiB). Decide si hace falta una pista del planificador. Registro nuevo `docs/records/benchmarks/HYBRID_POLICY_<aaaa-mm-dd>.md` (el de S10 no se edita); commit.
 
 ### Tarea 3: firmas de M3b (arquitecto)
 
