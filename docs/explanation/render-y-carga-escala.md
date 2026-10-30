@@ -116,6 +116,8 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 ### R1-T2: menos reconstrucciones y bordes cubiertos (Q2, E7)
 
+Con el worker de construcción, la coalescencia «gana la última» ya agrupa llegadas y vistas (reconstrucciones −50 %); esta tarea solo aplica a la ruta sin worker.
+
 **Archivos:** `examples/web-host/viewer-worker.js`, `crates/viewer_wasm/src/{bindings/render.rs, lod_dataset.rs}`.
 
 - [ ] Llegadas agrupadas: una reconstrucción por ventana de tiempo; en un cambio de cámara se dibuja la escena anterior hasta la nueva; el frustum de construcción se amplía con un margen para que el giro no deje bordes vacíos. Medida: `sceneBuilds` y p95 de respuestas de frame (si no baja, criterio de parada → E13).
@@ -155,8 +157,8 @@ escena desfasada entre B y 2B (B = tiempo de construcción: 0,48 s en Majadas, 2
 - [x] **R2-T1, costura y digest (`fb18073`–`638eb63`; 48 digests dorados sin cambios; actualización conducible en nativo):** tests dorados de digest FNV-64 de las instancias (fixtures, Replacement/Additive, 4 cámaras, 3 px); `ViewProjection` en `camera.rs` (sin GPU) a la que delega `SurfaceRenderer`; `update_view_progressive` devuelve la escena y quien llama la sube. Aceptación: digests sin cambios; humo Majadas con `sceneBuilds` y `voxelSourcePoints` ±5 %.
 - [x] **R2-T2, `WasmSceneBuilder` sin GPU (`014bd20`, `a546941`; digests idénticos entre visor y constructor en cada paso):** binding nuevo; colorización y etapa en funciones compartidas; test de navegador que da la misma secuencia de bloques y vistas a la ruta actual y a la nueva y exige digests idénticos.
 - [x] **R2-T3, `build-worker.js` y protocolo (`8c6d0ee`, `763f379`; opción `buildWorker`/`?buildWorker=1`, apagada por defecto; humo en Majadas con Chrome: órbita p50/p95 16,7/17,5 ms y edad de escena p95 484 ms; límites: modos de color por atributo no cubiertos en este modo y paquete `file://` sin probar en navegador):** opción `buildWorker` (apagada por defecto); empaquetado `file://`; métricas nuevas (`sceneAgeMs`, `epochLag`, `viewsCoalesced`, `scenesDropped`, memoria por worker). Aceptación: Majadas 4 px y Belvedere 8 px con p95 de respuestas < 33 ms y máx < 100 ms en carga y órbita; sin subir nodos sin cubrir, expulsiones de pendientes ni `oversized`; digest final en reposo igual a la ruta actual.
-- [ ] **R2-T4, subida en trozos:** solo si `sceneApplyMs` máx > 8 ms.
-- [ ] **R2-T5, registro:** matriz R0 con `sceneAgeMs` y margen de frustum 0/5/10° (parámetro, 0 por defecto); decide R2b.
+- [x] **R2-T4, subida en trozos:** no hace falta (`sceneApplyMs` máx 1,6 ms en R2-T5).
+- [x] **R2-T5 (`165be08`, [registro](../records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md)):** con el worker de construcción, intervalo de respuestas p95 ≤ 17,6 ms y máx ≤ 33,9 ms en carga y órbita (criterio cumplido); tiempo hasta el objetivo Majadas 48,8 → 18,8 s y Belvedere 157 → 66,8 s; cobertura, píxeles vacíos y expulsiones iguales; edad de escena p95 0,1–0,5 s (máx ~2,6 s en Belvedere); PSS +40–60 MiB. Pendiente antes de proponer el defecto (P8): modos de color por atributo en este modo, paquete `file://` en navegador y digest final en reposo ON = OFF. **R2-T5, registro:** matriz R0 con `sceneAgeMs` y margen de frustum 0/5/10° (parámetro, 0 por defecto); decide R2b.
 - [ ] **R2b (después):** caché por nodo de celdas agregadas para descender por celdas en lugar de por puntos (hoy 1 100–2 700 puntos leídos por vóxel); exactitud: fusión en el orden de `node_ids`, sumas exactas, exclusiones alineadas a celdas.
 
 ## Fases que esperan decisiones del propietario

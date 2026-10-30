@@ -18,7 +18,7 @@ Contexto: [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md) y
 | P5 | ¿El rango 1–8 px es dinámico (p. ej. 8 px en movimiento y 1–2 px en reposo) o fijo por sesión? | Fijo · dinámico por movimiento · dinámico por tiempo de frame | Dinámico por movimiento con histéresis | R1 (parcial), R3 |
 | P6 | ¿Los datasets de > 500 GB serán remotos (HTTP Range) o siempre locales? ¿Se pueden servir cabeceras COOP/COEP (hilos wasm)? | Local (`Blob`, ADR 0009) · remoto · ambos; con o sin COOP/COEP | Mantener local + preparar paginación; sin COOP/COEP salvo necesidad medida | R5, R2 |
 | P7 | Con el worker de construcción, mientras la cámara se mueve, ¿se acepta una escena con un tamaño de vóxel distinto del objetivo (desfasada 0,5–5 s según el dataset)? | Reconstruir siempre con la última vista · reconstruir solo al reposar · reconstruir solo si cambia el corte | Última vista con reproyección (los cubos en mundo siguen siendo válidos); revisar tras R2b | R2 (política en movimiento) |
-| P8 | ¿Se activa el worker de construcción por defecto en cuanto cumpla la latencia de frames, aunque la escena llegue con desfase? | Apagado hasta R2b · encendido tras R2-T3 | Encendido tras R2-T3 si los criterios de latencia pasan y no aumentan huecos | R2 (valor por defecto) |
+| P8 | ¿Se activa el worker de construcción por defecto en cuanto cumpla la latencia de frames, aunque la escena llegue con desfase? | Apagado hasta R2b · encendido tras R2-T3 | Encendido: R2-T5 cumple la latencia (p95 ≤ 17,6 ms), reduce el tiempo hasta el objetivo un 57–62 % y no aumenta huecos ([registro](../records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md)); antes se cierran color por atributo y `file://` | R2 (valor por defecto) |
 
 ## Conversor web paralelo (30-10-2026)
 
