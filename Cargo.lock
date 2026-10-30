@@ -1290,6 +1290,7 @@ dependencies = [
 name = "viewer_wasm"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "js-sys",
  "las",
  "serde",

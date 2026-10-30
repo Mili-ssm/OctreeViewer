@@ -10,10 +10,12 @@ use crate::{
     lod_driver::AttributeAvailability,
     lod_session::LodSession,
 };
+pub use builder::WasmSceneBuilder;
 use js_marshal::viewer_error_to_js;
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{RendererConfig, SurfaceRenderer, VoxelBuildLimits};
 
+mod builder;
 mod camera;
 mod js_marshal;
 mod js_stats;
@@ -41,7 +43,7 @@ pub struct WasmVoxelViewer {
     last_lod_error: Option<String>,
 }
 
-struct AsyncFormatContext {
+pub(super) struct AsyncFormatContext {
     has_attributes: bool,
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
 }
@@ -49,7 +51,7 @@ struct AsyncFormatContext {
 /// Whether the open dataset can paint `(index, component)`, and the range to normalise it with.
 /// The reader answers for a dataset opened from a Blob, the host-provided context for one
 /// whose blocks arrive asynchronously.
-fn attribute_availability(
+pub(super) fn attribute_availability(
     session: Option<&LodSession<FormatReader<BrowserBlobReader>>>,
     async_context: Option<&AsyncFormatContext>,
     index: u32,

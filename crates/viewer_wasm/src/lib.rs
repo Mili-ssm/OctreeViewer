@@ -14,6 +14,8 @@ mod lod_metadata;
 mod lod_request_scheduler;
 #[cfg(any(target_arch = "wasm32", test))]
 mod lod_session;
+#[cfg(any(target_arch = "wasm32", test))]
+mod scene_builder;
 
 pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
@@ -41,7 +43,7 @@ pub use async_format_reader::{
     WasmAsyncReadCancelToken,
 };
 #[cfg(target_arch = "wasm32")]
-pub use bindings::WasmVoxelViewer;
+pub use bindings::{WasmSceneBuilder, WasmVoxelViewer};
 #[cfg(target_arch = "wasm32")]
 pub use core_convert::WasmCoreConverter;
 #[cfg(target_arch = "wasm32")]

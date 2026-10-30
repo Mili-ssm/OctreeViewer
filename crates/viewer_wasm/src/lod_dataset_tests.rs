@@ -1683,3 +1683,361 @@ fn a_discarded_scene_is_rebuilt_by_the_next_update() {
 }
 
 const NATIVE_UPDATE_GOLDEN: (usize, u64) = (800, 7_206_320_447_428_042_895);
+
+// ---------------------------------------------------------------------------------------------
+// Binding parity: `WasmVoxelViewer` and `WasmSceneBuilder` must publish identical scenes.
+// ---------------------------------------------------------------------------------------------
+
+mod binding_parity {
+    use super::*;
+    use crate::{
+        LodBuiltScene,
+        lod_driver::{
+            AttributeAvailability, ColorSelection, LodStep, SceneSink, assemble_async_block,
+            resolve_color_selection, update_lod_view,
+        },
+        lod_session::LodSession,
+        scene_builder::{SceneBuilderCore, camera_from_transport},
+    };
+    use viewer_render_wgpu::{ColorMode, ViewProjection, VoxelBuildLimits};
+
+    /// What a consumer of one update observes.
+    #[derive(Debug, PartialEq)]
+    struct Observed {
+        digest: Option<u64>,
+        instance_count: Option<usize>,
+        block_ids: Option<Vec<BlockId>>,
+        rendered_voxels: usize,
+        pending: Vec<BlockId>,
+        async_order: Vec<BlockId>,
+        needs_refinement: bool,
+    }
+
+    enum Op {
+        Insert(u64),
+        Update { camera: usize, target: f64 },
+        Color(&'static str),
+    }
+
+    fn update(camera: usize, target: f64) -> Op {
+        Op::Update { camera, target }
+    }
+
+    fn cameras() -> Vec<OrbitCamera> {
+        let base = native_view().camera();
+        let mut orbited = base;
+        assert!(orbited.orbit(35.0, 12.0));
+        let mut zoomed = orbited;
+        assert!(zoomed.zoom(0.4));
+        vec![base, orbited, zoomed]
+    }
+
+    #[derive(Default)]
+    struct KeepSink(Option<LodBuiltScene>);
+
+    impl SceneSink for KeepSink {
+        fn publish(&mut self, built: LodBuiltScene) -> Result<(), String> {
+            self.0 = Some(built);
+            Ok(())
+        }
+        fn base_cut_exceeded(&mut self, _: &LodDataset) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn observe(
+        scene: Option<LodBuiltScene>,
+        stats: &crate::LodViewStats,
+        async_order: Vec<BlockId>,
+        needs_refinement: bool,
+    ) -> Observed {
+        Observed {
+            digest: scene.as_ref().map(LodBuiltScene::scene_digest),
+            instance_count: scene.as_ref().map(|s| s.voxels.scene.instance_count()),
+            block_ids: scene.map(|s| s.block_ids),
+            rendered_voxels: stats.rendered_voxels,
+            pending: stats.pending_block_ids.clone(),
+            async_order,
+            needs_refinement,
+        }
+    }
+
+    /// The state `WasmVoxelViewer` keeps around the shared functions: a moved camera or a new
+    /// target restarts at the coarse stage, an inserted block asks for a refinement.
+    struct ViewerPath {
+        dataset: LodDataset,
+        reader: Option<Vec<PointBlock>>,
+        mode: ColorMode,
+        attribute: Option<(u32, u32)>,
+        target: Option<f64>,
+        stage: Option<f64>,
+        dirty: bool,
+        camera: Option<OrbitCamera>,
+    }
+
+    impl ViewerPath {
+        fn update(&mut self, camera: OrbitCamera, target: f64) -> Observed {
+            if self.camera != Some(camera) || self.target != Some(target) {
+                self.stage = None;
+            }
+            self.camera = Some(camera);
+            self.target = Some(target);
+            let view = ViewProjection::new(
+                camera,
+                [800, 600],
+                self.dataset.visual_scale(),
+                VoxelBuildLimits::default(),
+            );
+            let mut sink = KeepSink::default();
+            let reader = self.reader.as_ref();
+            let mut load = |id: BlockId| {
+                Ok(reader.and_then(|blocks| blocks.iter().find(|b| b.id() == id).cloned()))
+            };
+            let result = update_lod_view(
+                &mut self.dataset,
+                &LodStep {
+                    view: &view,
+                    target_pixels: target,
+                    track_async_order: self.reader.is_none(),
+                    can_load_blocks: true,
+                },
+                &mut self.stage,
+                &mut self.dirty,
+                &mut sink,
+                &mut load,
+            )
+            .unwrap();
+            observe(
+                sink.0,
+                &result.stats,
+                result.async_priority_order,
+                self.dirty,
+            )
+        }
+
+        fn color(&mut self, selection: ColorSelection) {
+            if self.mode != selection.mode || self.attribute != selection.attribute {
+                self.mode = selection.mode;
+                self.attribute = selection.attribute;
+                self.dataset.clear_loaded_blocks();
+                self.stage = Some(16.0);
+                self.dirty = true;
+            }
+        }
+    }
+
+    fn builder_update(
+        core: &mut SceneBuilderCore<Vec<PointBlock>>,
+        camera: OrbitCamera,
+        target: f64,
+    ) -> Observed {
+        // The camera crosses the worker boundary as an f64 array.
+        let camera = camera_from_transport(&camera.to_f64_array()).unwrap();
+        let visual_scale = core.session().dataset().visual_scale();
+        let update = core
+            .update(camera, [800, 600], visual_scale, target, |blocks, id| {
+                Ok(blocks.iter().find(|b| b.id() == id).cloned())
+            })
+            .unwrap();
+        assert!(update.epoch >= 1);
+        observe(
+            update.scene,
+            &update.stats,
+            update.async_priority_order,
+            update.needs_refinement,
+        )
+    }
+
+    /// Runs `ops` through both paths and asserts identical observations at every update.
+    fn run_parity(ops: &[Op], session_reads_blocks: bool) -> Vec<Observed> {
+        let (viewer_dataset, blocks) = native_dataset(400);
+        let (builder_dataset, _) = native_dataset(400);
+        let mut viewer = ViewerPath {
+            dataset: viewer_dataset,
+            reader: session_reads_blocks.then(|| blocks.clone()),
+            mode: ColorMode::Rgb,
+            attribute: None,
+            target: None,
+            stage: None,
+            dirty: false,
+            camera: None,
+        };
+        let session = if session_reads_blocks {
+            LodSession::Format {
+                dataset: builder_dataset,
+                reader: blocks.clone(),
+            }
+        } else {
+            LodSession::External(builder_dataset)
+        };
+        let mut builder =
+            SceneBuilderCore::new(session, !session_reads_blocks, VoxelBuildLimits::default());
+        let cameras = cameras();
+        let mut seen = Vec::new();
+        for (step, op) in ops.iter().enumerate() {
+            match op {
+                Op::Insert(id) => {
+                    let block = blocks.iter().find(|b| b.id().get() == *id).unwrap().clone();
+                    viewer.dataset.insert_block(block.clone()).unwrap();
+                    viewer.dirty = viewer.target.is_some();
+                    let dataset = builder.session_mut().dataset_mut();
+                    dataset.insert_block(block).unwrap();
+                    builder.block_inserted();
+                }
+                Op::Color(mode) => {
+                    let selection =
+                        resolve_color_selection(mode, Some(&[]), |_, _| Ok(None)).unwrap();
+                    viewer.color(selection);
+                    builder.set_color_selection(selection);
+                    assert_eq!(builder.color_mode(), viewer.mode, "step {step}");
+                    assert_eq!(builder.selected_attribute().0, viewer.attribute);
+                }
+                Op::Update { camera, target } => {
+                    let expected = viewer.update(cameras[*camera], *target);
+                    let actual = builder_update(&mut builder, cameras[*camera], *target);
+                    assert_eq!(actual, expected, "step {step}");
+                    seen.push(actual);
+                }
+            }
+        }
+        seen
+    }
+
+    #[test]
+    fn builder_matches_the_viewer_while_the_host_inserts_blocks() {
+        let ops = [
+            update(0, 4.0),
+            Op::Insert(11),
+            update(0, 4.0),
+            update(0, 4.0),
+            Op::Insert(12),
+            update(0, 4.0),
+            Op::Insert(13),
+            update(0, 4.0),
+            update(0, 4.0),
+            update(0, 4.0),
+            // A moved camera restarts at the coarse stage.
+            update(1, 4.0),
+            update(1, 4.0),
+            update(2, 4.0),
+            // Everything is resident, so a finer target starts at the fine stage directly.
+            update(2, 1.0),
+            update(2, 1.0),
+            update(2, 16.0),
+        ];
+        let seen = run_parity(&ops, false);
+        assert!(seen.iter().filter(|o| o.digest.is_some()).count() >= 3);
+        assert!(seen.iter().any(|o| !o.async_order.is_empty()));
+        assert!(seen.iter().any(|o| o.digest.is_none()), "a scene is reused");
+    }
+
+    #[test]
+    fn builder_matches_the_viewer_when_the_session_reads_blocks() {
+        let ops = [
+            update(0, 4.0),
+            update(0, 4.0),
+            update(0, 4.0),
+            update(0, 4.0),
+            update(1, 4.0),
+            update(1, 4.0),
+            update(1, 4.0),
+            // A colour change drops the decoded blocks, which are then read again.
+            Op::Color("intensity"),
+            update(1, 4.0),
+            update(1, 4.0),
+            update(1, 4.0),
+            Op::Color("rgb"),
+            update(2, 2.0),
+            update(2, 2.0),
+            update(2, 2.0),
+        ];
+        let seen = run_parity(&ops, true);
+        assert!(seen.iter().filter(|o| o.digest.is_some()).count() >= 3);
+    }
+
+    #[test]
+    fn the_scene_reached_through_the_builder_keeps_the_pinned_digest() {
+        let ops = [
+            Op::Insert(11),
+            Op::Insert(12),
+            Op::Insert(13),
+            update(0, 4.0),
+            update(0, 4.0),
+            update(0, 4.0),
+            update(0, 4.0),
+        ];
+        let seen = run_parity(&ops, false);
+        let last = seen.iter().rev().find_map(|o| o.digest).unwrap();
+        assert_eq!(last, NATIVE_UPDATE_GOLDEN.1);
+    }
+
+    #[test]
+    fn the_builder_validates_its_inputs() {
+        let (dataset, _) = native_dataset(10);
+        let mut core: SceneBuilderCore<()> = SceneBuilderCore::new(
+            LodSession::External(dataset),
+            true,
+            VoxelBuildLimits::default(),
+        );
+        let camera = cameras()[0];
+        let scale = core.session().dataset().visual_scale();
+        let mut run = |viewport: [u32; 2], scale: f64, target: f64| {
+            core.update(camera, viewport, scale, target, |_, _| Ok(None))
+                .err()
+        };
+        assert!(run([800, 600], scale, 0.1).is_some());
+        assert!(run([800, 600], scale, f64::NAN).is_some());
+        assert!(run([0, 600], scale, 4.0).is_some());
+        assert!(run([800, 600], scale * 2.0, 4.0).is_some());
+        assert!(run([800, 600], scale, 4.0).is_none());
+        assert!(camera_from_transport(&[0.0; 3]).is_err());
+    }
+
+    #[test]
+    fn color_selection_parses_modes_and_rejects_unusable_attributes() {
+        let none = |_: u32, _: u32| Ok(None);
+        assert_eq!(
+            resolve_color_selection("elevation", None, none).unwrap(),
+            ColorSelection {
+                mode: ColorMode::Elevation,
+                attribute: None,
+                attribute_range: None,
+            }
+        );
+        assert!(resolve_color_selection("bogus", None, none).is_err());
+        assert!(resolve_color_selection("attribute:0:0", None, none).is_err());
+        assert!(resolve_color_selection("attribute:x:0", Some(&[]), none).is_err());
+        assert!(resolve_color_selection("attribute:0", Some(&[]), none).is_err());
+        // Index 0 does not exist in an empty schema, however available the attributes are.
+        let available = |_: u32, _: u32| {
+            Ok(Some(AttributeAvailability {
+                has_attributes: true,
+                range: Some([0.0, 1.0]),
+            }))
+        };
+        assert!(resolve_color_selection("attribute:0:0", Some(&[]), available).is_err());
+    }
+
+    #[test]
+    fn async_blocks_are_cached_as_delivered_unless_an_attribute_is_missing() {
+        let (_, blocks) = native_dataset(8);
+        let source = &blocks[0];
+        let assemble = |selected, budget| {
+            assemble_async_block(
+                source.id(),
+                source.points().clone(),
+                None,
+                &[],
+                selected,
+                None,
+                budget,
+            )
+        };
+        assert_eq!(
+            assemble(None, usize::MAX).unwrap().points().points().len(),
+            8
+        );
+        assert!(assemble(None, 1).is_err());
+        assert!(assemble(Some((0, 0)), usize::MAX).is_err());
+    }
+}

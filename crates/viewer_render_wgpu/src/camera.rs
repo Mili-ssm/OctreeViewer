@@ -43,7 +43,49 @@ impl Default for OrbitCamera {
     }
 }
 
+/// Number of `f64` values in the `OrbitCamera` transport form.
+pub const ORBIT_CAMERA_F64_LEN: usize = 11;
+
 impl OrbitCamera {
+    /// Lossless transport form for handing the camera to another worker as a `Float64Array`:
+    /// `[target xyz, distance, yaw, pitch, radius, scene_center xyz, fitted (0 or 1)]`.
+    pub fn to_f64_array(&self) -> [f64; ORBIT_CAMERA_F64_LEN] {
+        let [tx, ty, tz] = self.target.to_array();
+        let [cx, cy, cz] = self.scene_center.to_array();
+        [
+            tx,
+            ty,
+            tz,
+            self.distance,
+            self.yaw,
+            self.pitch,
+            self.radius,
+            cx,
+            cy,
+            cz,
+            if self.fitted { 1.0 } else { 0.0 },
+        ]
+    }
+
+    /// Inverse of [`Self::to_f64_array`]; the round trip preserves every bit.
+    pub fn from_f64_array(values: &[f64]) -> Option<Self> {
+        let values: &[f64; ORBIT_CAMERA_F64_LEN] = values.try_into().ok()?;
+        let fitted = match values[10] {
+            0.0 => false,
+            1.0 => true,
+            _ => return None,
+        };
+        Some(Self {
+            target: DVec3::new(values[0], values[1], values[2]),
+            distance: values[3],
+            yaw: values[4],
+            pitch: values[5],
+            radius: values[6],
+            scene_center: DVec3::new(values[7], values[8], values[9]),
+            fitted,
+        })
+    }
+
     pub fn target(&self) -> [f64; 3] {
         self.target.to_array()
     }
@@ -657,8 +699,38 @@ mod t4_diagnosis;
 mod tests {
     use glam::{DVec3, Mat4};
 
-    use super::OrbitCamera;
+    use super::{ORBIT_CAMERA_F64_LEN, OrbitCamera};
     use crate::SceneBounds;
+
+    #[test]
+    fn f64_transport_round_trips_every_bit() {
+        let mut camera = OrbitCamera::default();
+        assert!(camera.fit(bounds(), [800, 600]));
+        camera.orbit(13.7, -4.2);
+        camera.pan(3.3, 1.1, [800, 600]);
+        camera.zoom(0.37);
+        let packed = camera.to_f64_array();
+        let restored = OrbitCamera::from_f64_array(&packed).unwrap();
+        assert_eq!(restored, camera);
+        let repacked = restored.to_f64_array();
+        for (a, b) in packed.iter().zip(&repacked) {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+        let default = OrbitCamera::default();
+        assert_eq!(
+            OrbitCamera::from_f64_array(&default.to_f64_array()),
+            Some(default)
+        );
+    }
+
+    #[test]
+    fn f64_transport_rejects_wrong_length_and_flags() {
+        let packed = OrbitCamera::default().to_f64_array();
+        assert!(OrbitCamera::from_f64_array(&packed[..ORBIT_CAMERA_F64_LEN - 1]).is_none());
+        let mut bad = packed;
+        bad[ORBIT_CAMERA_F64_LEN - 1] = 0.5;
+        assert!(OrbitCamera::from_f64_array(&bad).is_none());
+    }
 
     #[test]
     fn frame_preserves_webgpu_depth_range_and_screen_orientation() {

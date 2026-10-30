@@ -1,0 +1,289 @@
+use std::sync::{Arc, Mutex};
+
+use viewer_core::BlockId;
+use wasm_bindgen::prelude::*;
+use web_sys::Blob;
+
+use super::{
+    AsyncFormatContext, attribute_availability,
+    js_stats::{
+        accumulate_browser_read_delta, reset_browser_read_stats, snapshot_browser_read_stats,
+    },
+    lod::{insert_async_block, lod_update_stats_to_js, open_descriptor, open_format},
+};
+use crate::{
+    browser_io::{BrowserBlobReader, BrowserReadStats},
+    lod_driver::resolve_color_selection,
+    lod_session::LodSession,
+    scene_builder::{BuilderUpdate, SceneBuilderCore, camera_from_transport},
+};
+use viewer_format::FormatReader;
+use viewer_render_wgpu::VoxelBuildLimits;
+
+type FormatSession = LodSession<FormatReader<BrowserBlobReader>>;
+
+/// LOD scene builder without a GPU, canvas or renderer, for a dedicated build worker.
+///
+/// It owns the dataset, block cache, planner and voxel builder. The host sends the camera with
+/// every `update` and receives the instance bytes as a transferable `ArrayBuffer`; a separate
+/// render worker uploads and draws them.
+#[wasm_bindgen]
+pub struct WasmSceneBuilder {
+    core: Option<SceneBuilderCore<FormatReader<BrowserBlobReader>>>,
+    limits: VoxelBuildLimits,
+    async_format_context: Option<AsyncFormatContext>,
+    pending_async_blocks: Vec<BlockId>,
+    browser_read_stats: Arc<Mutex<BrowserReadStats>>,
+    range_read_stats: BrowserReadStats,
+}
+
+#[wasm_bindgen]
+impl WasmSceneBuilder {
+    /// The limits bound estimated construction memory and voxel count, not process RSS. Pass
+    /// the render worker's effective limits, already capped by its GPU instance budget.
+    #[wasm_bindgen(constructor)]
+    pub fn new(max_voxels: u32, max_estimated_bytes: u32) -> Result<WasmSceneBuilder, JsValue> {
+        if max_voxels == 0 || max_estimated_bytes == 0 {
+            return Err(JsValue::from_str(
+                "voxel construction limits must be positive",
+            ));
+        }
+        Ok(Self {
+            core: None,
+            limits: VoxelBuildLimits {
+                max_voxels: max_voxels as usize,
+                max_estimated_bytes: u64::from(max_estimated_bytes),
+            },
+            async_format_context: None,
+            pending_async_blocks: Vec::new(),
+            browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
+            range_read_stats: BrowserReadStats::default(),
+        })
+    }
+
+    /// Opens hierarchy metadata whose blocks the host delivers with `insertAsyncLodBlock`.
+    #[wasm_bindgen(js_name = openLodDataset)]
+    pub fn open_lod_dataset(&mut self, descriptor: JsValue) -> Result<JsValue, JsValue> {
+        let (dataset, async_format_context) = open_descriptor(descriptor)?;
+        let visual_scale = dataset.visual_scale();
+        self.install(LodSession::External(dataset), async_format_context, None);
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &result,
+            &"status".into(),
+            &JsValue::from_str("metadata_ready"),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"visualScale".into(),
+            &JsValue::from_f64(visual_scale),
+        )?;
+        Ok(result.into())
+    }
+
+    /// Opens the random-access format from a Blob; the builder reads blocks itself.
+    #[wasm_bindgen(js_name = openFormatDataset)]
+    pub fn open_format_dataset(
+        &mut self,
+        file: Blob,
+        cache_bytes: u32,
+        attributes: Option<Blob>,
+    ) -> Result<JsValue, JsValue> {
+        let (session, browser_read_stats, result) = open_format(file, cache_bytes, attributes)?;
+        let visual_scale = session.dataset().visual_scale();
+        js_sys::Reflect::set(
+            &result,
+            &"visualScale".into(),
+            &JsValue::from_f64(visual_scale),
+        )?;
+        self.install(session, None, Some(browser_read_stats));
+        Ok(result)
+    }
+
+    /// Inserts one block delivered by the host; same contract as `WasmVoxelViewer`.
+    #[wasm_bindgen(js_name = insertAsyncLodBlock)]
+    pub fn insert_async_lod_block(
+        &mut self,
+        block_id: String,
+        positions: js_sys::Float32Array,
+        colors: Option<js_sys::Uint8Array>,
+        attribute: Option<JsValue>,
+    ) -> Result<usize, JsValue> {
+        let core = self.core_mut()?;
+        let selection = core.selected_attribute();
+        let accounted_bytes = insert_async_block(
+            Some(core.session_mut()),
+            selection,
+            block_id,
+            positions,
+            colors,
+            attribute,
+        )?;
+        core.block_inserted();
+        self.pending_async_blocks.clear();
+        Ok(accounted_bytes)
+    }
+
+    /// Selects `rgb`, `intensity`, `elevation`, `classification` or `attribute:index:component`.
+    #[wasm_bindgen(js_name = setColorMode)]
+    pub fn set_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
+        let core = self
+            .core
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let selection = {
+            let session: &FormatSession = core.session();
+            let async_context = self.async_format_context.as_ref();
+            resolve_color_selection(
+                &mode,
+                Some(session.dataset().attribute_schema()),
+                |index, component| {
+                    attribute_availability(Some(session), async_context, index, component)
+                },
+            )
+            .map_err(|message| JsValue::from_str(&message))?
+        };
+        if core.set_color_selection(selection) {
+            reset_browser_read_stats(&self.browser_read_stats);
+            self.range_read_stats = BrowserReadStats::default();
+        }
+        Ok(())
+    }
+
+    /// Missing blocks in the order the LOD plan wants them, as decimal id strings.
+    #[wasm_bindgen(js_name = pendingAsyncLodBlocks)]
+    pub fn pending_async_lod_blocks(&self) -> js_sys::Array {
+        self.pending_async_blocks
+            .iter()
+            .map(|id| JsValue::from_str(&id.get().to_string()))
+            .collect()
+    }
+
+    /// Selects the cut for a camera and rebuilds the scene when it changed.
+    ///
+    /// `camera` is `OrbitCamera.to_f64_array()` (11 numbers). Returns
+    /// `{ epoch, sceneBuffer, instanceCount, blockIds, digest, needsRefinement, lod }` where
+    /// `sceneBuffer` holds the `InstanceRaw` bytes in a fresh, transferable `ArrayBuffer`, or is
+    /// `null` when the previous scene still applies.
+    #[wasm_bindgen(js_name = update)]
+    pub fn update(
+        &mut self,
+        camera: js_sys::Float64Array,
+        viewport_width: u32,
+        viewport_height: u32,
+        visual_scale: f64,
+        target_voxel_pixels: f64,
+    ) -> Result<JsValue, JsValue> {
+        let mut camera_values = vec![0.0; camera.length() as usize];
+        camera.copy_to(&mut camera_values);
+        let camera = camera_from_transport(&camera_values).map_err(|m| JsValue::from_str(&m))?;
+        let core = self
+            .core
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let mode = core.color_mode();
+        let (selected_attribute, selected_range) = core.selected_attribute();
+        let browser_read_stats = Arc::clone(&self.browser_read_stats);
+        let mut range_read_stats = self.range_read_stats;
+        let update = core.update(
+            camera,
+            [viewport_width, viewport_height],
+            visual_scale,
+            target_voxel_pixels,
+            |reader, block_id| {
+                let before = snapshot_browser_read_stats(&browser_read_stats);
+                let loaded = crate::block_loading::load_render_block(
+                    reader,
+                    block_id,
+                    Some(mode),
+                    selected_attribute,
+                    selected_range,
+                )
+                .map(Some);
+                let after = snapshot_browser_read_stats(&browser_read_stats);
+                accumulate_browser_read_delta(&mut range_read_stats, before, after);
+                loaded
+            },
+        );
+        self.range_read_stats = range_read_stats;
+        let BuilderUpdate {
+            epoch,
+            scene,
+            stats,
+            async_priority_order,
+            needs_refinement,
+        } = update.map_err(|message| JsValue::from_str(&message))?;
+        self.pending_async_blocks = async_priority_order;
+
+        let dataset = core.session().dataset();
+        let lod = lod_update_stats_to_js(
+            &stats,
+            range_read_stats,
+            Some(dataset),
+            None,
+            None,
+            target_voxel_pixels,
+        )?;
+        let result = js_sys::Object::new();
+        let set = |name: &str, value: &JsValue| js_sys::Reflect::set(&result, &name.into(), value);
+        set("epoch", &JsValue::from_f64(epoch as f64))?;
+        set("needsRefinement", &JsValue::from_bool(needs_refinement))?;
+        set("lod", &lod)?;
+        match scene {
+            Some(built) => {
+                let instances = built.voxels.scene.instances();
+                // `Uint8Array::from` copies into JS memory, so the buffer is not a view of the
+                // wasm heap and can be transferred to another worker.
+                let bytes = js_sys::Uint8Array::from(bytemuck::cast_slice::<_, u8>(instances));
+                let block_ids = built
+                    .block_ids
+                    .iter()
+                    .map(|id| JsValue::from_str(&id.get().to_string()))
+                    .collect::<js_sys::Array>();
+                set("sceneBuffer", &bytes.buffer())?;
+                set("instanceCount", &JsValue::from_f64(instances.len() as f64))?;
+                set("blockIds", &block_ids)?;
+                set(
+                    "digest",
+                    &JsValue::from_str(&format!("{:016x}", built.scene_digest())),
+                )?;
+            }
+            None => {
+                set("sceneBuffer", &JsValue::NULL)?;
+                set("instanceCount", &JsValue::from_f64(0.0))?;
+                set("blockIds", &js_sys::Array::new())?;
+                set("digest", &JsValue::NULL)?;
+            }
+        }
+        Ok(result.into())
+    }
+}
+
+impl WasmSceneBuilder {
+    fn core_mut(
+        &mut self,
+    ) -> Result<&mut SceneBuilderCore<FormatReader<BrowserBlobReader>>, JsValue> {
+        self.core
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))
+    }
+
+    fn install(
+        &mut self,
+        session: FormatSession,
+        async_format_context: Option<AsyncFormatContext>,
+        browser_read_stats: Option<Arc<Mutex<BrowserReadStats>>>,
+    ) {
+        let host_delivers_blocks = async_format_context.is_some();
+        self.core = Some(SceneBuilderCore::new(
+            session,
+            host_delivers_blocks,
+            self.limits,
+        ));
+        self.async_format_context = async_format_context;
+        self.pending_async_blocks.clear();
+        self.browser_read_stats =
+            browser_read_stats.unwrap_or_else(|| Arc::new(Mutex::new(BrowserReadStats::default())));
+        self.range_read_stats = BrowserReadStats::default();
+    }
+}
