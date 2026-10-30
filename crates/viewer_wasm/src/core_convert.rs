@@ -3,18 +3,18 @@
 //! Everything runs in one synchronous call inside a dedicated worker; cancelling means the host
 //! terminates the worker and deletes the partial files.
 
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io;
 
 use viewer_convert_core::{
     ByteSource, ConversionProgress, ConversionStage, ConvertError, ConvertOptions, LasFactory,
     MemSpoolStore, NoClock, convert_serial, validate_output_serial,
 };
 use viewer_format::FormatVersion;
-use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen::prelude::*;
 use web_sys::Blob;
 
-use crate::browser_convert::OpfsWriter;
-use crate::browser_io::{BrowserBlobReader, js_error_to_io};
+use crate::browser_io::BrowserBlobReader;
+use crate::opfs::{OpfsReader, OpfsWriter};
 
 /// Opens a fresh cached reader per call; `las::Reader` needs `Send + Sync`, which `JsValue` holds
 /// on wasm32 without atomics (the same assumption `WasmLasOctConverter` makes).
@@ -32,71 +32,6 @@ impl ByteSource for BlobBytes {
 
     fn len(&self) -> u64 {
         self.blob.size() as u64
-    }
-}
-
-/// `Read + Seek` over `FileSystemSyncAccessHandle.read(buffer, { at })`.
-struct OpfsReader {
-    handle: JsValue,
-    position: u64,
-}
-
-impl OpfsReader {
-    fn call(&self, name: &str, arguments: &[JsValue]) -> Result<JsValue, JsValue> {
-        let method = js_sys::Reflect::get(&self.handle, &JsValue::from_str(name))?
-            .dyn_into::<js_sys::Function>()?;
-        let args = js_sys::Array::new();
-        for argument in arguments {
-            args.push(argument);
-        }
-        method.apply(&self.handle, &args)
-    }
-
-    fn size(&self) -> io::Result<u64> {
-        self.call("getSize", &[])
-            .map_err(js_error_to_io)?
-            .as_f64()
-            .map(|size| size as u64)
-            .ok_or_else(|| io::Error::other("OPFS getSize returned an invalid value"))
-    }
-}
-
-impl Read for OpfsReader {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if buffer.is_empty() {
-            return Ok(0);
-        }
-        let array = js_sys::Uint8Array::new_with_length(buffer.len() as u32);
-        let options = js_sys::Object::new();
-        js_sys::Reflect::set(
-            &options,
-            &"at".into(),
-            &JsValue::from_f64(self.position as f64),
-        )
-        .map_err(js_error_to_io)?;
-        let read = self
-            .call("read", &[array.clone().into(), options.into()])
-            .map_err(js_error_to_io)?
-            .as_f64()
-            .filter(|read| *read >= 0.0 && *read <= buffer.len() as f64 && read.fract() == 0.0)
-            .ok_or_else(|| io::Error::other("OPFS read returned an invalid byte count"))?
-            as usize;
-        array.subarray(0, read as u32).copy_to(&mut buffer[..read]);
-        self.position += read as u64;
-        Ok(read)
-    }
-}
-
-impl Seek for OpfsReader {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        let next = match position {
-            SeekFrom::Start(offset) => Some(offset),
-            SeekFrom::Current(offset) => self.position.checked_add_signed(offset),
-            SeekFrom::End(offset) => self.size()?.checked_add_signed(offset),
-        }
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid OPFS seek"))?;
-        self.position = next;
-        Ok(next)
     }
 }
 
@@ -231,14 +166,8 @@ impl WasmCoreConverter {
             .and_then(|()| std::io::Write::flush(&mut attributes))
             .map_err(|error| JsValue::from_str(&format!("flushing output: {error}")))?;
         validate_output_serial(
-            OpfsReader {
-                handle: self.geometry.clone(),
-                position: 0,
-            },
-            OpfsReader {
-                handle: self.attributes.clone(),
-                position: 0,
-            },
+            OpfsReader::new(self.geometry.clone()),
+            OpfsReader::new(self.attributes.clone()),
             &output.plan,
             &mut report,
         )

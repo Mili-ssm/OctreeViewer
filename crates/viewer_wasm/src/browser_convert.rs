@@ -1,4 +1,4 @@
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::Write;
 use viewer_core::{
     AttributeColumn, AttributeDataType, AttributeDescriptor, AttributeValues, BlockId, ColorRgb,
     CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId, SpatialBounds, SpatialHierarchy,
@@ -7,12 +7,13 @@ use viewer_core::{
 use viewer_format::{
     FormatMetadata, FormatWriter, FormatWriterOptions, OctreeWriter, SourcePointBlock,
 };
-use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen::prelude::*;
 use web_sys::Blob;
 
-use crate::browser_io::{BrowserBlobReader, js_error_to_io};
+use crate::browser_io::BrowserBlobReader;
 use crate::lod_partition::partition_block;
 use crate::lod_representatives::{MAX_REPRESENTATIVE_POINTS, VoxelRepresentativeBuffer};
+use crate::opfs::OpfsWriter;
 
 const CONVERSION_POINTS_PER_BLOCK: u64 = 16_384;
 const MAX_CONVERSION_BLOCKS: u64 = 1_000_000;
@@ -571,82 +572,4 @@ fn preflight_blob(blob: &Blob) -> Result<(), JsValue> {
         viewer_core::las::check_laz_chunk_table(&mut reader, layout).map_err(header_error)?;
     }
     Ok(())
-}
-
-pub(crate) struct OpfsWriter {
-    handle: JsValue,
-    position: u64,
-}
-
-impl OpfsWriter {
-    pub(crate) fn new(handle: JsValue) -> Result<Self, JsValue> {
-        Ok(Self {
-            handle,
-            position: 0,
-        })
-    }
-
-    fn call(&self, name: &str, arguments: &[JsValue]) -> Result<JsValue, JsValue> {
-        let method = js_sys::Reflect::get(&self.handle, &JsValue::from_str(name))?
-            .dyn_into::<js_sys::Function>()?;
-        let args = js_sys::Array::new();
-        for argument in arguments {
-            args.push(argument);
-        }
-        method.apply(&self.handle, &args)
-    }
-}
-
-impl Write for OpfsWriter {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let array = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
-        array.copy_from(bytes);
-        let options = js_sys::Object::new();
-        js_sys::Reflect::set(
-            &options,
-            &JsValue::from_str("at"),
-            &JsValue::from_f64(self.position as f64),
-        )
-        .map_err(js_error_to_io)?;
-        let written = self
-            .call("write", &[array.into(), options.into()])
-            .map_err(js_error_to_io)?
-            .as_f64()
-            .ok_or_else(|| io::Error::other("OPFS write returned an invalid byte count"))?;
-        if written < 0.0 || written > bytes.len() as f64 || written.fract() != 0.0 {
-            return Err(io::Error::other(
-                "OPFS write returned an invalid byte count",
-            ));
-        }
-        let written = written as usize;
-        self.position = self.position.saturating_add(written as u64);
-        Ok(written)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.call("flush", &[]).map_err(js_error_to_io)?;
-        Ok(())
-    }
-}
-
-impl Seek for OpfsWriter {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        let size = if matches!(position, SeekFrom::End(_)) {
-            self.call("getSize", &[])
-                .map_err(js_error_to_io)?
-                .as_f64()
-                .ok_or_else(|| io::Error::other("OPFS getSize returned an invalid value"))?
-                as u64
-        } else {
-            0
-        };
-        let next = match position {
-            SeekFrom::Start(offset) => Some(offset),
-            SeekFrom::Current(offset) => self.position.checked_add_signed(offset),
-            SeekFrom::End(offset) => size.checked_add_signed(offset),
-        }
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid OPFS seek"))?;
-        self.position = next;
-        Ok(next)
-    }
 }

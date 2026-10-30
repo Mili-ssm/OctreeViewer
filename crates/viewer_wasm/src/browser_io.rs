@@ -194,9 +194,15 @@ impl Seek for BrowserBlobReader {
     }
 }
 
+/// The text of a thrown JS value: a string as is, otherwise `Error.message`.
+pub(crate) fn js_message(error: &JsValue) -> Option<String> {
+    error.as_string().or_else(|| {
+        js_sys::Reflect::get(error, &"message".into())
+            .ok()
+            .and_then(|message| message.as_string())
+    })
+}
+
 pub(crate) fn js_error_to_io(error: JsValue) -> io::Error {
-    let message = error
-        .as_string()
-        .unwrap_or_else(|| "browser file read failed".to_owned());
-    io::Error::other(message)
+    io::Error::other(js_message(&error).unwrap_or_else(|| "browser file read failed".to_owned()))
 }
