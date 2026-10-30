@@ -9,7 +9,10 @@ const spoolTiers = (await readFile(new URL("../spool-tiers.mjs", import.meta.url
 const source = spoolTiers + "\n" + (await readFile(new URL("../converter-worker.js", import.meta.url), "utf8"))
     .replace(/^import .*\n/gm, "");
 
-async function run({ fail = null, zones = 2, quota = null } = {}) {
+async function run({
+    fail = null, zones = 2, quota = null, opfs = true, userAgent = "Chrome", persist = undefined,
+    estimate = {}, options = { pointsPerBlock: 4096 },
+} = {}) {
     const messages = [], handles = [], removed = [], events = [], seen = {};
     let receive;
     const directory = {
@@ -30,16 +33,27 @@ async function run({ fail = null, zones = 2, quota = null } = {}) {
     class CoreConverter {
         static estimate(file, options) {
             seen.estimateOptions = options;
-            return { zones, spilledPeakBytes: 3e9, outputBytes: 1e9 };
+            events.push("estimate");
+            return { zones, spilledPeakBytes: 3e9, outputBytes: 1e9, ramOnlyBytes: 1e9, ...estimate };
         }
         constructor(file, primary, attrs, options, onProgress, spoolHost) {
             assert.notEqual(primary, attrs);
+            seen.constructed = true;
+            seen.handles = { primary, attrs };
             Object.assign(seen, { options, spoolHost, zoneCount: spoolHost.zoneCount });
             this.onProgress = onProgress;
         }
         convert() {
             this.onProgress({ stage: "writing", processedPoints: 1, totalPoints: 2 });
             if (fail) throw fail;
+            if (!opfs) {
+                this.write = (handle, text) => handle.write(new TextEncoder().encode(text), { at: 0 });
+                this.write(seen.handles.primary, "geometry-bytes");
+                this.write(seen.handles.attrs, "attrs");
+                // Validation reads the output back through the same handles.
+                const view = new Uint8Array(64);
+                seen.readBack = seen.handles.primary.read(view, { at: 0 });
+            }
             return { pointCount: "2", blockCount: 3, spool: { spilledBytes: 7 } };
         }
         free() {}
@@ -51,15 +65,21 @@ async function run({ fail = null, zones = 2, quota = null } = {}) {
     vm.runInNewContext(source, {
         self: { addEventListener(_name, callback) { receive = callback; }, postMessage: post },
         navigator: {
+            userAgent,
             storage: {
-                async getDirectory() { return { async getDirectoryHandle() { return directory; } }; },
+                async getDirectory() {
+                    if (!opfs) throw new DOMException("denied", "SecurityError");
+                    return { async getDirectoryHandle() { return directory; } };
+                },
                 async estimate() { return quota; },
+                ...(persist === undefined ? {} : { async persist() { events.push("persist"); return persist; } }),
             },
         },
+        TextEncoder, Uint8Array, Blob,
         crypto: { randomUUID: () => "core-pair" }, performance, setTimeout, Date, DOMException,
         init: async () => {}, WasmLasOctConverter: class {}, WasmCoreConverter: CoreConverter,
     });
-    receive({ data: { type: "convert", engine: "core", options: { pointsPerBlock: 4096 }, file: { name: "source.las" } } });
+    receive({ data: { type: "convert", engine: "core", options, file: { name: "source.las" } } });
     for (let i = 0; i < 20; i++) await new Promise(setImmediate);
     return { messages, handles, removed, events, seen };
 }
@@ -106,4 +126,36 @@ test("a full browser store becomes a clear message and still cleans up", async (
     assert.match(error.message, /not enough browser storage: need about 4\.0 GB, available 2\.5 GB/i);
     assert.ok(handles.every((handle) => handle.closed));
     assert.equal(removed.length, 4);
+});
+
+const GiB = 2 ** 30;
+
+test("without OPFS the conversion runs RAM-only, warns, and delivers the output as Blobs", async () => {
+    const { messages, seen, events } = await run({ opfs: false });
+    assert.equal(seen.zoneCount, 0);
+    assert.equal(seen.readBack, "geometry-bytes".length);
+    assert.ok(!messages.some((message) => message.type === "partial-files"));
+    const warning = messages.find((message) => message.type === "warning");
+    assert.match(warning.message, /without browser storage.*limited to RAM.*http:\/\/localhost/);
+    assert.ok(events.indexOf("post:warning") < events.indexOf("post:progress"));
+    const done = messages.find((message) => message.type === "complete");
+    assert.equal(done.outputName, "source.oct");
+    assert.equal(done.outputAttributesName, "source.octattrs");
+    assert.equal(await done.file.text(), "geometry-bytes");
+    assert.equal(await done.attributesFile.text(), "attrs");
+});
+
+test("without OPFS an estimate above ramBudget is rejected before the converter exists", async () => {
+    const { messages, seen } = await run({ opfs: false, estimate: { ramOnlyBytes: 5e9 } });
+    assert.equal(seen.constructed, undefined);
+    const error = messages.find((message) => message.type === "error");
+    assert.match(error.message, /about 5\.0 GB of RAM but the limit is 4\.0 GB.*http:\/\/localhost/s);
+    assert.ok(!messages.some((message) => message.type === "warning" || message.type === "complete"));
+});
+
+test("ramBudget comes from the options and is capped at 8 GB", async () => {
+    const fits = await run({ opfs: false, estimate: { ramOnlyBytes: 6e9 }, options: { ramBudget: 7e9 } });
+    assert.ok(fits.messages.some((message) => message.type === "complete"));
+    const capped = await run({ opfs: false, estimate: { ramOnlyBytes: 9e9 }, options: { ramBudget: 64e9 } });
+    assert.match(capped.messages.find((message) => message.type === "error").message, /limit is 8\.0 GB/);
 });

@@ -1,5 +1,5 @@
 import init, { WasmCoreConverter, WasmLasOctConverter } from "../../pkg/viewer_wasm.js";
-import { createSpoolHost, removeWithRetry } from "./spool-tiers.mjs";
+import { createMemorySyncHandle, createSpoolHost, removeWithRetry } from "./spool-tiers.mjs";
 
 let cancelRequested = false;
 
@@ -180,10 +180,33 @@ function closeAll(handles) {
     }
 }
 
+const DEFAULT_RAM_BUDGET = 4 * GB;
+const MAX_RAM_BUDGET = 8 * GB;
+const RAM_WARNING = "Running without browser storage: the conversion is limited to RAM. "
+    + "Serve the page over http://localhost for large files.";
+
+function ramBudgetOf(options) {
+    const value = options?.ramBudget;
+    if (value === undefined || value === null) return DEFAULT_RAM_BUDGET;
+    if (!Number.isFinite(value) || value <= 0) throw new Error("option ramBudget must be a positive number of bytes");
+    return Math.min(value, MAX_RAM_BUDGET);
+}
+
+async function openOpfsFiles(directory, names, handles, files) {
+    for (const name of names) {
+        const entry = await directory.getFileHandle(name, { create: true });
+        files.push(entry);
+        const handle = await entry.createSyncAccessHandle();
+        handles.push(handle);
+        handle.truncate(0);
+    }
+}
+
 /**
  * Engine "core": one synchronous call over the shared native-equivalent converter. Cancelling is
  * the host's job (it terminates this worker and deletes the partial files named in `partial-files`).
- * Spill zones are sized from the header estimate; every file is announced before it is created.
+ * With OPFS, spill zones are sized from the header estimate and every file is announced before it
+ * is created. Without OPFS (Chrome `file://`) the conversion runs RAM-only into memory handles.
  */
 async function convertWithCore(file, options) {
     const startedAt = performance.now();
@@ -195,28 +218,39 @@ async function convertWithCore(file, options) {
     let estimate = null;
     try {
         if (!file || !/\.la[sz]$/i.test(file.name)) throw new Error("Choose a .las or .laz file.");
-        if (!navigator.storage?.getDirectory) {
-            throw new Error("This browser does not support the Origin Private File System (OPFS).");
-        }
+        const ramBudget = ramBudgetOf(options);
         await initWasm();
         estimate = WasmCoreConverter.estimate(file, options);
-        const root = await navigator.storage.getDirectory();
-        directory = await root.getDirectoryHandle(PARTIAL_DIRECTORY, { create: true });
-        const id = crypto.randomUUID();
-        const zoneNames = Array.from({ length: estimate.zones }, (_, i) => `conversion-${id}.zone-${i}.partial`);
-        names = [`conversion-${id}.oct.partial`, `conversion-${id}.octattrs.partial`, ...zoneNames];
-        // Announced before the files exist so a cancel can always find what to delete.
-        self.postMessage({ type: "partial-files", directory: PARTIAL_DIRECTORY, names });
+        let root = null;
+        try {
+            root = (await navigator.storage?.getDirectory?.()) ?? null;
+        } catch { /* Chrome file:// rejects: no OPFS */ }
+        const ramOnly = root === null;
         const files = [];
-        for (const name of names) {
-            const entry = await directory.getFileHandle(name, { create: true });
-            files.push(entry);
-            const handle = await entry.createSyncAccessHandle();
-            handles.push(handle);
-            handle.truncate(0);
+        let geometryHandle, attributesHandle, zoneHandles = [], zoneNames = [];
+        if (ramOnly) {
+            if (estimate.ramOnlyBytes > ramBudget) {
+                throw new Error(
+                    `Not enough memory without browser storage: this file needs about ${(estimate.ramOnlyBytes / GB).toFixed(1)} GB `
+                    + `of RAM but the limit is ${(ramBudget / GB).toFixed(1)} GB. Serve the page over http://localhost `
+                    + "(for example python3 -m http.server) so the converter can use disk-backed storage.",
+                );
+            }
+            self.postMessage({ type: "warning", message: RAM_WARNING });
+            geometryHandle = createMemorySyncHandle();
+            attributesHandle = createMemorySyncHandle();
+            spoolHost = createSpoolHost({ zones: [] });
+        } else {
+            directory = await root.getDirectoryHandle(PARTIAL_DIRECTORY, { create: true });
+            const id = crypto.randomUUID();
+            zoneNames = Array.from({ length: estimate.zones }, (_, i) => `conversion-${id}.zone-${i}.partial`);
+            names = [`conversion-${id}.oct.partial`, `conversion-${id}.octattrs.partial`, ...zoneNames];
+            // Announced before the files exist so a cancel can always find what to delete.
+            self.postMessage({ type: "partial-files", directory: PARTIAL_DIRECTORY, names });
+            await openOpfsFiles(directory, names, handles, files);
+            [geometryHandle, attributesHandle, ...zoneHandles] = handles;
+            spoolHost = createSpoolHost({ zones: zoneHandles });
         }
-        const [geometryHandle, attributesHandle, ...zoneHandles] = handles;
-        spoolHost = createSpoolHost({ zones: zoneHandles });
         self.postMessage({ type: "status", message: `Converting ${file.name} locally…` });
         let lastProgressAt = -Infinity;
         const onProgress = (progress) => {
@@ -234,18 +268,29 @@ async function convertWithCore(file, options) {
         converter = null;
         geometryHandle.flush();
         attributesHandle.flush();
-        // Scratch zones go first: removing them releases quota before the output is handed over.
-        closeAll(zoneHandles);
-        spoolHost.dispose();
-        await removeWithRetry(directory, zoneNames).catch(() => {});
-        closeAll([geometryHandle, attributesHandle]);
         const outputName = file.name.replace(/\.(las|laz)$/i, ".oct");
+        const outputAttributesName = outputName.replace(/\.oct$/i, ".octattrs");
+        let outputFile, outputAttributes;
+        if (ramOnly) {
+            spoolHost.dispose();
+            const asFile = (blob, name) => (typeof File === "function" ? new File([blob], name) : blob);
+            outputFile = asFile(geometryHandle.toBlob(), outputName);
+            outputAttributes = asFile(attributesHandle.toBlob(), outputAttributesName);
+        } else {
+            // Scratch zones go first: removing them releases quota before the output is handed over.
+            closeAll(zoneHandles);
+            spoolHost.dispose();
+            await removeWithRetry(directory, zoneNames).catch(() => {});
+            closeAll([geometryHandle, attributesHandle]);
+            outputFile = await files[0].getFile();
+            outputAttributes = await files[1].getFile();
+        }
         self.postMessage({
             type: "complete",
-            file: await files[0].getFile(),
-            attributesFile: await files[1].getFile(),
+            file: outputFile,
+            attributesFile: outputAttributes,
             outputName,
-            outputAttributesName: outputName.replace(/\.oct$/i, ".octattrs"),
+            outputAttributesName,
             points: summary.pointCount,
             blocks: summary.blockCount,
             spool: summary.spool,

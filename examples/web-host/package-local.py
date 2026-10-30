@@ -108,7 +108,7 @@ def main() -> None:
         "await __wbg_init(__CONVERTER_WASM_BYTES__);",
         "converter WASM init",
     )
-    spool_tiers_import = 'import { createSpoolHost, removeWithRetry } from "./spool-tiers.mjs";\n'
+    spool_tiers_import = 'import { createMemorySyncHandle, createSpoolHost, removeWithRetry } from "./spool-tiers.mjs";\n'
     converter_worker_js = require_replace(converter_worker_js, spool_tiers_import, "", "spool tiers import")
     inline_spool_tiers_js = re.sub(r"^export ", "", spool_tiers_js, flags=re.MULTILINE)
     # The page script also needs removeWithRetry (cancel cleanup), so converter-api's import goes too.
