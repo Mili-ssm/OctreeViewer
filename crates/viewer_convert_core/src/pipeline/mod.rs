@@ -2,6 +2,7 @@
 
 pub mod clock;
 pub mod executor;
+pub mod hybrid;
 pub mod laz_chunks;
 pub mod node_job;
 pub mod point_source;
