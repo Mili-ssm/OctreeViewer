@@ -26,7 +26,7 @@ Estado: Aceptada · Fecha: 30-10-2026
 ## Consecuencias
 - La escena llega desfasada entre B y 2B (B = tiempo de construcción: 0,48 s en Majadas, 2,6 s en Belvedere a 8 px).
 - R1-T2 (llegadas agrupadas) queda cancelada: las vistas ya se fusionan en el worker.
-- **Pendiente:** cambiar el valor por defecto (hoy `buildWorker` está apagado) y actualizar la documentación que lo describe como opcional.
+- El valor por defecto se activó en `c58194f`; `buildWorker: false` lo desactiva.
 - +40–60 MiB de PSS; el wasm de construcción ocupa 123–204 MiB.
 
 ## Revisar si

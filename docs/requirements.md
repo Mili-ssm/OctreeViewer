@@ -115,7 +115,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 
 ## Orden de trabajo acordado
 
-1. Fusionar `feat/web-converter-stage4` en `master` tras `scripts/check.sh` (W1).
+1. W1: la etapa 4 está integrada en `master`, sin evidencia registrada del chequeo previo a la integración.
 2. Escala: R3 (cubos en GPU) → R4 (pirámide densa y rejilla global) → R5 (jerarquía paginada y
    remoto) → congelar V7 final ([plan de render](plans/render-y-carga-escala.md)).
 3. API pública y funciones RF-10 a RF-15.
@@ -127,7 +127,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 
 | Pregunta | Resolución | Registro |
 | --- | --- | --- |
-| W1 | Fusionar tras `check.sh`. | Orden de trabajo |
+| W1 | Fusionar tras `check.sh`; etapa 4 integrada, sin evidencia registrada del chequeo previo. | Orden de trabajo |
 | W2 | Pedir `persist()` con mensaje; Firefox es mejor esfuerzo. | RF-29, CON-01 |
 | P1 | Cubos 3D obligatorios. | ADR 0019 |
 | P2 | iGPU 2 GB + 16 GB RAM. | EQ-REF |
