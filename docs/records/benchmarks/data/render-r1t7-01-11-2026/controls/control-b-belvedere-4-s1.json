@@ -1,0 +1,8275 @@
+{
+  "schemaVersion": 3,
+  "startedAt": "2026-11-01T19:49:22.372Z",
+  "probe": "probe-orbit-load",
+  "targetPixels": 4,
+  "orbitMs": 10000,
+  "maxLoadMs": 300000,
+  "buildWorker": true,
+  "browser": "chrome",
+  "adapter": {
+    "vendor": "amd",
+    "architecture": "rdna-3",
+    "device": "",
+    "description": ""
+  },
+  "vulkan": [
+    {
+      "pid": 2536585,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536599,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536600,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536628,
+      "libvulkanRadeon": true,
+      "libvulkanLvp": true,
+      "libLLVM": true,
+      "driFds": 2
+    },
+    {
+      "pid": 2536631,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536645,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536678,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536691,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536693,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    }
+  ],
+  "sceneInputsAtStart": {
+    "buildWorker": true,
+    "camera": [
+      49.99999999999999,
+      50.00000032210938,
+      49.99999999999999,
+      177.5391052434009,
+      1.5707963267948966,
+      0.7853981633974483,
+      86.60254056441379,
+      49.99999999999999,
+      50.00000032210938,
+      49.99999999999999,
+      1
+    ],
+    "viewport": [
+      1280,
+      720
+    ],
+    "voxelBuildLimits": [
+      8000000,
+      268435456
+    ],
+    "targetPx": 4,
+    "colorMode": "rgb",
+    "remoteVisualScale": 0.01649201621495024,
+    "viewEpoch": 1,
+    "appliedEpoch": 13,
+    "lastSentView": {
+      "camera": [
+        49.99999999999999,
+        50.00000032210938,
+        49.99999999999999,
+        177.5391052434009,
+        1.5707963267948966,
+        0.7853981633974483,
+        86.60254056441379,
+        49.99999999999999,
+        50.00000032210938,
+        49.99999999999999,
+        1
+      ],
+      "viewport": [
+        1280,
+        720
+      ],
+      "targetPx": 4
+    },
+    "attributeRange": null,
+    "sceneDigest": "50c99f361d852e4e",
+    "lod": {
+      "minVoxelEdgePixels": 11.77935280795677,
+      "maxVoxelEdgePixels": 15.109920462800147,
+      "oversizedVoxels": 0,
+      "projectionCachePeakEntries": 1689,
+      "voxelBuildBudgetBytes": "268435456",
+      "voxelBuildEstimatedPeakBytes": "33768624",
+      "voxelInstanceCapacityBytes": "50760",
+      "targetVoxelPixels": 4,
+      "visibleBlocks": 77,
+      "visiblePoints": "292006",
+      "renderedVoxels": 1269,
+      "voxelBudget": 8000000,
+      "lodStagePixels": 16,
+      "maxVisibleLevel": 3,
+      "cacheBytes": "4674560",
+      "cacheBudgetBytes": "268435456",
+      "pendingBlockIds": [
+        "274",
+        "850",
+        "1204",
+        "1342"
+      ],
+      "uncoveredNodes": 4,
+      "coverageComplete": false,
+      "budgetOmittedNodes": 0,
+      "refinementWork": {
+        "updateCalls": 13,
+        "blockLoadCalls": 13,
+        "loadedBlocks": 0,
+        "evictedPendingBlocks": 0,
+        "sceneBuilds": 9,
+        "prefixRebuilds": 0,
+        "prefixVoxelBuildMs": 0,
+        "reusedSceneUpdates": 1,
+        "selections": 2,
+        "prepares": 14,
+        "selectionsPerUpdate": 0.15384615384615385,
+        "preparesPerUpdate": 1.0769230769230769,
+        "selectionMs": 4.4000000059604645,
+        "planningMs": 18.599999964237213,
+        "blockLoadMs": 0.10000002384185791,
+        "rangeReadMs": 0,
+        "decodeAndOtherCpuMs": 0.10000002384185791,
+        "voxelBuildMs": 81.69999998807907,
+        "uploadMs": 0,
+        "unchangedCutBuilds": 0,
+        "reusableSceneBuilds": 0,
+        "reusableVoxelBuildMs": 0,
+        "rangeReadCalls": 0,
+        "rangeReadBytes": "0",
+        "voxelSourcePoints": "421277",
+        "reusableVoxelSourcePoints": "0",
+        "reusedSourcePoints": "78",
+        "prefixRetainedSourcePoints": "0",
+        "prefixAddedSourcePoints": "0"
+      },
+      "cacheActivity": {
+        "insertions": "77",
+        "evictions": "0",
+        "rejectedOversize": "0",
+        "rejectedProtected": "0"
+      },
+      "pendingTargetEvictions": 0,
+      "cacheCycleDetected": false,
+      "lodError": null,
+      "sceneDigest": "50c99f361d852e4e",
+      "attributeRange": null
+    }
+  },
+  "vulkanDuringRender": [
+    {
+      "pid": 2536585,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536599,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536600,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536628,
+      "libvulkanRadeon": true,
+      "libvulkanLvp": true,
+      "libLLVM": true,
+      "driFds": 2
+    },
+    {
+      "pid": 2536631,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536645,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536678,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536691,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    },
+    {
+      "pid": 2536693,
+      "libvulkanRadeon": false,
+      "libvulkanLvp": false,
+      "libLLVM": false,
+      "driFds": 0
+    }
+  ],
+  "targetReached": false,
+  "finalStatus": "first coarse frame 91 ms · target refining · stage 4 px",
+  "loadElapsedMs": 301303,
+  "loadStartEpoch": 1793562563359.2,
+  "endEpoch": 1793562864707.2,
+  "phases": [
+    {
+      "label": "during-load",
+      "startEpoch": 1793562563662.0999,
+      "endEpoch": 1793562574097.4,
+      "requestedMs": 10000,
+      "stepMs": 16,
+      "emptyPixelCaptures": [],
+      "summary": {
+        "replies": 626,
+        "intervalMs": {
+          "count": 625,
+          "p50": 16.699951171875,
+          "p95": 17.400146484375,
+          "max": 18.400146484375
+        },
+        "roundTripMs": {
+          "count": 626,
+          "p50": 0.5,
+          "p95": 0.9000000059604645,
+          "max": 1.4000000059604645
+        },
+        "renderCallMs": {
+          "count": 626,
+          "p50": 0.20000001788139343,
+          "p95": 0.4000000059604645,
+          "max": 1
+        }
+      }
+    }
+  ],
+  "wholeRunFrames": {
+    "replies": 18080,
+    "intervalMs": {
+      "count": 18079,
+      "p50": 16.699951171875,
+      "p95": 17.199951171875,
+      "max": 20
+    },
+    "roundTripMs": {
+      "count": 18080,
+      "p50": 0.30000001192092896,
+      "p95": 1.100000023841858,
+      "max": 3.2999999821186066
+    },
+    "renderCallMs": {
+      "count": 18080,
+      "p50": 0.10000002384185791,
+      "p95": 0.30000001192092896,
+      "max": 1.800000011920929
+    }
+  },
+  "workerMetrics": {
+    "timeOrigin": 1793562562477.3,
+    "busyByMessage": {
+      "init": {
+        "count": 1,
+        "busyMs": 106.2999999821186,
+        "maxBusyMs": 106.2999999821186,
+        "queueWaitMs": 0.30000001192092896,
+        "maxQueueWaitMs": 0.30000001192092896
+      },
+      "resize": {
+        "count": 2,
+        "busyMs": 0.9000000357627869,
+        "maxBusyMs": 0.800000011920929,
+        "queueWaitMs": 0.09999999403953552,
+        "maxQueueWaitMs": 0.09999999403953552
+      },
+      "frame": {
+        "count": 18111,
+        "busyMs": 4097.700000762939,
+        "maxBusyMs": 2.899999976158142,
+        "queueWaitMs": 229.89999997615814,
+        "maxQueueWaitMs": 1
+      },
+      "openFile": {
+        "count": 1,
+        "busyMs": 0.9000000059604645,
+        "maxBusyMs": 0.9000000059604645,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "build:opened": {
+        "count": 1,
+        "busyMs": 1,
+        "maxBusyMs": 1,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "build:lod": {
+        "count": 4,
+        "busyMs": 0.7000000476837158,
+        "maxBusyMs": 0.6000000238418579,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "buildScene": {
+        "count": 119,
+        "busyMs": 177.40000015497208,
+        "maxBusyMs": 3.2999999821186066,
+        "queueWaitMs": 0.20000001788139343,
+        "maxQueueWaitMs": 0.10000002384185791
+      },
+      "api:getCamera": {
+        "count": 1,
+        "busyMs": 0.30000001192092896,
+        "maxBusyMs": 0.30000001192092896,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "api:sceneInputs": {
+        "count": 1,
+        "busyMs": 0.4000000059604645,
+        "maxBusyMs": 0.4000000059604645,
+        "queueWaitMs": 0,
+        "maxQueueWaitMs": 0
+      },
+      "api:getStats": {
+        "count": 146,
+        "busyMs": 19.80000001192093,
+        "maxBusyMs": 0.3999999761581421,
+        "queueWaitMs": 1.0999999940395355,
+        "maxQueueWaitMs": 0.10000002384185791
+      }
+    },
+    "frameQueueWaitMs": {
+      "count": 8192,
+      "p50": 0,
+      "p95": 0.09999999403953552,
+      "max": 0.20000001788139343
+    },
+    "asyncBlocks": {
+      "blocks": 622,
+      "readMs": 1159385.3999997973,
+      "decodeMs": 1285.7000001072884,
+      "maxDecodeMs": 21.69999998807907,
+      "insertMs": 56.29999998211861,
+      "maxInsertMs": 1
+    },
+    "lodLog": [
+      {
+        "time": 1793562563470.8,
+        "source": "dataset",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 81,
+        "pendingBlocks": 81,
+        "visibleBlocks": 0,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563476.1,
+        "source": "lod",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 81,
+        "pendingBlocks": 81,
+        "visibleBlocks": 0,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563477.7,
+        "source": "lod",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 81,
+        "pendingBlocks": 81,
+        "visibleBlocks": 0,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563487.5,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 77,
+        "pendingBlocks": 77,
+        "visibleBlocks": 4,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563488.3,
+        "source": "lod",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 77,
+        "pendingBlocks": 77,
+        "visibleBlocks": 4,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563492.4001,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 73,
+        "pendingBlocks": 73,
+        "visibleBlocks": 8,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563500.7,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 62,
+        "pendingBlocks": 62,
+        "visibleBlocks": 19,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563510.3,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 48,
+        "pendingBlocks": 48,
+        "visibleBlocks": 33,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563520.7,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 38,
+        "pendingBlocks": 38,
+        "visibleBlocks": 43,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563534,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 22,
+        "pendingBlocks": 22,
+        "visibleBlocks": 59,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563552,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 9,
+        "pendingBlocks": 9,
+        "visibleBlocks": 72,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563589.5,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 6,
+        "pendingBlocks": 6,
+        "visibleBlocks": 75,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563656.7,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 4,
+        "pendingBlocks": 4,
+        "visibleBlocks": 77,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563764.4001,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 2,
+        "pendingBlocks": 2,
+        "visibleBlocks": 79,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563851.6,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 1,
+        "pendingBlocks": 1,
+        "visibleBlocks": 80,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562563959.2,
+        "source": "scene",
+        "stagePx": 16,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 0,
+        "visibleBlocks": 81,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562564204.2,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 243,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 306,
+        "visibleBlocks": 81,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562564451.6,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 243,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 296,
+        "visibleBlocks": 93,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562564699.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 243,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 283,
+        "visibleBlocks": 106,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562564947,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 243,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 271,
+        "visibleBlocks": 116,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562565193.6,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 243,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 251,
+        "visibleBlocks": 129,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562565445.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 329,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 234,
+        "visibleBlocks": 141,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562565708.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 331,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 219,
+        "visibleBlocks": 150,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562565962.3,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 309,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 205,
+        "visibleBlocks": 166,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562566269.4001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 151,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 201,
+        "visibleBlocks": 171,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562566589.7,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 484,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 188,
+        "visibleBlocks": 191,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562566903.6,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 93,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 165,
+        "visibleBlocks": 196,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562567215,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 100,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 151,
+        "visibleBlocks": 219,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562567530.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 124,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 141,
+        "visibleBlocks": 232,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562567845.4001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 101,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 129,
+        "visibleBlocks": 247,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562568173.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 92,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 125,
+        "visibleBlocks": 255,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562568505.6,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 92,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 120,
+        "visibleBlocks": 262,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562568837.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 92,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 116,
+        "visibleBlocks": 266,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562569177,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 92,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 105,
+        "visibleBlocks": 255,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562569489.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 204,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 97,
+        "visibleBlocks": 254,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562569898.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 362,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 99,
+        "visibleBlocks": 263,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562570290.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 132,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 92,
+        "visibleBlocks": 263,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562570706.6,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 39,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 91,
+        "visibleBlocks": 271,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562571049.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 43,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 92,
+        "visibleBlocks": 282,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562571436.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 26,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 89,
+        "visibleBlocks": 281,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562571939.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 30,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 83,
+        "visibleBlocks": 280,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562572512.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 79,
+        "visibleBlocks": 279,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562573093.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 407,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 75,
+        "visibleBlocks": 284,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562573671.7,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 78,
+        "visibleBlocks": 282,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562574335.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 247,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 73,
+        "visibleBlocks": 276,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562575010.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 72,
+        "visibleBlocks": 288,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562575716.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 69,
+        "visibleBlocks": 290,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562576514,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 66,
+        "visibleBlocks": 291,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562577155.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 64,
+        "visibleBlocks": 293,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562577768.7,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 62,
+        "visibleBlocks": 294,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562578555.2,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 59,
+        "visibleBlocks": 295,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562579644.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 56,
+        "visibleBlocks": 296,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562580743.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 54,
+        "visibleBlocks": 297,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562582017.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 25,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 52,
+        "visibleBlocks": 299,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562583416.3,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 22,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 49,
+        "visibleBlocks": 302,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562584985.4001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 19,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 45,
+        "visibleBlocks": 305,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562586508.2,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 19,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 41,
+        "visibleBlocks": 305,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562587804.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 13,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 37,
+        "visibleBlocks": 306,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562589231.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 13,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 33,
+        "visibleBlocks": 309,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562590715.4001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 10,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 30,
+        "visibleBlocks": 309,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562592278.4001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 10,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 28,
+        "visibleBlocks": 309,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562593904.5,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 10,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 26,
+        "visibleBlocks": 310,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562595542.7,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 10,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 24,
+        "visibleBlocks": 310,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562597281.6,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 10,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 22,
+        "visibleBlocks": 310,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562599145.1,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 7,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 19,
+        "visibleBlocks": 310,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562601034,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 7,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 18,
+        "visibleBlocks": 310,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562603068.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 7,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 15,
+        "visibleBlocks": 311,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562605161.7,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 7,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 14,
+        "visibleBlocks": 312,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562607391.8,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 7,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 11,
+        "visibleBlocks": 312,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562609608.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 7,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 10,
+        "visibleBlocks": 312,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562611975.4001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 4,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 7,
+        "visibleBlocks": 312,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562614364.3,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 4,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 6,
+        "visibleBlocks": 312,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562616939.9001,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 4,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 3,
+        "visibleBlocks": 313,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562619537,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 4,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 2,
+        "visibleBlocks": 313,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562622221,
+        "source": "scene",
+        "stagePx": 8,
+        "targetPx": 4,
+        "oversizedVoxels": 0,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 0,
+        "visibleBlocks": 313,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562626737.7,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 460,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 840,
+        "visibleBlocks": 318,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562631221.8,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 460,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 836,
+        "visibleBlocks": 322,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562635742.5,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 460,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 828,
+        "visibleBlocks": 330,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562640326.5,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 370,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 817,
+        "visibleBlocks": 341,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562644943.4001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 370,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 807,
+        "visibleBlocks": 351,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562649446.2,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 370,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 797,
+        "visibleBlocks": 361,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562653923.5,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 370,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 789,
+        "visibleBlocks": 369,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562658385.6,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 370,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 780,
+        "visibleBlocks": 378,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562662855,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 370,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 772,
+        "visibleBlocks": 386,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562667640.8,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 369,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 765,
+        "visibleBlocks": 393,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562674071.7,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 369,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 760,
+        "visibleBlocks": 398,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562678749.2,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 369,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 756,
+        "visibleBlocks": 402,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562683200.2,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 369,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 750,
+        "visibleBlocks": 408,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562687670.7,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 369,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 743,
+        "visibleBlocks": 415,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562693484.4001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 369,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 739,
+        "visibleBlocks": 419,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562697976.2,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 329,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 733,
+        "visibleBlocks": 425,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562702606.1,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 327,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 727,
+        "visibleBlocks": 431,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562707237.9001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 327,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 723,
+        "visibleBlocks": 435,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562711897.1,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 327,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 720,
+        "visibleBlocks": 438,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562716532.7,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 716,
+        "visibleBlocks": 442,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562721178.9001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 712,
+        "visibleBlocks": 446,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562725846.8,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 707,
+        "visibleBlocks": 451,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562730547.7,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 703,
+        "visibleBlocks": 455,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562735287.9001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 700,
+        "visibleBlocks": 458,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562739874.9001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 696,
+        "visibleBlocks": 462,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562744541.3,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 692,
+        "visibleBlocks": 466,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562749197.2,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 687,
+        "visibleBlocks": 471,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562753918.6,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 683,
+        "visibleBlocks": 475,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562758760.8,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 679,
+        "visibleBlocks": 479,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562763532.1,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 675,
+        "visibleBlocks": 483,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562768337.1,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 319,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 671,
+        "visibleBlocks": 487,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562773192.5,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 250,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 667,
+        "visibleBlocks": 491,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562778149.3,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 250,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 663,
+        "visibleBlocks": 495,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562783071.9001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 660,
+        "visibleBlocks": 498,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562788044.3,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 656,
+        "visibleBlocks": 502,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562793013.6,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 652,
+        "visibleBlocks": 506,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562798016.9001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 648,
+        "visibleBlocks": 510,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562802999.7,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 644,
+        "visibleBlocks": 514,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562808016.6,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 640,
+        "visibleBlocks": 518,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562813071.6,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 636,
+        "visibleBlocks": 522,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562818172.6,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 632,
+        "visibleBlocks": 526,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562823371.2,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 628,
+        "visibleBlocks": 530,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562828579,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 624,
+        "visibleBlocks": 534,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562834194,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 620,
+        "visibleBlocks": 538,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562840343.4001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 616,
+        "visibleBlocks": 542,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562847014.3,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 612,
+        "visibleBlocks": 546,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562854430.4001,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 610,
+        "visibleBlocks": 548,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      },
+      {
+        "time": 1793562861994.1,
+        "source": "scene",
+        "stagePx": 4,
+        "targetPx": 4,
+        "oversizedVoxels": 196,
+        "uncoveredNodes": 0,
+        "pendingBlocks": 608,
+        "visibleBlocks": 550,
+        "pendingTargetEvictions": 0,
+        "cacheCycleDetected": false
+      }
+    ],
+    "lodLogDropped": 0,
+    "buildWorkerEnabled": true,
+    "sceneDigest": "ee5f64116d8ceacb",
+    "sceneAgeMs": {
+      "count": 32,
+      "p50": 326.30000001192093,
+      "p95": 674.8000000119209,
+      "max": 916.3999999761581
+    },
+    "epochLag": {
+      "count": 119,
+      "p50": 0,
+      "p95": 25,
+      "max": 35
+    },
+    "sceneApplyMs": {
+      "count": 119,
+      "p50": 0.9000000059604645,
+      "p95": 1.899999976158142,
+      "max": 2.2000000178813934,
+      "totalMs": 118.00000002980232
+    },
+    "viewsSent": 623,
+    "viewsCoalesced": 590,
+    "scenesApplied": 119,
+    "scenesDropped": 0,
+    "buildWorkerSpawns": 1,
+    "wasmLinearMemoryBytes": {
+      "render": 3670016,
+      "build": 273088512
+    },
+    "buildWorker": {
+      "timeOrigin": 1793562562598.9,
+      "busyByMessage": {
+        "init": {
+          "count": 1,
+          "busyMs": 14.300000011920929,
+          "maxBusyMs": 14.300000011920929
+        },
+        "open": {
+          "count": 1,
+          "busyMs": 53.599999994039536,
+          "maxBusyMs": 53.599999994039536
+        },
+        "view": {
+          "count": 623,
+          "busyMs": 0.6000000238418579,
+          "maxBusyMs": 0.10000002384185791
+        },
+        "build": {
+          "count": 124,
+          "busyMs": 304114.5000000894,
+          "maxBusyMs": 7553.0999999940395
+        },
+        "asyncInsert": {
+          "count": 622,
+          "busyMs": 56.29999998211861,
+          "maxBusyMs": 1
+        }
+      },
+      "asyncBlocks": {
+        "blocks": 622,
+        "readMs": 1159385.3999997973,
+        "decodeMs": 1285.7000001072884,
+        "maxDecodeMs": 21.69999998807907,
+        "insertMs": 56.29999998211861,
+        "maxInsertMs": 1
+      },
+      "build": {
+        "builds": 124,
+        "scenes": 120,
+        "reused": 4,
+        "buildMs": 304114.5000000894,
+        "maxBuildMs": 7553.0999999940395,
+        "viewsReceived": 623,
+        "viewsCoalesced": 590
+      },
+      "wasmLinearMemoryBytes": 273088512
+    }
+  },
+  "buildWorkerMetrics": {
+    "sceneAgeMs": {
+      "count": 32,
+      "p50": 326.30000001192093,
+      "p95": 674.8000000119209,
+      "max": 916.3999999761581
+    },
+    "epochLag": {
+      "count": 119,
+      "p50": 0,
+      "p95": 25,
+      "max": 35
+    },
+    "viewsSent": 623,
+    "viewsCoalesced": 590,
+    "scenesApplied": 119,
+    "scenesDropped": 0,
+    "sceneApplyMs": {
+      "count": 119,
+      "p50": 0.9000000059604645,
+      "p95": 1.899999976158142,
+      "max": 2.2000000178813934,
+      "totalMs": 118.00000002980232
+    },
+    "buildBusyByMessage": {
+      "init": {
+        "count": 1,
+        "busyMs": 14.300000011920929,
+        "maxBusyMs": 14.300000011920929
+      },
+      "open": {
+        "count": 1,
+        "busyMs": 53.599999994039536,
+        "maxBusyMs": 53.599999994039536
+      },
+      "view": {
+        "count": 623,
+        "busyMs": 0.6000000238418579,
+        "maxBusyMs": 0.10000002384185791
+      },
+      "build": {
+        "count": 124,
+        "busyMs": 304114.5000000894,
+        "maxBusyMs": 7553.0999999940395
+      },
+      "asyncInsert": {
+        "count": 622,
+        "busyMs": 56.29999998211861,
+        "maxBusyMs": 1
+      }
+    },
+    "build": {
+      "builds": 124,
+      "scenes": 120,
+      "reused": 4,
+      "buildMs": 304114.5000000894,
+      "maxBuildMs": 7553.0999999940395,
+      "viewsReceived": 623,
+      "viewsCoalesced": 590
+    },
+    "asyncBlocks": {
+      "blocks": 622,
+      "readMs": 1159385.3999997973,
+      "decodeMs": 1285.7000001072884,
+      "maxDecodeMs": 21.69999998807907,
+      "insertMs": 56.29999998211861,
+      "maxInsertMs": 1
+    },
+    "wasmLinearMemoryBytes": {
+      "render": 3670016,
+      "build": 273088512
+    }
+  },
+  "counters": {
+    "sceneBuilds": 120,
+    "voxelSourcePoints": "947250655",
+    "loadedBlocks": 0,
+    "evictedPendingBlocks": 0,
+    "uncoveredNodes": 0,
+    "oversizedVoxels": 196
+  },
+  "lodFinal": {
+    "refinementWork": {
+      "updateCalls": 124,
+      "blockLoadCalls": 122,
+      "loadedBlocks": 0,
+      "evictedPendingBlocks": 0,
+      "sceneBuilds": 120,
+      "prefixRebuilds": 0,
+      "prefixVoxelBuildMs": 0,
+      "reusedSceneUpdates": 1,
+      "selections": 35,
+      "prepares": 125,
+      "selectionsPerUpdate": 0.28225806451612906,
+      "preparesPerUpdate": 1.0080645161290323,
+      "selectionMs": 18.000000089406967,
+      "planningMs": 162.39999997615814,
+      "blockLoadMs": 0.10000002384185791,
+      "rangeReadMs": 0,
+      "decodeAndOtherCpuMs": 0.10000002384185791,
+      "voxelBuildMs": 303804.59999993443,
+      "uploadMs": 0,
+      "unchangedCutBuilds": 1,
+      "reusableSceneBuilds": 0,
+      "reusableVoxelBuildMs": 0,
+      "rangeReadCalls": 0,
+      "rangeReadBytes": "0",
+      "voxelSourcePoints": "947250655",
+      "reusableVoxelSourcePoints": "0",
+      "reusedSourcePoints": "78",
+      "prefixRetainedSourcePoints": "0",
+      "prefixAddedSourcePoints": "0"
+    },
+    "pendingTargetEvictions": 0,
+    "cacheCycleDetected": false
+  },
+  "metadata": {
+    "name": "belvedere.oct",
+    "bytes": 981063326,
+    "nodeCount": 1343,
+    "sourcePointCount": "81682329"
+  },
+  "idleGpuBusyPercent": [
+    0,
+    2,
+    3,
+    4
+  ],
+  "gpuBusy": {
+    "files": [
+      "/sys/class/drm/card1/device/gpu_busy_percent"
+    ],
+    "sampleCount": 1228,
+    "max": 14,
+    "mean": 11.32899022801303,
+    "samples": [
+      {
+        "t": 1793562562120,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562562370,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562562620,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793562562870,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793562563120,
+        "card": "card1",
+        "percent": 4
+      },
+      {
+        "t": 1793562563371,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793562563655,
+        "card": "card1",
+        "percent": 5
+      },
+      {
+        "t": 1793562563905,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1793562564155,
+        "card": "card1",
+        "percent": 7
+      },
+      {
+        "t": 1793562564405,
+        "card": "card1",
+        "percent": 8
+      },
+      {
+        "t": 1793562564656,
+        "card": "card1",
+        "percent": 9
+      },
+      {
+        "t": 1793562564906,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562565156,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562565406,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562565656,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562565906,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562566156,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562566406,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562566656,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562566906,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562567156,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562567406,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562567656,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562567906,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562568156,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562568406,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562568656,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562568906,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562569156,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562569405,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562569656,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562569906,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562570156,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562570406,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562570656,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562570907,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562571157,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562571407,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562571657,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562571906,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562572157,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562572407,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562572657,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562572907,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562573158,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562573407,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562573658,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562573908,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562574158,
+        "card": "card1",
+        "percent": 14
+      },
+      {
+        "t": 1793562574409,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562574659,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562574909,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562575159,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562575409,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562575659,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562575910,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562576160,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562576410,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562576661,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562576911,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562577161,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562577412,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562577663,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562577914,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562578164,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562578414,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562578665,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562578915,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562579166,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562579416,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562579667,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562579917,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562580167,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562580418,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562580668,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562580919,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562581170,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562581422,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562581673,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562581923,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562582174,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562582424,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562582675,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562582926,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562583177,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562583428,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562583679,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562583929,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562584179,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562584430,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562584680,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562584931,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562585181,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562585431,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562585681,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562585931,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562586181,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562586431,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562586681,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562586931,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562587182,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562587432,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562587683,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562587934,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562588185,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562588435,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562588686,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562588937,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562589188,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562589438,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562589688,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562589938,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562590188,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562590439,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562590690,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562590942,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562591192,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562591444,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562591694,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562591944,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562592194,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562592445,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562592695,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562592947,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562593197,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562593447,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562593698,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562593948,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562594199,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562594450,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562594700,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562594951,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562595201,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562595451,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562595702,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562595952,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562596202,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562596452,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562596702,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562596953,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562597204,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562597455,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562597706,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562597957,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562598207,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562598457,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562598709,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562598960,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562599210,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562599461,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562599712,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562599963,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562600214,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562600466,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562600717,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562600967,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562601219,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562601469,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562601720,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562601971,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562602222,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562602474,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562602725,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562602975,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562603225,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562603475,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562603726,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562603977,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562604229,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562604479,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562604730,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562604981,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562605231,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562605481,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562605731,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562605982,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562606232,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562606482,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562606733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562606983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562607233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562607483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562607733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562607983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562608233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562608483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562608733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562608983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562609233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562609483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562609733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562609983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562610233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562610483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562610733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562610983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562611233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562611483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562611733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562611983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562612233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562612483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562612733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562612983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562613233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562613483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562613733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562613983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562614233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562614483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562614733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562614983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562615233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562615483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562615733,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562615983,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562616233,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562616483,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562616734,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562616984,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562617234,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562617484,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562617734,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562617984,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562618234,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562618484,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562618735,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562618985,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562619235,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562619485,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562619735,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562619985,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562620235,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562620486,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562620736,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562620986,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562621236,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562621487,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562621738,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562621990,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562622240,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562622491,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562622741,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562622992,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562623243,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562623494,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562623744,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562623995,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562624246,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562624496,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562624746,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562624996,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562625247,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562625498,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562625750,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562626000,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562626252,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562626502,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562626753,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562627003,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562627253,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562627503,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562627753,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562628004,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562628254,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562628504,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562628755,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562629005,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562629256,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562629507,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562629757,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562630007,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562630258,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562630508,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562630759,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562631009,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562631259,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562631509,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562631759,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562632009,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562632259,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562632509,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562632759,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562633009,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562633259,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562633509,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562633759,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562634009,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562634259,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562634509,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562634760,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562635010,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562635260,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562635510,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562635760,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562636010,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562636260,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562636511,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562636761,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562637011,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562637261,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562637512,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562637763,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562638014,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562638264,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562638514,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562638764,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562639015,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562639265,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562639516,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562639766,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562640016,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562640266,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562640516,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562640766,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562641016,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562641267,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562641517,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562641768,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562642019,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562642269,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562642520,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562642771,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562643021,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562643273,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562643523,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562643774,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562644025,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562644276,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562644527,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562644778,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562645028,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562645279,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562645529,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562645780,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562646032,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562646282,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562646532,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562646783,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562647033,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562647285,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562647536,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562647786,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562648038,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562648288,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562648539,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562648789,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562649039,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562649289,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562649540,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562649790,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562650040,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562650290,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562650541,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562650791,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562651041,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562651291,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562651541,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562651791,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562652041,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562652291,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562652541,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562652791,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562653041,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562653291,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562653541,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562653791,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562654041,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562654291,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562654541,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562654792,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562655042,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562655292,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562655542,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562655792,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562656042,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562656292,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562656542,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562656792,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562657042,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562657292,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562657543,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562657793,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562658043,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562658293,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562658543,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562658793,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562659043,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562659293,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562659543,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562659793,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562660043,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562660294,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562660544,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562660795,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562661045,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562661296,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562661547,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562661798,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562662048,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562662298,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562662549,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562662799,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562663050,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562663301,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562663552,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562663803,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562664053,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562664304,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562664555,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562664806,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562665057,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562665308,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562665559,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562665810,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562666061,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562666311,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562666561,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562666812,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562667063,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562667315,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562667565,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562667816,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562668066,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562668317,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562668567,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562668817,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562669068,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562669318,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562669569,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562669819,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562670071,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562670321,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562670572,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562670822,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562671073,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562671323,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562671573,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562671823,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562672074,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562672324,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562672575,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562672826,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562673077,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562673327,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562673578,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562673828,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562674078,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562674328,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562674578,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562674828,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562675078,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562675328,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562675578,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562675828,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562676078,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562676328,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562676579,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562676830,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562677081,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562677332,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562677583,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562677834,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562678085,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562678336,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562678586,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562678837,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562679088,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562679339,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562679589,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562679840,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562680091,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562680342,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562680592,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562680842,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562681092,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562681342,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562681593,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562681844,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562682095,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562682346,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562682598,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562682849,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562683100,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562683351,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562683602,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562683853,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562684104,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562684356,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562684606,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562684856,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562685106,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562685358,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562685608,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562685859,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562686110,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562686360,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562686610,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562686860,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562687110,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562687360,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562687611,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562687861,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562688112,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562688362,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562688612,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562688862,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562689112,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562689363,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562689614,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562689864,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562690115,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562690366,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562690616,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562690866,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562691117,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562691367,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562691617,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562691867,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562692117,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562692367,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562692618,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562692868,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562693118,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562693370,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562693620,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562693870,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562694121,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562694373,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562694624,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562694874,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562695125,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562695375,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562695626,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562695876,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562696127,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562696378,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562696629,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562696880,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562697131,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562697382,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562697633,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562697884,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562698135,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562698385,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562698636,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562698887,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562699138,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562699388,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562699639,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562699889,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562700139,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562700389,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562700639,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562700890,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562701140,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562701392,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562701643,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562701894,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562702145,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562702396,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562702646,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562702896,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562703146,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562703396,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562703647,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562703898,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562704148,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562704398,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562704649,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562704900,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562705151,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562705402,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562705653,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562705903,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562706155,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562706406,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562706658,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562706909,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562707160,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562707410,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562707660,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562707910,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562708161,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562708412,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562708662,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562708913,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562709164,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562709414,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562709664,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562709915,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562710165,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562710415,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562710665,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562710916,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562711166,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562711417,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562711668,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562711918,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562712168,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562712418,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562712668,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562712919,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562713169,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562713421,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562713671,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562713922,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562714173,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562714423,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562714675,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562714925,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562715177,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562715428,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562715679,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562715929,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562716180,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562716430,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562716682,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562716933,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562717183,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562717435,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562717685,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562717937,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562718188,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562718438,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562718688,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562718940,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562719190,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562719441,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562719692,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562719942,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562720193,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562720443,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562720694,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562720945,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562721195,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562721447,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562721698,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562721949,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562722200,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562722450,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562722700,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562722951,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562723202,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562723453,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562723704,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562723954,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562724205,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562724456,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562724707,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562724958,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562725209,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562725459,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562725711,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562725963,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562726214,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562726463,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562726715,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562726966,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562727217,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562727468,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562727720,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562727970,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562728220,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562728469,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562728720,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562728970,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562729221,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562729472,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562729723,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562729973,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562730224,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562730474,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562730725,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562730975,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562731226,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562731476,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562731727,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562731978,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562732228,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562732479,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562732730,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562732980,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562733230,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562733481,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562733731,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562733981,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562734232,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562734483,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562734735,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562734985,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562735237,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562735487,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562735737,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562735987,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562736237,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562736487,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562736738,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562736988,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562737238,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562737489,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562737740,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562737991,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562738241,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562738491,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562738743,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562738993,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562739244,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562739495,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562739747,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562739998,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562740249,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562740499,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562740749,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562741000,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562741250,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562741500,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562741752,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562742003,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562742253,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562742504,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562742755,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562743006,
+        "card": "card1",
+        "percent": 13
+      },
+      {
+        "t": 1793562743257,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562743508,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562743759,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562744010,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562744260,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562744511,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562744761,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562745012,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562745263,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562745513,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562745764,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562746014,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562746265,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562746515,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562746765,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562747015,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562747265,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562747515,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562747766,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562748017,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562748268,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562748519,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562748769,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562749019,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562749271,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562749522,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562749773,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562750023,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562750273,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562750524,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562750774,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562751024,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562751274,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562751524,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562751774,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562752024,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562752274,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562752525,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562752775,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562753025,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562753275,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562753525,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562753776,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562754026,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562754276,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562754526,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562754776,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562755026,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562755276,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562755526,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562755777,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562756027,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562756277,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562756527,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562756777,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562757028,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562757278,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562757528,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562757778,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562758028,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562758278,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562758528,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562758778,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562759028,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562759278,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562759528,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562759778,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562760028,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562760278,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562760528,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562760778,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562761029,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562761279,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562761529,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562761779,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562762029,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562762280,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562762530,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562762781,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562763031,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562763281,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562763531,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562763781,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562764031,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562764281,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562764531,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562764781,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562765031,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562765282,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562765532,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562765783,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562766033,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562766283,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562766534,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562766784,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562767035,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562767285,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562767536,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562767787,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562768037,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562768288,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562768538,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562768788,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562769038,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562769289,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562769540,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562769791,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562770043,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562770293,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562770544,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562770795,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562771046,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562771297,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562771548,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562771799,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562772051,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562772302,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562772552,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562772802,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562773052,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562773302,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562773552,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562773802,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562774053,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562774303,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562774553,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562774803,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562775054,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562775304,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562775554,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562775804,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562776054,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562776304,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562776554,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562776804,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562777055,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562777305,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562777555,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562777805,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562778055,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562778305,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562778555,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562778806,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562779056,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562779306,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562779556,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562779806,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562780056,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562780306,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562780556,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562780806,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562781057,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562781307,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562781558,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562781808,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562782058,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562782308,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562782558,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562782808,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562783058,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562783308,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562783558,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562783808,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562784058,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562784308,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562784558,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562784810,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562785060,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562785310,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562785560,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562785811,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562786062,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562786312,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562786562,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562786812,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562787062,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562787313,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562787563,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562787814,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562788064,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562788314,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562788565,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562788816,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562789067,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562789317,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562789568,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562789819,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562790070,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562790321,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562790572,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562790822,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562791072,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562791322,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562791573,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562791824,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562792074,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562792325,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562792576,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562792827,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562793077,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562793328,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562793578,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562793828,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562794080,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562794330,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562794580,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562794830,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562795080,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562795331,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562795582,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562795832,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562796082,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562796332,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562796582,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562796832,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562797082,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562797332,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562797582,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562797832,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562798082,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562798332,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562798582,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562798832,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562799082,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562799332,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562799583,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562799833,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562800085,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562800335,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562800585,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562800835,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562801085,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562801335,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562801585,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562801835,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562802085,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562802335,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562802585,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562802835,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562803085,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562803335,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562803586,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562803836,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562804086,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562804337,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562804587,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562804837,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562805087,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562805337,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562805587,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562805838,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562806089,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562806339,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562806589,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562806840,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562807091,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562807341,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562807591,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562807841,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562808092,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562808342,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562808592,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562808842,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562809093,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562809344,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562809595,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562809846,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562810097,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562810347,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562810598,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562810849,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562811100,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562811350,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562811601,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562811851,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562812101,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562812352,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562812602,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562812853,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562813104,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562813354,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562813605,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562813856,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562814106,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562814356,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562814606,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562814857,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562815107,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562815357,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562815607,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562815858,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562816108,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562816358,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562816609,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562816859,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562817109,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562817359,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562817610,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562817860,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562818111,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562818361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562818611,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562818861,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562819111,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562819361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562819611,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562819861,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562820111,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562820361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562820611,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562820861,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562821111,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562821361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562821611,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562821861,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562822111,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562822361,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562822611,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562822861,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562823111,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562823361,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562823611,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562823861,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562824111,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562824361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562824611,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562824861,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562825111,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562825361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562825611,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562825861,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562826111,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562826361,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562826611,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562826861,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562827111,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562827362,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562827612,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562827862,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562828112,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562828363,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562828613,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562828863,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562829114,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562829364,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562829614,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562829865,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562830115,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562830366,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562830616,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562830866,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562831116,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562831367,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562831617,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562831868,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562832118,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562832368,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562832618,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562832868,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562833118,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562833368,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562833619,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562833869,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562834120,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562834370,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562834621,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562834871,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562835121,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562835371,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562835621,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562835872,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562836123,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562836373,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562836623,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562836873,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562837124,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562837375,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562837625,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562837875,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562838125,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562838375,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562838625,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562838875,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562839125,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562839375,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562839625,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562839875,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562840126,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562840376,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562840626,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562840876,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562841126,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562841376,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562841626,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562841876,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562842128,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562842378,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562842628,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562842878,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562843128,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562843378,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562843628,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562843878,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562844128,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562844378,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562844628,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562844878,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562845128,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562845378,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562845628,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562845878,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562846128,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562846378,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562846628,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562846878,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562847128,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562847379,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562847629,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562847879,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562848129,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562848379,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562848630,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562848880,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562849130,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562849380,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562849630,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562849880,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562850131,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562850381,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562850632,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562850882,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562851132,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562851382,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562851632,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562851883,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562852133,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562852384,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562852635,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562852886,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562853136,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562853387,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562853637,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562853887,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562854138,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562854389,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562854640,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562854891,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562855141,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562855392,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562855643,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562855894,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562856145,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562856396,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562856647,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562856897,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562857148,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562857399,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562857650,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562857901,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562858151,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562858402,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562858652,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562858903,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562859153,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562859403,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562859653,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562859903,
+        "card": "card1",
+        "percent": 11
+      },
+      {
+        "t": 1793562860154,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562860404,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562860654,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562860904,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562861155,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562861405,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562861655,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562861905,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562862155,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562862405,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562862655,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562862905,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562863155,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562863405,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562863655,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562863905,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562864155,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562864405,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562864655,
+        "card": "card1",
+        "percent": 12
+      },
+      {
+        "t": 1793562864905,
+        "card": "card1",
+        "percent": 10
+      },
+      {
+        "t": 1793562865155,
+        "card": "card1",
+        "percent": 8
+      },
+      {
+        "t": 1793562865405,
+        "card": "card1",
+        "percent": 6
+      },
+      {
+        "t": 1793562865655,
+        "card": "card1",
+        "percent": 5
+      },
+      {
+        "t": 1793562865905,
+        "card": "card1",
+        "percent": 4
+      },
+      {
+        "t": 1793562866155,
+        "card": "card1",
+        "percent": 3
+      },
+      {
+        "t": 1793562866405,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793562866655,
+        "card": "card1",
+        "percent": 2
+      },
+      {
+        "t": 1793562866905,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793562867155,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793562867406,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793562867656,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793562867906,
+        "card": "card1",
+        "percent": 1
+      },
+      {
+        "t": 1793562868156,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562868406,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562868656,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562868907,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562869157,
+        "card": "card1",
+        "percent": 0
+      },
+      {
+        "t": 1793562869407,
+        "card": "card1",
+        "percent": 1
+      }
+    ]
+  },
+  "mode": "timing",
+  "functionalReasons": [],
+  "environment": {
+    "loadavgStart": [
+      1.73,
+      1.5,
+      1.31
+    ],
+    "loadavgEnd": [
+      1.35,
+      1.36,
+      1.29
+    ],
+    "cpus": 20,
+    "node": "v22.23.1",
+    "wasmUrl": "http://127.0.0.1:18771/pkg/viewer_wasm_bg.wasm",
+    "wasmSha256": "fb2cce797ee734080dbf73220d3b9f9aa67a944ce347472ff4da9ede982e0c9a",
+    "dataset": {
+      "path": "/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/target/render-data/belvedere.oct",
+      "bytes": 981063326,
+      "attributesBytes": 610586859
+    }
+  },
+  "consoleErrors": [
+    {
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ]
+}

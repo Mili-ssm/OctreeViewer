@@ -1,0 +1,17 @@
+135c147a2bb0e46162de1108fdb7356433802f5c
+ced4d15d2188c69199f8138d7e4b7d4472a391d6d91af0431f8a8fe720813793  -
+d4c612e47645b1136e61889084efdfe2bec794fd9122bb9ec9f48d4c55fbaddf  pkg/viewer_wasm_bg.wasm
+ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad  target/render-data/belvedere.oct
+38168777e6ac835688ffe56931bbd70e1ddef56e1c7d2101d8d70043c19b13ee  target/render-data/majadas.oct
+cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a  target/render-data/belvedere.octattrs
+6f968f11c330238a6924c07fe451129e48fae1a4e2db390b17c41c7e760a32a8  target/render-data/majadas.octattrs
+Linux pc-tatil 7.2.13-200.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Mon Oct 26 18:54:52 UTC 2026 x86_64 GNU/Linux
+CPU(s):                                  20
+On-line CPU(s) list:                     0-19
+Model name:                              AMD Ryzen AI 9 365 w/ Radeon 880M
+CPU(s) scaling MHz:                      73%
+NUMA node0 CPU(s):                       0-19
+Google Chrome 156.0.8078.73
+v22.23.1
+wasm-bindgen 0.2.129
+powersave
