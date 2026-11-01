@@ -145,7 +145,7 @@ Con el worker de construcción, la coalescencia «gana la última» ya agrupa ll
 
 ### R1-T7: medida después de R1
 
-- [x] **01-11-2026:** matriz R0 en `135c147`: respuestas p95 ≤ 17,6 ms y máx ≤ 19,2 ms; objetivo Majadas 18,8 → 10,8 s y Belvedere 8 px 66,8 → 48,8 s; nodos sin cubrir finales 0; expulsiones menores que en las revisiones de control anteriores a T1a/T3b. Pendiente: explicar la edad de escena p95 en Belvedere 8 px (120 → 2932 ms). [Registro](../records/benchmarks/RENDER_R1_T7_01-11-2026.md).
+- [x] **01-11-2026:** matriz R0 en `135c147`: respuestas p95 ≤ 17,6 ms y máx ≤ 19,2 ms; objetivo Majadas 18,8 → 10,8 s y Belvedere 8 px 66,8 → 48,8 s; nodos sin cubrir finales 0; expulsiones menores que en las revisiones de control anteriores a T1a/T3b. Edad de escena p95 en Belvedere 8 px 120 → 2932 ms: coste aceptado de T1a (cada vista exige una construcción en la etapa fina); lo resuelve R3 ([diagnóstico](../records/benchmarks/RENDER_R1_T7_SCENE_AGE_01-11-2026.md)). [Registro](../records/benchmarks/RENDER_R1_T7_01-11-2026.md).
 
 ## Fase R2: worker de construcción (B1, B4; decidido por E13)
 
