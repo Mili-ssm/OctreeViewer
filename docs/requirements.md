@@ -116,7 +116,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 ## Orden de trabajo acordado
 
 1. W1: la etapa 4 está integrada en `master`, sin evidencia registrada del chequeo previo a la integración.
-2. Escala: R3 (cubos en GPU) → R4 (pirámide densa y rejilla global) → R5 (jerarquía paginada y
+2. Escala: R4 (pirámide densa y rejilla global) → R3 (cubos en GPU; [ADR 0028](adr/0028-r4-antes-que-r3.md), 01-11-2026) → R5 (jerarquía paginada y
    remoto) → congelar V7 final ([plan de render](plans/render-y-carga-escala.md)).
 3. API pública y funciones RF-10 a RF-15.
 4. Conversor web: M6 (Majadas) con un worker; M4/M5 solo si M6 supera 60 min o la experiencia lo pide.

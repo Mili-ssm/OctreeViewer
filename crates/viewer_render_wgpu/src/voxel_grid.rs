@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry};
 
 use viewer_core::{NodeId, PointBlock, ResidentBlockSource, SpatialBounds, SpatialHierarchy};
 
-use crate::{InstanceRaw, RenderScene, attributes::ScalarAttribute};
+use crate::{CellGrid, InstanceRaw, RenderScene, attributes::ScalarAttribute};
 
 /// A global dyadic cell identity; source representatives can bound its finest resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -792,10 +792,13 @@ fn configure_representative_regions(
 }
 
 fn representative_depth(grid: &AdaptiveVoxelGrid, bounds: SpatialBounds) -> u8 {
-    (grid.side / (bounds_side(bounds) / 8.0))
-        .log2()
-        .floor()
-        .clamp(0.0, 24.0) as u8
+    crate::representative_depth(
+        &CellGrid {
+            root_min: grid.origin,
+            root_side: grid.side,
+        },
+        bounds,
+    )
 }
 
 /// Up to eight occupied regions per source node bound setup work and retained metadata.

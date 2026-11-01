@@ -44,7 +44,7 @@ Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
 
 ## Prioridades pendientes
 
-Orden acordado el 30-10-2026 ([requisitos](docs/requirements.md#orden-de-trabajo-acordado)): etapa 4 integrada en `master` (sin evidencia registrada del chequeo previo a la integración) → R1 restante (R1-T1a es requisito de R3) → R3 → R4 → R5 → V7 final → API pública y funciones →
+Orden acordado el 30-10-2026 ([requisitos](docs/requirements.md#orden-de-trabajo-acordado)): etapa 4 integrada en `master` (sin evidencia registrada del chequeo previo a la integración) → R1 restante (R1-T1a es requisito de R3) → R4 → R3 ([ADR 0028](docs/adr/0028-r4-antes-que-r3.md)) → R5 → V7 final → API pública y funciones →
 conversor web M6 (M4/M5 condicionales). Esta es la única lista activa. El [plan V7](docs/plans/format-v7-plan.md) desarrolla contratos,
 alternativas y verificación. No se desarrollarán nuevas revisiones V5/V6: se conservan durante
 la transición como compatibilidad y referencia de comparación.

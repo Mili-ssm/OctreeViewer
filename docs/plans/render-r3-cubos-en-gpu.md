@@ -1,6 +1,6 @@
 # R3 — Cubos por nodo residentes en GPU: plan de implementación
 
-Estado: pendiente · 30-10-2026
+Estado: en pausa · 01-11-2026
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -26,7 +26,9 @@ Chrome (arnés R0).
 [contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md).
 
 **Progreso (30-10-2026):** redactado tras el análisis del arquitecto y enmendado tras su pre-mortem (abajo).
-Ninguna tarea empezada. Requisito previo: R1-T1a cerrada (toca el código ★ de la Tarea 9).
+Requisito previo: R1-T1a cerrada (toca el código ★ de la Tarea 9).
+
+**Pausa (01-11-2026):** la Tarea 1 superó dos criterios de parada con datos reales (cadenas de hoja en el tope en el 78–99 % de las hojas, 2,7 × los bytes de sus puntos; [registro](../records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md)). El propietario decide hacer R4 primero ([ADR 0028](../adr/0028-r4-antes-que-r3.md)); al reanudar, la Tarea 1 se vuelve a medir con el formato de R4.
 
 ## Decisiones técnicas del coordinador (30-10-2026)
 
@@ -129,20 +131,20 @@ nodo con la regla de cara máxima inclusiva (A2). Cadena de hoja: desde la profu
 hasta que el número de celdas no crece entre dos niveles o se alcanza `representative_depth + CHAIN_SPAN`
 (A3).
 
-- [ ] **Paso 1: tests que fallan** en `node_cells_tests.rs`:
+- [x] **Paso 1: tests que fallan** en `node_cells_tests.rs`:
   `internal_node_cells_are_its_representatives` (una celda por subcelda ocupada, con divisiones 2, 4 y 8),
   `node_cells_do_not_depend_on_camera` (mismo digest con cuatro cámaras en el contexto),
   `cell_sums_match_accumulate_block`, `points_on_shared_and_max_faces_count_once` (A2: Σ recuentos = puntos
   finitos; ninguna celda fuera del rango del nodo), `leaf_chain_stops_when_cells_stop_growing` (hoja con
   xyz duplicados), `leaf_chain_respects_ten_bit_span`, `page_origin_relative_precision` (origen a 10⁶ m de
   la cámara: error f32 del centro ≤ 10⁻⁶ × distancia).
-- [ ] **Paso 2:** `cargo test -p viewer_render_wgpu node_cells` → FALLA (módulo inexistente).
-- [ ] **Paso 3:** implementar `node_cells.rs`.
-- [ ] **Paso 4:** los tests pasan. `node_cells_bench.rs` (`#[ignore]`, fuera de `check.sh`) recorre
+- [x] **Paso 2:** `cargo test -p viewer_render_wgpu node_cells` → FALLA (módulo inexistente).
+- [x] **Paso 3:** implementar `node_cells.rs`.
+- [x] **Paso 4:** los tests pasan. `node_cells_bench.rs` (`#[ignore]`, fuera de `check.sh`) recorre
   **todos** los nodos de Majadas y Belvedere: nodos no cúbicos o con profundidad inesperada, histograma de
   longitud de cadena, % de hojas en el tope, ms y bytes por hoja frente a los bytes de sus puntos (criterios
   de parada). Resultado al registro de la Tarea 4.
-- [ ] **Paso 5:** commit `feat(render): build camera-independent cells per LOD node`.
+- [x] **Paso 5:** commit `feat(render): build camera-independent cells per LOD node`.
 
 ## Tarea 2: oráculo de refinamiento frente a la ruta CPU
 

@@ -8,7 +8,7 @@ Estado: activo · 30-10-2026
 **Progreso (30-10-2026):** plan redactado tras la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md)
 y enmendado tras su pre-mortem (abajo). R0 hecha; R1 parcial (T0, T3a, T4 y T5 hechas); R2 hecha, con el worker de
 construcción encendido por defecto desde esta rama (`?buildWorker=0` / `buildWorker: false` lo apagan, [ADR 0018](../adr/0018-worker-de-construccion-por-defecto.md)).
-Preguntas P1–P8 resueltas el 30-10-2026 ([requisitos](../requirements.md)). Orden acordado: resto de R1 → R3 → R4 → R5 → V7 final.
+Preguntas P1–P8 resueltas el 30-10-2026 ([requisitos](../requirements.md)). Orden acordado: resto de R1 → R4 → R3 ([ADR 0028](../adr/0028-r4-antes-que-r3.md)) → R5 → V7 final.
 Nada de R3–R5 está implementado: las decisiones están registradas, el código no ha cambiado.
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de

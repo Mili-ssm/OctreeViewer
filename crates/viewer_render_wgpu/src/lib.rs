@@ -11,6 +11,9 @@ mod headless;
 mod hzb;
 #[cfg(not(target_arch = "wasm32"))]
 pub use headless::{OffscreenImage, render_offscreen};
+mod node_cells;
+#[cfg(test)]
+mod node_cells_tests;
 mod scene;
 #[cfg(test)]
 mod scene_digest_tests;
@@ -19,6 +22,10 @@ mod voxel_grid;
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
+pub use node_cells::{
+    CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel, NodeCellSource,
+    NodeCells, PointNodeCellSource, node_cells_digest, representative_depth,
+};
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,
     instance_buffer_layout,
