@@ -146,6 +146,13 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | Pool web | Medir M6 con un worker antes de M4/M5. | [Spec](plans/conversor-web-paralelo.md) |
 | Potree | Paridad cualitativa; abierta a métricas. | OQ-02 |
 
+## Resoluciones del 01-11-2026
+
+| Pregunta | Resolución | Registro |
+| --- | --- | --- |
+| Orden de escala | R4 antes que R3. | ADR 0028 |
+| R4-Q1 a R4-Q4 | Coordenadas enteras globales de cuanto 2⁻¹⁵ con octree implícito en sus bits (ADR 0029); límite de hoja medido (16/32/64 k); espaciado ÷2 por nivel; PROJ fuera de `v7.4-pre`. | [Plan de R4](plans/render-r4-piramide-densa.md#resoluciones-del-propietario-01-11-2026) |
+
 ## Preguntas abiertas
 
 | Id | Pregunta | Por qué se aplaza | Revisar cuando |
