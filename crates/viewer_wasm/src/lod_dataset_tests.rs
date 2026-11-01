@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use super::{
     CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
-    highest_priority_pending_block, load_priority, next_lod_stage, node_spacing,
-    prefix_extension_points, prioritized_pending_blocks, priority_precedes,
+    highest_priority_pending_block, index_block_owners, load_priority, next_lod_stage,
+    node_spacing, prefix_extension_points, prioritized_pending_blocks, priority_precedes,
     resident_target_plan_is_complete, reusable_build_match,
 };
 use viewer_render_wgpu::{OrbitCamera, RenderScene, SceneBounds, build_voxel_scene};
@@ -1431,6 +1431,105 @@ fn a_resident_fine_update_selects_and_prepares_once() {
     assert_eq!(dataset.refinement_work.prepares, 3);
 }
 
+#[test]
+fn pending_priority_projects_only_visible_pending_owners() {
+    let bounds = |x| SpatialBounds::new([x, 0.0, 0.0], [x + 0.5, 0.5, 0.5]).unwrap();
+    let mut nodes = vec![
+        SpatialNode::new(
+            NodeId::new(1),
+            None,
+            0,
+            SpatialBounds::new([-100.0; 3], [100.0; 3]).unwrap(),
+            1,
+            0.0,
+            vec![BlockId::new(1)],
+        )
+        .unwrap(),
+    ];
+    for id in 2..10_006 {
+        let blocks = match id {
+            2 => vec![10, 11, 14],
+            3 => vec![12, 13, 14],
+            4 => vec![10], // A higher-scoring owner outside the frustum.
+            _ => vec![id + 100],
+        };
+        nodes.push(
+            SpatialNode::new(
+                NodeId::new(id),
+                Some(NodeId::new(1)),
+                1,
+                bounds(if id == 4 { -2.0 } else { 1.0 }),
+                1,
+                0.0,
+                blocks.into_iter().map(BlockId::new).collect(),
+            )
+            .unwrap(),
+        );
+    }
+    let hierarchy = SpatialHierarchy::new(nodes, Vec::new(), None).unwrap();
+    let frustum =
+        SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 0.0).unwrap()]).unwrap();
+    let pending = [13, 10, 99_999, 14, 12, 11, 10].map(BlockId::new);
+    let uncovered = [BlockId::new(11)].into_iter().collect();
+    let owners = index_block_owners(&hierarchy);
+    let calls = std::cell::Cell::new(0);
+    let project = |node: &SpatialNode| {
+        calls.set(calls.get() + 1);
+        node.id().get() as f64
+    };
+    assert!(
+        prioritized_pending_blocks(&hierarchy, &owners, &[], &uncovered, &frustum, project)
+            .is_empty()
+    );
+    assert_eq!(calls.get(), 0);
+    assert_eq!(
+        highest_priority_pending_block(&hierarchy, &owners, &[], &uncovered, &frustum, project),
+        None
+    );
+    assert_eq!(calls.get(), 0);
+    let ordered =
+        prioritized_pending_blocks(&hierarchy, &owners, &pending, &uncovered, &frustum, project);
+    assert_eq!(
+        ordered,
+        vec![
+            (BlockId::new(11), 2.0),
+            (BlockId::new(12), 3.0),
+            (BlockId::new(13), 3.0),
+            (BlockId::new(14), 3.0),
+            (BlockId::new(10), 2.0)
+        ]
+    );
+    assert_eq!(calls.get(), 2);
+    let mut old_scores = std::collections::HashMap::<BlockId, f64>::new();
+    calls.set(0);
+    for node in hierarchy.query_frustum(frustum.clone()) {
+        let score = load_priority(project(node), node);
+        for block in node.blocks().iter().filter(|block| pending.contains(block)) {
+            old_scores
+                .entry(*block)
+                .and_modify(|current| {
+                    if score.total_cmp(current).is_gt() {
+                        *current = score;
+                    }
+                })
+                .or_insert(score);
+        }
+    }
+    assert_eq!(calls.get(), 10_004);
+    assert_eq!(old_scores.len(), ordered.len());
+    for (block, score) in &ordered {
+        assert_eq!(old_scores.get(block), Some(score));
+    }
+    calls.set(0);
+    assert_eq!(
+        highest_priority_pending_block(
+            &hierarchy, &owners, &pending, &uncovered, &frustum, project
+        ),
+        Some(ordered[0].0)
+    );
+    assert_eq!(calls.get(), 2);
+}
+
 /// Three equal leaves (geometric error 0) at increasing distance from the camera. Block ids
 /// ascend away from the camera, so the old tie-break by `BlockId` would load the farthest first.
 #[test]
@@ -1485,8 +1584,10 @@ fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
         )
     };
     let pending = [BlockId::new(104), BlockId::new(103), BlockId::new(102)];
+    let owners = index_block_owners(&hierarchy);
     let ordered = prioritized_pending_blocks(
         &hierarchy,
+        &owners,
         &pending,
         &std::collections::HashSet::new(),
         &frustum,
@@ -1498,6 +1599,7 @@ fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
     assert_eq!(
         highest_priority_pending_block(
             &hierarchy,
+            &owners,
             &pending,
             &std::collections::HashSet::new(),
             &frustum,

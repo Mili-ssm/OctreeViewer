@@ -130,8 +130,8 @@ Con el worker de construcción, la coalescencia «gana la última» ya agrupa ll
 
 ### R1-T3b: prioridad solo sobre pendientes (Q4)
 
-- [x] **Reordenación hecha en `d4604b7`** (error por punto fuente; medida aparte en vivo). Pendiente: calcular la prioridad solo sobre bloques pendientes (coste O(pendientes)).
-- [ ] Reordenación intencional (métrica de selección, cálculo solo sobre bloques pendientes) medida por separado: tiempo hasta el objetivo y expulsiones de pendientes.
+- [x] **Reordenación hecha en `d4604b7`** (error por punto fuente; medida aparte en vivo).
+- [x] **01-11-2026:** índice de propietarios por bloque; puntuación solo sobre propietarios pendientes, con el mismo orden. Regresión de 10.004 a 2 proyecciones; humo Majadas antes/después sin empeorar cobertura, expulsiones ni digest, sin mejora temporal demostrada. [Costes, verificación y límites](../records/benchmarks/RENDER_R1_T3B_01-11-2026.md).
 
 ### R1-T6: jerarquía construida en wasm desde el reader (Q7, B6 parcial) — movida a R5 (jerarquía paginada)
 

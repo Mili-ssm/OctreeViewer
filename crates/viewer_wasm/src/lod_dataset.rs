@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use thiserror::Error;
 use viewer_core::{
     BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
@@ -14,6 +17,8 @@ use viewer_render_wgpu::{
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
     metadata: Arc<DatasetMetadata>,
+    // Immutable metadata lets each view score only pending owners without scanning the hierarchy.
+    block_owners: HashMap<BlockId, Vec<NodeId>>,
     visual_scale: f64,
     cache: DecodedBlockCache,
     planner: LodTransitionPlanner,
@@ -240,8 +245,10 @@ impl LodDataset {
         visual_scale: f64,
         cache_bytes: usize,
     ) -> Self {
+        let block_owners = index_block_owners(metadata.hierarchy());
         Self {
             metadata,
+            block_owners,
             visual_scale,
             cache: DecodedBlockCache::new(cache_bytes),
             planner: LodTransitionPlanner::new(),
@@ -569,6 +576,7 @@ impl LodDataset {
         let next_block = if let Some(priority_order) = async_priority_order {
             let ordered = prioritized_pending_blocks(
                 self.metadata.hierarchy(),
+                &self.block_owners,
                 initial_plan.pending_blocks(),
                 &uncovered_blocks,
                 &frustum,
@@ -586,6 +594,7 @@ impl LodDataset {
         } else {
             highest_priority_pending_block(
                 self.metadata.hierarchy(),
+                &self.block_owners,
                 initial_plan.pending_blocks(),
                 &uncovered_blocks,
                 &frustum,
@@ -964,65 +973,91 @@ fn load_priority(error_pixels: f64, node: &SpatialNode) -> f64 {
     error_pixels / node.point_count().max(1) as f64
 }
 
+fn index_block_owners(hierarchy: &SpatialHierarchy) -> HashMap<BlockId, Vec<NodeId>> {
+    let root = hierarchy
+        .node(hierarchy.root_id())
+        .expect("validated hierarchy root");
+    let mut owners = HashMap::<BlockId, Vec<NodeId>>::new();
+    for node in hierarchy.query(root.bounds()) {
+        for block in node.blocks() {
+            owners.entry(*block).or_default().push(node.id());
+        }
+    }
+    owners
+}
+
+fn pending_block_priorities(
+    hierarchy: &SpatialHierarchy,
+    owners: &HashMap<BlockId, Vec<NodeId>>,
+    pending: &[BlockId],
+    frustum: &SpatialFrustum,
+    projected_error_pixels: impl Fn(&SpatialNode) -> f64,
+) -> HashMap<BlockId, f64> {
+    let mut node_scores = HashMap::<NodeId, Option<f64>>::new();
+    let mut priorities = HashMap::new();
+    for &block in pending {
+        if priorities.contains_key(&block) {
+            continue;
+        }
+        if let Some(block_owners) = owners.get(&block) {
+            for &id in block_owners {
+                let score = node_scores.entry(id).or_insert_with(|| {
+                    let node = hierarchy.node(id).expect("indexed hierarchy node");
+                    frustum
+                        .intersects(&node.bounds())
+                        .then(|| load_priority(projected_error_pixels(node), node))
+                });
+                if let Some(score) = *score {
+                    priorities
+                        .entry(block)
+                        .and_modify(|current: &mut f64| {
+                            if score.total_cmp(current).is_gt() {
+                                *current = score;
+                            }
+                        })
+                        .or_insert(score);
+                }
+            }
+        }
+    }
+    priorities
+}
+
 fn highest_priority_pending_block(
     hierarchy: &SpatialHierarchy,
+    owners: &HashMap<BlockId, Vec<NodeId>>,
     pending: &[BlockId],
     uncovered: &HashSet<BlockId>,
     frustum: &SpatialFrustum,
     projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Option<BlockId> {
-    if pending.is_empty() {
-        return None;
-    }
-    let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
-    let mut best = None;
-    for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = load_priority(projected_error_pixels(node), node);
-        for block_id in node.blocks() {
-            if pending_ids.contains(block_id) {
-                let candidate = (*block_id, priority);
-                let is_better = best.is_none_or(|current: (BlockId, f64)| {
-                    (uncovered.contains(&candidate.0) && !uncovered.contains(&current.0))
-                        || (uncovered.contains(&candidate.0) == uncovered.contains(&current.0)
-                            && priority_precedes(candidate, current))
-                });
-                if is_better {
-                    best = Some(candidate);
-                }
+    pending_block_priorities(hierarchy, owners, pending, frustum, projected_error_pixels)
+        .into_iter()
+        .reduce(|current, candidate| {
+            if (uncovered.contains(&candidate.0) && !uncovered.contains(&current.0))
+                || (uncovered.contains(&candidate.0) == uncovered.contains(&current.0)
+                    && priority_precedes(candidate, current))
+            {
+                candidate
+            } else {
+                current
             }
-        }
-    }
-    best.map(|(block_id, _)| block_id)
+        })
+        .map(|(block, _)| block)
 }
 
 fn prioritized_pending_blocks(
     hierarchy: &SpatialHierarchy,
+    owners: &HashMap<BlockId, Vec<NodeId>>,
     pending: &[BlockId],
     uncovered: &HashSet<BlockId>,
     frustum: &SpatialFrustum,
     projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Vec<(BlockId, f64)> {
-    if pending.is_empty() {
-        return Vec::new();
-    }
-    let pending_ids = pending.iter().copied().collect::<HashSet<_>>();
-    let mut priorities = std::collections::HashMap::<BlockId, f64>::new();
-    for node in hierarchy.query_frustum(frustum.clone()) {
-        let priority = load_priority(projected_error_pixels(node), node);
-        for block_id in node.blocks() {
-            if pending_ids.contains(block_id) {
-                priorities
-                    .entry(*block_id)
-                    .and_modify(|current| {
-                        if priority.total_cmp(current).is_gt() {
-                            *current = priority;
-                        }
-                    })
-                    .or_insert(priority);
-            }
-        }
-    }
-    let mut ordered = priorities.into_iter().collect::<Vec<_>>();
+    let mut ordered =
+        pending_block_priorities(hierarchy, owners, pending, frustum, projected_error_pixels)
+            .into_iter()
+            .collect::<Vec<_>>();
     ordered.sort_unstable_by(|candidate, current| {
         if uncovered.contains(&candidate.0) != uncovered.contains(&current.0) {
             uncovered
