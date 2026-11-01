@@ -19,7 +19,6 @@ impl WasmVoxelViewer {
             renderer.fit_scene(self.inner.render_scene())
         };
         if fitted && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(fitted)
@@ -33,7 +32,6 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.orbit_camera(delta_x, delta_y);
         if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(changed)
@@ -47,7 +45,6 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.pan_camera(delta_x, delta_y);
         if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(changed)
@@ -61,7 +58,6 @@ impl WasmVoxelViewer {
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
         let changed = renderer.zoom_camera(delta);
         if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
         Ok(changed)
@@ -159,7 +155,6 @@ impl WasmVoxelViewer {
 impl WasmVoxelViewer {
     pub(super) fn camera_changed(&mut self, changed: bool) {
         if changed && self.lod_session.is_some() {
-            self.lod_stage_pixels = None;
             self.lod_dirty = self.lod_config.is_some();
         }
     }

@@ -1,0 +1,44 @@
+{
+  "adapter": {
+    "vendor": "amd",
+    "architecture": "rdna-3",
+    "device": "",
+    "description": ""
+  },
+  "results": [
+    {
+      "name": "lod-reuse",
+      "type": "probeResult",
+      "passed": true,
+      "checks": [
+        "identical view",
+        "camera",
+        "viewport",
+        "stage",
+        "payload",
+        "attributes",
+        "reopen",
+        "pending camera stage"
+      ]
+    },
+    {
+      "name": "lod-session",
+      "type": "probeResult",
+      "passed": true,
+      "checks": [
+        "none",
+        "external",
+        "paired",
+        "failed replacement",
+        "response failure",
+        "external replacement",
+        "gray",
+        "clear",
+        "manual",
+        "reopen"
+      ],
+      "incompatibleSidecarChecked": false
+    }
+  ],
+  "errors": []
+}

@@ -1485,14 +1485,99 @@ fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
         )
     };
     let pending = [BlockId::new(104), BlockId::new(103), BlockId::new(102)];
-    let ordered = prioritized_pending_blocks(&hierarchy, &pending, &frustum, project);
+    let ordered = prioritized_pending_blocks(
+        &hierarchy,
+        &pending,
+        &std::collections::HashSet::new(),
+        &frustum,
+        project,
+    );
     let order = ordered.iter().map(|(id, _)| id.get()).collect::<Vec<_>>();
     assert_eq!(order, [102, 103, 104]);
     assert!(ordered[0].1 > ordered[1].1 && ordered[1].1 > ordered[2].1);
     assert_eq!(
-        highest_priority_pending_block(&hierarchy, &pending, &frustum, project),
+        highest_priority_pending_block(
+            &hierarchy,
+            &pending,
+            &std::collections::HashSet::new(),
+            &frustum,
+            project
+        ),
         Some(BlockId::new(102))
     );
+}
+
+#[test]
+fn uncovered_multiblock_node_precedes_covered_refinement_in_both_load_modes() {
+    let bounds = |x: f64| SpatialBounds::new([x, 0.0, 0.0], [x + 20.0, 20.0, 20.0]).unwrap();
+    let node = |id, parent: Option<u64>, level, x, blocks: Vec<u64>| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            bounds(x),
+            1,
+            0.0,
+            blocks.into_iter().map(BlockId::new).collect(),
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new_with_semantics(
+        vec![
+            SpatialNode::new(
+                NodeId::new(1),
+                None,
+                0,
+                SpatialBounds::new([0.0; 3], [100.0, 20.0, 20.0]).unwrap(),
+                1,
+                0.0,
+                vec![BlockId::new(10)],
+            )
+            .unwrap(),
+            node(2, Some(1), 1, 80.0, vec![11]),
+            node(4, Some(2), 2, 80.0, vec![12]),
+            node(3, Some(1), 1, 0.0, vec![13, 14]),
+        ],
+        Vec::new(),
+        None,
+        HierarchySemantics::Replacement,
+    )
+    .unwrap();
+    let mut camera = OrbitCamera::default();
+    let viewport = [800, 600];
+    assert!(camera.fit(
+        SceneBounds {
+            min: [0.0; 3],
+            max: [100.0, 20.0, 20.0]
+        },
+        viewport
+    ));
+    assert!(camera.set_pose([350.0, 10.0, 10.0], [50.0, 10.0, 10.0]));
+    let view = viewer_render_wgpu::ViewProjection::new(camera, viewport, 1.0, Default::default());
+    let make_dataset = || {
+        let mut dataset = LodDataset::new([0.0; 3], hierarchy.clone(), usize::MAX).unwrap();
+        dataset.insert_block(block(11)).unwrap();
+        dataset
+    };
+    let mut async_dataset = make_dataset();
+    let mut order = Vec::new();
+    let update = async_dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, Some(&mut order), |_| Ok(None))
+        .unwrap();
+    assert_eq!(update.stats.uncovered_nodes, 1);
+    assert_eq!(
+        order,
+        [BlockId::new(13), BlockId::new(14), BlockId::new(12)]
+    );
+    let mut sync_dataset = make_dataset();
+    let mut requested = None;
+    sync_dataset
+        .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |id| {
+            requested = Some(id);
+            Ok(None)
+        })
+        .unwrap();
+    assert_eq!(requested, Some(BlockId::new(13)));
 }
 
 /// Same bounds and camera for every node, so only the point count and the error argument vary.
@@ -1709,6 +1794,7 @@ mod binding_parity {
         instance_count: Option<usize>,
         block_ids: Option<Vec<BlockId>>,
         rendered_voxels: usize,
+        stage: f64,
         pending: Vec<BlockId>,
         async_order: Vec<BlockId>,
         needs_refinement: bool,
@@ -1716,6 +1802,7 @@ mod binding_parity {
 
     enum Op {
         Insert(u64),
+        EvictAll,
         /// Inserts a block with a `temperature` column, painted when an attribute is selected.
         InsertAttributed(u64),
         Update {
@@ -1803,14 +1890,14 @@ mod binding_parity {
             instance_count: scene.as_ref().map(|s| s.voxels.scene.instance_count()),
             block_ids: scene.map(|s| s.block_ids),
             rendered_voxels: stats.rendered_voxels,
+            stage: stats.lod_stage_pixels,
             pending: stats.pending_block_ids.clone(),
             async_order,
             needs_refinement,
         }
     }
 
-    /// The state `WasmVoxelViewer` keeps around the shared functions: a moved camera or a new
-    /// target restarts at the coarse stage, an inserted block asks for a refinement.
+    /// The state `WasmVoxelViewer` keeps around the shared functions.
     struct ViewerPath {
         dataset: LodDataset,
         reader: Option<Vec<PointBlock>>,
@@ -1825,8 +1912,11 @@ mod binding_parity {
 
     impl ViewerPath {
         fn update(&mut self, camera: OrbitCamera, target: f64) -> Observed {
-            if self.camera != Some(camera) || self.target != Some(target) {
+            if self.target != Some(target) {
                 self.stage = None;
+            }
+            if self.camera != Some(camera) {
+                self.dirty = true;
             }
             self.camera = Some(camera);
             self.target = Some(target);
@@ -1926,6 +2016,10 @@ mod binding_parity {
         let mut seen = Vec::new();
         for (step, op) in ops.iter().enumerate() {
             match op {
+                Op::EvictAll => {
+                    viewer.dataset.clear_loaded_blocks();
+                    builder.session_mut().dataset_mut().clear_loaded_blocks();
+                }
                 Op::Insert(id) => {
                     let block = blocks.iter().find(|b| b.id().get() == *id).unwrap().clone();
                     viewer.dataset.insert_block(block.clone()).unwrap();
@@ -1983,6 +2077,59 @@ mod binding_parity {
     }
 
     #[test]
+    fn alternating_cameras_keep_published_stage_with_missing_blocks() {
+        let seen = run_parity(
+            &[
+                update(0, 4.0),
+                Op::Insert(11),
+                Op::Insert(12),
+                Op::Insert(13),
+                update(0, 4.0),
+                update(0, 4.0),
+                update(0, 4.0),
+                Op::EvictAll,
+                update(1, 4.0),
+                update(0, 4.0),
+                update(1, 4.0),
+            ],
+            false,
+        );
+        assert!(seen.iter().skip(4).all(|o| !o.pending.is_empty()));
+        for pair in seen.windows(2) {
+            assert!(
+                pair[1].stage <= pair[0].stage,
+                "stages: {:?}",
+                seen.iter().map(|o| o.stage).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn target_change_and_new_dataset_restart_nonresident_stage() {
+        let seen = run_parity(
+            &[
+                update(0, 4.0),
+                Op::Insert(11),
+                Op::Insert(12),
+                Op::Insert(13),
+                update(0, 4.0),
+                update(0, 4.0),
+                update(0, 4.0),
+                Op::EvictAll,
+                update(1, 4.0),
+                update(1, 2.0),
+            ],
+            false,
+        );
+        assert_eq!(seen[4].stage, 4.0);
+        assert!(!seen[5].pending.is_empty());
+        assert_eq!(seen[5].stage, 16.0);
+        let fresh_dataset = run_parity(&[update(1, 2.0)], false);
+        assert!(!fresh_dataset[0].pending.is_empty());
+        assert_eq!(fresh_dataset[0].stage, 16.0);
+    }
+
+    #[test]
     fn builder_matches_the_viewer_while_the_host_inserts_blocks() {
         let ops = [
             update(0, 4.0),
@@ -1995,7 +2142,7 @@ mod binding_parity {
             update(0, 4.0),
             update(0, 4.0),
             update(0, 4.0),
-            // A moved camera restarts at the coarse stage.
+            // Camera movement preserves the current stage.
             update(1, 4.0),
             update(1, 4.0),
             update(2, 4.0),

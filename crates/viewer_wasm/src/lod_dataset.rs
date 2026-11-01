@@ -559,10 +559,18 @@ impl LodDataset {
         let initial_plan = self.resolve_plan(&target);
         let planning_started = WorkClock::start();
         let initial_epoch = self.state_epoch;
+        let uncovered_blocks: HashSet<_> = initial_plan
+            .uncovered_nodes()
+            .iter()
+            .filter_map(|id| self.metadata.hierarchy().node(*id))
+            .flat_map(|node| node.blocks().iter().copied())
+            .filter(|id| initial_plan.pending_blocks().binary_search(id).is_ok())
+            .collect();
         let next_block = if let Some(priority_order) = async_priority_order {
             let ordered = prioritized_pending_blocks(
                 self.metadata.hierarchy(),
                 initial_plan.pending_blocks(),
+                &uncovered_blocks,
                 &frustum,
                 |node| {
                     view.projected_error_pixels(
@@ -579,6 +587,7 @@ impl LodDataset {
             highest_priority_pending_block(
                 self.metadata.hierarchy(),
                 initial_plan.pending_blocks(),
+                &uncovered_blocks,
                 &frustum,
                 |node| {
                     view.projected_error_pixels(
@@ -958,6 +967,7 @@ fn load_priority(error_pixels: f64, node: &SpatialNode) -> f64 {
 fn highest_priority_pending_block(
     hierarchy: &SpatialHierarchy,
     pending: &[BlockId],
+    uncovered: &HashSet<BlockId>,
     frustum: &SpatialFrustum,
     projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Option<BlockId> {
@@ -971,7 +981,11 @@ fn highest_priority_pending_block(
         for block_id in node.blocks() {
             if pending_ids.contains(block_id) {
                 let candidate = (*block_id, priority);
-                let is_better = best.is_none_or(|current| priority_precedes(candidate, current));
+                let is_better = best.is_none_or(|current: (BlockId, f64)| {
+                    (uncovered.contains(&candidate.0) && !uncovered.contains(&current.0))
+                        || (uncovered.contains(&candidate.0) == uncovered.contains(&current.0)
+                            && priority_precedes(candidate, current))
+                });
                 if is_better {
                     best = Some(candidate);
                 }
@@ -984,6 +998,7 @@ fn highest_priority_pending_block(
 fn prioritized_pending_blocks(
     hierarchy: &SpatialHierarchy,
     pending: &[BlockId],
+    uncovered: &HashSet<BlockId>,
     frustum: &SpatialFrustum,
     projected_error_pixels: impl Fn(&SpatialNode) -> f64,
 ) -> Vec<(BlockId, f64)> {
@@ -1009,7 +1024,11 @@ fn prioritized_pending_blocks(
     }
     let mut ordered = priorities.into_iter().collect::<Vec<_>>();
     ordered.sort_unstable_by(|candidate, current| {
-        if candidate.1.total_cmp(&current.1).is_eq() {
+        if uncovered.contains(&candidate.0) != uncovered.contains(&current.0) {
+            uncovered
+                .contains(&current.0)
+                .cmp(&uncovered.contains(&candidate.0))
+        } else if candidate.1.total_cmp(&current.1).is_eq() {
             candidate.0.cmp(&current.0)
         } else {
             current.1.total_cmp(&candidate.1)

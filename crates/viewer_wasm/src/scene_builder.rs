@@ -141,9 +141,11 @@ impl<R> SceneBuilderCore<R> {
         if visual_scale != self.session.dataset().visual_scale() {
             return Err("visualScale does not match the dataset".to_owned());
         }
-        // Same resets the viewer applies when the camera moves or the target changes.
-        if self.last_camera != Some(camera) || self.target_pixels != Some(target_pixels) {
+        if self.target_pixels != Some(target_pixels) {
             self.stage_pixels = None;
+        }
+        if self.last_camera != Some(camera) {
+            self.dirty = true;
         }
         self.last_camera = Some(camera);
         self.target_pixels = Some(target_pixels);

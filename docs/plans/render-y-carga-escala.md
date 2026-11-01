@@ -116,9 +116,9 @@ de máquina → matriz reducida a Majadas y Belvedere 8 px.
 
 ### R1-T1a: no reiniciar la etapa al mover (Q1, E6)
 
-**Archivos:** `crates/viewer_wasm/src/bindings/{camera.rs, lod.rs}`, `crates/viewer_wasm/src/lod_dataset.rs`.
+**Archivos:** `crates/viewer_wasm/src/bindings/camera.rs`, `crates/viewer_wasm/src/{lod_dataset.rs, scene_builder.rs}` y tests.
 
-- [ ] Función pura (p. ej. `next_lod_stage`) con tests: tras órbitas con el objetivo no residente, la etapa publicada nunca sube; las regiones sin cubrir tienen prioridad de carga. Sin histéresis (eso es T1b).
+- [x] **01-11-2026:** viewer y worker de construcción conservan la etapa al mover; regiones sin cubrir primero, sin histéresis. Regresiones nativas antes/después, probes Chrome y humo Majadas en ambas rutas; `check.sh` 24/24. [Evidencia y límites](../records/benchmarks/RENDER_R1_T1A_01-11-2026.md).
 
 ### R1-T2: menos reconstrucciones y bordes cubiertos (Q2, E7) — cancelada por el propietario (30-10-2026)
 
