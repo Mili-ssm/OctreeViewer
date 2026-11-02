@@ -78,6 +78,8 @@ Resultado (02-11-2026, revisado el mismo día por dos decisiones del propietario
 
 ## Tarea P2a: flags LAS y Extra Bytes (RF-24)
 
+Decisión (02-11-2026): el criterio de parada se activó (toca `viewer_convert_core`, `viewer_convert`, `viewer_core` y `viewer_wasm`). El propietario autoriza hacerlo dentro de `v7.5-pre` para mantener una sola regeneración, **después de P3**. Diseño: columna `las_flags` u8 (bit 0 synthetic, 1 key-point, 2 withheld, 3 overlap) y una columna tipada por Extra Byte; descriptores en la extensión de metadatos; tipos obsoletos o que no caben → error explícito.
+
 - [ ] Llevar los flags y los Extra Bytes al spool (`SpoolLayout`), al esquema (≤ 256 atributos) y a la conversión web. Hoy se descartan (`source.rs:262-276`).
 - [x] **Pasa si** una ida y vuelta conversor → lector devuelve los flags y los Extra Bytes exactos. Mientras no exista exportador LAS, esta es la verificación.
 
