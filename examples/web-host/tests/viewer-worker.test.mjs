@@ -4,7 +4,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
-    .replace(/^import .*\n/, "");
+    .replace(/^import .*\n/gm, "");
 
 async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null) {
     const messages = [];
@@ -178,6 +178,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             postMessage(message) { messages.push(message); },
         },
         performance,
+        resolveSource: async (spec) => spec,
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
         WasmAsyncReadBudget: DefaultAsyncReadBudget,

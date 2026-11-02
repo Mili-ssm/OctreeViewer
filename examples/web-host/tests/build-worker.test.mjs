@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { test } from "node:test";
 
-const stripImports = source => source.replace(/^import .*\n/, "");
+const stripImports = source => source.replace(/^import .*\n/gm, "");
 const viewerSource = stripImports(await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"));
 const buildSource = stripImports(await readFile(new URL("../build-worker.js", import.meta.url), "utf8"));
 const settle = async () => {
@@ -80,6 +80,7 @@ async function runBuildWorker({ updates = [], graftFails = false } = {}) {
             postMessage(message) { posted.push(message); },
         },
         performance: { now: () => Date.now() },
+        resolveSource: async (spec) => spec,
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 2 }) }),
         WasmSceneBuilder, WasmAsyncFormatReader: Reader, WasmAsyncReadBudget: Budget,
         WasmBlockRequestScheduler: Scheduler,
@@ -266,6 +267,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             postMessage(message) { messages.push(message); },
         },
         performance: { now: () => now },
+        resolveSource: async (spec) => spec,
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: { createOffscreen: async () => viewer },
         WasmAsyncReadBudget: class {}, WasmBlockRequestScheduler: class {}, WasmAsyncFormatReader: class {},

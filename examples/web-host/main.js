@@ -158,6 +158,11 @@ window.__renderBench = {
     // Runs frames for a moment, as camera input would, so an idle scene keeps refining.
     wake: () => wakeRendering(),
     latestLodCounters: () => lodCounters(latestLodStats),
+    openTimings: () => benchmarkRun && {
+        firstCoarseFrameMs: benchmarkRun.firstCoarseFrameMs,
+        targetLodMs: benchmarkRun.targetLodMs,
+        uniqueBytesRead: benchmarkRun.uniqueBytesRead,
+    },
 };
 
 function exportBenchmarkRun() {
@@ -437,6 +442,22 @@ function startBenchmark() {
     }
 }
 
+// `?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file over HTTP Range; the attributes default to
+// the `.octattrs` next to it. The server must answer Range and send CORS headers.
+let urlOpened = false;
+function openUrlFromQuery() {
+    const params = new URLSearchParams(location.search);
+    const target = params.get("url");
+    if (urlOpened || !target) return;
+    urlOpened = true;
+    if (params.get("px")) voxelPixels.value = params.get("px");
+    const absolute = (value) => new URL(value, location.href).href;
+    const url = absolute(target);
+    const attrs = params.get("attrs");
+    const attributes = attrs === "none" ? undefined : { url: attrs ? absolute(attrs) : `${url}attrs` };
+    openProjectFile({ url }, decodeURIComponent(new URL(url).pathname.split("/").pop()), attributes);
+}
+
 function handleWorkerMessage(event) {
     if (event.currentTarget !== worker) return;
     const { data } = event;
@@ -454,6 +475,7 @@ function handleWorkerMessage(event) {
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
         requestFrameOnce();
+        openUrlFromQuery();
     } else if (data.type === "commandAck") {
         commandQueue.acknowledge(data.command);
     } else if (data.type === "status") {
@@ -875,6 +897,8 @@ function finishConverter() {
     convertCancelButton.disabled = false;
 }
 
+// `file` is a File, or `{ url }` for a file read over HTTP Range (the workers open it; see
+// http-range-source.mjs). `attributesFile` follows the same rule.
 function openProjectFile(file, displayName = file?.name, attributesFile = undefined) {
     if (!ready || !file) return;
     currentProjectFile = file;
@@ -883,8 +907,8 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     colorMode.value = "rgb";
     benchmarkRun = {
         datasetName: displayName,
-        fileBytes: file.size,
-        attributes: attributesFile ? { name: attributesFile.name, fileBytes: attributesFile.size } : null,
+        fileBytes: file.size ?? null,
+        attributes: attributesFile ? { name: attributesFile.name ?? attributesFile.url, fileBytes: attributesFile.size ?? null } : null,
         sourcePointCount: null,
         nodeCount: null,
         startedAt: performance.now(),

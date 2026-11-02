@@ -1,4 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmSceneBuilder } from "../../pkg/viewer_wasm.js";
+import { resolveSource } from "./http-range-source.mjs";
 
 // Build worker (render plan R2): owns the dataset hierarchy, the block reader and scheduler, the
 // decoded block cache, the LOD planner and the voxel builder (`WasmSceneBuilder`, no GPU). The
@@ -299,7 +300,12 @@ async function openDataset(data) {
     const nextScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
     scheduler = nextScheduler;
     readBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
-    const nextReader = await WasmAsyncFormatReader.open(data.file, data.attributes, readBudget.clone());
+    // A remote file is `{ url }`: this worker opens its own range source (it cannot be cloned).
+    const [file, attributes] = await Promise.all([
+        resolveSource(data.file),
+        resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 }),
+    ]);
+    const nextReader = await WasmAsyncFormatReader.open(file, attributes, readBudget.clone());
     if (requestGeneration !== generation) {
         nextReader.free();
         return;

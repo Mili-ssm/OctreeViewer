@@ -1,4 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
+import { resolveSource } from "./http-range-source.mjs";
 
 let viewer = null;
 let wasmExports = null;
@@ -611,7 +612,7 @@ function startBuiltDataset(data, requestId = null) {
     viewSentAt.clear();
     beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
     const name = data.name ?? data.file.name;
-    pendingOpen = { requestId, name, bytes: data.file.size, opened: null };
+    pendingOpen = { requestId, name, bytes: data.file.size ?? null, opened: null };
     self.postMessage({ type: "status", message: `Opening ${name}…` });
     const [maxVoxels, maxEstimatedBytes] = viewer.voxelBuildLimits();
     worker.postMessage({
@@ -777,7 +778,12 @@ function startAsyncDataset(data, requestId = null) {
     const name = data.name ?? data.file.name;
     self.postMessage({ type: "status", message: `Opening ${name}…` });
     asyncReadBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
-    void WasmAsyncFormatReader.open(data.file, data.attributes, asyncReadBudget.clone()).then((reader) => {
+    // A remote file is `{ url }`: each worker opens its own range source (it cannot be cloned).
+    let fileBytes = data.file.size ?? null;
+    void Promise.all([resolveSource(data.file), resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 })]).then(([file, attributes]) => {
+        fileBytes = file.size;
+        return WasmAsyncFormatReader.open(file, attributes, asyncReadBudget.clone());
+    }).then((reader) => {
         messageQueue = messageQueue.then(timed("asyncOpen", () => {
             if (generation !== datasetGeneration) {
                 reader.free();
@@ -806,7 +812,7 @@ function startAsyncDataset(data, requestId = null) {
             ));
             viewer.fitScene();
             const lod = viewer.updateLod(targetVoxelPixels);
-            currentMetadata = { ...opened, name, bytes: data.file.size, hasAttributes: descriptor.hasAttributes };
+            currentMetadata = { ...opened, name, bytes: fileBytes, hasAttributes: descriptor.hasAttributes };
             if (requestId !== null) {
                 self.postMessage({ type: "apiResult", requestId, value: { opened, lod, name } });
             } else {
