@@ -2164,7 +2164,72 @@ fn global_side_exponent(bounds: SpatialBounds) -> u32 {
 fn quanta(position: [f64; 3]) -> [i64; 3] {
     // Positions of a global conversion are on the grid and inside the coordinate limit.
     // `as` saturates: a level-0 corner -2^48 units is exactly -2^63 quanta.
-    position.map(|value| (value * 32_768.0).round() as i64)
+    position.map(|value| viewer_format::round_to_quanta(value * 32_768.0))
+}
+
+/// Per-node constants of [`sample_cell_global`]: computed once instead of per point.
+#[derive(Clone, Copy)]
+pub struct GlobalCellFrame {
+    origin: [i64; 3],
+    shift: u32,
+    grid: usize,
+    /// Every cell center is an `i64`: the cube lies inside the coordinate domain, so the
+    /// centers need no `i128` arithmetic or conversion.
+    centers_fit: bool,
+}
+
+impl GlobalCellFrame {
+    pub fn new(bounds: SpatialBounds, grid: usize) -> Self {
+        let origin = quanta(bounds.min());
+        let side_exponent = global_side_exponent(bounds);
+        let centers_fit = origin
+            .iter()
+            .all(|&origin| (i128::from(origin) + (1_i128 << side_exponent)) <= 1_i128 << 63);
+        Self {
+            origin,
+            shift: side_exponent - grid.trailing_zeros(),
+            grid,
+            centers_fit,
+        }
+    }
+
+    #[inline]
+    fn center(&self, axis: usize, cell: usize) -> f64 {
+        if self.centers_fit {
+            let half = if self.shift == 0 {
+                0
+            } else {
+                1_u64 << (self.shift - 1)
+            };
+            // The true sum is an `i64`, so wrapping arithmetic yields it exactly.
+            let quanta = self.origin[axis]
+                .wrapping_add(((cell as u64) << self.shift) as i64)
+                .wrapping_add(half as i64);
+            quanta as f64 * viewer_format::quanta_to_units(1)
+        } else {
+            global_cell_center(self.origin[axis], cell, self.shift)
+        }
+    }
+
+    /// Cell index and center of `position`; see [`sample_cell_global`].
+    #[inline]
+    pub fn cell(&self, position: [f64; 3]) -> (usize, [f64; 3]) {
+        let q = quanta(position);
+        let grid = self.grid;
+        let mut cell = [0_usize; 3];
+        let mut center = [0.0_f64; 3];
+        for axis in 0..3 {
+            // The difference fits `i64` for any point inside a node below the root; wider
+            // ones take the `i128` path (same value, only slower).
+            cell[axis] = match q[axis].checked_sub(self.origin[axis]) {
+                Some(relative) => (relative >> self.shift).clamp(0, grid as i64 - 1) as usize,
+                None => ((i128::from(q[axis]) - i128::from(self.origin[axis])) >> self.shift)
+                    .clamp(0, grid as i128 - 1) as usize,
+            };
+            center[axis] = self.center(axis, cell[axis]);
+        }
+        ((cell[0] * grid + cell[1]) * grid + cell[2], center)
+    }
 }
 
 /// [`sample_cell`] on exact integers for a node of a global octree: the cell of `position` is
@@ -2175,17 +2240,7 @@ pub fn sample_cell_global(
     bounds: SpatialBounds,
     grid: usize,
 ) -> (usize, [f64; 3]) {
-    let shift = global_side_exponent(bounds) - grid.trailing_zeros();
-    let q = quanta(position);
-    let origin = quanta(bounds.min());
-    let mut cell = [0_usize; 3];
-    let mut center = [0.0_f64; 3];
-    for axis in 0..3 {
-        let relative = i128::from(q[axis]) - i128::from(origin[axis]);
-        cell[axis] = ((relative >> shift).clamp(0, grid as i128 - 1)) as usize;
-        center[axis] = global_cell_center(origin[axis], cell[axis], shift);
-    }
-    ((cell[0] * grid + cell[1]) * grid + cell[2], center)
+    GlobalCellFrame::new(bounds, grid).cell(position)
 }
 
 #[inline]

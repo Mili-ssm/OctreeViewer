@@ -16,10 +16,10 @@ use super::{
 use crate::ConvertError;
 use crate::source::SourceInfo;
 use crate::spatial::{
-    ChildSpool, MAX_SPATIAL_DEPTH, SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter,
-    center_rounding_error, cube_side, decode_point, global_level, lod_sample_error, read_records,
-    sample_cell, sample_cell_global, visit_source_points, voxel_center, voxel_center_global,
-    write_point, write_source_points,
+    ChildSpool, GlobalCellFrame, MAX_SPATIAL_DEPTH, SampleAccumulator, SpoolLayout, SpoolPoint,
+    StoreWriter, center_rounding_error, cube_side, decode_point, global_level, lod_sample_error,
+    read_records, sample_cell, visit_source_points, voxel_center, voxel_center_global, write_point,
+    write_source_points,
 };
 
 /// Nodes at an absolute level below this are larger than one block (2^32 quanta).
@@ -238,6 +238,8 @@ pub struct SampleGrid {
     cells: SampleCells,
     /// Exact integer cells of a `v7.4-pre` node.
     global: bool,
+    /// Constants of the node, taken from the first point added (all share the same bounds).
+    frame: Option<GlobalCellFrame>,
 }
 
 impl SampleGrid {
@@ -253,6 +255,7 @@ impl SampleGrid {
             grid,
             cells,
             global,
+            frame: None,
         }
     }
 
@@ -274,7 +277,10 @@ impl SampleGrid {
     #[inline(always)]
     fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
         let (voxel_key, center) = if self.global {
-            sample_cell_global(point.position, bounds, self.grid)
+            let grid = self.grid;
+            self.frame
+                .get_or_insert_with(|| GlobalCellFrame::new(bounds, grid))
+                .cell(point.position)
         } else {
             sample_cell(point.position, bounds, self.grid)
         };
@@ -940,7 +946,7 @@ fn measure_leaf_spacing<S: SpoolStore>(
     let origin = job
         .bounds
         .min()
-        .map(|value| (value * 32_768.0).round() as i64);
+        .map(|value| viewer_format::round_to_quanta(value * 32_768.0));
     let mut reader = store.reader(
         job.input,
         SpoolExtent {
@@ -963,6 +969,65 @@ fn measure_leaf_spacing<S: SpoolStore>(
             }));
         }
     }
+    let depth = morton_spacing_depth(&cells, side_exponent, max_depth)
+        .unwrap_or_else(|| sorted_spacing_depth(&cells, side_exponent, max_depth));
+    Ok(2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32))
+}
+
+/// Spreads the low 21 bits of `value` three positions apart.
+fn spread_bits(mut value: u64) -> u64 {
+    value &= 0x1f_ffff;
+    value = (value | value << 32) & 0x001f_0000_0000_ffff;
+    value = (value | value << 16) & 0x001f_0000_ff00_00ff;
+    value = (value | value << 8) & 0x100f_00f0_0f00_f00f;
+    value = (value | value << 4) & 0x10c3_0c30_c30c_30c3;
+    (value | value << 2) & 0x1249_2492_4924_9249
+}
+
+/// [`sorted_spacing_depth`] with one sort: the cell keys of every depth are prefixes of the
+/// Morton code at `max_depth`, so a pair of neighbours in that order first differs at a depth
+/// found from the highest differing bit. `None` when a cell lies outside the node (the general
+/// search handles it).
+fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> Option<u32> {
+    if max_depth == 0 {
+        return None;
+    }
+    let shift = side_exponent - max_depth;
+    let mut codes = Vec::with_capacity(cells.len());
+    for relative in cells {
+        let [x, y, z] = relative.map(|value| value >> shift);
+        let limit = 1_i128 << max_depth;
+        if [x, y, z].iter().any(|v| !(0..limit).contains(v)) {
+            return None;
+        }
+        codes.push(spread_bits(x as u64) << 2 | spread_bits(y as u64) << 1 | spread_bits(z as u64));
+    }
+    codes.sort_unstable();
+    // `first_split[d]`: neighbours whose keys differ for the first time at depth `d`.
+    let mut first_split = [0_usize; LEAF_SPACING_MAX_DEPTH as usize + 1];
+    for pair in codes.windows(2) {
+        let differing = pair[0] ^ pair[1];
+        if differing != 0 {
+            let top_group = (63 - differing.leading_zeros()) / 3;
+            first_split[(max_depth - top_group) as usize] += 1;
+        }
+    }
+    let mut previous = 1_usize;
+    let mut occupied = 1_usize;
+    let mut depth = 0;
+    for candidate in 1..=max_depth {
+        occupied += first_split[candidate as usize];
+        depth = candidate;
+        if (occupied as f64) < LEAF_GROWTH_THRESHOLD * previous as f64 {
+            break;
+        }
+        previous = occupied;
+    }
+    Some(depth)
+}
+
+/// The depth search by one sort and dedup of the cell keys per candidate depth.
+fn sorted_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32 {
     let mut previous = 1_usize;
     let mut depth = 0;
     let mut keys = Vec::with_capacity(cells.len());
@@ -981,7 +1046,7 @@ fn measure_leaf_spacing<S: SpoolStore>(
         }
         previous = keys.len();
     }
-    Ok(2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32))
+    depth
 }
 
 /// A leaf keeps its input spool for the block phase, read in `point_limit` chunks; an empty one is

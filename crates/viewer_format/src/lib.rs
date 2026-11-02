@@ -45,7 +45,7 @@ pub use geometry::{
 };
 pub use global_frame::{
     CrsRaw, CrsRecord, GlobalFrame, NodeCell, SourceScaleOffset, cell_origin_quanta,
-    quanta_to_units, quantize_coordinate,
+    quanta_to_units, quantize_coordinate, round_to_quanta,
 };
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};

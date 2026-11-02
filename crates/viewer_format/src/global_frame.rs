@@ -29,7 +29,15 @@ pub fn quantize_coordinate(coordinate: f64) -> Option<i64> {
     if !coordinate.is_finite() || coordinate.abs() >= MAX_ABS_COORDINATE {
         return None;
     }
-    Some((coordinate * QUANTA_PER_UNIT).round() as i64)
+    Some(round_to_quanta(coordinate * QUANTA_PER_UNIT))
+}
+
+/// `value.round() as i64` (ties away from zero, saturating) without the libm call that `round`
+/// is on baseline x86-64: adding the largest `f64` below 0.5 with the sign of `value` and
+/// truncating gives the same integer for every finite `f64`, and `0` for NaN.
+#[inline]
+pub fn round_to_quanta(value: f64) -> i64 {
+    (value + 0.499_999_999_999_999_94_f64.copysign(value)) as i64
 }
 
 /// Quanta to CRS units, rounded to the nearest `f64`.
