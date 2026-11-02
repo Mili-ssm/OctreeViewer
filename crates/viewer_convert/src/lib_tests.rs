@@ -509,6 +509,8 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
         .with_spatial_workers(1)
         .unwrap()
         .with_spatial_divisions(4)
+        .unwrap()
+        .with_root_partition_ranges(0)
         .unwrap();
     let parallel_options = serial_options.with_spatial_workers(2).unwrap();
 
@@ -670,6 +672,36 @@ fn pipeline_prepares_next_batch_while_consuming_in_order() {
     )
     .unwrap();
     assert_eq!(written, [0, 1, 2, 3]);
+}
+
+#[test]
+fn sliding_window_consumes_in_order_with_bounded_items_in_flight() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let items: Vec<usize> = (0..64).collect();
+    let prepared = AtomicUsize::new(0);
+    let mut written = Vec::new();
+    crate::las_source::process_batches(
+        &items,
+        3,
+        false,
+        |item| {
+            // The first item is a straggler: later items finish before it.
+            if item[0] == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            prepared.fetch_add(1, Ordering::SeqCst);
+            Ok(item[0])
+        },
+        |item, value| {
+            assert_eq!(item[0], value);
+            // Consumed or in flight never exceeds the window of 2 * width items.
+            assert!(prepared.load(Ordering::SeqCst) <= written.len() + 6);
+            written.push(value);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(written, items);
 }
 
 #[test]
@@ -1469,6 +1501,8 @@ fn spool_diagnostics_account_written_and_live_bytes() {
     let options = ConvertOptions::new(64, 0.01)
         .unwrap()
         .with_spatial_divisions(4)
+        .unwrap()
+        .with_root_partition_ranges(0)
         .unwrap();
 
     let mut written = Vec::new();

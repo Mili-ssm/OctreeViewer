@@ -8,6 +8,8 @@ pub const MAX_POINTS_PER_BLOCK: u64 = 1_000_000;
 pub const MAX_SPATIAL_WORKERS: usize = 8;
 pub const DEFAULT_SPATIAL_WORKERS: usize = 4;
 pub const MAX_ROOT_PARTITION_RANGES: usize = 8;
+/// Default root scan split; `admitted_root_ranges` still bounds it by the memory budget.
+const DEFAULT_ROOT_PARTITION_RANGES: usize = 4;
 pub const DEFAULT_SAMPLE_GRID: usize = 8;
 pub const MAX_SAMPLE_GRID: usize = 256;
 pub const ALLOWED_SPATIAL_DIVISIONS: [u8; 3] = [2, 4, 8];
@@ -84,7 +86,7 @@ impl ConvertOptions {
             pipelined_writes: false,
             spatial_divisions: 2,
             sample_grid: DEFAULT_SAMPLE_GRID,
-            root_partition_ranges: 0,
+            root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         })
     }
@@ -158,7 +160,7 @@ impl ConvertOptions {
     }
 
     /// Reads the root in up to `ranges` parts (LAS record ranges, LAZ chunk groups) and joins
-    /// the per-range child spools; 0 (the default) scans it as one stream. Not a stable option.
+    /// the per-range child spools; 0 scans it as one stream (the default is 4). Not a stable option.
     #[doc(hidden)]
     pub fn with_root_partition_ranges(mut self, ranges: usize) -> Result<Self, ConvertError> {
         if ranges > MAX_ROOT_PARTITION_RANGES {
@@ -185,7 +187,7 @@ impl Default for ConvertOptions {
             pipelined_writes: false,
             spatial_divisions: 2,
             sample_grid: DEFAULT_SAMPLE_GRID,
-            root_partition_ranges: 0,
+            root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             format_version: FormatVersion::DEFAULT_OUTPUT,
         }
     }

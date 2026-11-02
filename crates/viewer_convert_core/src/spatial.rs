@@ -116,7 +116,8 @@ pub struct PlannedBlock {
     layout: SpoolLayout,
     pub is_source_points: bool,
     // Blocks sharing a spool stay in construction order when streamed. Only the
-    // last range may release it, after all reads in its worker batch have joined.
+    // last range may release it; blocks are written in plan order, so by then every other
+    // read of the spool has finished.
     final_block_in_spool: bool,
 }
 
