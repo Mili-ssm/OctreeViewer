@@ -1,0 +1,529 @@
+CAP lvl 3 pts 1049 first 7 cells [53, 71, 98, 141, 241, 420, 775, 1038]
+CAP lvl 8 pts 481 first 11 cells [3, 9, 18, 52, 146, 357, 459, 475]
+CAP lvl 6 pts 5418 first 8 cells [5, 11, 45, 186, 605, 1545, 3162, 4918]
+CAP lvl 6 pts 5215 first 9 cells [10, 30, 101, 315, 813, 1943, 3752, 5005]
+CAP lvl 11 pts 38 first 13 cells [4, 5, 8, 11, 18, 29, 36, 38]
+CAP lvl 9 pts 1853 first 11 cells [2, 3, 10, 37, 111, 322, 821, 1515]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 99 first 13 cells [4, 6, 12, 27, 57, 83, 97, 99]
+CAP lvl 11 pts 103 first 13 cells [4, 8, 16, 30, 51, 82, 99, 103]
+CAP lvl 7 pts 408 first 9 cells [2, 3, 8, 19, 30, 48, 99, 208]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 7 pts 10219 first 9 cells [4, 8, 29, 126, 490, 1575, 3892, 7387]
+CAP lvl 10 pts 1072 first 12 cells [2, 6, 19, 63, 163, 389, 790, 1063]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 2361 first 8 cells [4, 7, 13, 37, 118, 288, 757, 1596]
+CAP lvl 6 pts 565 first 8 cells [4, 7, 13, 26, 59, 131, 285, 484]
+CAP lvl 12 pts 12205 first 14 cells [4, 10, 26, 132, 654, 2812, 7729, 11496]
+CAP lvl 8 pts 1216 first 12 cells [13, 18, 26, 62, 168, 450, 920, 1203]
+CAP lvl 6 pts 30199 first 9 cells [4, 10, 37, 181, 805, 2867, 7801, 16005]
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 493 first 14 cells [4, 7, 14, 43, 132, 300, 476, 493]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 288 first 12 cells [2, 4, 7, 22, 62, 144, 256, 288]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 8 pts 56 first 10 cells [4, 6, 8, 9, 13, 25, 44, 55]
+CAP lvl 8 pts 24 first 10 cells [2, 3, 4, 5, 8, 14, 19, 22]
+CAP lvl 6 pts 6717 first 8 cells [4, 10, 20, 48, 138, 452, 1369, 3470]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 4677 first 8 cells [4, 8, 15, 32, 96, 275, 818, 2110]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 2051 first 9 cells [7, 16, 28, 69, 169, 427, 970, 1580]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 3 pts 101 first 6 cells [21, 27, 31, 35, 38, 50, 60, 85]
+CAP lvl 6 pts 354 first 8 cells [2, 3, 5, 10, 31, 90, 207, 336]
+CAP lvl 4 pts 473 first 8 cells [50, 55, 69, 100, 163, 285, 445, 473]
+CAP lvl 3 pts 296 first 7 cells [64, 76, 85, 94, 116, 158, 233, 292]
+CAP lvl 3 pts 130 first 6 cells [11, 12, 14, 22, 33, 65, 106, 130]
+CAP lvl 4 pts 157 first 7 cells [30, 36, 44, 54, 73, 98, 135, 157]
+CAP lvl 4 pts 281 first 7 cells [27, 39, 56, 77, 117, 164, 243, 281]
+CAP lvl 3 pts 386 first 7 cells [94, 121, 133, 148, 175, 230, 298, 382]
+CAP lvl 3 pts 36 first 6 cells [9, 10, 12, 15, 18, 23, 32, 36]
+CAP lvl 3 pts 261 first 7 cells [61, 70, 80, 100, 114, 153, 229, 260]
+CAP lvl 6 pts 9884 first 8 cells [4, 10, 36, 123, 439, 1403, 3852, 7689]
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 238 first 13 cells [3, 6, 9, 17, 39, 108, 201, 238]
+CAP lvl 9 pts 73 first 11 cells [5, 7, 10, 14, 20, 42, 67, 70]
+CAP lvl 10 pts 45 first 12 cells [4, 7, 9, 15, 19, 30, 39, 45]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 133 first 14 cells [4, 9, 16, 31, 65, 103, 126, 133]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 50 first 12 cells [2, 3, 7, 14, 23, 32, 46, 50]
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 466 first 13 cells [4, 9, 19, 55, 165, 324, 437, 466]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 1437 first 11 cells [4, 10, 37, 128, 360, 858, 1321, 1429]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 1047 first 12 cells [2, 5, 17, 59, 189, 493, 873, 1045]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 75 first 14 cells [4, 5, 7, 15, 33, 57, 73, 75]
+CAP lvl 9 pts 541 first 13 cells [7, 18, 48, 124, 293, 509, 540, 541]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 53 first 13 cells [5, 10, 15, 25, 34, 45, 51, 53]
+CAP lvl 11 pts 113 first 13 cells [4, 9, 21, 42, 82, 106, 112, 113]
+CAP lvl 11 pts 70 first 13 cells [4, 5, 10, 14, 24, 38, 58, 67]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 934 first 12 cells [2, 7, 23, 75, 256, 555, 843, 932]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 1900 first 14 cells [7, 24, 78, 234, 629, 1195, 1701, 1880]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 1562 first 13 cells [2, 7, 21, 88, 320, 786, 1275, 1539]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 5676 first 14 cells [43, 62, 149, 451, 1267, 2800, 4860, 5673]
+CAP lvl 11 pts 2969 first 13 cells [2, 5, 17, 57, 203, 683, 1650, 2720]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 995 first 14 cells [5, 11, 23, 63, 172, 382, 729, 949]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 10177 first 11 cells [3, 6, 22, 86, 386, 1548, 4392, 8158]
+CAP lvl 9 pts 693 first 12 cells [4, 6, 10, 26, 66, 200, 559, 678]
+CAP lvl 9 pts 202 first 11 cells [4, 6, 10, 21, 51, 114, 178, 201]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 1650 first 11 cells [5, 14, 36, 119, 338, 799, 1387, 1643]
+CAP lvl 9 pts 67 first 12 cells [2, 5, 8, 12, 16, 30, 55, 67]
+CAP lvl 12 pts 620 first 14 cells [5, 10, 13, 26, 73, 205, 366, 499]
+CLAMP lvl 15 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 592 first 11 cells [2, 4, 8, 19, 44, 97, 224, 453]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 291 first 12 cells [2, 8, 18, 42, 84, 164, 262, 291]
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 8 pts 268 first 10 cells [2, 7, 21, 45, 111, 190, 262, 268]
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 249 first 11 cells [2, 3, 4, 15, 42, 101, 190, 246]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 8 pts 1695 first 10 cells [2, 3, 5, 20, 85, 331, 923, 1483]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 746 first 14 cells [4, 7, 17, 59, 196, 487, 740, 746]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 249 first 11 cells [4, 5, 11, 23, 43, 93, 183, 246]
+CAP lvl 10 pts 109 first 12 cells [2, 3, 4, 7, 21, 58, 94, 109]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 189 first 13 cells [3, 5, 10, 17, 35, 91, 165, 189]
+CAP lvl 8 pts 5408 first 10 cells [2, 5, 17, 60, 222, 699, 1921, 3984]
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 89 first 14 cells [5, 11, 19, 37, 58, 79, 88, 89]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 112 first 14 cells [2, 4, 11, 28, 62, 95, 110, 112]
+CAP lvl 12 pts 111 first 14 cells [4, 5, 10, 23, 53, 84, 106, 111]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 77 first 14 cells [2, 3, 6, 16, 37, 65, 76, 77]
+CAP lvl 9 pts 820 first 11 cells [2, 5, 13, 34, 88, 253, 526, 773]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 8 pts 449 first 10 cells [4, 9, 17, 26, 58, 129, 207, 222]
+CAP lvl 9 pts 335 first 12 cells [2, 4, 13, 35, 93, 201, 304, 335]
+CLAMP lvl 6 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 36 first 14 cells [2, 4, 8, 12, 21, 29, 35, 36]
+CAP lvl 10 pts 52 first 13 cells [4, 5, 6, 7, 11, 16, 27, 39]
+CAP lvl 12 pts 113 first 14 cells [4, 6, 9, 20, 46, 80, 110, 113]
+CAP lvl 12 pts 153 first 14 cells [2, 6, 12, 28, 60, 118, 152, 153]
+CAP lvl 8 pts 113 first 11 cells [9, 12, 24, 42, 67, 89, 106, 113]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 8 pts 59 first 10 cells [2, 3, 5, 10, 18, 27, 43, 57]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 1530 first 12 cells [4, 12, 39, 157, 546, 1129, 1498, 1528]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 23 first 12 cells [2, 5, 6, 8, 12, 17, 21, 23]
+CAP lvl 10 pts 16 first 13 cells [5, 7, 10, 11, 13, 14, 15, 16]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 33 first 12 cells [2, 4, 7, 10, 11, 17, 29, 33]
+CAP lvl 9 pts 209 first 12 cells [3, 8, 14, 34, 84, 151, 205, 209]
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 109 first 13 cells [4, 5, 11, 20, 31, 64, 103, 109]
+CAP lvl 10 pts 44 first 14 cells [6, 7, 12, 15, 22, 36, 43, 44]
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 88 first 13 cells [6, 9, 11, 20, 33, 60, 83, 88]
+CAP lvl 10 pts 237 first 12 cells [2, 5, 14, 46, 102, 171, 230, 237]
+CAP lvl 9 pts 255 first 11 cells [2, 4, 8, 16, 35, 74, 168, 254]
+CLAMP lvl 7 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 7 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 1895 first 8 cells [4, 11, 26, 69, 206, 535, 1163, 1781]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 7 pts 4427 first 9 cells [4, 8, 22, 64, 208, 588, 1528, 3007]
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 25 first 13 cells [4, 5, 11, 16, 19, 21, 22, 23]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 48 first 14 cells [2, 5, 10, 15, 26, 35, 47, 48]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 58 first 14 cells [2, 3, 5, 13, 29, 47, 55, 58]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 33 first 13 cells [4, 8, 13, 21, 24, 30, 32, 33]
+CAP lvl 10 pts 246 first 12 cells [3, 4, 8, 22, 70, 169, 234, 246]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 74 first 13 cells [3, 5, 12, 19, 33, 43, 60, 69]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 80 first 12 cells [4, 5, 8, 18, 29, 37, 44, 59]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 610 first 13 cells [13, 34, 75, 155, 177, 206, 276, 380]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 327 first 14 cells [47, 56, 69, 89, 130, 170, 241, 301]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 7 pts 19600 first 9 cells [4, 11, 30, 95, 308, 893, 2457, 5441]
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 327 first 13 cells [8, 9, 12, 15, 32, 48, 81, 144]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 87 first 12 cells [5, 7, 8, 10, 14, 17, 27, 39]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 35 first 11 cells [2, 3, 5, 7, 9, 20, 33, 35]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 109 first 12 cells [2, 3, 4, 5, 6, 9, 16, 26]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 8 pts 973 first 10 cells [5, 8, 20, 66, 233, 565, 861, 955]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 10 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 68 first 14 cells [12, 18, 23, 25, 32, 42, 57, 66]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 489 first 14 cells [2, 8, 17, 44, 93, 216, 378, 487]
+CAP lvl 12 pts 1389 first 14 cells [7, 20, 54, 132, 341, 717, 1141, 1333]
+CAP lvl 11 pts 729 first 13 cells [2, 6, 13, 51, 152, 355, 604, 727]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 184 first 13 cells [5, 12, 21, 36, 67, 128, 175, 184]
+CAP lvl 10 pts 113 first 12 cells [5, 6, 8, 11, 14, 20, 37, 67]
+CAP lvl 10 pts 143 first 12 cells [4, 15, 50, 111, 130, 132, 136, 141]
+CAP lvl 11 pts 36 first 13 cells [2, 4, 5, 13, 21, 26, 34, 36]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 863 first 11 cells [2, 3, 6, 18, 60, 179, 476, 792]
+CAP lvl 8 pts 2418 first 10 cells [5, 7, 16, 36, 133, 389, 966, 1878]
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 2644 first 12 cells [2, 5, 10, 30, 95, 323, 943, 1885]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 47 first 13 cells [2, 3, 6, 7, 13, 20, 31, 41]
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 3744 first 12 cells [3, 6, 12, 26, 63, 155, 384, 813]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 10 pts 456 first 12 cells [3, 5, 16, 38, 94, 212, 393, 456]
+CAP lvl 8 pts 82 first 11 cells [10, 18, 27, 39, 54, 71, 81, 82]
+CAP lvl 9 pts 274 first 11 cells [2, 3, 8, 19, 60, 171, 258, 273]
+CAP lvl 7 pts 1346 first 9 cells [2, 3, 9, 20, 51, 166, 535, 1075]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 79 first 14 cells [5, 10, 19, 33, 56, 73, 77, 78]
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 158 first 14 cells [7, 15, 22, 47, 97, 148, 156, 157]
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 243 first 14 cells [7, 10, 25, 61, 123, 186, 236, 243]
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 11 pts 314 first 14 cells [7, 14, 32, 59, 129, 240, 312, 313]
+CAP lvl 12 pts 1796 first 14 cells [2, 6, 11, 41, 125, 381, 945, 1574]
+CAP lvl 10 pts 201 first 12 cells [5, 7, 12, 19, 25, 37, 52, 87]
+CAP lvl 6 pts 23581 first 8 cells [2, 3, 10, 34, 148, 619, 2202, 6507]
+CAP lvl 6 pts 23839 first 8 cells [2, 5, 11, 53, 235, 891, 2901, 8368]
+CAP lvl 5 pts 33 first 7 cells [5, 6, 8, 9, 11, 12, 15, 22]
+CLAMP lvl 8 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 237 first 14 cells [4, 8, 17, 35, 77, 152, 228, 237]
+CAP lvl 12 pts 84 first 14 cells [2, 4, 13, 25, 52, 74, 82, 84]
+CAP lvl 12 pts 277 first 14 cells [2, 4, 9, 31, 98, 203, 259, 275]
+CAP lvl 12 pts 141 first 14 cells [2, 4, 7, 21, 51, 98, 135, 141]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 745 first 14 cells [4, 7, 13, 48, 158, 367, 609, 740]
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 12 pts 1183 first 14 cells [3, 4, 14, 53, 154, 432, 840, 1126]
+CAP lvl 12 pts 80 first 14 cells [2, 5, 16, 31, 47, 65, 76, 80]
+CAP lvl 12 pts 310 first 14 cells [4, 9, 24, 66, 139, 232, 297, 310]
+CAP lvl 12 pts 412 first 14 cells [4, 5, 15, 35, 87, 206, 350, 412]
+CLAMP lvl 9 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 267 first 11 cells [2, 3, 9, 25, 60, 112, 192, 267]
+CLAMP lvl 7 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 14 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 11 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 12 pts 1 spacing Some(3.0517578125e-5) root 2048
+CLAMP lvl 13 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 9 pts 127 first 12 cells [4, 6, 11, 39, 78, 121, 125, 126]
+CAP lvl 3 pts 998 first 8 cells [241, 276, 320, 373, 462, 647, 840, 935]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 3411 first 9 cells [10, 18, 42, 124, 332, 842, 1869, 2987]
+CAP lvl 6 pts 1140 first 9 cells [11, 21, 53, 136, 324, 682, 1011, 1130]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 1460 first 8 cells [4, 7, 14, 47, 114, 298, 714, 1258]
+CLAMP lvl 5 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 3 pts 682 first 8 cells [186, 208, 219, 268, 349, 473, 615, 654]
+CAP lvl 6 pts 938 first 8 cells [4, 7, 14, 36, 88, 185, 433, 752]
+CLAMP lvl 7 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 6 pts 1527 first 8 cells [4, 8, 17, 51, 148, 329, 713, 1183]
+CAP lvl 6 pts 855 first 8 cells [3, 10, 32, 84, 183, 370, 669, 849]
+CAP lvl 6 pts 2598 first 8 cells [4, 13, 42, 115, 326, 819, 1724, 2495]
+CLAMP lvl 6 pts 1 spacing Some(3.0517578125e-5) root 2048
+CAP lvl 3 pts 933 first 8 cells [269, 312, 351, 407, 545, 773, 927, 933]
+CAP lvl 6 pts 228 first 8 cells [2, 3, 6, 12, 26, 58, 129, 204]
+CAP lvl 4 pts 778 first 8 cells [62, 78, 119, 175, 288, 511, 753, 777]
+CAP lvl 4 pts 520 first 8 cells [42, 60, 87, 152, 262, 399, 519, 520]
+CAP lvl 3 pts 416 first 7 cells [101, 125, 138, 155, 193, 241, 347, 412]
+CAP lvl 2 pts 141 first 6 cells [50, 54, 57, 66, 71, 84, 104, 121]
+CAP lvl 1 pts 464 first 7 cells [102, 113, 133, 153, 191, 270, 392, 461]
+CAP lvl 1 pts 782 first 7 cells [111, 126, 138, 157, 226, 363, 601, 759]
+file: target/explore-leaf/m1-maj.oct
+nodes: 24091 (leaves 19526, internal 4565), nodes with several blocks (skipped): 0
+size_of NodeCell: 64 B
+non-cubic nodes: 0
+nodes whose 8-cells-per-axis depth is not an integer: 0
+representative depth by (level, depth): count
+  level 0 depth 8: 1
+  level 1 depth 4: 1
+  level 1 depth 7: 2
+  level 1 depth 9: 1
+  level 2 depth 5: 1
+  level 2 depth 6: 3
+  level 2 depth 10: 3
+  level 2 depth 15: 1
+  level 3 depth 5: 2
+  level 3 depth 6: 3
+  level 3 depth 7: 5
+  level 3 depth 8: 4
+  level 3 depth 11: 7
+  level 3 depth 13: 1
+  level 3 depth 14: 1
+  level 3 depth 15: 1
+  level 4 depth 7: 2
+  level 4 depth 8: 4
+  level 4 depth 12: 13
+  level 4 depth 14: 1
+  level 4 depth 15: 9
+  level 5 depth 7: 16
+  level 5 depth 8: 5
+  level 5 depth 9: 1
+  level 5 depth 10: 1
+  level 5 depth 12: 1
+  level 5 depth 13: 35
+  level 5 depth 14: 1
+  level 5 depth 15: 12
+  level 5 depth 16: 2
+  level 5 depth 24: 8
+  level 6 depth 8: 20
+  level 6 depth 9: 7
+  level 6 depth 10: 2
+  level 6 depth 11: 2
+  level 6 depth 12: 1
+  level 6 depth 14: 112
+  level 6 depth 15: 21
+  level 6 depth 16: 77
+  level 6 depth 17: 17
+  level 6 depth 24: 2
+  level 7 depth 9: 5
+  level 7 depth 13: 2
+  level 7 depth 14: 1
+  level 7 depth 15: 237
+  level 7 depth 16: 106
+  level 7 depth 17: 71
+  level 7 depth 18: 7
+  level 7 depth 19: 1
+  level 7 depth 24: 4
+  level 8 depth 10: 19
+  level 8 depth 11: 7
+  level 8 depth 12: 5
+  level 8 depth 13: 4
+  level 8 depth 14: 1
+  level 8 depth 15: 15
+  level 8 depth 16: 535
+  level 8 depth 17: 424
+  level 8 depth 18: 101
+  level 8 depth 19: 8
+  level 8 depth 20: 3
+  level 8 depth 24: 10
+  level 9 depth 11: 29
+  level 9 depth 12: 19
+  level 9 depth 13: 10
+  level 9 depth 14: 7
+  level 9 depth 15: 11
+  level 9 depth 16: 63
+  level 9 depth 17: 1078
+  level 9 depth 18: 896
+  level 9 depth 19: 102
+  level 9 depth 20: 10
+  level 9 depth 24: 17
+  level 10 depth 12: 36
+  level 10 depth 13: 42
+  level 10 depth 14: 17
+  level 10 depth 15: 13
+  level 10 depth 16: 18
+  level 10 depth 17: 41
+  level 10 depth 18: 1396
+  level 10 depth 19: 1217
+  level 10 depth 20: 100
+  level 10 depth 21: 6
+  level 10 depth 22: 4
+  level 10 depth 24: 14
+  level 11 depth 13: 35
+  level 11 depth 14: 40
+  level 11 depth 15: 27
+  level 11 depth 16: 34
+  level 11 depth 17: 31
+  level 11 depth 18: 40
+  level 11 depth 19: 2496
+  level 11 depth 20: 1053
+  level 11 depth 21: 54
+  level 11 depth 22: 3
+  level 11 depth 24: 35
+  level 12 depth 14: 92
+  level 12 depth 15: 110
+  level 12 depth 16: 79
+  level 12 depth 17: 41
+  level 12 depth 18: 36
+  level 12 depth 19: 222
+  level 12 depth 20: 3840
+  level 12 depth 21: 1130
+  level 12 depth 22: 72
+  level 12 depth 24: 44
+  level 13 depth 15: 146
+  level 13 depth 16: 125
+  level 13 depth 17: 90
+  level 13 depth 18: 40
+  level 13 depth 19: 107
+  level 13 depth 20: 512
+  level 13 depth 21: 4135
+  level 13 depth 22: 1060
+  level 13 depth 24: 77
+  level 14 depth 16: 26
+  level 14 depth 17: 15
+  level 14 depth 18: 9
+  level 14 depth 19: 6
+  level 14 depth 20: 61
+  level 14 depth 21: 430
+  level 14 depth 22: 605
+  level 14 depth 24: 7
+  level 15 depth 21: 2
+  level 15 depth 22: 2
+  level 15 depth 24: 1
+leaf chain length histogram (levels: leaves)
+  1: 8543
+  2: 6400
+  3: 2172
+  4: 1275
+  5: 600
+  6: 223
+  7: 150
+  8: 163
+  of which representative depth already at MAX_CELL_DEPTH: 219, chain truncated by CHAIN_SPAN: 163
+leaves at chain cap: 382 (1.956 %)
+leaves with chain > 4x point bytes: 595; worst ratio 6.74x; total chain bytes 12046617552 vs point bytes 6647454112 (1.81x)
+leaf build: 5.708 ms/leaf, 268.3 ns/point, 616952.7 chain B/leaf, 340441.2 point B/leaf
+internal build: 8.794 ms/node
+total cells: 1166927022
