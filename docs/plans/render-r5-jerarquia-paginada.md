@@ -1,6 +1,6 @@
 # R5 — Jerarquía paginada: plan de implementación
 
-Estado: borrador · 02-11-2026
+Estado: listo para ejecutar · 02-11-2026
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -28,7 +28,6 @@ Estado: borrador · 02-11-2026
 - Paridad web/CLI byte a byte (RQ-08).
 - `FormatVersion::V<n>` solo dentro de `viewer_format`.
 - Los cambios en `lod_dataset.rs` (el fichero con más churn) se hacen de uno en uno.
-
 - Los cortes se comparan por (nivel, prefijo), no por `NodeId`: los ids pasan a derivarse.
 - v7.5-pre rechaza de forma explícita la entrada EPT, los checkpoints y Additive.
 
