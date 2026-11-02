@@ -1,0 +1,7 @@
+s r1 exit 0
+o3 r1 exit 0
+s r2 exit 0
+o3 r2 exit 0
+s r3 exit 0
+o3 r3 exit 0
+finished
