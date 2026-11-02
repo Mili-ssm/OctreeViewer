@@ -15,7 +15,8 @@ use crate::checkpoint_record::{
 };
 use crate::index_codec::{footer_bytes, header_for_role, write_index};
 pub(crate) use crate::prepare::{
-    BlockRecord, BoundsAccumulator, build_block_nodes, prepare_point_block_for_version,
+    BlockRecord, BoundsAccumulator, build_block_nodes, ensure_global_frame_matches,
+    prepare_point_block_for_version,
 };
 pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, prepare_point_block};
 
@@ -40,6 +41,9 @@ impl<W: Write + Seek> FormatWriter<W> {
         if self.failed {
             return Err(FormatError::WriterPoisoned);
         }
+        if self.layout.uses_global_frame() {
+            return Err(FormatError::UnsupportedFormatVersion(self.layout.version()));
+        }
         let record = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
         encode_checkpoint_record(id, record)
     }
@@ -62,6 +66,10 @@ impl<W: Write + Seek> FormatWriter<W> {
         W: std::io::Read,
     {
         let layout = StorageLayout::from_version(version)?;
+        if layout.uses_global_frame() {
+            return Err(FormatError::UnsupportedFormatVersion(version));
+        }
+        ensure_global_frame_matches(layout, &metadata)?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         let primary_end = writer.seek(SeekFrom::End(0))?;
@@ -234,6 +242,7 @@ impl<W: Write + Seek> FormatWriter<W> {
             return Err(FormatError::OutputMustBeEmpty);
         }
         writer.seek(SeekFrom::Start(0))?;
+        ensure_global_frame_matches(layout, &metadata)?;
         validate_metadata(&metadata)?;
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         writer.write_all(&header_for_role(layout.version(), FileRole::Monolithic)?)?;
@@ -339,6 +348,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 quantization_error: prepared.quantization_error,
                 origin: prepared.origin,
                 scale: prepared.scale,
+                origin_quanta: prepared.origin_quanta,
                 world_bounds: prepared.world_bounds,
                 payloads: prepared.payloads,
                 ranges: prepared.ranges,
@@ -451,8 +461,10 @@ impl<W: Write + Seek> FormatWriter<W> {
             .map(|node| (node.id(), BoundsAccumulator::from_bounds(node.bounds())))
             .collect::<BTreeMap<_, _>>();
 
+        // `v7.4-pre` bounds are derived from level and prefix; blocks never widen them.
+        let widens_bounds = !self.layout.uses_global_frame();
         for (block_id, record) in &self.blocks {
-            if let Some(block_bounds) = record.world_bounds {
+            if let Some(block_bounds) = record.world_bounds.filter(|_| widens_bounds) {
                 for node_id in &self.block_nodes[block_id] {
                     bounds
                         .get_mut(node_id)
@@ -469,7 +481,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         by_level.sort_unstable_by(|left, right| right.cmp(left));
         for (_, node_id) in by_level {
             let node = source_hierarchy.node(node_id).expect("indexed node");
-            if let Some(parent_id) = node.parent() {
+            if let Some(parent_id) = node.parent().filter(|_| widens_bounds) {
                 let child_bounds = bounds[&node_id].to_bounds()?;
                 bounds
                     .get_mut(&parent_id)

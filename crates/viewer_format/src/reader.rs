@@ -790,6 +790,70 @@ impl<R: Read + Seek> IndexedReader<R> {
         fork
     }
 
+    /// Decodes a `v7.4-pre` block: exact `i64` quanta checked against the integer box of the
+    /// node, plus the `f32` position local to the frame origin.
+    fn decode_global_geometry(
+        &self,
+        cursor: &mut SliceCursor<'_>,
+        entry: &BlockDirectoryEntry,
+        cell: crate::global_frame::CellBox,
+        point_count: usize,
+        mut visit: impl FnMut([i64; 3], [f32; 3]),
+    ) -> Result<(), FormatError> {
+        let frame_origin = self
+            .metadata
+            .global_frame()
+            .ok_or(FormatError::MalformedIndex("missing global frame"))?
+            .frame_origin_quanta();
+        let mut decoder = GeometryDecoder::with_count(
+            entry.geometry_encoding,
+            cursor.remaining_slice(),
+            point_count,
+        )?;
+        for _ in 0..point_count {
+            let offset = decoder.next_coordinate()?;
+            let quanta: [i128; 3] = std::array::from_fn(|axis| {
+                i128::from(entry.origin_quanta[axis]) + i128::from(offset[axis])
+            });
+            if !cell.contains(quanta) {
+                return Err(FormatError::MalformedBlock(
+                    "decoded position is outside its node",
+                ));
+            }
+            let local = crate::global_frame::local_position_units(quanta, frame_origin);
+            let local = local.map(|value| value as f32);
+            if local.iter().any(|value| !value.is_finite()) {
+                return Err(FormatError::MalformedBlock(
+                    "decoded position is out of range",
+                ));
+            }
+            let exact = quanta.map(|value| i64::try_from(value).expect("inside the node box"));
+            visit(exact, local);
+        }
+        decoder.finish()
+    }
+
+    /// Exact `i64` quanta (2^-15 CRS units) of a `v7.4-pre` block, in row order.
+    pub fn read_block_quanta(&mut self, id: BlockId) -> Result<Vec<[i64; 3]>, FormatError> {
+        let blocks = Arc::clone(&self.blocks);
+        let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let cell = entry.node_cell.ok_or(FormatError::InvalidMetadata(
+            "exact quanta exist only in v7.4-pre",
+        ))?;
+        let raw = self.read_payload(id, entry, &entry.payloads[0], None)?;
+        let count =
+            usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
+        let mut quanta = Vec::new();
+        quanta
+            .try_reserve_exact(count)
+            .map_err(|_| FormatError::AllocationFailed(count))?;
+        let mut cursor = SliceCursor::new(&raw);
+        self.decode_global_geometry(&mut cursor, entry, cell, count, |exact, _| {
+            quanta.push(exact)
+        })?;
+        Ok(quanta)
+    }
+
     fn decode_geometry(
         &self,
         cursor: &mut SliceCursor<'_>,
@@ -797,6 +861,17 @@ impl<R: Read + Seek> IndexedReader<R> {
         entry: &BlockDirectoryEntry,
         point_count: usize,
     ) -> Result<PointBatch, FormatError> {
+        if let Some(cell) = entry.node_cell {
+            let point_bytes = allocation_capacity(point_count, std::mem::size_of::<Point>())?;
+            let mut points = Vec::new();
+            points
+                .try_reserve_exact(point_count)
+                .map_err(|_| FormatError::AllocationFailed(point_bytes))?;
+            self.decode_global_geometry(cursor, entry, cell, point_count, |_, local| {
+                points.push(Point::new(local, ColorRgb::new(160, 160, 160)))
+            })?;
+            return Ok(PointBatch::new(points));
+        }
         let mut decoder = GeometryDecoder::with_count(
             entry.geometry_encoding,
             cursor.remaining_slice(),

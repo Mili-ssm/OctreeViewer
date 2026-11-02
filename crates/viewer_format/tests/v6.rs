@@ -1422,14 +1422,14 @@ fn prepared_v5_block_is_rejected_by_v6_writer_and_writer_remains_usable() {
 }
 
 #[test]
-fn unsupported_v6_final_pre5_and_v7_pre4_are_rejected_by_writer_encoder_and_reader() {
+fn unsupported_v6_final_pre5_and_v7_pre5_are_rejected_by_writer_encoder_and_reader() {
     let meta = metadata(POINTS.len() as u64, descriptors());
     let options = options();
     let versions = [
         FormatVersion::V6,
         FormatVersion::V6Pre(std::num::NonZeroU32::new(5).unwrap()),
         FormatVersion::V7,
-        FormatVersion::V7Pre(std::num::NonZeroU32::new(4).unwrap()),
+        FormatVersion::V7Pre(std::num::NonZeroU32::new(5).unwrap()),
     ];
     for version in versions {
         assert!(matches!(

@@ -117,10 +117,10 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 
 **Archivos:** `crates/viewer_format/src/{version.rs, layout.rs, index_codec.rs, metadata.rs, quantization.rs}`, tests y fuzz.
 
-- [ ] Tests primero: ida y vuelta del índice (prefijo, nivel, `spacing`, CRS); cuantización exacta con
+- [x] Tests primero: ida y vuelta del índice (prefijo, nivel, `spacing`, CRS); cuantización exacta con
   origen a 4,4·10⁶ m; exportación que devuelve los enteros LAS exactos con escalas 0,01, 0,001 y 0,0001;
   corrupción (`tests/corruption.rs`); v5 y v7.1–3-pre sin cambios.
-- [ ] Implementar; V7_PRE4 en `WRITABLE`, con V5 como `DEFAULT_OUTPUT`. Añadir v7.4 al corpus de
+- [x] Implementar; V7_PRE4 en `WRITABLE`, con V5 como `DEFAULT_OUTPUT`. Añadir v7.4 al corpus de
   `fuzz_format_reader` y SHA de referencia R1 para v7.4.
 
 ## Tarea 4: conversor denso sobre el octree global

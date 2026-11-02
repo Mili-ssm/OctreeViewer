@@ -71,20 +71,40 @@ fn write_las_version(
 
 /// One tiny two-point block written with the real writer for `version`: monolithic and split.
 fn write_revision(version: FormatVersion) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-    let origin = [1_000.0, -2_000.0, 10.0];
-    let bounds =
+    let mut origin = [1_000.0, -2_000.0, 10.0];
+    let mut bounds =
         SpatialBounds::new(origin, [origin[0] + 2.0, origin[1] + 1.0, origin[2] + 1.0]).unwrap();
+    let global = version.uses_global_frame().then(|| {
+        // Root at level 48 (side 2 m); its origin is the frame origin and the bounds are derived.
+        let prefix = [5, 7, 9].map(|k| (1_u64 << 47) + k);
+        let crs = viewer_format::CrsRecord::new(
+            "EPSG".to_owned(),
+            4978,
+            viewer_format::CrsRaw::Wkt("GEODCRS[\"WGS 84\",ID[\"EPSG\",4978]]".to_owned()),
+        )
+        .unwrap();
+        let source = viewer_format::SourceScaleOffset::new([0.001; 3], [0.0; 3]).unwrap();
+        let cells = vec![(NodeId::new(0), viewer_format::NodeCell::new(prefix, 0.0625))];
+        viewer_format::GlobalFrame::new(48, prefix, crs, Some(source), cells).unwrap()
+    });
+    if let Some(frame) = &global {
+        origin = frame.frame_origin();
+        bounds = frame.node_bounds(0, frame.root_prefix()).unwrap();
+    }
     let block_id = BlockId::new(7);
     let root = SpatialNode::new(NodeId::new(0), None, 0, bounds, 2, 0.25, vec![block_id]).unwrap();
     let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
     let hierarchy = SpatialHierarchy::new(vec![root], vec![descriptor.clone()], Some(2)).unwrap();
-    let metadata = FormatMetadata::new(
+    let mut metadata = FormatMetadata::new(
         DatasetMetadata::new(CoordinateFrame::new(origin).unwrap(), hierarchy),
         Some("EPSG:4978".to_owned()),
         Some("uniform voxel sampling".to_owned()),
         Vec::new(),
     )
     .unwrap();
+    if let Some(frame) = global {
+        metadata = metadata.with_global_frame(frame).unwrap();
+    }
     let block = || {
         let attribute =
             AttributeColumn::new(descriptor.clone(), AttributeValues::U16(vec![100, 200]), 2)

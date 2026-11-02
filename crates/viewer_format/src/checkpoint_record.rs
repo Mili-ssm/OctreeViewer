@@ -266,6 +266,7 @@ pub(crate) fn decode_checkpoint_record(
         quantization_error,
         origin,
         scale,
+        origin_quanta: [0; 3],
         world_bounds,
         payloads,
         ranges,

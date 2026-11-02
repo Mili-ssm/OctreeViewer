@@ -71,9 +71,27 @@ pub(crate) fn prepare_point_block_for_version_impl(
             limit: options.max_uncompressed_block_bytes,
         });
     }
-    let quantized =
-        quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
-    let world_bounds = block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
+    ensure_global_frame_matches(layout, metadata)?;
+    let (quantized, origin_quanta, world_bounds) = if layout.uses_global_frame() {
+        let frame = metadata.global_frame().expect("checked above");
+        let cell = frame
+            .block_box(block.id())
+            .ok_or(FormatError::UnreferencedBlock(block.id()))?;
+        let (quantized, origin) = crate::quantization::quantize_global_positions(
+            block.positions_local(),
+            metadata.dataset().coordinate_frame().origin(),
+            frame.frame_origin_quanta(),
+            cell,
+            options.max_quantization_error,
+        )?;
+        (quantized, origin, None)
+    } else {
+        let quantized =
+            quantize_local_positions(block.positions_local(), options.max_quantization_error)?;
+        let world_bounds =
+            block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
+        (quantized, [0; 3], world_bounds)
+    };
     let transform = quantized.transform();
     let quantization_error = quantized.max_error();
     let geometry_length = usize::try_from(
@@ -361,6 +379,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
             quantization_error,
             origin: transform.origin(),
             scale: transform.scale(),
+            origin_quanta,
             world_bounds,
             bytes,
             payloads,
@@ -415,9 +434,27 @@ pub(crate) struct BlockRecord {
     pub(crate) quantization_error: f64,
     pub(crate) origin: [f64; 3],
     pub(crate) scale: [f64; 3],
+    /// Block origin in quanta (`v7.4-pre`); zero in older layouts.
+    pub(crate) origin_quanta: [i64; 3],
     pub(crate) world_bounds: Option<SpatialBounds>,
     pub(crate) payloads: Vec<PayloadDirectoryEntry>,
     pub(crate) ranges: Vec<crate::NodeAttributeRange>,
+}
+
+/// The global frame belongs to `v7.4-pre` and to no other layout.
+pub(crate) fn ensure_global_frame_matches(
+    layout: StorageLayout,
+    metadata: &FormatMetadata,
+) -> Result<(), FormatError> {
+    match (layout.uses_global_frame(), metadata.global_frame()) {
+        (true, None) => Err(FormatError::InvalidMetadata(
+            "v7.4-pre needs a global frame in the metadata",
+        )),
+        (false, Some(_)) => Err(FormatError::InvalidMetadata(
+            "a global frame is only written by v7.4-pre",
+        )),
+        _ => Ok(()),
+    }
 }
 
 pub(crate) fn build_block_nodes(
@@ -691,6 +728,7 @@ pub struct PreparedPointBlock {
     pub(crate) quantization_error: f64,
     pub(crate) origin: [f64; 3],
     pub(crate) scale: [f64; 3],
+    pub(crate) origin_quanta: [i64; 3],
     pub(crate) world_bounds: Option<SpatialBounds>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) payloads: Vec<PayloadDirectoryEntry>,

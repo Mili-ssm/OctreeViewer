@@ -256,7 +256,10 @@ fn wide_schema_requires_explicit_reader_limits() {
         )
     };
     let limits = FormatReaderLimits::new(1 << 20, 1 << 20, 10, 10, 257, 65_535, 1 << 20).unwrap();
-    for version in FormatVersion::WRITABLE {
+    for version in FormatVersion::WRITABLE
+        .into_iter()
+        .filter(|version| !version.uses_global_frame())
+    {
         let mut writer = FormatWriter::new_for_version(
             version,
             Cursor::new(Vec::new()),

@@ -14,6 +14,7 @@ mod error;
 #[cfg(feature = "experimental")]
 pub mod experimental_tuple_dictionary;
 mod geometry;
+mod global_frame;
 mod index_codec;
 mod layout;
 mod metadata;
@@ -41,6 +42,10 @@ pub use geometry::GeometryEncoding;
 pub use geometry::{
     GeometryCandidateDiagnostics, GeometryCandidateKind, GeometryCodecDiagnostics,
     OccupancyBuildDiagnostics,
+};
+pub use global_frame::{
+    CrsRaw, CrsRecord, GlobalFrame, NodeCell, SourceScaleOffset, cell_origin_quanta,
+    quanta_to_units, quantize_coordinate,
 };
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};

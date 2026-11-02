@@ -165,6 +165,11 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend_mut().read_positions(id)
     }
 
+    /// Exact `i64` quanta (2^-15 CRS units) of a `v7.4-pre` block, for lossless export.
+    pub fn read_block_quanta(&mut self, id: BlockId) -> Result<Vec<[i64; 3]>, FormatError> {
+        self.backend_mut().read_block_quanta(id)
+    }
+
     pub fn read_attribute(
         &mut self,
         id: BlockId,

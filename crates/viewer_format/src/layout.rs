@@ -29,6 +29,7 @@ pub(crate) enum StorageLayout {
     V7Pre1,
     V7Pre2,
     V7Pre3,
+    V7Pre4,
 }
 
 impl StorageLayout {
@@ -42,6 +43,7 @@ impl StorageLayout {
             crate::FormatVersion::V7Pre(revision) if revision.get() == 1 => Ok(Self::V7Pre1),
             crate::FormatVersion::V7Pre(revision) if revision.get() == 2 => Ok(Self::V7Pre2),
             crate::FormatVersion::V7Pre(revision) if revision.get() == 3 => Ok(Self::V7Pre3),
+            crate::FormatVersion::V7Pre(revision) if revision.get() == 4 => Ok(Self::V7Pre4),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -56,6 +58,7 @@ impl StorageLayout {
             Self::V7Pre1 => crate::FormatVersion::V7_PRE1,
             Self::V7Pre2 => crate::FormatVersion::V7_PRE2,
             Self::V7Pre3 => crate::FormatVersion::V7_PRE3,
+            Self::V7Pre4 => crate::FormatVersion::V7_PRE4,
         }
     }
 
@@ -69,6 +72,7 @@ impl StorageLayout {
             Self::V7Pre1 => b"OCTVI71P",
             Self::V7Pre2 => b"OCTVI72P",
             Self::V7Pre3 => b"OCTVI73P",
+            Self::V7Pre4 => b"OCTVI74P",
         }
     }
 
@@ -82,6 +86,7 @@ impl StorageLayout {
             Self::V7Pre1 => b"OCTVE71P",
             Self::V7Pre2 => b"OCTVE72P",
             Self::V7Pre3 => b"OCTVE73P",
+            Self::V7Pre4 => b"OCTVE74P",
         }
     }
 
@@ -90,41 +95,52 @@ impl StorageLayout {
         matches!(self, Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3)
     }
 
+    /// Global `i64` integer frame, node prefixes, CRS record and `u32` offsets (v7.4-pre).
+    pub(crate) const fn uses_global_frame(self) -> bool {
+        matches!(self, Self::V7Pre4)
+    }
+
     /// Writer policy: occupancy blocks are always compact 24-bit candidates.
     pub(crate) const fn restricts_occupancy_to_compact24(self) -> bool {
-        matches!(self, Self::V7Pre2 | Self::V7Pre3)
+        matches!(self, Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4)
     }
 
     /// Writer policy: attribute payloads use the v7.3 dictionary-tuple encoder.
     pub(crate) const fn restricts_dictionary_tuples(self) -> bool {
-        matches!(self, Self::V7Pre3)
+        matches!(self, Self::V7Pre3 | Self::V7Pre4)
     }
 
     pub(crate) const fn supports_occupancy(self) -> bool {
         matches!(
             self,
-            Self::V6Pre2 | Self::V6Pre3 | Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3
+            Self::V6Pre2
+                | Self::V6Pre3
+                | Self::V6Pre4
+                | Self::V7Pre1
+                | Self::V7Pre2
+                | Self::V7Pre3
+                | Self::V7Pre4
         )
     }
 
     pub(crate) const fn supports_compact_occupancy(self) -> bool {
         matches!(
             self,
-            Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3
+            Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4
         )
     }
 
     pub(crate) const fn supports_dictionary(self) -> bool {
         matches!(
             self,
-            Self::V6Pre3 | Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3
+            Self::V6Pre3 | Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4
         )
     }
 
     pub(crate) const fn supports_byte_planes(self) -> bool {
         matches!(
             self,
-            Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3
+            Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4
         )
     }
 }

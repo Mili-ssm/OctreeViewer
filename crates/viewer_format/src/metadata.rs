@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use viewer_core::{AttributeDataType, AttributeValues, DatasetMetadata, NodeId};
 
-use crate::FormatError;
+use crate::{FormatError, GlobalFrame};
 
 /// Extra file-level metadata not interpreted by spatial queries.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +13,7 @@ pub struct FormatMetadata {
     sampling_policy: Option<String>,
     visual_scale: f64,
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
+    global_frame: Option<GlobalFrame>,
 }
 
 impl FormatMetadata {
@@ -34,7 +35,28 @@ impl FormatMetadata {
             sampling_policy,
             visual_scale: 1.0,
             node_attribute_ranges: ranges,
+            global_frame: None,
         })
+    }
+
+    /// Attaches the `v7.4-pre` global frame: root, CRS record, source scale/offset and per-node
+    /// prefix and spacing. The dataset's frame origin and node bounds must be the derived ones
+    /// (checked when the file is written or read). `crs()` then reports the CRS identity.
+    pub fn with_global_frame(mut self, mut frame: GlobalFrame) -> Result<Self, MetadataError> {
+        let hierarchy = self.dataset.hierarchy();
+        let root = hierarchy
+            .node(hierarchy.root_id())
+            .ok_or(MetadataError::InvalidGlobalFrame("root node is missing"))?;
+        let nodes: Vec<_> = hierarchy.query(root.bounds()).collect();
+        frame.bind_blocks(&nodes)?;
+        self.crs = frame.crs().identity_label();
+        self.global_frame = Some(frame);
+        Ok(self)
+    }
+
+    /// Present exactly in `v7.4-pre` files.
+    pub fn global_frame(&self) -> Option<&GlobalFrame> {
+        self.global_frame.as_ref()
     }
 
     pub fn dataset(&self) -> &DatasetMetadata {
@@ -91,6 +113,7 @@ impl FormatMetadata {
             sampling_policy: self.sampling_policy.clone(),
             visual_scale: self.visual_scale,
             node_attribute_ranges: ranges,
+            global_frame: self.global_frame.clone(),
         }
     }
 }
@@ -177,6 +200,10 @@ pub enum MetadataError {
     DuplicateNodeRanges(NodeId),
     #[error("visual scale must be finite and greater than zero")]
     InvalidVisualScale,
+    #[error("invalid CRS record: {0}")]
+    InvalidCrs(&'static str),
+    #[error("invalid global frame: {0}")]
+    InvalidGlobalFrame(&'static str),
 }
 
 pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatError> {
@@ -203,10 +230,16 @@ pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatE
     let root = hierarchy
         .node(hierarchy.root_id())
         .ok_or(FormatError::InvalidMetadata("root node is missing"))?;
-    let node_ids: BTreeSet<_> = hierarchy
-        .query(root.bounds())
-        .map(|node| node.id())
-        .collect();
+    let all_nodes: Vec<_> = hierarchy.query(root.bounds()).collect();
+    let node_ids: BTreeSet<_> = all_nodes.iter().map(|node| node.id()).collect();
+    if let Some(frame) = metadata.global_frame() {
+        crate::global_frame::validate_nodes(
+            frame,
+            metadata.dataset().coordinate_frame().origin(),
+            &all_nodes,
+        )
+        .map_err(FormatError::InvalidMetadata)?;
+    }
     let schema = hierarchy.attributes();
     for (node_id, ranges) in metadata.node_range_entries() {
         if !node_ids.contains(&node_id) {

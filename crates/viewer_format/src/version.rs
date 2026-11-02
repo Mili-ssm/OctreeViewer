@@ -33,12 +33,14 @@ impl FormatVersion {
     pub const V7_PRE1: Self = Self::V7Pre(NonZeroU32::new(1).expect("nonzero revision"));
     pub const V7_PRE2: Self = Self::V7Pre(NonZeroU32::new(2).expect("nonzero revision"));
     pub const V7_PRE3: Self = Self::V7Pre(NonZeroU32::new(3).expect("nonzero revision"));
+    /// Global integer octree frame, node prefixes and CRS record (R4).
+    pub const V7_PRE4: Self = Self::V7Pre(NonZeroU32::new(4).expect("nonzero revision"));
 
     /// Revision written when the caller does not choose one.
     pub const DEFAULT_OUTPUT: Self = Self::V5;
 
     /// Every revision the writer implements, in user-facing listing order.
-    pub const WRITABLE: [Self; 8] = [
+    pub const WRITABLE: [Self; 9] = [
         Self::V7_PRE1,
         Self::V7_PRE2,
         Self::V7_PRE3,
@@ -47,12 +49,20 @@ impl FormatVersion {
         Self::V6_PRE2,
         Self::V6_PRE3,
         Self::V6_PRE4,
+        Self::V7_PRE4,
     ];
 
     /// Whether block-level EPT checkpoint/resume can target this revision.
     pub fn supports_block_checkpoint(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
             .is_ok_and(crate::layout::StorageLayout::supports_block_checkpoint)
+    }
+
+    /// Whether the writer needs a [`crate::GlobalFrame`] in the metadata (the global integer
+    /// octree of `v7.4-pre`) and `i64` block origins instead of per-block `f64` transforms.
+    pub fn uses_global_frame(self) -> bool {
+        crate::layout::StorageLayout::from_version(self)
+            .is_ok_and(crate::layout::StorageLayout::uses_global_frame)
     }
 
     /// Reject unimplemented output formats before touching any output stream.
@@ -235,7 +245,7 @@ mod tests {
             FormatVersion::V6,
             FormatVersion::V7,
             FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
-            FormatVersion::V7Pre(NonZeroU32::new(4).unwrap()),
+            FormatVersion::V7Pre(NonZeroU32::new(5).unwrap()),
         ] {
             assert!(version.ensure_writable().is_err(), "{version}");
         }
@@ -246,7 +256,7 @@ mod tests {
             .collect();
         assert_eq!(
             names.join("|"),
-            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre"
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre"
         );
     }
 
@@ -277,6 +287,7 @@ mod tests {
             (7, 1, "v7.1-pre"),
             (7, 2, "v7.2-pre"),
             (7, 3, "v7.3-pre"),
+            (7, 4, "v7.4-pre"),
             (7, 0, "v7"),
             (8, 9, "unknown(8, 9)"),
         ] {
