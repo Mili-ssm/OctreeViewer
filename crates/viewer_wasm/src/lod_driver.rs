@@ -109,7 +109,7 @@ fn update_at_stage(
     (*stage_pixels, *dirty) = next_lod_stage(
         Some(stage),
         step.target_pixels,
-        !update.stats.pending_block_ids.is_empty(),
+        update.stats.has_pending_loads(),
         step.can_load_blocks,
     );
     Ok(LodStepResult {

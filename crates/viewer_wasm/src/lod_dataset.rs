@@ -181,9 +181,20 @@ pub struct LodViewStats {
     pub cache_bytes: usize,
     pub cache_budget_bytes: usize,
     pub pending_block_ids: Vec<BlockId>,
+    /// Anchors whose hierarchy page is missing and needed to refine the target, highest
+    /// projected error first. The stage must not advance while any is pending.
+    pub pending_page_anchors: Vec<NodeId>,
     pub uncovered_nodes: usize,
     pub budget_omitted_nodes: usize,
     pub refinement_work: LodWorkStats,
+}
+
+impl LodViewStats {
+    /// Whether the stage must hold: a needed block or hierarchy page is still missing.
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn has_pending_loads(&self) -> bool {
+        !self.pending_block_ids.is_empty() || !self.pending_page_anchors.is_empty()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -756,6 +767,17 @@ impl LodDataset {
             cache_bytes: self.cache.used_bytes(),
             cache_budget_bytes: self.cache.max_bytes(),
             pending_block_ids: plan.pending_blocks().to_vec(),
+            pending_page_anchors: pending_page_anchors(
+                self.metadata.hierarchy(),
+                &target,
+                |node| {
+                    view.projected_error_pixels(
+                        node.bounds(),
+                        node.representative_spacing(),
+                        coordinate_origin,
+                    )
+                },
+            ),
             uncovered_nodes: plan.uncovered_nodes().len(),
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
             refinement_work: self.refinement_work.clone(),
@@ -938,6 +960,21 @@ fn prefix_extension_points(
     Some((retained, added))
 }
 
+/// Missing pages the target needs, ordered by projected error (larger first, then node id).
+fn pending_page_anchors(
+    hierarchy: &SpatialHierarchy,
+    target: &LodSelection,
+    project: impl Fn(&SpatialNode) -> f64,
+) -> Vec<NodeId> {
+    let mut anchors = target
+        .unloaded_anchors()
+        .iter()
+        .filter_map(|id| hierarchy.node(*id).map(|node| (*id, project(node))))
+        .collect::<Vec<_>>();
+    anchors.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    anchors.into_iter().map(|(id, _)| id).collect()
+}
+
 fn max_visible_level(hierarchy: &SpatialHierarchy, node_ids: &[NodeId]) -> Option<u32> {
     node_ids
         .iter()
@@ -951,6 +988,7 @@ fn resident_target_plan_is_complete(
     plan: &LodTransitionPlan,
 ) -> bool {
     target.budget_limited().is_empty()
+        && target.unloaded_anchors().is_empty()
         && plan.pending_blocks().is_empty()
         && plan.uncovered_nodes().is_empty()
         && plan.budget_omitted_nodes().is_empty()

@@ -2411,3 +2411,52 @@ mod binding_parity {
         assert!(assemble(Some((0, 0)), usize::MAX).is_err());
     }
 }
+
+#[test]
+fn an_unloaded_anchor_holds_the_stage_and_is_requested() {
+    let (_, blocks) = native_dataset(400);
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [64.0; 3]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(11)],
+    )
+    .unwrap();
+    let mut hierarchy = SpatialHierarchy::new(vec![root], Vec::new(), Some(400)).unwrap();
+    hierarchy.mark_unloaded(NodeId::new(1)).unwrap();
+    let mut dataset =
+        LodDataset::new([0.0; 3], hierarchy, 8 * blocks[0].estimated_memory_bytes()).unwrap();
+    dataset.insert_block(blocks[0].clone()).unwrap();
+
+    let update = dataset
+        .update_view_progressive(&native_view(), 4.0, 4.0, 4.0, None, |_| Ok(None))
+        .unwrap();
+    // The root block is resident and covers the view, yet its page of children is missing.
+    assert!(update.stats.pending_block_ids.is_empty());
+    assert_eq!(update.stats.pending_page_anchors, [NodeId::new(1)]);
+    assert!(update.stats.has_pending_loads());
+    assert_eq!(
+        next_lod_stage(Some(8.0), 4.0, update.stats.has_pending_loads(), true),
+        (Some(8.0), true)
+    );
+
+    let target = dataset
+        .metadata
+        .hierarchy()
+        .select_lod(
+            &SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 1000.0).unwrap()])
+                .unwrap(),
+            LodSelectionConfig::new(1.0, u64::MAX).unwrap(),
+            |_| 100.0,
+        )
+        .unwrap();
+    let plan = LodTransitionPlanner::new().prepare(
+        dataset.metadata.hierarchy(),
+        &target,
+        &DecodedBlockCache::new(usize::MAX),
+    );
+    assert!(!resident_target_plan_is_complete(&target, &plan));
+}
