@@ -99,6 +99,8 @@ mod tests {
             crs: viewer_format::CrsRecord::local(),
             scale_offset: None,
             global: None,
+            extra_byte_vlrs: Vec::new(),
+            las_extra_bytes: None,
         }
     }
 

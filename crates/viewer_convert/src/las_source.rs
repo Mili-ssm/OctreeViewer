@@ -282,7 +282,7 @@ pub(crate) fn convert_file_inner(
             block_count,
             output_bytes,
             estimated_peak_memory_bytes: estimated_memory_bytes,
-            omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+            omitted_dimensions: source.omitted_dimensions(),
             block_preparation: None,
             output_validation,
         });

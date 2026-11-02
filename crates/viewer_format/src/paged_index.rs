@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom, Write};
 
+use viewer_core::las::{LasExtraByte, LasExtraByteFields};
 use viewer_core::{
     AttributeDescriptor, BlockId, CoordinateFrame, DatasetMetadata, HierarchySemantics, NodeId,
     SpatialBounds, SpatialHierarchy, SpatialNode,
@@ -46,6 +47,7 @@ pub struct PagedHeader {
     semantics: HierarchySemantics,
     visual_scale: f64,
     schema: Vec<AttributeDescriptor>,
+    las_extra_bytes: Vec<LasExtraByte>,
     total_nodes: u64,
     total_blocks: u64,
     pages_start: u64,
@@ -113,6 +115,11 @@ impl PagedHeader {
         self.source_point_count
     }
 
+    /// LAS Extra Bytes descriptors; their columns are the last ones of [`Self::schema`].
+    pub fn las_extra_bytes(&self) -> &[LasExtraByte] {
+        &self.las_extra_bytes
+    }
+
     pub fn sampling_policy(&self) -> Option<&str> {
         self.sampling_policy.as_deref()
     }
@@ -135,6 +142,110 @@ impl PagedHeader {
     pub fn pages_start(&self) -> u64 {
         self.pages_start
     }
+}
+
+/// Bytes of one Extra Bytes descriptor in the metadata extension.
+const EXTRA_BYTE_ENTRY_LEN: usize = 108;
+
+/// Reads the extension: its length, then (if non-zero) `count u16` and `count` descriptors of
+/// [`EXTRA_BYTE_ENTRY_LEN`] bytes. The descriptors must match the last `count` schema columns.
+fn parse_extension(
+    cursor: &mut SliceCursor<'_>,
+    schema: &[AttributeDescriptor],
+) -> Result<Vec<LasExtraByte>, FormatError> {
+    let length = cursor.u32()? as usize;
+    if length == 0 {
+        return Ok(Vec::new());
+    }
+    let mut body = SliceCursor::new(cursor.take(length)?);
+    let invalid = |reason| FormatError::MalformedIndex(reason);
+    let count = usize::from(body.u16()?);
+    if count == 0
+        || length != 2 + count * EXTRA_BYTE_ENTRY_LEN
+        || count > schema.len()
+        || count > viewer_core::las::extra::MAX_LAS_ATTRIBUTES
+    {
+        return Err(invalid("invalid index extension length"));
+    }
+    let mut descriptors = Vec::with_capacity(count);
+    for _ in 0..count {
+        let name_bytes = body.take(32)?;
+        let name_end = name_bytes.iter().position(|&b| b == 0).unwrap_or(32);
+        if name_bytes[name_end..].iter().any(|&b| b != 0) {
+            return Err(invalid("Extra Bytes name is not NUL padded"));
+        }
+        let name = std::str::from_utf8(&name_bytes[..name_end])
+            .map_err(|_| invalid("Extra Bytes name is not UTF-8"))?;
+        let las_type = body.u8()?;
+        let options = body.u8()?;
+        if body.u16()? != 0 {
+            return Err(invalid("nonzero reserved Extra Bytes field"));
+        }
+        let mut no_data = [[0_u8; 8]; 3];
+        for element in &mut no_data {
+            element.copy_from_slice(body.take(8)?);
+        }
+        let mut scale = [0.0; 3];
+        for value in &mut scale {
+            *value = body.f64()?;
+        }
+        let mut offset = [0.0; 3];
+        for value in &mut offset {
+            *value = body.f64()?;
+        }
+        let fields = LasExtraByteFields {
+            las_type,
+            options,
+            no_data,
+            scale,
+            offset,
+        };
+        let descriptor = LasExtraByte::new(name, fields)
+            .map_err(|_| invalid("invalid Extra Bytes descriptor"))?;
+        // `new` normalises absent fields and drops unknown options: a stored descriptor must
+        // already be in that form, so that one descriptor has one encoding.
+        if *descriptor.fields() != fields {
+            return Err(invalid("Extra Bytes descriptor is not normalised"));
+        }
+        descriptors.push(descriptor);
+    }
+    for (extra, column) in descriptors.iter().zip(&schema[schema.len() - count..]) {
+        if extra.data_type() != column.data_type() || extra.components() != column.component_count()
+        {
+            return Err(invalid("Extra Bytes descriptor does not match its column"));
+        }
+    }
+    Ok(descriptors)
+}
+
+/// Writes the extension (length `0` without Extra Bytes).
+fn write_extension<W: Write>(
+    out: &mut IndexWriter<'_, W>,
+    descriptors: &[LasExtraByte],
+) -> Result<(), FormatError> {
+    if descriptors.is_empty() {
+        return out.u32(0);
+    }
+    let count = u16::try_from(descriptors.len())
+        .map_err(|_| FormatError::InvalidMetadata("too many Extra Bytes descriptors"))?;
+    out.u32(2 + u32::from(count) * EXTRA_BYTE_ENTRY_LEN as u32)?;
+    out.write(&count.to_le_bytes())?;
+    for descriptor in descriptors {
+        let mut name = [0_u8; 32];
+        name[..descriptor.name().len()].copy_from_slice(descriptor.name().as_bytes());
+        let fields = descriptor.fields();
+        out.write(&name)?;
+        out.u8(fields.las_type)?;
+        out.u8(fields.options)?;
+        out.write(&[0, 0])?;
+        for element in fields.no_data {
+            out.write(&element)?;
+        }
+        for value in fields.scale.into_iter().chain(fields.offset) {
+            out.f64(value)?;
+        }
+    }
+    Ok(())
 }
 
 fn parse_header_block(
@@ -187,12 +298,7 @@ fn parse_header_block(
         }
         attribute_ranges.push(row);
     }
-    // Reserved for the LAS flag / Extra Byte descriptors of plan task P2a.
-    if cursor.u32()? != 0 {
-        return Err(FormatError::MalformedIndex(
-            "nonzero reserved index extension",
-        ));
-    }
+    let las_extra_bytes = parse_extension(cursor, &schema)?;
     // The declared totals are informative for a lazy reader, so `max_nodes` and `max_blocks` bound
     // what is actually read (each page, and the eager loader's running totals), not these fields.
     if total_nodes == 0 {
@@ -232,6 +338,7 @@ fn parse_header_block(
         semantics,
         visual_scale,
         schema,
+        las_extra_bytes,
         total_nodes,
         total_blocks,
         pages_start,
@@ -833,6 +940,7 @@ pub(crate) fn assemble_with(
         node_ranges,
     )?
     .with_visual_scale(header.visual_scale)?
+    .with_las_extra_bytes(header.las_extra_bytes.clone())
     .with_global_frame(frame)?;
     validate_metadata(&metadata)?;
     Ok((metadata, blocks, block_bounds))
@@ -1173,7 +1281,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
                 }
             }
         }
-        out.u32(0)?;
+        write_extension(&mut out, metadata.las_extra_bytes())?;
     }
     let root_bytes = build(0)?;
     crc.update(&header_bytes);

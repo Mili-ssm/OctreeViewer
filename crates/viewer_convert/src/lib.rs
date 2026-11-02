@@ -134,6 +134,9 @@ where
 mod tests;
 
 #[cfg(test)]
+#[path = "las_extra_tests.rs"]
+mod las_extra_tests;
+#[cfg(test)]
 #[path = "v7_4_tests.rs"]
 mod v7_4_tests;
 #[cfg(test)]

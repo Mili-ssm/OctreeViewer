@@ -30,6 +30,8 @@ pub enum ConvertError {
     },
     #[error(transparent)]
     Format(#[from] viewer_format::FormatError),
+    #[error("LAS Extra Bytes: {0}")]
+    LasExtraBytes(#[from] viewer_core::las::LasExtraBytesError),
     #[error(transparent)]
     Spatial(#[from] viewer_core::SpatialError),
     #[error(transparent)]

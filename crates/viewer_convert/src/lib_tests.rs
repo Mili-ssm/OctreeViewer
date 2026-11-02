@@ -2712,13 +2712,13 @@ fn the_serial_executor_plans_like_the_ready_queue() {
 
 // --- Serial core path (`convert_serial` / `validate_output_serial`) against the native CLI path ---
 
-struct SerialRun {
+pub(crate) struct SerialRun {
     geometry: Vec<u8>,
     attributes: Vec<u8>,
     plan: viewer_convert_core::PlanSummary,
 }
 
-fn run_serial(input: &std::path::Path, options: ConvertOptions) -> SerialRun {
+pub(crate) fn run_serial(input: &std::path::Path, options: ConvertOptions) -> SerialRun {
     use std::io::Cursor;
     use viewer_convert_core::{LasFactory, MemBytes, MemSpoolStore, NoClock, convert_serial};
     let factory = LasFactory::new(MemBytes(fs::read(input).unwrap().into()));
@@ -2742,7 +2742,7 @@ fn run_serial(input: &std::path::Path, options: ConvertOptions) -> SerialRun {
     }
 }
 
-fn assert_serial_matches_native(
+pub(crate) fn assert_serial_matches_native(
     input: &std::path::Path,
     options: ConvertOptions,
     expect_multiple_blocks: bool,

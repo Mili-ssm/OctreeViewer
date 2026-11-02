@@ -5,6 +5,7 @@ use std::{
 };
 
 use las::PointData;
+use viewer_core::las::{LasExtraByte, extra::MAX_EXTRA_BYTES_PER_POINT, las_flags_of_record};
 use viewer_core::{
     AttributeColumn, AttributeValues, BlockId, ColorRgb, DatasetMetadata, NodeId, SpatialBounds,
     SpatialHierarchy, SpatialNode,
@@ -25,9 +26,9 @@ use crate::pipeline::{
     spool_store::{PlanStore, SPOOL_IO_BUFFER_BYTES, SpoolExtent, SpoolId, SpoolStore},
 };
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
-use crate::source::{SourceInfo, next_descriptor, omitted_dimensions, source_schema};
+use crate::source::{SourceInfo, next_descriptor};
 
-const MAX_SPOOL_RECORD_BYTES: usize = 55;
+const MAX_SPOOL_RECORD_BYTES: usize = 55 + 1 + MAX_EXTRA_BYTES_PER_POINT;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
 pub const MAX_SPATIAL_DEPTH: u32 = 32;
 
@@ -51,6 +52,10 @@ pub struct SpoolLayout {
     has_gps_time: bool,
     has_color: bool,
     has_nir: bool,
+    /// `v7.5-pre`: the record carries the `las_flags` byte and `extra_len` raw Extra Bytes.
+    has_flags: bool,
+    extra_len: u8,
+    is_extended: bool,
     /// `v7.4-pre`: source positions are snapped to the 2^-15 grid so that node and cell
     /// membership is decided on exact integers.
     snap_to_quanta: bool,
@@ -68,6 +73,12 @@ impl SpoolLayout {
             has_gps_time: source.point_format.has_gps_time,
             has_color: source.point_format.has_color,
             has_nir: source.point_format.has_nir,
+            has_flags: source.las_extra_bytes.is_some(),
+            // Checked against `MAX_EXTRA_BYTES_PER_POINT` by `SourceInfo::schema`.
+            extra_len: source.las_extra_bytes.as_deref().map_or(0, |extras| {
+                extras.iter().map(LasExtraByte::byte_len).sum::<usize>() as u8
+            }),
+            is_extended: source.point_format.is_extended,
             snap_to_quanta: source.global.is_some(),
         }
     }
@@ -87,6 +98,8 @@ impl SpoolLayout {
             + usize::from(self.has_gps_time) * 8
             + usize::from(self.has_color) * 6
             + usize::from(self.has_nir) * 2
+            + usize::from(self.has_flags)
+            + usize::from(self.extra_len)
     }
 
     /// The LAS coordinate before any snapping (header bounds are checked against it).
@@ -127,6 +140,9 @@ pub struct SpoolPoint {
     gps_time: f64,
     rgb: [u16; 3],
     nir: u16,
+    las_flags: u8,
+    /// Raw Extra Bytes of the record; only the first `SpoolLayout::extra_len` are meaningful.
+    extra: [u8; MAX_EXTRA_BYTES_PER_POINT],
     display_color: ColorRgb,
 }
 
@@ -136,6 +152,8 @@ pub struct PlannedBlock {
     offset_points: u64,
     point_count: usize,
     layout: SpoolLayout,
+    /// Descriptors of the Extra Byte columns (`v7.5-pre`); empty otherwise.
+    extras: std::sync::Arc<[LasExtraByte]>,
     pub is_source_points: bool,
     // Blocks sharing a spool stay in construction order when streamed. Only the
     // last range may release it; blocks are written in plan order, so by then every other
@@ -205,6 +223,16 @@ impl PlannedBlock {
         } else {
             0
         });
+        let mut las_flags = Vec::with_capacity(if self.layout.has_flags {
+            self.point_count
+        } else {
+            0
+        });
+        let mut extra_values: Vec<_> = self
+            .extras
+            .iter()
+            .map(|extra| extra.new_values(self.point_count))
+            .collect();
         let mut remaining = self.point_count;
         while remaining > 0 {
             let requested = remaining.min(batch_capacity);
@@ -239,16 +267,28 @@ impl PlannedBlock {
                 if self.layout.has_nir {
                     nir_values.push(point.nir);
                 }
+                if self.layout.has_flags {
+                    las_flags.push(point.las_flags);
+                }
+                let mut offset = 0;
+                for (extra, values) in self.extras.iter().zip(&mut extra_values) {
+                    let end = offset + extra.byte_len();
+                    extra.push_values(&point.extra[offset..end], values);
+                    offset = end;
+                }
             }
             remaining -= records;
         }
 
-        let mut descriptors = viewer_core::las::las_attribute_schema(
-            self.layout.has_gps_time,
-            self.layout.has_color,
-            self.layout.has_nir,
-        )
-        .into_iter();
+        let mut descriptors =
+            viewer_core::las::las_attribute_schema_for(&viewer_core::las::LasSchemaSpec {
+                has_gps_time: self.layout.has_gps_time,
+                has_color: self.layout.has_color,
+                has_nir: self.layout.has_nir,
+                las_flags: self.layout.has_flags,
+                extra_bytes: &self.extras,
+            })?
+            .into_iter();
         let mut attributes = Vec::with_capacity(10);
         attributes.push(AttributeColumn::new(
             next_descriptor(&mut descriptors, "intensity"),
@@ -305,6 +345,19 @@ impl PlannedBlock {
                 AttributeValues::U16(nir_values),
                 self.point_count,
             )?);
+        }
+        if self.layout.has_flags {
+            attributes.push(AttributeColumn::new(
+                next_descriptor(&mut descriptors, viewer_core::las::extra::LAS_FLAGS_NAME),
+                AttributeValues::U8(las_flags),
+                self.point_count,
+            )?);
+        }
+        for values in extra_values {
+            let descriptor = descriptors
+                .next()
+                .expect("LAS attribute schema covers every column");
+            attributes.push(AttributeColumn::new(descriptor, values, self.point_count)?);
         }
         Ok(SourcePointBlock::new(
             self.id, positions, colors, attributes,
@@ -479,6 +532,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         sample_grid: options.sample_grid(),
         frame: source.frame,
         layout: SpoolLayout::source(source),
+        extras: source
+            .las_extra_bytes
+            .clone()
+            .unwrap_or_else(|| Vec::new().into()),
         node_records: Vec::new(),
         output_blocks: Vec::new(),
         next_block_id: 0,
@@ -550,7 +607,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         estimated_peak_memory_bytes
     };
 
-    let schema = source_schema(&source.point_format);
+    let schema = source.schema()?;
     crate::limits::check_reader_attribute_ranges(builder.node_records.len(), schema.len())?;
     let global_frame = source
         .global
@@ -604,6 +661,9 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         Vec::new(),
     )?
     .with_visual_scale(crate::limits::visual_scale_for_bounds(source.bounds)?)?;
+    if let Some(extras) = &source.las_extra_bytes {
+        metadata = metadata.with_las_extra_bytes(extras.to_vec());
+    }
     if let Some(frame) = global_frame {
         metadata = metadata.with_global_frame(frame)?;
     }
@@ -612,7 +672,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         blocks: builder.output_blocks,
         point_count: source.point_count,
         estimated_peak_memory_bytes,
-        omitted_dimensions: omitted_dimensions(&source.point_format, source.has_crs),
+        omitted_dimensions: source.omitted_dimensions(),
         spool_diagnostics: builder.spool_diagnostics,
         spatial_phases: builder.spatial_phases,
     })
@@ -791,6 +851,7 @@ pub struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     sample_grid: usize,
     frame: viewer_core::CoordinateFrame,
     layout: SpoolLayout,
+    extras: std::sync::Arc<[LasExtraByte]>,
     node_records: Vec<NodeRecord>,
     output_blocks: Vec<PlannedBlock>,
     next_block_id: u64,
@@ -1359,6 +1420,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 } else {
                     self.layout.lod()
                 },
+                extras: self.extras.clone(),
                 is_source_points: plan.is_source_points,
                 final_block_in_spool: plan.final_block_in_spool,
             });
@@ -1464,6 +1526,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             sample_grid: self.sample_grid,
             frame: self.frame,
             layout: self.layout,
+            extras: self.extras.clone(),
             node_records: std::mem::take(&mut branch.node_records),
             output_blocks: std::mem::take(&mut branch.output_blocks),
             next_block_id: branch.next_block_id,
@@ -1809,7 +1872,14 @@ pub fn visit_source_points(
         return Err(ConvertError::InvalidAttributeSchema);
     }
     let layout = SpoolLayout::source(source);
-    for (index, ((x, y), z)) in data.x_raw().zip(data.y_raw()).zip(data.z_raw()).enumerate() {
+    let records = data.raw_bytes().chunks_exact(data.record_len());
+    for (index, (((x, y), z), record)) in data
+        .x_raw()
+        .zip(data.y_raw())
+        .zip(data.z_raw())
+        .zip(records)
+        .enumerate()
+    {
         let raw_position = [x, y, z];
         let exact = layout.exact_position(raw_position);
         let position = layout.position(raw_position);
@@ -1874,6 +1944,14 @@ pub fn visit_source_points(
             let gray = (intensity >> 8) as u8;
             ColorRgb::new(gray, gray, gray)
         };
+        let mut extra = [0; MAX_EXTRA_BYTES_PER_POINT];
+        let extra_len = usize::from(layout.extra_len);
+        let las_flags = if layout.has_flags {
+            extra[..extra_len].copy_from_slice(&record[record.len() - extra_len..]);
+            las_flags_of_record(record, layout.is_extended)
+        } else {
+            0
+        };
         visitor(SpoolPoint {
             raw_position,
             position,
@@ -1887,6 +1965,8 @@ pub fn visit_source_points(
             gps_time,
             rgb,
             nir,
+            las_flags,
+            extra,
             display_color,
         })?;
     }
@@ -1969,6 +2049,10 @@ pub fn write_point(
     if layout.has_nir {
         append_bytes!(point.nir.to_le_bytes());
     }
+    if layout.has_flags {
+        append_bytes!([point.las_flags]);
+    }
+    append_bytes!(&point.extra[..usize::from(layout.extra_len)]);
     append_bytes!([
         point.display_color.r,
         point.display_color.g,
@@ -2060,6 +2144,16 @@ pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
     } else {
         0
     };
+    let las_flags = if layout.has_flags {
+        offset += 1;
+        bytes[offset - 1]
+    } else {
+        0
+    };
+    let mut extra = [0; MAX_EXTRA_BYTES_PER_POINT];
+    let extra_len = usize::from(layout.extra_len);
+    extra[..extra_len].copy_from_slice(&bytes[offset..offset + extra_len]);
+    offset += extra_len;
     let display_color = ColorRgb::new(bytes[offset], bytes[offset + 1], bytes[offset + 2]);
     SpoolPoint {
         raw_position,
@@ -2074,6 +2168,8 @@ pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
         gps_time,
         rgb,
         nir,
+        las_flags,
+        extra,
         display_color,
     }
 }
@@ -2467,6 +2563,8 @@ mod partition_tests {
             crs: viewer_format::CrsRecord::local(),
             scale_offset: None,
             global: None,
+            extra_byte_vlrs: Vec::new(),
+            las_extra_bytes: None,
         };
         let point = SpoolPoint {
             raw_position,
@@ -2481,6 +2579,8 @@ mod partition_tests {
             gps_time: 123_456.789,
             rgb: [12_345, 23_456, 34_567],
             nir: 54_321,
+            las_flags: 0,
+            extra: [0; MAX_EXTRA_BYTES_PER_POINT],
             display_color: ColorRgb::new(71, 82, 93),
         };
         (source, point)
@@ -2641,6 +2741,7 @@ mod partition_tests {
                     offset_points: 1,
                     point_count: 1,
                     layout,
+                    extras: Vec::new().into(),
                     is_source_points: layout.source_coordinates,
                     final_block_in_spool: true,
                 }

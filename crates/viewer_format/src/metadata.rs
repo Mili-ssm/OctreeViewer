@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use viewer_core::{AttributeDataType, AttributeValues, DatasetMetadata, NodeId};
+use viewer_core::{AttributeDataType, AttributeValues, DatasetMetadata, NodeId, las::LasExtraByte};
 
 use crate::{FormatError, GlobalFrame};
 
@@ -14,6 +14,7 @@ pub struct FormatMetadata {
     visual_scale: f64,
     node_attribute_ranges: BTreeMap<NodeId, Vec<NodeAttributeRange>>,
     global_frame: Option<GlobalFrame>,
+    las_extra_bytes: Vec<LasExtraByte>,
 }
 
 impl FormatMetadata {
@@ -36,6 +37,7 @@ impl FormatMetadata {
             visual_scale: 1.0,
             node_attribute_ranges: ranges,
             global_frame: None,
+            las_extra_bytes: Vec::new(),
         })
     }
 
@@ -52,6 +54,17 @@ impl FormatMetadata {
         self.crs = frame.crs().identity_label();
         self.global_frame = Some(frame);
         Ok(self)
+    }
+
+    /// Attaches the LAS Extra Bytes descriptors (`v7.5-pre` only; other versions do not store
+    /// them). The last `descriptors.len()` schema columns are their columns, in order.
+    pub fn with_las_extra_bytes(mut self, descriptors: Vec<LasExtraByte>) -> Self {
+        self.las_extra_bytes = descriptors;
+        self
+    }
+
+    pub fn las_extra_bytes(&self) -> &[LasExtraByte] {
+        &self.las_extra_bytes
     }
 
     /// Present exactly in `v7.4-pre` files.
@@ -169,6 +182,7 @@ impl FormatMetadata {
             visual_scale: self.visual_scale,
             node_attribute_ranges: ranges,
             global_frame: self.global_frame.clone(),
+            las_extra_bytes: self.las_extra_bytes.clone(),
         }
     }
 }
@@ -274,6 +288,22 @@ pub(crate) fn validate_metadata(metadata: &FormatMetadata) -> Result<(), FormatE
         }
     }
     let hierarchy = metadata.dataset().hierarchy();
+    let extras = metadata.las_extra_bytes();
+    let tail = hierarchy
+        .attributes()
+        .len()
+        .checked_sub(extras.len())
+        .ok_or(FormatError::InvalidMetadata(
+            "more Extra Bytes descriptors than schema attributes",
+        ))?;
+    for (extra, column) in extras.iter().zip(&hierarchy.attributes()[tail..]) {
+        if extra.data_type() != column.data_type() || extra.components() != column.component_count()
+        {
+            return Err(FormatError::InvalidMetadata(
+                "Extra Bytes descriptor does not match its schema column",
+            ));
+        }
+    }
     if hierarchy.attributes().len() > u32::MAX as usize {
         return Err(FormatError::SchemaTooLarge);
     }

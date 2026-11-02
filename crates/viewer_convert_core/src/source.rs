@@ -1,9 +1,13 @@
 //! Source inspection and decoder-panic containment, free of paths and the filesystem.
 
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::Arc;
 
 use las::Reader;
-use viewer_core::las::{LasPreflightError, LazChunkTableLayout};
+use viewer_core::las::{
+    LasExtraByte, LasPreflightError, LasSchemaSpec, LazChunkTableLayout, las_attribute_schema_for,
+    parse_extra_byte_descriptors, validate_extra_bytes,
+};
 use viewer_core::{AttributeDescriptor, CoordinateFrame, SpatialBounds};
 
 use viewer_format::{
@@ -27,6 +31,12 @@ pub struct SourceInfo {
     pub scale_offset: Option<SourceScaleOffset>,
     /// Set by [`SourceInfo::for_options`] when the output is a global-octree format.
     pub global: Option<GlobalRoot>,
+    /// Payload of the Extra Bytes VLRs (`LASF_Spec`, record 4), concatenated; parsed only for a
+    /// format that keeps them, so other formats never fail on exotic descriptors.
+    pub extra_byte_vlrs: Vec<u8>,
+    /// Set by [`SourceInfo::for_options`] for `v7.5-pre`: the output then also holds `las_flags`
+    /// and one column per Extra Byte descriptor (RF-24).
+    pub las_extra_bytes: Option<Arc<[LasExtraByte]>>,
 }
 
 /// Root node and frame origin of a `v7.4-pre` conversion, from the header bounds.
@@ -99,9 +109,37 @@ impl GlobalRoot {
 }
 
 impl SourceInfo {
+    /// Attribute schema of the output, in column order.
+    pub fn schema(&self) -> Result<Vec<AttributeDescriptor>, ConvertError> {
+        let format = &self.point_format;
+        Ok(las_attribute_schema_for(&LasSchemaSpec {
+            has_gps_time: format.has_gps_time,
+            has_color: format.has_color,
+            has_nir: format.has_nir,
+            las_flags: self.las_extra_bytes.is_some(),
+            extra_bytes: self.las_extra_bytes.as_deref().unwrap_or(&[]),
+        })?)
+    }
+
+    /// Source dimensions the output drops.
+    pub fn omitted_dimensions(&self) -> Vec<String> {
+        let mut dimensions = omitted_dimensions(&self.point_format, self.has_crs);
+        if self.las_extra_bytes.is_some() {
+            dimensions.retain(|d| !d.starts_with("synthetic/") && d != "extra point bytes");
+        }
+        dimensions
+    }
+
     /// Adapts the source to the output format: for `v7.4-pre` the frame origin becomes the
     /// minimum quantized corner and the root the smallest global node containing the header box.
     pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
+        if options.format_version().uses_pages() {
+            let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs)?;
+            validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))?;
+            self.las_extra_bytes = Some(extras.into());
+            // Fails here, before any point is read, when the schema does not fit.
+            self.schema()?;
+        }
         if !options.format_version().uses_global_frame() {
             return Ok(self);
         }
@@ -226,6 +264,12 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         crs: crate::crs::read_crs(header),
         scale_offset: scale_offset(header),
         global: None,
+        extra_byte_vlrs: header
+            .all_vlrs()
+            .filter(|vlr| vlr.user_id == "LASF_Spec" && vlr.record_id == 4)
+            .flat_map(|vlr| vlr.data.iter().copied())
+            .collect(),
+        las_extra_bytes: None,
     })
 }
 
