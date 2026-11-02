@@ -1091,7 +1091,8 @@ impl SpatialHierarchy {
             if !frustum.intersects(&indexed.metadata.bounds) {
                 continue;
             }
-            if indexed.metadata.point_count > 0 {
+            // An unloaded anchor stays in the frontier even when empty: its page may hold points.
+            if indexed.metadata.point_count > 0 || self.unloaded.contains(&id) {
                 frontier.push(id);
             } else {
                 pending.extend(indexed.children.iter().rev().copied());

@@ -10,6 +10,7 @@ mod lod_dataset;
 mod lod_driver;
 #[cfg(target_arch = "wasm32")]
 mod lod_metadata;
+mod lod_pages;
 #[cfg(target_arch = "wasm32")]
 mod lod_request_scheduler;
 #[cfg(any(target_arch = "wasm32", test))]
@@ -23,6 +24,7 @@ pub use controller::{
 pub use lod_dataset::{
     LodBuiltScene, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate, LodWorkStats,
 };
+pub use lod_pages::{DEFAULT_PAGE_BUDGET_BYTES, PageInsert, PageRelease};
 
 #[cfg(target_arch = "wasm32")]
 mod async_format_reader;

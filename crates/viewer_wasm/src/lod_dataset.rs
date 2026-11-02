@@ -1,3 +1,4 @@
+use crate::lod_pages::{PageInsert, PageRelease, PageResidency};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -42,6 +43,8 @@ pub struct LodDataset {
     state_epoch: u64,
     /// CRS identity (`EPSG:code`) of a `v7.4-pre` cloud; older formats carry none.
     crs: Option<String>,
+    /// Present when the hierarchy is paged (`v7.5-pre`): pages are grafted and evicted at run time.
+    pages: Option<PageResidency>,
 }
 
 struct SelectionMemo {
@@ -219,6 +222,16 @@ pub enum LodDatasetError {
     CacheCyclePaused,
     #[error("LOD selection failed: {0}")]
     Selection(#[from] LodSelectionError),
+    #[error("hierarchy page rejected: {0}")]
+    Page(#[from] viewer_core::SpatialError),
+    #[error(
+        "page budget exhausted: a {needed}-byte page does not fit in {budget} bytes with {pinned} bytes pinned by the cut"
+    )]
+    PageBudget {
+        needed: usize,
+        budget: usize,
+        pinned: usize,
+    },
     #[error("GPU cut update failed: {0}")]
     Gpu(#[from] GpuRendererError),
     #[error("voxel scene build failed: {0}")]
@@ -278,7 +291,165 @@ impl LodDataset {
             plan_memo: None,
             state_epoch: 0,
             crs: None,
+            pages: None,
         }
+    }
+
+    /// Makes the hierarchy paged: `unloaded` are the nodes whose pages are missing, `release` is
+    /// told about every evicted page, and resident pages account for at most `budget_bytes`.
+    pub fn with_pages(
+        mut self,
+        unloaded: &[NodeId],
+        release: PageRelease,
+        budget_bytes: usize,
+    ) -> Result<Self, LodDatasetError> {
+        let hierarchy = Arc::make_mut(&mut self.metadata).hierarchy_mut();
+        for id in unloaded {
+            hierarchy.mark_unloaded(*id)?;
+        }
+        self.pages = Some(PageResidency::new(release, budget_bytes));
+        Ok(self)
+    }
+
+    /// Whether pages are fetched on demand.
+    pub fn is_paged(&self) -> bool {
+        self.pages.is_some()
+    }
+
+    /// Resident hierarchy size, for the host's open report.
+    pub fn resident_node_count(&self) -> usize {
+        self.metadata.hierarchy().stats().node_count
+    }
+
+    pub fn resident_max_level(&self) -> u32 {
+        self.metadata.hierarchy().stats().max_level
+    }
+
+    /// Resident pages (excluding the root page), their accounted bytes and the evictions so far.
+    pub fn page_stats(&self) -> (usize, usize, u64) {
+        self.pages
+            .as_ref()
+            .map_or((0, 0, 0), |p| (p.pages(), p.used_bytes(), p.evictions()))
+    }
+
+    /// Nodes no page may drop: the retained cut, the visible cut and the last target.
+    fn pinned_nodes(&self) -> Vec<NodeId> {
+        let mut nodes: Vec<NodeId> = self.planner.retained_nodes().to_vec();
+        if let Some(plan) = &self.visible_plan {
+            nodes.extend_from_slice(plan.node_ids());
+        }
+        if let Some(memo) = &self.selection_memo {
+            nodes.extend_from_slice(memo.selection.node_ids());
+        }
+        nodes
+    }
+
+    /// Grafts a fetched page, first evicting least-recently-used pages that carry no retained
+    /// node and no resident descendant page until it fits. Fails with `PageBudget` when the
+    /// pinned pages leave no room; the hierarchy is then unchanged.
+    pub fn graft_page(&mut self, page: PageInsert) -> Result<(), LodDatasetError> {
+        let Some(residency) = &self.pages else {
+            return Err(LodDatasetError::Page(
+                viewer_core::SpatialError::NotUnloadedAnchor(page.anchor),
+            ));
+        };
+        if !residency.fits(page.bytes) {
+            self.evict_for(page.bytes, page.anchor)?;
+        }
+        let PageInsert {
+            anchor,
+            number,
+            nodes,
+            unloaded,
+            bytes,
+        } = page;
+        let blocks: Vec<(NodeId, Vec<BlockId>)> = nodes
+            .iter()
+            .map(|node| (node.id(), node.blocks().to_vec()))
+            .collect();
+        Arc::make_mut(&mut self.metadata)
+            .hierarchy_mut()
+            .graft_page(anchor, nodes, &unloaded)?;
+        for (id, node_blocks) in blocks {
+            for block in node_blocks {
+                self.block_owners.entry(block).or_default().push(id);
+            }
+        }
+        if let Some(residency) = &mut self.pages {
+            residency.insert(anchor, number, bytes);
+        }
+        self.invalidate_selection();
+        Ok(())
+    }
+
+    /// Frees room for `needed` bytes. `incoming` is the anchor about to be grafted: the page that
+    /// holds it stays.
+    fn evict_for(&mut self, needed: usize, incoming: NodeId) -> Result<(), LodDatasetError> {
+        let mut pinned = Vec::new();
+        loop {
+            let Some(residency) = &self.pages else {
+                return Ok(());
+            };
+            if residency.fits(needed) {
+                return Ok(());
+            }
+            let retained = self.pinned_nodes();
+            let holder_page = incoming.get() >> 32;
+            let mut evicted = false;
+            for (anchor, number) in residency.lru() {
+                // The page that holds `incoming` is its ancestor: keep it.
+                if pinned.contains(&anchor) || u64::from(number) == holder_page {
+                    continue;
+                }
+                match Arc::make_mut(&mut self.metadata)
+                    .hierarchy_mut()
+                    .evict_page(anchor, &retained)
+                {
+                    Ok(_) => {
+                        let hierarchy = self.metadata.hierarchy();
+                        self.block_owners.retain(|_, owners| {
+                            owners.retain(|id| hierarchy.node(*id).is_some());
+                            !owners.is_empty()
+                        });
+                        if let Some(residency) = &mut self.pages {
+                            residency.remove(anchor);
+                        }
+                        self.invalidate_selection();
+                        evicted = true;
+                        break;
+                    }
+                    Err(_) => pinned.push(anchor),
+                }
+            }
+            if !evicted {
+                let residency = self.pages.as_ref().expect("checked above");
+                return Err(LodDatasetError::PageBudget {
+                    needed,
+                    budget: residency.budget_bytes(),
+                    pinned: residency.bytes_of(&pinned),
+                });
+            }
+        }
+    }
+
+    /// Marks pages holding `node_ids` as recently used so the cut in use is evicted last.
+    fn touch_pages(&mut self, node_ids: &[NodeId]) {
+        let Some(residency) = &mut self.pages else {
+            return;
+        };
+        let mut seen = HashSet::new();
+        for id in node_ids {
+            let number = (id.get() >> 32) as u32;
+            if number != 0 && seen.insert(number) {
+                residency.touch(number);
+            }
+        }
+    }
+
+    fn invalidate_selection(&mut self) {
+        self.selection_memo = None;
+        self.plan_memo = None;
+        self.state_epoch += 1;
     }
 
     /// Records the CRS identity checked when another cloud is opened (RF-02).
@@ -742,6 +913,7 @@ impl LodDataset {
             // the planner's cache protection. Only voxel construction and upload are omitted.
             self.state_epoch += 1;
             self.planner.commit(&plan, &mut self.cache);
+            self.touch_pages(plan.node_ids());
             self.visible_plan = Some(plan.clone());
             self.last_successful_build = Some(build_context);
         }

@@ -26,6 +26,11 @@ impl DatasetMetadata {
     pub const fn hierarchy(&self) -> &SpatialHierarchy {
         &self.hierarchy
     }
+
+    /// Grows or shrinks the hierarchy as pages arrive or are evicted.
+    pub const fn hierarchy_mut(&mut self) -> &mut SpatialHierarchy {
+        &mut self.hierarchy
+    }
 }
 
 /// Typed values for one attribute column, stored compactly in its declared type.

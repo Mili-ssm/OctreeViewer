@@ -2460,3 +2460,107 @@ fn an_unloaded_anchor_holds_the_stage_and_is_requested() {
     );
     assert!(!resident_target_plan_is_complete(&target, &plan));
 }
+
+/// Root (id 1) with two unloaded anchors 2 and 3; pages below them hold one child each.
+fn paged_dataset(budget: usize) -> (LodDataset, std::rc::Rc<std::cell::RefCell<Vec<NodeId>>>) {
+    let node = |id: u64, parent: Option<u64>, level: u32, min: f64, max: f64| {
+        SpatialNode::new(
+            NodeId::new(id),
+            parent.map(NodeId::new),
+            level,
+            SpatialBounds::new([min, 0.0, 0.0], [max, 8.0, 8.0]).unwrap(),
+            10,
+            0.0,
+            vec![BlockId::new(id)],
+        )
+        .unwrap()
+    };
+    let hierarchy = SpatialHierarchy::new(
+        vec![
+            node(1, None, 0, 0.0, 8.0),
+            node(2, Some(1), 1, 0.0, 4.0),
+            node(3, Some(1), 1, 4.0, 8.0),
+        ],
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    let released = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = std::rc::Rc::clone(&released);
+    let dataset = LodDataset::new([0.0; 3], hierarchy, 1 << 20)
+        .unwrap()
+        .with_pages(
+            &[NodeId::new(2), NodeId::new(3)],
+            Box::new(move |anchor| sink.borrow_mut().push(anchor)),
+            budget,
+        )
+        .unwrap();
+    (dataset, released)
+}
+
+fn page_below(anchor: u64, number: u32, child: u64, min: f64, max: f64) -> crate::PageInsert {
+    let node = SpatialNode::new(
+        NodeId::new(child),
+        Some(NodeId::new(anchor)),
+        2,
+        SpatialBounds::new([min, 0.0, 0.0], [max, 4.0, 4.0]).unwrap(),
+        5,
+        0.0,
+        vec![BlockId::new(child)],
+    )
+    .unwrap();
+    crate::PageInsert {
+        anchor: NodeId::new(anchor),
+        number,
+        nodes: vec![node],
+        unloaded: Vec::new(),
+        bytes: 100,
+    }
+}
+
+#[test]
+fn grafting_beyond_the_page_budget_evicts_the_oldest_unpinned_page() {
+    let (mut dataset, released) = paged_dataset(150);
+    dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();
+    assert!(dataset.references_block(BlockId::new(20)));
+    assert_eq!(dataset.resident_node_count(), 4);
+    // The second page needs room: the first one carries no retained node, so it goes.
+    dataset.graft_page(page_below(3, 2, 30, 4.0, 6.0)).unwrap();
+    assert_eq!(*released.borrow(), [NodeId::new(2)]);
+    assert!(!dataset.references_block(BlockId::new(20)));
+    assert!(dataset.references_block(BlockId::new(30)));
+    assert_eq!(dataset.page_stats(), (1, 100, 1));
+}
+
+#[test]
+fn pinned_pages_are_never_evicted_and_a_full_budget_is_an_error() {
+    let (mut dataset, released) = paged_dataset(150);
+    dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();
+    // The retained cut holds the page's node: nothing may be evicted.
+    dataset.insert_block(block(20)).unwrap();
+    dataset.insert_block(block(3)).unwrap();
+    let target = dataset
+        .metadata
+        .hierarchy()
+        .select_lod(
+            &SpatialFrustum::new(vec![FrustumPlane::new([1.0, 0.0, 0.0], 1000.0).unwrap()])
+                .unwrap(),
+            LodSelectionConfig::new(1.0, u64::MAX).unwrap(),
+            |_| 100.0,
+        )
+        .unwrap();
+    dataset
+        .planner
+        .update(dataset.metadata.hierarchy(), &target, &mut dataset.cache);
+    assert!(dataset.planner.retained_nodes().contains(&NodeId::new(20)));
+    let error = dataset
+        .graft_page(page_below(3, 2, 30, 4.0, 6.0))
+        .unwrap_err();
+    assert!(
+        matches!(error, LodDatasetError::PageBudget { pinned: 100, .. }),
+        "{error}"
+    );
+    assert!(released.borrow().is_empty());
+    assert!(dataset.references_block(BlockId::new(20)));
+    assert!(!dataset.references_block(BlockId::new(30)));
+}

@@ -272,3 +272,35 @@ fn random_load_and_evict_sequences_leave_no_orphans() {
         assert!(evictions > 0, "seed {seed} never evicted");
     }
 }
+
+/// An empty node whose page is missing may hide points below it, so it is reported rather than
+/// skipped as an empty region.
+#[test]
+fn unloaded_anchor_without_points_is_not_dropped() {
+    let (below, anchors) = page(1);
+    let mut nodes = vec![node(1)];
+    nodes.extend(below.into_iter().map(|n| {
+        if n.id() == NodeId::new(4) {
+            SpatialNode::new(n.id(), n.parent(), n.level(), n.bounds(), 0, 0.0, vec![]).unwrap()
+        } else {
+            n
+        }
+    }));
+    let mut hierarchy = SpatialHierarchy::new(nodes, Vec::new(), None).unwrap();
+    for anchor in anchors {
+        hierarchy.mark_unloaded(anchor).unwrap();
+    }
+    for selection in [
+        hierarchy
+            .select_lod(&frustum(), config(), refine_everything)
+            .unwrap(),
+        hierarchy
+            .select_lod_stable_projector(&frustum(), config(), 1 << 20, refine_everything)
+            .unwrap()
+            .0,
+    ] {
+        let mut anchors = selection.unloaded_anchors().to_vec();
+        anchors.sort_unstable();
+        assert_eq!(anchors, (4..8).map(NodeId::new).collect::<Vec<_>>());
+    }
+}
