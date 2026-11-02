@@ -56,6 +56,8 @@ pub enum ConvertError {
     InvalidSpatialDivisions(u8),
     #[error("root partition ranges must be between 0 and 8, got {0}")]
     InvalidRootRanges(usize),
+    #[error("sample grid per axis must be between 1 and 256, got {0}")]
+    InvalidSampleGrid(usize),
     #[error("LAS dimensions do not match the planned output attribute schema")]
     InvalidAttributeSchema,
     #[error("estimated controlled memory is {requested} bytes, exceeding budget {limit} bytes")]

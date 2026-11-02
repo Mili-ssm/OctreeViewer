@@ -1,0 +1,21 @@
+{
+  "input": "data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz",
+  "leaf_count": 39436,
+  "leaf_points": 32000,
+  "max_level": 15,
+  "node_count": 48798,
+  "output_bytes": 4962838736,
+  "peak_rss_bytes": 319639552,
+  "points_per_leaf": {
+    "max": 31996.0,
+    "p50": 9826.0,
+    "p95": 26063.0
+  },
+  "sample_grid": 32,
+  "spacing_jump_levels": {
+    "max": 7.000000000050838,
+    "p50": 2.9999999994577258,
+    "p95": 4.0
+  },
+  "wall_seconds": 356.97915448
+}

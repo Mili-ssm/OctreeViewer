@@ -29,7 +29,6 @@ use crate::source::{SourceInfo, next_descriptor, omitted_dimensions, source_sche
 
 const MAX_SPOOL_RECORD_BYTES: usize = 55;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
-pub const SAMPLE_GRID_SIZE: usize = 8;
 pub const MAX_SPATIAL_DEPTH: u32 = 32;
 
 /// Consume-order rank of the child spool `key` at `depth` (>= 1). The depth-first planner
@@ -387,7 +386,13 @@ fn build_spatial_plan_inner<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     let point_limit =
         crate::options::input_batch_point_limit(options.points_per_block(), source.record_length);
     check_memory_budget(
-        estimate_memory(point_limit, 0, 0, options.spatial_divisions())?,
+        estimate_memory(
+            point_limit,
+            0,
+            0,
+            options.spatial_divisions(),
+            options.sample_grid(),
+        )?,
         options.max_memory_budget_bytes(),
     )?;
     // Ids are never reused; 0 is `SpoolId::SOURCE`. The counter is host state, not store I/O.
@@ -445,6 +450,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         point_limit,
         memory_budget: options.max_memory_budget_bytes(),
         spatial_divisions: options.spatial_divisions(),
+        sample_grid: options.sample_grid(),
         frame: source.frame,
         layout: SpoolLayout::source(source),
         node_records: Vec::new(),
@@ -478,6 +484,7 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         builder.node_records.len(),
         builder.output_blocks.len(),
         options.spatial_divisions(),
+        options.sample_grid(),
     )?
     .checked_add(
         (builder.workers_used.saturating_sub(1) as u64)
@@ -495,16 +502,23 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     )?;
     // Ranges were admitted against the budget; their working sets are only reported.
     let estimated_peak_memory_bytes = if builder.ranges_used > 1 {
-        let ranged = estimate_memory(point_limit, 0, 0, options.spatial_divisions())?
-            .checked_add(
-                (builder.ranges_used as u64 - 1)
-                    .checked_mul(range_memory_bytes(
-                        point_limit,
-                        options.spatial_divisions(),
-                    )?)
-                    .ok_or(ConvertError::SizeOverflow)?,
-            )
-            .ok_or(ConvertError::SizeOverflow)?;
+        let ranged = estimate_memory(
+            point_limit,
+            0,
+            0,
+            options.spatial_divisions(),
+            options.sample_grid(),
+        )?
+        .checked_add(
+            (builder.ranges_used as u64 - 1)
+                .checked_mul(range_memory_bytes(
+                    point_limit,
+                    options.spatial_divisions(),
+                    options.sample_grid(),
+                )?)
+                .ok_or(ConvertError::SizeOverflow)?,
+        )
+        .ok_or(ConvertError::SizeOverflow)?;
         estimated_peak_memory_bytes.max(ranged)
     } else {
         estimated_peak_memory_bytes
@@ -532,10 +546,13 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         DatasetMetadata::new(source.frame, hierarchy),
         None,
         Some(format!(
-            "adaptive {}x{}x{} spatial partition; full-resolution leaves; 8x8x8 voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
+            "adaptive {}x{}x{} spatial partition; full-resolution leaves; {}x{}x{} voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
             options.spatial_divisions(),
             options.spatial_divisions(),
-            options.spatial_divisions()
+            options.spatial_divisions(),
+            options.sample_grid(),
+            options.sample_grid(),
+            options.sample_grid()
         )),
         Vec::new(),
     )?
@@ -669,6 +686,7 @@ pub struct SpatialBuilder<'a, S: PlanStore, C: Clock, X> {
     point_limit: u64,
     memory_budget: u64,
     spatial_divisions: u8,
+    sample_grid: usize,
     frame: viewer_core::CoordinateFrame,
     layout: SpoolLayout,
     node_records: Vec<NodeRecord>,
@@ -852,6 +870,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         JobContext {
             point_limit: self.point_limit,
             spatial_divisions: self.spatial_divisions,
+            sample_grid: self.sample_grid,
             frame: self.frame,
             layout: self.layout,
             collect_diagnostics: self.spool_diagnostics.is_some(),
@@ -896,8 +915,15 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
     /// Admitted root ranges: the requested count, reduced so that the extra ranges fit in the
     /// budget left after the root's own working set (as `memory_limited_workers` does).
     fn admitted_root_ranges(&self) -> Result<usize, ConvertError> {
-        let base = estimate_memory(self.point_limit, 0, 0, self.spatial_divisions)?;
-        let per_range = range_memory_bytes(self.point_limit, self.spatial_divisions)?;
+        let base = estimate_memory(
+            self.point_limit,
+            0,
+            0,
+            self.spatial_divisions,
+            self.sample_grid,
+        )?;
+        let per_range =
+            range_memory_bytes(self.point_limit, self.spatial_divisions, self.sample_grid)?;
         let extra = self.memory_budget.saturating_sub(base) / per_range;
         Ok(self
             .root_ranges
@@ -1060,7 +1086,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 bounds,
                 point_count: sample_count as u64,
                 geometric_error: (3.0_f64).sqrt() * cube_side(bounds)
-                    / SAMPLE_GRID_SIZE as f64
+                    / self.sample_grid as f64
                     / 2.0
                     + center_rounding_error(bounds, self.frame),
                 blocks: Vec::new(),
@@ -1304,6 +1330,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 self.output_blocks.len(),
                 batch_count,
                 self.spatial_divisions,
+                self.sample_grid,
             )?;
             self.workers_used = self.workers_used.max(batch_count);
             let executor = self.executor;
@@ -1331,6 +1358,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
             point_limit: self.point_limit,
             memory_budget,
             spatial_divisions: self.spatial_divisions,
+            sample_grid: self.sample_grid,
             frame: self.frame,
             layout: self.layout,
             node_records: std::mem::take(&mut branch.node_records),
@@ -1488,6 +1516,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
                 node_count,
                 block_count,
                 self.spatial_divisions,
+                self.sample_grid,
             )?,
             self.memory_budget,
         )
@@ -1985,25 +2014,20 @@ fn child_bounds(bounds: SpatialBounds, child: usize, divisions: u8) -> SpatialBo
 }
 
 #[inline]
-pub fn sample_index(position: [f64; 3], bounds: SpatialBounds) -> usize {
+pub fn sample_index(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> usize {
     let side = cube_side(bounds);
     let mut cell = [0_usize; 3];
     for axis in 0..3 {
-        let scaled =
-            ((position[axis] - bounds.min()[axis]) / side * SAMPLE_GRID_SIZE as f64).floor();
-        cell[axis] = (scaled as usize).min(SAMPLE_GRID_SIZE - 1);
+        let scaled = ((position[axis] - bounds.min()[axis]) / side * grid as f64).floor();
+        cell[axis] = (scaled as usize).min(grid - 1);
     }
-    (cell[0] * SAMPLE_GRID_SIZE + cell[1]) * SAMPLE_GRID_SIZE + cell[2]
+    (cell[0] * grid + cell[1]) * grid + cell[2]
 }
 
 #[inline]
-pub fn voxel_center(index: usize, bounds: SpatialBounds) -> [f64; 3] {
-    let cell = [
-        index / (SAMPLE_GRID_SIZE * SAMPLE_GRID_SIZE),
-        (index / SAMPLE_GRID_SIZE) % SAMPLE_GRID_SIZE,
-        index % SAMPLE_GRID_SIZE,
-    ];
-    let cell_size = cube_side(bounds) / SAMPLE_GRID_SIZE as f64;
+pub fn voxel_center(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
+    let cell = [index / (grid * grid), (index / grid) % grid, index % grid];
+    let cell_size = cube_side(bounds) / grid as f64;
     std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size)
 }
 
@@ -2039,6 +2063,7 @@ fn estimate_memory(
     node_count: usize,
     block_count: usize,
     spatial_divisions: u8,
+    sample_grid: usize,
 ) -> Result<u64, ConvertError> {
     let node_bytes = u64::try_from(node_count)
         .map_err(|_| ConvertError::SizeOverflow)?
@@ -2051,9 +2076,7 @@ fn estimate_memory(
     let working_bytes = point_limit
         .checked_mul(crate::options::ESTIMATED_WORKING_BYTES_PER_POINT)
         .ok_or(ConvertError::SizeOverflow)?;
-    let sample_accumulators = (SAMPLE_GRID_SIZE.pow(3) as u64)
-        .checked_mul(256)
-        .ok_or(ConvertError::SizeOverflow)?;
+    let sample_accumulators = sample_accumulator_bytes(sample_grid, point_limit)?;
     let child_spool_buffers = child_spool_buffer_bytes(spatial_divisions)?;
     working_bytes
         .checked_add(node_bytes)
@@ -2066,12 +2089,29 @@ fn estimate_memory(
 
 /// What each root range beyond the first adds to the root's working set: its decode batch, child
 /// buffers, sample accumulators and fixed overhead.
-fn range_memory_bytes(point_limit: u64, spatial_divisions: u8) -> Result<u64, ConvertError> {
+fn range_memory_bytes(
+    point_limit: u64,
+    spatial_divisions: u8,
+    sample_grid: usize,
+) -> Result<u64, ConvertError> {
     point_limit
         .checked_mul(crate::options::ESTIMATED_WORKING_BYTES_PER_POINT)
         .and_then(|bytes| bytes.checked_add(child_spool_buffer_bytes(spatial_divisions).ok()?))
-        .and_then(|bytes| bytes.checked_add((SAMPLE_GRID_SIZE.pow(3) as u64).checked_mul(256)?))
+        .and_then(|bytes| {
+            bytes.checked_add(sample_accumulator_bytes(sample_grid, point_limit).ok()?)
+        })
         .and_then(|bytes| bytes.checked_add(SPATIAL_WORKER_OVERHEAD_BYTES))
+        .ok_or(ConvertError::SizeOverflow)
+}
+
+/// The sample grid is sparse: at most one accumulator per occupied cell, and a node holds about
+/// `point_limit` points, so occupied cells are bounded by `min(g³, max(point_limit, 8³))`; the
+/// floor keeps the estimate of the default 8³ grid unchanged for small limits.
+fn sample_accumulator_bytes(sample_grid: usize, point_limit: u64) -> Result<u64, ConvertError> {
+    (sample_grid as u64)
+        .checked_pow(3)
+        .map(|cells| cells.min(point_limit.max(512)))
+        .and_then(|cells| cells.checked_mul(256))
         .ok_or(ConvertError::SizeOverflow)
 }
 
@@ -2089,13 +2129,15 @@ fn branch_memory_budget(
     completed_blocks: usize,
     worker_count: usize,
     spatial_divisions: u8,
+    sample_grid: usize,
 ) -> Result<u64, ConvertError> {
-    let base = estimate_memory(point_limit, 0, 0, spatial_divisions)?;
+    let base = estimate_memory(point_limit, 0, 0, spatial_divisions, sample_grid)?;
     let current = estimate_memory(
         point_limit,
         completed_nodes,
         completed_blocks,
         spatial_divisions,
+        sample_grid,
     )?;
     let current_index = current.saturating_sub(base);
     let workers = u64::try_from(worker_count).map_err(|_| ConvertError::SizeOverflow)?;

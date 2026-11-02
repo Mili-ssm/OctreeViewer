@@ -159,6 +159,7 @@ fn context(info: &crate::source::SourceInfo, divisions: u8, limit: u64) -> JobCo
     JobContext {
         point_limit: limit,
         spatial_divisions: divisions,
+        sample_grid: crate::options::DEFAULT_SAMPLE_GRID,
         frame: info.frame,
         layout: SpoolLayout::source(info),
         collect_diagnostics: false,

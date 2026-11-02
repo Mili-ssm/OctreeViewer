@@ -3,6 +3,7 @@
 //! commits: blocks without ids, non-empty children and the spools to release. Jobs see only the
 //! store, spool ids and plain values; ids, budgets and progress forwarding belong to the host.
 
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::io::Read;
 
 use las::PointDataBuilder;
@@ -16,8 +17,8 @@ use super::{
 use crate::ConvertError;
 use crate::source::SourceInfo;
 use crate::spatial::{
-    ChildSpool, MAX_SPATIAL_DEPTH, SAMPLE_GRID_SIZE, SampleAccumulator, SpoolLayout, SpoolPoint,
-    StoreWriter, center_rounding_error, cube_side, decode_point, read_records, sample_index,
+    ChildSpool, MAX_SPATIAL_DEPTH, SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter,
+    center_rounding_error, cube_side, decode_point, read_records, sample_index,
     visit_source_points, voxel_center, write_point, write_source_points,
 };
 
@@ -35,6 +36,7 @@ impl NodePath {
 pub struct JobContext {
     pub point_limit: u64,
     pub spatial_divisions: u8,
+    pub sample_grid: usize,
     pub frame: CoordinateFrame,
     pub layout: SpoolLayout,
     pub collect_diagnostics: bool,
@@ -119,38 +121,85 @@ pub enum JobProgress {
     NodeHeartbeat,
 }
 
-/// The 8×8×8 LOD accumulators of one node, indexed by voxel.
-pub struct SampleGrid(Vec<Option<SampleAccumulator>>);
+/// Grids up to this many cells (8³ and 16³) stay dense: a flat array is the fastest in the hot
+/// loop and costs little memory. Larger grids keep only occupied cells.
+const DENSE_SAMPLE_CELLS: usize = 4096;
+
+enum SampleCells {
+    Dense(Vec<Option<SampleAccumulator>>),
+    Sparse(BTreeMap<usize, SampleAccumulator>),
+}
+
+/// The g×g×g LOD accumulators of one node, keyed by voxel index; iterated in ascending key order
+/// whichever the storage.
+pub struct SampleGrid {
+    grid: usize,
+    cells: SampleCells,
+}
 
 impl SampleGrid {
-    fn new() -> Self {
-        Self(
-            std::iter::repeat_with(|| None)
-                .take(SAMPLE_GRID_SIZE.pow(3))
-                .collect(),
-        )
+    fn new(grid: usize) -> Self {
+        let cell_count = grid.pow(3);
+        let cells = if cell_count <= DENSE_SAMPLE_CELLS {
+            SampleCells::Dense(std::iter::repeat_with(|| None).take(cell_count).collect())
+        } else {
+            SampleCells::Sparse(BTreeMap::new())
+        };
+        Self { grid, cells }
+    }
+
+    fn iter(&self) -> Box<dyn Iterator<Item = (usize, &SampleAccumulator)> + '_> {
+        match &self.cells {
+            SampleCells::Dense(slots) => Box::new(
+                slots
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(key, slot)| slot.as_ref().map(|accumulator| (key, accumulator))),
+            ),
+            SampleCells::Sparse(map) => Box::new(map.iter().map(|(key, value)| (*key, value))),
+        }
     }
 
     // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
     #[inline(always)]
     fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
-        let voxel_key = sample_index(point.position, bounds);
-        let center = voxel_center(voxel_key, bounds);
-        self.0[voxel_key]
-            .get_or_insert_with(SampleAccumulator::default)
-            .add(point, center);
+        let voxel_key = sample_index(point.position, bounds, self.grid);
+        let center = voxel_center(voxel_key, bounds, self.grid);
+        let accumulator = match &mut self.cells {
+            SampleCells::Dense(slots) => {
+                slots[voxel_key].get_or_insert_with(SampleAccumulator::default)
+            }
+            SampleCells::Sparse(map) => map.entry(voxel_key).or_default(),
+        };
+        accumulator.add(point, center);
     }
 }
 
 impl SampleGrid {
     /// Folds in the grid of the points that follow this one's in the source order.
     pub fn merge(&mut self, later: SampleGrid) {
-        for (slot, later) in self.0.iter_mut().zip(later.0) {
-            match (slot.as_mut(), later) {
-                (Some(earlier), Some(later)) => earlier.merge(&later),
-                (None, later) => *slot = later,
-                (Some(_), None) => {}
+        debug_assert_eq!(self.grid, later.grid);
+        match (&mut self.cells, later.cells) {
+            (SampleCells::Dense(slots), SampleCells::Dense(later)) => {
+                for (slot, later) in slots.iter_mut().zip(later) {
+                    match (slot.as_mut(), later) {
+                        (Some(earlier), Some(later)) => earlier.merge(&later),
+                        (None, later) => *slot = later,
+                        (Some(_), None) => {}
+                    }
+                }
             }
+            (SampleCells::Sparse(map), SampleCells::Sparse(later)) => {
+                for (key, later) in later {
+                    match map.entry(key) {
+                        Entry::Occupied(mut earlier) => earlier.get_mut().merge(&later),
+                        Entry::Vacant(slot) => {
+                            slot.insert(later);
+                        }
+                    }
+                }
+            }
+            _ => unreachable!("grids of one size share a storage"),
         }
     }
 }
@@ -173,8 +222,8 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     let mut children = (0..child_count)
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new();
-    let sample_cell_size = cube_side(job.bounds) / SAMPLE_GRID_SIZE as f64;
+    let mut samples = SampleGrid::new(ctx.sample_grid);
+    let sample_cell_size = cube_side(job.bounds) / ctx.sample_grid as f64;
     let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
@@ -336,7 +385,7 @@ fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
     let mut children = (0..ctx.child_count())
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new();
+    let mut samples = SampleGrid::new(ctx.sample_grid);
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
@@ -687,15 +736,10 @@ pub fn write_lod(
 ) -> Result<usize, ConvertError> {
     let mut encoded = Vec::new();
     let mut count = 0;
-    for (key, accumulator) in samples
-        .0
-        .iter()
-        .enumerate()
-        .filter_map(|(key, sample)| sample.as_ref().map(|accumulator| (key, accumulator)))
-    {
+    for (key, accumulator) in samples.iter() {
         write_point(
             &mut encoded,
-            &accumulator.finish(voxel_center(key, bounds)),
+            &accumulator.finish(voxel_center(key, bounds, samples.grid)),
             layout.lod(),
         )?;
         count += 1;
