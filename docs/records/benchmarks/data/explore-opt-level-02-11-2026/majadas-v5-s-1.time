@@ -1,0 +1,66 @@
+InspectingInput
+PlanningMetadata
+PlanningSpatialIndex
+  130192/415465882 points (0 MiB written; 0%)
+  41597184/415465882 points (0 MiB written; 10%)
+  83278080/415465882 points (0 MiB written; 20%)
+  124696832/415465882 points (0 MiB written; 30%)
+  166377728/415465882 points (0 MiB written; 40%)
+  207796480/415465882 points (0 MiB written; 50%)
+  249477376/415465882 points (0 MiB written; 60%)
+  290896128/415465882 points (0 MiB written; 70%)
+  332577024/415465882 points (0 MiB written; 80%)
+  373995776/415465882 points (0 MiB written; 90%)
+  415465882/415465882 points (0 MiB written; 100%)
+BuildingSpatialHierarchy
+ReadingAndWritingBlocks
+  0/415465882 points (0 MiB written; 0%)
+  41601598/415465882 points (411 MiB written; 10%)
+  83120870/415465882 points (809 MiB written; 20%)
+  124660376/415465882 points (1213 MiB written; 30%)
+  166263748/415465882 points (1604 MiB written; 40%)
+  207772739/415465882 points (1999 MiB written; 50%)
+  249318961/415465882 points (2396 MiB written; 60%)
+  290834869/415465882 points (2798 MiB written; 70%)
+  332384688/415465882 points (3205 MiB written; 80%)
+  373993498/415465882 points (3604 MiB written; 90%)
+  415465882/415465882 points (4016 MiB written; 100%)
+ValidatingOutput
+  0/415465882 points (7184 MiB written; 0%)
+  41607645/415465882 points (7184 MiB written; 10%)
+  83171956/415465882 points (7184 MiB written; 20%)
+  124647079/415465882 points (7184 MiB written; 30%)
+  166218133/415465882 points (7184 MiB written; 40%)
+  207767926/415465882 points (7184 MiB written; 50%)
+  249378296/415465882 points (7184 MiB written; 60%)
+  290939146/415465882 points (7184 MiB written; 70%)
+  332375416/415465882 points (7184 MiB written; 80%)
+  374146883/415465882 points (7184 MiB written; 90%)
+  415465882/415465882 points (7184 MiB written; 100%)
+PublishingOutput
+Complete
+Converted 415465882 points in 6259 blocks (7533781717 bytes; estimated controlled memory 213 MiB) to target/explore-o3/out.oct + target/explore-o3/out.octattrs
+Not preserved: synthetic/key-point/withheld/overlap flags, scan direction and flight-line edge flags
+	Command being timed: "target/release/viewer_convert data/datasets/sensoforest/SensOFOREST_2026_02_26_Majadas_pointcloud_TLS_20260503.laz target/explore-o3/out.oct --format-version v5"
+	User time (seconds): 490.39
+	System time (seconds): 107.81
+	Percent of CPU this job got: 207%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:48.29
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 93888
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 17199261
+	Voluntary context switches: 117122
+	Involuntary context switches: 26983
+	Swaps: 0
+	File system inputs: 60275376
+	File system outputs: 304802920
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
