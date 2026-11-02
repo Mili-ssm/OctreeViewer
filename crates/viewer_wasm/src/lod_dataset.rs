@@ -478,7 +478,7 @@ impl LodDataset {
             return false;
         }
         renderer.fit_spatial_bounds(
-            self.metadata.hierarchy().stats().root_bounds,
+            self.metadata.hierarchy().stats().data_bounds,
             self.metadata.coordinate_frame().origin(),
         )
     }

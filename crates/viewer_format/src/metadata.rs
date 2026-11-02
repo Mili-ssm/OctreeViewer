@@ -71,8 +71,8 @@ impl FormatMetadata {
     /// origin (world), plus each node's stored representative spacing.
     ///
     /// `v7.4-pre` stores bounds relative to the frame origin and a spacing per node, so they are
-    /// shifted back by the origin (exact: the origin and bounds are multiples of 2^-15 below 2^35)
-    /// and the spacing is attached. Other versions return `shared_dataset()` unchanged.
+    /// shifted back by the origin (exact: the origin and bounds are multiples of 2^-15 below 2^35),
+    /// the spacing is attached and `stats().data_bounds` is the tight data extent of the frame. Other versions return `shared_dataset()` unchanged.
     pub fn viewer_dataset(&self) -> Result<Arc<DatasetMetadata>, MetadataError> {
         let Some(frame) = &self.global_frame else {
             return Ok(self.shared_dataset());
@@ -113,6 +113,8 @@ impl FormatMetadata {
             hierarchy.stats().source_point_count,
             hierarchy.semantics(),
         )
+        .map_err(invalid)?
+        .with_data_bounds(frame.data_bounds().map_err(invalid)?)
         .map_err(invalid)?;
         Ok(Arc::new(DatasetMetadata::new(
             self.dataset.coordinate_frame(),

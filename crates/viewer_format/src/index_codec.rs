@@ -117,6 +117,9 @@ pub(crate) fn write_index<W: Write>(
         for quanta in frame.frame_origin_quanta() {
             index.i64(quanta)?;
         }
+        for quanta in frame.data_max_quanta() {
+            index.i64(quanta)?;
+        }
     }
     if let Some(point_count) = metadata.dataset().hierarchy().stats().source_point_count {
         index.u8(1)?;
@@ -413,14 +416,15 @@ pub(crate) fn parse_index(
     }
     let dataset_origin = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
     let global = layout.uses_global_frame();
-    let (root_level, root_prefix, frame_origin_quanta) = if global {
+    let (root_level, root_prefix, frame_origin_quanta, data_max_quanta) = if global {
         (
             cursor.u32()?,
             [cursor.u64()?, cursor.u64()?, cursor.u64()?],
             [cursor.i64()?, cursor.i64()?, cursor.i64()?],
+            [cursor.i64()?, cursor.i64()?, cursor.i64()?],
         )
     } else {
-        (0, [0; 3], [0; 3])
+        (0, [0; 3], [0; 3], [0; 3])
     };
     let source_point_count = match cursor.u8()? {
         0 => None,
@@ -638,12 +642,15 @@ pub(crate) fn parse_index(
                 root_level,
                 root_prefix,
                 frame_origin_quanta,
+                data_max_quanta,
                 crs,
                 source_scale_offset,
                 node_cells,
             )
             .map_err(|_| {
-                FormatError::MalformedIndex("invalid root level, prefix or frame origin")
+                FormatError::MalformedIndex(
+                    "invalid root level, prefix, frame origin or data maximum",
+                )
             })?;
             let node_refs: Vec<&SpatialNode> = nodes.iter().collect();
             crate::global_frame::validate_nodes(&frame, dataset_origin, &node_refs)

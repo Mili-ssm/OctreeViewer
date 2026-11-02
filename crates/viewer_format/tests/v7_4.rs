@@ -81,6 +81,7 @@ fn tree(
         40,
         root_prefix,
         root_origin(40, root_prefix),
+        root_origin(40, root_prefix).map(|q| q + 100 * 32_768),
         crs,
         source,
         cells,
@@ -471,6 +472,7 @@ fn metadata_with_origin(
         level,
         prefix,
         origin,
+        origin,
         wkt_crs(),
         None,
         vec![(NodeId::new(0), cell)],
@@ -644,6 +646,24 @@ fn reader_rejects_inconsistent_new_fields_even_with_valid_checksums() {
         patched_nth(&bytes, &origin[..], &shifted, Some(0)),
         "frame origin moved off the derived f64 slot",
     );
+    // The data maximum (origin + 100 m) must not fall below the frame origin nor leave the root.
+    let data_max: Vec<u8> = [1536_i64, 2048, 2560]
+        .iter()
+        .flat_map(|m| ((m + 100) * 32_768).to_le_bytes())
+        .collect();
+    let mut below = origin.clone();
+    below[..8].copy_from_slice(&(1536_i64 * 32_768 - 1).to_le_bytes());
+    below[8..16].copy_from_slice(&(2048_i64 * 32_768).to_le_bytes());
+    malformed(
+        patched(&bytes, &data_max, &below),
+        "data maximum below origin",
+    );
+    let mut outside = data_max.clone();
+    outside[..8].copy_from_slice(&(2048_i64 * 32_768 + (1 << 24)).to_le_bytes());
+    malformed(
+        patched(&bytes, &data_max, &outside),
+        "data maximum outside root",
+    );
     // Authority must be upper case, so a flipped letter is refused.
     malformed(
         patched(&bytes, b"EPSG\x78\x7f\0\0", b"EPsG\x78\x7f\0\0"),
@@ -658,6 +678,7 @@ fn writer_rejects_metadata_that_breaks_the_spec() {
         let frame = GlobalFrame::new(
             crs_level,
             prefix,
+            root_origin(crs_level, prefix),
             root_origin(crs_level, prefix),
             wkt_crs(),
             None,
@@ -743,6 +764,7 @@ fn a_local_cloud_anchors_its_lattice_at_the_frame_origin() {
         40,
         [0; 3],
         origin,
+        origin,
         local.clone(),
         None,
         vec![(NodeId::new(0), NodeCell::new([0; 3], 2.0))],
@@ -753,6 +775,45 @@ fn a_local_cloud_anchors_its_lattice_at_the_frame_origin() {
     assert_eq!(bounds.min(), [0.0; 3]);
     assert_eq!(bounds.max(), [512.0; 3]);
     // The same prefix under a CRS identity is a global cell elsewhere, which cannot hold the origin.
-    assert!(GlobalFrame::new(40, [0; 3], origin, wkt_crs(), None, Vec::new()).is_err());
+    assert!(GlobalFrame::new(40, [0; 3], origin, origin, wkt_crs(), None, Vec::new()).is_err());
     assert!(!wkt_crs().is_local());
+}
+
+#[test]
+fn data_extent_round_trips_and_the_viewer_frames_it_not_the_root_cube() {
+    let (metadata, blocks) = tree(wkt_crs(), None);
+    let bytes = write(metadata, blocks, 0.01);
+    let reader = open(bytes);
+    let metadata = reader.format_metadata();
+    let frame = metadata.global_frame().unwrap();
+    let origin_quanta = [1536_i64, 2048, 2560].map(|m| m * 32_768);
+    assert_eq!(
+        frame.data_max_quanta(),
+        origin_quanta.map(|q| q + 100 * 32_768)
+    );
+    let world_min = [1536.0, 2048.0, 2560.0];
+    let world_max = world_min.map(|m| m + 100.0);
+    let data = frame.data_bounds().unwrap();
+    assert_eq!((data.min(), data.max()), (world_min, world_max));
+    // The viewer dataset keeps lattice node bounds and reports the tight extent separately.
+    let viewer = metadata.viewer_dataset().unwrap();
+    let stats = viewer.hierarchy().stats();
+    assert_eq!(stats.root_bounds.min(), world_min);
+    assert_eq!(stats.root_bounds.max(), world_min.map(|m| m + 512.0));
+    assert_eq!(stats.data_bounds, data);
+    // Other formats frame the root bounds.
+    let v5 = metadata.dataset().hierarchy().stats();
+    assert_eq!(v5.data_bounds, v5.root_bounds);
+}
+
+#[test]
+fn data_extent_must_lie_between_the_frame_origin_and_the_root_end() {
+    let origin = root_origin(40, [1 << 39; 3]);
+    let build = |max: [i64; 3]| {
+        GlobalFrame::new(40, [1 << 39; 3], origin, max, wkt_crs(), None, Vec::new()).map(|_| ())
+    };
+    assert!(build(origin).is_ok());
+    assert!(build(origin.map(|q| q + (1 << 24) - 1)).is_ok());
+    assert!(build(origin.map(|q| q + (1 << 24))).is_err());
+    assert!(build([origin[0] - 1, origin[1], origin[2]]).is_err());
 }

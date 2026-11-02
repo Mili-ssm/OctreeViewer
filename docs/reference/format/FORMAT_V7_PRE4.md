@@ -16,7 +16,7 @@ header, footer, file roles, payload directory entries, geometry/attribute codecs
 | Header revision / index magic / footer magic | `3` / `OCTVI73P` / `OCTVE73P` | `4` / `OCTVI74P` / `OCTVE74P` |
 | Coordinates | per-block `f64` origin and scale, `u32` quantization | global `i64` quanta, `u32` offsets, fixed scale 2⁻¹⁵ |
 | Node identity | bounds only | bounds **plus** prefix, derived absolute level, `spacing` |
-| Frame | `f64` origin of the cloud minimum | `i64` quanta origin inside the root node (the writer uses the cloud minimum) |
+| Frame | `f64` origin of the cloud minimum | `i64` quanta origin inside the root node (the writer uses the cloud minimum) plus the `i64` quanta maximum corner of the data |
 | CRS | descriptive string | identity (authority + code) plus raw bytes |
 | Source scale/offset | absent | stored for exact export |
 | Fixed by the version | — | `spatial_divisions` = 2, leaf limit 64 000 points, `sample_grid` = 256 |
@@ -63,13 +63,23 @@ triple of the index is that origin in CRS units (`origin_quanta × 2^-15`, round
 Decoded positions and stored node bounds are frame-local (`world − frame origin`), as in V5. Readers
 validate that the quanta lie inside the root node and that the `f64` triple matches them.
 
+**Data extent.** Right after the frame origin the index stores the **maximum quantized corner of the
+data** (3 × `i64` quanta). With the frame origin as minimum it is the dataset's tight extent, which node
+bounds are not: they are lattice cubes, and a cloud may fill a small corner of its root (Belvedere: a
+16 384 m root around a ~3 km cloud). The converter writes the quantized maximum of the LAS header box
+(it rejects points outside that box, so it contains every point). Readers validate, per axis, that
+`origin <= maximum` and that the maximum lies inside the root node, and **use the box
+`[origin, maximum]` as the dataset's world bounds** (camera fit, scene framing, empty-area metrics);
+node bounds keep their lattice meaning. Other formats have no such field: their world bounds are the
+root bounds.
+
 ## Index layout
 
 The index follows V5's field order with these changes (numbers refer to the V5 index list).
 
 | # | Field | V7.4-pre |
 | --- | --- | --- |
-| 1 | Frame origin | 3 × `f64`, unchanged slot; value derived from the quanta origin below. **New, immediately after it:** root absolute level `a0` (`u32`), root prefix (3 × `u64`), frame origin (3 × `i64` quanta) |
+| 1 | Frame origin | 3 × `f64`, unchanged slot; value derived from the quanta origin below. **New, immediately after it:** root absolute level `a0` (`u32`), root prefix (3 × `u64`), frame origin (3 × `i64` quanta), data maximum corner (3 × `i64` quanta) |
 | 2 | Source point count | unchanged |
 | 3 | CRS string | replaced by the CRS record below |
 | 3b | Source scale and offset (new, after the CRS record) | `u8` tag (0 absent, 1 present; other tags invalid); if present 3 × `f64` scale then 3 × `f64` offset. Scale finite and > 0, offset finite |
@@ -118,7 +128,7 @@ than one, grow by less than ×1.5 (`d` up to 32; a cloud tucked into a corner of
 it starts to spread) (`0 <= d <= 64 - a`, i.e. between one quantum and `side`). Readers validate the power of two,
 the range `2^-15 <= spacing <= side` and, for a node with children, the exact value `2^(41 - a)`.
 
-The index header grows by 24 bytes (frame origin quanta). The minimum encoded node grows by 32 bytes (3 × `u64` + `f64`): `MIN_NODE_RECORD_LEN` in
+The index header grows by 48 bytes (frame origin quanta and data maximum quanta). The minimum encoded node grows by 32 bytes (3 × `u64` + `f64`): `MIN_NODE_RECORD_LEN` in
 `index_codec.rs` goes from 85 to 117.
 
 ### Block record
@@ -165,7 +175,7 @@ as LAS integers.
 ## Validation (readers)
 
 Every "must" above, plus the V5 rules for IDs, ranges, contiguity and CRCs. Cross-field checks: frame
-origin quanta inside the root node and `f64` triple = quanta × 2^-15; level ≤ 64; child prefix = parent prefix extended; bounds derived from prefix;
+origin quanta inside the root node, data maximum inside the root node and not below the origin, and `f64` triple = quanta × 2^-15; level ≤ 64; child prefix = parent prefix extended; bounds derived from prefix;
 authority empty iff code 0; encoding 0 iff raw empty.
 
 ## Writer restrictions

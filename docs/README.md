@@ -52,6 +52,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Referencias SHA R1](records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md) | SHA del CLI tras la norma portátil (ADR 0016); sustituyen a los de M0, cuyos tiempos siguen vigentes. | fechado |
 | [Referencia SHA v7.4-pre (R4-T3)](records/benchmarks/R4_V74_REFERENCE_SHA_02-11-2026.md) | SHA del primer fixture `v7.4-pre` del escritor de `viewer_format`, junto a las referencias R1. | fechado |
 | [Referencia SHA v7.4-pre con origen en cuantos (R4-T4)](records/benchmarks/R4_V74_REFERENCE_SHA_2_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el origen de marco como `i64` cuantos; sustituye al anterior. | fechado |
+| [Referencia SHA v7.4-pre con extensión de datos (R4)](records/benchmarks/R4_V74_REFERENCE_SHA_3_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el máximo cuantizado de los datos en el índice; sustituye al anterior. | fechado |
 | [S2: rangos de chunks LAZ](records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md) | Decodificación por rangos de chunks sin `seek`, fixture de chunks variables y velocidad en wasm32 frente a nativo. | fechado |
 | [S10: RAM del híbrido](records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md) | Pico de RAM y handles de spools híbridos RAM/OPFS; propuesta P3. | fechado |
 | [Zonas OPFS (S5 residual)](records/benchmarks/OPFS_ZONES_2026-10-30.md) | Ficheros > 4 GiB, `truncate`, liberación de handles tras `terminate()` y RAM de JS en Chrome y Firefox; base del ADR 0017. | fechado |

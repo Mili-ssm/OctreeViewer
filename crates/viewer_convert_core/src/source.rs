@@ -35,6 +35,9 @@ pub struct GlobalRoot {
     pub level: u32,
     pub prefix: [u64; 3],
     pub frame_origin_quanta: [i64; 3],
+    /// Maximum quantized corner of the header box (points outside it are rejected), the tight
+    /// data extent stored next to the frame origin.
+    pub data_max_quanta: [i64; 3],
     /// Lattice anchor: `i64::MIN` for a cloud with a CRS identity, the frame origin for a local one.
     pub lattice_base: [i64; 3],
 }
@@ -77,6 +80,7 @@ impl GlobalRoot {
             level: common,
             prefix,
             frame_origin_quanta: low,
+            data_max_quanta: high,
             lattice_base,
         })
     }

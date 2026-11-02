@@ -141,7 +141,7 @@ pub(super) fn open_format(
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let coordinate_origin = metadata.coordinate_frame().origin();
     let semantics = format!("{:?}", metadata.hierarchy().semantics()).to_lowercase();
-    let root_bounds = hierarchy_stats.root_bounds;
+    let root_bounds = metadata.hierarchy().stats().data_bounds;
     let crs = reader
         .format_metadata()
         .global_frame()

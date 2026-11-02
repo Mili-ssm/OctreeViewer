@@ -360,6 +360,7 @@ pub struct GlobalFrame {
     root_level: u32,
     root_prefix: [u64; 3],
     frame_origin_quanta: [i64; 3],
+    data_max_quanta: [i64; 3],
     lattice_base: [i64; 3],
     crs: CrsRecord,
     source_scale_offset: Option<SourceScaleOffset>,
@@ -372,6 +373,7 @@ impl GlobalFrame {
         root_level: u32,
         root_prefix: [u64; 3],
         frame_origin_quanta: [i64; 3],
+        data_max_quanta: [i64; 3],
         crs: CrsRecord,
         source_scale_offset: Option<SourceScaleOffset>,
         nodes: Vec<(NodeId, NodeCell)>,
@@ -391,6 +393,16 @@ impl GlobalFrame {
                 "frame origin outside the root node",
             ));
         }
+        if (0..3).any(|axis| data_max_quanta[axis] < frame_origin_quanta[axis]) {
+            return Err(MetadataError::InvalidGlobalFrame(
+                "data maximum below the frame origin",
+            ));
+        }
+        if !root.contains(data_max_quanta.map(i128::from)) {
+            return Err(MetadataError::InvalidGlobalFrame(
+                "data maximum outside the root node",
+            ));
+        }
         let mut cells = BTreeMap::new();
         for (id, cell) in nodes {
             if cells.insert(id, cell).is_some() {
@@ -401,6 +413,7 @@ impl GlobalFrame {
             root_level,
             root_prefix,
             frame_origin_quanta,
+            data_max_quanta,
             lattice_base,
             crs,
             source_scale_offset,
@@ -434,6 +447,20 @@ impl GlobalFrame {
     /// corner) that keeps `f32` local positions small for a shallow root.
     pub const fn frame_origin_quanta(&self) -> [i64; 3] {
         self.frame_origin_quanta
+    }
+
+    /// Maximum quantized corner of the data: with the frame origin (the minimum corner) it is the
+    /// tight extent of the points, unlike the lattice-cube node bounds.
+    pub const fn data_max_quanta(&self) -> [i64; 3] {
+        self.data_max_quanta
+    }
+
+    /// Tight data extent in CRS units (world space, not frame-local): what the viewer frames.
+    pub fn data_bounds(&self) -> Result<SpatialBounds, SpatialError> {
+        SpatialBounds::new(
+            self.frame_origin_quanta.map(quanta_to_units),
+            self.data_max_quanta.map(quanta_to_units),
+        )
     }
 
     /// Frame origin in CRS units, rounded to nearest: what the index and `CoordinateFrame` carry.

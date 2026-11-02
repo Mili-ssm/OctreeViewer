@@ -320,6 +320,9 @@ impl SpatialNode {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpatialStats {
     pub root_bounds: SpatialBounds,
+    /// Extent of the data for framing the dataset; equals `root_bounds` unless the root is a
+    /// lattice cube larger than the points (`v7.4-pre`, see [`SpatialHierarchy::with_data_bounds`]).
+    pub data_bounds: SpatialBounds,
     pub node_count: usize,
     pub max_level: u32,
     pub source_point_count: Option<u64>,
@@ -635,6 +638,7 @@ impl SpatialHierarchy {
             .unwrap_or(0);
         let stats = SpatialStats {
             root_bounds,
+            data_bounds: root_bounds,
             node_count: node_map.len(),
             max_level,
             source_point_count,
@@ -710,6 +714,19 @@ impl SpatialHierarchy {
 
     pub const fn stats(&self) -> SpatialStats {
         self.stats
+    }
+
+    /// Sets the tight data extent reported in [`SpatialStats::data_bounds`]. Node bounds are
+    /// untouched; the extent must lie inside the root bounds.
+    pub fn with_data_bounds(mut self, data_bounds: SpatialBounds) -> Result<Self, SpatialError> {
+        if !self.stats.root_bounds.contains(&data_bounds) {
+            return Err(SpatialError::InvalidBounds {
+                min: data_bounds.min(),
+                max: data_bounds.max(),
+            });
+        }
+        self.stats.data_bounds = data_bounds;
+        Ok(self)
     }
 
     pub const fn semantics(&self) -> HierarchySemantics {

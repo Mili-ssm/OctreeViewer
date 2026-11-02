@@ -174,6 +174,26 @@ fn cloud_centred_on_zero_converts_at_the_default_error() {
         0,
         "a cloud straddling the sign bit has a level-0 root"
     );
+    // The stored data extent hugs the points while the root stays a lattice cube.
+    let data = frame.data_bounds().unwrap();
+    for axis in 0..3 {
+        let extent = data.max()[axis] - data.min()[axis];
+        assert!(
+            (0.0..=100.0 + 1e-3).contains(&extent),
+            "axis {axis}: {extent}"
+        );
+    }
+    assert!(data.max()[0] - data.min()[0] > 90.0);
+    assert!(
+        reader
+            .format_metadata()
+            .viewer_dataset()
+            .unwrap()
+            .hierarchy()
+            .stats()
+            .root_bounds
+            .contains(&data)
+    );
     assert_eq!(
         reader
             .format_metadata()

@@ -661,6 +661,7 @@ fn global_frame(
         root.level,
         root.prefix,
         root.frame_origin_quanta,
+        root.data_max_quanta,
         source.crs.clone(),
         source.scale_offset,
         cells,

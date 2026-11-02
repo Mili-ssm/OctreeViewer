@@ -89,6 +89,7 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
             48,
             prefix,
             prefix.map(|p| viewer_format::cell_origin_quanta(48, p)),
+            prefix.map(|p| viewer_format::cell_origin_quanta(48, p) + 1_000),
             crs,
             Some(source),
             cells,

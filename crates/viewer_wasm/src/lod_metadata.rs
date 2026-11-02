@@ -24,6 +24,11 @@ pub(crate) struct LodDatasetDescriptor {
     pub(crate) source_point_count: Option<String>,
     #[serde(default)]
     pub(crate) crs: Option<String>,
+    /// Tight data extent (world space); absent means the root bounds.
+    #[serde(default)]
+    pub(crate) data_min: Option<[f64; 3]>,
+    #[serde(default)]
+    pub(crate) data_max: Option<[f64; 3]>,
     pub(crate) nodes: Vec<LodNodeDescriptor>,
 }
 
@@ -144,6 +149,12 @@ impl LodDatasetDescriptor {
         let hierarchy =
             SpatialHierarchy::new_with_semantics(nodes, schema, source_point_count, semantics)
                 .map_err(|error| error.to_string())?;
+        let hierarchy = match (self.data_min, self.data_max) {
+            (Some(min), Some(max)) => hierarchy
+                .with_data_bounds(SpatialBounds::new(min, max).map_err(|error| error.to_string())?)
+                .map_err(|error| error.to_string())?,
+            _ => hierarchy,
+        };
         let frame =
             CoordinateFrame::new(self.coordinate_origin).map_err(|error| error.to_string())?;
         Ok(LodDataset::from_shared_metadata_and_visual_scale(

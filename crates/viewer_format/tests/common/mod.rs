@@ -176,6 +176,7 @@ pub fn global_metadata(
         level,
         prefix,
         root_origin(level, prefix),
+        root_origin(level, prefix),
         crs,
         source,
         vec![(NodeId::new(0), NodeCell::new(prefix, spacing))],

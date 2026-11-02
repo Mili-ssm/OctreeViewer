@@ -270,14 +270,13 @@ async function openDataset(data) {
     }
     const nextBuilder = new WasmSceneBuilder(maxVoxels, maxEstimatedBytes);
     const descriptor = nextReader.lodDatasetDescriptor(data.cacheBytes);
-    const root = descriptor.nodes.find(node => node.parent === null);
     const opened = {
         ...nextBuilder.openLodDataset(descriptor),
         nodeCount: descriptor.nodes.length,
         maxLevel: descriptor.nodes.reduce((max, node) => Math.max(max, node.level), 0),
         coordinateOrigin: new Float64Array(descriptor.coordinateOrigin),
-        boundsMin: new Float64Array(root.min),
-        boundsMax: new Float64Array(root.max),
+        boundsMin: new Float64Array(descriptor.dataMin),
+        boundsMax: new Float64Array(descriptor.dataMax),
         semantics: descriptor.semantics,
         attributeSchema: descriptor.attributeSchema,
         hasAttributes: descriptor.hasAttributes,

@@ -54,6 +54,7 @@ async function runBuildWorker({ updates = [] } = {}) {
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
+                dataMin: [0, 0, 0], dataMax: [0.5, 0.5, 0.5],
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
             };
         }
@@ -90,7 +91,7 @@ test("build worker opens the dataset and reports its metadata", async () => {
     assert.equal(message.gen, 1);
     assert.equal(message.opened.visualScale, 2);
     assert.equal(message.opened.nodeCount, 1);
-    assert.deepEqual([...message.opened.boundsMax], [1, 1, 1]);
+    assert.deepEqual([...message.opened.boundsMax], [0.5, 0.5, 0.5]); // tight data extent, not the root node
 });
 
 test("build worker coalesces views queued during a build: latest wins", async () => {

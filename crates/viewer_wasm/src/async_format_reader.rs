@@ -292,6 +292,11 @@ impl WasmAsyncFormatReader {
             )?;
         }
 
+        // Extent of the data (tight in `v7.4-pre`; node bounds stay lattice cubes).
+        let data_bounds = hierarchy.stats().data_bounds;
+        set(&descriptor, "dataMin", &number_array(&data_bounds.min()))?;
+        set(&descriptor, "dataMax", &number_array(&data_bounds.max()))?;
+
         let nodes = js_sys::Array::new();
         let mut pending = vec![hierarchy.root_id()];
         while let Some(node_id) = pending.pop() {
