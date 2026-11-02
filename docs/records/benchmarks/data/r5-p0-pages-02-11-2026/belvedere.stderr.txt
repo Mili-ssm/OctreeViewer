@@ -1,0 +1,1 @@
+belvedere-v74: nodes 3941 blocks 3941 root level 0 max depth 8 index_size_bytes 2405027 model_current_nodes+blocks 2404002 ranges 362572 leaf_slim_avg 315 int_slim_avg 307 schema_attrs 9

@@ -1,0 +1,1 @@
+majadas-v74: nodes 24091 blocks 24091 root level 0 max depth 15 index_size_bytes 13515451 model_current_nodes+blocks 13515043 ranges 1734552 leaf_slim_avg 282 int_slim_avg 274 schema_attrs 8
