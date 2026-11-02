@@ -533,7 +533,7 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
     let (block_ids, source_block_ids) = output_block_ids(&parallel_output).unwrap();
     let limited = validate_output_pair(
         &parallel_output,
-        &attributes_path,
+        Some(&attributes_path),
         &OutputValidation {
             total_points: parallel.point_count,
             block_ids: &block_ids,
@@ -2737,7 +2737,7 @@ fn run_serial(input: &std::path::Path, options: ConvertOptions) -> SerialRun {
     assert_eq!((stats.live_spools, stats.live_bytes), (0, 0));
     SerialRun {
         geometry: output.geometry.into_inner(),
-        attributes: output.attributes.into_inner(),
+        attributes: output.attributes.unwrap().into_inner(),
         plan: output.plan,
     }
 }
@@ -2842,7 +2842,7 @@ fn assert_hybrid_matches_mem(
         "{label}: .oct bytes differ"
     );
     assert!(
-        output.attributes.into_inner() == reference.attributes,
+        output.attributes.unwrap().into_inner() == reference.attributes,
         "{label}: .octattrs bytes differ"
     );
     assert_eq!((store.live_ids(), store.segment_count()), (0, 0), "{label}");
@@ -2904,7 +2904,7 @@ fn serial_validation(
     use std::io::Cursor;
     viewer_convert_core::validate_output_serial(
         Cursor::new(run.geometry.as_slice()),
-        Cursor::new(run.attributes.as_slice()),
+        Some(Cursor::new(run.attributes.as_slice())),
         &run.plan,
         &mut |_| true,
     )
@@ -2924,7 +2924,7 @@ fn serial_validation_accepts_the_output_and_rejects_a_flipped_payload_byte_like_
         fs::write(output_attributes_path(&path), &run.attributes).unwrap();
         validate_output_pair(
             &path,
-            &output_attributes_path(&path),
+            Some(&output_attributes_path(&path)),
             &OutputValidation {
                 total_points: run.plan.point_count,
                 block_ids: &run.plan.block_ids,
@@ -2968,7 +2968,7 @@ fn serial_validation_reports_progress_and_honours_cancellation() {
     let mut last = None;
     validate_output_serial(
         Cursor::new(run.geometry.as_slice()),
-        Cursor::new(run.attributes.as_slice()),
+        Some(Cursor::new(run.attributes.as_slice())),
         &run.plan,
         &mut |progress: ConversionProgress| {
             assert_eq!(progress.stage, ConversionStage::ValidatingOutput);
@@ -2980,7 +2980,7 @@ fn serial_validation_reports_progress_and_honours_cancellation() {
     assert_eq!(last, Some(run.plan.point_count));
     let error = validate_output_serial(
         Cursor::new(run.geometry.as_slice()),
-        Cursor::new(run.attributes.as_slice()),
+        Some(Cursor::new(run.attributes.as_slice())),
         &run.plan,
         &mut |_| false,
     )

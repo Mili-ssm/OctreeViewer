@@ -146,6 +146,11 @@ pub(crate) fn convert_file_inner(
             diagnostics.as_deref_mut(),
         );
     }
+    if checkpoint_mode.is_some() && options.format_version().uses_pages() {
+        return Err(ConvertError::UnsupportedForPagedFormat(
+            "a checkpointed or resumed conversion",
+        ));
+    }
     let requested_attributes_path = output_attributes_path(output_path);
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
@@ -240,7 +245,7 @@ pub(crate) fn convert_file_inner(
             let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
             let output_validation = validate_output_pair(
                 output_path,
-                &attributes_path,
+                Some(&attributes_path),
                 &validation,
                 on_progress,
                 diagnostics.as_deref_mut(),
@@ -258,7 +263,7 @@ pub(crate) fn convert_file_inner(
         } else {
             publish_output_pair(
                 &candidate_path,
-                &checkpoint.candidate_attributes_path(),
+                Some(&checkpoint.candidate_attributes_path()),
                 output_path,
                 validation,
                 on_progress,
@@ -374,7 +379,10 @@ pub(crate) fn convert_file_inner(
     }
     let plan = ConversionPlan::from_spatial(spatial_plan, source.frame);
     let mut temporary = if checkpoint.is_none() {
-        Some(create_temporary_pair(output_path)?)
+        Some(create_temporary_pair(
+            output_path,
+            options.format_version().has_companion_file(),
+        )?)
     } else {
         None
     };
@@ -405,22 +413,25 @@ pub(crate) fn convert_file_inner(
             .open(&temporary_path)?
     };
     let attributes_file = if let Some(temporary) = temporary.as_mut() {
-        temporary
-            .attributes
-            .file
-            .take()
-            .expect("temporary attributes file is present")
+        temporary.attributes.as_mut().map(|attributes| {
+            attributes
+                .file
+                .take()
+                .expect("temporary attributes file is present")
+        })
     } else {
-        OpenOptions::new()
-            .create_new(true)
-            .read(true)
-            .write(true)
-            .open(
-                checkpoint
-                    .as_ref()
-                    .expect("checkpoint candidate is present")
-                    .candidate_attributes_path(),
-            )?
+        Some(
+            OpenOptions::new()
+                .create_new(true)
+                .read(true)
+                .write(true)
+                .open(
+                    checkpoint
+                        .as_ref()
+                        .expect("checkpoint candidate is present")
+                        .candidate_attributes_path(),
+                )?,
+        )
     };
     let (mut writer, encoder) = output_writer(options, &plan.metadata, file, attributes_file)?;
     let block_preparation = stream_blocks(
@@ -440,8 +451,9 @@ pub(crate) fn convert_file_inner(
     let finalize_started = Instant::now();
     let (output, attributes) = OctreeWriter::finish_pair(writer)?;
     output.sync_all()?;
-    let attributes = attributes.expect("split writer returns its companion");
-    attributes.sync_all()?;
+    if let Some(attributes) = &attributes {
+        attributes.sync_all()?;
+    }
     if let Some(diagnostics) = diagnostics.as_deref_mut() {
         diagnostics.finalize_and_sync_elapsed_ns = Some(finalize_started.elapsed().as_nanos());
     }
@@ -449,16 +461,20 @@ pub(crate) fn convert_file_inner(
     drop(attributes);
     let file_length = fs::metadata(&temporary_path)?.len();
     let attributes_path = if let Some(checkpoint) = checkpoint.as_ref() {
-        checkpoint.candidate_attributes_path()
+        Some(checkpoint.candidate_attributes_path())
     } else {
         temporary
             .as_ref()
             .expect("temporary pair exists")
             .attributes
-            .path
-            .clone()
+            .as_ref()
+            .map(|attributes| attributes.path.clone())
     };
-    let attributes_length = fs::metadata(&attributes_path)?.len();
+    let attributes_length = attributes_path
+        .as_ref()
+        .map(|path| fs::metadata(path).map(|metadata| metadata.len()))
+        .transpose()?
+        .unwrap_or(0);
     if let Some(checkpoint) = checkpoint.as_mut() {
         checkpoint.verify_input(input_path)?;
         checkpoint.commit_output(
@@ -467,11 +483,19 @@ pub(crate) fn convert_file_inner(
             plan.estimated_peak_memory_bytes,
         )?;
     }
-    let output_block_ids = plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>();
+    // `v7.5-pre` numbers blocks by page when it writes them, so read the ids back from the file.
+    let (output_block_ids, source_block_ids) = if options.format_version().uses_pages() {
+        crate::publish::output_block_ids(&temporary_path)?
+    } else {
+        (
+            plan.blocks.iter().map(|block| block.id).collect::<Vec<_>>(),
+            plan.source_block_ids.clone(),
+        )
+    };
     let validation = OutputValidation {
         total_points: plan.point_count,
         block_ids: &output_block_ids,
-        source_block_ids: &plan.source_block_ids,
+        source_block_ids: &source_block_ids,
         file_length,
         attributes_length,
         requested_workers: options.spatial_workers(),
@@ -480,7 +504,7 @@ pub(crate) fn convert_file_inner(
     };
     let (output_bytes, output_validation) = publish_output_pair(
         &temporary_path,
-        &attributes_path,
+        attributes_path.as_deref(),
         output_path,
         validation,
         on_progress,

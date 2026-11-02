@@ -44,7 +44,9 @@ pub use pipeline::hybrid::{
 pub use pipeline::point_source::{ByteSource, LasFactory, MemBytes, SourceFactory};
 pub use pipeline::spool_store::{MemSpoolStore, SpoolStore};
 pub use report::{ConversionProgress, ConversionReport, ConversionStage, ConversionWorkerStats};
-pub use serial::{PlanSummary, SerialOutput, convert_serial, validate_output_serial};
+pub use serial::{
+    PlanSummary, SerialOutput, convert_serial, validate_output_serial, written_block_ids,
+};
 
 #[cfg(test)]
 mod range_tests;

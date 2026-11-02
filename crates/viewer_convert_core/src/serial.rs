@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::io::{Read, Seek, Write};
 
 use viewer_core::{BlockId, DatasetSource};
-use viewer_format::{FormatReader, OctreeWriter};
+use viewer_format::{FormatReader, OctreeReader, OctreeWriter};
 
 use crate::blocks::{ConversionPlan, output_writer, prepare_planned_block, write_prepared};
 use crate::error::ConvertError;
@@ -34,11 +34,13 @@ pub struct PlanSummary {
 
 pub struct SerialOutput<W> {
     pub geometry: W,
-    pub attributes: W,
+    /// `None` for single-file revisions (`v7.5-pre`).
+    pub attributes: Option<W>,
     pub plan: PlanSummary,
 }
 
-/// Converts LAS/LAZ bytes to the split `.oct` / `.octattrs` pair on the calling thread.
+/// Converts LAS/LAZ bytes to the split `.oct` / `.octattrs` pair on the calling thread (only
+/// `.oct` for `v7.5-pre`, which ignores `attributes`).
 /// `bytes_written` in progress reports is always 0: only the host knows what reached storage.
 pub fn convert_serial<B, S, C, W>(
     input: &LasFactory<B>,
@@ -85,6 +87,10 @@ where
     )?;
     drop(first);
     let plan = ConversionPlan::from_spatial(spatial, source.frame);
+    let attributes = options
+        .format_version()
+        .has_companion_file()
+        .then_some(attributes);
     let (mut writer, encoder) = output_writer(options, &plan.metadata, geometry, attributes)?;
     emit_progress(
         on_progress,
@@ -121,7 +127,7 @@ where
     let (geometry, attributes) = OctreeWriter::finish_pair(writer)?;
     Ok(SerialOutput {
         geometry,
-        attributes: attributes.expect("split writer returns its companion"),
+        attributes,
         plan: PlanSummary {
             point_count: plan.point_count,
             block_count: plan.block_count,
@@ -133,21 +139,50 @@ where
     })
 }
 
+/// Every block id of a written file and those of its leaf nodes (the blocks that hold source
+/// points). `v7.5-pre` renumbers blocks when it writes its pages, so the plan's ids do not apply.
+pub fn written_block_ids<R: Read + Seek>(
+    reader: &FormatReader<R>,
+) -> Result<(Vec<BlockId>, Vec<BlockId>), ConvertError> {
+    let block_ids = reader
+        .block_storage_stats()?
+        .into_iter()
+        .map(|block| block.id)
+        .collect();
+    let hierarchy = reader.format_metadata().dataset().hierarchy();
+    let nodes = hierarchy
+        .query(hierarchy.stats().root_bounds)
+        .collect::<Vec<_>>();
+    let parent_ids = nodes
+        .iter()
+        .filter_map(|node| node.parent())
+        .collect::<HashSet<_>>();
+    let source_block_ids = nodes
+        .iter()
+        .filter(|node| !parent_ids.contains(&node.id()))
+        .flat_map(|node| node.blocks().iter().copied())
+        .collect();
+    Ok((block_ids, source_block_ids))
+}
+
 /// Rereads every block of the pair and checks that the source blocks hold `plan.point_count`
 /// points: the checks of the native validation, one block at a time.
 pub fn validate_output_serial<R: Read + Seek>(
     geometry: R,
-    attributes: R,
+    attributes: Option<R>,
     plan: &PlanSummary,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
 ) -> Result<ConversionWorkerStats, ConvertError> {
     let mut reader = FormatReader::new(geometry)?;
-    reader.attach_attributes(attributes)?;
-    let source_blocks = plan
-        .source_block_ids
-        .iter()
-        .copied()
-        .collect::<HashSet<_>>();
+    if let Some(attributes) = attributes {
+        reader.attach_attributes(attributes)?;
+    }
+    let (block_ids, source_block_ids) = if reader.format_version().uses_pages() {
+        written_block_ids(&reader)?
+    } else {
+        (plan.block_ids.clone(), plan.source_block_ids.clone())
+    };
+    let source_blocks = source_block_ids.iter().copied().collect::<HashSet<_>>();
     emit_progress(
         on_progress,
         progress(ConversionStage::ValidatingOutput, 0, plan.point_count),
@@ -164,7 +199,7 @@ pub fn validate_output_serial<R: Read + Seek>(
         .and_then(|bytes| bytes.checked_add(1024 * 1024))
         .ok_or(ConvertError::SizeOverflow)?;
     let mut validated_points = 0_u64;
-    for block_id in plan.block_ids.iter().copied() {
+    for block_id in block_ids {
         let points = reader.read_block(block_id)?.points().len() as u64;
         if source_blocks.contains(&block_id) {
             validated_points = validated_points

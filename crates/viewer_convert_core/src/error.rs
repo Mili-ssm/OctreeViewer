@@ -87,6 +87,8 @@ pub enum ConvertError {
     FixedByFormat(&'static str),
     #[error("{0} cannot be written as v7.4-pre")]
     UnsupportedForGlobalFormat(&'static str),
+    #[error("{0} cannot be written as v7.5-pre")]
+    UnsupportedForPagedFormat(&'static str),
     #[error("coordinate magnitude {0} exceeds the converter limit of 2^35 CRS units for v7.4-pre")]
     GlobalCoordinateRange(f64),
     #[error("conversion size or identifier count overflowed")]

@@ -92,6 +92,7 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
 }
 
 /// Converts a LAS/LAZ Blob into the `.oct` / `.octattrs` pair behind two OPFS sync access handles.
+/// `v7.5-pre` is a single file: the attributes handle may then be `null` and is never touched.
 #[wasm_bindgen]
 pub struct WasmCoreConverter {
     input: Blob,
@@ -193,11 +194,17 @@ impl WasmCoreConverter {
         .map_err(|error| conversion_error("conversion failed", &error))?;
         let (mut geometry, mut attributes) = (output.geometry, output.attributes);
         std::io::Write::flush(&mut geometry)
-            .and_then(|()| std::io::Write::flush(&mut attributes))
+            .and_then(|()| {
+                attributes
+                    .as_mut()
+                    .map_or(Ok(()), std::io::Write::flush)
+            })
             .map_err(|error| conversion_error("flushing output", &ConvertError::Io(error)))?;
         validate_output_serial(
             OpfsReader::new(self.geometry.clone()),
-            OpfsReader::new(self.attributes.clone()),
+            attributes
+                .is_some()
+                .then(|| OpfsReader::new(self.attributes.clone())),
             &output.plan,
             &mut report,
         )

@@ -135,6 +135,10 @@ are V7.4-pre's.
 (root page first, then breadth-first), so ids are unique in a valid file; a reader that holds several
 pages rejects a page whose id range intersects another resident page's.
 
+The writer's `BlockId`s are not kept: a reader sees the ids above, so the converter validates the written file with the ids
+it reads back. Decision: this numbering is normative (a split node can own many blocks and a node id already uses up to
+64 bits, so no id function of the node alone exists).
+
 ### Choosing `k`
 
 Per page, the writer takes the **largest `k` ≤ 5** (also ≤ `21 − d_anchor` and ≤ `64 − level`) whose
@@ -180,6 +184,16 @@ assembled hierarchy with derived `NodeId`s; consumers must not assume they equal
 `max_nodes`, `max_blocks`, `max_attribute_ranges` and the string limits keep their meaning; the first
 two bound the declared totals and, for the eager `FormatReader`, the pages actually read.
 
+## Converter and tools
+
+- `viewer_convert INPUT OUT.oct --format-version v7.5-pre` writes **only `OUT.oct`** (no `.octattrs`; monolithic,
+  as the table above says). Same global-octree semantics as v7.4-pre (fixed leaf 64 000, sample grid 256, 2 divisions).
+  EPT input, `--checkpoint`/`--resume` and Additive are refused with an explicit error.
+- `viewer_convert verify FILE.oct` reads every page and runs the global checks (page chain, child pages tiling the
+  page section, no gaps between payloads, one owner per block, totals); exit code 0 or 1. Payload bytes are not read.
+- `cargo run --release -p viewer_format --example synthetic_paged -- OUT.oct [NODES]` writes a deterministic file
+  (default 6 M nodes, two-point blocks, about 0.8 GB, about 1 min and 15 GB RAM).
+
 ## Writer restrictions
 
 - Everything in V7.4-pre's "Writer restrictions" except that split files are not offered and the
@@ -195,14 +209,13 @@ two bound the declared totals and, for the eager `FormatReader`, the pages actua
   extension-length hook above and the reserved node flag bits are defined here.
 - Lazy loading in the viewer (P3) and HTTP Range (P4): the sync `PagedReader` is the format-level API
   those build on.
-- Converter output, the `verify` subcommand and the 6 M-node generator (second half of P2).
+- Nodes deeper than 21 levels below the root (depth limit): the converter fails with an explicit error. A cloud whose box straddles
+  the lattice sign bit has a level-0 root and a long single-child chain, so it cannot be written yet (open point 3).
 
 ## Open points for review
 
-1. **`BlockId` as `first_block_id` + ordinal** instead of derived from the node: a split node can own many
-   blocks, and a node id already uses up to 64 bits, so no id function of the node alone exists.
-2. **Total node and block counts** are informative until all pages are read; the lazy path cannot verify them.
-3. **Tail read size** (1 MiB) is a hint tuned for a 512 KB root page; `k = 1` root pages up to 1 MiB plus
+1. **Total node and block counts** are informative until all pages are read; the lazy path cannot verify them.
+2. **Tail read size** (1 MiB) is a hint tuned for a 512 KB root page; `k = 1` root pages up to 1 MiB plus
    the metadata block can need a second request.
-4. **Depth limit 21** equals ADR 0030's "revisit if more than 21" threshold (OQ-07), now enforced by the id
+3. **Depth limit 21** equals ADR 0030's "revisit if more than 21" threshold (OQ-07), now enforced by the id
    encoding.

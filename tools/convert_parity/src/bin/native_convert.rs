@@ -8,7 +8,9 @@ use viewer_convert::{ConvertOptions, convert_file};
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let [input, output, points_per_block, divisions, rest @ ..] = arguments.as_slice() else {
-        eprintln!("usage: native_convert INPUT OUTPUT.oct POINTS_PER_BLOCK DIVISIONS [v7.4-pre]");
+        eprintln!(
+            "usage: native_convert INPUT OUTPUT.oct POINTS_PER_BLOCK DIVISIONS [v7.4-pre|v7.5-pre]"
+        );
         std::process::exit(2);
     };
     let mut options =
@@ -17,10 +19,10 @@ fn main() {
                 options.with_spatial_divisions(divisions.parse().expect("divisions"))
             })
             .expect("valid options");
-    if rest.first().is_some_and(|format| format == "v7.4-pre") {
+    if let Some(format) = rest.first() {
         options = options
-            .with_format_version(viewer_format::FormatVersion::V7_PRE4)
-            .expect("v7.4-pre options");
+            .with_format_version(format.parse().expect("format version"))
+            .expect("format version options");
     }
     let report =
         convert_file(Path::new(input), Path::new(output), options).expect("native conversion");

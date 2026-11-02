@@ -56,7 +56,7 @@ pub use page_codec::{
     MAX_NODE_DEPTH, MAX_PAGE_LEVELS, Page, PageAnchor, PageBlock, PageNode, PagePointer,
     TARGET_PAGE_BYTES, derive_node_id,
 };
-pub use paged_index::{PagedHeader, PagedReader, TAIL_READ_BYTES};
+pub use paged_index::{PagedHeader, PagedReader, PagedStats, TAIL_READ_BYTES, verify_paged};
 pub use quantization::{
     QuantizationError, QuantizationTransform, QuantizedCoordinates, norm3, quantize_local_positions,
 };

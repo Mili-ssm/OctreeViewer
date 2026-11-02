@@ -43,14 +43,14 @@ fn run(
     points_per_block: u64,
     divisions: u8,
     workers: usize,
-    global_format: bool,
+    format: Option<viewer_format::FormatVersion>,
 ) -> Result<Outcome, String> {
     let mut options = ConvertOptions::new(points_per_block, 0.01)
         .and_then(|options| options.with_spatial_divisions(divisions))
         .map_err(|error| error.to_string())?;
-    if global_format {
+    if let Some(version) = format {
         options = options
-            .with_format_version(viewer_format::FormatVersion::V7_PRE4)
+            .with_format_version(version)
             .map_err(|error| error.to_string())?;
     }
     if workers != 0 {
@@ -71,10 +71,13 @@ fn run(
     )
     .map_err(|error| error.to_string())?;
     let geometry = output.geometry.into_inner();
-    let attributes = output.attributes.into_inner();
+    let attributes = output
+        .attributes
+        .map(Cursor::into_inner)
+        .unwrap_or_default();
     validate_output_serial(
         Cursor::new(geometry.as_slice()),
-        Cursor::new(attributes.as_slice()),
+        (!attributes.is_empty()).then(|| Cursor::new(attributes.as_slice())),
         &output.plan,
         &mut |_| true,
     )
@@ -88,7 +91,8 @@ fn run(
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. Returns 1 on success; on failure returns 0 and the message is at `error_ptr`.
+/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre` (which
+/// has no companion, so the attributes buffer comes back empty). Returns 1 on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
 /// `ptr` must come from `convert_parity_alloc(len)` and stay unmodified during the call.
@@ -99,7 +103,7 @@ pub unsafe extern "C" fn convert_parity_run(
     points_per_block: u64,
     divisions: u32,
     workers: u32,
-    global_format: u32,
+    format: u32,
 ) -> u32 {
     // SAFETY: the caller passes a buffer from `convert_parity_alloc` of exactly `len` bytes.
     let input = unsafe { std::slice::from_raw_parts(ptr, len) };
@@ -109,7 +113,11 @@ pub unsafe extern "C" fn convert_parity_run(
         points_per_block,
         divisions,
         workers as usize,
-        global_format != 0,
+        match format {
+            0 => None,
+            1 => Some(viewer_format::FormatVersion::V7_PRE4),
+            _ => Some(viewer_format::FormatVersion::V7_PRE5),
+        },
     );
     let succeeded = result.is_ok();
     OUTCOME.with(|outcome| {

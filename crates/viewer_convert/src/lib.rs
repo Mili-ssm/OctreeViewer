@@ -25,9 +25,11 @@ mod publish;
 mod report;
 mod source;
 mod spatial;
+mod verify;
 mod workspace;
 
 pub use checkpoint::CheckpointMode;
+pub use verify::{VerifyReport, verify_file};
 pub use viewer_convert_core::{
     CheckpointError, ConversionDiagnostics, ConversionProgress, ConversionReport, ConversionStage,
     ConversionWorkerStats, ConvertError, ConvertOptions, DiagnosticWindow, SpatialPhaseDiagnostics,
@@ -137,3 +139,6 @@ mod v7_4_tests;
 #[cfg(test)]
 #[path = "v7_4_viewer_tests.rs"]
 mod v7_4_viewer_tests;
+#[cfg(test)]
+#[path = "v7_5_tests.rs"]
+mod v7_5_tests;

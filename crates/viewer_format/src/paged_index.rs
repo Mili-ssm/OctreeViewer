@@ -384,14 +384,23 @@ impl<R: Read + Seek> PagedReader<R> {
     }
 }
 
-/// Reads every page and assembles the whole-index view that `FormatReader` serves, with the
-/// global checks (contiguous blocks, totals) that single pages cannot make.
-pub(crate) fn load_all<R: Read + Seek>(
+/// Every page of a file in breadth-first order (root first) with the pointer each child page was
+/// read through.
+struct AllPages {
+    pages: Vec<Page>,
+    pointers: Vec<PagePointer>,
+    header: PagedHeader,
+    index_identity: (u64, u64, u32),
+    index_offset: u64,
+}
+
+fn read_all_pages<R: Read + Seek>(
     reader: &mut R,
     limits: &FormatReaderLimits,
-) -> Result<(ParsedIndex, (u64, u64, u32)), FormatError> {
+) -> Result<AllPages, FormatError> {
     let mut paged = PagedReader::with_limits(&mut *reader, *limits)?;
     let mut pages = vec![paged.root.clone()];
+    let mut pointers = Vec::new();
     let mut next = 0;
     let (mut nodes_total, mut blocks_total) = (0_u64, 0_u64);
     while next < pages.len() {
@@ -420,6 +429,7 @@ pub(crate) fn load_all<R: Read + Seek>(
         let children: Vec<_> = page.child_pages().collect();
         for (anchor, pointer) in children {
             pages.push(paged.read_child_page(anchor, pointer)?);
+            pointers.push(pointer);
         }
     }
     if nodes_total != paged.header.total_nodes || blocks_total != paged.header.total_blocks {
@@ -427,9 +437,88 @@ pub(crate) fn load_all<R: Read + Seek>(
             "declared node or block totals do not match the pages",
         ));
     }
-    let identity = paged.index_identity();
-    let parsed = assemble(&paged.header, &pages)?;
-    Ok((parsed, identity))
+    Ok(AllPages {
+        index_identity: paged.index_identity(),
+        index_offset: paged.index_offset,
+        header: paged.header,
+        pages,
+        pointers,
+    })
+}
+
+/// Reads every page and assembles the whole-index view that `FormatReader` serves, with the
+/// global checks (contiguous blocks, totals) that single pages cannot make.
+pub(crate) fn load_all<R: Read + Seek>(
+    reader: &mut R,
+    limits: &FormatReaderLimits,
+) -> Result<(ParsedIndex, (u64, u64, u32)), FormatError> {
+    let all = read_all_pages(reader, limits)?;
+    let parsed = assemble(&all.header, &all.pages)?;
+    Ok((parsed, all.index_identity))
+}
+
+/// Sizes of a fully verified `v7.5-pre` index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PagedStats {
+    /// Root page included.
+    pub pages: u64,
+    pub nodes: u64,
+    pub blocks: u64,
+    /// Metadata block plus root page.
+    pub index_region_bytes: u64,
+    /// Child pages plus the index region: everything the paged index occupies in the file.
+    pub index_bytes: u64,
+    /// Largest page, root included.
+    pub max_page_bytes: u64,
+    /// Number of pages with `k = 1 ..= 5` (index `k - 1`).
+    pub pages_by_levels: [u64; 5],
+}
+
+/// Reads every page and runs all the global checks that a lazy reader cannot make: each page
+/// validates against the node that points to it, the child pages tile the page section without
+/// gaps or overlaps, block payloads fill `[24, pages_start)` without gaps, every block belongs to
+/// one node, and the declared totals match.
+pub fn verify_paged<R: Read + Seek>(
+    reader: &mut R,
+    limits: &FormatReaderLimits,
+) -> Result<PagedStats, FormatError> {
+    let all = read_all_pages(reader, limits)?;
+    let mut sorted = all.pointers.clone();
+    sorted.sort_unstable_by_key(|pointer| pointer.offset);
+    let mut expected = all.header.pages_start;
+    for pointer in &sorted {
+        if pointer.offset != expected {
+            return Err(FormatError::MalformedIndex(
+                "child pages leave a gap or overlap in the page section",
+            ));
+        }
+        expected += u64::from(pointer.length);
+    }
+    if expected != all.index_offset {
+        return Err(FormatError::MalformedIndex(
+            "child pages do not end at the index region",
+        ));
+    }
+    assemble(&all.header, &all.pages)?;
+    let mut pages_by_levels = [0_u64; 5];
+    for page in &all.pages {
+        pages_by_levels[usize::from(page.k - 1)] += 1;
+    }
+    let index_region_bytes = all.index_identity.1;
+    Ok(PagedStats {
+        pages: all.pages.len() as u64,
+        nodes: all.header.total_nodes,
+        blocks: all.header.total_blocks,
+        index_region_bytes,
+        index_bytes: index_region_bytes + (all.index_offset - all.header.pages_start),
+        max_page_bytes: all
+            .pages
+            .iter()
+            .map(|page| page.encoded_len() as u64)
+            .max()
+            .unwrap_or(0),
+        pages_by_levels,
+    })
 }
 
 fn assemble(header: &PagedHeader, pages: &[Page]) -> Result<ParsedIndex, FormatError> {

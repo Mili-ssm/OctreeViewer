@@ -29,6 +29,9 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         print_help();
         return Ok(());
     }
+    if arguments.first().is_some_and(|word| word == "verify") && arguments.len() == 2 {
+        return verify(&PathBuf::from(&arguments[1]));
+    }
     if arguments.len() < 2 {
         print_help();
         return Err("expected input and output paths".into());
@@ -148,17 +151,47 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     } else {
         convert_file_with_progress(&input, &output, options, &mut on_progress)?
     };
+    let destination = if options.format_version().has_companion_file() {
+        format!(
+            "{} + {}",
+            output.display(),
+            output.with_extension("octattrs").display()
+        )
+    } else {
+        output.display().to_string()
+    };
     eprintln!(
-        "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {} + {}",
+        "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {destination}",
         report.point_count,
         report.block_count,
         report.output_bytes,
         report.estimated_peak_memory_bytes.div_ceil(1024 * 1024),
-        output.display(),
-        output.with_extension("octattrs").display()
     );
     if !report.omitted_dimensions.is_empty() {
         eprintln!("Not preserved: {}", report.omitted_dimensions.join(", "));
+    }
+    Ok(())
+}
+
+/// `viewer_convert verify FILE.oct`: reads every page and runs the global checks.
+fn verify(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let report = viewer_convert::verify_file(path)
+        .map_err(|error| format!("verification of {} failed: {error}", path.display()))?;
+    match report.paged {
+        Some(paged) => println!(
+            "OK {}: {} nodes, {} blocks, {} pages (max {} B; by levels k=1..5: {:?}), index {} B",
+            report.version,
+            paged.nodes,
+            paged.blocks,
+            paged.pages,
+            paged.max_page_bytes,
+            paged.pages_by_levels,
+            paged.index_bytes
+        ),
+        None => println!(
+            "OK {}: {} blocks (the whole index is checked when the file is opened)",
+            report.version, report.block_count
+        ),
     }
     Ok(())
 }
@@ -174,7 +207,8 @@ fn print_help() {
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
-         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both.\n\
+         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. v7.5-pre writes only OUTPUT.oct (EPT, --checkpoint and --resume are not supported for it).\n\
+         viewer_convert verify FILE.oct reads every index page of a v7.5-pre file and runs the global checks; exit code 0 if valid, 1 otherwise.\n\
          Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\

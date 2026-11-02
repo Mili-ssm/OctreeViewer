@@ -51,26 +51,35 @@ impl ConversionPlan {
     }
 }
 
-/// The split-pair writer and its block encoder for `options`, built in the order the converter
-/// has always used (writer options, writer, encoder) so error precedence is unchanged.
+/// The writer and its block encoder for `options`, built in the order the converter has always
+/// used (writer options, writer, encoder) so error precedence is unchanged. The split pair is
+/// written unless the revision is a single file (`attributes` is `None` then).
 pub fn output_writer<W: Write + Seek>(
     options: ConvertOptions,
     metadata: &FormatMetadata,
     geometry: W,
-    attributes: W,
+    attributes: Option<W>,
 ) -> Result<(FormatWriter<W>, FormatBlockEncoder<'_>), ConvertError> {
     let writer_options = FormatWriterOptions::new(
         options.max_quantization_error,
         WRITER_MAX_UNCOMPRESSED_BLOCK_BYTES as u64,
     )
     .map_err(ConvertError::Format)?;
-    let writer = FormatWriter::new_split_for_version(
-        options.format_version(),
-        geometry,
-        attributes,
-        metadata.clone(),
-        writer_options,
-    )?;
+    let writer = match attributes {
+        Some(attributes) => FormatWriter::new_split_for_version(
+            options.format_version(),
+            geometry,
+            attributes,
+            metadata.clone(),
+            writer_options,
+        )?,
+        None => FormatWriter::new_for_version(
+            options.format_version(),
+            geometry,
+            metadata.clone(),
+            writer_options,
+        )?,
+    };
     let encoder = FormatBlockEncoder::new(options.format_version(), metadata, writer_options)?;
     Ok((writer, encoder))
 }
