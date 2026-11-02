@@ -81,6 +81,18 @@ impl PageSource {
         self.declared_nodes
     }
 
+    /// Global range of one attribute component, over every page of the file.
+    pub fn attribute_range(
+        &self,
+        schema_index: u32,
+        component: u32,
+    ) -> Result<Option<[f64; 2]>, FormatError> {
+        self.lock()
+            .core
+            .header()
+            .attribute_range(schema_index, component)
+    }
+
     /// Nodes of the root page whose child pages are not loaded.
     pub fn root_unloaded(&self) -> &[NodeId] {
         &self.root_unloaded

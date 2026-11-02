@@ -61,6 +61,7 @@ CRS record, source scale/offset, sampling policy, semantics, visual scale, schem
 | Total nodes | `u64` | 1 ..= `max_nodes`. Informative until every page has been read |
 | Total blocks | `u64` | ≤ `max_blocks`. Informative until every page has been read |
 | Pages start | `u64` | End of the block payloads and start of the child pages; ≥ 24 and ≤ `index_offset` |
+| Global attribute ranges | per schema attribute, per component | `u8` flag (0 = no finite value, 1 = present), then `f64` min and `f64` max when present (finite, min ≤ max). The range over **every node** of the file, so a reader holding only the root page colours all views with one range. `verify` and the eager reader check it against the pages |
 | Extension length | `u32` | Must be 0 in this part. **Hook for [plan task P2a](../../plans/render-r5-jerarquia-paginada.md#tarea-p2a-flags-las-y-extra-bytes-rf-24)**: LAS flags and Extra Bytes descriptors will go here (or as schema attributes); nothing else about them is defined yet |
 
 The schema may hold at most 65 535 attributes in this revision (`u16` indexes in pages).

@@ -441,6 +441,9 @@ impl<R: Read + Seek> IndexedReader<R> {
         if component >= descriptor.component_count() {
             return Err(FormatError::InvalidSchema);
         }
+        if let Some(source) = &self.paged {
+            return source.attribute_range(schema_index, component);
+        }
         let mut cache = self
             .attribute_range_cache
             .lock()

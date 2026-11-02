@@ -980,3 +980,22 @@ fn lazy_reader_grows_to_the_eager_hierarchy_and_serves_resident_blocks() {
     lazy.read_page(anchor).unwrap();
     lazy.read_geometry(block).unwrap();
 }
+
+/// The global attribute range is in the metadata block: a lazy reader that holds only the root
+/// page reports the range of the whole file, not of its own nodes.
+#[test]
+fn lazy_attribute_range_covers_pages_that_are_not_loaded() {
+    let tree = random_tree(9, 7, 20);
+    let (primary, attributes) = write_pair(V75, &tree, Some(2_000));
+    let eager = open_pair(primary.clone(), attributes);
+    let lazy =
+        FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
+    assert!(!lazy.page_source().unwrap().root_unloaded().is_empty());
+    let expected = eager.attribute_range(0, 0).unwrap();
+    assert!(expected.is_some());
+    assert_eq!(lazy.attribute_range(0, 0).unwrap(), expected);
+    assert!(matches!(
+        lazy.attribute_range(0, 1),
+        Err(FormatError::InvalidSchema)
+    ));
+}

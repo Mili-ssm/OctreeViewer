@@ -49,9 +49,57 @@ pub struct PagedHeader {
     total_nodes: u64,
     total_blocks: u64,
     pages_start: u64,
+    /// Range over every node of the file, per attribute and component; `None` when no node has a
+    /// finite value. Stored here because a lazy reader never holds every page.
+    attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
+}
+
+/// Range of each attribute component over `ranges`, the per-node ranges of the whole file.
+fn global_attribute_ranges<'a>(
+    schema: &[AttributeDescriptor],
+    ranges: impl Iterator<Item = &'a NodeAttributeRange>,
+) -> Result<Vec<Vec<Option<[f64; 2]>>>, FormatError> {
+    let mut result: Vec<Vec<Option<[f64; 2]>>> = schema
+        .iter()
+        .map(|attribute| vec![None; attribute.component_count() as usize])
+        .collect();
+    for range in ranges {
+        let row = result
+            .get_mut(range.schema_index() as usize)
+            .ok_or(FormatError::InvalidSchema)?;
+        for (component, slot) in row.iter_mut().enumerate() {
+            let low = range
+                .min()
+                .scalar_as_f64(component)
+                .ok_or(FormatError::InvalidSchema)?;
+            let high = range
+                .max()
+                .scalar_as_f64(component)
+                .ok_or(FormatError::InvalidSchema)?;
+            if low.is_finite() && high.is_finite() {
+                *slot = Some(slot.map_or([low, high], |r| [r[0].min(low), r[1].max(high)]));
+            }
+        }
+    }
+    Ok(result)
 }
 
 impl PagedHeader {
+    /// Global range of one attribute component, from the metadata block.
+    pub fn attribute_range(
+        &self,
+        schema_index: u32,
+        component: u32,
+    ) -> Result<Option<[f64; 2]>, FormatError> {
+        let row = self
+            .attribute_ranges
+            .get(schema_index as usize)
+            .ok_or(FormatError::UnknownAttribute(schema_index))?;
+        row.get(component as usize)
+            .copied()
+            .ok_or(FormatError::InvalidSchema)
+    }
+
     /// Frame, CRS and root identity; its node-cell table is empty (nodes live in pages).
     pub fn frame(&self) -> &GlobalFrame {
         &self.frame
@@ -115,6 +163,30 @@ fn parse_header_block(
     let total_nodes = cursor.u64()?;
     let total_blocks = cursor.u64()?;
     let pages_start = cursor.u64()?;
+    let mut attribute_ranges = Vec::with_capacity(schema.len());
+    for attribute in &schema {
+        let mut row = Vec::with_capacity(attribute.component_count() as usize);
+        for _ in 0..attribute.component_count() {
+            row.push(match cursor.u8()? {
+                0 => None,
+                1 => {
+                    let (low, high) = (cursor.f64()?, cursor.f64()?);
+                    if !low.is_finite() || !high.is_finite() || low > high {
+                        return Err(FormatError::MalformedIndex(
+                            "invalid global attribute range",
+                        ));
+                    }
+                    Some([low, high])
+                }
+                _ => {
+                    return Err(FormatError::MalformedIndex(
+                        "invalid global attribute range flag",
+                    ));
+                }
+            });
+        }
+        attribute_ranges.push(row);
+    }
     // Reserved for the LAS flag / Extra Byte descriptors of plan task P2a.
     if cursor.u32()? != 0 {
         return Err(FormatError::MalformedIndex(
@@ -163,6 +235,7 @@ fn parse_header_block(
         total_nodes,
         total_blocks,
         pages_start,
+        attribute_ranges,
     })
 }
 
@@ -554,6 +627,16 @@ fn read_all_pages<R: Read + Seek>(
     {
         return Err(FormatError::MalformedIndex(
             "declared node or block totals do not match the pages",
+        ));
+    }
+    let nodes = pages.iter().flat_map(|page| page.nodes.iter());
+    if global_attribute_ranges(
+        &paged.core.header.schema,
+        nodes.flat_map(|node| node.ranges.iter()),
+    )? != paged.core.header.attribute_ranges
+    {
+        return Err(FormatError::MalformedIndex(
+            "global attribute ranges do not match the pages",
         ));
     }
     Ok(AllPages {
@@ -1074,6 +1157,22 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
         out.u64(plan.len() as u64)?;
         out.u64(blocks.len() as u64)?;
         out.u64(pages_start)?;
+        for row in global_attribute_ranges(
+            hierarchy.attributes(),
+            plan.iter()
+                .flat_map(|node| metadata.node_attribute_ranges(node.node.id()).iter()),
+        )? {
+            for range in row {
+                match range {
+                    None => out.u8(0)?,
+                    Some([low, high]) => {
+                        out.u8(1)?;
+                        out.f64(low)?;
+                        out.f64(high)?;
+                    }
+                }
+            }
+        }
         out.u32(0)?;
     }
     let root_bytes = build(0)?;
