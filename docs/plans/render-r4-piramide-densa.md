@@ -97,7 +97,7 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 
 ## Tarea 2: spec de `v7.4-pre`
 
-**Archivos:** crear `docs/reference/format/FORMAT_V7_PRE4.md` (a partir de `FORMAT_V7_PRE3.md`).
+**Archivos:** crear [`docs/reference/format/FORMAT_V7_PRE4.md`](../reference/format/FORMAT_V7_PRE4.md) (a partir de `FORMAT_V7_PRE3.md`); borrador escrito el 02-11-2026, pendiente de revisión.
 
 - [ ] Marco (ADR 0029): `q = round(c × 2^15)` en `i64`; raíz guardada = primer nodo con más de un hijo
   (nivel y prefijo); bloques con desplazamientos `u32` respecto al origen de su nodo; los nodos de más de
