@@ -1,0 +1,56 @@
+file: target/render-data/belvedere-v74.oct
+nodes: 3941 (leaves 3174, internal 767), nodes with several blocks (skipped): 0
+size_of NodeCell: 64 B
+non-cubic nodes: 0
+nodes whose 8-cells-per-axis depth is not an integer: 0
+representative depth by (level, depth): count
+  level 0 depth 8: 1
+  level 1 depth 9: 4
+  level 2 depth 8: 1
+  level 2 depth 10: 5
+  level 3 depth 11: 15
+  level 4 depth 7: 2
+  level 4 depth 9: 1
+  level 4 depth 12: 50
+  level 4 depth 16: 2
+  level 5 depth 7: 2
+  level 5 depth 8: 1
+  level 5 depth 9: 1
+  level 5 depth 10: 1
+  level 5 depth 13: 151
+  level 5 depth 16: 31
+  level 6 depth 8: 5
+  level 6 depth 9: 6
+  level 6 depth 10: 4
+  level 6 depth 14: 456
+  level 6 depth 16: 227
+  level 7 depth 9: 10
+  level 7 depth 10: 12
+  level 7 depth 11: 5
+  level 7 depth 12: 2
+  level 7 depth 13: 3
+  level 7 depth 15: 87
+  level 7 depth 16: 2241
+  level 7 depth 17: 2
+  level 7 depth 24: 3
+  level 8 depth 10: 4
+  level 8 depth 11: 2
+  level 8 depth 12: 2
+  level 8 depth 15: 1
+  level 8 depth 16: 598
+  level 8 depth 17: 2
+  level 8 depth 24: 1
+leaf chain length histogram (levels: leaves)
+  1: 57
+  2: 3062
+  3: 3
+  4: 1
+  5: 2
+  6: 3
+  7: 5
+  8: 41
+leaves at chain cap: 45 (1.418 %)
+leaves with chain > 4x point bytes: 0; worst ratio 3.71x; total chain bytes 2555923312 vs point bytes 1306917264 (1.96x)
+leaf build: 7.239 ms/leaf, 281.3 ns/point, 805268.8 chain B/leaf, 411757.2 point B/leaf
+internal build: 6.267 ms/node
+total cells: 210885431

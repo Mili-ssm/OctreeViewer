@@ -1,0 +1,2 @@
+command: node examples/web-host/probe-orbit-load.mjs target/render-data/belvedere-v74.oct docs/records/benchmarks/data/r4-t6-02-11-2026/belvedere-v74-8-s1.json --url=http://127.0.0.1:18767/examples/web-host/index.html --px=8 --max-load-s=300 --orbit-s=10 --browser=chrome
+{"mode":"timing","reasons":[],"targetReached":true,"error":null}
