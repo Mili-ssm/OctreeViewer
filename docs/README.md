@@ -29,7 +29,7 @@ trabajo nuevo va en un plan nuevo.
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
 | [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | en pausa (ADR 0028) |
 | [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
-| [R5: jerarquía paginada](plans/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | listo |
+| [R5: jerarquía paginada](plans/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | completado |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
 | [Etapa 1](plans/conversor-web-paralelo-etapa1.md), [2](plans/conversor-web-paralelo-etapa2.md), [3](plans/conversor-web-paralelo-etapa3.md), [4](plans/conversor-web-paralelo-etapa4.md) del conversor web | S0/M0/S1; trabajos por nodo, S8, S9 y M1; S2, S10, M2 y M3a; M3b con zonas OPFS y retirada del conversor antiguo. | cerrado |
 
@@ -79,6 +79,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [opt-level 3 en el WASM (exploración)](records/benchmarks/EXPLORE_OPT_LEVEL_WASM_02-11-2026.md) | Descarga +7–8 % comprimida; edad de escena −14 %; tiempo al objetivo −18 %. | fechado |
 | [Hojas en el tope de R3-T1 (exploración)](records/benchmarks/EXPLORE_ADAPTIVE_LEAF_02-11-2026.md) | Meseta de espaciado con 8 celdas y bench según ADR 0028: 0,06 % y 0,14 % en el tope. | fechado |
 | [Tamaño de página de la jerarquía paginada (R5-P0)](records/benchmarks/R5_P0_PAGES_02-11-2026.md) | k = 5 vale en aéreo (p95 16–27 KB), no con ramificación 8; índice −50 %. | fechado |
+| [Apertura remota por HTTP Range (R5-P4)](records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md) | RED-REF: primer frame 370–390 ms y 4 px ≤ 1,3 s con v7.5-pre; RQ-04 pasa; v7.4 como base. | fechado |
 | [Worker de construcción (R2)](records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md) | Escenas construidas fuera del hilo de render, activado y no: respuestas de frame y tiempo a objetivo en Majadas y Belvedere. | fechado |
 | [Digest del worker de construcción](records/benchmarks/RENDER_BUILD_WORKER_DIGEST_2026-10-30.md) | Digest en reposo distinto entre ambas rutas: la causa es la cámara de la sonda, no el worker. | fechado |
 | [Diagnóstico de T4](records/benchmarks/RENDER_T4_DIAGNOSIS_2026-10-30.md) | Causa de la regresión de T4 en Belvedere: orden de carga de los bloques pendientes. | fechado |

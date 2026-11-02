@@ -1,6 +1,6 @@
 # R5 — Jerarquía paginada: plan de implementación
 
-Estado: listo para ejecutar · 02-11-2026
+Estado: completado · 02-11-2026
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -125,7 +125,9 @@ Resultado (02-11-2026, release, Chrome headless 1280×720, RED-REF 100 Mbit/s y 
 
 ## Tarea P5: documentación
 
-- [ ] Actualizar el inventario (`docs/reference/inventory.md`), los límites de ADR 0007 y la spec.
+- [x] Actualizar el inventario (`docs/reference/inventory.md`) y los límites vigentes de v7.5-pre. ADR 0007 no se edita (aceptada): sus límites de nodos y bloques siguen vigentes para el lector eager; los de páginas están en la [spec](../reference/format/FORMAT_V7_PRE5.md#limits) y el inventario.
+
+Resultado (02-11-2026): inventario, README y registro [R5-P4](../records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md) al día. R5 queda implementado como `v7.5-pre` en la rama `feat/r5-paged-hierarchy`, pendiente de integración.
 
 ## Fuera de este plan
 

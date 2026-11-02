@@ -9,7 +9,7 @@ Estado: activo · 30-10-2026
 y enmendado tras su pre-mortem (abajo). R0 hecha; R1 parcial (T0, T3a, T4 y T5 hechas); R2 hecha, con el worker de
 construcción encendido por defecto desde esta rama (`?buildWorker=0` / `buildWorker: false` lo apagan, [ADR 0018](../adr/0018-worker-de-construccion-por-defecto.md)).
 Preguntas P1–P8 resueltas el 30-10-2026 ([requisitos](../requirements.md)). Orden acordado: resto de R1 → R4 → R3 ([ADR 0028](../adr/0028-r4-antes-que-r3.md)) → R5 → V7 final.
-Nada de R3–R5 está implementado: las decisiones están registradas, el código no ha cambiado.
+Estado (02-11-2026): R4 y R5 están completados (`v7.4-pre`, `v7.5-pre`; R5 en la rama `feat/r5-paged-hierarchy`, pendiente de integración); R3 sigue en pausa ([ADR 0028](../adr/0028-r4-antes-que-r3.md)).
 
 **Objetivo (propietario, 30-10-2026):** cargar nubes de cientos de GB y dibujarlas con vóxeles de
 1–8 px en pantalla, con una carga que se perciba continua: sin saltos a grueso al mover la cámara,
