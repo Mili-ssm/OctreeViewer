@@ -51,6 +51,20 @@ Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
 
 ## Prioridades pendientes
 
+### Estado al pausar (03-11-2026)
+
+Ramas: el trabajo integrado está en `feat/render-r3-node-cells` (sin push). R3 se ejecuta en `feat/r3-v75`, cuyo último commit (`3eb78f7`) es un **WIP sin verificar** de la Tarea 0b; ejecutar `scripts/check.sh --offline` antes de seguir.
+
+| Orden | Trabajo | Estado | Siguiente paso |
+| --- | --- | --- | --- |
+| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), [ADR 0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md)) | Plan aceptado; T0b a medias | Terminar T0b (espaciado de referencia por nube = mediana ponderada por puntos del espaciado de hoja, `f64`, en metadatos v7.5), luego T0 (línea base CPU) y T1 |
+| 2 | Velocidad de conversión (RQ-07) | v7.5/V5 ≈ 2,0× Belvedere y 1,7× Majadas; objetivo ≤ 1,3× ([registro](docs/records/benchmarks/EXPLORE_CONVERT_CPU_02-11-2026.md)) | Rediseñar el acumulador de muestreo disperso (fallos de caché) y la fase de bloques sin `i128`; requisito para promover V7 |
+| 3 | Integración | R4 y R5 completados y verificados (`check.sh` 24/24) | Revisión de la rama y PR a `main` cuando el propietario lo pida |
+
+Pendientes menores: con `?buildWorker=0` falta la guarda contra reintentos en bucle al fallar un injerto de página; medición remota sin órbita, S3 real ni compresión; borrar los worktrees `target/r1t7-control-a/b-20261101` y `~/.cache/codex-worktrees/octree-r1-t1a` (pendiente de confirmación del propietario).
+
+### Orden general
+
 Orden acordado el 30-10-2026 ([requisitos](docs/requirements.md#orden-de-trabajo-acordado)): etapa 4 integrada en `master` (sin evidencia registrada del chequeo previo a la integración) → R1 restante (R1-T1a es requisito de R3) → R4 → R3 ([ADR 0028](docs/adr/0028-r4-antes-que-r3.md)) → R5 → V7 final → API pública y funciones →
 conversor web M6 (M4/M5 condicionales). Esta es la única lista activa. El [plan V7](docs/plans/format-v7-plan.md) desarrolla contratos,
 alternativas y verificación. No se desarrollarán nuevas revisiones V5/V6: se conservan durante
