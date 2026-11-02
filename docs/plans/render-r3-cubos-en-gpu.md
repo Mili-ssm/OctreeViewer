@@ -1,6 +1,6 @@
 # R3 — Cubos por nodo residentes en GPU: plan de implementación
 
-Estado: en pausa · 01-11-2026
+Estado: en revisión para reanudar · 03-11-2026
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -29,6 +29,16 @@ Chrome (arnés R0).
 Requisito previo: R1-T1a cerrada (toca el código ★ de la Tarea 9).
 
 **Pausa (01-11-2026):** la Tarea 1 superó dos criterios de parada con datos reales (cadenas de hoja en el tope en el 78–99 % de las hojas, 2,7 × los bytes de sus puntos; [registro](../records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md)). El propietario decide hacer R4 primero ([ADR 0028](../adr/0028-r4-antes-que-r3.md)); al reanudar, la Tarea 1 se vuelve a medir con el formato de R4.
+
+## Reanudación (03-11-2026)
+
+R3 se reanuda por decisión del propietario: con `v7.5-pre` se cumplen los dos criterios de parada de la Tarea 1 ([ADR 0028](../adr/0028-r4-antes-que-r3.md)): hojas en el tope 0,06–0,14 % y 0 hojas con cadena > 4 × sus puntos tras la poda de niveles ([registro](../records/benchmarks/EXPLORE_LEAF_CHAIN_BYTES_02-11-2026.md)). Cambios de contexto que este plan debe absorber antes de ejecutarse:
+
+- **Formato:** la fuente es `v7.5-pre` (octree global por bits, [ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md); espaciado por nodo; rejilla local en nubes sin CRS) con jerarquía paginada ([ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md)): los nodos llegan por páginas y pueden expulsarse.
+- **Cadena podada:** la cadena de hoja es un conjunto disperso de profundidades (`chain_keep_mask`, `CHAIN_MIN_GROWTH` = 1,5). Una profundidad deseada que no está guardada se resuelve con la menor profundidad guardada ≥ la deseada (o la más fina), nunca con una más gruesa (RQ-09). La preferencia «más gruesa» de A6 se aplica solo a niveles guardados pero aún no residentes.
+- **Profundidad:** OQ-07 (más de 24 niveles) se decide aquí: claves `u64` en CPU y posiciones relativas al origen `i64` de un ancla cercana en GPU.
+
+El plan se revisa con un pre-mortem antes de ejecutar.
 
 ## Decisiones técnicas del coordinador (30-10-2026)
 
