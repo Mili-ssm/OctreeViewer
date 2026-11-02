@@ -33,3 +33,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0027](0027-celdas-por-nodo-en-pool-paginado.md) | R3: celdas por nodo en un pool de GPU paginado con máscaras de cobertura | Propuesta |
 | [0028](0028-r4-antes-que-r3.md) | R4 (pirámide densa) antes que R3 | Aceptada |
 | [0029](0029-octree-global-por-bits-de-enteros.md) | Octree global sobre coordenadas enteras con cuanto binario (precisa 0021) | Aceptada |
+| [0030](0030-jerarquia-paginada-por-anclas.md) | Jerarquía paginada cada 5 niveles desde anclas de prefijo (R5) | Propuesta |
