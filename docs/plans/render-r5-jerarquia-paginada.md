@@ -59,7 +59,7 @@ Resultado (02-11-2026): API `mark_unloaded` / `graft_page` / `evict_page` en `Sp
   - cabecera de página (nivel del ancla, prefijo, *k*, número de nodos, CRC32);
   - registro reducido y punteros a páginas hijas;
   - página raíz junto al pie, con una lectura de cola que traiga pie y raíz en una sola petición;
-  - derivación de `NodeId`, `BlockId` y del orden de los hijos.
+  - derivación de `NodeId` (página, índice), `BlockId` y del orden de los hijos.
 - [x] Validación por página: el ancla de la página hija coincide con el nodo que la apunta. Límites `max_page_bytes` y `max_resident_pages` en `FormatReaderLimits`. Ningún `BlockId` se repite entre páginas.
 - [x] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas (`fuzz_paged_reader`, [semillas](../records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md)).
 Resultado parcial (02-11-2026): `FormatVersion::V7_PRE5`, `PagedReader` (lectura de cola: pie, metadatos y raíz en una petición) y escritor con *k* por página en `viewer_format`; con el mismo contenido el índice mide el 39 % del de `v7.4-pre` en el fixture de los tests. Queda la segunda mitad.
@@ -67,14 +67,14 @@ Resultado parcial (02-11-2026): `FormatVersion::V7_PRE5`, `PagedReader` (lectura
 - [x] Subcomando `viewer_convert verify` con las comprobaciones globales (hoy el CLI solo tiene flags sueltos, `main.rs:28-80`).
 - [x] Generador de un `.oct` sintético `v7.5-pre` con 6 M nodos.
 - [x] **Pasa si** el índice es al menos un 30 % menor que el de `v7.4-pre` y hay paridad web/CLI.
-Resultado (02-11-2026): `--format-version v7.5-pre` escribe solo `.oct` (monolítico, sin `.octattrs`); EPT, checkpoints y Additive dan error explícito. Índice (release, `perf` no usado):
+Resultado (02-11-2026, revisado el mismo día por dos decisiones del propietario): `--format-version v7.5-pre` escribe la pareja `.oct` + `.octattrs` como v7.4 ([ADR 0001](../adr/0001-pareja-separada-oct-octattrs.md); la geometría, las páginas y el índice van en el `.oct`, que abre solo en gris) y el id de nodo es `(página, índice)` sin límite de profundidad. EPT, checkpoints y Additive dan error explícito. Índice (release, `perf` no usado):
 
 | Dataset | Índice v7.4 | Índice v7.5 | Reducción | Páginas | Página máx. | Conversión | RSS |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Belvedere | 2 405 003 B | 1 115 887 B | 53,6 % | 152 (todas *k* = 5) | 76 936 B | 42 s | 96 MiB |
-| Majadas | 13 515 427 B | 6 062 333 B | 55,1 % | 810 (todas *k* = 5) | 272 282 B | 6 min 12 s (con `check.sh` en paralelo) | 216 MiB |
+| Belvedere | 2 405 003 B | 1 116 491 B | 53,6 % | 152 (todas *k* = 5) | 77 540 B | 46 s | 104 MiB |
+| Majadas | 13 515 427 B | 6 065 569 B | 55,1 % | 810 (todas *k* = 5) | 272 898 B | 6 min 52 s (con `check.sh` en paralelo) | 230 MiB |
 
-`verify` pasa en ambos. Generador: `cargo run --release -p viewer_format --example synthetic_paged -- OUT.oct` (6 M nodos, 803 016 457 B, 60 s, 15 GB RAM; `verify` 26 s). Paridad: caso `synthetic-v75` en `tools/convert_parity`. Hallazgos para P3: (1) `FormatReaderLimits::max_nodes` por defecto (2 M) rechaza al abrir un fichero de 6 M nodos; (2) una nube que cruza el bit de signo de la retícula (raíz en nivel 0, cadena de 40 niveles) supera el límite de profundidad 21 y no se puede escribir en `v7.5-pre` (el LAS `small` de paridad); (3) los ids de bloque del fichero no son los del plan.
+`verify` pasa en ambos (también comprueba el pie del `.octattrs`). Generador: `cargo run --release -p viewer_format --example synthetic_paged -- OUT.oct` (6 M nodos, `.oct` de 761 914 737 B más `.octattrs`, 63 s, 15 GB RAM; `verify` pasa). Paridad web/nativo: casos `small-v75` (el LAS que cruza el bit de signo, raíz en nivel 0 y cadena de ~40 niveles, ya convierte y verifica) y `synthetic-v75` en `tools/convert_parity`. Hallazgos para P3: (1) `FormatReaderLimits::max_nodes` por defecto (2 M) rechaza al abrir un fichero de 6 M nodos; (2) los ids de bloque y de nodo del fichero dependen del plan de páginas, no del plan del conversor; (3) la decodificación de la celda de bloque desbordaba `i64` con raíces de nivel 0 (corregido en `page_codec`).
 
 ## Tarea P2a: flags LAS y Extra Bytes (RF-24)
 
