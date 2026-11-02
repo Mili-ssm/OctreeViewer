@@ -67,6 +67,59 @@ impl FormatMetadata {
         Arc::clone(&self.dataset)
     }
 
+    /// The dataset as the viewer consumes it: node bounds in the same space as the coordinate
+    /// origin (world), plus each node's stored representative spacing.
+    ///
+    /// `v7.4-pre` stores bounds relative to the frame origin and a spacing per node, so they are
+    /// shifted back by the origin (exact: the origin and bounds are multiples of 2^-15 below 2^35)
+    /// and the spacing is attached. Other versions return `shared_dataset()` unchanged.
+    pub fn viewer_dataset(&self) -> Result<Arc<DatasetMetadata>, MetadataError> {
+        let Some(frame) = &self.global_frame else {
+            return Ok(self.shared_dataset());
+        };
+        let origin = self.dataset.coordinate_frame().origin();
+        let hierarchy = self.dataset.hierarchy();
+        let invalid = |_| MetadataError::InvalidGlobalFrame("viewer dataset");
+        let mut nodes = Vec::new();
+        let mut pending = vec![hierarchy.root_id()];
+        while let Some(id) = pending.pop() {
+            let node = hierarchy
+                .node(id)
+                .ok_or(MetadataError::InvalidGlobalFrame("missing node"))?;
+            let bounds = viewer_core::SpatialBounds::new(
+                std::array::from_fn(|axis| node.bounds().min()[axis] + origin[axis]),
+                std::array::from_fn(|axis| node.bounds().max()[axis] + origin[axis]),
+            )
+            .map_err(invalid)?;
+            let mut shifted = viewer_core::SpatialNode::new(
+                id,
+                node.parent(),
+                node.level(),
+                bounds,
+                node.point_count(),
+                node.geometric_error(),
+                node.blocks().to_vec(),
+            )
+            .map_err(invalid)?;
+            if let Some(cell) = frame.node_cell(id) {
+                shifted = shifted.with_spacing(cell.spacing()).map_err(invalid)?;
+            }
+            nodes.push(shifted);
+            pending.extend(hierarchy.child_ids(id).iter().rev().copied());
+        }
+        let rebuilt = viewer_core::SpatialHierarchy::new_with_semantics(
+            nodes,
+            hierarchy.attributes().to_vec(),
+            hierarchy.stats().source_point_count,
+            hierarchy.semantics(),
+        )
+        .map_err(invalid)?;
+        Ok(Arc::new(DatasetMetadata::new(
+            self.dataset.coordinate_frame(),
+            rebuilt,
+        )))
+    }
+
     pub fn crs(&self) -> Option<&str> {
         self.crs.as_deref()
     }

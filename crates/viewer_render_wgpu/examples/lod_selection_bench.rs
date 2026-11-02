@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let stable = args.len() == 2;
     let reader = FormatReader::new(File::open(&args[0])?)?;
-    let metadata = reader.format_metadata().dataset();
+    let viewer_dataset = reader.format_metadata().viewer_dataset()?;
+    let metadata = &*viewer_dataset;
     let hierarchy = metadata.hierarchy();
     let origin = metadata.coordinate_frame().origin();
     let root = hierarchy.stats().root_bounds;
@@ -59,10 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let project = |node: &viewer_core::SpatialNode| {
                 calls.set(calls.get() + 1);
                 let bounds = node.bounds();
-                let side = (0..3)
-                    .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-                    .fold(0.0_f64, f64::max);
-                camera.projected_error_pixels(bounds, side / 8.0, origin, viewport)
+                let spacing = node.representative_spacing();
+                camera.projected_error_pixels(bounds, spacing, origin, viewport)
             };
             let expected = hierarchy.select_lod(&world_frustum, config, project)?;
             let priority_stats = if stable {

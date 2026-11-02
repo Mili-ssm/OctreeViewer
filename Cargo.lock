@@ -1238,6 +1238,7 @@ dependencies = [
  "viewer_convert_core",
  "viewer_core",
  "viewer_format",
+ "viewer_render_wgpu",
 ]
 
 [[package]]

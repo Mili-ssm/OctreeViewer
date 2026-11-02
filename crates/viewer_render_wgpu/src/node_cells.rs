@@ -28,18 +28,28 @@ const DEPTH_SNAP_TOLERANCE: f64 = 1e-3;
 /// Depth at which a node's side spans 8 cells, derived from the node side so it holds for any
 /// `--spatial-divisions` of the converter (2, 4 or 8).
 pub fn representative_depth(grid: &CellGrid, bounds: SpatialBounds) -> u8 {
-    let side = (0..3)
-        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
-        .fold(0.0, f64::max);
+    representative_depth_for_spacing(grid, side_of(bounds) / 8.0)
+}
+
+/// Depth of the cells whose side equals `spacing`, relative to the stored root. `v7.4-pre` nodes
+/// pass their index `spacing`, so a node of 256 representatives per axis lands 8 levels below its
+/// own depth instead of 3.
+pub fn representative_depth_for_spacing(grid: &CellGrid, spacing: f64) -> u8 {
     // Node sides are root_side / 2^k up to float noise (log2 ≈ 13.99999 on real data); snap
     // before flooring so such nodes keep their intended depth.
-    let depth = (grid.root_side / (side / 8.0)).log2();
+    let depth = (grid.root_side / spacing).log2();
     let snapped = if (depth - depth.round()).abs() < DEPTH_SNAP_TOLERANCE {
         depth.round()
     } else {
         depth.floor()
     };
     snapped.clamp(0.0, f64::from(MAX_CELL_DEPTH)) as u8
+}
+
+fn side_of(bounds: SpatialBounds) -> f64 {
+    (0..3)
+        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
+        .fold(0.0, f64::max)
 }
 
 /// Exact per-cell sums, accumulated in point order like the CPU voxel build.
@@ -94,6 +104,7 @@ pub trait NodeCellSource {
         grid: &CellGrid,
         node: NodeId,
         bounds: SpatialBounds,
+        spacing: Option<f64>,
         is_leaf: bool,
         block: &PointBlock,
     ) -> Result<NodeCells, NodeCellError>;
@@ -108,6 +119,7 @@ impl NodeCellSource for PointNodeCellSource {
         grid: &CellGrid,
         node: NodeId,
         bounds: SpatialBounds,
+        spacing: Option<f64>,
         is_leaf: bool,
         block: &PointBlock,
     ) -> Result<NodeCells, NodeCellError> {
@@ -120,7 +132,10 @@ impl NodeCellSource for PointNodeCellSource {
         if (0..3).all(|axis| bounds.max()[axis] <= bounds.min()[axis]) {
             return Err(NodeCellError::DegenerateBounds);
         }
-        let first = representative_depth(grid, bounds);
+        let first = match spacing {
+            Some(spacing) => representative_depth_for_spacing(grid, spacing),
+            None => representative_depth(grid, bounds),
+        };
         let last = if is_leaf {
             first.saturating_add(CHAIN_SPAN).min(MAX_CELL_DEPTH)
         } else {

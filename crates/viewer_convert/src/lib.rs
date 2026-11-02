@@ -134,3 +134,6 @@ mod tests;
 #[cfg(test)]
 #[path = "v7_4_tests.rs"]
 mod v7_4_tests;
+#[cfg(test)]
+#[path = "v7_4_viewer_tests.rs"]
+mod v7_4_viewer_tests;

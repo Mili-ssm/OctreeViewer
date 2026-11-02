@@ -7,7 +7,7 @@ use viewer_core::{
     BlockCacheStats, BlockId, CacheInsertRejection, CacheInsertResult, CoordinateFrame,
     DEFAULT_LOD_PRIORITY_BYTES, DatasetMetadata, DecodedBlockCache, LodSelection,
     LodSelectionConfig, LodSelectionError, LodTransitionPlan, LodTransitionPlanner, NodeId,
-    PointBlock, SpatialBounds, SpatialFrustum, SpatialHierarchy, SpatialNode,
+    PointBlock, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 use viewer_render_wgpu::{
     GpuRendererError, OrbitCamera, SurfaceRenderer, ViewProjection, VoxelBuildMemoryStats,
@@ -40,6 +40,8 @@ pub struct LodDataset {
     plan_memo: Option<PlanMemo>,
     /// Bumped on every cache or planner mutation; a plan is valid only for the epoch it saw.
     state_epoch: u64,
+    /// CRS identity (`EPSG:code`) of a `v7.4-pre` cloud; older formats carry none.
+    crs: Option<String>,
 }
 
 struct SelectionMemo {
@@ -264,7 +266,18 @@ impl LodDataset {
             selection_memo: None,
             plan_memo: None,
             state_epoch: 0,
+            crs: None,
         }
+    }
+
+    /// Records the CRS identity checked when another cloud is opened (RF-02).
+    pub fn with_crs(mut self, crs: Option<String>) -> Self {
+        self.crs = crs;
+        self
+    }
+
+    pub fn crs(&self) -> Option<&str> {
+        self.crs.as_deref()
     }
 
     /// Selects the target cut for a view, or returns the previous selection when camera,
@@ -538,7 +551,7 @@ impl LodDataset {
                 // Camera and viewport remain immutable throughout this synchronous selection.
                 view.projected_error_pixels(
                     node.bounds(),
-                    node_spacing(node.bounds()),
+                    node.representative_spacing(),
                     coordinate_origin,
                 )
             },
@@ -583,7 +596,7 @@ impl LodDataset {
                 |node| {
                     view.projected_error_pixels(
                         node.bounds(),
-                        node_spacing(node.bounds()),
+                        node.representative_spacing(),
                         coordinate_origin,
                     )
                 },
@@ -601,7 +614,7 @@ impl LodDataset {
                 |node| {
                     view.projected_error_pixels(
                         node.bounds(),
-                        node_spacing(node.bounds()),
+                        node.representative_spacing(),
                         coordinate_origin,
                     )
                 },
@@ -771,7 +784,7 @@ impl LodDataset {
             self.resolve_target(&camera, viewport, target_voxel_pixels, &frustum, |node| {
                 view.projected_error_pixels(
                     node.bounds(),
-                    node_spacing(node.bounds()),
+                    node.representative_spacing(),
                     coordinate_origin,
                 )
             })?;
@@ -858,12 +871,8 @@ impl WorkClock {
     }
 }
 
-/// Representative spacing of a node: one eighth of its side, as the voxel builder subdivides it.
-fn node_spacing(bounds: SpatialBounds) -> f64 {
-    bounds_side(bounds) / 8.0
-}
-
-fn bounds_side(bounds: SpatialBounds) -> f64 {
+#[cfg(test)]
+fn bounds_side(bounds: viewer_core::SpatialBounds) -> f64 {
     (0..3)
         .map(|axis| bounds.max()[axis] - bounds.min()[axis])
         .fold(0.0, f64::max)

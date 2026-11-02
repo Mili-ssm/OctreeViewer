@@ -420,11 +420,12 @@ fn aligned_direct_child(
     if !side.is_finite() || side <= 0.0 {
         return false;
     }
-    // The voxel builder rejects mixed cuts finer than the parent's native 8^3 representatives.
-    let parent_side = (0..3)
-        .map(|axis| parent.bounds().max()[axis] - parent.bounds().min()[axis])
-        .fold(0.0, f64::max);
-    let representative_depth = (side / (parent_side / 8.0)).log2().floor().clamp(0.0, 24.0) as u32;
+    // The voxel builder rejects mixed cuts finer than the parent's native representatives
+    // (8 per axis, or the stored spacing of `v7.4-pre`).
+    let representative_depth = (side / parent.representative_spacing())
+        .log2()
+        .floor()
+        .clamp(0.0, 24.0) as u32;
     if child.level() > representative_depth {
         return false;
     }

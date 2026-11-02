@@ -217,6 +217,8 @@ pub struct SpatialNode {
     point_count: u64,
     geometric_error: f64,
     blocks: Vec<BlockId>,
+    /// Spacing of the node's representatives, stored by `v7.4-pre`; older formats derive it.
+    spacing: Option<f64>,
 }
 
 /// Describes how payloads in parent and child nodes combine during refinement.
@@ -253,6 +255,35 @@ impl SpatialNode {
             point_count,
             geometric_error,
             blocks,
+            spacing: None,
+        })
+    }
+
+    /// Sets the stored representative spacing (a finite positive value in dataset units).
+    pub fn with_spacing(mut self, spacing: f64) -> Result<Self, SpatialError> {
+        if !spacing.is_finite() || spacing <= 0.0 {
+            return Err(SpatialError::InvalidSpacing {
+                node: self.id,
+                spacing,
+            });
+        }
+        self.spacing = Some(spacing);
+        Ok(self)
+    }
+
+    /// Spacing stored in the index, when the format has one.
+    pub const fn spacing(&self) -> Option<f64> {
+        self.spacing
+    }
+
+    /// Distance between the node's representatives: the stored spacing when the format has one,
+    /// otherwise one eighth of the node side (the 8 representatives per axis of V5 and V7.1-3-pre).
+    pub fn representative_spacing(&self) -> f64 {
+        self.spacing.unwrap_or_else(|| {
+            let side = (0..3)
+                .map(|axis| self.bounds.max()[axis] - self.bounds.min()[axis])
+                .fold(0.0, f64::max);
+            side / 8.0
         })
     }
 
@@ -386,6 +417,8 @@ pub enum SpatialError {
     DuplicateAttributeName(String),
     #[error("node {node:?} has invalid geometric error {geometric_error}")]
     InvalidGeometricError { node: NodeId, geometric_error: f64 },
+    #[error("node {node:?} has invalid spacing {spacing}")]
+    InvalidSpacing { node: NodeId, spacing: f64 },
     #[error("spatial hierarchy must contain at least one node")]
     EmptyHierarchy,
     #[error("node identifier {0:?} is repeated")]

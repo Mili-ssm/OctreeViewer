@@ -8,7 +8,7 @@ use viewer_core::{Point, PointBlock};
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{
     CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellSource, PointNodeCellSource,
-    representative_depth,
+    representative_depth, representative_depth_for_spacing,
 };
 
 /// Planned GPU instance size (ADR 0027): 512 instances per 8 KiB page.
@@ -25,7 +25,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .transpose()?
         .unwrap_or(10);
     let mut reader = FormatReader::new(File::open(&args[0])?)?;
-    let metadata = reader.format_metadata().dataset();
+    let viewer_dataset = reader.format_metadata().viewer_dataset()?;
+    let metadata = &*viewer_dataset;
     let hierarchy = metadata.hierarchy().clone();
     let origin = metadata.coordinate_frame().origin();
     let root = hierarchy.stats().root_bounds;
@@ -59,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             non_cubic.push((node.id().get(), sides));
         }
         // 8 cells per axis means the root/side ratio is a power of two once divided by 8.
-        let exact = (grid.root_side / (side / 8.0)).log2();
+        let exact = (grid.root_side / node.representative_spacing()).log2();
         if (exact - exact.round()).abs() > 1.0e-6 {
             unexpected_depth.push((node.id().get(), node.level(), exact));
         }
@@ -71,14 +72,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::array::from_fn(|axis| bounds.min()[axis] - origin[axis]),
             std::array::from_fn(|axis| bounds.max()[axis] - origin[axis]),
         )?;
-        let first = representative_depth(&grid, local);
+        let first = node.spacing().map_or_else(
+            || representative_depth(&grid, local),
+            |spacing| representative_depth_for_spacing(&grid, spacing),
+        );
         *depth_by_level.entry((node.level(), first)).or_default() += 1;
         let points = reader.read_positions(node.blocks()[0])?;
         let point_count = points.len();
         let block = PointBlock::new(node.blocks()[0], points, Vec::new());
         let is_leaf = hierarchy.is_leaf(node.id());
         let started = Instant::now();
-        let cells = PointNodeCellSource.node_cells(&grid, node.id(), local, is_leaf, &block)?;
+        let cells = PointNodeCellSource.node_cells(
+            &grid,
+            node.id(),
+            local,
+            node.spacing(),
+            is_leaf,
+            &block,
+        )?;
         let seconds = started.elapsed().as_secs_f64();
         let cell_count: usize = cells.levels.iter().map(|level| level.cells.len()).sum();
         cells_total += cell_count;

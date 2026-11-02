@@ -135,15 +135,24 @@ pub(super) fn open_format(
     reset_browser_read_stats(&browser_read_stats);
     let hierarchy_stats = reader.metadata().hierarchy().stats();
     let visual_scale = reader.format_metadata().visual_scale();
-    let metadata = reader.format_metadata().shared_dataset();
+    let metadata = reader
+        .format_metadata()
+        .viewer_dataset()
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let coordinate_origin = metadata.coordinate_frame().origin();
     let semantics = format!("{:?}", metadata.hierarchy().semantics()).to_lowercase();
     let root_bounds = hierarchy_stats.root_bounds;
+    let crs = reader
+        .format_metadata()
+        .global_frame()
+        .and_then(|_| reader.format_metadata().crs())
+        .map(str::to_owned);
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
         metadata,
         visual_scale,
         cache_bytes as usize,
-    );
+    )
+    .with_crs(crs);
     let result = js_sys::Object::new();
     js_sys::Reflect::set(
         &result,

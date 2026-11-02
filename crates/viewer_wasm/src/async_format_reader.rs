@@ -250,7 +250,8 @@ impl WasmAsyncFormatReader {
     #[wasm_bindgen(js_name = lodDatasetDescriptor)]
     pub fn lod_dataset_descriptor(&self, cache_bytes: u32) -> Result<JsValue, JsValue> {
         let metadata = self.shared.reader.format_metadata();
-        let dataset = metadata.dataset();
+        // World-space bounds and stored spacing, as the viewer consumes them.
+        let dataset = metadata.viewer_dataset().map_err(format_error)?;
         let hierarchy = dataset.hierarchy();
         let descriptor = js_sys::Object::new();
         set(
@@ -263,6 +264,11 @@ impl WasmAsyncFormatReader {
             "semantics",
             &JsValue::from_str(&format!("{:?}", hierarchy.semantics()).to_lowercase()),
         )?;
+        if metadata.global_frame().is_some()
+            && let Some(crs) = metadata.crs()
+        {
+            set(&descriptor, "crs", &JsValue::from_str(crs))?;
+        }
         set(
             &descriptor,
             "cacheBytes",
@@ -321,6 +327,9 @@ impl WasmAsyncFormatReader {
                 blocks.push(&JsValue::from_str(&block_id.get().to_string()));
             }
             set(&value, "blocks", &blocks.into())?;
+            if let Some(spacing) = node.spacing() {
+                set(&value, "spacing", &JsValue::from_f64(spacing))?;
+            }
             nodes.push(&value);
             pending.extend(hierarchy.child_ids(node.id()).iter().rev().copied());
         }

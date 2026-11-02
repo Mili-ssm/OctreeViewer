@@ -78,7 +78,7 @@ fn attributed_block(points: Vec<Point>, intensity: Vec<u16>, class: Vec<u8>) -> 
 
 fn cells_of(grid: &CellGrid, bounds: SpatialBounds, leaf: bool, block: &PointBlock) -> NodeCells {
     PointNodeCellSource
-        .node_cells(grid, NodeId::new(7), bounds, leaf, block)
+        .node_cells(grid, NodeId::new(7), bounds, None, leaf, block)
         .unwrap()
 }
 

@@ -25,6 +25,7 @@ pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats,
 pub use node_cells::{
     CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel, NodeCellSource,
     NodeCells, PointNodeCellSource, node_cells_digest, representative_depth,
+    representative_depth_for_spacing,
 };
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,

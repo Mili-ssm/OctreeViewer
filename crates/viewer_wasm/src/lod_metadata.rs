@@ -22,6 +22,8 @@ pub(crate) struct LodDatasetDescriptor {
     pub(crate) attribute_ranges: Option<Vec<Vec<Option<[f64; 2]>>>>,
     #[serde(default)]
     pub(crate) source_point_count: Option<String>,
+    #[serde(default)]
+    pub(crate) crs: Option<String>,
     pub(crate) nodes: Vec<LodNodeDescriptor>,
 }
 
@@ -48,6 +50,9 @@ pub(crate) struct LodNodeDescriptor {
     pub(crate) point_count: String,
     pub(crate) geometric_error: f64,
     pub(crate) blocks: Vec<String>,
+    /// Stored representative spacing (`v7.4-pre`); absent in older formats.
+    #[serde(default)]
+    pub(crate) spacing: Option<f64>,
 }
 
 impl LodDatasetDescriptor {
@@ -118,7 +123,7 @@ impl LodDatasetDescriptor {
                     .iter()
                     .map(|value| parse_u64(value, "block id").map(BlockId::new))
                     .collect::<Result<Vec<_>, _>>()?;
-                SpatialNode::new(
+                let spatial = SpatialNode::new(
                     id,
                     parent,
                     node.level,
@@ -127,7 +132,13 @@ impl LodDatasetDescriptor {
                     node.geometric_error,
                     blocks,
                 )
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+                match node.spacing {
+                    Some(spacing) => spatial
+                        .with_spacing(spacing)
+                        .map_err(|error| error.to_string()),
+                    None => Ok(spatial),
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
         let hierarchy =
@@ -139,7 +150,8 @@ impl LodDatasetDescriptor {
             Arc::new(DatasetMetadata::new(frame, hierarchy)),
             self.visual_scale,
             self.cache_bytes,
-        ))
+        )
+        .with_crs(self.crs))
     }
 }
 

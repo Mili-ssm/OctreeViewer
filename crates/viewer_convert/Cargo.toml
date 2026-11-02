@@ -24,6 +24,7 @@ viewer_format = { path = "../viewer_format" }
 
 [dev-dependencies]
 tempfile = "3"
+viewer_render_wgpu = { path = "../viewer_render_wgpu" }
 
 [lints.clippy]
 disallowed_methods = "deny"

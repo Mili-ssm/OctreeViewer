@@ -613,7 +613,7 @@ pub fn build_voxel_scene_with_limits(
             return Err(VoxelSceneBuildError::MixedCutNotAligned);
         }
         let source_depth_limit =
-            (!excluded.is_empty()).then(|| representative_depth(&builder.grid, node.bounds()));
+            (!excluded.is_empty()).then(|| representative_depth(&builder.grid, node));
         for block_id in node.blocks() {
             let Some(block) = cache.peek(*block_id) else {
                 continue;
@@ -641,7 +641,7 @@ fn validate_mixed_cut(
         let Some(parent) = hierarchy.node(*parent_id) else {
             continue;
         };
-        let depth = representative_depth(grid, parent.bounds());
+        let depth = representative_depth(grid, parent);
         let parent_min: [f64; 3] =
             std::array::from_fn(|axis| parent.bounds().min()[axis] - coordinate_origin[axis]);
         let parent_max: [f64; 3] =
@@ -741,7 +741,7 @@ fn configure_representative_regions(
     let mut regional = true;
     let mut count = 0_usize;
     for node in coarse_nodes() {
-        global_depth = global_depth.min(representative_depth(&builder.grid, node.bounds()));
+        global_depth = global_depth.min(representative_depth(&builder.grid, node));
         if regional {
             if let Some((_, length)) = representative_regions(&builder.grid, node, cache) {
                 count = count
@@ -791,14 +791,27 @@ fn configure_representative_regions(
     Ok(())
 }
 
-fn representative_depth(grid: &AdaptiveVoxelGrid, bounds: SpatialBounds) -> u8 {
-    crate::representative_depth(
+/// Depth of a node's representative cells: 8 per axis, or its stored spacing (`v7.4-pre`).
+fn representative_depth(grid: &AdaptiveVoxelGrid, node: &viewer_core::SpatialNode) -> u8 {
+    crate::representative_depth_for_spacing(
         &CellGrid {
             root_min: grid.origin,
             root_side: grid.side,
         },
-        bounds,
+        node.representative_spacing(),
     )
+}
+
+/// log2 of the representatives per axis: 3 for the fixed 8, derived from the spacing otherwise.
+fn representatives_per_axis_log2(node: &viewer_core::SpatialNode) -> u8 {
+    let Some(spacing) = node.spacing() else {
+        return 3;
+    };
+    let bounds = node.bounds();
+    let side = (0..3)
+        .map(|axis| bounds.max()[axis] - bounds.min()[axis])
+        .fold(0.0, f64::max);
+    (side / spacing).log2().round().clamp(0.0, 24.0) as u8
 }
 
 /// Up to eight occupied regions per source node bound setup work and retained metadata.
@@ -808,7 +821,7 @@ fn representative_regions(
     node: &viewer_core::SpatialNode,
     cache: &dyn ResidentBlockSource,
 ) -> Option<([VoxelKey; 8], usize)> {
-    let depth = representative_depth(grid, node.bounds());
+    let depth = representative_depth(grid, node);
     let mut keys = [VoxelKey {
         depth: 0,
         coord: [0; 3],
@@ -817,7 +830,7 @@ fn representative_regions(
     if depth == 24 {
         return Some((keys, length));
     }
-    let region_depth = depth.checked_sub(3)?;
+    let region_depth = depth.checked_sub(representatives_per_axis_log2(node))?;
     for block in node.blocks().iter().filter_map(|id| cache.peek(*id)) {
         for point in block.points().points() {
             if point.position.iter().any(|v| !v.is_finite()) {

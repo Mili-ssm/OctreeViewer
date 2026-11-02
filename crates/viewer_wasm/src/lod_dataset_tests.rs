@@ -9,7 +9,7 @@ use std::sync::Arc;
 use super::{
     CacheCycleDetector, LodDataset, LodDatasetError, SuccessfulBuildContext, bounds_side,
     highest_priority_pending_block, index_block_owners, load_priority, next_lod_stage,
-    node_spacing, prefix_extension_points, prioritized_pending_blocks, priority_precedes,
+    prefix_extension_points, prioritized_pending_blocks, priority_precedes,
     resident_target_plan_is_complete, reusable_build_match,
 };
 use viewer_render_wgpu::{OrbitCamera, RenderScene, SceneBounds, build_voxel_scene};
@@ -1578,7 +1578,7 @@ fn pending_leaf_priority_follows_the_screen_space_metric_not_block_ids() {
     let project = |node: &SpatialNode| {
         camera.projected_error_pixels(
             node.bounds(),
-            node_spacing(node.bounds()),
+            node.representative_spacing(),
             [0.0; 3],
             viewport,
         )
