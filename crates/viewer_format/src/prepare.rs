@@ -697,6 +697,7 @@ impl BoundsAccumulator {
 pub struct FormatWriterOptions {
     max_quantization_error: f64,
     max_uncompressed_block_bytes: u64,
+    page_target_bytes: usize,
 }
 
 impl FormatWriterOptions {
@@ -715,7 +716,19 @@ impl FormatWriterOptions {
         Ok(Self {
             max_quantization_error,
             max_uncompressed_block_bytes,
+            page_target_bytes: crate::TARGET_PAGE_BYTES,
         })
+    }
+
+    /// `v7.5-pre` only: the size a page may reach before the writer lowers its level count `k`
+    /// (default [`crate::TARGET_PAGE_BYTES`]). A page never has fewer than one level.
+    pub fn with_page_target_bytes(mut self, bytes: usize) -> Self {
+        self.page_target_bytes = bytes;
+        self
+    }
+
+    pub(crate) fn page_target_bytes(&self) -> usize {
+        self.page_target_bytes
     }
 }
 

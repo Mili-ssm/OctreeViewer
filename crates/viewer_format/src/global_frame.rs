@@ -519,7 +519,7 @@ impl GlobalFrame {
 }
 
 /// Exponent of a positive normal power of two read from the `f64` bits, no `log2`.
-fn power_of_two_exponent(value: f64) -> Option<i32> {
+pub(crate) fn power_of_two_exponent(value: f64) -> Option<i32> {
     let bits = value.to_bits();
     let exponent_field = ((bits >> 52) & 0x7ff) as i32;
     let valid = bits >> 63 == 0

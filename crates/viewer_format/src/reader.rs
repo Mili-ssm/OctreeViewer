@@ -214,6 +214,31 @@ impl<R: Read + Seek> IndexedReader<R> {
             return Err(FormatError::InvalidHeader);
         }
         let split = identity.role == FileRole::SplitPrimary;
+        if layout.uses_pages() {
+            if split {
+                return Err(FormatError::InvalidMetadata("v7.5-pre has no split layout"));
+            }
+            // Eager view: every page is read and the global checks run. Lazy readers use
+            // `PagedReader` instead.
+            let ((metadata, blocks, block_bounds), index_identity) =
+                crate::paged_index::load_all(&mut reader, &limits)?;
+            return Ok(Self {
+                reader,
+                attributes: None,
+                attributes_attached: false,
+                external_payloads_only: false,
+                split: false,
+                layout,
+                index_identity,
+                attribute_file_length: 0,
+                metadata: Arc::new(metadata),
+                blocks: Arc::new(blocks),
+                block_bounds: Arc::new(block_bounds),
+                plan_owner: Arc::new(()),
+                attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
+                limits,
+            });
+        }
 
         let footer_offset = file_length - FOOTER_SIZE;
         reader.seek(SeekFrom::Start(footer_offset))?;

@@ -19,6 +19,8 @@ mod index_codec;
 mod layout;
 mod metadata;
 mod occupancy_codec;
+mod page_codec;
+mod paged_index;
 #[cfg(not(target_arch = "wasm32"))]
 mod parallel_reader;
 mod prepare;
@@ -50,6 +52,11 @@ pub use global_frame::{
 };
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};
+pub use page_codec::{
+    MAX_NODE_DEPTH, MAX_PAGE_LEVELS, Page, PageAnchor, PageBlock, PageNode, PagePointer,
+    TARGET_PAGE_BYTES, derive_node_id,
+};
+pub use paged_index::{PagedHeader, PagedReader, TAIL_READ_BYTES};
 pub use quantization::{
     QuantizationError, QuantizationTransform, QuantizedCoordinates, norm3, quantize_local_positions,
 };

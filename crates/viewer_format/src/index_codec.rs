@@ -106,61 +106,8 @@ pub(crate) fn write_index<W: Write>(
         None
     };
     index.write(layout.index_magic())?;
-    for coordinate in metadata.dataset().coordinate_frame().origin() {
-        index.f64(coordinate)?;
-    }
-    if let Some(frame) = global {
-        index.u32(frame.root_level())?;
-        for prefix in frame.root_prefix() {
-            index.u64(prefix)?;
-        }
-        for quanta in frame.frame_origin_quanta() {
-            index.i64(quanta)?;
-        }
-        for quanta in frame.data_max_quanta() {
-            index.i64(quanta)?;
-        }
-    }
-    if let Some(point_count) = metadata.dataset().hierarchy().stats().source_point_count {
-        index.u8(1)?;
-        index.u64(point_count)?;
-    } else {
-        index.u8(0)?;
-    }
-    if let Some(frame) = global {
-        write_crs_record(&mut index, frame.crs())?;
-        match frame.source_scale_offset() {
-            Some(source) => {
-                index.u8(1)?;
-                for value in source.scale().into_iter().chain(source.offset()) {
-                    index.f64(value)?;
-                }
-            }
-            None => index.u8(0)?,
-        }
-    } else {
-        write_string(&mut index, metadata.crs())?;
-    }
-    write_string(&mut index, metadata.sampling_policy())?;
-
+    write_index_prefix(&mut index, metadata, global)?;
     let hierarchy = metadata.dataset().hierarchy();
-    index.u8(match hierarchy.semantics() {
-        HierarchySemantics::Replacement => 0,
-        HierarchySemantics::Additive => 1,
-    })?;
-    index.f64(metadata.visual_scale())?;
-    index.u32(
-        u32::try_from(hierarchy.attributes().len()).map_err(|_| FormatError::SchemaTooLarge)?,
-    )?;
-    for descriptor in hierarchy.attributes() {
-        index.u32(
-            u32::try_from(descriptor.name().len())
-                .map_err(|_| FormatError::StringTooLong(descriptor.name().len()))?,
-        )?;
-        index.write(descriptor.name().as_bytes())?;
-        index.u8(attribute_type_tag(descriptor.data_type()))?;
-        index.u32(descriptor.component_count())?;
-    }
 
     let root = hierarchy
         .node(hierarchy.root_id())
@@ -260,7 +207,72 @@ pub(crate) fn write_index<W: Write>(
     Ok((length, checksum))
 }
 
-fn write_crs_record<W: Write>(
+/// Everything before the node table, shared by the whole-index and the paged layouts: frame,
+/// source count, CRS, sampling policy, semantics, visual scale and schema.
+pub(crate) fn write_index_prefix<W: Write>(
+    index: &mut IndexWriter<'_, W>,
+    metadata: &FormatMetadata,
+    global: Option<&crate::GlobalFrame>,
+) -> Result<(), FormatError> {
+    for coordinate in metadata.dataset().coordinate_frame().origin() {
+        index.f64(coordinate)?;
+    }
+    if let Some(frame) = global {
+        index.u32(frame.root_level())?;
+        for prefix in frame.root_prefix() {
+            index.u64(prefix)?;
+        }
+        for quanta in frame.frame_origin_quanta() {
+            index.i64(quanta)?;
+        }
+        for quanta in frame.data_max_quanta() {
+            index.i64(quanta)?;
+        }
+    }
+    if let Some(point_count) = metadata.dataset().hierarchy().stats().source_point_count {
+        index.u8(1)?;
+        index.u64(point_count)?;
+    } else {
+        index.u8(0)?;
+    }
+    if let Some(frame) = global {
+        write_crs_record(index, frame.crs())?;
+        match frame.source_scale_offset() {
+            Some(source) => {
+                index.u8(1)?;
+                for value in source.scale().into_iter().chain(source.offset()) {
+                    index.f64(value)?;
+                }
+            }
+            None => index.u8(0)?,
+        }
+    } else {
+        write_string(index, metadata.crs())?;
+    }
+    write_string(index, metadata.sampling_policy())?;
+
+    let hierarchy = metadata.dataset().hierarchy();
+    index.u8(match hierarchy.semantics() {
+        HierarchySemantics::Replacement => 0,
+        HierarchySemantics::Additive => 1,
+    })?;
+    index.f64(metadata.visual_scale())?;
+    index.u32(
+        u32::try_from(hierarchy.attributes().len()).map_err(|_| FormatError::SchemaTooLarge)?,
+    )?;
+    for descriptor in hierarchy.attributes() {
+        index.u32(
+            u32::try_from(descriptor.name().len())
+                .map_err(|_| FormatError::StringTooLong(descriptor.name().len()))?,
+        )?;
+        index.write(descriptor.name().as_bytes())?;
+        index.u8(attribute_type_tag(descriptor.data_type()))?;
+        index.u32(descriptor.component_count())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn write_crs_record<W: Write>(
     index: &mut IndexWriter<'_, W>,
     crs: &crate::CrsRecord,
 ) -> Result<(), FormatError> {
@@ -403,19 +415,29 @@ const MIN_NODE_RECORD_LEN: usize = 85;
 /// `v7.4-pre` adds the prefix (3 x u64) and the spacing (f64).
 const GLOBAL_NODE_EXTRA_LEN: usize = 32;
 
-pub(crate) fn parse_index(
-    bytes: &[u8],
+/// Fields before the node table, shared by the whole-index and the paged layouts.
+pub(crate) struct IndexPrefix {
+    pub(crate) dataset_origin: [f64; 3],
+    pub(crate) root_level: u32,
+    pub(crate) root_prefix: [u64; 3],
+    pub(crate) frame_origin_quanta: [i64; 3],
+    pub(crate) data_max_quanta: [i64; 3],
+    pub(crate) source_point_count: Option<u64>,
+    pub(crate) crs: Option<String>,
+    pub(crate) crs_record: Option<crate::CrsRecord>,
+    pub(crate) source_scale_offset: Option<crate::SourceScaleOffset>,
+    pub(crate) sampling_policy: Option<String>,
+    pub(crate) semantics: HierarchySemantics,
+    pub(crate) visual_scale: f64,
+    pub(crate) schema: Vec<AttributeDescriptor>,
+}
+
+pub(crate) fn parse_index_prefix(
+    cursor: &mut SliceCursor<'_>,
     limits: &FormatReaderLimits,
-    index_offset: u64,
-    split: bool,
-    layout: StorageLayout,
-) -> Result<ParsedIndex, FormatError> {
-    let mut cursor = SliceCursor::new(bytes);
-    if cursor.take(8)? != layout.index_magic() {
-        return Err(FormatError::MalformedIndex("invalid index magic"));
-    }
+    global: bool,
+) -> Result<IndexPrefix, FormatError> {
     let dataset_origin = [cursor.f64()?, cursor.f64()?, cursor.f64()?];
-    let global = layout.uses_global_frame();
     let (root_level, root_prefix, frame_origin_quanta, data_max_quanta) = if global {
         (
             cursor.u32()?,
@@ -440,7 +462,7 @@ pub(crate) fn parse_index(
     let mut crs_record = None;
     let mut source_scale_offset = None;
     if global {
-        let record = read_crs_record(&mut cursor, limits)?;
+        let record = read_crs_record(cursor, limits)?;
         crs = record.identity_label();
         crs_record = Some(record);
         source_scale_offset =
@@ -497,6 +519,93 @@ pub(crate) fn parse_index(
         }
         schema.push(AttributeDescriptor::new(name, data_type, component_count)?);
     }
+    Ok(IndexPrefix {
+        dataset_origin,
+        root_level,
+        root_prefix,
+        frame_origin_quanta,
+        data_max_quanta,
+        source_point_count,
+        crs,
+        crs_record,
+        source_scale_offset,
+        sampling_policy,
+        semantics,
+        visual_scale,
+        schema,
+    })
+}
+
+/// Codec rules of one payload column (index 0 is geometry, 1 display colors, then the schema).
+pub(crate) fn validate_column_codec(
+    layout: StorageLayout,
+    schema: &[AttributeDescriptor],
+    payload_index: usize,
+    point_count: u64,
+    column: &PayloadDirectoryEntry,
+) -> Result<(), FormatError> {
+    if matches!(
+        column.codec,
+        BlockCodec::Constant | BlockCodec::Dictionary | BlockCodec::BytePlanes
+    ) {
+        let width = if payload_index == 1 {
+            3
+        } else if payload_index > 1 {
+            let descriptor = &schema[payload_index - 2];
+            crate::layout::primitive_width(descriptor.data_type())
+                * u64::from(descriptor.component_count())
+        } else {
+            0
+        };
+        if !layout.supports_dictionary()
+            || payload_index == 0
+            || point_count < 2
+            || column.stored_length >= column.raw_length
+            || (column.codec == BlockCodec::Constant && column.stored_length != width)
+            || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
+            || (column.codec == BlockCodec::BytePlanes
+                && (!layout.supports_byte_planes() || width <= 1 || column.stored_length == 0))
+        {
+            return Err(FormatError::MalformedIndex(
+                "attribute codec not valid in this revision or column",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn parse_index(
+    bytes: &[u8],
+    limits: &FormatReaderLimits,
+    index_offset: u64,
+    split: bool,
+    layout: StorageLayout,
+) -> Result<ParsedIndex, FormatError> {
+    if layout.uses_pages() {
+        // Paged indexes are read page by page (`paged_index`), never as one buffer.
+        return Err(FormatError::UnsupportedFormatVersion(layout.version()));
+    }
+    let mut cursor = SliceCursor::new(bytes);
+    if cursor.take(8)? != layout.index_magic() {
+        return Err(FormatError::MalformedIndex("invalid index magic"));
+    }
+    let IndexPrefix {
+        dataset_origin,
+        root_level,
+        root_prefix,
+        frame_origin_quanta,
+        data_max_quanta,
+        source_point_count,
+        crs,
+        crs_record,
+        source_scale_offset,
+        sampling_policy,
+        semantics,
+        visual_scale,
+        schema,
+    } = parse_index_prefix(&mut cursor, limits, layout.uses_global_frame())?;
+    let global = layout.uses_global_frame();
+    let attribute_count = schema.len() as u32;
 
     let node_count = cursor.u64()?;
     if node_count == 0 || node_count > limits.max_nodes {
@@ -789,35 +898,7 @@ pub(crate) fn parse_index(
                 codec: BlockCodec::try_from(cursor.u8()?)?,
                 checksum: cursor.u32()?,
             };
-            if matches!(
-                column.codec,
-                BlockCodec::Constant | BlockCodec::Dictionary | BlockCodec::BytePlanes
-            ) {
-                let width = if payload_index == 1 {
-                    3
-                } else if payload_index > 1 {
-                    let descriptor = &schema[payload_index - 2];
-                    crate::layout::primitive_width(descriptor.data_type())
-                        * u64::from(descriptor.component_count())
-                } else {
-                    0
-                };
-                if !layout.supports_dictionary()
-                    || payload_index == 0
-                    || point_count < 2
-                    || column.stored_length >= column.raw_length
-                    || (column.codec == BlockCodec::Constant && column.stored_length != width)
-                    || (column.codec == BlockCodec::Dictionary && column.stored_length < 10)
-                    || (column.codec == BlockCodec::BytePlanes
-                        && (!layout.supports_byte_planes()
-                            || width <= 1
-                            || column.stored_length == 0))
-                {
-                    return Err(FormatError::MalformedIndex(
-                        "attribute codec not valid in this revision or column",
-                    ));
-                }
-            }
+            validate_column_codec(layout, &schema, payload_index, point_count, &column)?;
             if split && payload_index > 0 {
                 if payload_index == 1 {
                     expected_offset = column.offset;
@@ -944,7 +1025,7 @@ pub(crate) fn parse_index(
     Ok((metadata, blocks, block_bounds))
 }
 
-fn read_crs_record(
+pub(crate) fn read_crs_record(
     cursor: &mut SliceCursor<'_>,
     limits: &FormatReaderLimits,
 ) -> Result<crate::CrsRecord, FormatError> {

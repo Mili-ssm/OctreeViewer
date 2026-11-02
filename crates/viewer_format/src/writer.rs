@@ -244,6 +244,14 @@ impl<W: Write + Seek> FormatWriter<W> {
         writer.seek(SeekFrom::Start(0))?;
         ensure_global_frame_matches(layout, &metadata)?;
         validate_metadata(&metadata)?;
+        if layout.uses_pages()
+            && metadata.dataset().hierarchy().semantics()
+                != viewer_core::HierarchySemantics::Replacement
+        {
+            return Err(FormatError::InvalidMetadata(
+                "v7.5-pre does not support additive hierarchies",
+            ));
+        }
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
         writer.write_all(&header_for_role(layout.version(), FileRole::Monolithic)?)?;
         Ok(Self {
@@ -276,6 +284,9 @@ impl<W: Write + Seek> FormatWriter<W> {
         options: FormatWriterOptions,
         layout: StorageLayout,
     ) -> Result<Self, FormatError> {
+        if layout.uses_pages() {
+            return Err(FormatError::InvalidMetadata("v7.5-pre has no split layout"));
+        }
         if attributes.stream_position()? != 0 || attributes.seek(SeekFrom::End(0))? != 0 {
             return Err(FormatError::OutputMustBeEmpty);
         }
@@ -413,6 +424,23 @@ impl<W: Write + Seek> FormatWriter<W> {
 
         let metadata = self.adjusted_metadata()?;
         validate_metadata(&metadata)?;
+        if self.layout.uses_pages() {
+            let written = crate::paged_index::write_paged_index(
+                &mut self.writer,
+                &metadata,
+                &self.blocks,
+                self.options.page_target_bytes(),
+            )?;
+            let file_length = written
+                .index_offset
+                .checked_add(written.index_length)
+                .and_then(|value| value.checked_add(FOOTER_SIZE))
+                .ok_or(FormatError::FileSizeOverflow)?;
+            self.writer
+                .write_all(&crate::paged_index::paged_footer(&written, file_length))?;
+            self.writer.flush()?;
+            return Ok((self.writer, None));
+        }
         let index_offset = self.writer.stream_position()?;
         let (index_length, index_checksum) =
             write_index(&mut self.writer, &metadata, &self.blocks, self.layout)?;

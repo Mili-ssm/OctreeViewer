@@ -15,7 +15,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | --- | --- | --- |
 | [Inventario](reference/inventory.md) | Mapa de componentes, identidades de formato, herramientas, límites y candidatos. | vivo |
 | [Formato V5](reference/format/FORMAT_V5.md) | Especificación del `.oct`/`.octattrs` predeterminado. | vivo |
-| [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md) | Especificaciones de las revisiones V7 experimentales. | vivo |
+| [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5). | vivo |
 
 ## Planes y specs
 
@@ -54,6 +54,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Referencia SHA v7.4-pre (R4-T3)](records/benchmarks/R4_V74_REFERENCE_SHA_02-11-2026.md) | SHA del primer fixture `v7.4-pre` del escritor de `viewer_format`, junto a las referencias R1. | fechado |
 | [Referencia SHA v7.4-pre con origen en cuantos (R4-T4)](records/benchmarks/R4_V74_REFERENCE_SHA_2_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el origen de marco como `i64` cuantos; sustituye al anterior. | fechado |
 | [Referencia SHA v7.4-pre con extensión de datos (R4)](records/benchmarks/R4_V74_REFERENCE_SHA_3_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el máximo cuantizado de los datos en el índice; sustituye al anterior. | fechado |
+| [Referencia SHA de las semillas v7.5-pre (R5)](records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md) | SHA de `seed-sample-rev9` y de las semillas de páginas encadenadas (`fuzz_paged_reader`). | fechado |
 | [S2: rangos de chunks LAZ](records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md) | Decodificación por rangos de chunks sin `seek`, fixture de chunks variables y velocidad en wasm32 frente a nativo. | fechado |
 | [S10: RAM del híbrido](records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md) | Pico de RAM y handles de spools híbridos RAM/OPFS; propuesta P3. | fechado |
 | [Zonas OPFS (S5 residual)](records/benchmarks/OPFS_ZONES_2026-10-30.md) | Ficheros > 4 GiB, `truncate`, liberación de handles tras `terminate()` y RAM de JS en Chrome y Firefox; base del ADR 0017. | fechado |

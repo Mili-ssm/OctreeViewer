@@ -34,6 +34,8 @@ pub enum FormatError {
     InvalidReaderLimits,
     #[error("format index needs {requested} bytes, exceeding limit {limit}")]
     IndexExceedsLimit { requested: u64, limit: u64 },
+    #[error("format page has {requested} bytes, exceeding limit {limit}")]
+    PageExceedsLimit { requested: u64, limit: u64 },
     #[error("format count for {kind} is {requested}, exceeding limit {limit}")]
     CountLimit {
         kind: &'static str,

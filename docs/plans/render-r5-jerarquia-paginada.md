@@ -9,7 +9,7 @@ Estado: listo para ejecutar · 02-11-2026
 
 **Por qué:** con el índice entero, el primer frame remoto (RQ-04) falla hacia 70 GB, el local (RQ-03) hacia 90 GB y el límite del lector de 256 MiB se alcanza hacia 150 GB. Antes de 1 TB revienta la memoria wasm32 ([ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md)).
 
-**Spec:** [ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md), [ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md), [ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md), [ADR 0023](../adr/0023-fuentes-locales-y-remotas.md); [spec v7.4-pre](../reference/format/FORMAT_V7_PRE4.md); [spike P0](../records/benchmarks/R5_P0_PAGES_02-11-2026.md); requisitos RF-24, RQ-02, RQ-03, RQ-04, RQ-08.
+**Spec:** [ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md), [ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md), [ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md), [ADR 0023](../adr/0023-fuentes-locales-y-remotas.md); [spec v7.4-pre](../reference/format/FORMAT_V7_PRE4.md); [spec v7.5-pre](../reference/format/FORMAT_V7_PRE5.md); [spike P0](../records/benchmarks/R5_P0_PAGES_02-11-2026.md); requisitos RF-24, RQ-02, RQ-03, RQ-04, RQ-08.
 
 ## Resoluciones del propietario (02-11-2026)
 
@@ -55,13 +55,14 @@ Resultado (02-11-2026): API `mark_unloaded` / `graft_page` / `evict_page` en `Sp
 
 ## Tarea P2: `v7.5-pre`, páginas
 
-- [ ] Spec `FORMAT_V7_PRE5.md`:
+- [x] Spec [`FORMAT_V7_PRE5.md`](../reference/format/FORMAT_V7_PRE5.md):
   - cabecera de página (nivel del ancla, prefijo, *k*, número de nodos, CRC32);
   - registro reducido y punteros a páginas hijas;
   - página raíz junto al pie, con una lectura de cola que traiga pie y raíz en una sola petición;
   - derivación de `NodeId`, `BlockId` y del orden de los hijos.
-- [ ] Validación por página: el ancla de la página hija coincide con el nodo que la apunta. Límites `max_page_bytes` y `max_resident_pages` en `FormatReaderLimits`. Ningún `BlockId` se repite entre páginas.
-- [ ] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas.
+- [x] Validación por página: el ancla de la página hija coincide con el nodo que la apunta. Límites `max_page_bytes` y `max_resident_pages` en `FormatReaderLimits`. Ningún `BlockId` se repite entre páginas.
+- [x] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas (`fuzz_paged_reader`, [semillas](../records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md)).
+Resultado parcial (02-11-2026): `FormatVersion::V7_PRE5`, `PagedReader` (lectura de cola: pie, metadatos y raíz en una petición) y escritor con *k* por página en `viewer_format`; con el mismo contenido el índice mide el 39 % del de `v7.4-pre` en el fixture de los tests. Queda la segunda mitad.
 - [ ] El conversor escribe las páginas en anchura después de los datos, eligiendo *k* por página.
 - [ ] Subcomando `viewer_convert verify` con las comprobaciones globales (hoy el CLI solo tiene flags sueltos, `main.rs:28-80`).
 - [ ] Generador de un `.oct` sintético `v7.5-pre` con 6 M nodos.

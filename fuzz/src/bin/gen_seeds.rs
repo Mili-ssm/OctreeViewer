@@ -70,7 +70,7 @@ fn write_las_version(
 }
 
 /// One tiny two-point block written with the real writer for `version`: monolithic and split.
-fn write_revision(version: FormatVersion) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)>) {
     let mut origin = [1_000.0, -2_000.0, 10.0];
     let mut bounds =
         SpatialBounds::new(origin, [origin[0] + 2.0, origin[1] + 1.0, origin[2] + 1.0]).unwrap();
@@ -136,6 +136,10 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     .unwrap();
     writer.write_block(block()).unwrap();
     let monolithic = writer.finish().unwrap().into_inner();
+    if version == FormatVersion::V7_PRE5 {
+        // The paged revision has no split layout.
+        return (monolithic, None);
+    }
 
     let mut writer = FormatWriter::new_split_for_version(
         version,
@@ -149,9 +153,114 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let (primary, attributes) = writer.finish_pair().unwrap();
     (
         monolithic,
-        primary.into_inner(),
-        attributes.unwrap().into_inner(),
+        Some((primary.into_inner(), attributes.unwrap().into_inner())),
     )
+}
+
+/// `v7.5-pre` chain: four nested nodes written with one level per page (`k` = 1), so the file has
+/// a root page and three chained child pages. `levels` picks the page target: 1 byte forces
+/// `k` = 1 everywhere, the default keeps the whole chain in the root page.
+fn write_paged_chain(page_target: Option<usize>) -> Vec<u8> {
+    use viewer_format::{CrsRecord, GlobalFrame, NodeCell};
+    let root_prefix = [5, 7, 9].map(|k| (1_u64 << 39) + k);
+    let level = 40;
+    let prefixes: Vec<[u64; 3]> = (0..4_u32)
+        .scan(root_prefix, |prefix, depth| {
+            let current = *prefix;
+            *prefix = prefix.map(|p| (p << 1) | u64::from(depth % 2));
+            Some(current)
+        })
+        .collect();
+    let spacing = |depth: u32| {
+        if depth == 3 {
+            0.03125
+        } else {
+            2.0_f64.powi(1 - depth as i32)
+        }
+    };
+    let cells = prefixes
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (NodeId::new(i as u64), NodeCell::new(*p, spacing(i as u32))))
+        .collect();
+    let origin = root_prefix.map(|p| viewer_format::cell_origin_quanta(level, p));
+    let frame = GlobalFrame::new(
+        level,
+        root_prefix,
+        origin,
+        origin.map(|q| q + 1_000),
+        CrsRecord::new("EPSG".to_owned(), 4978, viewer_format::CrsRaw::None).unwrap(),
+        None,
+        cells,
+    )
+    .unwrap();
+    let descriptor = AttributeDescriptor::new("intensity", AttributeDataType::U16, 1).unwrap();
+    let nodes: Vec<SpatialNode> = prefixes
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            SpatialNode::new(
+                NodeId::new(i as u64),
+                (i > 0).then(|| NodeId::new(i as u64 - 1)),
+                i as u32,
+                frame.node_bounds(i as u32, *p).unwrap(),
+                2,
+                0.25,
+                vec![BlockId::new(i as u64)],
+            )
+            .unwrap()
+        })
+        .collect();
+    let bounds: Vec<SpatialBounds> = nodes.iter().map(SpatialNode::bounds).collect();
+    let hierarchy = SpatialHierarchy::new(nodes, vec![descriptor.clone()], Some(8)).unwrap();
+    let metadata = FormatMetadata::new(
+        DatasetMetadata::new(
+            CoordinateFrame::new(frame.frame_origin()).unwrap(),
+            hierarchy,
+        ),
+        None,
+        Some("uniform voxel sampling".to_owned()),
+        Vec::new(),
+    )
+    .unwrap()
+    .with_global_frame(frame)
+    .unwrap();
+    let mut options = FormatWriterOptions::new(0.001, 1024).unwrap();
+    if let Some(target) = page_target {
+        options = options.with_page_target_bytes(target);
+    }
+    let mut writer = FormatWriter::new_for_version(
+        FormatVersion::V7_PRE5,
+        Cursor::new(Vec::new()),
+        metadata,
+        options,
+    )
+    .unwrap();
+    for id in 0..4_u64 {
+        let attribute = AttributeColumn::new(
+            descriptor.clone(),
+            AttributeValues::U16(vec![id as u16, 9]),
+            2,
+        )
+        .unwrap();
+        writer
+            .write_block(SourcePointBlock::new(
+                BlockId::new(id),
+                [0.25, 0.75]
+                    .into_iter()
+                    .map(|f| {
+                        let b = bounds[id as usize];
+                        std::array::from_fn(|axis| {
+                            b.min()[axis] + (b.max()[axis] - b.min()[axis]) * f
+                        })
+                    })
+                    .collect(),
+                vec![ColorRgb::new(10, 20, 30), ColorRgb::new(40, 50, 60)],
+                vec![attribute],
+            ))
+            .unwrap();
+    }
+    writer.finish().unwrap().into_inner()
 }
 
 fn join_split(primary: &[u8], attributes: &[u8]) -> Vec<u8> {
@@ -211,17 +320,38 @@ fn main() {
     }
 
     for (index, version) in FormatVersion::WRITABLE.into_iter().enumerate() {
-        let (monolithic, primary, attributes) = write_revision(version);
+        let (monolithic, split) = write_revision(version);
         fs::write(
             format_dir.join(format!("seed-sample-rev{index}")),
             monolithic,
         )
         .unwrap();
-        fs::write(
-            format_dir.join(format!("seed-sample-rev{index}-split")),
-            join_split(&primary, &attributes),
-        )
-        .unwrap();
+        if let Some((primary, attributes)) = split {
+            fs::write(
+                format_dir.join(format!("seed-sample-rev{index}-split")),
+                join_split(&primary, &attributes),
+            )
+            .unwrap();
+        }
+    }
+
+    // Chained pages for the paged-reader target; the format-reader target gets them too.
+    let paged_dir = Path::new("corpus/fuzz_paged_reader");
+    fs::create_dir_all(paged_dir).unwrap();
+    // Only `seed-sample*` files are tracked (see `fuzz/.gitignore`).
+    for (name, bytes) in [
+        ("seed-sample-chain-k5", write_paged_chain(None)),
+        ("seed-sample-chain-k1", write_paged_chain(Some(1))),
+        ("seed-sample", write_revision(FormatVersion::V7_PRE5).0),
+    ] {
+        fs::write(paged_dir.join(name), &bytes).unwrap();
+        if name != "seed-sample" {
+            fs::write(
+                format_dir.join(name.replace("seed-sample", "seed-sample-paged")),
+                &bytes,
+            )
+            .unwrap();
+        }
     }
 
     for format in [6, 7, 8] {
