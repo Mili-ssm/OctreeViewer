@@ -125,7 +125,9 @@ V5 record plus two inserted fields; everything else keeps its order and type.
 bits, no `log2`). An internal node has `side / 256 = 2^(41 - a)` CRS units: it halves per level. A leaf
 stores the measured spacing `side / 2^d`, with `d` the first level where the occupied cells, once more
 than one, grow by less than ×1.5 (`d` up to 32; a cloud tucked into a corner of its leaf is measured where
-it starts to spread) (`0 <= d <= 64 - a`, i.e. between one quantum and `side`). Readers validate the power of two,
+it starts to spread). A plateau only counts once the previous level had at least `min(8, point count)`
+occupied cells, so a few separated clusters are not read as the point spacing
+(`0 <= d <= 64 - a`, i.e. between one quantum and `side`). Readers validate the power of two,
 the range `2^-15 <= spacing <= side` and, for a node with children, the exact value `2^(41 - a)`.
 
 The index header grows by 48 bytes (frame origin quanta and data maximum quanta). The minimum encoded node grows by 32 bytes (3 × `u64` + `f64`): `MIN_NODE_RECORD_LEN` in

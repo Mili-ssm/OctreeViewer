@@ -31,6 +31,9 @@ const LEAF_SPACING_MAX_DEPTH: u32 = 32;
 /// Deepest candidate the single-sort search handles: three interleaved coordinates in a `u64`.
 const MORTON_SPACING_MAX_DEPTH: u32 = 21;
 const LEAF_GROWTH_THRESHOLD: f64 = 1.5;
+/// Occupied cells a plateau needs before it ends the spacing search (capped by the point count):
+/// a few separated clusters stop growing early but are not the point spacing.
+const LEAF_PLATEAU_MIN_CELLS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodePath(pub Vec<u16>); // child keys from the root; Ord = preorder
@@ -989,8 +992,10 @@ fn spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32
 
 /// Whether the growth from `previous` to `occupied` cells ends the search. A single occupied
 /// cell has no growth to measure yet: the points have not started to spread.
-fn growth_ends_search(previous: usize, occupied: usize) -> bool {
-    previous > 1 && (occupied as f64) < LEAF_GROWTH_THRESHOLD * previous as f64
+fn growth_ends_search(previous: usize, occupied: usize, min_cells: usize) -> bool {
+    previous > 1
+        && previous >= min_cells
+        && (occupied as f64) < LEAF_GROWTH_THRESHOLD * previous as f64
 }
 
 /// Spreads the low 21 bits of `value` three positions apart.
@@ -1031,13 +1036,14 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
             first_split[(max_depth - top_group) as usize] += 1;
         }
     }
+    let min_cells = LEAF_PLATEAU_MIN_CELLS.min(cells.len());
     let mut previous = 1_usize;
     let mut occupied = 1_usize;
     let mut depth = 0;
     for candidate in 1..=max_depth {
         occupied += first_split[candidate as usize];
         depth = candidate;
-        if growth_ends_search(previous, occupied) {
+        if growth_ends_search(previous, occupied, min_cells) {
             break;
         }
         previous = occupied;
@@ -1047,6 +1053,7 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
 
 /// The depth search by one sort and dedup of the cell keys per candidate depth.
 fn sorted_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32 {
+    let min_cells = LEAF_PLATEAU_MIN_CELLS.min(cells.len());
     let mut previous = 1_usize;
     let mut depth = 0;
     let mut keys = Vec::with_capacity(cells.len());
@@ -1060,7 +1067,7 @@ fn sorted_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
         keys.sort_unstable();
         keys.dedup();
         depth = candidate;
-        if growth_ends_search(previous, keys.len()) {
+        if growth_ends_search(previous, keys.len(), min_cells) {
             break;
         }
         previous = keys.len();
@@ -1198,6 +1205,21 @@ mod spacing_tests {
         assert_eq!(spacing_depth(&cells, 32, 32), 25);
         assert_eq!(sorted_spacing_depth(&cells, 32, 32), 25);
         assert_eq!(spacing_depth(&cells, 32, 21), 21);
+    }
+
+    #[test]
+    fn separated_clusters_are_not_read_as_the_point_spacing() {
+        // Two lattices in opposite corners: two occupied cells from depth 1 to 19 is a plateau
+        // of clusters, not of points, so the search goes on to where the lattices fill their cells.
+        let mut cells = corner_cluster();
+        let far = 1_i128 << 31;
+        cells.extend(
+            corner_cluster()
+                .into_iter()
+                .map(|cell| cell.map(|value| value + far)),
+        );
+        assert_eq!(spacing_depth(&cells, 32, 32), 25);
+        assert_eq!(sorted_spacing_depth(&cells, 32, 32), 25);
     }
 
     #[test]

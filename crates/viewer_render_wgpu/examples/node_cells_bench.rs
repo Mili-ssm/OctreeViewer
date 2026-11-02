@@ -97,8 +97,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             leaves += 1;
             *chain_histogram.entry(cells.levels.len()).or_default() += 1;
             let cap = first.saturating_add(CHAIN_SPAN).min(MAX_CELL_DEPTH);
-            // The chain only reaches its last allowed depth while cells were still growing.
-            if cells.levels.last().is_some_and(|level| level.depth == cap) {
+            // The chain only reaches its last allowed depth while cells were still growing. A last
+            // level with one cell per point (a single-point leaf at the deepest level included)
+            // has nothing left to split, so the cap did not truncate it.
+            if cells
+                .levels
+                .last()
+                .is_some_and(|level| level.depth == cap && level.cells.len() < point_count)
+            {
                 leaves_at_cap += 1;
             }
             let cell_bytes = cell_count * INSTANCE_BYTES;
