@@ -46,6 +46,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut spatial_divisions = ConvertOptions::default().spatial_divisions();
     let mut checkpoint_mode = None;
     let mut format_version = ConvertOptions::default().format_version();
+    let mut page_target_bytes = None;
     let mut index = 2;
     while index < arguments.len() {
         let flag = arguments[index].to_string_lossy();
@@ -69,6 +70,8 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         let value = arguments.get(index + 1).ok_or("missing value for option")?;
         match flag.as_ref() {
             "--format-version" => format_version = value.to_string_lossy().parse()?,
+            // Hidden: tests and benchmarks that need several pages in a small file.
+            "--page-target-bytes" => page_target_bytes = Some(value.to_string_lossy().parse()?),
             "--points-per-block" => points_per_block = value.to_string_lossy().parse()?,
             "--max-error" => max_error = value.to_string_lossy().parse()?,
             "--max-memory-mib" => {
@@ -90,6 +93,9 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
             .with_spatial_divisions(spatial_divisions)?
             .with_format_version(format_version)?;
     options = options.with_pipelined_writes(pipelined_writes);
+    if let Some(bytes) = page_target_bytes {
+        options = options.with_page_target_bytes(bytes);
+    }
     if let Some(workers) = spatial_workers {
         options = options.with_spatial_workers(workers)?;
     }

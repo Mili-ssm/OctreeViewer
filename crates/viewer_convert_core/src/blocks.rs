@@ -59,11 +59,14 @@ pub fn output_writer<W: Write + Seek>(
     geometry: W,
     attributes: W,
 ) -> Result<(FormatWriter<W>, FormatBlockEncoder<'_>), ConvertError> {
-    let writer_options = FormatWriterOptions::new(
+    let mut writer_options = FormatWriterOptions::new(
         options.max_quantization_error,
         WRITER_MAX_UNCOMPRESSED_BLOCK_BYTES as u64,
     )
     .map_err(ConvertError::Format)?;
+    if let Some(bytes) = options.page_target_bytes {
+        writer_options = writer_options.with_page_target_bytes(bytes);
+    }
     let writer = FormatWriter::new_split_for_version(
         options.format_version(),
         geometry,

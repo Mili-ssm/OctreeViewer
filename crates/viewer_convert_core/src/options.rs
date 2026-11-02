@@ -43,6 +43,8 @@ pub struct ConvertOptions {
     pub(crate) sample_grid: usize,
     pub(crate) root_partition_ranges: usize,
     pub(crate) format_version: FormatVersion,
+    /// `v7.5-pre` page size target; `None` keeps the format default.
+    pub(crate) page_target_bytes: Option<usize>,
 }
 
 impl ConvertOptions {
@@ -67,6 +69,14 @@ impl ConvertOptions {
         }
         self.format_version = version;
         Ok(self)
+    }
+
+    /// For tests and benchmarks: caps `v7.5-pre` pages at about `bytes`, so small files still
+    /// need several pages. Production output keeps the default.
+    #[doc(hidden)]
+    pub const fn with_page_target_bytes(mut self, bytes: usize) -> Self {
+        self.page_target_bytes = Some(bytes);
+        self
     }
 
     pub const fn format_version(self) -> FormatVersion {
@@ -108,6 +118,7 @@ impl ConvertOptions {
             sample_grid: DEFAULT_SAMPLE_GRID,
             root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             format_version: FormatVersion::DEFAULT_OUTPUT,
+            page_target_bytes: None,
         })
     }
 
@@ -215,6 +226,7 @@ impl Default for ConvertOptions {
             sample_grid: DEFAULT_SAMPLE_GRID,
             root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             format_version: FormatVersion::DEFAULT_OUTPUT,
+            page_target_bytes: None,
         }
     }
 }

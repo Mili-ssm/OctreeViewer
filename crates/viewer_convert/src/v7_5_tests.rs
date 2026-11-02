@@ -220,3 +220,26 @@ fn cloud_straddling_the_lattice_origin_converts_with_a_deep_chain() {
     let stats = crate::verify_file(&output).unwrap().paged.unwrap();
     assert!(stats.nodes > 21);
 }
+
+#[test]
+fn a_page_target_splits_a_small_cloud_into_more_pages() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.las");
+    write_las(
+        &input,
+        &cloud(300_000, [500_000.0, 4_400_000.0, 100.0], 80.0, 11),
+        Vec::new(),
+    );
+    let mut pages = Vec::new();
+    for (name, target) in [("a", None), ("b", Some(2_000))] {
+        let output = dir.path().join(format!("{name}.oct"));
+        let mut options = options(FormatVersion::V7_PRE5);
+        if let Some(bytes) = target {
+            options = options.with_page_target_bytes(bytes);
+        }
+        convert_file(&input, &output, options).unwrap();
+        let report = crate::verify::verify_file(&output).unwrap();
+        pages.push(report.paged.unwrap().pages);
+    }
+    assert!(pages[1] > pages[0], "{pages:?}");
+}
