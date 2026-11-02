@@ -88,7 +88,7 @@ Decisión (02-11-2026): el criterio de parada se activó (toca `viewer_convert_c
 - [x] Fuente de páginas sobre `read_at` / `Blob.slice`, con un **presupuesto propio para páginas** (64 MiB, separado del de bloques), y caché LRU con las páginas fijadas según P1.
 - [x] Migrar las rutas de apertura (`open_format` síncrono incluido: lee `v7.5-pre` en perezoso y las vistas leen y injertan páginas con `update_lod_view_paged`) y los usos de `nodeCount` / `maxLevel`. Eliminar el descriptor JS por nodo.
 - [x] Los rangos globales de atributos van en el bloque de metadatos (cambia los bytes de `v7.5-pre`: los ficheros anteriores se regeneran); `verify` y el lector completo los comparan con las páginas.
-- [x] **Pasa si** abrir el sintético de 6 M nodos tarda como máximo el doble que una nube de 24 k nodos, y la matriz de T7 no empeora (verificación con Playwright incluida).
+- [x] **Pasa si** el tiempo de apertura está acotado por el tamaño de la página raíz (≤ 512 KB) y no crece con el total de nodos, y la matriz de T7 no empeora (verificación con Playwright incluida). Criterio reformulado por el propietario el 02-11-2026: el original («6 M nodos ≤ 2 × 24 k nodos») daba 2,3 × contra Majadas y 1,25 × contra Belvedere porque compara páginas raíz de distinto tamaño.
 
 Resultado (02-11-2026, release, Chrome headless, equipo de T6b):
 
