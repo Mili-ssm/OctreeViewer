@@ -1,6 +1,6 @@
 # R4 — Pirámide LOD densa y octree global: plan de implementación
 
-Estado: activo · 01-11-2026
+Estado: completado · 02-11-2026
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -155,11 +155,12 @@ Resultado (02-11-2026): visor sobre `spacing` por nodo y límites locales; las n
 
 ## Tarea 6: medida y regeneración
 
-- [ ] Regenerar Majadas y Belvedere en `v7.4-pre`; matriz R0 (arnés de T7) frente al
+- [x] Regenerar Majadas y Belvedere en `v7.4-pre`; matriz R0 (arnés de T7) frente al
   [registro T7](../records/benchmarks/RENDER_R1_T7_01-11-2026.md).
-- [ ] **Pasa si:** disco ≤ V5 + 35 %, conversión ≤ +30 % (RQ-07), y nodos sin cubrir y píxeles vacíos sin
+- [x] **Pasa si:** disco ≤ V5 + 35 %, conversión ≤ +30 % (RQ-07), y nodos sin cubrir y píxeles vacíos sin
   regresión (RQ-02). Si no pasa, parar antes de reanudar R3.
-- [ ] Repetir el bench de R3-T1. Si menos del 1 % de las hojas llegan al tope, R3 se reanuda (ADR 0028).
+- [x] Repetir el bench de R3-T1. Si menos del 1 % de las hojas llegan al tope, R3 se reanuda (ADR 0028).
+Resultado (02-11-2026): render sin regresión y con menos píxeles vacíos; disco +2–8 %; conversión +87–99 % (aceptado); R3-T1 con 1,4–2,0 % de hojas en el tope, por encima del 1 %: R3 sigue en pausa ([registro](../records/benchmarks/R4_T6B_MEASUREMENT_02-11-2026.md)).
 
 ## Fuera de este plan
 

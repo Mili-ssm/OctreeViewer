@@ -1,0 +1,16 @@
+CPU(s):                                  20
+Model name:                              AMD Ryzen AI 9 365 w/ Radeon 880M
+CPU(s) scaling MHz:                      53%
+build: HEAD 2bddbff0ea25a876f794c5d721905c646025c3c4; release viewer_convert + wasm32 release + wasm-bindgen --target web --out-dir target/web-root/pkg (cargo up to date; binaries mtime 14:32 newer than all sources)
+8451a21c3d572b3e10feb3b64a49f3a64b873b7aeb7b65b7ec7a4801b27e3aa7  target/web-root/pkg/viewer_wasm_bg.wasm
+5f9c01f8b37abddb8e06e8d0b8f2e42bd09f93e21e8bc3f9127da5259332f25b  target/release/viewer_convert
+3980f744e2a04f8860412e7ad20e378d933dc7bf81448863ff5cb43fdc42cea4  target/render-data/majadas-v74.oct
+39fd02d3efa573859113430c0392615447f33ab8bf38d2460f29a2a12225e1b0  target/render-data/belvedere-v74.oct
+87541fe60da891dde0ef76c33fe508912d1b30904e8ed6a3242d1c84486730ee  target/render-data/majadas-v74.octattrs
+b5dcc8d117b5c2d0b379e36ef1372d11b198fff269fba2e4d1ce35d6595a8c76  target/render-data/belvedere-v74.octattrs
+38168777e6ac835688ffe56931bbd70e1ddef56e1c7d2101d8d70043c19b13ee  target/render-data/majadas.oct
+ecdc4889778c082ee4ba67d8d0a2fc37182a9d3f2f35abd965a8293bec6fccad  target/render-data/belvedere.oct
+6f968f11c330238a6924c07fe451129e48fae1a4e2db390b17c41c7e760a32a8  target/render-data/majadas.octattrs
+cd3cad4571b2474377b977fe2237b645eef221f97f68c6e1783c5fd4a2a8fe9a  target/render-data/belvedere.octattrs
+data extent verified in index of both v74 files (tight, smaller than root cube); no reconversion
+deviation: run-sampled.py copied from r4-t6 dir (output dir changed); matrix-progress.txt logs the limit arg, not the label; v5 pixels rounds use target/render-data/{belvedere,majadas}.oct
