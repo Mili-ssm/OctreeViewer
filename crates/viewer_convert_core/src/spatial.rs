@@ -2027,6 +2027,22 @@ pub fn sample_index(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> u
     (cell[0] * grid + cell[1]) * grid + cell[2]
 }
 
+/// `sample_index` and `voxel_center` of the same position in one pass: the cell coordinates are
+/// reused instead of divided back out of the index (same arithmetic, so identical results).
+#[inline]
+pub fn sample_cell(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> (usize, [f64; 3]) {
+    let side = cube_side(bounds);
+    let cell_size = side / grid as f64;
+    let mut cell = [0_usize; 3];
+    for axis in 0..3 {
+        let scaled = ((position[axis] - bounds.min()[axis]) / side * grid as f64).floor();
+        cell[axis] = (scaled as usize).min(grid - 1);
+    }
+    let center =
+        std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size);
+    ((cell[0] * grid + cell[1]) * grid + cell[2], center)
+}
+
 #[inline]
 pub fn voxel_center(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
     let cell = [index / (grid * grid), (index / grid) % grid, index % grid];

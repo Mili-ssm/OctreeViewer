@@ -17,8 +17,8 @@ use crate::ConvertError;
 use crate::source::SourceInfo;
 use crate::spatial::{
     ChildSpool, MAX_SPATIAL_DEPTH, SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter,
-    center_rounding_error, cube_side, decode_point, read_records, sample_index,
-    visit_source_points, voxel_center, write_point, write_source_points,
+    center_rounding_error, cube_side, decode_point, read_records, sample_cell, visit_source_points,
+    voxel_center, write_point, write_source_points,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -135,12 +135,25 @@ enum SampleCells {
 #[derive(Default)]
 struct SparseCells {
     entries: Vec<(u32, SampleAccumulator)>,
-    /// Power-of-two length, load factor at most 1/2; `EMPTY` marks a free slot.
-    table: Vec<u32>,
+    /// Power-of-two length, load factor at most 1/2; `EMPTY` marks a free slot, otherwise
+    /// `key << 32 | index`: a probe compares keys without touching the (large) entries.
+    table: Vec<u64>,
 }
 
 impl SparseCells {
-    const EMPTY: u32 = u32::MAX;
+    const EMPTY: u64 = u64::MAX;
+    /// Largest number of cells reserved from a point-count hint; more grow on demand.
+    const MAX_HINT: usize = 1 << 16;
+
+    fn with_capacity_hint(points: u64) -> Self {
+        let cells = points.min(Self::MAX_HINT as u64) as usize;
+        let mut sparse = Self::default();
+        if cells > 0 {
+            sparse.entries.reserve_exact(cells);
+            sparse.table = vec![Self::EMPTY; (cells * 2).next_power_of_two()];
+        }
+        sparse
+    }
 
     #[inline]
     fn slot(key: u32, mask: usize) -> usize {
@@ -156,17 +169,16 @@ impl SparseCells {
         let mask = self.table.len() - 1;
         let mut slot = Self::slot(key, mask);
         loop {
-            match self.table[slot] {
-                Self::EMPTY => {
-                    self.table[slot] = self.entries.len() as u32;
-                    self.entries.push((key, SampleAccumulator::default()));
-                    return &mut self.entries.last_mut().expect("just pushed").1;
-                }
-                index if self.entries[index as usize].0 == key => {
-                    return &mut self.entries[index as usize].1;
-                }
-                _ => slot = (slot + 1) & mask,
+            let word = self.table[slot];
+            if word == Self::EMPTY {
+                self.table[slot] = (u64::from(key) << 32) | self.entries.len() as u64;
+                self.entries.push((key, SampleAccumulator::default()));
+                return &mut self.entries.last_mut().expect("just pushed").1;
             }
+            if (word >> 32) as u32 == key {
+                return &mut self.entries[(word & u64::from(u32::MAX)) as usize].1;
+            }
+            slot = (slot + 1) & mask;
         }
     }
 
@@ -180,15 +192,23 @@ impl SparseCells {
             while self.table[slot] != Self::EMPTY {
                 slot = (slot + 1) & mask;
             }
-            self.table[slot] = index as u32;
+            self.table[slot] = (u64::from(*key) << 32) | index as u64;
         }
     }
 
-    /// Entries in ascending key order.
-    fn sorted(&self) -> Vec<&(u32, SampleAccumulator)> {
-        let mut sorted = self.entries.iter().collect::<Vec<_>>();
-        sorted.sort_unstable_by_key(|(key, _)| *key);
-        sorted
+    /// Entries in ascending key order. Sorts `key << 32 | index` words rather than references to
+    /// the (large) entries, so the sort does not chase pointers.
+    fn sorted(&self) -> impl Iterator<Item = &(u32, SampleAccumulator)> {
+        let mut order = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (u64::from(*key) << 32) | index as u64)
+            .collect::<Vec<_>>();
+        order.sort_unstable();
+        order
+            .into_iter()
+            .map(|word| &self.entries[(word & u64::from(u32::MAX)) as usize])
     }
 }
 
@@ -200,12 +220,13 @@ pub struct SampleGrid {
 }
 
 impl SampleGrid {
-    fn new(grid: usize) -> Self {
+    /// `expected_points` sizes the sparse table up front (0 when unknown).
+    fn new(grid: usize, expected_points: u64) -> Self {
         let cell_count = grid.pow(3);
         let cells = if cell_count <= DENSE_SAMPLE_CELLS {
             SampleCells::Dense(std::iter::repeat_with(|| None).take(cell_count).collect())
         } else {
-            SampleCells::Sparse(Box::default())
+            SampleCells::Sparse(Box::new(SparseCells::with_capacity_hint(expected_points)))
         };
         Self { grid, cells }
     }
@@ -218,20 +239,16 @@ impl SampleGrid {
                     .enumerate()
                     .filter_map(|(key, slot)| slot.as_ref().map(|accumulator| (key, accumulator))),
             ),
-            SampleCells::Sparse(cells) => Box::new(
-                cells
-                    .sorted()
-                    .into_iter()
-                    .map(|(key, value)| (*key as usize, value)),
-            ),
+            SampleCells::Sparse(cells) => {
+                Box::new(cells.sorted().map(|(key, value)| (*key as usize, value)))
+            }
         }
     }
 
     // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
     #[inline(always)]
     fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
-        let voxel_key = sample_index(point.position, bounds, self.grid);
-        let center = voxel_center(voxel_key, bounds, self.grid);
+        let (voxel_key, center) = sample_cell(point.position, bounds, self.grid);
         let accumulator = match &mut self.cells {
             SampleCells::Dense(slots) => {
                 slots[voxel_key].get_or_insert_with(SampleAccumulator::default)
@@ -286,7 +303,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     let mut children = (0..child_count)
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid);
+    let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count);
     let sample_cell_size = cube_side(job.bounds) / ctx.sample_grid as f64;
     let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
@@ -449,7 +466,7 @@ fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
     let mut children = (0..ctx.child_count())
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid);
+    let mut samples = SampleGrid::new(ctx.sample_grid, 0);
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
