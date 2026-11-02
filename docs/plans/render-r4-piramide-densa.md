@@ -138,7 +138,8 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 
 ## Tarea 4b: medida intermedia de conversión
 
-- [ ] Majadas en `v7.4-pre`: tiempo, RSS y disco de conversión frente a V5 (criterio de parada).
+- [x] Majadas en `v7.4-pre`: tiempo, RSS y disco de conversión frente a V5 (criterio de parada).
+  Resultado (02-11-2026): tiempo +92 % (Majadas) y +96 % (Belvedere, tras optimizar) frente a V5; RSS y disco dentro. El propietario acepta seguir con la Tarea 5 y optimizar la conversión aparte antes de promover V7 ([registro](../records/benchmarks/R4_T4B_CONVERSION_02-11-2026.md)).
 
 ## Tarea 5: el visor sobre el octree global
 
