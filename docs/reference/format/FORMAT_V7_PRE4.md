@@ -25,7 +25,8 @@ header, footer, file roles, payload directory entries, geometry/attribute codecs
 
 For each axis, a source coordinate `c` in CRS units becomes `q = round(c × 2^15)` as `i64`
 (`f64::round`, ties away from zero; the product is exact). With LAS input `c = X as f64 * scale + offset`
-evaluated in `f64`. The quantum 2⁻¹⁵ is fixed by the version: it is not a field.
+evaluated in `f64`. The quantum 2⁻¹⁵ is fixed by the version: it is not a field. Writers reject any
+point with `|c| >= 2^48` CRS units (`|q| < 2^63`, the `i64` range); no other magnitude limit applies.
 
 The octree is implicit in the bits of `u = q ^ 0x8000_0000_0000_0000` (the `i64` sign bit flipped, read as
 `u64`). A node at **absolute level** `a` (0..=64) has a per-axis **prefix** `P` of `a` bits (`u64`, `P < 2^a`) and covers
@@ -39,15 +40,19 @@ node origin (quanta) = ((P << (64 - a)) ^ 0x8000_0000_0000_0000) as i64
 A child at level `a + 1` has `P_child = (P_parent << 1) | bit` per axis (`spatial_divisions` = 2 only).
 Shifts by 64 are defined as 0. Two clouds with the same CRS share nodes and cells at every level (RF-23).
 
-**Stored root.** The chain of single-child nodes above the first node with more than one child is
-omitted. The index states the root's absolute level `a0` and prefix; no cloud box enlarges the root.
-Writers require `a0 >= 11` (root side ≤ 2^53 quanta), so every frame-local bound below is exact in `f64`
-(a cloud that splits at a shallower level is an error: open point 6). A cloud with no node of more than
-one child (a single leaf) has no defined root: open point 7.
+**Stored root.** The root is the **smallest node containing all points**; the chain of single-child nodes
+above it is omitted. It is the first node with more than one child whenever one exists, and a single-leaf
+cloud also has a root. The index states the root's absolute level `a0` (any value 0..=64) and prefix; no
+cloud box enlarges the root. A cloud straddling a high bit (e.g. local coordinates centred on 0) gets a
+shallow root with chains of single-child nodes below it (tens of near-empty nodes); this is accepted.
 
-**Frame origin.** The `f64` origin triple of the index equals the root origin in CRS units
-(`root_origin_quanta × 2^-15`; exact while `|q| < 2^53`, open point 8). All stored node bounds and decoded positions are frame-local
-(`world − frame origin`), as in V5. Readers validate that the triple matches the root prefix.
+**Integer geometry.** Node origins and bounds are defined and computed in `i64` quanta from level and
+prefix, never in `f64`. Every `f64` slot holding geometry (frame origin, node bounds) is derived and
+informative: readers must not use it for exact computations.
+
+**Frame origin.** The `f64` origin triple of the index is the root origin in CRS units
+(`root_origin_quanta × 2^-15`, rounded to nearest `f64`). Decoded positions and stored node bounds are
+frame-local (`world − frame origin`), as in V5. Readers validate that the triple matches the root prefix.
 
 ## Index layout
 
@@ -92,7 +97,7 @@ V5 record plus two inserted fields; everything else keeps its order and type.
 | --- | --- | --- |
 | Node ID, parent, **Level** | `u64`, tag+`u64`, `u32` | Level stays the depth below the stored root (root = 0), because the hierarchy validator requires it; absolute level = `a0 + depth` and must be ≤ 64 |
 | Prefix (new, right after Level) | 3 × `u64` | Must equal the parent's shifted prefix plus one bit per axis; the root's equals the index root prefix |
-| Bounds | 6 × `f64` | Must equal the box derived from level and prefix, frame-local |
+| Bounds | 6 × `f64` | Derived, informative: the integer box from level and prefix minus the frame origin, times 2⁻¹⁵, rounded to nearest `f64`; readers check equality with that value |
 | Point count, geometric error | `u64`, `f64` | Geometric error unchanged in meaning |
 | Spacing (new, right after geometric error) | `f64` | Below |
 | Blocks, ranges | unchanged | |
@@ -134,7 +139,7 @@ per axis, and the point lies inside its node. Decoding to the reader's `f32` loc
 local = (((block_origin + offset) - frame_origin_quanta) as f64 * 2^-15) as f32
 ```
 
-with checked `i64` arithmetic (the difference is exact in `f64` by the `a0 >= 11` rule).
+with the difference in checked `i128` (it can exceed `i64` for a shallow root) and its conversion to `f64` rounded to nearest, which is below `f32` resolution.
 **Quantization error** keeps V5 semantics: a conservative bound on the Euclidean distance from the
 source position (frame-local `f64`, before rounding to the grid, so the grid error ≤ √3·2^-16 is included) to
 the decoded `f32`, with the V5 arithmetic margin (`norm3`, no `hypot`); the writer rejects a block above `--max-error`. The node geometric error must be at least the
@@ -186,14 +191,7 @@ authority empty iff code 0; encoding 0 iff raw empty.
    string are proposals; no source of GeoTIFF CRS has been measured yet.
 4. **Internal spacing** `side / 256` assumes the pyramid's internal grid is exactly `sample_grid`.
 5. `FormatMetadata::crs()` (`Option<&str>`) and `DatasetMetadata` need a richer CRS/frame API (Task 3).
-6. **Roots shallower than level 11.** A cloud centred on a coordinate where a high bit changes (for
-   example local coordinates straddling 0) splits at `a0 < 11`, and the writer errors. Alternatives: relax
-   the rule and accept inexact `f64` bounds, or store bounds as integer quanta. Real UTM clouds are unaffected.
-7. **Single-leaf clouds** (fewer points than the leaf limit) have no node with more than one child.
-   Proposal: the root is the smallest node containing all points, with `a0 >= 11` still required.
-8. **Magnitude limit.** The `f64` frame origin is exact only for `|q| < 2^53` (|c| < 2.7e11 CRS units).
-   Proposal: writers reject larger coordinates.
-9. **WKT2 and compound CRS.** Identity extraction covers WKT1 `AUTHORITY` and GeoKeys only; WKT2 `ID[...]`
+6. **WKT2 and compound CRS.** Identity extraction covers WKT1 `AUTHORITY` and GeoKeys only; WKT2 `ID[...]`
    and the vertical part of a compound CRS are unspecified.
-10. **CRS evidence** (table above) was measured on 02-11-2026 without a committed record; Task 4 should
+7. **CRS evidence** (table above) was measured on 02-11-2026 without a committed record; Task 4 should
     repeat it with `las::Header::vlrs()` and cite the output.

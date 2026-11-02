@@ -29,6 +29,8 @@ RQ-02, RQ-07, RQ-08, RQ-09.
 | R4-Q2 | El límite de puntos por hoja se fija **midiendo** 16, 32 y 64 k (Tarea 1) |
 | R4-Q3 | «Un nivel por ×2 de densidad» = **el espaciado se divide entre 2 en cada nivel** (como Potree/COPC) |
 | R4-Q4 | La reproyección con PROJ (RF-22) queda **fuera** de `v7.4-pre`: es una opción posterior del CLI que no cambia el formato |
+| R4-Q5 (02-11-2026) | Límites de nodo en cuantos `i64` (nivel + prefijo), sin `f64` exacto: se admite cualquier nivel de raíz `a0`; la raíz es el **menor nodo que contiene todos los puntos** (también para nubes de una hoja); los escritores rechazan `\|c\| >= 2^48` unidades CRS |
+| R4-Q6 (02-11-2026) | Una nube a caballo de un bit alto (p. ej. coordenadas locales centradas en 0) tiene raíz poco profunda y cadenas de nodos de un hijo debajo (decenas de nodos casi vacíos): se acepta |
 
 ## Lectura del código (verificada por el pre-mortem, 01-11-2026)
 
@@ -99,17 +101,17 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 
 **Archivos:** crear [`docs/reference/format/FORMAT_V7_PRE4.md`](../reference/format/FORMAT_V7_PRE4.md) (a partir de `FORMAT_V7_PRE3.md`); borrador escrito el 02-11-2026, pendiente de revisión.
 
-- [ ] Marco (ADR 0029): `q = round(c × 2^15)` en `i64`; raíz guardada = primer nodo con más de un hijo
+- [x] Marco (ADR 0029): `q = round(c × 2^15)` en `i64`; raíz guardada = primer nodo con más de un hijo
   (nivel y prefijo); bloques con desplazamientos `u32` respecto al origen de su nodo; los nodos de más de
   2^32 cuantos se parten.
-- [ ] Por nodo: nivel absoluto, prefijo y `spacing` (f64; en hoja, el espaciado medido). `geometric_error`
+- [x] Por nodo: nivel absoluto, prefijo y `spacing` (f64; en hoja, el espaciado medido). `geometric_error`
   se conserva para el lector.
-- [ ] CRS: WKT/GeoTIFF completo (RF-24). Identidad = autoridad + código (EPSG del WKT o de la GeoKey
+- [x] CRS: WKT/GeoTIFF completo (RF-24). Identidad = autoridad + código (EPSG del WKT o de la GeoKey
   3072/2048), y bytes solo si no hay código. Sin CRS, la nube es «local» y no se mezcla (RF-02). Escala y
   offset LAS de origen para la exportación exacta.
-- [ ] Flags LAS y Extra Bytes (RF-24): se decide aquí si van en `v7.4-pre`.
-- [ ] Comprobar el CRS real de Majadas y Belvedere (`las::Header::vlrs()`).
-- [ ] Spec revisada con `doc-curator` antes de la Tarea 3.
+- [x] Flags LAS y Extra Bytes (RF-24): se decide aquí si van en `v7.4-pre`.
+- [x] Comprobar el CRS real de Majadas y Belvedere (`las::Header::vlrs()`).
+- [x] Spec revisada con `doc-curator` antes de la Tarea 3.
 
 ## Tarea 3: `FormatVersion::V7_PRE4` en `viewer_format`
 
