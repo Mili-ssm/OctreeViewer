@@ -37,7 +37,7 @@ fn page_of(tree: &Tree, k: u32) -> Vec<u32> {
     // nodes are stored parent-before-child
     for n in 1..tree.parent.len() {
         let p = tree.parent[n] as usize;
-        page[n] = if tree.depth[p] % k == 0 {
+        page[n] = if tree.depth[p].is_multiple_of(k) {
             p as u32
         } else {
             page[p]
@@ -54,7 +54,7 @@ fn page_stats(tree: &Tree, k: u32, label: &str, extra: serde_json::Value) -> (Ve
         e.0 += 1;
         e.1 += tree.slim[n];
         // node at relative depth k (page's last level) with children carries a child-page pointer
-        if tree.depth[n] > 0 && tree.depth[n] % k == 0 && tree.children[n] > 0 {
+        if tree.depth[n] > 0 && tree.depth[n].is_multiple_of(k) && tree.children[n] > 0 {
             e.1 += POINTER;
         }
     }
@@ -248,7 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (page, sizes) = page_stats(&tree, k, &label, serde_json::json!({}));
         let mut pdepth = vec![0_u32; tree.parent.len()];
         for n in 1..tree.parent.len() {
-            if tree.depth[n] % k == 0 {
+            if tree.depth[n].is_multiple_of(k) {
                 pdepth[n] = pdepth[page[n] as usize] + 1;
             }
         }
@@ -261,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 touched.insert(page[s as usize]);
                 touched_b.insert(page[s as usize]);
                 if tree.depth[s as usize] > 0
-                    && tree.depth[s as usize] % k == 0
+                    && tree.depth[s as usize].is_multiple_of(k)
                     && tree.children[s as usize] > 0
                 {
                     touched_b.insert(s);
