@@ -82,16 +82,18 @@ RQ-02, RQ-07, RQ-08, RQ-09.
 **Archivos:** `crates/viewer_convert_core/src/{options.rs, spatial.rs, pipeline/node_job.rs}`;
 `crates/viewer_convert/examples/density_spike.rs`.
 
-- [ ] `SampleGrid` disperso (claves ordenadas) y `sample_grid` como parámetro interno, por defecto 8. La
+- [x] `SampleGrid` disperso (claves ordenadas) y `sample_grid` como parámetro interno, por defecto 8. La
   salida actual no cambia: los tests y las SHA de los fixtures siguen iguales.
-- [ ] Definir e implementar el espaciado de hoja: lado/2^d, con d el primer nivel en el que las celdas
+- [x] Definir e implementar el espaciado de hoja: lado/2^d, con d el primer nivel en el que las celdas
   ocupadas crecen menos de ×1,5.
-- [ ] **Regla de elección, escrita antes de medir:** mínimo disco con salto hoja/padre ≤ 1 nivel en p95 y
+- [x] **Regla de elección, escrita antes de medir:** mínimo disco con salto hoja/padre ≤ 1 nivel en p95 y
   RSS ≤ presupuesto.
-- [ ] Convertir Majadas y Belvedere (v7.3-pre) con hoja {16, 32, 64} k × `sample_grid` {32, 64, 128, 256}.
+- [x] Convertir Majadas y Belvedere (v7.3-pre) con hoja {16, 32, 64} k × `sample_grid` {32, 64, 128, 256}.
   Medir solo el conversor: disco frente a V5, tiempo y RSS, nodos, profundidad, puntos por hoja (p50/p95) y
   salto de espaciado. El bench de R3-T1 se repite en la Tarea 6.
-- [ ] Registro `R4_DENSITY_SPIKE_<fecha>.md`. **Puerta del propietario:** fija el límite de hoja y `sample_grid`.
+- [x] Registro `R4_DENSITY_SPIKE_<fecha>.md`. **Puerta del propietario:** fija el límite de hoja y `sample_grid`.
+
+Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +24 % de tiempo, 207 MB de RSS, +18 % de disco frente a V5 ([registro](../records/benchmarks/R4_CONVERT_TIME_2_02-11-2026.md)).
 
 ## Tarea 2: spec de `v7.4-pre`
 
