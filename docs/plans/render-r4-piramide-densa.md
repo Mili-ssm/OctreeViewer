@@ -146,11 +146,12 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 **Archivos:** `crates/viewer_wasm/src/lod_dataset.rs`, `crates/viewer_core/src/lod_transition.rs`,
 `crates/viewer_render_wgpu/src/{voxel_grid.rs, node_cells.rs}` y examples.
 
-- [ ] Inventario con `rg 'side / 8|/ 8\.0|8\^3|SAMPLE_GRID_SIZE'`; todos los usos pasan a derivar del
+- [x] Inventario con `rg 'side / 8|/ 8\.0|8\^3|SAMPLE_GRID_SIZE'`; todos los usos pasan a derivar del
   `spacing` del índice cuando existe, y conservan `side / 8` para v5 y v7.1–3-pre.
-- [ ] `representative_depth` derivada de `spacing` y relativa a la raíz guardada; origen de render = prefijo de la raíz.
-- [ ] Dorados nuevos para v7.4; los dorados de los formatos existentes no cambian.
-- [ ] El visor rechaza una nube con otra identidad de CRS y nombra ambas (RF-02).
+- [x] `representative_depth` derivada de `spacing` y relativa a la raíz guardada; origen de render = prefijo de la raíz.
+- [x] Dorados nuevos para v7.4; los dorados de los formatos existentes no cambian.
+- [x] El visor rechaza una nube con otra identidad de CRS y nombra ambas (RF-02).
+Resultado (02-11-2026): visor sobre `spacing` por nodo y límites locales; las nubes sin CRS usan una rejilla local (decisión del propietario). Playwright en escritorio y móvil: v5, v7 y v7.4 (40 256 puntos, vóxeles de 2–4 px) sin errores. Sin verificar en navegador: cambios de nivel LOD con un dataset de varios bloques (Tarea 6).
 
 ## Tarea 6: medida y regeneración
 
