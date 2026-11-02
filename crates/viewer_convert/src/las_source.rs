@@ -131,6 +131,7 @@ pub(crate) fn convert_file_inner(
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
+    crate::allocator::limit_retention();
     if output_path == output_attributes_path(output_path) {
         return Err(ConvertError::ConflictingOutputPaths);
     }

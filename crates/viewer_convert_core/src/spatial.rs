@@ -1539,8 +1539,10 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
 #[derive(Default)]
 pub struct SampleAccumulator {
     count: u64,
-    display_color: [u128; 3],
-    rgb: [u128; 3],
+    // `u64` sums hold `count * 65535` while `count < 2^48`, far above any point cloud; `u128`
+    // would double the size of every occupied cell of a large sample grid.
+    display_color: [u64; 3],
+    rgb: [u64; 3],
     nearest_distance_squared: f64,
     nearest_point: Option<SpoolPoint>,
 }
@@ -1550,8 +1552,8 @@ impl SampleAccumulator {
     pub fn add(&mut self, point: &SpoolPoint, center: [f64; 3]) {
         self.count += 1;
         for axis in 0..3 {
-            self.display_color[axis] += u128::from(point.display_color_component(axis));
-            self.rgb[axis] += u128::from(point.rgb[axis]);
+            self.display_color[axis] += u64::from(point.display_color_component(axis));
+            self.rgb[axis] += u64::from(point.rgb[axis]);
         }
         let delta_x = point.position[0] - center[0];
         let delta_y = point.position[1] - center[1];
@@ -1609,8 +1611,8 @@ impl SpoolPoint {
 }
 
 #[inline]
-fn average(sum: u128, count: u64) -> u128 {
-    (sum + u128::from(count / 2)) / u128::from(count)
+fn average(sum: u64, count: u64) -> u64 {
+    (sum + count / 2) / count
 }
 
 /// Forwards `JobProgress::SourcePoints` of a job reading the source to the host callback.

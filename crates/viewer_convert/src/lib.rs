@@ -6,6 +6,7 @@ use std::path::Path;
 
 use las_source::convert_file_inner;
 
+mod allocator;
 mod blocks;
 mod checkpoint;
 mod diagnostic_timer;

@@ -3,7 +3,6 @@
 //! commits: blocks without ids, non-empty children and the spools to release. Jobs see only the
 //! store, spool ids and plain values; ids, budgets and progress forwarding belong to the host.
 
-use std::collections::{BTreeMap, btree_map::Entry};
 use std::io::Read;
 
 use las::PointDataBuilder;
@@ -127,7 +126,70 @@ const DENSE_SAMPLE_CELLS: usize = 4096;
 
 enum SampleCells {
     Dense(Vec<Option<SampleAccumulator>>),
-    Sparse(BTreeMap<usize, SampleAccumulator>),
+    Sparse(Box<SparseCells>),
+}
+
+/// Occupied cells of a large grid: accumulators packed in insertion order plus an open-addressing
+/// table of their indices, so the cost per cell is the accumulator and a few table bytes (a
+/// `BTreeMap` wasted about 40% on partly filled nodes). Keys are below `MAX_SAMPLE_GRID³` < 2³².
+#[derive(Default)]
+struct SparseCells {
+    entries: Vec<(u32, SampleAccumulator)>,
+    /// Power-of-two length, load factor at most 1/2; `EMPTY` marks a free slot.
+    table: Vec<u32>,
+}
+
+impl SparseCells {
+    const EMPTY: u32 = u32::MAX;
+
+    #[inline]
+    fn slot(key: u32, mask: usize) -> usize {
+        ((u64::from(key).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32) as usize) & mask
+    }
+
+    #[inline]
+    fn entry(&mut self, key: usize) -> &mut SampleAccumulator {
+        let key = key as u32;
+        if (self.entries.len() + 1) * 2 > self.table.len() {
+            self.grow();
+        }
+        let mask = self.table.len() - 1;
+        let mut slot = Self::slot(key, mask);
+        loop {
+            match self.table[slot] {
+                Self::EMPTY => {
+                    self.table[slot] = self.entries.len() as u32;
+                    self.entries.push((key, SampleAccumulator::default()));
+                    return &mut self.entries.last_mut().expect("just pushed").1;
+                }
+                index if self.entries[index as usize].0 == key => {
+                    return &mut self.entries[index as usize].1;
+                }
+                _ => slot = (slot + 1) & mask,
+            }
+        }
+    }
+
+    fn grow(&mut self) {
+        let len = (self.table.len() * 2).max(64);
+        let mask = len - 1;
+        self.table.clear();
+        self.table.resize(len, Self::EMPTY);
+        for (index, (key, _)) in self.entries.iter().enumerate() {
+            let mut slot = Self::slot(*key, mask);
+            while self.table[slot] != Self::EMPTY {
+                slot = (slot + 1) & mask;
+            }
+            self.table[slot] = index as u32;
+        }
+    }
+
+    /// Entries in ascending key order.
+    fn sorted(&self) -> Vec<&(u32, SampleAccumulator)> {
+        let mut sorted = self.entries.iter().collect::<Vec<_>>();
+        sorted.sort_unstable_by_key(|(key, _)| *key);
+        sorted
+    }
 }
 
 /// The g×g×g LOD accumulators of one node, keyed by voxel index; iterated in ascending key order
@@ -143,7 +205,7 @@ impl SampleGrid {
         let cells = if cell_count <= DENSE_SAMPLE_CELLS {
             SampleCells::Dense(std::iter::repeat_with(|| None).take(cell_count).collect())
         } else {
-            SampleCells::Sparse(BTreeMap::new())
+            SampleCells::Sparse(Box::default())
         };
         Self { grid, cells }
     }
@@ -156,7 +218,12 @@ impl SampleGrid {
                     .enumerate()
                     .filter_map(|(key, slot)| slot.as_ref().map(|accumulator| (key, accumulator))),
             ),
-            SampleCells::Sparse(map) => Box::new(map.iter().map(|(key, value)| (*key, value))),
+            SampleCells::Sparse(cells) => Box::new(
+                cells
+                    .sorted()
+                    .into_iter()
+                    .map(|(key, value)| (*key as usize, value)),
+            ),
         }
     }
 
@@ -169,7 +236,7 @@ impl SampleGrid {
             SampleCells::Dense(slots) => {
                 slots[voxel_key].get_or_insert_with(SampleAccumulator::default)
             }
-            SampleCells::Sparse(map) => map.entry(voxel_key).or_default(),
+            SampleCells::Sparse(cells) => cells.entry(voxel_key),
         };
         accumulator.add(point, center);
     }
@@ -189,14 +256,11 @@ impl SampleGrid {
                     }
                 }
             }
-            (SampleCells::Sparse(map), SampleCells::Sparse(later)) => {
-                for (key, later) in later {
-                    match map.entry(key) {
-                        Entry::Occupied(mut earlier) => earlier.get_mut().merge(&later),
-                        Entry::Vacant(slot) => {
-                            slot.insert(later);
-                        }
-                    }
+            (SampleCells::Sparse(earlier), SampleCells::Sparse(later)) => {
+                // Cells are independent, so the visiting order does not matter; an empty
+                // accumulator merges as the identity (`None` nearest point never wins).
+                for (key, later) in later.entries {
+                    earlier.entry(key as usize).merge(&later);
                 }
             }
             _ => unreachable!("grids of one size share a storage"),
