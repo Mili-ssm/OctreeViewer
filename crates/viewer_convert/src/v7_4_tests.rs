@@ -162,7 +162,12 @@ fn crs_is_read_from_wkt_geotiff_keys_and_absent() {
 fn cloud_centred_on_zero_converts_at_the_default_error() {
     let dir = tempfile::tempdir().unwrap();
     let points = cloud(2000, [-50.0, -50.0, -5.0], 100.0, 3);
-    let reader = convert(&points, Vec::new(), dir.path(), "centred");
+    let reader = convert(
+        &points,
+        vec![vlr(2112, WKT.as_bytes().to_vec())],
+        dir.path(),
+        "centred",
+    );
     let frame = reader.format_metadata().global_frame().unwrap();
     assert_eq!(
         frame.root_level(),
@@ -181,11 +186,48 @@ fn cloud_centred_on_zero_converts_at_the_default_error() {
 }
 
 #[test]
+fn local_cloud_near_zero_has_its_root_at_its_own_first_split() {
+    let dir = tempfile::tempdir().unwrap();
+    // 0.2 m wide and straddling every high bit: the global lattice would need a level-0 root.
+    let points = cloud(5000, [-0.1, -0.1, -0.1], 0.2, 6);
+    let reader = convert(&points, Vec::new(), dir.path(), "local-zero");
+    let metadata = reader.format_metadata();
+    let frame = metadata.global_frame().unwrap();
+    assert!(frame.crs().is_local());
+    // The cloud spans about 6 600 quanta (< 2^13), so the root is the first node that holds it.
+    assert!(
+        frame.root_level() >= 50,
+        "root level {}",
+        frame.root_level()
+    );
+    assert_eq!(frame.root_prefix(), [0; 3]);
+    assert_eq!(frame.lattice_base(), frame.frame_origin_quanta());
+    let hierarchy = metadata.dataset().hierarchy();
+    let nodes = (0..)
+        .map(NodeId::new)
+        .take_while(|id| hierarchy.node(*id).is_some())
+        .count();
+    let deepest = (0..nodes)
+        .map(|index| hierarchy.node(NodeId::new(index as u64)).unwrap().level())
+        .max()
+        .unwrap();
+    assert!(
+        deepest <= 3,
+        "no chain from a straddled high bit: {deepest}"
+    );
+}
+
+#[test]
 fn box_crossing_2_pow_22_has_the_smallest_containing_root() {
     let dir = tempfile::tempdir().unwrap();
     let edge = 4_194_304.0;
     let points = cloud(2000, [edge - 20.0, 1000.0, 0.0], 40.0, 4);
-    let reader = convert(&points, Vec::new(), dir.path(), "edge");
+    let reader = convert(
+        &points,
+        vec![vlr(2112, WKT.as_bytes().to_vec())],
+        dir.path(),
+        "edge",
+    );
     let frame = reader.format_metadata().global_frame().unwrap();
     // x straddles 2^22 m = 2^37 quanta, so the root side is 2^38 quanta (a = 26) at most: a
     // single-child chain may follow, but no level above the smallest containing node exists.
@@ -220,8 +262,18 @@ fn overlapping_crops_share_node_cells_in_the_common_area() {
         }
         map
     };
-    let a = cells(&convert(&crop(0.0, 101.0), Vec::new(), dir.path(), "a"));
-    let b = cells(&convert(&crop(20.0, 101.0), Vec::new(), dir.path(), "b"));
+    let a = cells(&convert(
+        &crop(0.0, 101.0),
+        vec![vlr(2112, WKT.as_bytes().to_vec())],
+        dir.path(),
+        "a",
+    ));
+    let b = cells(&convert(
+        &crop(20.0, 101.0),
+        vec![vlr(2112, WKT.as_bytes().to_vec())],
+        dir.path(),
+        "b",
+    ));
     // A node whose x range lies inside [20, 101) m holds the same points in both crops.
     let (low, high) = (
         (300_020.0_f64 * 32_768.0) as i128,

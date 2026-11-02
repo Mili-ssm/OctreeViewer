@@ -26,7 +26,10 @@ use crate::spatial::{
 const GLOBAL_BLOCK_LEVEL: u32 = 32;
 const GLOBAL_MAX_INTERNAL_LEVEL: u32 = 55;
 /// Leaf spacing search stops after this many halvings of the leaf side (R4 task 1).
-const LEAF_SPACING_MAX_DEPTH: u32 = 16;
+/// Deepest candidate for a leaf spacing: `u32` cell coordinates per axis in the sorted search.
+const LEAF_SPACING_MAX_DEPTH: u32 = 32;
+/// Deepest candidate the single-sort search handles: three interleaved coordinates in a `u64`.
+const MORTON_SPACING_MAX_DEPTH: u32 = 21;
 const LEAF_GROWTH_THRESHOLD: f64 = 1.5;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -934,7 +937,9 @@ pub fn lod_blocks(spool: SpoolId, lod: &LodWritten) -> Vec<BlockPlan> {
 }
 
 /// `v7.4-pre` leaf spacing: `side / 2^d` for the first `d >= 1` at which the occupied cells grow
-/// by less than x1.5 (`d` is capped at 16 and at the quantum). Reads the leaf spool once.
+/// by less than x1.5 once the points occupy more than one cell (`d` is capped at 32 and at the
+/// quantum), so a cloud tucked in a corner of its leaf is measured where it starts to spread.
+/// Reads the leaf spool once.
 fn measure_leaf_spacing<S: SpoolStore>(
     ctx: &JobContext,
     job: &NodeJob,
@@ -969,9 +974,23 @@ fn measure_leaf_spacing<S: SpoolStore>(
             }));
         }
     }
-    let depth = morton_spacing_depth(&cells, side_exponent, max_depth)
-        .unwrap_or_else(|| sorted_spacing_depth(&cells, side_exponent, max_depth));
+    let depth = spacing_depth(&cells, side_exponent, max_depth);
     Ok(2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32))
+}
+
+fn spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32 {
+    if max_depth <= MORTON_SPACING_MAX_DEPTH
+        && let Some(depth) = morton_spacing_depth(cells, side_exponent, max_depth)
+    {
+        return depth;
+    }
+    sorted_spacing_depth(cells, side_exponent, max_depth)
+}
+
+/// Whether the growth from `previous` to `occupied` cells ends the search. A single occupied
+/// cell has no growth to measure yet: the points have not started to spread.
+fn growth_ends_search(previous: usize, occupied: usize) -> bool {
+    previous > 1 && (occupied as f64) < LEAF_GROWTH_THRESHOLD * previous as f64
 }
 
 /// Spreads the low 21 bits of `value` three positions apart.
@@ -1004,7 +1023,7 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
     }
     codes.sort_unstable();
     // `first_split[d]`: neighbours whose keys differ for the first time at depth `d`.
-    let mut first_split = [0_usize; LEAF_SPACING_MAX_DEPTH as usize + 1];
+    let mut first_split = [0_usize; MORTON_SPACING_MAX_DEPTH as usize + 1];
     for pair in codes.windows(2) {
         let differing = pair[0] ^ pair[1];
         if differing != 0 {
@@ -1018,7 +1037,7 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
     for candidate in 1..=max_depth {
         occupied += first_split[candidate as usize];
         depth = candidate;
-        if (occupied as f64) < LEAF_GROWTH_THRESHOLD * previous as f64 {
+        if growth_ends_search(previous, occupied) {
             break;
         }
         previous = occupied;
@@ -1041,7 +1060,7 @@ fn sorted_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
         keys.sort_unstable();
         keys.dedup();
         depth = candidate;
-        if (keys.len() as f64) < LEAF_GROWTH_THRESHOLD * previous as f64 {
+        if growth_ends_search(previous, keys.len()) {
             break;
         }
         previous = keys.len();
@@ -1155,5 +1174,35 @@ fn end_phase<C: Clock>(
     if let (Some(metrics), Some(started)) = (metrics.as_mut(), started) {
         let target = target(metrics);
         *target = target.saturating_add(clock.elapsed_ns(started));
+    }
+}
+
+#[cfg(test)]
+mod spacing_tests {
+    use super::*;
+
+    /// A 16^3 lattice of step 256 quanta in the corner of a 2^32-quanta leaf.
+    fn corner_cluster() -> Vec<[i128; 3]> {
+        (0..16_i128)
+            .flat_map(|x| (0..16_i128).flat_map(move |y| (0..16_i128).map(move |z| [x, y, z])))
+            .map(|cell| cell.map(|value| value * 256))
+            .collect()
+    }
+
+    #[test]
+    fn a_cluster_in_one_corner_is_measured_where_it_spreads() {
+        let cells = corner_cluster();
+        // One occupied cell down to depth 20 (cell 2^12); the lattice fills its cells at depth 24
+        // and stops growing at depth 25.
+        assert_eq!(morton_spacing_depth(&cells, 32, 21), Some(21));
+        assert_eq!(spacing_depth(&cells, 32, 32), 25);
+        assert_eq!(sorted_spacing_depth(&cells, 32, 32), 25);
+        assert_eq!(spacing_depth(&cells, 32, 21), 21);
+    }
+
+    #[test]
+    fn identical_points_use_the_deepest_candidate() {
+        let cells = vec![[5, 5, 5]; 4];
+        assert_eq!(spacing_depth(&cells, 32, 32), 32);
     }
 }

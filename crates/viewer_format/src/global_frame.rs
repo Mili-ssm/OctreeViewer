@@ -58,6 +58,15 @@ pub fn cell_origin_quanta(level: u32, prefix: u64) -> i64 {
     (shift_left(prefix, MAX_LEVEL - level) ^ SIGN_BIT) as i64
 }
 
+/// Lattice base of a global cloud: `u = q - base` is the unsigned value whose bits form the prefix.
+pub const GLOBAL_LATTICE_BASE: [i64; 3] = [i64::MIN; 3];
+
+/// Origin of the node `(level, prefix)` on one axis for a lattice anchored at `base`, in quanta;
+/// `None` if it does not fit `i64` (only a corrupt file).
+pub fn cell_origin_from_base(base: i64, level: u32, prefix: u64) -> Option<i64> {
+    i64::try_from(i128::from(base) + i128::from(shift_left(prefix, MAX_LEVEL - level))).ok()
+}
+
 /// Integer box of one node: origin in quanta and side `2^side_exponent` quanta.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CellBox {
@@ -66,11 +75,24 @@ pub(crate) struct CellBox {
 }
 
 impl CellBox {
+    #[cfg(test)]
     pub(crate) fn new(level: u32, prefix: [u64; 3]) -> Self {
         Self {
             origin: prefix.map(|p| cell_origin_quanta(level, p)),
             side_exponent: MAX_LEVEL - level,
         }
+    }
+
+    /// The node `(level, prefix)` of the lattice anchored at `base` (see [`GlobalFrame::lattice_base`]).
+    pub(crate) fn in_lattice(base: [i64; 3], level: u32, prefix: [u64; 3]) -> Option<Self> {
+        let mut origin = [0_i64; 3];
+        for axis in 0..3 {
+            origin[axis] = cell_origin_from_base(base[axis], level, prefix[axis])?;
+        }
+        Some(Self {
+            origin,
+            side_exponent: MAX_LEVEL - level,
+        })
     }
 
     pub(crate) fn side(self) -> i128 {
@@ -165,6 +187,11 @@ impl CrsRecord {
             code,
             raw,
         })
+    }
+
+    /// No code and no raw bytes: the cloud is **local** and its octree is anchored at the frame origin.
+    pub fn is_local(&self) -> bool {
+        self.code == 0 && matches!(self.raw, CrsRaw::None)
     }
 
     /// A cloud with neither code nor raw bytes: never merged with another cloud.
@@ -333,6 +360,7 @@ pub struct GlobalFrame {
     root_level: u32,
     root_prefix: [u64; 3],
     frame_origin_quanta: [i64; 3],
+    lattice_base: [i64; 3],
     crs: CrsRecord,
     source_scale_offset: Option<SourceScaleOffset>,
     nodes: BTreeMap<NodeId, NodeCell>,
@@ -351,7 +379,13 @@ impl GlobalFrame {
         if root_level > MAX_LEVEL || root_prefix.iter().any(|p| !prefix_fits(root_level, *p)) {
             return Err(MetadataError::InvalidGlobalFrame("root level or prefix"));
         }
-        let root = CellBox::new(root_level, root_prefix);
+        let lattice_base = if crs.is_local() {
+            frame_origin_quanta
+        } else {
+            GLOBAL_LATTICE_BASE
+        };
+        let root = CellBox::in_lattice(lattice_base, root_level, root_prefix)
+            .ok_or(MetadataError::InvalidGlobalFrame("root level or prefix"))?;
         if !root.contains(frame_origin_quanta.map(i128::from)) {
             return Err(MetadataError::InvalidGlobalFrame(
                 "frame origin outside the root node",
@@ -367,6 +401,7 @@ impl GlobalFrame {
             root_level,
             root_prefix,
             frame_origin_quanta,
+            lattice_base,
             crs,
             source_scale_offset,
             nodes: cells,
@@ -408,12 +443,26 @@ impl GlobalFrame {
 
     /// Derived `f64` bounds (relative to the frame origin) of a node at `depth` below the root.
     pub fn node_bounds(&self, depth: u32, prefix: [u64; 3]) -> Result<SpatialBounds, SpatialError> {
-        CellBox::new(self.root_level + depth, prefix).bounds(self.frame_origin_quanta())
+        self.node_box(depth, prefix)
+            .ok_or(SpatialError::InvalidBounds {
+                min: [f64::NAN; 3],
+                max: [f64::NAN; 3],
+            })?
+            .bounds(self.frame_origin_quanta())
+    }
+
+    /// Per-axis quanta whose offset from a node origin is the node prefix: `i64::MIN` (the sign
+    /// bit flip) for a cloud with a CRS identity, the frame origin for a local cloud.
+    pub const fn lattice_base(&self) -> [i64; 3] {
+        self.lattice_base
     }
 
     pub(crate) fn node_box(&self, depth: u32, prefix: [u64; 3]) -> Option<CellBox> {
         let level = self.root_level.checked_add(depth)?;
-        (level <= MAX_LEVEL).then(|| CellBox::new(level, prefix))
+        if level > MAX_LEVEL {
+            return None;
+        }
+        CellBox::in_lattice(self.lattice_base, level, prefix)
     }
 
     /// Integer box of the node that owns `block`, if any.
@@ -510,7 +559,8 @@ pub(crate) fn validate_nodes(
         if !identities.insert((level, cell.prefix)) {
             return Err("two nodes share level and prefix");
         }
-        let derived = CellBox::new(level, cell.prefix)
+        let derived = CellBox::in_lattice(frame.lattice_base, level, cell.prefix)
+            .ok_or("node origin exceeds the quanta range")?
             .bounds(frame_origin_quanta)
             .map_err(|_| "derived node bounds are invalid")?;
         if node.bounds().min() != derived.min() || node.bounds().max() != derived.max() {

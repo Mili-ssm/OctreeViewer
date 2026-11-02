@@ -7,7 +7,7 @@ use viewer_core::las::{LasPreflightError, LazChunkTableLayout};
 use viewer_core::{AttributeDescriptor, CoordinateFrame, SpatialBounds};
 
 use viewer_format::{
-    CrsRecord, SourceScaleOffset, cell_origin_quanta, quanta_to_units, quantize_coordinate,
+    CrsRecord, SourceScaleOffset, cell_origin_from_base, quanta_to_units, quantize_coordinate,
 };
 
 use crate::error::ConvertError;
@@ -35,18 +35,18 @@ pub struct GlobalRoot {
     pub level: u32,
     pub prefix: [u64; 3],
     pub frame_origin_quanta: [i64; 3],
+    /// Lattice anchor: `i64::MIN` for a cloud with a CRS identity, the frame origin for a local one.
+    pub lattice_base: [i64; 3],
 }
 
 /// Coordinates below this magnitude (CRS units) keep every node bound exact in `f64`.
 const MAX_GLOBAL_COORDINATE: f64 = (1_u64 << 35) as f64;
-const SIGN_BIT: u64 = 1 << 63;
 
 impl GlobalRoot {
     /// Smallest node containing both header corners, and the minimum quantized corner as origin.
-    fn from_bounds(bounds: SpatialBounds) -> Result<Self, ConvertError> {
+    fn from_bounds(bounds: SpatialBounds, local: bool) -> Result<Self, ConvertError> {
         let mut low = [0_i64; 3];
-        let mut common = 64_u32;
-        let mut prefix_source = [0_u64; 3];
+        let mut high = [0_i64; 3];
         for axis in 0..3 {
             for coordinate in [bounds.min()[axis], bounds.max()[axis]] {
                 if coordinate.is_nan() || coordinate.abs() >= MAX_GLOBAL_COORDINATE {
@@ -58,23 +58,38 @@ impl GlobalRoot {
             let max =
                 quantize_coordinate(bounds.max()[axis]).ok_or(ConvertError::InvalidHeaderBounds)?;
             low[axis] = min;
-            prefix_source[axis] = (min as u64) ^ SIGN_BIT;
-            common = common.min(((min as u64) ^ (max as u64)).leading_zeros());
+            high[axis] = max;
         }
-        let prefix = prefix_source.map(|u| u.checked_shr(64 - common).unwrap_or(0));
+        let lattice_base = if local { low } else { [i64::MIN; 3] };
+        // `u = q - base` read as `u64`: the smallest node holding both corners shares their top bits.
+        let unsigned =
+            |q: i64, axis: usize| (i128::from(q) - i128::from(lattice_base[axis])) as u64;
+        let common = (0..3)
+            .map(|axis| (unsigned(low[axis], axis) ^ unsigned(high[axis], axis)).leading_zeros())
+            .min()
+            .unwrap_or(64);
+        let prefix = std::array::from_fn(|axis| {
+            unsigned(low[axis], axis)
+                .checked_shr(64 - common)
+                .unwrap_or(0)
+        });
         Ok(Self {
             level: common,
             prefix,
             frame_origin_quanta: low,
+            lattice_base,
         })
     }
 
     /// The root cube in CRS units (exact in `f64` within the coordinate limit).
     pub fn bounds(&self) -> Result<SpatialBounds, ConvertError> {
         let side = 2.0_f64.powi(49 - self.level as i32);
-        let min: [f64; 3] = self
-            .prefix
-            .map(|prefix| quanta_to_units(cell_origin_quanta(self.level, prefix)));
+        let min: [f64; 3] = std::array::from_fn(|axis| {
+            quanta_to_units(
+                cell_origin_from_base(self.lattice_base[axis], self.level, self.prefix[axis])
+                    .expect("a root holding the header box lies inside the quanta range"),
+            )
+        });
         Ok(SpatialBounds::new(min, min.map(|value| value + side))?)
     }
 }
@@ -86,7 +101,7 @@ impl SourceInfo {
         if !options.format_version().uses_global_frame() {
             return Ok(self);
         }
-        let root = GlobalRoot::from_bounds(self.bounds)?;
+        let root = GlobalRoot::from_bounds(self.bounds, self.crs.is_local())?;
         let origin = root.frame_origin_quanta.map(quanta_to_units);
         self.frame = CoordinateFrame::new(origin)?;
         self.global = Some(root);

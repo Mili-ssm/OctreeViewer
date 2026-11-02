@@ -562,9 +562,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
         .iter()
         .map(|node| {
             let bounds = match &global_frame {
-                Some(frame) => {
-                    frame.node_bounds(node.level, global_prefix(frame.root_level(), node))?
-                }
+                Some(frame) => frame.node_bounds(
+                    node.level,
+                    global_prefix(frame.root_level(), frame.lattice_base(), node),
+                )?,
                 None => node.bounds,
             };
             Ok(SpatialNode::new(
@@ -617,11 +618,13 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     })
 }
 
-/// Prefix of a node from its absolute cube: the top `a` bits of its flipped minimum corner.
-fn global_prefix(root_level: u32, node: &NodeRecord) -> [u64; 3] {
+/// Prefix of a node from its absolute cube: the top `a` bits of its minimum corner minus the
+/// lattice base (the flipped sign bit, or the frame origin of a local cloud).
+fn global_prefix(root_level: u32, base: [i64; 3], node: &NodeRecord) -> [u64; 3] {
     let level = root_level + node.level;
-    quanta(node.bounds.min()).map(|q| {
-        ((q as u64) ^ (1 << 63))
+    let min = quanta(node.bounds.min());
+    std::array::from_fn(|axis| {
+        ((i128::from(min[axis]) - i128::from(base[axis])) as u64)
             .checked_shr(64 - level)
             .unwrap_or(0)
     })
@@ -647,7 +650,10 @@ fn global_frame(
             };
             (
                 node.id,
-                viewer_format::NodeCell::new(global_prefix(root.level, node), spacing),
+                viewer_format::NodeCell::new(
+                    global_prefix(root.level, root.lattice_base, node),
+                    spacing,
+                ),
             )
         })
         .collect();

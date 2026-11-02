@@ -28,13 +28,17 @@ For each axis, a source coordinate `c` in CRS units becomes `q = round(c × 2^15
 evaluated in `f64`. The quantum 2⁻¹⁵ is fixed by the version: it is not a field. Writers reject any
 point with `|c| >= 2^48` CRS units (`|q| < 2^63`, the `i64` range); no other format limit applies. The v7.4-pre converter rejects `|c| >= 2^35` CRS units so derived `f64` node bounds stay exact.
 
-The octree is implicit in the bits of `u = q ^ 0x8000_0000_0000_0000` (the `i64` sign bit flipped, read as
-`u64`). A node at **absolute level** `a` (0..=64) has a per-axis **prefix** `P` of `a` bits (`u64`, `P < 2^a`) and covers
+The octree is implicit in the bits of `u = q - base`, read as `u64`, with `base` per axis (the **lattice
+base**). A cloud with a CRS identity (authority and code, or raw CRS bytes) uses `base = i64::MIN`, which
+is `q ^ 0x8000_0000_0000_0000` (the sign bit flipped): the **global** lattice, shared by every cloud of
+the CRS. A **local** cloud (no code and no raw CRS bytes; the CRS record says so, no extra field) uses
+`base = frame origin quanta`, so its cells start at its own minimum corner and its root is its own first
+split. Local clouds never merge, so they share nothing. A node at **absolute level** `a` (0..=64) has a per-axis **prefix** `P` of `a` bits (`u64`, `P < 2^a`) and covers
 
 ```text
 u in [P << (64 - a), (P + 1) << (64 - a))      per axis; for a = 0, P = 0 covers everything
 side = 2^(64 - a) quanta = 2^(49 - a) CRS units
-node origin (quanta) = ((P << (64 - a)) ^ 0x8000_0000_0000_0000) as i64
+node origin (quanta) = base + (P << (64 - a))     (global: ((P << (64 - a)) ^ 0x8000_0000_0000_0000) as i64)
 ```
 
 A child at level `a + 1` has `P_child = (P_parent << 1) | bit` per axis (`spatial_divisions` = 2 only).
@@ -44,7 +48,9 @@ Shifts by 64 are defined as 0. Two clouds with the same CRS share nodes and cell
 above it is omitted. It is the first node with more than one child whenever one exists, and a single-leaf
 cloud also has a root. The index states the root's absolute level `a0` (any value 0..=64) and prefix; no
 cloud box enlarges the root. A cloud straddling a high bit (e.g. local coordinates centred on 0) gets a
-shallow root with chains of single-child nodes below it (tens of near-empty nodes); this is accepted.
+shallow root with chains of single-child nodes below it (tens of near-empty nodes); this is accepted. A
+**local** cloud has no such chain: its lattice starts at its minimum corner, so its prefix is 0 and the
+root is the first node that holds the cloud.
 
 **Integer geometry.** Node origins and bounds are defined and computed in `i64` quanta from level and
 prefix, never in `f64`. Every `f64` slot holding geometry (frame origin, node bounds) is derived and
@@ -107,8 +113,9 @@ V5 record plus two inserted fields; everything else keeps its order and type.
 
 **Spacing** is finite, positive and an exact power of two (zero mantissa bits; checked from the `f64`
 bits, no `log2`). An internal node has `side / 256 = 2^(41 - a)` CRS units: it halves per level. A leaf
-stores the measured spacing `side / 2^d`, with `d` the first level where the occupied cells grow by less
-than ×1.5 (`0 <= d <= 64 - a`, i.e. between one quantum and `side`). Readers validate the power of two,
+stores the measured spacing `side / 2^d`, with `d` the first level where the occupied cells, once more
+than one, grow by less than ×1.5 (`d` up to 32; a cloud tucked into a corner of its leaf is measured where
+it starts to spread) (`0 <= d <= 64 - a`, i.e. between one quantum and `side`). Readers validate the power of two,
 the range `2^-15 <= spacing <= side` and, for a node with children, the exact value `2^(41 - a)`.
 
 The index header grows by 24 bytes (frame origin quanta). The minimum encoded node grows by 32 bytes (3 × `u64` + `f64`): `MIN_NODE_RECORD_LEN` in

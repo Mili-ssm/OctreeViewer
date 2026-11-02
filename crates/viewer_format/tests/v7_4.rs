@@ -144,7 +144,6 @@ fn index_round_trips_root_prefixes_spacing_crs_and_source_scale() {
     for (crs, source, label) in [
         (wkt_crs(), Some(source), "wkt"),
         (geotiff, Some(source), "geotiff"),
-        (CrsRecord::local(), None, "local"),
     ] {
         let (metadata, blocks) = tree(crs.clone(), source);
         let written = metadata.global_frame().unwrap().clone();
@@ -247,7 +246,7 @@ fn quantization_is_exact_with_a_frame_origin_near_4_4e6_m() {
             vec![BlockId::new(1)],
             500,
             Vec::new(),
-            CrsRecord::local(),
+            wkt_crs(),
             None,
         )
     };
@@ -349,7 +348,7 @@ fn nodes_larger_than_u32_are_split_in_cells_of_2_pow_32_quanta() {
             vec![BlockId::new(1), BlockId::new(2)],
             4,
             Vec::new(),
-            CrsRecord::local(),
+            wkt_crs(),
             None,
         )
     };
@@ -412,7 +411,7 @@ fn shallow_root_uses_integer_bounds_and_exact_quanta() {
             (1..=3).map(BlockId::new).collect(),
             3,
             Vec::new(),
-            CrsRecord::local(),
+            wkt_crs(),
             None,
         )
     };
@@ -472,7 +471,7 @@ fn metadata_with_origin(
         level,
         prefix,
         origin,
-        CrsRecord::local(),
+        wkt_crs(),
         None,
         vec![(NodeId::new(0), cell)],
     )
@@ -660,7 +659,7 @@ fn writer_rejects_metadata_that_breaks_the_spec() {
             crs_level,
             prefix,
             root_origin(crs_level, prefix),
-            CrsRecord::local(),
+            wkt_crs(),
             None,
             vec![(NodeId::new(0), NodeCell::new(prefix, spacing))],
         )
@@ -732,4 +731,28 @@ fn only_v7_4_takes_a_global_frame() {
     assert!(!FormatVersion::DEFAULT_OUTPUT.uses_global_frame());
     assert!(!V74.supports_block_checkpoint());
     assert!(FormatVersion::WRITABLE.contains(&V74));
+}
+
+#[test]
+fn a_local_cloud_anchors_its_lattice_at_the_frame_origin() {
+    let origin = [-3_000_i64, 120, -77];
+    let local = CrsRecord::local();
+    assert!(local.is_local());
+    // Root level 40 (side 2^24 quanta) at prefix 0 starts exactly at the frame origin.
+    let frame = GlobalFrame::new(
+        40,
+        [0; 3],
+        origin,
+        local.clone(),
+        None,
+        vec![(NodeId::new(0), NodeCell::new([0; 3], 2.0))],
+    )
+    .unwrap();
+    assert_eq!(frame.lattice_base(), origin);
+    let bounds = frame.node_bounds(0, [0; 3]).unwrap();
+    assert_eq!(bounds.min(), [0.0; 3]);
+    assert_eq!(bounds.max(), [512.0; 3]);
+    // The same prefix under a CRS identity is a global cell elsewhere, which cannot hold the origin.
+    assert!(GlobalFrame::new(40, [0; 3], origin, wkt_crs(), None, Vec::new()).is_err());
+    assert!(!wkt_crs().is_local());
 }

@@ -4,9 +4,14 @@
 use std::{fs, path::Path};
 
 use las::{Builder, Point, Writer, point::Format};
-use viewer_core::{BlockId, DecodedBlockCache, NodeId, PointBlock, SpatialBounds};
+use viewer_core::{
+    BlockId, DecodedBlockCache, FrustumPlane, LodSelectionConfig, NodeId, PointBlock,
+    SpatialBounds, SpatialFrustum,
+};
 use viewer_format::{FormatReader, FormatVersion};
-use viewer_render_wgpu::{CellGrid, VoxelBuildLimits, build_voxel_scene_with_limits};
+use viewer_render_wgpu::{
+    CellGrid, OrbitCamera, SceneBounds, VoxelBuildLimits, build_voxel_scene_with_limits,
+};
 
 use super::{ConvertOptions, convert_file};
 
@@ -157,7 +162,113 @@ fn the_viewer_dataset_of_a_v7_4_file_is_world_space_with_stored_spacing() {
 }
 
 const GOLDEN: [(usize, u64); 3] = [
-    (2, 7_562_690_955_787_948_776),
-    (24_102, 9_172_085_341_111_685_325),
-    (24_335, 6_436_223_555_049_525_197),
+    (49, 13_076_060_938_919_457_961),
+    (75_378, 7_110_426_578_556_197_141),
+    (75_378, 7_110_426_578_556_197_141),
 ];
+
+/// A 15 cm cloud straddling 0 (like a scanned object in its own frame), 10 um LAS scale.
+fn write_small_local_las(path: &Path, count: usize) {
+    let mut builder = Builder::from((1, 2));
+    builder.point_format = Format::new(0).unwrap();
+    let transform = las::Transform {
+        scale: 0.00001,
+        offset: 0.0,
+    };
+    builder.transforms = las::Vector {
+        x: transform,
+        y: transform,
+        z: transform,
+    };
+    let mut writer = Writer::from_path(path, builder.into_header().unwrap()).unwrap();
+    let mut state = 11_u64;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 33) % 100_000) as f64 / 100_000.0
+    };
+    for _ in 0..count {
+        writer
+            .write_point(Point {
+                x: -0.095 + next() * 0.156,
+                y: 0.036 + next() * 0.152,
+                z: -0.059 + next() * 0.118,
+                ..Point::default()
+            })
+            .unwrap();
+    }
+}
+
+#[test]
+fn a_local_cloud_near_zero_has_a_tight_root_and_every_point_is_reachable() {
+    const COUNT: usize = 30_000;
+    let dir = tempfile::tempdir().unwrap();
+    write_small_local_las(&dir.path().join("a.las"), COUNT);
+    let output = dir.path().join("a.oct");
+    let options = ConvertOptions::new(262_144, 0.01)
+        .unwrap()
+        .with_format_version(FormatVersion::V7_PRE4)
+        .unwrap();
+    convert_file(&dir.path().join("a.las"), &output, options).unwrap();
+    let reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    let metadata = reader.format_metadata();
+    let frame = metadata.global_frame().unwrap();
+    // The extent is about 0.156 m = 5112 quanta, so the root side is 2^13 quanta (a = 51), not
+    // the level-0 root that the sign bit of a cloud straddling 0 would give.
+    assert_eq!(frame.root_level(), 51);
+    assert_eq!(frame.root_prefix(), [0; 3]);
+    let stored = metadata.dataset().hierarchy();
+    assert!(
+        stored.stats().node_count < 50,
+        "no chain of single-child nodes: {}",
+        stored.stats().node_count
+    );
+
+    let dataset = (*metadata.viewer_dataset().unwrap()).clone();
+    let hierarchy = dataset.hierarchy();
+    let origin = dataset.coordinate_frame().origin();
+    let root = hierarchy.stats().root_bounds;
+    let viewport = [1280_u32, 960];
+    let mut camera = OrbitCamera::default();
+    assert!(camera.fit(
+        SceneBounds {
+            min: std::array::from_fn(|axis| root.min()[axis] - origin[axis]),
+            max: std::array::from_fn(|axis| root.max()[axis] - origin[axis]),
+        },
+        viewport,
+    ));
+    let local = camera.spatial_frustum(viewport).unwrap();
+    let world = SpatialFrustum::new(
+        local
+            .planes()
+            .iter()
+            .map(|plane| {
+                FrustumPlane::new(
+                    plane.normal(),
+                    plane.offset()
+                        - (0..3)
+                            .map(|axis| plane.normal()[axis] * origin[axis])
+                            .sum::<f64>(),
+                )
+            })
+            .collect::<Result<_, _>>()
+            .unwrap(),
+    )
+    .unwrap();
+    let cut = hierarchy
+        .select_lod(
+            &world,
+            LodSelectionConfig::new(0.5, u64::MAX).unwrap(),
+            |node| {
+                camera.projected_error_pixels(
+                    node.bounds(),
+                    node.representative_spacing(),
+                    origin,
+                    viewport,
+                )
+            },
+        )
+        .unwrap();
+    assert_eq!(cut.point_count(), COUNT as u64);
+}
