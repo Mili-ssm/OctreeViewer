@@ -1003,9 +1003,7 @@ fn measure_leaf_spacing<S: SpoolStore>(
 }
 
 fn spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32) -> u32 {
-    if max_depth <= MORTON_SPACING_MAX_DEPTH
-        && let Some(depth) = morton_spacing_depth(cells, side_exponent, max_depth)
-    {
+    if let Some(depth) = morton_spacing_depth(cells, side_exponent, max_depth) {
         return depth;
     }
     sorted_spacing_depth(cells, side_exponent, max_depth)
@@ -1037,11 +1035,15 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
     if max_depth == 0 {
         return None;
     }
-    let shift = side_exponent - max_depth;
+    // Codes hold at most `MORTON_SPACING_MAX_DEPTH` levels. The search only reads the counts of
+    // the depths it visits, so when it ends within them a deeper `max_depth` gives the same
+    // result; otherwise the general search takes over.
+    let code_depth = max_depth.min(MORTON_SPACING_MAX_DEPTH);
+    let shift = side_exponent - code_depth;
     let mut codes = Vec::with_capacity(cells.len());
     for relative in cells {
         let [x, y, z] = relative.map(|value| value >> shift);
-        let limit = 1_i128 << max_depth;
+        let limit = 1_i128 << code_depth;
         if [x, y, z].iter().any(|v| !(0..limit).contains(v)) {
             return None;
         }
@@ -1054,22 +1056,22 @@ fn morton_spacing_depth(cells: &[[i128; 3]], side_exponent: u32, max_depth: u32)
         let differing = pair[0] ^ pair[1];
         if differing != 0 {
             let top_group = (63 - differing.leading_zeros()) / 3;
-            first_split[(max_depth - top_group) as usize] += 1;
+            first_split[(code_depth - top_group) as usize] += 1;
         }
     }
     let min_cells = LEAF_PLATEAU_MIN_CELLS.min(cells.len());
     let mut previous = 1_usize;
     let mut occupied = 1_usize;
     let mut depth = 0;
-    for candidate in 1..=max_depth {
+    for candidate in 1..=code_depth {
         occupied += first_split[candidate as usize];
         depth = candidate;
         if growth_ends_search(previous, occupied, min_cells) {
-            break;
+            return Some(depth);
         }
         previous = occupied;
     }
-    Some(depth)
+    (code_depth == max_depth).then_some(depth)
 }
 
 /// The depth search by one sort and dedup of the cell keys per candidate depth.
@@ -1247,5 +1249,23 @@ mod spacing_tests {
     fn identical_points_use_the_deepest_candidate() {
         let cells = vec![[5, 5, 5]; 4];
         assert_eq!(spacing_depth(&cells, 32, 32), 32);
+    }
+
+    #[test]
+    fn a_search_that_ends_within_the_morton_depths_matches_the_general_one() {
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        // Spread over a node of side 2^40 quanta, so the points separate within 21 levels.
+        let cells = (0..2_000)
+            .map(|_| std::array::from_fn(|_| i128::from(next() >> 24)))
+            .collect::<Vec<[i128; 3]>>();
+        let general = sorted_spacing_depth(&cells, 40, 32);
+        assert!(general <= MORTON_SPACING_MAX_DEPTH);
+        assert_eq!(morton_spacing_depth(&cells, 40, 32), Some(general));
     }
 }
