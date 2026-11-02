@@ -265,7 +265,8 @@ fn flags_without_extra_bytes_are_kept_and_older_formats_are_unchanged() {
     // The same file with extra bytes in v7.4-pre has the pre-RF-24 schema.
     let extras = dir.path().join("e.las");
     write_las(&extras, 3, 3000, Some(descriptors()), 19);
-    for version in [FormatVersion::V7_PRE4] {
+    {
+        let version = FormatVersion::V7_PRE4;
         let output = dir.path().join("old.oct");
         convert_file(&extras, &output, options(version)).unwrap();
         let reader = open(&output);

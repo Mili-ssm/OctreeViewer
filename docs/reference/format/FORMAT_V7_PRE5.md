@@ -62,10 +62,32 @@ CRS record, source scale/offset, sampling policy, semantics, visual scale, schem
 | Total blocks | `u64` | ≤ `max_blocks`. Informative until every page has been read |
 | Pages start | `u64` | End of the block payloads and start of the child pages; ≥ 24 and ≤ `index_offset` |
 | Global attribute ranges | per schema attribute, per component | `u8` flag (0 = no finite value, 1 = present), then `f64` min and `f64` max when present (finite, min ≤ max). The range over **every node** of the file, so a reader holding only the root page colours all views with one range. `verify` and the eager reader check it against the pages |
-| Extension length | `u32` | Must be 0 in this part. **Hook for [plan task P2a](../../plans/render-r5-jerarquia-paginada.md#tarea-p2a-flags-las-y-extra-bytes-rf-24)**: LAS flags and Extra Bytes descriptors will go here (or as schema attributes); nothing else about them is defined yet |
+| Extension length | `u32` | Bytes that follow: `0` (no Extra Bytes) or `2 + 108 × count`. See [LAS flags and Extra Bytes](#flags-las-y-extra-bytes-rf-24) |
 
 The schema may hold at most 65 535 attributes in this revision (`u16` indexes in pages).
 Hierarchy source EPT, Additive semantics and checkpoints are rejected by the writer (R5 constraint).
+
+## Flags LAS y Extra Bytes (RF-24)
+
+Solo `v7.5-pre` conserva estos datos (los demás formatos los descartan como antes). Una conversión LAS escribe siempre la columna `las_flags`; la extensión del bloque de metadatos solo tiene contenido si el LAS declara Extra Bytes.
+
+- **Esquema** (máximo 256 atributos): las columnas de siempre, luego `las_flags` y una columna por descriptor de Extra Byte, en el orden de los descriptores. Superar 256 atributos o 64 B de Extra Bytes por punto es un error explícito.
+- **`las_flags`** (`u8`): bit 0 sintético, 1 punto clave, 2 retenido (*withheld*), 3 solapado. Formatos de punto 0–5: bits 5–7 del byte de clasificación (el solape es siempre 0; la clasificación 12 queda como está). Formatos 6–10: nibble bajo del byte de flags.
+- **Columna de un Extra Byte** `extra:<nombre>` (`extra:<nombre>#<i>` si el nombre está vacío o repetido): una sola columna con el tipo almacenado (u8…f64) y 1–3 componentes (los tipos array 11–30 son una columna de 2 o 3 componentes). Los valores son los crudos del LAS; escala, desplazamiento y *no data* van en el descriptor, de modo que no hay redondeo.
+- **Tipos no admitidos**: 0 (sin documentar) y 31–255 (obsoletos) dan error. Los descriptores deben sumar exactamente los Extra Bytes del formato de punto; si faltan o no cuadran, error.
+- **Extensión** (`count u16`, luego `count` entradas de 108 B; las columnas son las `count` últimas del esquema y su tipo y componentes deben coincidir):
+
+| Campo | Tamaño | Regla |
+| --- | --- | --- |
+| Nombre | 32 B | UTF-8 con relleno NUL |
+| Tipo LAS | `u8` | 1–30 |
+| Opciones | `u8` | bit 0 *no data*, bit 3 escala, bit 4 desplazamiento; el resto 0 |
+| Reservado | `u16` | 0 |
+| *No data* | 3 × 8 B | Crudo, tipado por el tipo LAS; ceros si falta |
+| Escala | 3 × `f64` | Finita; 1 si falta |
+| Desplazamiento | 3 × `f64` | Finito; 0 si falta |
+
+Valor real = crudo × escala + desplazamiento (por elemento). Una entrada sin normalizar (campo ausente distinto de su valor por defecto) se rechaza para que cada descriptor tenga una sola codificación.
 
 ## Node identity and order
 
@@ -220,8 +242,7 @@ two bound the declared totals and, for the eager `FormatReader`, the pages actua
 
 ## Not in this revision (yet)
 
-- **LAS flags and Extra Bytes (RF-24)** belong to `v7.5-pre` (R5-Q4) but are plan task **P2a**; only the
-  extension-length hook above and the reserved node flag bits are defined here.
+- The reserved node flag bits are still undefined.
 - Lazy loading in the viewer (P3) and HTTP Range (P4): the sync `PagedReader` is the format-level API
   those build on.
 

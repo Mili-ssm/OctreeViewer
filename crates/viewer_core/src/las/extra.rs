@@ -207,7 +207,9 @@ pub fn parse_extra_byte_descriptors(data: &[u8]) -> Result<Vec<LasExtraByte>, La
     if !data.len().is_multiple_of(EXTRA_BYTE_DESCRIPTOR_LEN) {
         return Err(LasExtraBytesError::DescriptorLength(data.len()));
     }
-    data.chunks_exact(EXTRA_BYTE_DESCRIPTOR_LEN)
+    data.as_chunks::<EXTRA_BYTE_DESCRIPTOR_LEN>()
+        .0
+        .iter()
         .enumerate()
         .map(|(index, record)| {
             let at = |start: usize| -> [u8; 8] {

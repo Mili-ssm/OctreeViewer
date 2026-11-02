@@ -80,8 +80,10 @@ Resultado (02-11-2026, revisado el mismo día por dos decisiones del propietario
 
 Decisión (02-11-2026): el criterio de parada se activó (toca `viewer_convert_core`, `viewer_convert`, `viewer_core` y `viewer_wasm`). El propietario autoriza hacerlo dentro de `v7.5-pre` para mantener una sola regeneración, **después de P3**. Diseño: columna `las_flags` u8 (bit 0 synthetic, 1 key-point, 2 withheld, 3 overlap) y una columna tipada por Extra Byte; descriptores en la extensión de metadatos; tipos obsoletos o que no caben → error explícito.
 
-- [ ] Llevar los flags y los Extra Bytes al spool (`SpoolLayout`), al esquema (≤ 256 atributos) y a la conversión web. Hoy se descartan (`source.rs:262-276`).
+- [x] Llevar los flags y los Extra Bytes al spool (`SpoolLayout`), al esquema (≤ 256 atributos) y a la conversión web (la web usa el mismo núcleo serie de `viewer_convert_core`).
 - [x] **Pasa si** una ida y vuelta conversor → lector devuelve los flags y los Extra Bytes exactos. Mientras no exista exportador LAS, esta es la verificación.
+
+Resultado (02-11-2026): implementado según el diseño; formato en [FORMAT_V7_PRE5](../reference/format/FORMAT_V7_PRE5.md#flags-las-y-extra-bytes-rf-24). Extra Bytes de hasta 64 B por punto (el registro del spool los lleva en línea). Pruebas de ida y vuelta en `viewer_convert` (`las_extra_tests.rs`: formatos 3 y 6, escalado, no escalado, array, tipos rechazados, más de 256 atributos, formatos anteriores sin cambios) y paridad núcleo serie (ruta web) frente a CLI. Pendiente: caso de paridad en wasm32 real (`tools/convert_parity`, necesita un LAS generado) y verificación en navegador.
 
 ## Tarea P3: lector perezoso local
 
