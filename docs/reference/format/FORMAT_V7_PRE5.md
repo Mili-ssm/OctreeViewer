@@ -74,7 +74,7 @@ Solo `v7.5-pre` conserva estos datos (los demás formatos los descartan como ant
 - **Esquema** (máximo 256 atributos): las columnas de siempre, luego `las_flags` y una columna por descriptor de Extra Byte, en el orden de los descriptores. Superar 256 atributos o 64 B de Extra Bytes por punto es un error explícito.
 - **`las_flags`** (`u8`): bit 0 sintético, 1 punto clave, 2 retenido (*withheld*), 3 solapado. Formatos de punto 0–5: bits 5–7 del byte de clasificación (el solape es siempre 0; la clasificación 12 queda como está). Formatos 6–10: nibble bajo del byte de flags.
 - **Columna de un Extra Byte** `extra:<nombre>` (`extra:<nombre>#<i>` si el nombre está vacío o repetido): una sola columna con el tipo almacenado (u8…f64) y 1–3 componentes (los tipos array 11–30 son una columna de 2 o 3 componentes). Los valores son los crudos del LAS; escala, desplazamiento y *no data* van en el descriptor, de modo que no hay redondeo.
-- **Tipos no admitidos**: 0 (sin documentar) y 31–255 (obsoletos) dan error. Los descriptores deben sumar exactamente los Extra Bytes del formato de punto; si faltan o no cuadran, error.
+- **Tipos no admitidos**: 0 (sin documentar) y 31–255 (obsoletos) dan error. Los descriptores deben sumar exactamente los Extra Bytes del formato de punto; si no cuadran, error. Si el LAS tiene Extra Bytes pero ningún VLR de descriptores, los bytes no se pueden tipar: se descartan y el conversor los informa en `omitted_dimensions` («extra point bytes»).
 - **Extensión** (`count u16`, luego `count` entradas de 108 B; las columnas son las `count` últimas del esquema y su tipo y componentes deben coincidir):
 
 | Campo | Tamaño | Regla |

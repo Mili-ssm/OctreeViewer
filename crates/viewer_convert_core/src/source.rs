@@ -124,8 +124,13 @@ impl SourceInfo {
     /// Source dimensions the output drops.
     pub fn omitted_dimensions(&self) -> Vec<String> {
         let mut dimensions = omitted_dimensions(&self.point_format, self.has_crs);
-        if self.las_extra_bytes.is_some() {
-            dimensions.retain(|d| !d.starts_with("synthetic/") && d != "extra point bytes");
+        if let Some(extras) = &self.las_extra_bytes {
+            // Extra Bytes in the record with no descriptor VLR are undocumented: they are
+            // dropped and stay reported.
+            let undocumented = extras.is_empty() && self.point_format.extra_bytes > 0;
+            dimensions.retain(|d| {
+                !d.starts_with("synthetic/") && (undocumented || d != "extra point bytes")
+            });
         }
         dimensions
     }
@@ -135,7 +140,11 @@ impl SourceInfo {
     pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
         if options.format_version().uses_pages() {
             let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs)?;
-            validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))?;
+            // Without any descriptor the bytes cannot be typed: they are dropped (and reported
+            // in `omitted_dimensions`); descriptors that do not cover the record are an error.
+            if !self.extra_byte_vlrs.is_empty() {
+                validate_extra_bytes(&extras, usize::from(self.point_format.extra_bytes))?;
+            }
             self.las_extra_bytes = Some(extras.into());
             // Fails here, before any point is read, when the schema does not fit.
             self.schema()?;

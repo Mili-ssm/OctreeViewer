@@ -308,13 +308,7 @@ fn unsupported_or_inconsistent_extra_bytes_are_explicit_errors() {
             ))
         ));
     }
-    // Extra bytes in the record without descriptors, or descriptors of another size.
-    assert!(matches!(
-        convert("u", None, 4),
-        Err(ConvertError::LasExtraBytes(
-            LasExtraBytesError::SizeMismatch { .. }
-        ))
-    ));
+    // Descriptors of another size than the record's Extra Bytes.
     assert!(matches!(
         convert("m", Some(descriptor(3, 0, "x", 1.0, 0.0, 0)), 1),
         Err(ConvertError::LasExtraBytes(
@@ -330,7 +324,8 @@ fn unsupported_or_inconsistent_extra_bytes_are_explicit_errors() {
         ))
     ));
     // The same descriptors are fine for a format that drops Extra Bytes.
-    let input = dir.path().join("u.las");
+    let input = dir.path().join("m.las");
+    write_las(&input, 0, 100, Some(descriptors()), 19);
     convert_file(
         &input,
         &dir.path().join("old.oct"),
@@ -355,4 +350,26 @@ fn serial_core_matches_native_with_flags_and_extra_bytes() {
             &format!("format {format_id}"),
         );
     }
+}
+
+/// Extra Bytes without an Extra Bytes VLR cannot be typed: they are dropped and reported, and
+/// the flags column is still kept.
+#[test]
+fn undocumented_extra_bytes_are_dropped_and_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("u.las");
+    write_las(&input, 3, 500, None, 4);
+    let output = dir.path().join("u.oct");
+    let report = convert_file(&input, &output, options(FormatVersion::V7_PRE5)).unwrap();
+    assert!(
+        report
+            .omitted_dimensions
+            .iter()
+            .any(|d| d == "extra point bytes"),
+        "{:?}",
+        report.omitted_dimensions
+    );
+    let reader = open(&output);
+    assert!(reader.format_metadata().las_extra_bytes().is_empty());
+    column_index(&reader, "las_flags");
 }
