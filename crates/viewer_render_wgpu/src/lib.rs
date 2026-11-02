@@ -23,9 +23,9 @@ pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use node_cells::{
-    CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel, NodeCellSource,
-    NodeCells, PointNodeCellSource, node_cells_digest, representative_depth,
-    representative_depth_for_spacing,
+    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
+    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cells_digest,
+    representative_depth, representative_depth_for_spacing,
 };
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,

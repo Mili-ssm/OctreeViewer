@@ -6,8 +6,8 @@ use viewer_core::{
 };
 
 use crate::{
-    CHAIN_SPAN, CellGrid, NodeCellSource, NodeCells, OrbitCamera, PointNodeCellSource, SceneBounds,
-    node_cells_digest, representative_depth,
+    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, NodeCellSource, NodeCells, OrbitCamera,
+    PointNodeCellSource, SceneBounds, chain_keep_mask, node_cells_digest, representative_depth,
 };
 
 const SIDE: f64 = 64.0;
@@ -77,7 +77,7 @@ fn attributed_block(points: Vec<Point>, intensity: Vec<u16>, class: Vec<u8>) -> 
 }
 
 fn cells_of(grid: &CellGrid, bounds: SpatialBounds, leaf: bool, block: &PointBlock) -> NodeCells {
-    PointNodeCellSource
+    PointNodeCellSource::default()
         .node_cells(grid, NodeId::new(7), bounds, None, leaf, block)
         .unwrap()
 }
@@ -266,7 +266,17 @@ fn leaf_chain_respects_ten_bit_span() {
         let x = (SIDE * 1.5 / f64::from(1_u32 << (u32::from(d0) + j))) as f32;
         points.push(Point::new([x, 0.0, 0.0], ColorRgb::new(2, 2, 2)));
     }
-    let cells = cells_of(&grid(), bounds, true, &plain_block(points));
+    // Growth 1.0 keeps every level; the default growth prunes this slowly growing chain.
+    let cells = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(
+            &grid(),
+            NodeId::new(7),
+            bounds,
+            None,
+            true,
+            &plain_block(points),
+        )
+        .unwrap();
     let depths: Vec<_> = cells.levels.iter().map(|level| level.depth).collect();
     let expected: Vec<_> = (d0..=d0 + CHAIN_SPAN).collect();
     assert_eq!(depths, expected);
@@ -329,4 +339,34 @@ fn representative_depth_snaps_float_noise_to_the_intended_level() {
     assert_eq!(representative_depth(&grid, noisy), 14);
     let coarser = cube(grid.root_min, exact * 1.5);
     assert_eq!(representative_depth(&grid, coarser), 13);
+}
+
+#[test]
+fn chain_keep_mask_keeps_finest_and_geometric_levels() {
+    // 100 is kept; 90 and 80 are within 1.5x of it; 60 is not; 50 is dropped against 60; 20 is kept.
+    let counts = [20, 50, 60, 80, 90, 100];
+    assert_eq!(
+        chain_keep_mask(&counts, 1.5),
+        [true, false, true, false, false, true]
+    );
+    assert_eq!(chain_keep_mask(&counts, 1.0), [true; 6]);
+    assert!(chain_keep_mask(&[], 1.5).is_empty());
+}
+
+#[test]
+fn leaf_chain_has_at_most_three_cells_per_point() {
+    let mut rng = Lcg(5);
+    let bounds = cube([0.0; 3], 16.0);
+    for count in [3_usize, 40, 300, 2000] {
+        let points = random_points(&mut rng, [0.0; 3], 16.0, count);
+        let cells = cells_of(&grid(), bounds, true, &plain_block(points));
+        let total: usize = cells.levels.iter().map(|level| level.cells.len()).sum();
+        assert!(
+            (total as f64) <= count as f64 * CHAIN_MIN_GROWTH / (CHAIN_MIN_GROWTH - 1.0),
+            "{count} points gave {total} cells"
+        );
+        let finest = cells.levels.last().unwrap();
+        let counts: usize = finest.cells.iter().map(|cell| cell.count as usize).sum();
+        assert_eq!(counts, count, "the finest level keeps every point");
+    }
 }

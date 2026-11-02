@@ -14,6 +14,10 @@ use crate::attributes::ScalarAttribute;
 pub const MAX_CELL_DEPTH: u8 = 24;
 /// Levels a leaf chain may add to its representative depth: 10 bits per axis for a root-sized node.
 pub const CHAIN_SPAN: u8 = 7;
+/// Minimum cell-count growth between two stored levels of a leaf chain. Stored counts then grow
+/// geometrically towards the finest level, which holds at most one cell per point, so the chain
+/// has at most `g / (g - 1)` times the cells of its finest level: 3x for 1.5.
+pub const CHAIN_MIN_GROWTH: f64 = 1.5;
 
 /// The dyadic grid; R4 changes its anchor.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -111,7 +115,19 @@ pub trait NodeCellSource {
 }
 
 /// Cells computed directly from the node's decoded points.
-pub struct PointNodeCellSource;
+pub struct PointNodeCellSource {
+    /// Minimum cell-count growth between stored leaf levels (see `chain_keep_mask`); `1.0` keeps
+    /// every level (benchmark baseline).
+    pub min_growth: f64,
+}
+
+impl Default for PointNodeCellSource {
+    fn default() -> Self {
+        Self {
+            min_growth: CHAIN_MIN_GROWTH,
+        }
+    }
+}
 
 impl NodeCellSource for PointNodeCellSource {
     fn node_cells(
@@ -154,8 +170,30 @@ impl NodeCellSource for PointNodeCellSource {
             }
             levels.push(NodeCellLevel { depth, cells });
         }
+        if is_leaf {
+            let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
+            let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
+            levels.retain(|_| keep.next().unwrap_or(true));
+        }
         Ok(NodeCells { node, levels })
     }
+}
+
+/// Which levels of a chain (cell counts, coarse to fine) to store. The finest level is always
+/// kept; a coarser level is kept only if it has at most `1 / growth` of the cells of the next
+/// kept level. A dropped level adds no detail over the kept finer one (similar cell count), and
+/// a lookup that falls back to the next finer stored level never draws cells larger than the
+/// target (RQ-09).
+pub fn chain_keep_mask(counts: &[usize], growth: f64) -> Vec<bool> {
+    let mut keep = vec![false; counts.len()];
+    let mut finer: Option<usize> = None;
+    for (index, count) in counts.iter().enumerate().rev() {
+        if finer.is_none_or(|cells| (*count as f64) * growth <= cells as f64) {
+            keep[index] = true;
+            finer = Some(*count);
+        }
+    }
+    keep
 }
 
 struct Points<'a> {

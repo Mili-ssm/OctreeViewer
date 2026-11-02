@@ -7,12 +7,22 @@ use std::{collections::BTreeMap, fs::File, time::Instant};
 use viewer_core::{Point, PointBlock};
 use viewer_format::FormatReader;
 use viewer_render_wgpu::{
-    CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellSource, PointNodeCellSource,
-    representative_depth, representative_depth_for_spacing,
+    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellSource,
+    PointNodeCellSource, chain_keep_mask, representative_depth, representative_depth_for_spacing,
 };
 
 /// Planned GPU instance size (ADR 0027): 512 instances per 8 KiB page.
 const INSTANCE_BYTES: usize = 16;
+/// Growth values compared against the unpruned chain (`1.0`), besides `CHAIN_MIN_GROWTH`.
+const CANDIDATE_GROWTH: [f64; 4] = [1.0, 1.25, 1.5, 2.0];
+
+#[derive(Default, Clone, Copy)]
+struct GrowthStats {
+    over_4x: usize,
+    worst: f64,
+    cell_bytes: usize,
+    levels: usize,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
@@ -48,8 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut leaf_seconds, mut leaf_points, mut leaf_cell_bytes, mut leaf_point_bytes) =
         (0.0_f64, 0_u64, 0_usize, 0_usize);
     let mut worst_ratio = 0.0_f64;
+    let mut worst_leaf = String::new();
     let (mut internal_seconds, mut internal_nodes) = (0.0_f64, 0_usize);
     let mut cells_total = 0_usize;
+    let mut growth_stats = [GrowthStats::default(); CANDIDATE_GROWTH.len()];
 
     for node in &nodes {
         let bounds = node.bounds();
@@ -82,7 +94,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let block = PointBlock::new(node.blocks()[0], points, Vec::new());
         let is_leaf = hierarchy.is_leaf(node.id());
         let started = Instant::now();
-        let cells = PointNodeCellSource.node_cells(
+        // Growth 1.0 keeps every level: the chain before pruning.
+        let cells = PointNodeCellSource { min_growth: 1.0 }.node_cells(
             &grid,
             node.id(),
             local,
@@ -112,8 +125,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if cell_bytes > 4 * point_bytes {
                 over_4x += 1;
             }
-            if point_bytes > 0 {
-                worst_ratio = worst_ratio.max(cell_bytes as f64 / point_bytes as f64);
+            if point_bytes > 0 && cell_bytes as f64 / point_bytes as f64 > worst_ratio {
+                worst_ratio = cell_bytes as f64 / point_bytes as f64;
+                let per_level: Vec<_> = cells
+                    .levels
+                    .iter()
+                    .map(|level| (level.depth, level.cells.len()))
+                    .collect();
+                worst_leaf = format!(
+                    "node {} level {} spacing {:?}: {point_count} points, (depth, cells) {per_level:?}",
+                    node.id().get(),
+                    node.level(),
+                    node.spacing()
+                );
+            }
+            let counts: Vec<usize> = cells.levels.iter().map(|level| level.cells.len()).collect();
+            for (stats, growth) in growth_stats.iter_mut().zip(CANDIDATE_GROWTH) {
+                let mask = chain_keep_mask(&counts, growth);
+                let kept = counts.iter().zip(&mask).filter(|(_, keep)| **keep);
+                let bytes = kept.clone().map(|(count, _)| count).sum::<usize>() * INSTANCE_BYTES;
+                stats.over_4x += usize::from(bytes > 4 * point_bytes);
+                if point_bytes > 0 {
+                    stats.worst = stats.worst.max(bytes as f64 / point_bytes as f64);
+                }
+                stats.cell_bytes += bytes;
+                stats.levels += kept.count();
             }
             leaf_seconds += seconds;
             leaf_points += point_count as u64;
@@ -166,6 +202,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             1.0e9 * leaf_seconds / leaf_points.max(1) as f64,
             leaf_cell_bytes as f64 / leaves as f64,
             leaf_point_bytes as f64 / leaves as f64,
+        );
+    }
+    println!("worst unpruned leaf: {worst_leaf}");
+    println!("leaf chain pruning (default growth {CHAIN_MIN_GROWTH}; 1.0 = no pruning):");
+    for (stats, growth) in growth_stats.iter().zip(CANDIDATE_GROWTH) {
+        println!(
+            "  growth {growth}: >4x {}, worst {:.2}x, total {:.2}x, {:.2} levels/leaf",
+            stats.over_4x,
+            stats.worst,
+            stats.cell_bytes as f64 / leaf_point_bytes.max(1) as f64,
+            stats.levels as f64 / leaves.max(1) as f64,
         );
     }
     if internal_nodes > 0 {
