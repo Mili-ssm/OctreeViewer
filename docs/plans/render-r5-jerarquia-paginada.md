@@ -44,13 +44,14 @@ Pre-mortem (02-11-2026) integrado: sus fallos 1–8 tienen tarea o criterio en e
 
 ## Tarea P1: jerarquía que crece y encoge
 
-- [ ] `SpatialHierarchy` detrás de una abstracción con subárboles desconocidos, que crece al llegar una página y encoge al expulsarla.
-- [ ] `LodSelection` distingue `unloaded_anchors` de `resolution_limited`. `next_lod_stage` y `resident_target_plan_is_complete` (`lod_dataset.rs`) cuentan las páginas pendientes. Las páginas que faltan se piden con la prioridad de error proyectado.
-- [ ] Solo se expulsa una página si no tiene páginas descendientes residentes ni nodos en el corte retenido del planner (`lod_transition.rs` sube por `parent()`).
-- [ ] Tests:
+- [x] `SpatialHierarchy` detrás de una abstracción con subárboles desconocidos, que crece al llegar una página y encoge al expulsarla.
+- [x] `LodSelection` distingue `unloaded_anchors` de `resolution_limited`. `next_lod_stage` y `resident_target_plan_is_complete` (`lod_dataset.rs`) cuentan las páginas pendientes. Las páginas que faltan se piden con la prioridad de error proyectado.
+- [x] Solo se expulsa una página si no tiene páginas descendientes residentes ni nodos en el corte retenido del planner (`lod_transition.rs` sube por `parent()`).
+- [x] Tests:
   - con todas las páginas cargadas, el corte y los digests son iguales a los de hoy;
   - con páginas retenidas, la etapa no baja de la inicial y se pide la página;
   - expulsar páginas bajo presión no deja nodos huérfanos.
+Resultado (02-11-2026): API `mark_unloaded` / `graft_page` / `evict_page` en `SpatialHierarchy`; selección y etapas con anclas pendientes; dorados sin cambios. Pasa a P3: `LodDataset` mutable (hoy `Arc<DatasetMetadata>`), política de expulsión, exponer `pending_page_anchors` a JS y descartar anclas sin puntos. La comparación por (nivel, prefijo) pasa a P2.
 
 ## Tarea P2: `v7.5-pre`, páginas
 
