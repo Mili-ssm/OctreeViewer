@@ -1,6 +1,6 @@
 # 0030 Jerarquía paginada por niveles desde anclas de prefijo
 
-Estado: Propuesta · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR 0029](0029-octree-global-por-bits-de-enteros.md)
+Estado: Aceptada · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR 0029](0029-octree-global-por-bits-de-enteros.md)
 
 ## Contexto
 - Hoy el índice se carga entero. Mide ~560–610 B por nodo: 13,5 MB en Majadas (24 091 nodos) y 2,4 MB en Belvedere ([registro T6](../records/benchmarks/R4_T6_MEASUREMENT_02-11-2026.md)). Abrir cuesta 17–35 µs por nodo.
@@ -25,7 +25,7 @@ Estado: Propuesta · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR
   - espaciado de los nodos internos;
   - ids de nodo y de padre.
 - **Apertura:** el índice es un bloque de metadatos más la página raíz, junto al pie. Las páginas hijas se escriben en anchura tras los datos, de modo que una sola petición de rango trae varias hermanas.
-- **Validación:** cada página se valida sola. Las comprobaciones globales del fichero pasan a un `verify` del CLI.
+- **Validación:** al abrir, cada página se valida sola (CRC, claves, rangos dentro de la sección de datos, sin solapes dentro de la página); una página inválida se rechaza. Las comprobaciones globales (sin huecos entre bloques, propiedad de bloques) pasan a `viewer_convert verify` (propietario, 02-11-2026; precisa ADR 0023).
 - **Lector:** pide las páginas bajo demanda, con la prioridad de error proyectado de los bloques. Las guarda en una caché LRU, con las páginas que tienen nodos seleccionados fijadas.
 - **Selección de LOD:** un ancla sin página cargada cuenta como «hijos desconocidos».
 - **Revisión `v7.5-pre`:** incluye también los flags LAS y los Extra Bytes (RF-24), decisión del propietario del 02-11-2026, para que haya una sola regeneración (ADR 0022).
@@ -45,7 +45,7 @@ Estado: Propuesta · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR
 - El coste de apertura deja de crecer con el número total de nodos, y la lectura remota pasa a ser posible.
 - `SpatialHierarchy` tiene que poder crecer.
 - Desaparece el descriptor JS por nodo (antigua R1-T6).
-- Las comprobaciones globales pasan al `verify` del CLI. Para ficheros remotos no fiables, esto debilita la validación al abrir (ADR 0023): queda pendiente del propietario.
+- Las comprobaciones globales pasan al `verify` del CLI.
 - Hay que reconvertir todos los datasets; `v7.4-pre` sigue siendo legible.
 
 ## Revisar si
