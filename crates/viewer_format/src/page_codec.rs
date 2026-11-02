@@ -1,5 +1,5 @@
 //! Page codec of `v7.5-pre` ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)): node
-//! identity derived from `(level, prefix)`, and encode/decode/validation of one page.
+//! identity as `(page number, index in the page)`, and encode/decode/validation of one page.
 
 use viewer_core::{AttributeDescriptor, BlockId, NodeId};
 
@@ -15,9 +15,6 @@ use crate::{BlockCodec, Crc32, FormatError, GeometryEncoding, NodeAttributeRange
 pub const MAX_PAGE_LEVELS: u8 = 5;
 /// The writer picks the largest `k` whose page fits this size.
 pub const TARGET_PAGE_BYTES: usize = 512 * 1024;
-/// Deepest node below the stored root: `1 + 3 * depth` bits of `NodeId` must fit a `u64`.
-pub const MAX_NODE_DEPTH: u32 = 21;
-
 const MAX_LEVEL: u32 = 64;
 const SPLIT_BELOW_LEVEL: u32 = MAX_LEVEL - BLOCK_SIDE_EXPONENT;
 const MIN_SPACING_EXPONENT: i32 = -15;
@@ -28,7 +25,8 @@ const PAGE_HEADER_LEN: usize = 38;
 const CRC_LEN: usize = 4;
 /// Depth 1, path 2, flags 1, point count 8, geometric error 8, block count 4, range count 2.
 const MIN_NODE_RECORD_LEN: usize = 26;
-/// Offset 8, length 8, point count 8, geometry tag 1, error 8, plus the geometry payload entry.
+/// Geometry offset 8, attribute offset 8, point count 8, geometry tag 1, error 8, plus the geometry
+/// payload entry.
 const MIN_BLOCK_RECORD_LEN: usize = 33;
 /// Smallest valid page: header, one node, CRC.
 pub(crate) const MIN_PAGE_LEN: usize = PAGE_HEADER_LEN + MIN_NODE_RECORD_LEN + CRC_LEN;
@@ -42,11 +40,26 @@ pub struct PageAnchor {
     pub prefix: [u64; 3],
 }
 
-/// Where a child page lives: absolute file offset and byte length.
+/// Where a child page lives: absolute file offset, byte length and page number. The page number
+/// is stored; `anchor_node` is not: the decoder fills in the id of the node that holds the
+/// pointer, which the child page needs to resolve the parent of its top nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PagePointer {
     pub offset: u64,
     pub length: u32,
+    pub page: u32,
+    pub anchor_node: NodeId,
+}
+
+/// `NodeId` of the node at `index` (position in page order) of page number `page`.
+pub const fn page_node_id(page: u32, index: u32) -> NodeId {
+    NodeId::new(((page as u64) << 32) | index as u64)
+}
+
+/// `(page number, index in the page)` of a `v7.5-pre` node id.
+pub const fn split_node_id(id: NodeId) -> (u32, u32) {
+    let value = id.get();
+    ((value >> 32) as u32, value as u32)
 }
 
 /// One block record, inline in its node.
@@ -54,7 +67,10 @@ pub struct PagePointer {
 pub struct PageBlock {
     pub(crate) id: BlockId,
     pub(crate) offset: u64,
+    /// Geometry length in the `.oct`: the stored length of the geometry column.
     pub(crate) payload_length: u64,
+    /// Start of the block's colour and attribute columns in the `.octattrs`.
+    pub(crate) attribute_offset: u64,
     pub(crate) point_count: u64,
     pub(crate) geometry_encoding: GeometryEncoding,
     pub(crate) quantization_error: f64,
@@ -75,6 +91,10 @@ impl PageBlock {
         self.payload_length
     }
 
+    pub fn attribute_offset(&self) -> u64 {
+        self.attribute_offset
+    }
+
     pub fn point_count(&self) -> u64 {
         self.point_count
     }
@@ -88,6 +108,17 @@ impl PageBlock {
     }
 
     /// Stored (compressed) byte length of each payload column, geometry first.
+    /// End of the block's columns in the `.octattrs`.
+    pub(crate) fn attribute_end(&self) -> u64 {
+        self.attribute_offset
+            + self
+                .payloads
+                .iter()
+                .skip(1)
+                .map(|payload| payload.stored_length)
+                .sum::<u64>()
+    }
+
     pub fn stored_lengths(&self) -> Vec<u64> {
         self.payloads.iter().map(|p| p.stored_length).collect()
     }
@@ -177,6 +208,7 @@ impl PageNode {
 /// A decoded, validated page.
 #[derive(Debug, Clone)]
 pub struct Page {
+    pub(crate) number: u32,
     pub(crate) anchor: PageAnchor,
     pub(crate) k: u8,
     pub(crate) is_root: bool,
@@ -186,6 +218,11 @@ pub struct Page {
 }
 
 impl Page {
+    /// Page number: 0 for the root page, then the writer's plan order (breadth-first).
+    pub fn number(&self) -> u32 {
+        self.number
+    }
+
     pub fn anchor(&self) -> PageAnchor {
         self.anchor
     }
@@ -231,7 +268,11 @@ impl Page {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum PageExpect {
     Root,
-    Child(PageAnchor),
+    Child {
+        anchor: PageAnchor,
+        page: u32,
+        anchor_node: NodeId,
+    },
 }
 
 /// Everything page validation needs from the metadata block.
@@ -247,32 +288,16 @@ fn prefix_fits(level: u32, prefix: u64) -> bool {
     prefix.checked_shr(level).unwrap_or(0) == 0
 }
 
-/// Derived `NodeId` of the node `(level, prefix)`: a sentinel `1` followed by one octant (3 bits,
-/// `x | y << 1 | z << 2`) per level below the stored root. `None` if the node is not below the
-/// root prefix, is deeper than [`MAX_NODE_DEPTH`] or has an impossible prefix.
-pub fn derive_node_id(
-    root_level: u32,
-    root_prefix: [u64; 3],
-    level: u32,
-    prefix: [u64; 3],
-) -> Option<NodeId> {
-    let depth = level.checked_sub(root_level)?;
-    if depth > MAX_NODE_DEPTH || level > MAX_LEVEL {
-        return None;
-    }
-    for axis in 0..3 {
-        if !prefix_fits(level, prefix[axis]) || prefix[axis] >> depth != root_prefix[axis] {
-            return None;
-        }
-    }
-    let mut id = 1_u64;
-    for step in (0..depth).rev() {
-        let octant = (0..3).fold(0_u64, |bits, axis| {
-            bits | (((prefix[axis] >> step) & 1) << axis)
-        });
-        id = (id << 3) | octant;
-    }
-    Some(NodeId::new(id))
+/// Whether `(level, prefix)` lies at or below the root node.
+fn under_root(root_level: u32, root_prefix: [u64; 3], level: u32, prefix: [u64; 3]) -> bool {
+    let Some(depth) = level.checked_sub(root_level) else {
+        return false;
+    };
+    level <= MAX_LEVEL
+        && (0..3).all(|axis| {
+            prefix_fits(level, prefix[axis])
+                && prefix[axis].checked_shr(depth).unwrap_or(0) == root_prefix[axis]
+        })
 }
 
 /// Prefix of the node at `depth`/`path` below `anchor`.
@@ -350,15 +375,21 @@ pub(crate) fn decode_page(
     let node_count = cursor.u32()?;
     let first_block_id = cursor.u64()?;
 
-    let (is_root, expected) = match expect {
+    let (is_root, expected, number, anchor_node) = match expect {
         PageExpect::Root => (
             true,
             PageAnchor {
                 level: ctx.frame.root_level(),
                 prefix: ctx.frame.root_prefix(),
             },
+            0,
+            None,
         ),
-        PageExpect::Child(anchor) => (false, anchor),
+        PageExpect::Child {
+            anchor,
+            page,
+            anchor_node,
+        } => (false, anchor, page, Some(anchor_node)),
     };
     if anchor != expected {
         return Err(FormatError::MalformedIndex(
@@ -369,19 +400,14 @@ pub(crate) fn decode_page(
         return Err(FormatError::MalformedIndex("page level count is invalid"));
     }
     let root_level = ctx.frame.root_level();
-    let anchor_id = derive_node_id(
+    if !under_root(
         root_level,
         ctx.frame.root_prefix(),
         anchor.level,
         anchor.prefix,
-    )
-    .ok_or(FormatError::MalformedIndex(
-        "page anchor is outside the root prefix or too deep",
-    ))?
-    .get();
-    if anchor.level - root_level + u32::from(k) > MAX_NODE_DEPTH {
+    ) {
         return Err(FormatError::MalformedIndex(
-            "page reaches below the maximum node depth",
+            "page anchor is outside the root prefix",
         ));
     }
     if node_count == 0
@@ -406,6 +432,7 @@ pub(crate) fn decode_page(
     let mut index_of = std::collections::BTreeMap::<(u8, u16), usize>::new();
     let mut next_block_id = first_block_id;
     let mut block_ranges: Vec<(u64, u64)> = Vec::new();
+    let mut attribute_ranges: Vec<(u64, u64)> = Vec::new();
     let mut total_ranges = 0_u64;
     let first_depth = u8::from(!is_root);
 
@@ -432,7 +459,7 @@ pub(crate) fn decode_page(
         let has_children = flags & 1 == 1;
         let level = anchor.level + u32::from(depth);
         let prefix = path_prefix(anchor, depth, path);
-        let id = (anchor_id << (3 * u32::from(depth))) | u64::from(path);
+        let id = page_node_id(number, position as u32);
         let point_count = cursor.u64()?;
         let geometric_error = cursor.f64()?;
         if !geometric_error.is_finite() || geometric_error < 0.0 {
@@ -447,23 +474,25 @@ pub(crate) fn decode_page(
         };
 
         // Parent: a node of the page with children, or the anchor itself at depth 1 of a child page.
-        let parent =
-            if depth == 0 {
-                None
-            } else {
-                if depth > 1 || is_root {
-                    let parent_index = *index_of.get(&(depth - 1, path >> 3)).ok_or(
-                        FormatError::MalformedIndex("page node has no parent in the page"),
-                    )?;
-                    if !nodes[parent_index].has_children {
-                        return Err(FormatError::MalformedIndex(
-                            "page node under a node without children",
-                        ));
-                    }
-                    child_counts[parent_index] += 1;
-                }
-                Some(NodeId::new(id >> 3))
-            };
+        let parent = if depth == 0 {
+            None
+        } else if depth > 1 || is_root {
+            let parent_index =
+                *index_of
+                    .get(&(depth - 1, path >> 3))
+                    .ok_or(FormatError::MalformedIndex(
+                        "page node has no parent in the page",
+                    ))?;
+            if !nodes[parent_index].has_children {
+                return Err(FormatError::MalformedIndex(
+                    "page node under a node without children",
+                ));
+            }
+            child_counts[parent_index] += 1;
+            Some(page_node_id(number, parent_index as u32))
+        } else {
+            anchor_node
+        };
 
         let block_count = cursor.u32()?;
         if u64::from(block_count) > ctx.limits.max_blocks
@@ -491,14 +520,15 @@ pub(crate) fn decode_page(
                 .ok_or(FormatError::MalformedIndex("page block ids overflow"))?;
             block_points = block_points
                 .checked_add(block.point_count)
-                .ok_or(FormatError::PointCountOverflow(NodeId::new(id)))?;
+                .ok_or(FormatError::PointCountOverflow(id))?;
             block_error = block_error.max(block.quantization_error);
             block_ranges.push((block.offset, block.offset + block.payload_length));
+            attribute_ranges.push((block.attribute_offset, block.attribute_end()));
             blocks.push(block);
         }
         if block_points != point_count {
             return Err(FormatError::NodePointCountMismatch {
-                node: NodeId::new(id),
+                node: id,
                 declared: point_count,
                 blocks: block_points,
             });
@@ -549,8 +579,11 @@ pub(crate) fn decode_page(
             let pointer = PagePointer {
                 offset: cursor.u64()?,
                 length: cursor.u32()?,
+                page: cursor.u32()?,
+                anchor_node: id,
             };
-            if pointer.offset < ctx.pages_start
+            if pointer.page == 0
+                || pointer.offset < ctx.pages_start
                 || pointer
                     .offset
                     .checked_add(u64::from(pointer.length))
@@ -570,7 +603,7 @@ pub(crate) fn decode_page(
         index_of.insert((depth, path), nodes.len());
         child_counts.push(0);
         nodes.push(PageNode {
-            id: NodeId::new(id),
+            id,
             parent,
             depth,
             path,
@@ -595,11 +628,14 @@ pub(crate) fn decode_page(
             ));
         }
     }
-    block_ranges.sort_unstable();
-    if block_ranges.windows(2).any(|pair| pair[0].1 > pair[1].0) {
-        return Err(FormatError::MalformedIndex("page block payloads overlap"));
+    for ranges in [&mut block_ranges, &mut attribute_ranges] {
+        ranges.sort_unstable();
+        if ranges.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+            return Err(FormatError::MalformedIndex("page block payloads overlap"));
+        }
     }
     Ok(Page {
+        number,
         anchor,
         k,
         is_root,
@@ -618,7 +654,7 @@ fn decode_block(
 ) -> Result<PageBlock, FormatError> {
     let layout = StorageLayout::V7Pre5;
     let offset = cursor.u64()?;
-    let payload_length = cursor.u64()?;
+    let attribute_offset = cursor.u64()?;
     let point_count = cursor.u64()?;
     let geometry_encoding = GeometryEncoding::try_from(cursor.u8()?)?;
     let quantization_error = cursor.f64()?;
@@ -630,10 +666,10 @@ fn decode_block(
     let origin_quanta = if level < SPLIT_BELOW_LEVEL {
         let mut origin = node_box.origin;
         for value in &mut origin {
-            let cell = i64::from(cursor.u32()?) << BLOCK_SIDE_EXPONENT;
-            *value = value.checked_add(cell).ok_or(FormatError::MalformedIndex(
-                "block cell exceeds the quanta range",
-            ))?;
+            // A cell of a level-0 node can be 2^31 or more, so the shift cannot happen in `i64`.
+            let cell = i128::from(cursor.u32()?) << BLOCK_SIDE_EXPONENT;
+            *value = i64::try_from(i128::from(*value) + cell)
+                .map_err(|_| FormatError::MalformedIndex("block cell exceeds the quanta range"))?;
         }
         if !crate::global_frame::block_origin_is_valid(node_box, origin) {
             return Err(FormatError::MalformedIndex(
@@ -644,12 +680,6 @@ fn decode_block(
     } else {
         node_box.origin
     };
-    if payload_length > ctx.limits.max_block_bytes {
-        return Err(FormatError::BlockExceedsLimit {
-            requested: payload_length,
-            limit: ctx.limits.max_block_bytes,
-        });
-    }
     let logical = crate::layout::block_payload_size(
         usize::try_from(point_count).map_err(|_| FormatError::PointCountOutOfRange)?,
         ctx.schema,
@@ -660,13 +690,9 @@ fn decode_block(
             limit: ctx.limits.max_block_bytes,
         });
     }
-    if offset < HEADER_SIZE
-        || offset
-            .checked_add(payload_length)
-            .is_none_or(|end| end > ctx.pages_start)
-    {
+    if attribute_offset < HEADER_SIZE {
         return Err(FormatError::MalformedIndex(
-            "block payload range is outside the data section",
+            "attribute offset before header",
         ));
     }
 
@@ -674,6 +700,8 @@ fn decode_block(
     payloads
         .try_reserve_exact(ctx.schema.len() + 2)
         .map_err(|_| FormatError::AllocationFailed(ctx.schema.len() + 2))?;
+    // The geometry column starts the block in the `.oct`; the other columns follow each other in the
+    // `.octattrs` from `attribute_offset`, so `expected_offset` is the running sum of their lengths.
     let mut expected_offset = 0_u64;
     for payload_index in 0..ctx.schema.len() + 2 {
         let codec = BlockCodec::try_from(cursor.u8()?)?;
@@ -689,7 +717,13 @@ fn decode_block(
             }
         };
         let column = PayloadDirectoryEntry {
-            offset: expected_offset,
+            offset: if payload_index == 0 {
+                0
+            } else {
+                attribute_offset
+                    .checked_add(expected_offset)
+                    .ok_or(FormatError::FileSizeOverflow)?
+            },
             stored_length,
             raw_length,
             codec,
@@ -707,19 +741,30 @@ fn decode_block(
                 "invalid payload range or length",
             ));
         }
-        expected_offset = expected_offset
-            .checked_add(stored_length)
-            .ok_or(FormatError::FileSizeOverflow)?;
-        if expected_offset > payload_length {
-            return Err(FormatError::MalformedIndex(
-                "column extends beyond its block",
-            ));
+        if payload_index > 0 {
+            expected_offset = expected_offset
+                .checked_add(stored_length)
+                .ok_or(FormatError::FileSizeOverflow)?;
         }
         payloads.push(column);
     }
-    if expected_offset != payload_length {
+    if attribute_offset.checked_add(expected_offset).is_none() {
+        return Err(FormatError::FileSizeOverflow);
+    }
+    let payload_length = payloads[0].stored_length;
+    if payload_length > ctx.limits.max_block_bytes {
+        return Err(FormatError::BlockExceedsLimit {
+            requested: payload_length,
+            limit: ctx.limits.max_block_bytes,
+        });
+    }
+    if offset < HEADER_SIZE
+        || offset
+            .checked_add(payload_length)
+            .is_none_or(|end| end > ctx.pages_start)
+    {
         return Err(FormatError::MalformedIndex(
-            "column payload section does not fill its block",
+            "block payload range is outside the data section",
         ));
     }
     let total_raw = payloads.iter().try_fold(0_u64, |sum, payload| {
@@ -736,6 +781,7 @@ fn decode_block(
         id: BlockId::new(id),
         offset,
         payload_length,
+        attribute_offset,
         point_count,
         geometry_encoding,
         quantization_error,
@@ -782,7 +828,7 @@ pub(crate) fn encode_page(page: &Page, frame: &GlobalFrame) -> Result<Vec<u8>, F
             .ok_or(FormatError::InvalidMetadata("node origin"))?;
         for block in &node.blocks {
             out.u64(block.offset)?;
-            out.u64(block.payload_length)?;
+            out.u64(block.attribute_offset)?;
             out.u64(block.point_count)?;
             out.u8(block.geometry_encoding as u8)?;
             out.f64(block.quantization_error)?;
@@ -826,6 +872,7 @@ pub(crate) fn encode_page(page: &Page, frame: &GlobalFrame) -> Result<Vec<u8>, F
             ))?;
             out.u64(pointer.offset)?;
             out.u32(pointer.length)?;
+            out.u32(pointer.page)?;
         }
     }
     let crc = out.checksum.finish();

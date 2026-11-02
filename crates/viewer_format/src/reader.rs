@@ -119,17 +119,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         }
         let (metadata, blocks, block_bounds) =
             parse_index(index, &limits, index_offset, true, layout)?;
-        let attribute_file_length = blocks
-            .values()
-            .flat_map(|b| b.payloads.iter().skip(1))
-            .try_fold(HEADER_SIZE, |end, p| {
-                p.offset
-                    .checked_add(p.stored_length)
-                    .map(|n| end.max(n))
-                    .ok_or(FormatError::FileSizeOverflow)
-            })?
-            .checked_add(FOOTER_SIZE)
-            .ok_or(FormatError::FileSizeOverflow)?;
+        let attribute_file_length = split_attribute_file_length(&blocks)?;
         Ok(Self {
             reader,
             attributes: None,
@@ -215,22 +205,23 @@ impl<R: Read + Seek> IndexedReader<R> {
         }
         let split = identity.role == FileRole::SplitPrimary;
         if layout.uses_pages() {
-            if split {
-                return Err(FormatError::InvalidMetadata("v7.5-pre has no split layout"));
+            if !split {
+                return Err(FormatError::InvalidHeader);
             }
             // Eager view: every page is read and the global checks run. Lazy readers use
             // `PagedReader` instead.
             let ((metadata, blocks, block_bounds), index_identity) =
                 crate::paged_index::load_all(&mut reader, &limits)?;
+            let attribute_file_length = split_attribute_file_length(&blocks)?;
             return Ok(Self {
                 reader,
                 attributes: None,
                 attributes_attached: false,
                 external_payloads_only: false,
-                split: false,
+                split,
                 layout,
                 index_identity,
-                attribute_file_length: 0,
+                attribute_file_length,
                 metadata: Arc::new(metadata),
                 blocks: Arc::new(blocks),
                 block_bounds: Arc::new(block_bounds),
@@ -275,17 +266,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         let (metadata, blocks, block_bounds) =
             parse_index(&index, &limits, index_offset, split, layout)?;
         let attribute_file_length = if split {
-            blocks
-                .values()
-                .flat_map(|block| block.payloads.iter().skip(1))
-                .try_fold(HEADER_SIZE, |end, p| {
-                    p.offset
-                        .checked_add(p.stored_length)
-                        .map(|next| end.max(next))
-                        .ok_or(FormatError::FileSizeOverflow)
-                })?
-                .checked_add(FOOTER_SIZE)
-                .ok_or(FormatError::FileSizeOverflow)?
+            split_attribute_file_length(&blocks)?
         } else {
             0
         };
@@ -1129,6 +1110,24 @@ impl<R: Read + Seek> DatasetSource for IndexedReader<R> {
     fn read_block(&mut self, id: BlockId) -> Result<PointBlock, Self::Error> {
         self.read_point_block(id)
     }
+}
+
+/// Length a split companion must have: header, the furthest attribute column and the footer.
+fn split_attribute_file_length(
+    blocks: &BTreeMap<BlockId, BlockDirectoryEntry>,
+) -> Result<u64, FormatError> {
+    blocks
+        .values()
+        .flat_map(|block| block.payloads.iter().skip(1))
+        .try_fold(HEADER_SIZE, |end, payload| {
+            payload
+                .offset
+                .checked_add(payload.stored_length)
+                .map(|next| end.max(next))
+                .ok_or(FormatError::FileSizeOverflow)
+        })?
+        .checked_add(FOOTER_SIZE)
+        .ok_or(FormatError::FileSizeOverflow)
 }
 
 fn validate_supported_primary(

@@ -209,6 +209,11 @@ impl<W: Write + Seek> FormatWriter<W> {
         options: FormatWriterOptions,
     ) -> Result<Self, FormatError> {
         let layout = StorageLayout::from_version(version)?;
+        if layout.uses_pages() {
+            return Err(FormatError::InvalidMetadata(
+                "v7.5-pre is written as a .oct / .octattrs pair",
+            ));
+        }
         Self::new_with_layout(writer, metadata, options, layout)
     }
 
@@ -284,9 +289,6 @@ impl<W: Write + Seek> FormatWriter<W> {
         options: FormatWriterOptions,
         layout: StorageLayout,
     ) -> Result<Self, FormatError> {
-        if layout.uses_pages() {
-            return Err(FormatError::InvalidMetadata("v7.5-pre has no split layout"));
-        }
         if attributes.stream_position()? != 0 || attributes.seek(SeekFrom::End(0))? != 0 {
             return Err(FormatError::OutputMustBeEmpty);
         }
@@ -436,10 +438,24 @@ impl<W: Write + Seek> FormatWriter<W> {
                 .checked_add(written.index_length)
                 .and_then(|value| value.checked_add(FOOTER_SIZE))
                 .ok_or(FormatError::FileSizeOverflow)?;
+            if let Some(attributes) = self.attributes.as_mut() {
+                let length = attributes
+                    .stream_position()?
+                    .checked_add(FOOTER_SIZE)
+                    .ok_or(FormatError::FileSizeOverflow)?;
+                attributes.write_all(&footer_bytes(
+                    self.layout.footer_magic(),
+                    written.index_offset,
+                    written.index_length,
+                    length,
+                    written.index_crc,
+                ))?;
+                attributes.flush()?;
+            }
             self.writer
                 .write_all(&crate::paged_index::paged_footer(&written, file_length))?;
             self.writer.flush()?;
-            return Ok((self.writer, None));
+            return Ok((self.writer, self.attributes));
         }
         let index_offset = self.writer.stream_position()?;
         let (index_length, index_checksum) =

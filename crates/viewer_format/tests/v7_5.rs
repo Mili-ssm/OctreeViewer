@@ -13,7 +13,7 @@ use viewer_core::{
 use viewer_format::{
     CrsRecord, FormatError, FormatMetadata, FormatReader, FormatReaderLimits, FormatVersion,
     FormatWriter, FormatWriterOptions, GlobalFrame, NodeCell, PageAnchor, PagedReader,
-    SourcePointBlock, derive_node_id,
+    SourcePointBlock, page_node_id, split_node_id,
 };
 
 const V74: FormatVersion = FormatVersion::V7_PRE4;
@@ -95,21 +95,34 @@ fn wkt_crs() -> CrsRecord {
 /// Metadata plus one two-point block per node (block id = node id + 1), points at 1/4 and 3/4 of
 /// the node cell.
 fn dataset(tree: &[TreeNode]) -> (FormatMetadata, Vec<SourcePointBlock>) {
+    dataset_at(tree, ROOT_LEVEL, ROOT_PREFIX)
+}
+
+fn dataset_at(
+    tree: &[TreeNode],
+    root_level: u32,
+    root_prefix: [u64; 3],
+) -> (FormatMetadata, Vec<SourcePointBlock>) {
     let cells: Vec<_> = tree
         .iter()
         .map(|n| {
             let spacing = if n.has_children {
-                2.0_f64.powi(1 - n.depth as i32)
+                2.0_f64.powi(41 - (root_level + n.depth) as i32)
             } else {
-                2.0_f64.powi(-5)
+                2.0_f64.powi((49 - (root_level + n.depth) as i32).min(-5))
             };
             (NodeId::new(n.id), NodeCell::new(n.prefix, spacing))
         })
         .collect();
-    let origin = root_origin(ROOT_LEVEL, ROOT_PREFIX);
+    // A level-0 root has its corner 2^48 units away; the frame origin sits at the cloud instead.
+    let origin = if root_level == 0 {
+        [0; 3]
+    } else {
+        root_origin(root_level, root_prefix)
+    };
     let frame = GlobalFrame::new(
-        ROOT_LEVEL,
-        ROOT_PREFIX,
+        root_level,
+        root_prefix,
         origin,
         origin.map(|q| q + 100 * 32_768),
         wkt_crs(),
@@ -119,8 +132,17 @@ fn dataset(tree: &[TreeNode]) -> (FormatMetadata, Vec<SourcePointBlock>) {
     .unwrap();
     let mut nodes = Vec::new();
     let mut blocks = Vec::new();
+    // A block must fit one cell of its node. Near the root a node is huge, so a chain puts every
+    // node's points in its deepest node (the chain's last entry), which every ancestor contains.
+    let deepest = tree.last().unwrap();
+    let deepest_bounds = frame.node_bounds(deepest.depth, deepest.prefix).unwrap();
     for n in tree {
         let bounds = frame.node_bounds(n.depth, n.prefix).unwrap();
+        let point_bounds = if root_level == 0 {
+            deepest_bounds
+        } else {
+            bounds
+        };
         nodes.push(
             SpatialNode::new(
                 NodeId::new(n.id),
@@ -133,9 +155,16 @@ fn dataset(tree: &[TreeNode]) -> (FormatMetadata, Vec<SourcePointBlock>) {
             )
             .unwrap(),
         );
+        // Chain: stay within 2^32 quanta (the side of one block cell) of the origin, on the grid.
         let at = |fraction: f64| {
             std::array::from_fn(|axis| {
-                bounds.min()[axis] + (bounds.max()[axis] - bounds.min()[axis]) * fraction
+                let side = point_bounds.max()[axis] - point_bounds.min()[axis];
+                let side = if root_level == 0 {
+                    side.min(1024.0)
+                } else {
+                    side
+                };
+                point_bounds.min()[axis] + side * fraction
             })
         };
         let intensity = AttributeColumn::new(
@@ -167,18 +196,60 @@ fn dataset(tree: &[TreeNode]) -> (FormatMetadata, Vec<SourcePointBlock>) {
     (metadata, blocks)
 }
 
-fn write(version: FormatVersion, tree: &[TreeNode], page_target: Option<usize>) -> Vec<u8> {
+/// The `.oct` / `.octattrs` pair.
+fn write_pair(
+    version: FormatVersion,
+    tree: &[TreeNode],
+    page_target: Option<usize>,
+) -> (Vec<u8>, Vec<u8>) {
     let (metadata, blocks) = dataset(tree);
     let mut options = FormatWriterOptions::new(0.01, 1 << 24).unwrap();
     if let Some(target) = page_target {
         options = options.with_page_target_bytes(target);
     }
-    let mut writer =
-        FormatWriter::new_for_version(version, Cursor::new(Vec::new()), metadata, options).unwrap();
+    let mut writer = FormatWriter::new_split_for_version(
+        version,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata,
+        options,
+    )
+    .unwrap();
     for block in blocks {
         writer.write_block(block).unwrap();
     }
-    writer.finish().unwrap().into_inner()
+    let (primary, attributes) = writer.finish_pair().unwrap();
+    (primary.into_inner(), attributes.unwrap().into_inner())
+}
+
+/// The `.oct` alone.
+/// A level-0 root (prefix 0), as a cloud straddling a high lattice bit produces.
+fn write_chain(tree: &[TreeNode]) -> (Vec<u8>, Vec<u8>) {
+    let (metadata, blocks) = dataset_at(tree, 0, [0; 3]);
+    let options = FormatWriterOptions::new(0.01, 1 << 24).unwrap();
+    let mut writer = FormatWriter::new_split_for_version(
+        V75,
+        Cursor::new(Vec::new()),
+        Cursor::new(Vec::new()),
+        metadata,
+        options,
+    )
+    .unwrap();
+    for block in blocks {
+        writer.write_block(block).unwrap();
+    }
+    let (primary, attributes) = writer.finish_pair().unwrap();
+    (primary.into_inner(), attributes.unwrap().into_inner())
+}
+
+fn write(version: FormatVersion, tree: &[TreeNode], page_target: Option<usize>) -> Vec<u8> {
+    write_pair(version, tree, page_target).0
+}
+
+fn open_pair(primary: Vec<u8>, attributes: Vec<u8>) -> FormatReader<Cursor<Vec<u8>>> {
+    let mut reader = FormatReader::new(Cursor::new(primary)).unwrap();
+    reader.attach_attributes(Cursor::new(attributes)).unwrap();
+    reader
 }
 
 /// Every page of a file in breadth-first order, with its pointer (`None` for the root).
@@ -250,10 +321,6 @@ fn pages_chain_and_round_trip_for_several_k() {
         for (page, _) in &pages {
             for node in page.nodes() {
                 assert!(seen.insert((node.level(), node.prefix())));
-                assert_eq!(
-                    node.id(),
-                    derive_node_id(ROOT_LEVEL, ROOT_PREFIX, node.level(), node.prefix()).unwrap()
-                );
             }
         }
         assert_eq!(seen.len(), tree.len());
@@ -261,40 +328,88 @@ fn pages_chain_and_round_trip_for_several_k() {
 }
 
 #[test]
-fn derived_ids_are_unique_sentinel_octant_paths() {
-    let root = derive_node_id(ROOT_LEVEL, ROOT_PREFIX, ROOT_LEVEL, ROOT_PREFIX).unwrap();
-    assert_eq!(root, NodeId::new(1));
-    // Octant 5 = x | z << 2.
-    let child: [u64; 3] = std::array::from_fn(|axis| (ROOT_PREFIX[axis] << 1) | [1, 0, 1][axis]);
-    assert_eq!(
-        derive_node_id(ROOT_LEVEL, ROOT_PREFIX, ROOT_LEVEL + 1, child),
-        Some(NodeId::new(0b1_101))
-    );
-    // Depth limit 21 fits u64; 22 does not exist.
-    let deep = |depth: u32| -> [u64; 3] { std::array::from_fn(|axis| ROOT_PREFIX[axis] << depth) };
-    assert_eq!(
-        derive_node_id(ROOT_LEVEL, ROOT_PREFIX, ROOT_LEVEL + 21, deep(21)),
-        Some(NodeId::new(1 << 63))
-    );
-    assert_eq!(
-        derive_node_id(ROOT_LEVEL, ROOT_PREFIX, ROOT_LEVEL + 22, deep(22)),
-        None
-    );
-    // Not under the root prefix, or above the root.
-    assert_eq!(
-        derive_node_id(ROOT_LEVEL, ROOT_PREFIX, ROOT_LEVEL + 1, [0; 3]),
-        None
-    );
-    assert_eq!(
-        derive_node_id(ROOT_LEVEL, ROOT_PREFIX, ROOT_LEVEL - 1, [0; 3]),
-        None
-    );
-    // Output is deterministic.
+fn node_ids_are_page_number_and_index_in_page_order() {
+    assert_eq!(page_node_id(0, 0), NodeId::new(0));
+    assert_eq!(page_node_id(3, 7), NodeId::new((3 << 32) | 7));
+    assert_eq!(split_node_id(page_node_id(u32::MAX, 5)), (u32::MAX, 5));
     let tree = random_tree(5, 7, 15);
-    assert_eq!(
-        write(V75, &tree, Some(2_000)),
-        write(V75, &tree, Some(2_000))
-    );
+    let bytes = write(V75, &tree, Some(2_000));
+    assert_eq!(bytes, write(V75, &tree, Some(2_000)), "deterministic");
+    let mut reader = PagedReader::open(Cursor::new(bytes)).unwrap();
+    let pages = all_pages(&mut reader);
+    assert!(pages.len() > 3);
+    let mut seen = BTreeSet::new();
+    for (position, (page, pointer)) in pages.iter().enumerate() {
+        // Pages are numbered in plan (breadth-first) order and the pointer says so.
+        assert_eq!(page.number() as usize, position);
+        assert_eq!(
+            pointer.map(|p| p.page as usize),
+            (position > 0).then_some(position)
+        );
+        let keys: Vec<_> = page.nodes().iter().map(|n| (n.depth(), n.path())).collect();
+        assert!(keys.windows(2).all(|w| w[0] < w[1]), "(depth, path) order");
+        for (index, node) in page.nodes().iter().enumerate() {
+            assert_eq!(node.id(), page_node_id(page.number(), index as u32));
+            assert!(seen.insert(node.id()));
+        }
+        // The parent of a top node is the anchor record in the parent page.
+        if let Some(pointer) = pointer {
+            assert!(pointer.anchor_node.get() < (position as u64) << 32);
+            for node in page.nodes().iter().filter(|n| n.depth() == 1) {
+                assert_eq!(node.parent(), Some(pointer.anchor_node));
+            }
+        }
+    }
+    assert_eq!(seen.len(), tree.len());
+    let eager = FormatReader::new(Cursor::new(write(V75, &tree, Some(2_000)))).unwrap();
+    let hierarchy = eager.format_metadata().dataset().hierarchy();
+    assert_eq!(hierarchy.root_id(), page_node_id(0, 0));
+    for (page, _) in &pages {
+        for node in page.nodes() {
+            assert_eq!(hierarchy.node(node.id()).unwrap().parent(), node.parent());
+        }
+    }
+}
+
+/// A chain far deeper than the old 21-level limit (a cloud straddling a high lattice bit has a
+/// level-0 root and a long single-child chain).
+#[test]
+fn chains_deeper_than_21_levels_write_and_read() {
+    for depth in [22_u32, 40, 56] {
+        let tree: Vec<TreeNode> = (0..=depth)
+            .map(|d| TreeNode {
+                id: d.into(),
+                parent: d.checked_sub(1).map(u64::from),
+                depth: d,
+                // Level 1 prefix 1 is the positive half-lattice; then octant 0 all the way down,
+                // so the chain hugs the lattice origin.
+                prefix: [d.checked_sub(1).map_or(0, |shift| 1_u64 << shift); 3],
+                has_children: d < depth,
+            })
+            .collect();
+        let (primary, attributes) = write_chain(&tree);
+        let mut paged = PagedReader::open(Cursor::new(primary.clone())).unwrap();
+        let pages = all_pages(&mut paged);
+        let nodes: usize = pages.iter().map(|(page, _)| page.nodes().len()).sum();
+        assert_eq!(nodes, tree.len(), "depth {depth}");
+        assert!(pages.len() >= depth as usize / 5, "depth {depth}");
+        let stats = viewer_format::verify_paged(
+            &mut Cursor::new(primary.clone()),
+            &FormatReaderLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(stats.nodes, tree.len() as u64);
+        let mut reader = open_pair(primary, attributes);
+        let hierarchy = reader.format_metadata().dataset().hierarchy();
+        assert_eq!(hierarchy.stats().max_level, depth);
+        let leaf = hierarchy
+            .query(hierarchy.stats().root_bounds)
+            .last()
+            .unwrap();
+        let block = leaf.blocks()[0];
+        assert_eq!(reader.read_positions(block).unwrap().len(), 2);
+        assert_eq!(reader.read_display_colors(block).unwrap().len(), 2);
+    }
 }
 
 #[test]
@@ -338,10 +453,10 @@ fn open_costs_one_tail_read_and_no_header_read() {
 #[test]
 fn all_pages_read_equals_v7_4_by_level_and_prefix() {
     let tree = random_tree(77, 8, 14);
-    let old = write(V74, &tree, None);
-    let new = write(V75, &tree, Some(4_000));
-    let mut old_reader = FormatReader::new(Cursor::new(old.clone())).unwrap();
-    let mut new_reader = FormatReader::new(Cursor::new(new.clone())).unwrap();
+    let (old, old_attributes) = write_pair(V74, &tree, None);
+    let (new, new_attributes) = write_pair(V75, &tree, Some(4_000));
+    let mut old_reader = open_pair(old.clone(), old_attributes);
+    let mut new_reader = open_pair(new.clone(), new_attributes);
 
     type Summary = (
         u64,
@@ -383,10 +498,7 @@ fn all_pages_read_equals_v7_4_by_level_and_prefix() {
         let (new_summary, new_spacing, new_id) = &new_nodes[key];
         assert_eq!(summary, new_summary, "{key:?}");
         assert_eq!(spacing, new_spacing, "{key:?}");
-        assert_eq!(
-            *new_id,
-            derive_node_id(ROOT_LEVEL, ROOT_PREFIX, key.0, key.1).unwrap()
-        );
+        assert!((split_node_id(*new_id).0 as usize) < tree.len());
     }
     // Same blocks, in the same order per node: positions, colors and attributes decode equal.
     let block_ids = |reader: &FormatReader<Cursor<Vec<u8>>>, id: NodeId| {
@@ -645,20 +757,72 @@ fn released_pages_can_be_read_again_but_resident_ones_keep_their_ids() {
 }
 
 #[test]
-fn v7_5_rejects_split_output() {
+fn v7_5_rejects_monolithic_output() {
     let tree = random_tree(2, 2, 10);
     let (metadata, _) = dataset(&tree);
     let options = FormatWriterOptions::new(0.01, 1 << 24).unwrap();
     assert!(
-        FormatWriter::new_split_for_version(
-            V75,
-            Cursor::new(Vec::new()),
-            Cursor::new(Vec::new()),
-            metadata,
-            options
-        )
-        .is_err()
+        FormatWriter::new_for_version(V75, Cursor::new(Vec::new()), metadata, options).is_err()
     );
+}
+
+#[test]
+fn oct_opens_alone_and_companion_must_match_the_index() {
+    let tree = random_tree(8, 5, 20);
+    let (primary, attributes) = write_pair(V75, &tree, Some(3_000));
+    // Header roles: split primary and companion.
+    assert_eq!(&attributes[..8], b"OCTVFRM1");
+    assert_eq!(
+        &attributes[attributes.len() - 40..attributes.len() - 32],
+        b"OCTVE75P"
+    );
+    let mut alone = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    assert!(!alone.has_attributes());
+    let block = alone
+        .format_metadata()
+        .dataset()
+        .hierarchy()
+        .node(alone.format_metadata().dataset().hierarchy().root_id())
+        .unwrap()
+        .blocks()[0];
+    assert_eq!(alone.read_positions(block).unwrap().len(), 2);
+    assert!(alone.read_display_colors(block).is_err());
+    let mut attached = open_pair(primary.clone(), attributes.clone());
+    assert_eq!(
+        attached.read_display_colors(block).unwrap(),
+        vec![ColorRgb::new(1, 2, 3); 2]
+    );
+    // A companion of another file, or a damaged one, is not accepted.
+    let (_, other) = write_pair(V75, &random_tree(9, 5, 20), Some(3_000));
+    let mut reader = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    assert!(reader.attach_attributes(Cursor::new(other)).is_err());
+    let mut short = attributes.clone();
+    short.pop();
+    assert!(reader.attach_attributes(Cursor::new(short)).is_err());
+}
+
+#[test]
+fn attribute_columns_must_tile_the_companion() {
+    let (bytes, anchor, pointer) = two_pages();
+    // The attribute offset is the second field of the page's first block record.
+    let start = pointer.offset as usize;
+    let mut reader = PagedReader::open(Cursor::new(bytes.clone())).unwrap();
+    let page = reader.read_child_page(anchor, pointer).unwrap();
+    let original = page.nodes()[0].blocks()[0].attribute_offset();
+    let mut tampered = bytes;
+    let page_bytes = &mut tampered[start..start + pointer.length as usize];
+    let at = page_bytes
+        .windows(8)
+        .position(|w| w == original.to_le_bytes())
+        .unwrap();
+    page_bytes[at..at + 8].copy_from_slice(&(original + 1).to_le_bytes());
+    fix_page_crc(&mut tampered, start, pointer.length as usize);
+    // One page alone still decodes; the whole-file view finds the gap.
+    read_child(tampered.clone(), anchor, pointer).unwrap();
+    assert!(matches!(
+        FormatReader::new(Cursor::new(tampered)),
+        Err(FormatError::MalformedIndex(message)) if message.contains("attribute blocks")
+    ));
 }
 
 // ---- Corruption sweeps -----------------------------------------------------------------------

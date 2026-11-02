@@ -18,8 +18,8 @@ use crate::index_codec::{
 use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::page_codec::{
-    MAX_NODE_DEPTH, MAX_PAGE_LEVELS, MIN_PAGE_LEN, Page, PageAnchor, PageBlock, PageContext,
-    PageExpect, PageNode, PagePointer, decode_page, encode_page, prefix_path,
+    MAX_PAGE_LEVELS, MIN_PAGE_LEN, Page, PageAnchor, PageBlock, PageContext, PageExpect, PageNode,
+    PagePointer, decode_page, encode_page, page_node_id, prefix_path,
 };
 use crate::prepare::BlockRecord;
 use crate::reader_limits::FormatReaderLimits;
@@ -191,8 +191,10 @@ pub struct PagedReader<R> {
     index_length: u64,
     index_crc: u32,
     /// Block id range of every page currently resident, by page offset, to reject repeated ids.
-    resident: BTreeMap<u64, (u64, u64)>,
+    resident: BTreeMap<u64, (u32, (u64, u64))>,
     by_first_id: BTreeMap<u64, (u64, u64)>,
+    /// Page offset of every resident page number, to reject a number used by two pages.
+    by_number: BTreeMap<u32, u64>,
 }
 
 impl<R: Read + Seek> PagedReader<R> {
@@ -265,9 +267,10 @@ impl<R: Read + Seek> PagedReader<R> {
             index_crc,
             resident: BTreeMap::new(),
             by_first_id: BTreeMap::new(),
+            by_number: BTreeMap::new(),
         };
         let root_range = paged.root.block_id_range();
-        paged.register_page(index_offset, root_range)?;
+        paged.register_page(index_offset, 0, root_range)?;
         Ok(paged)
     }
 
@@ -315,16 +318,21 @@ impl<R: Read + Seek> PagedReader<R> {
                 pages_start: self.header.pages_start,
                 index_offset: self.index_offset,
             },
-            PageExpect::Child(anchor),
+            PageExpect::Child {
+                anchor,
+                page: pointer.page,
+                anchor_node: pointer.anchor_node,
+            },
         )?;
-        self.register_page(pointer.offset, page.block_id_range())?;
+        self.register_page(pointer.offset, page.number(), page.block_id_range())?;
         Ok(page)
     }
 
     /// Forgets a page the caller evicted, so its block ids may be seen again.
     pub fn release_page(&mut self, pointer: PagePointer) {
-        if let Some((first, _)) = self.resident.remove(&pointer.offset) {
+        if let Some((number, (first, _))) = self.resident.remove(&pointer.offset) {
             self.by_first_id.remove(&first);
+            self.by_number.remove(&number);
         }
     }
 
@@ -341,7 +349,8 @@ impl<R: Read + Seek> PagedReader<R> {
         Ok(())
     }
 
-    /// Stored bytes of one block (all payload columns, geometry first), without decoding.
+    /// Stored bytes of one block's geometry column in the `.oct`, without decoding. Colour and
+    /// attribute columns live in the `.octattrs` at `block.attribute_offset()`.
     pub fn read_block_bytes(&mut self, block: &PageBlock) -> Result<Vec<u8>, FormatError> {
         let length = usize::try_from(block.payload_length)
             .map_err(|_| FormatError::SizeOutOfRange(block.payload_length))?;
@@ -355,15 +364,25 @@ impl<R: Read + Seek> PagedReader<R> {
         self.reader
     }
 
-    fn register_page(&mut self, offset: u64, range: (u64, u64)) -> Result<(), FormatError> {
+    fn register_page(
+        &mut self,
+        offset: u64,
+        number: u32,
+        range: (u64, u64),
+    ) -> Result<(), FormatError> {
         if let Some(known) = self.resident.get(&offset) {
-            return if *known == range {
+            return if *known == (number, range) {
                 Ok(())
             } else {
                 Err(FormatError::MalformedIndex(
                     "a page changed since it was read",
                 ))
             };
+        }
+        if self.by_number.contains_key(&number) {
+            return Err(FormatError::MalformedIndex(
+                "a page number repeats across pages",
+            ));
         }
         let (first, end) = range;
         if end > first {
@@ -379,7 +398,8 @@ impl<R: Read + Seek> PagedReader<R> {
             }
             self.by_first_id.insert(first, (end, offset));
         }
-        self.resident.insert(offset, range);
+        self.resident.insert(offset, (number, range));
+        self.by_number.insert(number, offset);
         Ok(())
     }
 }
@@ -428,6 +448,12 @@ fn read_all_pages<R: Read + Seek>(
         }
         let children: Vec<_> = page.child_pages().collect();
         for (anchor, pointer) in children {
+            // Pages are numbered in plan order, which is the order a breadth-first walk meets them.
+            if pointer.page as usize != pages.len() {
+                return Err(FormatError::MalformedIndex(
+                    "page numbers do not follow the plan order",
+                ));
+            }
             pages.push(paged.read_child_page(anchor, pointer)?);
             pointers.push(pointer);
         }
@@ -521,6 +547,27 @@ pub fn verify_paged<R: Read + Seek>(
     })
 }
 
+/// The colour and attribute columns of all blocks tile the `.octattrs` between its header and
+/// footer without gaps or overlaps (the split-file rule of V7.4-pre).
+fn validate_attribute_layout(nodes: &[&PageNode]) -> Result<(), FormatError> {
+    let mut ranges = nodes
+        .iter()
+        .flat_map(|node| node.blocks.iter())
+        .map(|block| (block.attribute_offset, block.attribute_end()))
+        .collect::<Vec<_>>();
+    ranges.sort_unstable();
+    let mut end = HEADER_SIZE;
+    for (start, next) in ranges {
+        if start != end {
+            return Err(FormatError::MalformedIndex(
+                "attribute blocks contain gaps or overlaps",
+            ));
+        }
+        end = next;
+    }
+    Ok(())
+}
+
 fn assemble(header: &PagedHeader, pages: &[Page]) -> Result<ParsedIndex, FormatError> {
     let page_nodes: Vec<&PageNode> = pages.iter().flat_map(|page| page.nodes.iter()).collect();
     let root_frame = &header.frame;
@@ -583,6 +630,7 @@ fn assemble(header: &PagedHeader, pages: &[Page]) -> Result<ParsedIndex, FormatE
             return Err(FormatError::MalformedIndex("duplicate block IDs"));
         }
     }
+    validate_attribute_layout(&page_nodes)?;
     validate_block_layout(&nodes, &blocks, header.pages_start)?;
     validate_node_point_counts(&nodes, &blocks)?;
     validate_node_error_bounds(&nodes, &blocks)?;
@@ -706,11 +754,6 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
 
     let mut plan: Vec<PlanNode<'_>> = Vec::with_capacity(ordered.len());
     for node in &ordered {
-        if node.level() > MAX_NODE_DEPTH {
-            return Err(FormatError::InvalidMetadata(
-                "v7.5-pre nodes must lie within 21 levels of the root",
-            ));
-        }
         let cell = frame
             .node_cell(node.id())
             .ok_or(FormatError::UnknownNode(node.id()))?;
@@ -758,11 +801,8 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
     while cursor < pages.len() {
         let anchor = pages[cursor].anchor;
         let is_root = cursor == 0;
-        let anchor_depth = plan[anchor].node.level();
-        let anchor_level = frame.root_level() + anchor_depth;
-        let max_k = u32::from(MAX_PAGE_LEVELS)
-            .min(MAX_NODE_DEPTH - anchor_depth)
-            .min(64 - anchor_level) as u8;
+        let anchor_level = frame.root_level() + plan[anchor].node.level();
+        let max_k = u32::from(MAX_PAGE_LEVELS).min(64 - anchor_level) as u8;
         let mut chosen = None;
         for k in (1..=max_k).rev() {
             let entries = page_entries(&plan, anchor, k, is_root);
@@ -775,7 +815,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
                         p.record_len
                             + usize::from(p.children.is_empty())
                             + if depth == k && !p.children.is_empty() {
-                                12
+                                16
                             } else {
                                 0
                             }
@@ -846,6 +886,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
                     id: BlockId::new(id),
                     offset: record.offset,
                     payload_length: record.payload_length,
+                    attribute_offset: record.payloads[1].offset,
                     point_count: record.point_count,
                     geometry_encoding: record.geometry_encoding,
                     quantization_error: record.quantization_error,
@@ -857,7 +898,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             let mut ranges = metadata.node_attribute_ranges(node.id()).to_vec();
             ranges.sort_unstable_by_key(|range| range.schema_index());
             nodes.push(PageNode {
-                id: node.id(),
+                id: page_node_id(index as u32, position as u32),
                 parent: None,
                 depth,
                 path,
@@ -872,10 +913,13 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
                 child_page: page.children.get(&position).map(|&child| PagePointer {
                     offset: offsets[child],
                     length: pages[child].size as u32,
+                    page: child as u32,
+                    anchor_node: page_node_id(index as u32, position as u32),
                 }),
             });
         }
         let page_value = Page {
+            number: index as u32,
             anchor,
             k: page.k,
             is_root: index == 0,
@@ -896,6 +940,9 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
         .any(|page| u32::try_from(page.size).is_err())
     {
         return Err(FormatError::InvalidMetadata("page larger than 4 GiB"));
+    }
+    if u32::try_from(pages.len()).is_err() {
+        return Err(FormatError::TooManyNodes);
     }
     for index in 1..pages.len() {
         writer.write_all(&build(index)?)?;

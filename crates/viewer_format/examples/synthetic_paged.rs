@@ -155,8 +155,16 @@ fn main() {
 
     let file = BufWriter::new(File::create(&output).expect("create output"));
     let options = FormatWriterOptions::new(0.01, 1 << 24).expect("writer options");
-    let mut writer = FormatWriter::new_for_version(FormatVersion::V7_PRE5, file, metadata, options)
-        .expect("writer");
+    let attributes_path = std::path::Path::new(&output).with_extension("octattrs");
+    let attributes = BufWriter::new(File::create(&attributes_path).expect("create companion"));
+    let mut writer = FormatWriter::new_split_for_version(
+        FormatVersion::V7_PRE5,
+        file,
+        attributes,
+        metadata,
+        options,
+    )
+    .expect("writer");
     // The writer needs `Seek` and `BufWriter<File>` has it; blocks are made one at a time.
     for (id, node) in tree.iter().enumerate() {
         let cell = bounds[id];
@@ -180,7 +188,9 @@ fn main() {
             ))
             .expect("block");
     }
-    writer.finish().expect("finish");
+    let (mut primary, attributes) = writer.finish_pair().expect("finish");
+    std::io::Write::flush(&mut primary).expect("flush");
+    std::io::Write::flush(&mut attributes.expect("companion")).expect("flush companion");
     let bytes = std::fs::metadata(&output).expect("output metadata").len();
     println!(
         "{} nodes, {bytes} bytes, {:.1} s -> {output}",

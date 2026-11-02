@@ -91,12 +91,7 @@ fn convert(bytes: &[u8], options: ConvertOptions) -> Result<Pair, ConvertError> 
             .err()
             .map_or(String::new(), ToString::to_string)
     );
-    result.map(|output| {
-        (
-            output.geometry.into_inner(),
-            output.attributes.unwrap().into_inner(),
-        )
-    })
+    result.map(|output| (output.geometry.into_inner(), output.attributes.into_inner()))
 }
 
 fn assert_ranges_match_default(bytes: &[u8], points_per_block: u64, label: &str) {
@@ -500,10 +495,7 @@ mod spool_hints {
             &mut |_| true,
         )
         .unwrap();
-        let pair = (
-            output.geometry.into_inner(),
-            output.attributes.unwrap().into_inner(),
-        );
+        let pair = (output.geometry.into_inner(), output.attributes.into_inner());
         (pair, store)
     }
 

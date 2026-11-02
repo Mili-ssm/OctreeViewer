@@ -53,8 +53,8 @@ pub use global_frame::{
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};
 pub use page_codec::{
-    MAX_NODE_DEPTH, MAX_PAGE_LEVELS, Page, PageAnchor, PageBlock, PageNode, PagePointer,
-    TARGET_PAGE_BYTES, derive_node_id,
+    MAX_PAGE_LEVELS, Page, PageAnchor, PageBlock, PageNode, PagePointer, TARGET_PAGE_BYTES,
+    page_node_id, split_node_id,
 };
 pub use paged_index::{PagedHeader, PagedReader, PagedStats, TAIL_READ_BYTES, verify_paged};
 pub use quantization::{

@@ -94,7 +94,7 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
         "{}",
         String::from_utf8_lossy(&converted.stderr)
     );
-    assert!(!tmp.path().join("out.octattrs").exists());
+    assert!(tmp.path().join("out.octattrs").exists());
 
     let verify = |path: &std::path::Path| {
         Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
@@ -116,4 +116,19 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
     let bad = verify(&corrupt);
     assert_eq!(bad.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&bad.stderr).contains("verification of"));
+
+    // A companion that does not belong to the index is refused too.
+    let mut attributes = fs::read(tmp.path().join("out.octattrs")).unwrap();
+    let crc = attributes.len() - 8;
+    attributes[crc] ^= 0xff;
+    fs::write(tmp.path().join("corrupt.octattrs"), attributes).unwrap();
+    fs::copy(&output, tmp.path().join("other.oct")).unwrap();
+    fs::copy(
+        tmp.path().join("corrupt.octattrs"),
+        tmp.path().join("other.octattrs"),
+    )
+    .unwrap();
+    let mismatched = verify(&tmp.path().join("other.oct"));
+    assert_eq!(mismatched.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&mismatched.stderr).contains("companion"));
 }

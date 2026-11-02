@@ -71,13 +71,10 @@ fn run(
     )
     .map_err(|error| error.to_string())?;
     let geometry = output.geometry.into_inner();
-    let attributes = output
-        .attributes
-        .map(Cursor::into_inner)
-        .unwrap_or_default();
+    let attributes = output.attributes.into_inner();
     validate_output_serial(
         Cursor::new(geometry.as_slice()),
-        (!attributes.is_empty()).then(|| Cursor::new(attributes.as_slice())),
+        Cursor::new(attributes.as_slice()),
         &output.plan,
         &mut |_| true,
     )
@@ -91,8 +88,8 @@ fn run(
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre` (which
-/// has no companion, so the attributes buffer comes back empty). Returns 1 on success; on failure returns 0 and the message is at `error_ptr`.
+/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre`. Returns 1
+/// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
 /// `ptr` must come from `convert_parity_alloc(len)` and stay unmodified during the call.

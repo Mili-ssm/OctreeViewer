@@ -1,4 +1,5 @@
-//! `--format-version v7.5-pre`: the paged hierarchy keeps the global-octree semantics of v7.4-pre.
+//! `--format-version v7.5-pre`: the paged hierarchy keeps the global-octree semantics of v7.4-pre and
+//! the `.oct` / `.octattrs` pair.
 
 use std::{collections::BTreeMap, fs, path::Path};
 
@@ -79,7 +80,7 @@ fn cells(reader: &FormatReader<fs::File>) -> BTreeMap<(u32, [u64; 3]), u64> {
     let frame = metadata.global_frame().unwrap();
     let hierarchy = metadata.dataset().hierarchy();
     let mut map = BTreeMap::new();
-    // Paged ids are derived from (level, prefix), so they are not a dense range.
+    // Paged ids are (page, index), so they are not a dense range.
     for node in hierarchy.query(hierarchy.stats().root_bounds) {
         let cell = frame.node_cell(node.id()).unwrap();
         map.insert(
@@ -105,15 +106,11 @@ fn paged_output_has_the_node_set_and_frame_of_v7_4() {
         let output = dir.path().join(format!("{name}.oct"));
         convert_file(&input, &output, options(version)).unwrap();
         let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
-        if version.has_companion_file() {
-            reader
-                .attach_attributes(
-                    fs::File::open(crate::publish::output_attributes_path(&output)).unwrap(),
-                )
-                .unwrap();
-        } else {
-            assert!(!crate::publish::output_attributes_path(&output).exists());
-        }
+        reader
+            .attach_attributes(
+                fs::File::open(crate::publish::output_attributes_path(&output)).unwrap(),
+            )
+            .unwrap();
         readers.push(reader);
     }
     assert_eq!(readers[1].format_version(), FormatVersion::V7_PRE5);
@@ -144,10 +141,12 @@ fn paged_output_is_byte_identical_and_opens_lazily() {
         )
         .unwrap();
     }
-    assert_eq!(
-        fs::read(dir.path().join("x.oct")).unwrap(),
-        fs::read(dir.path().join("y.oct")).unwrap()
-    );
+    for extension in ["oct", "octattrs"] {
+        assert_eq!(
+            fs::read(dir.path().join(format!("x.{extension}"))).unwrap(),
+            fs::read(dir.path().join(format!("y.{extension}"))).unwrap()
+        );
+    }
     let reader = PagedReader::open(fs::File::open(dir.path().join("x.oct")).unwrap()).unwrap();
     assert_eq!(reader.header().source_point_count(), Some(3000));
 }
@@ -189,4 +188,35 @@ fn paged_format_refuses_ept_checkpoints_and_keeps_fixed_parameters() {
         Err(ConvertError::FixedByFormat(_))
     ));
     assert_eq!(options(FormatVersion::V7_PRE5).points_per_block(), 64_000);
+}
+
+/// A cloud around the origin has a level-0 root and chains far deeper than the 21 levels of the
+/// first v7.5-pre draft; it must convert, verify and read back.
+#[test]
+fn cloud_straddling_the_lattice_origin_converts_with_a_deep_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("in.las");
+    write_las(
+        &input,
+        &cloud(150_000, [-40.0, -40.0, -40.0], 80.0, 5),
+        vlr_wkt(),
+    );
+    let output = dir.path().join("deep.oct");
+    let report = convert_file(&input, &output, options(FormatVersion::V7_PRE5)).unwrap();
+    assert_eq!(report.point_count, 150_000);
+    let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
+    reader
+        .attach_attributes(fs::File::open(crate::publish::output_attributes_path(&output)).unwrap())
+        .unwrap();
+    let frame = reader.format_metadata().global_frame().unwrap();
+    assert_eq!(frame.root_level(), 0);
+    let depth = reader
+        .format_metadata()
+        .dataset()
+        .hierarchy()
+        .stats()
+        .max_level;
+    assert!(depth > 21, "depth {depth}");
+    let stats = crate::verify_file(&output).unwrap().paged.unwrap();
+    assert!(stats.nodes > 21);
 }

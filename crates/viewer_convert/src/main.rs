@@ -151,21 +151,14 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     } else {
         convert_file_with_progress(&input, &output, options, &mut on_progress)?
     };
-    let destination = if options.format_version().has_companion_file() {
-        format!(
-            "{} + {}",
-            output.display(),
-            output.with_extension("octattrs").display()
-        )
-    } else {
-        output.display().to_string()
-    };
     eprintln!(
-        "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {destination}",
+        "Converted {} points in {} blocks ({} bytes; estimated controlled memory {} MiB) to {} + {}",
         report.point_count,
         report.block_count,
         report.output_bytes,
         report.estimated_peak_memory_bytes.div_ceil(1024 * 1024),
+        output.display(),
+        output.with_extension("octattrs").display()
     );
     if !report.omitted_dimensions.is_empty() {
         eprintln!("Not preserved: {}", report.omitted_dimensions.join(", "));
@@ -207,8 +200,8 @@ fn print_help() {
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
-         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. v7.5-pre writes only OUTPUT.oct (EPT, --checkpoint and --resume are not supported for it).\n\
-         viewer_convert verify FILE.oct reads every index page of a v7.5-pre file and runs the global checks; exit code 0 if valid, 1 otherwise.\n\
+         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. v7.5-pre does not support EPT, --checkpoint or --resume.\n\
+         viewer_convert verify FILE.oct reads every index page of a v7.5-pre file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
          Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\

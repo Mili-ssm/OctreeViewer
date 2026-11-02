@@ -429,7 +429,7 @@ pub(super) fn convert(
         verify_source_inventory(root, &source_files)?;
         let (output_bytes, output_validation) = publish_validated_output_pair(
             &candidate_path,
-            Some(&candidate_attributes_path),
+            &candidate_attributes_path,
             output_path,
             point_count,
             output_validation,
@@ -456,7 +456,7 @@ pub(super) fn convert(
         });
     }
     let mut temporary = if checkpoint.is_none() {
-        Some(create_temporary_pair(output_path, true)?)
+        Some(create_temporary_pair(output_path)?)
     } else {
         None
     };
@@ -477,8 +477,6 @@ pub(super) fn convert(
                 .as_ref()
                 .expect("temporary pair exists")
                 .attributes
-                .as_ref()
-                .expect("EPT output always has a companion file")
                 .path
                 .clone()
         },
@@ -609,8 +607,6 @@ pub(super) fn convert(
             .expect("temporary file exists");
         let attributes = temporary
             .attributes
-            .as_mut()
-            .expect("EPT output always has a companion file")
             .file
             .take()
             .expect("temporary companion file exists");
@@ -800,7 +796,7 @@ pub(super) fn convert(
         let validation_timer = diagnostics.as_ref().map(|_| DiagnosticTimer::start());
         let output_validation = validate_output_pair(
             &primary_path,
-            Some(&attributes_path),
+            &attributes_path,
             &validation,
             on_progress,
             diagnostics.as_deref_mut(),
@@ -815,7 +811,7 @@ pub(super) fn convert(
             .mark_output_ready(manifest.points, written_blocks, output_validation)?;
         let published = publish_validated_output_pair(
             &primary_path,
-            Some(&attributes_path),
+            &attributes_path,
             output_path,
             manifest.points,
             output_validation,
@@ -829,7 +825,7 @@ pub(super) fn convert(
     } else {
         publish_output_pair(
             &primary_path,
-            Some(&attributes_path),
+            &attributes_path,
             output_path,
             validation,
             on_progress,

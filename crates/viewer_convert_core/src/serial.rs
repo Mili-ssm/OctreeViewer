@@ -34,13 +34,11 @@ pub struct PlanSummary {
 
 pub struct SerialOutput<W> {
     pub geometry: W,
-    /// `None` for single-file revisions (`v7.5-pre`).
-    pub attributes: Option<W>,
+    pub attributes: W,
     pub plan: PlanSummary,
 }
 
-/// Converts LAS/LAZ bytes to the split `.oct` / `.octattrs` pair on the calling thread (only
-/// `.oct` for `v7.5-pre`, which ignores `attributes`).
+/// Converts LAS/LAZ bytes to the split `.oct` / `.octattrs` pair on the calling thread.
 /// `bytes_written` in progress reports is always 0: only the host knows what reached storage.
 pub fn convert_serial<B, S, C, W>(
     input: &LasFactory<B>,
@@ -87,10 +85,6 @@ where
     )?;
     drop(first);
     let plan = ConversionPlan::from_spatial(spatial, source.frame);
-    let attributes = options
-        .format_version()
-        .has_companion_file()
-        .then_some(attributes);
     let (mut writer, encoder) = output_writer(options, &plan.metadata, geometry, attributes)?;
     emit_progress(
         on_progress,
@@ -127,7 +121,7 @@ where
     let (geometry, attributes) = OctreeWriter::finish_pair(writer)?;
     Ok(SerialOutput {
         geometry,
-        attributes,
+        attributes: attributes.expect("split writer returns its companion"),
         plan: PlanSummary {
             point_count: plan.point_count,
             block_count: plan.block_count,
@@ -166,17 +160,16 @@ pub fn written_block_ids<R: Read + Seek>(
 }
 
 /// Rereads every block of the pair and checks that the source blocks hold `plan.point_count`
-/// points: the checks of the native validation, one block at a time.
+/// points: the checks of the native validation, one block at a time. `v7.5-pre` numbers its blocks
+/// by page, so its ids come from the file instead of the plan.
 pub fn validate_output_serial<R: Read + Seek>(
     geometry: R,
-    attributes: Option<R>,
+    attributes: R,
     plan: &PlanSummary,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
 ) -> Result<ConversionWorkerStats, ConvertError> {
     let mut reader = FormatReader::new(geometry)?;
-    if let Some(attributes) = attributes {
-        reader.attach_attributes(attributes)?;
-    }
+    reader.attach_attributes(attributes)?;
     let (block_ids, source_block_ids) = if reader.format_version().uses_pages() {
         written_block_ids(&reader)?
     } else {

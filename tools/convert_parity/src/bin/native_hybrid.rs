@@ -302,7 +302,7 @@ fn run(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
     let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
     let blocks = output.plan.block_count;
     // Flush the buffered writers before the files are hashed.
-    for mut writer in std::iter::once(output.geometry).chain(output.attributes) {
+    for mut writer in [output.geometry, output.attributes] {
         std::io::Write::flush(&mut writer)?;
     }
     Ok(format!(

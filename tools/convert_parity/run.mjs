@@ -43,7 +43,7 @@ const cases = [
   { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true },
   { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true },
   { name: "small-v74", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
-  // small.las is not a v7.5 case: it straddles the lattice sign bit (root level 0, 40-level chain), beyond the 21-level depth limit.
+  { name: "small-v75", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "synthetic-v75", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
 ];
@@ -68,7 +68,7 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
-// `convert_parity_run` format argument; `v7.5-pre` is a single file (no `.octattrs`).
+// `convert_parity_run` format argument.
 const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2 };
 
 function wasmConvert(name, bytes, ppb, divisions, format) {
@@ -110,7 +110,7 @@ function nativeConvert(name, input, ppb, divisions, format) {
   return {
     blocks: Number(run.stdout.trim()),
     oct: sha256(readFileSync(output)),
-    attrs: existsSync(`${output}attrs`) ? sha256(readFileSync(`${output}attrs`)) : sha256(new Uint8Array()),
+    attrs: sha256(readFileSync(`${output}attrs`)),
   };
 }
 

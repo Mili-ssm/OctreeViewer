@@ -68,12 +68,6 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::uses_global_frame)
     }
 
-    /// Whether the revision stores its color and attributes in a `.octattrs` companion next to
-    /// the `.oct` (every writable revision except the paged `v7.5-pre`, which is one file).
-    pub fn has_companion_file(self) -> bool {
-        !self.uses_pages()
-    }
-
     /// Whether the index is a metadata block plus a root page with child pages (`v7.5-pre`).
     pub fn uses_pages(self) -> bool {
         crate::layout::StorageLayout::from_version(self)

@@ -127,19 +127,20 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)
     };
     let options = || FormatWriterOptions::new(0.001, 1024).unwrap();
 
-    let mut writer = FormatWriter::new_for_version(
-        version,
-        Cursor::new(Vec::new()),
-        metadata.clone(),
-        options(),
-    )
-    .unwrap();
-    writer.write_block(block()).unwrap();
-    let monolithic = writer.finish().unwrap().into_inner();
-    if version == FormatVersion::V7_PRE5 {
-        // The paged revision has no split layout.
-        return (monolithic, None);
-    }
+    // The paged revision is only written as a pair, so its monolithic seed is the primary alone.
+    let monolithic = if version == FormatVersion::V7_PRE5 {
+        Vec::new()
+    } else {
+        let mut writer = FormatWriter::new_for_version(
+            version,
+            Cursor::new(Vec::new()),
+            metadata.clone(),
+            options(),
+        )
+        .unwrap();
+        writer.write_block(block()).unwrap();
+        writer.finish().unwrap().into_inner()
+    };
 
     let mut writer = FormatWriter::new_split_for_version(
         version,
@@ -151,6 +152,11 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)
     .unwrap();
     writer.write_block(block()).unwrap();
     let (primary, attributes) = writer.finish_pair().unwrap();
+    let monolithic = if monolithic.is_empty() {
+        primary.get_ref().clone()
+    } else {
+        monolithic
+    };
     (
         monolithic,
         Some((primary.into_inner(), attributes.unwrap().into_inner())),
@@ -160,7 +166,7 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)
 /// `v7.5-pre` chain: four nested nodes written with one level per page (`k` = 1), so the file has
 /// a root page and three chained child pages. `levels` picks the page target: 1 byte forces
 /// `k` = 1 everywhere, the default keeps the whole chain in the root page.
-fn write_paged_chain(page_target: Option<usize>) -> Vec<u8> {
+fn write_paged_chain(page_target: Option<usize>) -> (Vec<u8>, Vec<u8>) {
     use viewer_format::{CrsRecord, GlobalFrame, NodeCell};
     let root_prefix = [5, 7, 9].map(|k| (1_u64 << 39) + k);
     let level = 40;
@@ -229,8 +235,9 @@ fn write_paged_chain(page_target: Option<usize>) -> Vec<u8> {
     if let Some(target) = page_target {
         options = options.with_page_target_bytes(target);
     }
-    let mut writer = FormatWriter::new_for_version(
+    let mut writer = FormatWriter::new_split_for_version(
         FormatVersion::V7_PRE5,
+        Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata,
         options,
@@ -260,7 +267,8 @@ fn write_paged_chain(page_target: Option<usize>) -> Vec<u8> {
             ))
             .unwrap();
     }
-    writer.finish().unwrap().into_inner()
+    let (primary, attributes) = writer.finish_pair().unwrap();
+    (primary.into_inner(), attributes.unwrap().into_inner())
 }
 
 fn join_split(primary: &[u8], attributes: &[u8]) -> Vec<u8> {
@@ -339,16 +347,23 @@ fn main() {
     let paged_dir = Path::new("corpus/fuzz_paged_reader");
     fs::create_dir_all(paged_dir).unwrap();
     // Only `seed-sample*` files are tracked (see `fuzz/.gitignore`).
-    for (name, bytes) in [
+    let sample = write_revision(FormatVersion::V7_PRE5);
+    let (sample_primary, sample_attributes) = sample.1.unwrap();
+    for (name, primary, attributes) in [
         ("seed-sample-chain-k5", write_paged_chain(None)),
         ("seed-sample-chain-k1", write_paged_chain(Some(1))),
-        ("seed-sample", write_revision(FormatVersion::V7_PRE5).0),
-    ] {
-        fs::write(paged_dir.join(name), &bytes).unwrap();
+    ]
+    .map(|(name, (primary, attributes))| (name, primary, attributes))
+    .into_iter()
+    .chain([("seed-sample", sample_primary, sample_attributes)])
+    {
+        fs::write(paged_dir.join(name), &primary).unwrap();
         if name != "seed-sample" {
+            let target = name.replace("seed-sample", "seed-sample-paged");
+            fs::write(format_dir.join(&target), &primary).unwrap();
             fs::write(
-                format_dir.join(name.replace("seed-sample", "seed-sample-paged")),
-                &bytes,
+                format_dir.join(format!("{target}-split")),
+                join_split(&primary, &attributes),
             )
             .unwrap();
         }

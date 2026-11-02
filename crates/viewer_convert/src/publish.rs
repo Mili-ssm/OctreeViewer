@@ -64,10 +64,9 @@ pub(crate) struct OutputValidation<'a> {
     pub(crate) reserved_memory_bytes: u64,
 }
 
-/// `attributes_path` is `None` for single-file revisions (`v7.5-pre`).
 pub(crate) fn validate_output_pair(
     path: &Path,
-    attributes_path: Option<&Path>,
+    attributes_path: &Path,
     validation: &OutputValidation<'_>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     diagnostics: Option<&mut ConversionDiagnostics>,
@@ -84,9 +83,7 @@ pub(crate) fn validate_output_pair(
         reserved_memory_bytes,
     } = *validation;
     let mut reader = FormatReader::new(File::open(path)?)?;
-    if let Some(attributes_path) = attributes_path {
-        reader.attach_attributes(File::open(attributes_path)?)?;
-    }
+    reader.attach_attributes(File::open(attributes_path)?)?;
     let file_length = file_length
         .checked_add(attributes_length)
         .ok_or(ConvertError::SizeOverflow)?;
@@ -126,9 +123,7 @@ pub(crate) fn validate_output_pair(
         .enumerate()
         .map(|(worker_index, _)| {
             let mut fork = reader.fork_reader(File::open(path)?);
-            if let Some(attributes_path) = attributes_path {
-                fork.attach_attributes(File::open(attributes_path)?)?;
-            }
+            fork.attach_attributes(File::open(attributes_path)?)?;
             Ok((worker_index, fork))
         })
         .collect::<Result<Vec<_>, ConvertError>>()?;
@@ -266,7 +261,7 @@ pub(crate) enum ValidationMessage {
 
 pub(crate) fn publish_output_pair(
     temporary_path: &Path,
-    attributes_temporary_path: Option<&Path>,
+    attributes_temporary_path: &Path,
     output_path: &Path,
     validation: OutputValidation<'_>,
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
@@ -295,7 +290,7 @@ pub(crate) fn publish_output_pair(
 
 pub(crate) fn publish_validated_output_pair(
     temporary_path: &Path,
-    attributes_temporary_path: Option<&Path>,
+    attributes_temporary_path: &Path,
     output_path: &Path,
     point_count: u64,
     output_validation: ConversionWorkerStats,
@@ -303,10 +298,7 @@ pub(crate) fn publish_validated_output_pair(
 ) -> Result<(u64, ConversionWorkerStats), ConvertError> {
     let attributes_path = output_attributes_path(output_path);
     let primary_bytes = fs::metadata(temporary_path)?.len();
-    let attributes_bytes = attributes_temporary_path
-        .map(|path| fs::metadata(path).map(|metadata| metadata.len()))
-        .transpose()?
-        .unwrap_or(0);
+    let attributes_bytes = fs::metadata(attributes_temporary_path)?.len();
     let output_bytes = primary_bytes
         .checked_add(attributes_bytes)
         .ok_or(ConvertError::SizeOverflow)?;
@@ -321,23 +313,27 @@ pub(crate) fn publish_validated_output_pair(
         point_count,
     )?;
     let primary_exists = output_path.exists();
-    let attributes_exists = attributes_temporary_path.is_none() || attributes_path.exists();
+    let attributes_exists = attributes_path.exists();
     if primary_exists && fingerprint_file(output_path)? != fingerprint_file(temporary_path)? {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }
-    if let Some(attributes_temporary_path) = attributes_temporary_path {
-        if attributes_exists
-            && fingerprint_file(&attributes_path)? != fingerprint_file(attributes_temporary_path)?
-        {
-            return Err(ConvertError::OutputExists(attributes_path));
-        }
-        if !attributes_exists {
-            link_attributes(attributes_temporary_path, &attributes_path)?;
-        }
+    if attributes_exists
+        && fingerprint_file(&attributes_path)? != fingerprint_file(attributes_temporary_path)?
+    {
+        return Err(ConvertError::OutputExists(attributes_path));
+    }
+    if !attributes_exists {
+        fs::hard_link(attributes_temporary_path, &attributes_path).map_err(|error| {
+            if error.kind() == io::ErrorKind::AlreadyExists || attributes_path.exists() {
+                ConvertError::OutputExists(attributes_path.clone())
+            } else {
+                ConvertError::Io(error)
+            }
+        })?;
     }
     fs_util::sync_parent(output_path)?;
     if !primary_exists && let Err(error) = fs::hard_link(temporary_path, output_path) {
-        if attributes_temporary_path.is_some() && !attributes_exists {
+        if !attributes_exists {
             let _ = fs::remove_file(&attributes_path);
         }
         return Err(
@@ -350,16 +346,6 @@ pub(crate) fn publish_validated_output_pair(
     }
     fs_util::sync_parent(output_path)?;
     Ok((output_bytes, output_validation))
-}
-
-fn link_attributes(temporary: &Path, attributes_path: &Path) -> Result<(), ConvertError> {
-    fs::hard_link(temporary, attributes_path).map_err(|error| {
-        if error.kind() == io::ErrorKind::AlreadyExists || attributes_path.exists() {
-            ConvertError::OutputExists(attributes_path.to_owned())
-        } else {
-            ConvertError::Io(error)
-        }
-    })
 }
 
 pub(crate) struct TemporaryOutput {
@@ -414,18 +400,12 @@ pub(crate) fn output_attributes_path(output_path: &Path) -> PathBuf {
 
 pub(crate) struct TemporaryPair {
     pub(crate) geometry: TemporaryOutput,
-    /// `None` when the revision has no companion file (`v7.5-pre`).
-    pub(crate) attributes: Option<TemporaryOutput>,
+    pub(crate) attributes: TemporaryOutput,
 }
 
-pub(crate) fn create_temporary_pair(
-    output_path: &Path,
-    companion: bool,
-) -> Result<TemporaryPair, ConvertError> {
+pub(crate) fn create_temporary_pair(output_path: &Path) -> Result<TemporaryPair, ConvertError> {
     Ok(TemporaryPair {
         geometry: create_temporary_output(output_path)?,
-        attributes: companion
-            .then(|| create_temporary_output(&output_attributes_path(output_path)))
-            .transpose()?,
+        attributes: create_temporary_output(&output_attributes_path(output_path))?,
     })
 }
