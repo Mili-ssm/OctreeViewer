@@ -544,6 +544,7 @@ fn reference_select_lod(
         let mut best: Option<(usize, NodeId, f64, Vec<NodeId>, u64)> = None;
         let mut budget_limited = Vec::new();
         let mut resolution_limited = Vec::new();
+        let mut unloaded_anchors = Vec::new();
         for (index, id) in frontier.iter().copied().enumerate() {
             let node = &hierarchy.nodes[&id].metadata;
             let error = projected_error_pixels(node);
@@ -559,7 +560,11 @@ fn reference_select_lod(
                 frustum,
             );
             if children.is_empty() {
-                resolution_limited.push(id);
+                if hierarchy.unloaded.contains(&id) {
+                    unloaded_anchors.push(id);
+                } else {
+                    resolution_limited.push(id);
+                }
                 continue;
             }
             let children_count = reference_count_points(hierarchy, &children)?;
@@ -600,6 +605,7 @@ fn reference_select_lod(
                 max_error_pixels,
                 budget_limited,
                 resolution_limited,
+                unloaded_anchors,
             });
         };
 

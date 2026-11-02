@@ -78,6 +78,12 @@ impl LodTransitionPlanner {
         Self::default()
     }
 
+    /// The retained (last complete) cut. Hierarchy pages containing any of these nodes must not
+    /// be evicted: the planner walks their ancestors.
+    pub fn retained_nodes(&self) -> &[NodeId] {
+        &self.retained_nodes
+    }
+
     /// Resolves target nodes against cache residency without changing the active cut
     /// or cache protection. Call [`Self::commit`] after downstream consumers accept it.
     pub fn prepare<S: ResidentBlockSource + ?Sized>(
