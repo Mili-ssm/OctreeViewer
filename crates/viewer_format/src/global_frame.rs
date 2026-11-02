@@ -324,6 +324,7 @@ impl NodeCell {
 pub struct GlobalFrame {
     root_level: u32,
     root_prefix: [u64; 3],
+    frame_origin_quanta: [i64; 3],
     crs: CrsRecord,
     source_scale_offset: Option<SourceScaleOffset>,
     nodes: BTreeMap<NodeId, NodeCell>,
@@ -334,12 +335,19 @@ impl GlobalFrame {
     pub fn new(
         root_level: u32,
         root_prefix: [u64; 3],
+        frame_origin_quanta: [i64; 3],
         crs: CrsRecord,
         source_scale_offset: Option<SourceScaleOffset>,
         nodes: Vec<(NodeId, NodeCell)>,
     ) -> Result<Self, MetadataError> {
         if root_level > MAX_LEVEL || root_prefix.iter().any(|p| !prefix_fits(root_level, *p)) {
             return Err(MetadataError::InvalidGlobalFrame("root level or prefix"));
+        }
+        let root = CellBox::new(root_level, root_prefix);
+        if !root.contains(frame_origin_quanta.map(i128::from)) {
+            return Err(MetadataError::InvalidGlobalFrame(
+                "frame origin outside the root node",
+            ));
         }
         let mut cells = BTreeMap::new();
         for (id, cell) in nodes {
@@ -350,6 +358,7 @@ impl GlobalFrame {
         Ok(Self {
             root_level,
             root_prefix,
+            frame_origin_quanta,
             crs,
             source_scale_offset,
             nodes: cells,
@@ -378,10 +387,10 @@ impl GlobalFrame {
         self.nodes.get(&id)
     }
 
-    /// Origin of the stored root in quanta: the frame origin.
-    pub fn frame_origin_quanta(&self) -> [i64; 3] {
-        self.root_prefix
-            .map(|prefix| cell_origin_quanta(self.root_level, prefix))
+    /// Frame origin in quanta: a point inside the root node (the converter uses the cloud's minimum
+    /// corner) that keeps `f32` local positions small for a shallow root.
+    pub const fn frame_origin_quanta(&self) -> [i64; 3] {
+        self.frame_origin_quanta
     }
 
     /// Frame origin in CRS units, rounded to nearest: what the index and `CoordinateFrame` carry.

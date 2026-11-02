@@ -149,6 +149,11 @@ pub fn repair_index_and_footer(bytes: &mut [u8]) {
     bytes[footer + 36..].copy_from_slice(&crc.to_le_bytes());
 }
 
+/// Root corner in quanta, the simplest valid frame origin.
+pub fn root_origin(level: u32, prefix: [u64; 3]) -> [i64; 3] {
+    prefix.map(|p| viewer_format::cell_origin_quanta(level, p))
+}
+
 /// Prefix of the node at absolute `level` that contains `coordinate` (CRS units), per axis.
 pub fn prefix_of(coordinate: f64, level: u32) -> u64 {
     let quanta = viewer_format::quantize_coordinate(coordinate).unwrap();
@@ -170,6 +175,7 @@ pub fn global_metadata(
     let frame = GlobalFrame::new(
         level,
         prefix,
+        root_origin(level, prefix),
         crs,
         source,
         vec![(NodeId::new(0), NodeCell::new(prefix, spacing))],

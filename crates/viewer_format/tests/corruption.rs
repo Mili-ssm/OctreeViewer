@@ -459,6 +459,7 @@ fn index_fields(index: &[u8], version: FormatVersion) -> Vec<Field> {
         for _ in 0..3 {
             walker.int("root_prefix", 8, true);
         }
+        walker.raw("frame_origin_quanta", 24);
     }
     let has_source_count = walker.bytes[walker.at] == 1;
     walker.raw("source_count_tag", 1);

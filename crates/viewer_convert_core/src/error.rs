@@ -83,6 +83,12 @@ pub enum ConvertError {
     UnsupportedEpt(String),
     #[error("invalid EPT dataset: {0}")]
     InvalidEpt(String),
+    #[error("{0} is fixed by the output format version and cannot be overridden")]
+    FixedByFormat(&'static str),
+    #[error("{0} cannot be written as v7.4-pre")]
+    UnsupportedForGlobalFormat(&'static str),
+    #[error("coordinate magnitude {0} exceeds the converter limit of 2^35 CRS units for v7.4-pre")]
+    GlobalCoordinateRange(f64),
     #[error("conversion size or identifier count overflowed")]
     SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]

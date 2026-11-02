@@ -123,6 +123,11 @@ pub(super) fn convert(
     on_progress: &mut dyn FnMut(ConversionProgress) -> bool,
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
+    if options.format_version().uses_global_frame() {
+        return Err(ConvertError::UnsupportedForGlobalFormat(
+            "an EPT dataset (additive hierarchy)",
+        ));
+    }
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));
     }

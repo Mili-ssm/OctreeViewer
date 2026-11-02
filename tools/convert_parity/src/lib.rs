@@ -43,10 +43,16 @@ fn run(
     points_per_block: u64,
     divisions: u8,
     workers: usize,
+    global_format: bool,
 ) -> Result<Outcome, String> {
     let mut options = ConvertOptions::new(points_per_block, 0.01)
         .and_then(|options| options.with_spatial_divisions(divisions))
         .map_err(|error| error.to_string())?;
+    if global_format {
+        options = options
+            .with_format_version(viewer_format::FormatVersion::V7_PRE4)
+            .map_err(|error| error.to_string())?;
+    }
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)
@@ -93,11 +99,18 @@ pub unsafe extern "C" fn convert_parity_run(
     points_per_block: u64,
     divisions: u32,
     workers: u32,
+    global_format: u32,
 ) -> u32 {
     // SAFETY: the caller passes a buffer from `convert_parity_alloc` of exactly `len` bytes.
     let input = unsafe { std::slice::from_raw_parts(ptr, len) };
     let divisions = u8::try_from(divisions).unwrap_or(u8::MAX);
-    let result = run(input, points_per_block, divisions, workers as usize);
+    let result = run(
+        input,
+        points_per_block,
+        divisions,
+        workers as usize,
+        global_format != 0,
+    );
     let succeeded = result.is_ok();
     OUTCOME.with(|outcome| {
         *outcome.borrow_mut() = result.unwrap_or_else(|error| Outcome {

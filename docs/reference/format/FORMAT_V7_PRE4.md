@@ -16,7 +16,7 @@ header, footer, file roles, payload directory entries, geometry/attribute codecs
 | Header revision / index magic / footer magic | `3` / `OCTVI73P` / `OCTVE73P` | `4` / `OCTVI74P` / `OCTVE74P` |
 | Coordinates | per-block `f64` origin and scale, `u32` quantization | global `i64` quanta, `u32` offsets, fixed scale 2⁻¹⁵ |
 | Node identity | bounds only | bounds **plus** prefix, derived absolute level, `spacing` |
-| Frame | `f64` origin of the cloud minimum | root node of the global octree |
+| Frame | `f64` origin of the cloud minimum | `i64` quanta origin inside the root node (the writer uses the cloud minimum) |
 | CRS | descriptive string | identity (authority + code) plus raw bytes |
 | Source scale/offset | absent | stored for exact export |
 | Fixed by the version | — | `spatial_divisions` = 2, leaf limit 64 000 points, `sample_grid` = 256 |
@@ -26,7 +26,7 @@ header, footer, file roles, payload directory entries, geometry/attribute codecs
 For each axis, a source coordinate `c` in CRS units becomes `q = round(c × 2^15)` as `i64`
 (`f64::round`, ties away from zero; the product is exact). With LAS input `c = X as f64 * scale + offset`
 evaluated in `f64`. The quantum 2⁻¹⁵ is fixed by the version: it is not a field. Writers reject any
-point with `|c| >= 2^48` CRS units (`|q| < 2^63`, the `i64` range); no other magnitude limit applies.
+point with `|c| >= 2^48` CRS units (`|q| < 2^63`, the `i64` range); no other format limit applies. The v7.4-pre converter rejects `|c| >= 2^35` CRS units so derived `f64` node bounds stay exact.
 
 The octree is implicit in the bits of `u = q ^ 0x8000_0000_0000_0000` (the `i64` sign bit flipped, read as
 `u64`). A node at **absolute level** `a` (0..=64) has a per-axis **prefix** `P` of `a` bits (`u64`, `P < 2^a`) and covers
@@ -50,9 +50,12 @@ shallow root with chains of single-child nodes below it (tens of near-empty node
 prefix, never in `f64`. Every `f64` slot holding geometry (frame origin, node bounds) is derived and
 informative: readers must not use it for exact computations.
 
-**Frame origin.** The `f64` origin triple of the index is the root origin in CRS units
-(`root_origin_quanta × 2^-15`, rounded to nearest `f64`). Decoded positions and stored node bounds are
-frame-local (`world − frame origin`), as in V5. Readers validate that the triple matches the root prefix.
+**Frame origin.** The index stores the frame origin as 3 × `i64` quanta, a point **inside the root
+node** (the converter writes the cloud's minimum quantized corner, exact in quanta). It is independent of
+the root corner so that a shallow root (R4-Q5/Q6) keeps `f32` local positions small. The `f64` origin
+triple of the index is that origin in CRS units (`origin_quanta × 2^-15`, rounded to nearest `f64`).
+Decoded positions and stored node bounds are frame-local (`world − frame origin`), as in V5. Readers
+validate that the quanta lie inside the root node and that the `f64` triple matches them.
 
 ## Index layout
 
@@ -60,7 +63,7 @@ The index follows V5's field order with these changes (numbers refer to the V5 i
 
 | # | Field | V7.4-pre |
 | --- | --- | --- |
-| 1 | Frame origin | 3 × `f64`, unchanged slot; value derived from the root. **New, immediately after it:** root absolute level `a0` (`u32`), root prefix (3 × `u64`) |
+| 1 | Frame origin | 3 × `f64`, unchanged slot; value derived from the quanta origin below. **New, immediately after it:** root absolute level `a0` (`u32`), root prefix (3 × `u64`), frame origin (3 × `i64` quanta) |
 | 2 | Source point count | unchanged |
 | 3 | CRS string | replaced by the CRS record below |
 | 3b | Source scale and offset (new, after the CRS record) | `u8` tag (0 absent, 1 present; other tags invalid); if present 3 × `f64` scale then 3 × `f64` offset. Scale finite and > 0, offset finite |
@@ -108,7 +111,7 @@ stores the measured spacing `side / 2^d`, with `d` the first level where the occ
 than ×1.5 (`0 <= d <= 64 - a`, i.e. between one quantum and `side`). Readers validate the power of two,
 the range `2^-15 <= spacing <= side` and, for a node with children, the exact value `2^(41 - a)`.
 
-The minimum encoded node grows by 32 bytes (3 × `u64` + `f64`): `MIN_NODE_RECORD_LEN` in
+The index header grows by 24 bytes (frame origin quanta). The minimum encoded node grows by 32 bytes (3 × `u64` + `f64`): `MIN_NODE_RECORD_LEN` in
 `index_codec.rs` goes from 85 to 117.
 
 ### Block record
@@ -155,7 +158,7 @@ as LAS integers.
 ## Validation (readers)
 
 Every "must" above, plus the V5 rules for IDs, ranges, contiguity and CRCs. Cross-field checks: frame
-origin = root origin; level ≤ 64; child prefix = parent prefix extended; bounds derived from prefix;
+origin quanta inside the root node and `f64` triple = quanta × 2^-15; level ≤ 64; child prefix = parent prefix extended; bounds derived from prefix;
 authority empty iff code 0; encoding 0 iff raw empty.
 
 ## Writer restrictions

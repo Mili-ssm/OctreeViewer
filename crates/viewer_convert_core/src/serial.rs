@@ -60,7 +60,7 @@ where
         progress(ConversionStage::InspectingInput, 0, 0),
         0,
     )?;
-    let source = inspect_source(input)?;
+    let source = inspect_source(input)?.for_options(options)?;
     let full = input
         .split(1, 1)?
         .into_iter()

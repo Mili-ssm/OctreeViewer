@@ -42,6 +42,8 @@ const cases = [
   { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true },
   { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true },
   { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true },
+  { name: "small-v74", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
+  { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
 ];
 if (autzen) {
   cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false });
@@ -64,11 +66,11 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
-function wasmConvert(name, bytes, ppb, divisions) {
+function wasmConvert(name, bytes, ppb, divisions, format) {
   const ptr = x.convert_parity_alloc(bytes.length);
   // Viewed after the allocation: growing memory detaches earlier buffers.
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0);
+  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, format ? 1 : 0);
   const view = (p, l) => new Uint8Array(x.memory.buffer, p, l);
   if (!ok) {
     const message = new TextDecoder().decode(
@@ -91,12 +93,12 @@ function wasmConvert(name, bytes, ppb, divisions) {
   };
 }
 
-function nativeConvert(name, input, ppb, divisions) {
+function nativeConvert(name, input, ppb, divisions, format) {
   const output = join(workDir, `${name}.oct`);
   // The converter refuses to overwrite an existing output.
   rmSync(output, { force: true });
   rmSync(`${output}attrs`, { force: true });
-  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions)], {
+  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...(format ? [format] : [])], {
     encoding: "utf8",
   });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
@@ -108,9 +110,9 @@ function nativeConvert(name, input, ppb, divisions) {
 }
 
 let failed = false;
-for (const { name, input, ppb, divisions, multi } of cases) {
-  const native = nativeConvert(name, input, ppb, divisions);
-  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions);
+for (const { name, input, ppb, divisions, multi, format } of cases) {
+  const native = nativeConvert(name, input, ppb, divisions, format);
+  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions, format);
   const problems = [];
   if (native.oct !== wasm.oct) problems.push("oct differs");
   if (native.attrs !== wasm.attrs) problems.push("octattrs differs");

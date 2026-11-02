@@ -51,9 +51,16 @@ pub struct SpoolLayout {
     has_gps_time: bool,
     has_color: bool,
     has_nir: bool,
+    /// `v7.4-pre`: source positions are snapped to the 2^-15 grid so that node and cell
+    /// membership is decided on exact integers.
+    snap_to_quanta: bool,
 }
 
 impl SpoolLayout {
+    pub const fn is_global(self) -> bool {
+        self.snap_to_quanta
+    }
+
     pub fn source(source: &SourceInfo) -> Self {
         Self {
             transforms: source.transforms,
@@ -61,6 +68,7 @@ impl SpoolLayout {
             has_gps_time: source.point_format.has_gps_time,
             has_color: source.point_format.has_color,
             has_nir: source.point_format.has_nir,
+            snap_to_quanta: source.global.is_some(),
         }
     }
 
@@ -81,13 +89,27 @@ impl SpoolLayout {
             + usize::from(self.has_nir) * 2
     }
 
+    /// The LAS coordinate before any snapping (header bounds are checked against it).
     #[inline]
-    fn position(self, raw: [i32; 3]) -> [f64; 3] {
+    fn exact_position(self, raw: [i32; 3]) -> [f64; 3] {
         [
             self.transforms.x.direct(raw[0]),
             self.transforms.y.direct(raw[1]),
             self.transforms.z.direct(raw[2]),
         ]
+    }
+
+    #[inline]
+    fn position(self, raw: [i32; 3]) -> [f64; 3] {
+        let exact = self.exact_position(raw);
+        if self.snap_to_quanta {
+            exact.map(|value| {
+                viewer_format::quantize_coordinate(value)
+                    .map_or(value, viewer_format::quanta_to_units)
+            })
+        } else {
+            exact
+        }
     }
 }
 
@@ -442,7 +464,10 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     point_limit: u64,
     spool_ids: &AtomicU64,
 ) -> Result<SpatialPlan, ConvertError> {
-    let root_bounds = cube_bounds(source.bounds);
+    let root_bounds = match &source.global {
+        Some(root) => root.bounds()?,
+        None => cube_bounds(source.bounds),
+    };
     let mut builder = SpatialBuilder {
         store,
         clock,
@@ -527,26 +552,41 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
 
     let schema = source_schema(&source.point_format);
     crate::limits::check_reader_attribute_ranges(builder.node_records.len(), schema.len())?;
+    let global_frame = source
+        .global
+        .as_ref()
+        .map(|root| global_frame(source, root, &builder.node_records))
+        .transpose()?;
     let nodes = builder
         .node_records
         .iter()
         .map(|node| {
-            SpatialNode::new(
+            let bounds = match &global_frame {
+                Some(frame) => {
+                    frame.node_bounds(node.level, global_prefix(frame.root_level(), node))?
+                }
+                None => node.bounds,
+            };
+            Ok(SpatialNode::new(
                 node.id,
                 node.parent,
                 node.level,
-                node.bounds,
+                bounds,
                 node.point_count,
                 node.geometric_error,
                 node.blocks.clone(),
-            )
+            )?)
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, ConvertError>>()?;
     let hierarchy = SpatialHierarchy::new(nodes, schema, Some(source.point_count))?;
-    let metadata = FormatMetadata::new(
-        DatasetMetadata::new(source.frame, hierarchy),
-        None,
-        Some(format!(
+    let sampling_policy = if global_frame.is_some() {
+        format!(
+            "sample-grid:{};leaf:{}",
+            options.sample_grid(),
+            crate::options::GLOBAL_LEAF_POINT_LIMIT
+        )
+    } else {
+        format!(
             "adaptive {}x{}x{} spatial partition; full-resolution leaves; {}x{}x{} voxel-center LOD samples; color averaged per voxel; other attributes from nearest source point",
             options.spatial_divisions(),
             options.spatial_divisions(),
@@ -554,10 +594,18 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
             options.sample_grid(),
             options.sample_grid(),
             options.sample_grid()
-        )),
+        )
+    };
+    let mut metadata = FormatMetadata::new(
+        DatasetMetadata::new(source.frame, hierarchy),
+        None,
+        Some(sampling_policy),
         Vec::new(),
     )?
     .with_visual_scale(crate::limits::visual_scale_for_bounds(source.bounds)?)?;
+    if let Some(frame) = global_frame {
+        metadata = metadata.with_global_frame(frame)?;
+    }
     Ok(SpatialPlan {
         metadata,
         blocks: builder.output_blocks,
@@ -569,7 +617,53 @@ fn plan_spatial<S: PlanStore, C: Clock, X: BatchPlanner<S, C>>(
     })
 }
 
+/// Prefix of a node from its absolute cube: the top `a` bits of its flipped minimum corner.
+fn global_prefix(root_level: u32, node: &NodeRecord) -> [u64; 3] {
+    let level = root_level + node.level;
+    quanta(node.bounds.min()).map(|q| {
+        ((q as u64) ^ (1 << 63))
+            .checked_shr(64 - level)
+            .unwrap_or(0)
+    })
+}
+
+/// Node cells (prefix and spacing) and CRS of a `v7.4-pre` conversion. Internal nodes have
+/// spacing `side / 256`; leaves carry the measured value.
+fn global_frame(
+    source: &SourceInfo,
+    root: &crate::source::GlobalRoot,
+    records: &[NodeRecord],
+) -> Result<viewer_format::GlobalFrame, ConvertError> {
+    let parents: std::collections::BTreeSet<NodeId> =
+        records.iter().filter_map(|node| node.parent).collect();
+    let cells = records
+        .iter()
+        .map(|node| {
+            let level = root.level + node.level;
+            let spacing = if parents.contains(&node.id) {
+                2.0_f64.powi(41 - level as i32)
+            } else {
+                node.spacing
+            };
+            (
+                node.id,
+                viewer_format::NodeCell::new(global_prefix(root.level, node), spacing),
+            )
+        })
+        .collect();
+    Ok(viewer_format::GlobalFrame::new(
+        root.level,
+        root.prefix,
+        root.frame_origin_quanta,
+        source.crs.clone(),
+        source.scale_offset,
+        cells,
+    )?)
+}
+
 struct NodeRecord {
+    /// Measured leaf spacing of `v7.4-pre` in CRS units; 0 when not measured.
+    spacing: f64,
     id: NodeId,
     parent: Option<NodeId>,
     level: u32,
@@ -1072,7 +1166,8 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         let lod_write_started = self.spatial_phases.as_ref().map(|_| self.clock.now());
         let sample_spool =
             SpoolId(first_output.0 + usize::from(self.spatial_divisions).pow(3) as u64);
-        let sample_count = write_lod(store, sample_spool, &partition.samples, bounds, self.layout)?;
+        let lod = write_lod(store, sample_spool, &partition.samples, bounds, self.layout)?;
+        let sample_count = lod.count;
         self.record_lod_write_elapsed(lod_write_started);
         let lod_bytes = (sample_count * self.layout.lod().record_bytes()) as u64;
         self.add_lod_spool_bytes(lod_bytes)?;
@@ -1081,18 +1176,17 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         }
         self.commit_node(
             NodeRecord {
+                spacing: 0.0,
                 id: root_id,
                 parent: None,
                 level: 0,
                 bounds,
                 point_count: sample_count as u64,
-                geometric_error: (3.0_f64).sqrt() * cube_side(bounds)
-                    / self.sample_grid as f64
-                    / 2.0
+                geometric_error: lod_sample_error(bounds, self.sample_grid, self.layout)
                     + center_rounding_error(bounds, self.frame),
                 blocks: Vec::new(),
             },
-            lod_blocks(sample_spool, sample_count),
+            lod_blocks(sample_spool, &lod),
         )?;
 
         if let Some(open) = open.as_mut() {
@@ -1182,6 +1276,7 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
         self.hint_children(job.level, &children);
         self.commit_node(
             NodeRecord {
+                spacing: output.spacing,
                 id,
                 parent,
                 level: job.level,
@@ -1587,6 +1682,13 @@ impl SampleAccumulator {
         }
     }
 
+    /// Sample placed at its nearest source point instead of the cell center: used where the cell
+    /// is so large (`a < 32`) that a center far from the data could not be held in `f32`.
+    pub fn finish_at_nearest(&self) -> SpoolPoint {
+        let nearest = self.nearest_point.expect("sample has a source point");
+        self.finish(nearest.position)
+    }
+
     pub fn finish(&self, center: [f64; 3]) -> SpoolPoint {
         let mut point = self.nearest_point.expect("sample has a source point");
         point.position = center;
@@ -1702,6 +1804,7 @@ pub fn visit_source_points(
     let layout = SpoolLayout::source(source);
     for (index, ((x, y), z)) in data.x_raw().zip(data.y_raw()).zip(data.z_raw()).enumerate() {
         let raw_position = [x, y, z];
+        let exact = layout.exact_position(raw_position);
         let position = layout.position(raw_position);
         let local = std::array::from_fn(|axis| position[axis] - source.frame.origin()[axis]);
         if position.iter().any(|coordinate| !coordinate.is_finite())
@@ -1711,10 +1814,10 @@ pub fn visit_source_points(
                 viewer_core::CoordinateFrameError::PositionOutOfRange(local),
             ));
         }
-        if outside_header_bounds(position, source.bounds) {
+        if outside_header_bounds(exact, source.bounds) {
             return Err(ConvertError::PointOutsideHeaderBounds {
                 point_index: processed + index as u64,
-                position,
+                position: exact,
             });
         }
         let intensity = intensities
@@ -2043,11 +2146,79 @@ pub fn sample_cell(position: [f64; 3], bounds: SpatialBounds, grid: usize) -> (u
     ((cell[0] * grid + cell[1]) * grid + cell[2], center)
 }
 
+/// Exponent of a positive power-of-two side read from the `f64` bits (no `log2`).
+fn power_of_two_exponent(value: f64) -> i32 {
+    ((value.to_bits() >> 52) & 0x7ff) as i32 - 1023
+}
+
+/// Absolute level `a` of a `v7.4-pre` node from its cube (side `2^(49 - a)` CRS units).
+pub fn global_level(bounds: SpatialBounds) -> u32 {
+    (49 - power_of_two_exponent(cube_side(bounds))).clamp(0, 64) as u32
+}
+
+/// Side of a `v7.4-pre` node in quanta as a power-of-two exponent (`64 - a`).
+fn global_side_exponent(bounds: SpatialBounds) -> u32 {
+    64 - global_level(bounds)
+}
+
+fn quanta(position: [f64; 3]) -> [i64; 3] {
+    // Positions of a global conversion are on the grid and inside the coordinate limit.
+    // `as` saturates: a level-0 corner -2^48 units is exactly -2^63 quanta.
+    position.map(|value| (value * 32_768.0).round() as i64)
+}
+
+/// [`sample_cell`] on exact integers for a node of a global octree: the cell of `position` is
+/// `(q - origin) >> (side_exponent - log2(grid))` and the center is an integer number of quanta.
+#[inline]
+pub fn sample_cell_global(
+    position: [f64; 3],
+    bounds: SpatialBounds,
+    grid: usize,
+) -> (usize, [f64; 3]) {
+    let shift = global_side_exponent(bounds) - grid.trailing_zeros();
+    let q = quanta(position);
+    let origin = quanta(bounds.min());
+    let mut cell = [0_usize; 3];
+    let mut center = [0.0_f64; 3];
+    for axis in 0..3 {
+        let relative = i128::from(q[axis]) - i128::from(origin[axis]);
+        cell[axis] = ((relative >> shift).clamp(0, grid as i128 - 1)) as usize;
+        center[axis] = global_cell_center(origin[axis], cell[axis], shift);
+    }
+    ((cell[0] * grid + cell[1]) * grid + cell[2], center)
+}
+
+#[inline]
+fn global_cell_center(origin: i64, cell: usize, shift: u32) -> f64 {
+    let half = if shift == 0 { 0 } else { 1_i128 << (shift - 1) };
+    let center = i128::from(origin) + ((cell as i128) << shift) + half;
+    center as f64 * viewer_format::quanta_to_units(1)
+}
+
+#[inline]
+pub fn voxel_center_global(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
+    let shift = global_side_exponent(bounds) - grid.trailing_zeros();
+    let origin = quanta(bounds.min());
+    let cell = [index / (grid * grid), (index / grid) % grid, index % grid];
+    std::array::from_fn(|axis| global_cell_center(origin[axis], cell[axis], shift))
+}
+
 #[inline]
 pub fn voxel_center(index: usize, bounds: SpatialBounds, grid: usize) -> [f64; 3] {
     let cell = [index / (grid * grid), (index / grid) % grid, index % grid];
     let cell_size = cube_side(bounds) / grid as f64;
     std::array::from_fn(|axis| bounds.min()[axis] + (cell[axis] as f64 + 0.5) * cell_size)
+}
+
+/// Half the cell diagonal, or the whole diagonal where samples sit at their nearest point
+/// (`v7.4-pre` nodes with `a < 32`).
+pub fn lod_sample_error(bounds: SpatialBounds, grid: usize, layout: SpoolLayout) -> f64 {
+    let half_diagonal = (3.0_f64).sqrt() * (cube_side(bounds) / grid as f64) / 2.0;
+    if layout.is_global() && global_level(bounds) < 32 {
+        2.0 * half_diagonal
+    } else {
+        half_diagonal
+    }
 }
 
 pub fn center_rounding_error(bounds: SpatialBounds, frame: viewer_core::CoordinateFrame) -> f64 {
@@ -2231,6 +2402,9 @@ mod partition_tests {
             point_format: las::point::Format::new(format_id).unwrap(),
             transforms,
             has_crs: false,
+            crs: viewer_format::CrsRecord::local(),
+            scale_offset: None,
+            global: None,
         };
         let point = SpoolPoint {
             raw_position,

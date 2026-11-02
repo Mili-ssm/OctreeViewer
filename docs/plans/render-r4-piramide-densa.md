@@ -128,11 +128,11 @@ Resultado (02-11-2026): hoja 64 k y `sample_grid` = 256 (propietario); Majadas +
 **Archivos:** `crates/viewer_convert_core/src/{source.rs, spatial.rs, pipeline/node_job.rs, options.rs}`,
 `crates/viewer_convert/src/{main.rs, checkpoint.rs}`, `crates/viewer_wasm/src/core_convert.rs`.
 
-- [ ] Leer el CRS y la escala/offset de los VLR y escribirlos.
-- [ ] Con `--format v7.4-pre`: nodos por prefijo de bits, raíz = primera división real, límite de hoja y
+- [x] Leer el CRS y la escala/offset de los VLR y escribirlos.
+- [x] Con `--format v7.4-pre`: nodos por prefijo de bits, raíz = primera división real, límite de hoja y
   `sample_grid` de la Tarea 1, `spacing` por nodo y `sampling_policy` generado. Manifiesto de checkpoint
   con versión nueva y los parámetros nuevos.
-- [ ] Tests: dos conversiones del mismo fixture dan los mismos bytes; dos recortes solapados de una nube
+- [x] Tests: dos conversiones del mismo fixture dan los mismos bytes; dos recortes solapados de una nube
   comparten prefijos de nodo y celdas en la zona común (RF-23); una caja que cruza 2^22 no añade niveles
   vacíos; paridad web/CLI (RQ-08).
 

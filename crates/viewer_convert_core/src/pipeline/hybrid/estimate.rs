@@ -96,6 +96,9 @@ mod tests {
             point_format: las::point::Format::new(format).unwrap(),
             transforms: las::Vector::default(),
             has_crs: false,
+            crs: viewer_format::CrsRecord::local(),
+            scale_offset: None,
+            global: None,
         }
     }
 

@@ -4,7 +4,7 @@ mod common;
 
 use std::io::Cursor;
 
-use common::{global_metadata, options, prefix_of, repair_index_and_footer};
+use common::{global_metadata, options, prefix_of, repair_index_and_footer, root_origin};
 use viewer_core::{
     BlockId, ColorRgb, CoordinateFrame, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode,
 };
@@ -77,7 +77,15 @@ fn tree(
             NodeCell::new(child_prefix(child_bits[1]), 0.0625),
         ),
     ];
-    let frame = GlobalFrame::new(40, root_prefix, crs, source, cells).unwrap();
+    let frame = GlobalFrame::new(
+        40,
+        root_prefix,
+        root_origin(40, root_prefix),
+        crs,
+        source,
+        cells,
+    )
+    .unwrap();
     let node = |id: u64, parent: Option<u64>, depth: u32, prefix, count| {
         SpatialNode::new(
             NodeId::new(id),
@@ -452,6 +460,89 @@ fn shallow_root_uses_integer_bounds_and_exact_quanta() {
     ));
 }
 
+/// Single-root metadata with an explicit frame origin (quanta) instead of the root corner.
+fn metadata_with_origin(
+    level: u32,
+    prefix: [u64; 3],
+    origin: [i64; 3],
+    count: u64,
+) -> Result<FormatMetadata, ()> {
+    let cell = NodeCell::new(prefix, 2.0_f64.powi(-5));
+    let frame = GlobalFrame::new(
+        level,
+        prefix,
+        origin,
+        CrsRecord::local(),
+        None,
+        vec![(NodeId::new(0), cell)],
+    )
+    .map_err(|_| ())?;
+    let bounds = frame.node_bounds(0, prefix).unwrap();
+    let node = SpatialNode::new(
+        NodeId::new(0),
+        None,
+        0,
+        bounds,
+        count,
+        0.0,
+        vec![BlockId::new(1)],
+    )
+    .unwrap();
+    let hierarchy = SpatialHierarchy::new(vec![node], Vec::new(), Some(count)).unwrap();
+    Ok(FormatMetadata::new(
+        DatasetMetadata::new(
+            CoordinateFrame::new(frame.frame_origin()).unwrap(),
+            hierarchy,
+        ),
+        None,
+        None,
+        Vec::new(),
+    )
+    .unwrap()
+    .with_global_frame(frame)
+    .unwrap())
+}
+
+#[test]
+fn shallow_root_with_frame_origin_at_the_cloud_minimum_writes_at_default_error() {
+    // A level-0 root has its corner 2^48 m away; the frame origin sits at the cloud minimum instead.
+    let min = [0.0, 5.0, 0.0];
+    let origin = min.map(|v| quantize_coordinate(v).unwrap());
+    let local = vec![[0.0; 3], [6.0, 7.5, 2.25], [3.0, 1.0, 0.5]];
+    let metadata = metadata_with_origin(0, [0; 3], origin, 3).unwrap();
+    let mut reader = open(write(metadata, vec![block_of(1, local.clone())], 0.01));
+    let quanta = reader.read_block_quanta(BlockId::new(1)).unwrap();
+    for (quanta, local) in quanta.iter().zip(&local) {
+        let expected: Vec<i64> = (0..3)
+            .map(|axis| quantize_coordinate(min[axis] + local[axis]).unwrap())
+            .collect();
+        assert_eq!(&quanta[..], &expected[..]);
+    }
+    let positions = reader.read_positions(BlockId::new(1)).unwrap();
+    assert_eq!(positions.points()[1].position, [6.0, 7.5, 2.25]);
+    assert_eq!(
+        reader
+            .format_metadata()
+            .dataset()
+            .coordinate_frame()
+            .origin(),
+        min
+    );
+}
+
+#[test]
+fn frame_origin_outside_the_root_node_is_refused() {
+    let prefix = [1_u64 << 39; 3];
+    let corner = root_origin(40, prefix);
+    metadata_with_origin(40, prefix, corner, 1).unwrap();
+    let inside = corner.map(|v| v + 32_768);
+    metadata_with_origin(40, prefix, inside, 1).unwrap();
+    let below = corner.map(|v| v - 1);
+    assert!(metadata_with_origin(40, prefix, below, 1).is_err());
+    let above = corner.map(|v| v + (1 << 24));
+    assert!(metadata_with_origin(40, prefix, above, 1).is_err());
+}
+
 /// Offset and length of the index, read from the footer.
 fn index_range(bytes: &[u8]) -> (usize, usize) {
     let footer = bytes.len() - 40;
@@ -462,6 +553,16 @@ fn index_range(bytes: &[u8]) -> (usize, usize) {
 }
 
 fn patched(bytes: &[u8], needle: &[u8], replacement: &[u8]) -> Result<(), FormatError> {
+    patched_nth(bytes, needle, replacement, None)
+}
+
+/// Like `patched`, but with `Some(n)` the pattern may repeat and the `n`-th occurrence is patched.
+fn patched_nth(
+    bytes: &[u8],
+    needle: &[u8],
+    replacement: &[u8],
+    nth: Option<usize>,
+) -> Result<(), FormatError> {
     let mut bytes = bytes.to_vec();
     let (offset, length) = index_range(&bytes);
     let found: Vec<usize> = bytes[offset..offset + length]
@@ -469,11 +570,14 @@ fn patched(bytes: &[u8], needle: &[u8], replacement: &[u8]) -> Result<(), Format
         .enumerate()
         .filter_map(|(at, window)| (window == needle).then_some(offset + at))
         .collect();
-    assert_eq!(
-        found.len(),
-        1,
-        "pattern {needle:?} must be unique in the index: {found:?}"
-    );
+    if nth.is_none() {
+        assert_eq!(
+            found.len(),
+            1,
+            "pattern {needle:?} must be unique in the index: {found:?}"
+        );
+    }
+    let found = [found[nth.unwrap_or(0)]];
     bytes[found[0]..found[0] + replacement.len()].copy_from_slice(replacement);
     repair_index_and_footer(&mut bytes);
     FormatReader::new(Cursor::new(bytes)).map(|_| ())
@@ -524,14 +628,23 @@ fn reader_rejects_inconsistent_new_fields_even_with_valid_checksums() {
         moved
     };
     malformed(patched(&bytes, &first, &moved), "child prefix");
-    // The block origin of the root block must be the node origin.
+    // The frame origin (here the root corner) comes first in the index; the block origin of the
+    // root block, which must be the node origin, is its second occurrence.
     let origin: Vec<u8> = [1536_i64, 2048, 2560]
         .iter()
         .flat_map(|m| (m * 32_768).to_le_bytes())
         .collect();
     let mut shifted = origin.clone();
     shifted[0] ^= 1;
-    malformed(patched(&bytes, &origin[..], &shifted), "block origin");
+    malformed(
+        patched_nth(&bytes, &origin[..], &shifted, Some(1)),
+        "block origin",
+    );
+    // A frame origin outside the root node is refused; one inside it is accepted.
+    malformed(
+        patched_nth(&bytes, &origin[..], &shifted, Some(0)),
+        "frame origin moved off the derived f64 slot",
+    );
     // Authority must be upper case, so a flipped letter is refused.
     malformed(
         patched(&bytes, b"EPSG\x78\x7f\0\0", b"EPsG\x78\x7f\0\0"),
@@ -546,6 +659,7 @@ fn writer_rejects_metadata_that_breaks_the_spec() {
         let frame = GlobalFrame::new(
             crs_level,
             prefix,
+            root_origin(crs_level, prefix),
             CrsRecord::local(),
             None,
             vec![(NodeId::new(0), NodeCell::new(prefix, spacing))],

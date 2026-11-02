@@ -9,6 +9,8 @@
 #[doc(hidden)]
 pub mod blocks;
 #[doc(hidden)]
+pub mod crs;
+#[doc(hidden)]
 pub mod diagnostics;
 #[doc(hidden)]
 pub mod error;

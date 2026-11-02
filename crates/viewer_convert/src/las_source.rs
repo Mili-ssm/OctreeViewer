@@ -90,7 +90,7 @@ pub(crate) fn plan_sample_blocks(
     lod_count: usize,
 ) -> Result<Vec<viewer_format::SourcePointBlock>, ConvertError> {
     let (reader, len) = open_las_reader_with_len(input_path)?;
-    let source = inspect_source(&reader)?;
+    let source = inspect_source(&reader)?.for_options(options)?;
     let workspace = Workspace::create(workspace_anchor)?;
     let store = FileSpoolStore::new(workspace.root(), false);
     let factory = LasFactory::new(FileBytes {
@@ -167,7 +167,7 @@ pub(crate) fn convert_file_inner(
         0,
     )?;
     let (mut reader, len) = open_las_reader_with_len(input_path)?;
-    let source = inspect_source(&reader)?;
+    let source = inspect_source(&reader)?.for_options(options)?;
     let expected_visual_scale = visual_scale_for_bounds(source.bounds)?;
     let mut checkpoint = if let Some(mode) = checkpoint_mode {
         let source_fingerprint = fingerprint_file(input_path)?;

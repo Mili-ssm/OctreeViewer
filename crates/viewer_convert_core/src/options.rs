@@ -12,6 +12,9 @@ pub const MAX_ROOT_PARTITION_RANGES: usize = 8;
 const DEFAULT_ROOT_PARTITION_RANGES: usize = 4;
 pub const DEFAULT_SAMPLE_GRID: usize = 8;
 pub const MAX_SAMPLE_GRID: usize = 256;
+/// Leaf point limit and sample grid fixed by `v7.4-pre` (R4 task 1, owner resolution 02-11-2026).
+pub const GLOBAL_LEAF_POINT_LIMIT: u64 = 64_000;
+pub const GLOBAL_SAMPLE_GRID: usize = 256;
 pub const ALLOWED_SPATIAL_DIVISIONS: [u8; 3] = [2, 4, 8];
 pub const MAX_INPUT_BYTES_PER_BATCH: usize = 8 * 1024 * 1024;
 pub const MAX_BLOCKS: u64 = 1_000_000;
@@ -45,6 +48,23 @@ pub struct ConvertOptions {
 impl ConvertOptions {
     pub fn with_format_version(mut self, version: FormatVersion) -> Result<Self, ConvertError> {
         version.ensure_writable()?;
+        if version.uses_global_frame() {
+            // The version fixes these; a value the user changed from the defaults is an error.
+            if !matches!(
+                self.points_per_block,
+                DEFAULT_POINTS_PER_BLOCK | GLOBAL_LEAF_POINT_LIMIT
+            ) {
+                return Err(ConvertError::FixedByFormat("points per block (leaf limit)"));
+            }
+            if !matches!(self.sample_grid, DEFAULT_SAMPLE_GRID | GLOBAL_SAMPLE_GRID) {
+                return Err(ConvertError::FixedByFormat("sample grid"));
+            }
+            if self.spatial_divisions != 2 {
+                return Err(ConvertError::FixedByFormat("spatial divisions"));
+            }
+            self.points_per_block = GLOBAL_LEAF_POINT_LIMIT;
+            self.sample_grid = GLOBAL_SAMPLE_GRID;
+        }
         self.format_version = version;
         Ok(self)
     }
@@ -135,6 +155,9 @@ impl ConvertOptions {
         if !ALLOWED_SPATIAL_DIVISIONS.contains(&divisions) {
             return Err(ConvertError::InvalidSpatialDivisions(divisions));
         }
+        if self.format_version.uses_global_frame() && divisions != 2 {
+            return Err(ConvertError::FixedByFormat("spatial divisions"));
+        }
         self.spatial_divisions = divisions;
         Ok(self)
     }
@@ -149,6 +172,9 @@ impl ConvertOptions {
     pub fn with_sample_grid(mut self, grid: usize) -> Result<Self, ConvertError> {
         if !(1..=MAX_SAMPLE_GRID).contains(&grid) {
             return Err(ConvertError::InvalidSampleGrid(grid));
+        }
+        if self.format_version.uses_global_frame() && grid != GLOBAL_SAMPLE_GRID {
+            return Err(ConvertError::FixedByFormat("sample grid"));
         }
         self.sample_grid = grid;
         Ok(self)

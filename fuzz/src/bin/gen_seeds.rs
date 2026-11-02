@@ -85,7 +85,15 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
         .unwrap();
         let source = viewer_format::SourceScaleOffset::new([0.001; 3], [0.0; 3]).unwrap();
         let cells = vec![(NodeId::new(0), viewer_format::NodeCell::new(prefix, 0.0625))];
-        viewer_format::GlobalFrame::new(48, prefix, crs, Some(source), cells).unwrap()
+        viewer_format::GlobalFrame::new(
+            48,
+            prefix,
+            prefix.map(|p| viewer_format::cell_origin_quanta(48, p)),
+            crs,
+            Some(source),
+            cells,
+        )
+        .unwrap()
     });
     if let Some(frame) = &global {
         origin = frame.frame_origin();

@@ -130,3 +130,7 @@ where
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "v7_4_tests.rs"]
+mod v7_4_tests;

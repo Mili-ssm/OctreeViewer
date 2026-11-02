@@ -6,7 +6,12 @@ use las::Reader;
 use viewer_core::las::{LasPreflightError, LazChunkTableLayout};
 use viewer_core::{AttributeDescriptor, CoordinateFrame, SpatialBounds};
 
+use viewer_format::{
+    CrsRecord, SourceScaleOffset, cell_origin_quanta, quanta_to_units, quantize_coordinate,
+};
+
 use crate::error::ConvertError;
+use crate::options::ConvertOptions;
 
 pub struct SourceInfo {
     pub bounds: SpatialBounds,
@@ -16,6 +21,77 @@ pub struct SourceInfo {
     pub point_format: las::point::Format,
     pub transforms: las::Vector<las::Transform>,
     pub has_crs: bool,
+    /// CRS read from the projection records (local when there is none); written by `v7.4-pre`.
+    pub crs: CrsRecord,
+    /// LAS scale and offset, kept for the exact export of `v7.4-pre`.
+    pub scale_offset: Option<SourceScaleOffset>,
+    /// Set by [`SourceInfo::for_options`] when the output is a global-octree format.
+    pub global: Option<GlobalRoot>,
+}
+
+/// Root node and frame origin of a `v7.4-pre` conversion, from the header bounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GlobalRoot {
+    pub level: u32,
+    pub prefix: [u64; 3],
+    pub frame_origin_quanta: [i64; 3],
+}
+
+/// Coordinates below this magnitude (CRS units) keep every node bound exact in `f64`.
+const MAX_GLOBAL_COORDINATE: f64 = (1_u64 << 35) as f64;
+const SIGN_BIT: u64 = 1 << 63;
+
+impl GlobalRoot {
+    /// Smallest node containing both header corners, and the minimum quantized corner as origin.
+    fn from_bounds(bounds: SpatialBounds) -> Result<Self, ConvertError> {
+        let mut low = [0_i64; 3];
+        let mut common = 64_u32;
+        let mut prefix_source = [0_u64; 3];
+        for axis in 0..3 {
+            for coordinate in [bounds.min()[axis], bounds.max()[axis]] {
+                if coordinate.is_nan() || coordinate.abs() >= MAX_GLOBAL_COORDINATE {
+                    return Err(ConvertError::GlobalCoordinateRange(coordinate));
+                }
+            }
+            let min =
+                quantize_coordinate(bounds.min()[axis]).ok_or(ConvertError::InvalidHeaderBounds)?;
+            let max =
+                quantize_coordinate(bounds.max()[axis]).ok_or(ConvertError::InvalidHeaderBounds)?;
+            low[axis] = min;
+            prefix_source[axis] = (min as u64) ^ SIGN_BIT;
+            common = common.min(((min as u64) ^ (max as u64)).leading_zeros());
+        }
+        let prefix = prefix_source.map(|u| u.checked_shr(64 - common).unwrap_or(0));
+        Ok(Self {
+            level: common,
+            prefix,
+            frame_origin_quanta: low,
+        })
+    }
+
+    /// The root cube in CRS units (exact in `f64` within the coordinate limit).
+    pub fn bounds(&self) -> Result<SpatialBounds, ConvertError> {
+        let side = 2.0_f64.powi(49 - self.level as i32);
+        let min: [f64; 3] = self
+            .prefix
+            .map(|prefix| quanta_to_units(cell_origin_quanta(self.level, prefix)));
+        Ok(SpatialBounds::new(min, min.map(|value| value + side))?)
+    }
+}
+
+impl SourceInfo {
+    /// Adapts the source to the output format: for `v7.4-pre` the frame origin becomes the
+    /// minimum quantized corner and the root the smallest global node containing the header box.
+    pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
+        if !options.format_version().uses_global_frame() {
+            return Ok(self);
+        }
+        let root = GlobalRoot::from_bounds(self.bounds)?;
+        let origin = root.frame_origin_quanta.map(quanta_to_units);
+        self.frame = CoordinateFrame::new(origin)?;
+        self.global = Some(root);
+        Ok(self)
+    }
 }
 
 /// Bounds header-declared allocations by `len` and decoded LAZ chunk table entries by the
@@ -128,7 +204,23 @@ pub fn inspect_header(header: &las::Header) -> Result<SourceInfo, ConvertError> 
         point_format: *header.point_format(),
         transforms: *header.transforms(),
         has_crs: header.has_crs_vlrs(),
+        crs: crate::crs::read_crs(header),
+        scale_offset: scale_offset(header),
+        global: None,
     })
+}
+
+fn scale_offset(header: &las::Header) -> Option<SourceScaleOffset> {
+    let transforms = header.transforms();
+    SourceScaleOffset::new(
+        [transforms.x.scale, transforms.y.scale, transforms.z.scale],
+        [
+            transforms.x.offset,
+            transforms.y.offset,
+            transforms.z.offset,
+        ],
+    )
+    .ok()
 }
 
 pub fn source_schema(format: &las::point::Format) -> Vec<AttributeDescriptor> {

@@ -4,7 +4,7 @@
 const GB = 1e9;
 
 /** Writable output revisions, in the CLI listing order (`FormatVersion::WRITABLE`). */
-export const FORMAT_VERSIONS = ["v7.1-pre", "v7.2-pre", "v7.3-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre"];
+export const FORMAT_VERSIONS = ["v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
 
 /** CLI defaults (`ConvertOptions::default`), as the strings shown in the form. */

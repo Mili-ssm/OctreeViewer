@@ -17,9 +17,17 @@ use crate::ConvertError;
 use crate::source::SourceInfo;
 use crate::spatial::{
     ChildSpool, MAX_SPATIAL_DEPTH, SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter,
-    center_rounding_error, cube_side, decode_point, read_records, sample_cell, visit_source_points,
-    voxel_center, write_point, write_source_points,
+    center_rounding_error, cube_side, decode_point, global_level, lod_sample_error, read_records,
+    sample_cell, sample_cell_global, visit_source_points, voxel_center, voxel_center_global,
+    write_point, write_source_points,
 };
+
+/// Nodes at an absolute level below this are larger than one block (2^32 quanta).
+const GLOBAL_BLOCK_LEVEL: u32 = 32;
+const GLOBAL_MAX_INTERNAL_LEVEL: u32 = 55;
+/// Leaf spacing search stops after this many halvings of the leaf side (R4 task 1).
+const LEAF_SPACING_MAX_DEPTH: u32 = 16;
+const LEAF_GROWTH_THRESHOLD: f64 = 1.5;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodePath(pub Vec<u16>); // child keys from the root; Ord = preorder
@@ -44,6 +52,15 @@ pub struct JobContext {
 impl JobContext {
     /// Whether a node with these values is partitioned; the root (level 0) uses the same rule.
     pub fn splits(&self, point_count: u64, level: u32, bounds: SpatialBounds) -> bool {
+        if self.layout.is_global() {
+            // Nodes larger than 2^32 quanta (`a < 32`) hold several blocks; a multi-point node
+            // there is split so that every leaf block lies in one 2^32-quanta cell. Internal
+            // nodes stop at `a = 54`: a sample cell must span at least two quanta.
+            let absolute = global_level(bounds);
+            return point_count > 1
+                && (point_count > self.point_limit || absolute < GLOBAL_BLOCK_LEVEL)
+                && absolute < GLOBAL_MAX_INTERNAL_LEVEL;
+        }
         point_count > self.point_limit && level < MAX_SPATIAL_DEPTH && cube_side(bounds) > 0.0
     }
 
@@ -85,6 +102,8 @@ pub struct NodeJobOutput {
     pub path: NodePath,
     pub point_count: u64, // LOD samples, or input points for a leaf
     pub geometric_error: f64,
+    /// `v7.4-pre` leaf spacing in CRS units (0 for internal nodes and other formats).
+    pub spacing: f64,
     pub blocks: Vec<BlockPlan>,      // no ids yet, in allocation order
     pub children: Vec<ChildOutput>,  // ascending key, empty ones skipped
     pub release: Vec<SpoolId>,       // deleted by the host after the job
@@ -217,18 +236,24 @@ impl SparseCells {
 pub struct SampleGrid {
     grid: usize,
     cells: SampleCells,
+    /// Exact integer cells of a `v7.4-pre` node.
+    global: bool,
 }
 
 impl SampleGrid {
     /// `expected_points` sizes the sparse table up front (0 when unknown).
-    fn new(grid: usize, expected_points: u64) -> Self {
+    fn new(grid: usize, expected_points: u64, global: bool) -> Self {
         let cell_count = grid.pow(3);
         let cells = if cell_count <= DENSE_SAMPLE_CELLS {
             SampleCells::Dense(std::iter::repeat_with(|| None).take(cell_count).collect())
         } else {
             SampleCells::Sparse(Box::new(SparseCells::with_capacity_hint(expected_points)))
         };
-        Self { grid, cells }
+        Self {
+            grid,
+            cells,
+            global,
+        }
     }
 
     fn iter(&self) -> Box<dyn Iterator<Item = (usize, &SampleAccumulator)> + '_> {
@@ -248,7 +273,11 @@ impl SampleGrid {
     // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
     #[inline(always)]
     fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
-        let (voxel_key, center) = sample_cell(point.position, bounds, self.grid);
+        let (voxel_key, center) = if self.global {
+            sample_cell_global(point.position, bounds, self.grid)
+        } else {
+            sample_cell(point.position, bounds, self.grid)
+        };
         let accumulator = match &mut self.cells {
             SampleCells::Dense(slots) => {
                 slots[voxel_key].get_or_insert_with(SampleAccumulator::default)
@@ -294,7 +323,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
 ) -> Result<NodeJobOutput, ConvertError> {
     let mut metrics = ctx.collect_diagnostics.then(JobMetrics::default);
     if !ctx.splits(job.point_count, job.level, job.bounds) {
-        return leaf_output(ctx, job, Vec::new(), metrics);
+        return leaf_output(ctx, job, store, Vec::new(), metrics);
     }
     // A leaf job gets `SOURCE` as a placeholder; a splitting one must have reserved ids.
     debug_assert_ne!(job.first_output, SpoolId::SOURCE, "{:?}", job.path);
@@ -303,9 +332,8 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     let mut children = (0..child_count)
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count);
-    let sample_cell_size = cube_side(job.bounds) / ctx.sample_grid as f64;
-    let sample_error = (3.0_f64).sqrt() * sample_cell_size / 2.0;
+    let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count, ctx.layout.is_global());
+    let sample_error = lod_sample_error(job.bounds, ctx.sample_grid, ctx.layout);
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
@@ -382,12 +410,13 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
             metrics.became_leaf_all_equal = true;
         }
         let release = created_spools(&children);
-        return leaf_output(ctx, job, release, metrics);
+        return leaf_output(ctx, job, store, release, metrics);
     }
 
     let lod_started = start_phase(clock, &metrics);
     let lod_spool = SpoolId(job.first_output.0 + child_count as u64);
-    let sample_count = write_lod(store, lod_spool, &samples, job.bounds, ctx.layout)?;
+    let lod = write_lod(store, lod_spool, &samples, job.bounds, ctx.layout)?;
+    let sample_count = lod.count;
     end_phase(clock, &mut metrics, lod_started, |m| &mut m.lod_write_ns);
     if let Some(metrics) = metrics.as_mut() {
         metrics.lod_bytes = (sample_count * ctx.layout.lod().record_bytes()) as u64;
@@ -396,7 +425,8 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
         path: job.path.clone(),
         point_count: sample_count as u64,
         geometric_error: sample_error + center_rounding_error(job.bounds, ctx.frame),
-        blocks: lod_blocks(lod_spool, sample_count),
+        spacing: 0.0,
+        blocks: lod_blocks(lod_spool, &lod),
         children: child_outputs(children, subdivision),
         release: vec![job.input],
         metrics,
@@ -466,7 +496,7 @@ fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
     let mut children = (0..ctx.child_count())
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid, 0);
+    let mut samples = SampleGrid::new(ctx.sample_grid, 0, ctx.layout.is_global());
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
@@ -806,6 +836,13 @@ pub fn spool_source<P: PointSource, S: SpoolStore>(
         .ok_or(ConvertError::SizeOverflow)
 }
 
+/// Samples written for a node: how many, and for a node larger than one block (`v7.4-pre`,
+/// `a < 32`) the run length of each 2^32-quanta cell, in the order written.
+pub struct LodWritten {
+    pub count: usize,
+    pub runs: Vec<usize>,
+}
+
 /// Writes the LOD samples of a node into `id` (no spool when there are none) and returns how many
 /// there are. `layout` is the source layout; samples use its LOD form.
 pub fn write_lod(
@@ -814,44 +851,145 @@ pub fn write_lod(
     samples: &SampleGrid,
     bounds: SpatialBounds,
     layout: SpoolLayout,
-) -> Result<usize, ConvertError> {
+) -> Result<LodWritten, ConvertError> {
     let mut encoded = Vec::new();
     let mut count = 0;
-    for (key, accumulator) in samples.iter() {
-        write_point(
-            &mut encoded,
-            &accumulator.finish(voxel_center(key, bounds, samples.grid)),
-            layout.lod(),
-        )?;
-        count += 1;
+    let mut runs = Vec::new();
+    if samples.global && global_level(bounds) < GLOBAL_BLOCK_LEVEL {
+        // Group the samples by 2^32-quanta cell (stable, so key order holds inside a group).
+        let mut grouped: Vec<([i64; 3], SpoolPoint)> = samples
+            .iter()
+            .map(|(_, accumulator)| {
+                let point = accumulator.finish_at_nearest();
+                let cell = point
+                    .position
+                    .map(|value| viewer_format::quantize_coordinate(value).unwrap_or(0) >> 32);
+                (cell, point)
+            })
+            .collect();
+        grouped.sort_by_key(|(cell, _)| *cell);
+        for (index, (cell, point)) in grouped.iter().enumerate() {
+            if index == 0 || grouped[index - 1].0 != *cell {
+                runs.push(0);
+            }
+            *runs.last_mut().expect("a run was opened") += 1;
+            write_point(&mut encoded, point, layout.lod())?;
+            count += 1;
+        }
+    } else {
+        for (key, accumulator) in samples.iter() {
+            let center = if samples.global {
+                voxel_center_global(key, bounds, samples.grid)
+            } else {
+                voxel_center(key, bounds, samples.grid)
+            };
+            write_point(&mut encoded, &accumulator.finish(center), layout.lod())?;
+            count += 1;
+        }
     }
     if count > 0 {
         store.create(id)?;
         store.append(id, &encoded)?;
         store.close(id)?;
     }
-    Ok(count)
+    Ok(LodWritten { count, runs })
 }
 
-/// The single LOD block of a node, if it has samples.
-pub fn lod_blocks(spool: SpoolId, sample_count: usize) -> Vec<BlockPlan> {
-    if sample_count == 0 {
+/// The LOD blocks of a node, if it has samples: one, or one per 2^32-quanta cell.
+pub fn lod_blocks(spool: SpoolId, lod: &LodWritten) -> Vec<BlockPlan> {
+    if lod.count == 0 {
         return Vec::new();
     }
-    vec![BlockPlan {
-        spool,
-        offset_points: 0,
-        point_count: sample_count,
-        is_source_points: false,
-        final_block_in_spool: true,
-    }]
+    if lod.runs.len() <= 1 {
+        return vec![BlockPlan {
+            spool,
+            offset_points: 0,
+            point_count: lod.count,
+            is_source_points: false,
+            final_block_in_spool: true,
+        }];
+    }
+    let mut offset_points = 0_u64;
+    lod.runs
+        .iter()
+        .enumerate()
+        .map(|(index, run)| {
+            let plan = BlockPlan {
+                spool,
+                offset_points,
+                point_count: *run,
+                is_source_points: false,
+                final_block_in_spool: index + 1 == lod.runs.len(),
+            };
+            offset_points += *run as u64;
+            plan
+        })
+        .collect()
+}
+
+/// `v7.4-pre` leaf spacing: `side / 2^d` for the first `d >= 1` at which the occupied cells grow
+/// by less than x1.5 (`d` is capped at 16 and at the quantum). Reads the leaf spool once.
+fn measure_leaf_spacing<S: SpoolStore>(
+    ctx: &JobContext,
+    job: &NodeJob,
+    store: &S,
+) -> Result<f64, ConvertError> {
+    let side_exponent = 64 - global_level(job.bounds);
+    let max_depth = side_exponent.min(LEAF_SPACING_MAX_DEPTH);
+    let mut cells = Vec::with_capacity(usize::try_from(job.point_count).unwrap_or(0));
+    let origin = job
+        .bounds
+        .min()
+        .map(|value| (value * 32_768.0).round() as i64);
+    let mut reader = store.reader(
+        job.input,
+        SpoolExtent {
+            offset: 0,
+            len: store.len(job.input)?,
+        },
+    )?;
+    let record_bytes = ctx.layout.record_bytes();
+    let mut buffer = vec![0; (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1) * record_bytes];
+    loop {
+        let records = read_records(&mut reader, &mut buffer, ctx.layout)?;
+        if records == 0 {
+            break;
+        }
+        for bytes in buffer[..records * record_bytes].chunks_exact(record_bytes) {
+            let point = decode_point(bytes, ctx.layout);
+            cells.push(std::array::from_fn::<i128, 3, _>(|axis| {
+                let q = viewer_format::quantize_coordinate(point.position[axis]).unwrap_or(0);
+                i128::from(q) - i128::from(origin[axis])
+            }));
+        }
+    }
+    let mut previous = 1_usize;
+    let mut depth = 0;
+    let mut keys = Vec::with_capacity(cells.len());
+    for candidate in 1..=max_depth {
+        let shift = side_exponent - candidate;
+        keys.clear();
+        keys.extend(cells.iter().map(|relative| {
+            let [x, y, z] = relative.map(|value| (value >> shift) as u64);
+            (u128::from(x) << 64) | (u128::from(y) << 32) | u128::from(z)
+        }));
+        keys.sort_unstable();
+        keys.dedup();
+        depth = candidate;
+        if (keys.len() as f64) < LEAF_GROWTH_THRESHOLD * previous as f64 {
+            break;
+        }
+        previous = keys.len();
+    }
+    Ok(2.0_f64.powi(49 - global_level(job.bounds) as i32 - depth as i32))
 }
 
 /// A leaf keeps its input spool for the block phase, read in `point_limit` chunks; an empty one is
 /// released.
-fn leaf_output(
+fn leaf_output<S: SpoolStore>(
     ctx: &JobContext,
     job: &NodeJob,
+    store: &S,
     mut release: Vec<SpoolId>,
     metrics: Option<JobMetrics>,
 ) -> Result<NodeJobOutput, ConvertError> {
@@ -875,10 +1013,16 @@ fn leaf_output(
     if job.point_count == 0 {
         release.push(job.input);
     }
+    let spacing = if ctx.layout.is_global() && job.point_count > 0 {
+        measure_leaf_spacing(ctx, job, store)?
+    } else {
+        0.0
+    };
     Ok(NodeJobOutput {
         path: job.path.clone(),
         point_count: job.point_count,
         geometric_error: 0.0,
+        spacing,
         blocks,
         children: Vec::new(),
         release,
