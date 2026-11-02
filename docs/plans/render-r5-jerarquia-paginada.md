@@ -29,41 +29,65 @@ Estado: borrador · 02-11-2026
 - `FormatVersion::V<n>` solo dentro de `viewer_format`.
 - Los cambios en `lod_dataset.rs` (el fichero con más churn) se hacen de uno en uno.
 
+- Los cortes se comparan por (nivel, prefijo), no por `NodeId`: los ids pasan a derivarse.
+- v7.5-pre rechaza de forma explícita la entrada EPT, los checkpoints y Additive.
+
 ## Criterios de parada
 
-- P1: cualquier diferencia de corte LOD o de digest de escena frente a la jerarquía actual → parar.
+- P1: con todas las páginas cargadas, cualquier diferencia de corte LOD (por nivel y prefijo) o de digest de escena frente a la jerarquía actual → parar.
+- P1/P3: la etapa llega al objetivo con páginas pendientes, o `hierarchy.node()` devuelve `None` para un nodo del corte tras una expulsión → parar.
 - P2: índice paginado mayor que el de `v7.4-pre`, o una página con *k* = 1 por encima de 1 MiB → parar.
-- P3: regresión de nodos sin cubrir o de píxeles vacíos (RQ-02) → parar.
-- P4: la paginación añade más de una petición al primer frame → parar.
+- P2a: la ruta de datos de RF-24 toca más de 2 crates además de `viewer_format` → llevarla a una revisión propia, con el visto bueno del propietario.
+- P3: regresión de nodos sin cubrir o de píxeles vacíos (RQ-02), o una reserva de página falla con menos del 10 % del presupuesto fijado → parar y replantear el presupuesto.
+- P4: la paginación añade más de una petición al primer frame, o llegar a 4 px en RED-REF necesita más de 3 viajes de página en serie → revisar cómo se elige *k*.
 
-## Tarea P1: jerarquía que crece
+Pre-mortem (02-11-2026) integrado: sus fallos 1–8 tienen tarea o criterio en este plan.
 
-- [ ] `SpatialHierarchy` detrás de una abstracción que admite subárboles desconocidos («hijos desconocidos») y que puede crecer al llegar una página.
-- [ ] La selección de LOD trata un ancla sin página como hoja provisional y pide su página con la prioridad de error proyectado.
-- [ ] **Pasa si** el corte LOD y los digests de escena son iguales a los de hoy con todas las páginas cargadas.
+## Tarea P1: jerarquía que crece y encoge
 
-## Tarea P2: `v7.5-pre`
+- [ ] `SpatialHierarchy` detrás de una abstracción con subárboles desconocidos, que crece al llegar una página y encoge al expulsarla.
+- [ ] `LodSelection` distingue `unloaded_anchors` de `resolution_limited`. `next_lod_stage` y `resident_target_plan_is_complete` (`lod_dataset.rs`) cuentan las páginas pendientes. Las páginas que faltan se piden con la prioridad de error proyectado.
+- [ ] Solo se expulsa una página si no tiene páginas descendientes residentes ni nodos en el corte retenido del planner (`lod_transition.rs` sube por `parent()`).
+- [ ] Tests:
+  - con todas las páginas cargadas, el corte y los digests son iguales a los de hoy;
+  - con páginas retenidas, la etapa no baja de la inicial y se pide la página;
+  - expulsar páginas bajo presión no deja nodos huérfanos.
+
+## Tarea P2: `v7.5-pre`, páginas
 
 - [ ] Spec `FORMAT_V7_PRE5.md`:
   - cabecera de página (nivel del ancla, prefijo, *k*, número de nodos, CRC32);
   - registro reducido y punteros a páginas hijas;
-  - página raíz junto al pie;
-  - flags LAS y Extra Bytes.
-- [ ] Códec, escritor y lector de páginas en `viewer_format`, con un target de fuzz para páginas.
+  - página raíz junto al pie, con una lectura de cola que traiga pie y raíz en una sola petición;
+  - derivación de `NodeId`, `BlockId` y del orden de los hijos.
+- [ ] Validación por página: el ancla de la página hija coincide con el nodo que la apunta. Límites `max_page_bytes` y `max_resident_pages` en `FormatReaderLimits`. Ningún `BlockId` se repite entre páginas.
+- [ ] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas.
 - [ ] El conversor escribe las páginas en anchura después de los datos, eligiendo *k* por página.
-- [ ] `viewer_convert verify`, con las comprobaciones globales.
-- [ ] **Pasa si** el índice es al menos un 30 % menor que el de `v7.4-pre`, la exportación devuelve los flags y los Extra Bytes, y hay paridad web/CLI.
+- [ ] Subcomando `viewer_convert verify` con las comprobaciones globales (hoy el CLI solo tiene flags sueltos, `main.rs:28-80`).
+- [ ] Generador de un `.oct` sintético `v7.5-pre` con 6 M nodos.
+- [ ] **Pasa si** el índice es al menos un 30 % menor que el de `v7.4-pre` y hay paridad web/CLI.
+
+## Tarea P2a: flags LAS y Extra Bytes (RF-24)
+
+- [ ] Llevar los flags y los Extra Bytes al spool (`SpoolLayout`), al esquema (≤ 256 atributos) y a la conversión web. Hoy se descartan (`source.rs:262-276`).
+- [ ] **Pasa si** una ida y vuelta conversor → lector devuelve los flags y los Extra Bytes exactos. Mientras no exista exportador LAS, esta es la verificación.
 
 ## Tarea P3: lector perezoso local
 
-- [ ] Fuente de páginas sobre `read_at` / `Blob.slice`, con caché LRU y páginas fijadas mientras sus nodos estén seleccionados o residentes. Se elimina el descriptor JS por nodo.
-- [ ] **Pasa si** abrir una jerarquía sintética de 6 M nodos tarda como máximo el doble que una de 24 k nodos, y la matriz de T7 no empeora.
+- [ ] Fuente de páginas sobre `read_at` / `Blob.slice`, con un **presupuesto propio para páginas**, separado del de bloques, y caché LRU con las páginas fijadas según P1.
+- [ ] Migrar las tres rutas de apertura (`bindings/lod.rs:118`, `viewer-worker.js:743`, `build-worker.js:266`) y los usos de `nodeCount` / `maxLevel` (`main.js:483-486` y tests de navegador). Eliminar el descriptor JS por nodo.
+- [ ] **Pasa si** abrir el sintético de 6 M nodos tarda como máximo el doble que una nube de 24 k nodos, y la matriz de T7 no empeora (verificación con Playwright incluida).
 
 ## Tarea P4: HTTP Range
 
-- [ ] Fuente HTTP con peticiones de rango agrupadas (varias páginas hermanas en una).
+- [ ] Arnés RED-REF: servidor con Range y CORS, fijado por `ETag` / `If-Range`. Tiene que detectar un 200 completo cuando el servidor ignora `Range`, y no usar peticiones multirango, que S3 rechaza.
+- [ ] Fuente HTTP con agrupación de páginas hermanas en un solo rango contiguo.
 - [ ] **Pasa si** se cumple RQ-04 con la latencia de RED-REF. Además se miden los bytes por vista a 4 px (ASM-02).
+
+## Tarea P5: documentación
+
+- [ ] Actualizar el inventario (`docs/reference/inventory.md`), los límites de ADR 0007 y la spec.
 
 ## Fuera de este plan
 
-OQ-07 (profundidad > 24 en el visor; va con R3), la fusión incremental de nubes (RF-21) y la reproyección con PROJ.
+OQ-07 (profundidad > 24 en el visor; va con R3), la fusión incremental de nubes (RF-21), la reproyección con PROJ y un exportador LAS.
