@@ -17,6 +17,7 @@ mod geometry;
 mod global_frame;
 mod index_codec;
 mod layout;
+mod lazy_pages;
 mod metadata;
 mod occupancy_codec;
 mod page_codec;
@@ -51,12 +52,15 @@ pub use global_frame::{
     round_to_quanta,
 };
 pub use layout::{FORMAT_VERSION, HEADER_ENVELOPE_VERSION, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES};
+pub use lazy_pages::{PageGraft, PageRange, PageSource};
 pub use metadata::{FormatMetadata, MetadataError, NodeAttributeRange, SourcePointBlock};
 pub use page_codec::{
     MAX_PAGE_LEVELS, Page, PageAnchor, PageBlock, PageNode, PagePointer, TARGET_PAGE_BYTES,
     page_node_id, split_node_id,
 };
-pub use paged_index::{PagedHeader, PagedReader, PagedStats, TAIL_READ_BYTES, verify_paged};
+pub use paged_index::{
+    IndexLocation, PagedCore, PagedHeader, PagedReader, PagedStats, TAIL_READ_BYTES, verify_paged,
+};
 pub use quantization::{
     QuantizationError, QuantizationTransform, QuantizedCoordinates, norm3, quantize_local_positions,
 };

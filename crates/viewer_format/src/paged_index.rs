@@ -121,19 +121,10 @@ fn parse_header_block(
             "nonzero reserved index extension",
         ));
     }
-    if total_nodes == 0 || total_nodes > limits.max_nodes {
-        return Err(FormatError::CountLimit {
-            kind: "nodes",
-            requested: total_nodes,
-            limit: limits.max_nodes,
-        });
-    }
-    if total_blocks > limits.max_blocks {
-        return Err(FormatError::CountLimit {
-            kind: "blocks",
-            requested: total_blocks,
-            limit: limits.max_blocks,
-        });
+    // The declared totals are informative for a lazy reader, so `max_nodes` and `max_blocks` bound
+    // what is actually read (each page, and the eager loader's running totals), not these fields.
+    if total_nodes == 0 {
+        return Err(FormatError::MalformedIndex("index declares no nodes"));
     }
     if pages_start < HEADER_SIZE || pages_start > index_offset {
         return Err(FormatError::MalformedIndex(
@@ -179,11 +170,17 @@ fn parse_header_block(
 // Reader
 // ---------------------------------------------------------------------------------------------
 
-/// Page-granular reader over a local seekable stream: opens with one tail read (footer, metadata
-/// block, root page) and fetches child pages by pointer. It keeps no page cache; the caller owns
-/// residency and reports evictions with [`Self::release_page`].
-pub struct PagedReader<R> {
-    reader: R,
+/// Where the index region sits in the file, from the footer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndexLocation {
+    pub offset: u64,
+    pub length: u64,
+    pub crc: u32,
+}
+
+/// I/O-free state of a lazily read `v7.5-pre` file: the metadata block, the root page and the
+/// ids of the pages currently held. Callers fetch the bytes (sync or async) and feed them in.
+pub struct PagedCore {
     limits: FormatReaderLimits,
     header: PagedHeader,
     root: Page,
@@ -197,55 +194,42 @@ pub struct PagedReader<R> {
     by_number: BTreeMap<u32, u64>,
 }
 
-impl<R: Read + Seek> PagedReader<R> {
-    pub fn open(reader: R) -> Result<Self, FormatError> {
-        Self::with_limits(reader, FormatReaderLimits::default())
-    }
-
-    /// Identifies the revision from the footer magic and never reads the file header, so opening
-    /// costs one request for the tail (plus one more if the index is larger than the hint).
-    pub fn with_limits(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
-        let file_length = reader.seek(SeekFrom::End(0))?;
+impl PagedCore {
+    /// Parses the 40-byte footer (the last bytes of the file) and checks the index range.
+    pub fn locate_index(
+        file_length: u64,
+        footer: &[u8],
+        limits: &FormatReaderLimits,
+    ) -> Result<IndexLocation, FormatError> {
         if file_length < HEADER_SIZE + FOOTER_SIZE {
             return Err(FormatError::FileTooShort);
         }
-        let tail_length = file_length.min(TAIL_READ_BYTES);
-        reader.seek(SeekFrom::Start(file_length - tail_length))?;
-        let mut tail = vec![0; tail_length as usize];
-        reader.read_exact(&mut tail)?;
-        let footer: &[u8; FOOTER_SIZE as usize] = tail[tail.len() - FOOTER_SIZE as usize..]
-            .try_into()
-            .map_err(|_| FormatError::InvalidFooter)?;
-        let (index_offset, index_length, declared_length, index_crc) =
+        let footer: &[u8; FOOTER_SIZE as usize] =
+            footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
+        let (offset, length, declared_length, crc) =
             parse_split_footer(footer, LAYOUT.footer_magic())?;
-        validate_index_range(
-            file_length,
-            index_offset,
-            index_length,
-            declared_length,
-            limits,
-        )?;
-        let index_size =
-            usize::try_from(index_length).map_err(|_| FormatError::SizeOutOfRange(index_length))?;
-        let index = if index_length + FOOTER_SIZE <= tail_length {
-            let end = tail.len() - FOOTER_SIZE as usize;
-            tail[end - index_size..end].to_vec()
-        } else {
-            let mut index = Vec::new();
-            index
-                .try_reserve_exact(index_size)
-                .map_err(|_| FormatError::AllocationFailed(index_size))?;
-            index.resize(index_size, 0);
-            reader.seek(SeekFrom::Start(index_offset))?;
-            reader.read_exact(&mut index)?;
-            index
-        };
-        drop(tail);
-        if !checksum_matches(&index, index_crc) {
+        validate_index_range(file_length, offset, length, declared_length, *limits)?;
+        Ok(IndexLocation {
+            offset,
+            length,
+            crc,
+        })
+    }
+
+    /// Validates the index region (metadata block and root page) read at `location`.
+    pub fn from_index(
+        index: &[u8],
+        location: IndexLocation,
+        limits: FormatReaderLimits,
+    ) -> Result<Self, FormatError> {
+        if usize::try_from(location.length).ok() != Some(index.len()) {
+            return Err(FormatError::InvalidFooter);
+        }
+        if !checksum_matches(index, location.crc) {
             return Err(FormatError::InvalidChecksum("index"));
         }
-        let mut cursor = SliceCursor::new(&index);
-        let header = parse_header_block(&mut cursor, &limits, index_offset)?;
+        let mut cursor = SliceCursor::new(index);
+        let header = parse_header_block(&mut cursor, &limits, location.offset)?;
         let root = decode_page(
             cursor.remaining_slice(),
             &PageContext {
@@ -253,25 +237,24 @@ impl<R: Read + Seek> PagedReader<R> {
                 schema: &header.schema,
                 limits: &limits,
                 pages_start: header.pages_start,
-                index_offset,
+                index_offset: location.offset,
             },
             PageExpect::Root,
         )?;
-        let mut paged = Self {
-            reader,
+        let mut core = Self {
             limits,
             header,
             root,
-            index_offset,
-            index_length,
-            index_crc,
+            index_offset: location.offset,
+            index_length: location.length,
+            index_crc: location.crc,
             resident: BTreeMap::new(),
             by_first_id: BTreeMap::new(),
             by_number: BTreeMap::new(),
         };
-        let root_range = paged.root.block_id_range();
-        paged.register_page(index_offset, 0, root_range)?;
-        Ok(paged)
+        let root_range = core.root.block_id_range();
+        core.register_page(location.offset, 0, root_range)?;
+        Ok(core)
     }
 
     pub fn header(&self) -> &PagedHeader {
@@ -282,18 +265,17 @@ impl<R: Read + Seek> PagedReader<R> {
         &self.root
     }
 
+    pub fn limits(&self) -> &FormatReaderLimits {
+        &self.limits
+    }
+
     /// Footer fields of the index: `(offset, length, crc32)`.
     pub(crate) fn index_identity(&self) -> (u64, u64, u32) {
         (self.index_offset, self.index_length, self.index_crc)
     }
 
-    /// Reads and validates the page a node points to. `anchor` must be that node's identity.
-    /// Errors if the page's block ids repeat ids of another resident page.
-    pub fn read_child_page(
-        &mut self,
-        anchor: PageAnchor,
-        pointer: PagePointer,
-    ) -> Result<Page, FormatError> {
+    /// Checks that `pointer` lies in the page section and within the page size limit.
+    pub fn check_pointer(&self, pointer: PagePointer) -> Result<(), FormatError> {
         if pointer.offset < self.header.pages_start
             || pointer
                 .offset
@@ -306,11 +288,20 @@ impl<R: Read + Seek> PagedReader<R> {
                 "child page pointer is outside the page section",
             ));
         }
-        let mut bytes = vec![0; pointer.length as usize];
-        self.reader.seek(SeekFrom::Start(pointer.offset))?;
-        self.reader.read_exact(&mut bytes)?;
+        Ok(())
+    }
+
+    /// Validates the bytes of the page `pointer` names; `anchor` must be its node's identity.
+    /// Errors if the page's block ids repeat ids of another resident page.
+    pub fn decode_child(
+        &mut self,
+        bytes: &[u8],
+        anchor: PageAnchor,
+        pointer: PagePointer,
+    ) -> Result<Page, FormatError> {
+        self.check_pointer(pointer)?;
         let page = decode_page(
-            &bytes,
+            bytes,
             &PageContext {
                 frame: &self.header.frame,
                 schema: &self.header.schema,
@@ -347,21 +338,6 @@ impl<R: Read + Seek> PagedReader<R> {
             });
         }
         Ok(())
-    }
-
-    /// Stored bytes of one block's geometry column in the `.oct`, without decoding. Colour and
-    /// attribute columns live in the `.octattrs` at `block.attribute_offset()`.
-    pub fn read_block_bytes(&mut self, block: &PageBlock) -> Result<Vec<u8>, FormatError> {
-        let length = usize::try_from(block.payload_length)
-            .map_err(|_| FormatError::SizeOutOfRange(block.payload_length))?;
-        let mut bytes = vec![0; length];
-        self.reader.seek(SeekFrom::Start(block.offset))?;
-        self.reader.read_exact(&mut bytes)?;
-        Ok(bytes)
-    }
-
-    pub fn into_inner(self) -> R {
-        self.reader
     }
 
     fn register_page(
@@ -404,6 +380,116 @@ impl<R: Read + Seek> PagedReader<R> {
     }
 }
 
+/// Page-granular reader over a local seekable stream: opens with one tail read (footer, metadata
+/// block, root page) and fetches child pages by pointer. It keeps no page cache; the caller owns
+/// residency and reports evictions with [`Self::release_page`].
+pub struct PagedReader<R> {
+    reader: R,
+    core: PagedCore,
+}
+
+impl<R: Read + Seek> PagedReader<R> {
+    pub fn open(reader: R) -> Result<Self, FormatError> {
+        Self::with_limits(reader, FormatReaderLimits::default())
+    }
+
+    /// Identifies the revision from the footer magic and never reads the file header, so opening
+    /// costs one request for the tail (plus one more if the index is larger than the hint).
+    pub fn with_limits(mut reader: R, limits: FormatReaderLimits) -> Result<Self, FormatError> {
+        let core = open_core(&mut reader, limits)?;
+        Ok(Self { reader, core })
+    }
+
+    pub fn header(&self) -> &PagedHeader {
+        self.core.header()
+    }
+
+    pub fn root_page(&self) -> &Page {
+        self.core.root_page()
+    }
+
+    pub(crate) fn index_identity(&self) -> (u64, u64, u32) {
+        self.core.index_identity()
+    }
+
+    /// Reads and validates the page a node points to. `anchor` must be that node's identity.
+    /// Errors if the page's block ids repeat ids of another resident page.
+    pub fn read_child_page(
+        &mut self,
+        anchor: PageAnchor,
+        pointer: PagePointer,
+    ) -> Result<Page, FormatError> {
+        self.core.check_pointer(pointer)?;
+        let mut bytes = vec![0; pointer.length as usize];
+        self.reader.seek(SeekFrom::Start(pointer.offset))?;
+        self.reader.read_exact(&mut bytes)?;
+        self.core.decode_child(&bytes, anchor, pointer)
+    }
+
+    /// Forgets a page the caller evicted, so its block ids may be seen again.
+    pub fn release_page(&mut self, pointer: PagePointer) {
+        self.core.release_page(pointer);
+    }
+
+    /// Errors if keeping `resident` pages would exceed `max_resident_pages`.
+    pub fn check_resident_pages(&self, resident: usize) -> Result<(), FormatError> {
+        self.core.check_resident_pages(resident)
+    }
+
+    /// Stored bytes of one block's geometry column in the `.oct`, without decoding. Colour and
+    /// attribute columns live in the `.octattrs` at `block.attribute_offset()`.
+    pub fn read_block_bytes(&mut self, block: &PageBlock) -> Result<Vec<u8>, FormatError> {
+        let length = usize::try_from(block.payload_length)
+            .map_err(|_| FormatError::SizeOutOfRange(block.payload_length))?;
+        let mut bytes = vec![0; length];
+        self.reader.seek(SeekFrom::Start(block.offset))?;
+        self.reader.read_exact(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
+}
+
+/// One tail read: footer, metadata block and root page (a second read only if the index is larger
+/// than [`TAIL_READ_BYTES`]).
+pub(crate) fn open_core<R: Read + Seek>(
+    reader: &mut R,
+    limits: FormatReaderLimits,
+) -> Result<PagedCore, FormatError> {
+    let file_length = reader.seek(SeekFrom::End(0))?;
+    if file_length < HEADER_SIZE + FOOTER_SIZE {
+        return Err(FormatError::FileTooShort);
+    }
+    let tail_length = file_length.min(TAIL_READ_BYTES);
+    reader.seek(SeekFrom::Start(file_length - tail_length))?;
+    let mut tail = vec![0; tail_length as usize];
+    reader.read_exact(&mut tail)?;
+    let location = PagedCore::locate_index(
+        file_length,
+        &tail[tail.len() - FOOTER_SIZE as usize..],
+        &limits,
+    )?;
+    let index_size = usize::try_from(location.length)
+        .map_err(|_| FormatError::SizeOutOfRange(location.length))?;
+    let index = if location.length + FOOTER_SIZE <= tail_length {
+        let end = tail.len() - FOOTER_SIZE as usize;
+        tail[end - index_size..end].to_vec()
+    } else {
+        let mut index = Vec::new();
+        index
+            .try_reserve_exact(index_size)
+            .map_err(|_| FormatError::AllocationFailed(index_size))?;
+        index.resize(index_size, 0);
+        reader.seek(SeekFrom::Start(location.offset))?;
+        reader.read_exact(&mut index)?;
+        index
+    };
+    drop(tail);
+    PagedCore::from_index(&index, location, limits)
+}
+
 /// Every page of a file in breadth-first order (root first) with the pointer each child page was
 /// read through.
 struct AllPages {
@@ -419,7 +505,7 @@ fn read_all_pages<R: Read + Seek>(
     limits: &FormatReaderLimits,
 ) -> Result<AllPages, FormatError> {
     let mut paged = PagedReader::with_limits(&mut *reader, *limits)?;
-    let mut pages = vec![paged.root.clone()];
+    let mut pages = vec![paged.core.root.clone()];
     let mut pointers = Vec::new();
     let mut next = 0;
     let (mut nodes_total, mut blocks_total) = (0_u64, 0_u64);
@@ -458,15 +544,17 @@ fn read_all_pages<R: Read + Seek>(
             pointers.push(pointer);
         }
     }
-    if nodes_total != paged.header.total_nodes || blocks_total != paged.header.total_blocks {
+    if nodes_total != paged.core.header.total_nodes
+        || blocks_total != paged.core.header.total_blocks
+    {
         return Err(FormatError::MalformedIndex(
             "declared node or block totals do not match the pages",
         ));
     }
     Ok(AllPages {
         index_identity: paged.index_identity(),
-        index_offset: paged.index_offset,
-        header: paged.header,
+        index_offset: paged.core.index_offset,
+        header: paged.core.header,
         pages,
         pointers,
     })
@@ -569,6 +657,16 @@ fn validate_attribute_layout(nodes: &[&PageNode]) -> Result<(), FormatError> {
 }
 
 fn assemble(header: &PagedHeader, pages: &[Page]) -> Result<ParsedIndex, FormatError> {
+    assemble_with(header, pages, false)
+}
+
+/// `partial` skips the checks that need every page (tiling of the payload sections); the pages
+/// given must still form a connected top of the tree.
+pub(crate) fn assemble_with(
+    header: &PagedHeader,
+    pages: &[Page],
+    partial: bool,
+) -> Result<ParsedIndex, FormatError> {
     let page_nodes: Vec<&PageNode> = pages.iter().flat_map(|page| page.nodes.iter()).collect();
     let root_frame = &header.frame;
     let cells: Vec<(NodeId, NodeCell)> = page_nodes
@@ -614,24 +712,15 @@ fn assemble(header: &PagedHeader, pages: &[Page]) -> Result<ParsedIndex, FormatE
 
     let mut blocks = BTreeMap::new();
     for block in page_nodes.iter().flat_map(|node| node.blocks.iter()) {
-        let entry = BlockDirectoryEntry {
-            offset: block.offset,
-            payload_length: block.payload_length,
-            point_count: block.point_count,
-            quantization_error: block.quantization_error,
-            origin: [0.0; 3],
-            scale: [0.0; 3],
-            origin_quanta: block.origin_quanta,
-            node_cell: frame.block_box(block.id),
-            geometry_encoding: block.geometry_encoding,
-            payloads: block.payloads.clone(),
-        };
+        let entry = block_entry(block, frame.block_box(block.id));
         if blocks.insert(block.id, entry).is_some() {
             return Err(FormatError::MalformedIndex("duplicate block IDs"));
         }
     }
-    validate_attribute_layout(&page_nodes)?;
-    validate_block_layout(&nodes, &blocks, header.pages_start)?;
+    if !partial {
+        validate_attribute_layout(&page_nodes)?;
+        validate_block_layout(&nodes, &blocks, header.pages_start)?;
+    }
     validate_node_point_counts(&nodes, &blocks)?;
     validate_node_error_bounds(&nodes, &blocks)?;
     let mut block_bounds = BTreeMap::<BlockId, Vec<SpatialBounds>>::new();
@@ -683,6 +772,24 @@ struct PagePlan {
     size: usize,
     /// Page index of the page hanging from each entry that points to one.
     children: BTreeMap<usize, usize>,
+}
+
+pub(crate) fn block_entry(
+    block: &PageBlock,
+    node_cell: Option<crate::global_frame::CellBox>,
+) -> BlockDirectoryEntry {
+    BlockDirectoryEntry {
+        offset: block.offset,
+        payload_length: block.payload_length,
+        point_count: block.point_count,
+        quantization_error: block.quantization_error,
+        origin: [0.0; 3],
+        scale: [0.0; 3],
+        origin_quanta: block.origin_quanta,
+        node_cell,
+        geometry_encoding: block.geometry_encoding,
+        payloads: block.payloads.clone(),
+    }
 }
 
 fn octant(prefix: [u64; 3]) -> u8 {

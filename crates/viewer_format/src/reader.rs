@@ -79,9 +79,44 @@ pub(crate) struct IndexedReader<R> {
     metadata: Arc<FormatMetadata>,
     blocks: Arc<BTreeMap<BlockId, BlockDirectoryEntry>>,
     block_bounds: Arc<BTreeMap<BlockId, Vec<SpatialBounds>>>,
+    /// Lazily read `v7.5-pre`: the block directory of the resident pages (`blocks` is empty).
+    paged: Option<Arc<crate::lazy_pages::PageSource>>,
     plan_owner: Arc<()>,
     attribute_range_cache: Arc<Mutex<VecDeque<CachedAttributeRange>>>,
     limits: FormatReaderLimits,
+}
+
+/// A block directory entry that does not borrow the reader.
+pub(crate) enum EntryHandle {
+    Table(Arc<BTreeMap<BlockId, BlockDirectoryEntry>>, BlockId),
+    Shared(Arc<BlockDirectoryEntry>),
+}
+
+impl std::ops::Deref for EntryHandle {
+    type Target = BlockDirectoryEntry;
+
+    fn deref(&self) -> &BlockDirectoryEntry {
+        match self {
+            Self::Table(table, id) => &table[id],
+            Self::Shared(entry) => entry,
+        }
+    }
+}
+
+impl<R> IndexedReader<R> {
+    fn entry(&self, id: BlockId) -> Result<EntryHandle, FormatError> {
+        if let Some(paged) = &self.paged {
+            return paged
+                .block(id)
+                .map(EntryHandle::Shared)
+                .ok_or(FormatError::UnknownBlock(id));
+        }
+        if self.blocks.contains_key(&id) {
+            Ok(EntryHandle::Table(Arc::clone(&self.blocks), id))
+        } else {
+            Err(FormatError::UnknownBlock(id))
+        }
+    }
 }
 
 impl<R: Read + Seek> IndexedReader<R> {
@@ -130,6 +165,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             metadata: Arc::new(metadata),
             blocks: Arc::new(blocks),
             block_bounds: Arc::new(block_bounds),
+            paged: None,
             attributes_attached: false,
             external_payloads_only: true,
             plan_owner: Arc::new(()),
@@ -154,7 +190,8 @@ impl<R: Read + Seek> IndexedReader<R> {
                 "attribute identity requires a metadata-only reader",
             ));
         }
-        if file_length != self.attribute_file_length {
+        // A lazy reader has not seen every block, so the companion length is checked by `verify`.
+        if self.paged.is_none() && file_length != self.attribute_file_length {
             return Err(FormatError::InvalidFooter);
         }
         let header: &[u8; HEADER_SIZE as usize] =
@@ -174,6 +211,62 @@ impl<R: Read + Seek> IndexedReader<R> {
         }
         self.attributes_attached = true;
         Ok(())
+    }
+
+    /// Lazy `v7.5-pre` view: the metadata block and root page are validated, child pages arrive
+    /// through [`Self::read_page`]. `external` readers never touch the stream for payloads.
+    pub(crate) fn from_paged_core(
+        reader: R,
+        core: crate::paged_index::PagedCore,
+        external: bool,
+    ) -> Result<Self, FormatError> {
+        let header = core.header().clone();
+        let root = core.root_page().clone();
+        let index_identity = core.index_identity();
+        let limits = *core.limits();
+        let (metadata, _, _) =
+            crate::paged_index::assemble_with(&header, std::slice::from_ref(&root), true)?;
+        let (source, _) = crate::lazy_pages::PageSource::new(core)?;
+        Ok(Self {
+            reader,
+            attributes: None,
+            attributes_attached: false,
+            external_payloads_only: external,
+            split: true,
+            layout: StorageLayout::V7Pre5,
+            index_identity,
+            attribute_file_length: 0,
+            metadata: Arc::new(metadata),
+            blocks: Arc::new(BTreeMap::new()),
+            block_bounds: Arc::new(BTreeMap::new()),
+            paged: Some(source),
+            plan_owner: Arc::new(()),
+            attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
+            limits,
+        })
+    }
+
+    pub(crate) fn page_source(&self) -> Option<&Arc<crate::lazy_pages::PageSource>> {
+        self.paged.as_ref()
+    }
+
+    /// Reads, validates and registers the page hanging from `anchor` from the primary stream.
+    pub(crate) fn read_page(
+        &mut self,
+        anchor: viewer_core::NodeId,
+    ) -> Result<crate::lazy_pages::PageGraft, FormatError> {
+        if self.external_payloads_only {
+            return Err(FormatError::ExternalPayloadBuffersRequired);
+        }
+        let source = self
+            .paged
+            .clone()
+            .ok_or(FormatError::InvalidMetadata("the index is not paged"))?;
+        let range = source.page_range(anchor)?;
+        let mut bytes = vec![0; range.length as usize];
+        self.reader.seek(SeekFrom::Start(range.offset))?;
+        self.reader.read_exact(&mut bytes)?;
+        source.accept_page(anchor, &bytes)
     }
 
     #[cfg(test)]
@@ -225,6 +318,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 metadata: Arc::new(metadata),
                 blocks: Arc::new(blocks),
                 block_bounds: Arc::new(block_bounds),
+                paged: None,
                 plan_owner: Arc::new(()),
                 attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
                 limits,
@@ -282,6 +376,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             metadata: Arc::new(metadata),
             blocks: Arc::new(blocks),
             block_bounds: Arc::new(block_bounds),
+            paged: None,
             plan_owner: Arc::new(()),
             attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
             limits,
@@ -297,7 +392,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             ));
         }
         let length = attributes.seek(SeekFrom::End(0))?;
-        if length != self.attribute_file_length {
+        if self.paged.is_none() && length != self.attribute_file_length {
             return Err(FormatError::InvalidFooter);
         }
         attributes.seek(SeekFrom::Start(0))?;
@@ -486,7 +581,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         selection: crate::ReadSelection,
     ) -> Result<crate::ReadPlan, FormatError> {
         use crate::{ReadPlan, ReadSelection};
-        let block = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let block = self.entry(id)?;
         let points_bytes = || {
             block
                 .point_count
@@ -505,7 +600,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         })?;
         let memory = match selection {
             ReadSelection::Positions | ReadSelection::Geometry => {
-                let range = self.payload_range(block, &block.payloads[0], false)?;
+                let range = self.payload_range(&block, &block.payloads[0], false)?;
                 let positions = crate::read_plan::estimate_payload(
                     &range,
                     points_bytes()?,
@@ -513,7 +608,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 )?;
                 ranges.push(range);
                 if selection == ReadSelection::Geometry && self.has_attributes() {
-                    let range = self.payload_range(block, &block.payloads[1], true)?;
+                    let range = self.payload_range(&block, &block.payloads[1], true)?;
                     let colors = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                     ranges.push(range);
                     crate::read_plan::combine_geometry(positions, colors)?
@@ -522,7 +617,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 }
             }
             ReadSelection::DisplayColors => {
-                let range = self.payload_range(block, &block.payloads[1], true)?;
+                let range = self.payload_range(&block, &block.payloads[1], true)?;
                 let memory = crate::read_plan::estimate_payload(&range, colors_bytes()?, None)?;
                 ranges.push(range);
                 memory
@@ -537,7 +632,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                     .ok_or(FormatError::UnknownAttribute(schema_index))?;
                 let output_bytes = attribute_payload_size(block.point_count, descriptor)?;
                 let range =
-                    self.payload_range(block, &block.payloads[schema_index as usize + 2], true)?;
+                    self.payload_range(&block, &block.payloads[schema_index as usize + 2], true)?;
                 let memory = crate::read_plan::estimate_payload(&range, output_bytes, None)?;
                 ranges.push(range);
                 memory
@@ -569,7 +664,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         }
         let id = plan.block_id();
         let selection = plan.selection();
-        let entry = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let entry = self.entry(id)?;
         let mut decoded = Vec::new();
         decoded
             .try_reserve_exact(buffers.len())
@@ -607,16 +702,16 @@ impl<R: Read + Seek> IndexedReader<R> {
         Ok(match selection {
             S::Positions => {
                 let mut c = SliceCursor::new(&decoded[0]);
-                O::Positions(self.decode_geometry(&mut c, id, entry, count)?)
+                O::Positions(self.decode_geometry(&mut c, id, &entry, count)?)
             }
             S::Geometry if decoded.len() == 1 => {
                 let mut c = SliceCursor::new(&decoded[0]);
-                O::Geometry(self.decode_geometry(&mut c, id, entry, count)?)
+                O::Geometry(self.decode_geometry(&mut c, id, &entry, count)?)
             }
             S::Geometry => {
                 let mut c = SliceCursor::new(&decoded[0]);
                 let mut points = self
-                    .decode_geometry(&mut c, id, entry, count)?
+                    .decode_geometry(&mut c, id, &entry, count)?
                     .into_points();
                 for (p, rgb) in points.iter_mut().zip(decoded[1].as_chunks::<3>().0) {
                     p.color = ColorRgb::new(rgb[0], rgb[1], rgb[2]);
@@ -777,6 +872,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             metadata: Arc::clone(&self.metadata),
             blocks: Arc::clone(&self.blocks),
             block_bounds: Arc::clone(&self.block_bounds),
+            paged: self.paged.clone(),
             plan_owner: Arc::clone(&self.plan_owner),
             attribute_range_cache: Arc::clone(&self.attribute_range_cache),
             limits: self.limits,
@@ -841,12 +937,11 @@ impl<R: Read + Seek> IndexedReader<R> {
 
     /// Exact `i64` quanta (2^-15 CRS units) of a `v7.4-pre` block, in row order.
     pub fn read_block_quanta(&mut self, id: BlockId) -> Result<Vec<[i64; 3]>, FormatError> {
-        let blocks = Arc::clone(&self.blocks);
-        let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let entry = self.entry(id)?;
         let cell = entry.node_cell.ok_or(FormatError::InvalidMetadata(
             "exact quanta exist only in v7.4-pre",
         ))?;
-        let raw = self.read_payload(id, entry, &entry.payloads[0], None)?;
+        let raw = self.read_payload(id, &entry, &entry.payloads[0], None)?;
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
         let mut quanta = Vec::new();
@@ -854,7 +949,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             .try_reserve_exact(count)
             .map_err(|_| FormatError::AllocationFailed(count))?;
         let mut cursor = SliceCursor::new(&raw);
-        self.decode_global_geometry(&mut cursor, entry, cell, count, |exact, _| {
+        self.decode_global_geometry(&mut cursor, &entry, cell, count, |exact, _| {
             quanta.push(exact)
         })?;
         Ok(quanta)
@@ -934,9 +1029,8 @@ impl<R: Read + Seek> IndexedReader<R> {
     }
 
     pub fn read_display_colors(&mut self, id: BlockId) -> Result<Vec<ColorRgb>, FormatError> {
-        let blocks = Arc::clone(&self.blocks);
-        let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
-        let raw = self.read_payload(id, entry, &entry.payloads[1], Some(3))?;
+        let entry = self.entry(id)?;
+        let raw = self.read_payload(id, &entry, &entry.payloads[1], Some(3))?;
         Ok(raw
             .as_chunks::<3>()
             .0
@@ -947,13 +1041,12 @@ impl<R: Read + Seek> IndexedReader<R> {
 
     /// Reads only XYZ; supplies neutral gray without accessing color or attribute payloads.
     pub fn read_positions(&mut self, id: BlockId) -> Result<PointBatch, FormatError> {
-        let blocks = Arc::clone(&self.blocks);
-        let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
-        let raw = self.read_payload(id, entry, &entry.payloads[0], None)?;
+        let entry = self.entry(id)?;
+        let raw = self.read_payload(id, &entry, &entry.payloads[0], None)?;
         let mut cursor = SliceCursor::new(&raw);
         let count =
             usize::try_from(entry.point_count).map_err(|_| FormatError::PointCountOutOfRange)?;
-        let points = self.decode_geometry(&mut cursor, id, entry, count)?;
+        let points = self.decode_geometry(&mut cursor, id, &entry, count)?;
         Ok(points)
     }
 
@@ -964,8 +1057,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         id: BlockId,
         schema_index: u32,
     ) -> Result<AttributeColumn, FormatError> {
-        let blocks = Arc::clone(&self.blocks);
-        let entry = blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let entry = self.entry(id)?;
         let descriptor = self
             .metadata
             .dataset()
@@ -977,7 +1069,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         let width = crate::layout::attribute_tuple_width(&descriptor)?;
         let raw = self.read_payload(
             id,
-            entry,
+            &entry,
             &entry.payloads[schema_index as usize + 2],
             Some(width),
         )?;
@@ -1002,7 +1094,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         row_id: u64,
         schema_index: u32,
     ) -> Result<AttributeValues, FormatError> {
-        let entry = self.blocks.get(&id).ok_or(FormatError::UnknownBlock(id))?;
+        let entry = self.entry(id)?;
         if row_id >= entry.point_count {
             return Err(FormatError::UnknownRow { block: id, row_id });
         }
@@ -1022,7 +1114,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         if self.external_payloads_only {
             return Err(FormatError::ExternalPayloadBuffersRequired);
         }
-        let range = self.payload_range(block, column, attribute_width.is_some())?;
+        let range = self.payload_range(&block, column, attribute_width.is_some())?;
         let size = usize::try_from(column.stored_length)
             .map_err(|_| FormatError::SizeOutOfRange(column.stored_length))?;
         let mut stored = Vec::new();

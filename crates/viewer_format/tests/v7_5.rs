@@ -892,3 +892,91 @@ fn bit_flips_with_repaired_checksums_never_panic() {
         "too few mutations were rejected: {rejected}"
     );
 }
+
+/// Lazy reader: grafting every page onto the root-page hierarchy gives the eager hierarchy, and
+/// blocks of a page are readable only while that page is resident.
+#[test]
+fn lazy_reader_grows_to_the_eager_hierarchy_and_serves_resident_blocks() {
+    let tree = random_tree(9, 7, 20);
+    let (primary, attributes) = write_pair(V75, &tree, Some(2_000));
+    let mut eager = open_pair(primary.clone(), attributes.clone());
+    let eager_dataset = eager.format_metadata().viewer_dataset().unwrap();
+
+    let mut lazy =
+        FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
+    lazy.attach_attributes(Cursor::new(attributes)).unwrap();
+    let root_only = lazy.format_metadata().viewer_dataset().unwrap();
+    let mut hierarchy = root_only.hierarchy().clone();
+    let source = std::sync::Arc::clone(lazy.page_source().unwrap());
+    let mut pending: Vec<NodeId> = source.root_unloaded().to_vec();
+    for id in &pending {
+        hierarchy.mark_unloaded(*id).unwrap();
+    }
+    assert!(hierarchy.stats().node_count < eager_dataset.hierarchy().stats().node_count);
+    // A block of a page that is not loaded is unknown.
+    let unknown = eager_dataset
+        .hierarchy()
+        .block_ids()
+        .iter()
+        .copied()
+        .find(|id| !hierarchy.references_block(*id))
+        .unwrap();
+    assert!(matches!(
+        lazy.read_geometry(unknown),
+        Err(FormatError::UnknownBlock(_))
+    ));
+    let mut loaded = Vec::new();
+    while let Some(anchor) = pending.pop() {
+        let graft = lazy.read_page(anchor).unwrap();
+        assert_eq!(graft.anchor, Some(anchor));
+        hierarchy
+            .graft_page(anchor, graft.nodes.clone(), &graft.unloaded)
+            .unwrap();
+        pending.extend(graft.unloaded.iter().copied());
+        loaded.push(anchor);
+    }
+    let eager_hierarchy = eager_dataset.hierarchy();
+    assert_eq!(
+        hierarchy.stats().node_count,
+        eager_hierarchy.stats().node_count
+    );
+    for id in eager_hierarchy
+        .query(
+            eager_hierarchy
+                .node(eager_hierarchy.root_id())
+                .unwrap()
+                .bounds(),
+        )
+        .map(|n| n.id())
+        .collect::<Vec<_>>()
+    {
+        let (a, b) = (
+            hierarchy.node(id).unwrap(),
+            eager_hierarchy.node(id).unwrap(),
+        );
+        assert_eq!(
+            (a.bounds(), a.level(), a.parent()),
+            (b.bounds(), b.level(), b.parent())
+        );
+        assert_eq!(a.blocks(), b.blocks());
+        assert_eq!(a.spacing(), b.spacing());
+        for block in a.blocks() {
+            let lazy_block = lazy.read_geometry(*block).unwrap();
+            let eager_block = eager.read_geometry(*block).unwrap();
+            assert_eq!(lazy_block, eager_block);
+        }
+    }
+    // Releasing a page frees its blocks and lets the page be read again.
+    let anchor = *loaded.last().unwrap();
+    let block = hierarchy
+        .node(hierarchy.child_ids(anchor)[0])
+        .unwrap()
+        .blocks()[0];
+    source.release_page(anchor);
+    assert!(matches!(
+        lazy.read_geometry(block),
+        Err(FormatError::UnknownBlock(_))
+    ));
+    lazy.read_page(anchor).unwrap();
+    lazy.read_geometry(block).unwrap();
+}
