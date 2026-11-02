@@ -233,19 +233,18 @@ fn random_load_and_evict_sequences_leave_no_orphans() {
                 planner.commit(&plan, &mut cache);
             }
             let anchors: Vec<u64> = (2..1 << (MAX_LEVEL + 1))
-                .filter(|id| level(*id) % PAGE_DEPTH == 0 && level(*id) < MAX_LEVEL)
+                .filter(|id| level(*id).is_multiple_of(PAGE_DEPTH) && level(*id) < MAX_LEVEL)
                 .collect();
             let anchor = NodeId::new(anchors[(rng.next() as usize) % anchors.len()]);
             if hierarchy.is_unloaded(anchor) {
                 let (nodes, nested) = page(anchor.get());
                 hierarchy.graft_page(anchor, nodes, &nested).unwrap();
-            } else if hierarchy.node(anchor).is_some() {
-                if hierarchy
+            } else if hierarchy.node(anchor).is_some()
+                && hierarchy
                     .evict_page(anchor, planner.retained_nodes())
                     .is_ok()
-                {
-                    evictions += 1;
-                }
+            {
+                evictions += 1;
             }
 
             let ids: HashSet<NodeId> = (1..1 << (MAX_LEVEL + 1))
