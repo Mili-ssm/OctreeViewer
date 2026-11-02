@@ -24,9 +24,7 @@ use crate::{
     lod_session::LodSession,
 };
 use viewer_core::NodeId;
-use viewer_format::{
-    FormatReader, FormatReaderLimits, FormatVersion, PageGraft, PageSource, probe_format,
-};
+use viewer_format::{FormatReader, FormatReaderLimits, PageGraft, PageSource, probe_format};
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
@@ -222,7 +220,7 @@ pub(super) fn open_format(
     let identity =
         probe_format(&mut source).map_err(|error| JsValue::from_str(&error.to_string()))?;
     // A paged file opens lazily: only its root page is resident, the rest is read on demand.
-    let mut reader = if identity.version == FormatVersion::V7_PRE5 {
+    let mut reader = if identity.version.uses_pages() {
         FormatReader::open_lazy(source, FormatReaderLimits::default())
     } else {
         FormatReader::new(source)
