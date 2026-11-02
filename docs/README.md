@@ -75,6 +75,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [opt-level 3 frente a "s" (exploración)](records/benchmarks/EXPLORE_OPT_LEVEL_02-11-2026.md) | Conversor nativo −20 % con opt-level 3; no cambia la proporción v7.4/V5. | fechado |
 | [opt-level 3 en el WASM (exploración)](records/benchmarks/EXPLORE_OPT_LEVEL_WASM_02-11-2026.md) | Descarga +7–8 % comprimida; edad de escena −14 %; tiempo al objetivo −18 %. | fechado |
 | [Hojas en el tope de R3-T1 (exploración)](records/benchmarks/EXPLORE_ADAPTIVE_LEAF_02-11-2026.md) | Meseta de espaciado con 8 celdas y bench según ADR 0028: 0,06 % y 0,14 % en el tope. | fechado |
+| [Tamaño de página de la jerarquía paginada (R5-P0)](records/benchmarks/R5_P0_PAGES_02-11-2026.md) | k = 5 vale en aéreo (p95 16–27 KB), no con ramificación 8; índice −50 %. | fechado |
 | [Worker de construcción (R2)](records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md) | Escenas construidas fuera del hilo de render, activado y no: respuestas de frame y tiempo a objetivo en Majadas y Belvedere. | fechado |
 | [Digest del worker de construcción](records/benchmarks/RENDER_BUILD_WORKER_DIGEST_2026-10-30.md) | Digest en reposo distinto entre ambas rutas: la causa es la cámara de la sonda, no el worker. | fechado |
 | [Diagnóstico de T4](records/benchmarks/RENDER_T4_DIAGNOSIS_2026-10-30.md) | Causa de la regresión de T4 en Belvedere: orden de carga de los bloques pendientes. | fechado |

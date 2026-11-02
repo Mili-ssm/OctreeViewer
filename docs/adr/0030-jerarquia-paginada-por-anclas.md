@@ -1,4 +1,4 @@
-# 0030 Jerarquía paginada cada 5 niveles desde anclas de prefijo
+# 0030 Jerarquía paginada por niveles desde anclas de prefijo
 
 Estado: Propuesta · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR 0029](0029-octree-global-por-bits-de-enteros.md)
 
@@ -11,7 +11,7 @@ Estado: Propuesta · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR
 - Propuestas del propietario: OQ-05, OQ-06 y OQ-07 ([requisitos](../requirements.md#preguntas-abiertas)).
 
 ## Decisión
-- **Corte por niveles del octree, no por número de hijos ni por bytes.** Hay una página cada *k* = 5 niveles bajo la raíz guardada (*k* lo fija la versión; el spike P0 lo confirma). La página de un nodo se calcula con desplazamientos de bits: `nivel_ancla = nivel − ((nivel − a0) mod k)` y `prefijo_ancla = prefijo >> (nivel − nivel_ancla)`.
+- **Corte por niveles del octree, no por número de hijos ni por bytes.** Cada página cubre *k* niveles bajo su ancla, con *k* entre 1 y 5 guardado en la cabecera de la página (`u8`). El conversor elige el mayor *k* ≤ 5 que deja la página en 512 KB o menos (propietario, 02-11-2026, tras el [spike P0](../records/benchmarks/R5_P0_PAGES_02-11-2026.md)). Las páginas se encuentran bajando por los punteros de las páginas padre, sin contar nodos.
 - **Cada página tiene un ancla:** su cabecera guarda el nivel (`u8`) y el prefijo completo (3 × `u64`), más un CRC32 de la página.
 - **Nodos de la página:**
   - Se identifican por (profundidad relativa `u8`, camino `u16`), con 5 niveles × 3 bits de octante (OQ-06), en orden determinista.
@@ -49,4 +49,4 @@ Estado: Propuesta · Fecha: 02-11-2026 · Decide: propietario · Depende de [ADR
 - Hay que reconvertir todos los datasets; `v7.4-pre` sigue siendo legible.
 
 ## Revisar si
-El p95 del tamaño de página supera 1 MiB, más del 1 % de los nodos tienen un solo hijo, o hace falta una profundidad mayor de 21 (OQ-07).
+Una página con *k* = 1 supera 1 MiB, más del 1 % de los nodos tienen un solo hijo, o hace falta una profundidad mayor de 21 (OQ-07).
