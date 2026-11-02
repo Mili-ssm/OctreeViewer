@@ -4,11 +4,11 @@
 //! worker) call these functions, so the two paths cannot drift. Nothing here touches a GPU, which
 //! is what lets native tests pin both bindings to the same scene digests.
 
-use viewer_core::{AttributeColumn, AttributeDescriptor, BlockId, PointBatch, PointBlock};
+use viewer_core::{AttributeColumn, AttributeDescriptor, BlockId, NodeId, PointBatch, PointBlock};
 use viewer_render_wgpu::{ColorMode, ViewProjection};
 
 use crate::{
-    LodBuiltScene, LodDataset, LodViewStats,
+    LodBuiltScene, LodDataset, LodViewStats, PageInsert,
     lod_dataset::{WorkClock, next_lod_stage},
 };
 
@@ -68,6 +68,46 @@ pub(crate) fn update_lod_view(
     }
     let stage = stage_pixels.unwrap_or(COARSEST_STAGE_PIXELS);
     update_at_stage(dataset, step, stage, stage_pixels, dirty, sink, load_block)
+}
+
+/// Most page-fetch rounds one synchronous update runs before it returns what it has.
+const MAX_PAGE_ROUNDS: usize = 32;
+
+/// [`update_lod_view`] for a reader that serves blocks and hierarchy pages from the same stream:
+/// after each step, the pages the cut lacks are read and grafted and the step is repeated until
+/// none is missing. Hosts that deliver pages themselves pass `reader = None`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn update_lod_view_paged<R>(
+    dataset: &mut LodDataset,
+    step: &LodStep<'_>,
+    stage_pixels: &mut Option<f64>,
+    dirty: &mut bool,
+    sink: &mut impl SceneSink,
+    mut reader: Option<&mut R>,
+    load_block: &mut impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
+    load_page: &mut impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
+) -> Result<LodStepResult, String> {
+    let mut rounds = 0;
+    loop {
+        let mut load = |id| match reader.as_deref_mut() {
+            Some(reader) => load_block(reader, id),
+            None => Ok(None),
+        };
+        let result = update_lod_view(dataset, step, stage_pixels, dirty, sink, &mut load)?;
+        rounds += 1;
+        let Some(reader) = reader.as_deref_mut() else {
+            return Ok(result);
+        };
+        if result.stats.pending_page_anchors.is_empty() || rounds == MAX_PAGE_ROUNDS {
+            return Ok(result);
+        }
+        for anchor in &result.stats.pending_page_anchors {
+            let page = load_page(reader, *anchor)?;
+            dataset
+                .graft_page(page)
+                .map_err(|error| error.to_string())?;
+        }
+    }
 }
 
 fn update_at_stage(

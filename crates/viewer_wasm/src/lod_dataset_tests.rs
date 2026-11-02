@@ -2076,9 +2076,14 @@ mod binding_parity {
         let camera = camera_from_transport(&camera.to_f64_array()).unwrap();
         let visual_scale = core.session().dataset().visual_scale();
         let update = core
-            .update(camera, [800, 600], visual_scale, target, |blocks, id| {
-                Ok(blocks.iter().find(|b| b.id() == id).cloned())
-            })
+            .update(
+                camera,
+                [800, 600],
+                visual_scale,
+                target,
+                |blocks, id| Ok(blocks.iter().find(|b| b.id() == id).cloned()),
+                |_, _| Err("the test dataset has no pages".to_owned()),
+            )
             .unwrap();
         assert!(update.epoch >= 1);
         observe(
@@ -2352,8 +2357,15 @@ mod binding_parity {
         let camera = cameras()[0];
         let scale = core.session().dataset().visual_scale();
         let mut run = |viewport: [u32; 2], scale: f64, target: f64| {
-            core.update(camera, viewport, scale, target, |_, _| Ok(None))
-                .err()
+            core.update(
+                camera,
+                viewport,
+                scale,
+                target,
+                |_, _| Ok(None),
+                |_, _| Err(String::new()),
+            )
+            .err()
         };
         assert!(run([800, 600], scale, 0.1).is_some());
         assert!(run([800, 600], scale, f64::NAN).is_some());
@@ -2563,4 +2575,83 @@ fn pinned_pages_are_never_evicted_and_a_full_budget_is_an_error() {
     assert!(released.borrow().is_empty());
     assert!(dataset.references_block(BlockId::new(20)));
     assert!(!dataset.references_block(BlockId::new(30)));
+}
+
+/// A synchronous reader that serves pages: the driver reads and grafts the pages the cut lacks and
+/// repeats the step until none is missing.
+#[test]
+fn a_synchronous_update_reads_the_pages_the_cut_lacks() {
+    use crate::lod_driver::{LodStep, SceneSink, update_lod_view_paged};
+
+    struct Discard;
+    impl SceneSink for Discard {
+        fn publish(&mut self, _: crate::LodBuiltScene) -> Result<(), String> {
+            Ok(())
+        }
+        fn base_cut_exceeded(&mut self, _: &LodDataset) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    let (_, blocks) = native_dataset(400);
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [64.0; 3]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(11)],
+    )
+    .unwrap();
+    let mut hierarchy = SpatialHierarchy::new(vec![root], Vec::new(), Some(400)).unwrap();
+    hierarchy.mark_unloaded(NodeId::new(1)).unwrap();
+    let mut dataset = LodDataset::new([0.0; 3], hierarchy, 8 * blocks[0].estimated_memory_bytes())
+        .unwrap()
+        .with_pages(&[NodeId::new(1)], Box::new(|_| {}), 1 << 20)
+        .unwrap();
+    dataset.insert_block(blocks[0].clone()).unwrap();
+
+    let view = native_view();
+    let step = LodStep {
+        view: &view,
+        target_pixels: 4.0,
+        track_async_order: false,
+        can_load_blocks: true,
+    };
+    let mut reader = Vec::<NodeId>::new();
+    let child = SpatialNode::new(
+        NodeId::new(2),
+        Some(NodeId::new(1)),
+        1,
+        SpatialBounds::new([0.0; 3], [32.0, 64.0, 64.0]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(12)],
+    )
+    .unwrap();
+    let (mut stage, mut dirty) = (None, false);
+    let result = update_lod_view_paged(
+        &mut dataset,
+        &step,
+        &mut stage,
+        &mut dirty,
+        &mut Discard,
+        Some(&mut reader),
+        &mut |_, _| Ok(None),
+        &mut |loads: &mut Vec<NodeId>, anchor| {
+            loads.push(anchor);
+            Ok(crate::PageInsert {
+                anchor,
+                number: 1,
+                nodes: vec![child.clone()],
+                unloaded: Vec::new(),
+                bytes: 100,
+            })
+        },
+    )
+    .unwrap();
+    assert_eq!(reader, [NodeId::new(1)]);
+    assert!(dataset.references_block(BlockId::new(12)));
+    assert!(result.stats.pending_page_anchors.is_empty());
 }

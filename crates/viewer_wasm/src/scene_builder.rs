@@ -4,14 +4,14 @@
 //! `WasmSceneBuilder` wraps this for JavaScript. It lives outside the bindings so native tests
 //! can run the exact same code and compare its scenes with the viewer's.
 
-use viewer_core::{BlockId, PointBlock};
+use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_render_wgpu::{
     ColorMode, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection, VoxelBuildLimits,
 };
 
 use crate::{
-    LodBuiltScene, LodDataset, LodViewStats,
-    lod_driver::{ColorSelection, LodStep, LodStepResult, SceneSink, update_lod_view},
+    LodBuiltScene, LodDataset, LodViewStats, PageInsert,
+    lod_driver::{ColorSelection, LodStep, LodStepResult, SceneSink, update_lod_view_paged},
     lod_session::LodSession,
 };
 
@@ -123,7 +123,8 @@ impl<R> SceneBuilderCore<R> {
     /// Selects the cut for `camera` and rebuilds the scene when it changed.
     ///
     /// `load_block` serves blocks the session's reader can supply; hosts that deliver blocks
-    /// asynchronously return `Ok(None)` and read `async_priority_order` instead.
+    /// asynchronously return `Ok(None)` and read `async_priority_order` instead. `load_page`
+    /// reads the hierarchy pages of a paged reader.
     pub(crate) fn update(
         &mut self,
         camera: OrbitCamera,
@@ -131,6 +132,7 @@ impl<R> SceneBuilderCore<R> {
         visual_scale: f64,
         target_pixels: f64,
         mut load_block: impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
+        mut load_page: impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
     ) -> Result<BuilderUpdate, String> {
         if !TARGET_PIXELS_RANGE.contains(&target_pixels) {
             return Err("targetVoxelPixels must be finite and between 0.5 and 16".to_owned());
@@ -152,15 +154,11 @@ impl<R> SceneBuilderCore<R> {
 
         let view = ViewProjection::new(camera, viewport, visual_scale, self.limits);
         let can_load_blocks = self.host_delivers_blocks || self.session.reader().is_some();
-        let (dataset, mut reader) = self.session.parts_mut();
-        let mut load = |id| match reader.as_deref_mut() {
-            Some(reader) => load_block(reader, id),
-            None => Ok(None),
-        };
+        let (dataset, reader) = self.session.parts_mut();
         let mut sink = CollectSink::default();
         let mut stage_pixels = self.stage_pixels;
         let mut dirty = self.dirty;
-        let result = update_lod_view(
+        let result = update_lod_view_paged(
             dataset,
             &LodStep {
                 view: &view,
@@ -171,7 +169,9 @@ impl<R> SceneBuilderCore<R> {
             &mut stage_pixels,
             &mut dirty,
             &mut sink,
-            &mut load,
+            reader,
+            &mut load_block,
+            &mut load_page,
         );
         self.stage_pixels = stage_pixels;
         self.dirty = dirty;

@@ -19,11 +19,14 @@ use crate::{
     DEFAULT_PAGE_BUDGET_BYTES, LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
     PageInsert, WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
-    lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view},
+    lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view_paged},
     lod_metadata::LodDatasetDescriptor,
     lod_session::LodSession,
 };
-use viewer_format::FormatReader;
+use viewer_core::NodeId;
+use viewer_format::{
+    FormatReader, FormatReaderLimits, FormatVersion, PageGraft, PageSource, probe_format,
+};
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
@@ -139,25 +142,52 @@ pub(super) fn open_paged(
         }
         attribute_ranges.push(row);
     }
-    let unloaded = source.root_unloaded().to_vec();
-    let release_source = Arc::clone(&source);
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
         metadata,
         format.format_metadata().visual_scale(),
         cache_bytes as usize,
     )
-    .with_crs(crs)
-    .with_pages(
-        &unloaded,
-        Box::new(move |anchor| release_source.release_page(anchor)),
-        DEFAULT_PAGE_BUDGET_BYTES,
-    )
-    .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    .with_crs(crs);
+    let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
         has_attributes: format.has_attributes(),
         attribute_ranges,
     };
     Ok((dataset, Some(context)))
+}
+
+/// Makes `dataset` (holding a paged file's root page) evict pages through `source`.
+fn with_page_source(dataset: LodDataset, source: &Arc<PageSource>) -> Result<LodDataset, JsValue> {
+    let release_source = Arc::clone(source);
+    dataset
+        .with_pages(
+            source.root_unloaded(),
+            Box::new(move |anchor| release_source.release_page(anchor)),
+            DEFAULT_PAGE_BUDGET_BYTES,
+        )
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+/// A page read by a synchronous reader, ready to graft.
+fn page_insert(graft: PageGraft) -> Result<PageInsert, String> {
+    Ok(PageInsert {
+        anchor: graft.anchor.ok_or("the root page is grafted at open")?,
+        number: graft.number,
+        nodes: graft.nodes,
+        unloaded: graft.unloaded,
+        bytes: graft.encoded_len,
+    })
+}
+
+/// Reads the page hanging from `anchor` with a session's own reader.
+pub(super) fn read_page_insert(
+    reader: &mut FormatReader<BrowserBlobReader>,
+    anchor: NodeId,
+) -> Result<PageInsert, String> {
+    reader
+        .read_page(anchor)
+        .map_err(|error| error.to_string())
+        .and_then(page_insert)
 }
 
 /// Grafts a page fetched by the reader into `dataset`, evicting least-recently-used pages that
@@ -166,18 +196,9 @@ pub(super) fn graft_page(
     dataset: &mut LodDataset,
     mut graft: WasmPageGraft,
 ) -> Result<(), JsValue> {
-    let graft = graft.take()?;
-    let anchor = graft
-        .anchor
-        .ok_or_else(|| JsValue::from_str("the root page is grafted at open"))?;
+    let page = page_insert(graft.take()?).map_err(|message| JsValue::from_str(&message))?;
     dataset
-        .graft_page(PageInsert {
-            anchor,
-            number: graft.number,
-            nodes: graft.nodes,
-            unloaded: graft.unloaded,
-            bytes: graft.encoded_len,
-        })
+        .graft_page(page)
         .map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
@@ -197,8 +218,16 @@ pub(super) fn open_format(
 ) -> Result<OpenedFormat, JsValue> {
     let browser_read_stats = Arc::new(Mutex::new(BrowserReadStats::default()));
     let source = BrowserBlobReader::new_with_stats(file, true, Arc::clone(&browser_read_stats))?;
-    let mut reader =
-        FormatReader::new(source).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let mut source = source;
+    let identity =
+        probe_format(&mut source).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    // A paged file opens lazily: only its root page is resident, the rest is read on demand.
+    let mut reader = if identity.version == FormatVersion::V7_PRE5 {
+        FormatReader::open_lazy(source, FormatReaderLimits::default())
+    } else {
+        FormatReader::new(source)
+    }
+    .map_err(|error| JsValue::from_str(&error.to_string()))?;
     if let Some(attributes) = attributes {
         let source =
             BrowserBlobReader::new_with_stats(attributes, false, Arc::clone(&browser_read_stats))?;
@@ -228,6 +257,11 @@ pub(super) fn open_format(
         cache_bytes as usize,
     )
     .with_crs(crs);
+    let page_source = reader.page_source().cloned();
+    let dataset = match &page_source {
+        Some(source) => with_page_source(dataset, source)?,
+        None => dataset,
+    };
     let result = js_sys::Object::new();
     js_sys::Reflect::set(
         &result,
@@ -237,7 +271,13 @@ pub(super) fn open_format(
     js_sys::Reflect::set(
         &result,
         &"nodeCount".into(),
-        &JsValue::from_f64(hierarchy_stats.node_count as f64),
+        &JsValue::from_f64(
+            page_source
+                .as_ref()
+                .map_or(hierarchy_stats.node_count as f64, |source| {
+                    source.declared_nodes() as f64
+                }),
+        ),
     )?;
     js_sys::Reflect::set(
         &result,
@@ -672,32 +712,27 @@ impl WasmVoxelViewer {
             .lod_session
             .as_mut()
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
-        let (dataset, mut format_reader) = session.parts_mut();
+        let (dataset, format_reader) = session.parts_mut();
         let can_load_blocks = format_reader.is_some() || has_async_reader;
         let view = lod_view_projection(renderer, dataset)?;
-        let mut load_block = |block_id| {
-            format_reader
-                .as_mut()
-                .map(|reader| {
-                    let before = snapshot_browser_read_stats(&browser_read_stats);
-                    let loaded = crate::block_loading::load_render_block(
-                        *reader,
-                        block_id,
-                        requested_mode,
-                        selected_attribute,
-                        selected_range,
-                    )
-                    .map(Some);
-                    let after = snapshot_browser_read_stats(&browser_read_stats);
-                    accumulate_browser_read_delta(&mut lod_range_read_stats, before, after);
-                    loaded
-                })
-                .unwrap_or(Ok(None))
+        let mut load_block = |reader: &mut FormatReader<BrowserBlobReader>, block_id| {
+            let before = snapshot_browser_read_stats(&browser_read_stats);
+            let loaded = crate::block_loading::load_render_block(
+                reader,
+                block_id,
+                requested_mode,
+                selected_attribute,
+                selected_range,
+            )
+            .map(Some);
+            let after = snapshot_browser_read_stats(&browser_read_stats);
+            accumulate_browser_read_delta(&mut lod_range_read_stats, before, after);
+            loaded
         };
         let mut stage_pixels = self.lod_stage_pixels;
         let mut dirty = self.lod_dirty;
         let mut scene_digest = self.last_scene_digest;
-        let result = update_lod_view(
+        let result = update_lod_view_paged(
             dataset,
             &LodStep {
                 view: &view,
@@ -711,7 +746,9 @@ impl WasmVoxelViewer {
                 renderer,
                 digest: &mut scene_digest,
             },
+            format_reader,
             &mut load_block,
+            &mut read_page_insert,
         );
         self.lod_range_read_stats = lod_range_read_stats;
         self.last_scene_digest = scene_digest;

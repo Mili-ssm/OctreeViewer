@@ -11,7 +11,7 @@ use super::{
     },
     lod::{
         graft_page, insert_async_block, lod_update_stats_to_js, open_descriptor, open_format,
-        open_paged,
+        open_paged, read_page_insert,
     },
     selected_range_to_js,
 };
@@ -240,7 +240,7 @@ impl WasmSceneBuilder {
             [viewport_width, viewport_height],
             visual_scale,
             target_voxel_pixels,
-            |reader, block_id| {
+            |reader: &mut FormatReader<BrowserBlobReader>, block_id| {
                 let before = snapshot_browser_read_stats(&browser_read_stats);
                 let loaded = crate::block_loading::load_render_block(
                     reader,
@@ -254,6 +254,7 @@ impl WasmSceneBuilder {
                 accumulate_browser_read_delta(&mut range_read_stats, before, after);
                 loaded
             },
+            read_page_insert,
         );
         self.range_read_stats = range_read_stats;
         let BuilderUpdate {
