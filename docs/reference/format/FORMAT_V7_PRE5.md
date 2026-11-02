@@ -16,24 +16,28 @@ geometry/attribute codecs, payload CRCs, block origin and split rule, spacing ru
 | --- | --- | --- |
 | Header revision / index magic / footer magic | `4` / `OCTVI74P` / `OCTVE74P` | `5` / `OCTVI75P` / `OCTVE75P` |
 | Index | one buffer: schema, every node, every block | **metadata block + root page** next to the footer; the rest in child pages |
-| Node identity | `NodeId` and parent stored per node | derived from `(level, prefix)`; keyed in a page by `(depth, path)` |
+| Node identity | `NodeId` and parent stored per node | derived: `(page number, index in the page)`; keyed in a page by `(depth, path)`; no depth limit |
 | Block directory | one table | inline in each node's page record, slimmed (offsets and raw lengths derived) |
 | Bounds, spacing of internal nodes | derived, but bounds stored | derived, not stored |
-| Split files (`.octattrs`) | supported | **not supported**: monolithic only |
+| Split files (`.octattrs`) | supported | **required**: `.oct` + `.octattrs` as in V7.4-pre ([ADR 0001](../../adr/0001-pareja-separada-oct-octattrs.md)); no monolithic file |
 | Index validation at open | whole index | metadata block + root page; each child page when it is read |
 | Global checks (no gaps between blocks, totals) | at open | `viewer_convert verify` (R5-Q3); `FormatReader` still runs them because it reads every page |
 
 ## File layout
 
 ```text
-header (24 B, revision 5)
-block payloads                      [24, pages_start)         written in node order, as in V7.4
+header (24 B, revision 5, split primary)
+geometry payloads                   [24, pages_start)         written in node order, as in V7.4
 child pages, breadth-first          [pages_start, index_offset)
 metadata block                      } index region, [index_offset, footer)
 root page                           }   (index_length = metadata block + root page)
 footer (40 B, magic OCTVE75P)
 ```
 
+- The `.octattrs` companion has the V7.4-pre layout: a 24-byte attributes header, then per block (in the
+  order the blocks were written) its colour and attribute columns back to back, then a 40-byte footer
+  with the primary's index offset, index length and index CRC32 (so the pair can be matched) and its own
+  file length. The `.oct` opens alone: geometry and hierarchy are complete and colour is neutral grey.
 - Footer fields are V5's: index offset, index length, file length, index CRC32 (over the whole index
   region) and footer CRC32. `index_offset + index_length` is the footer offset.
 - The root page is the **last** part of the index region, so a tail read gets footer, metadata block
@@ -64,20 +68,28 @@ Hierarchy source EPT, Additive semantics and checkpoints are rejected by the wri
 
 ## Node identity and order
 
-A node is **`(level, prefix)`**, as in V7.4-pre. Inside the tree below the stored root:
+A node is **`(level, prefix)`**, as in V7.4-pre. Inside the tree below the stored root there is **no depth
+limit** beyond `level ≤ 64` (a cloud straddling a high lattice bit has a level-0 root and a chain of ~40
+levels).
 
-- **Depth** `d = level − a0`. The writer and readers reject `d > 21` (the **depth limit**): the id
-  needs `1 + 3d` bits and must fit a `u64`.
 - **Octant** of a child: `x | y << 1 | z << 2`, where each bit is the last bit of the child's prefix on
   that axis. Children are ordered by ascending octant.
-- **`NodeId`** (derived, never stored): `1` (a sentinel bit), then for each level below the root the
-  3-bit octant of the node's ancestor-or-self at that level, most significant first. The root is `1`; the
-  parent of `id` is `id >> 3`. The id is unique per `(level, prefix)` under one root.
-  `viewer_format::derive_node_id` implements it.
+- **Page number**: the root page is 0; child pages are numbered 1, 2, … in the writer's plan order
+  (breadth-first: the pages hanging from page 0 in node order, then those hanging from page 1, …). The
+  number is stored in the child pointer.
+- **`NodeId`** (derived, never stored): `page number << 32 | index`, a `u64`, where `index` is the node's
+  position in its page's record order (below). The root node is `0` (page 0, index 0).
+  `viewer_format::page_node_id` and `split_node_id` build and split it. Ids are unique per file and
+  deterministic: they depend only on the tree and the page plan. They are **not** a function of
+  `(level, prefix)` alone, and a node's id changes if the page plan changes.
+- **Parent**: for a node at depth ≥ 2 of a child page (≥ 1 in the root page) it is the record of its
+  parent in the same page. For a depth-1 node of a child page it is the **anchor record** in the parent
+  page, whose id the reader knows from the pointer it followed.
 - **Path** (inside a page) of a node at relative depth `r` below the page anchor: the same octants, `3r`
   bits, ancestor first; `path < 8^r` and fits `u16` because `r ≤ 5`. The pair `(r, path)` is the node's
   key in the page.
-- **Order in a page**: ascending `(r, path)`. This is breadth-first and fully determined by the tree.
+- **Order in a page**: ascending `(r, path)`. This is breadth-first and fully determined by the tree; the
+  record index of the id is this position.
 
 ## Pages
 
@@ -88,6 +100,7 @@ page is read; the root page additionally holds the root node.
 ```text
 page := header, node record × node_count, crc32
 header := anchor level u8, anchor prefix 3 × u64, k u8, node_count u32, first_block_id u64     (38 bytes)
+(the page number is not stored in the page: it comes from the pointer, 0 for the root page)
 crc32  := over every preceding byte of the page                                                 (4 bytes)
 ```
 
@@ -107,7 +120,7 @@ The page length is known from the pointer (child pages) or from the index region
 | Blocks | block record × count | Below |
 | Range count | `u16` | ≤ schema size; 0 if the point count is 0 |
 | Ranges | repeated | `u16` schema index (strictly ascending), min values, max values, as in V7.4-pre |
-| Child page pointer | `u64` offset + `u32` length | **Only if depth = `k` and the node has children**: the page anchored at this node |
+| Child page pointer | `u64` offset + `u32` length + `u32` page number | **Only if depth = `k` and the node has children**: the page anchored at this node. The page number is ≥ 1 |
 
 Not stored (derived): node id, parent id, level, prefix, bounds (from level and prefix, as in V7.4-pre),
 internal spacing, block ids, block origin of nodes with `level ≥ 32`, payload offsets inside a block
@@ -117,14 +130,16 @@ and the raw lengths of every column except geometry.
 
 | Field | Type | Rule |
 | --- | --- | --- |
-| Payload offset, payload length, point count | 3 × `u64` | Payload range inside `[24, pages_start)` |
+| Geometry offset, attribute offset, point count | 3 × `u64` | The geometry column occupies `[offset, offset + geometry stored length)` inside `[24, pages_start)` of the `.oct`; the colour and attribute columns follow each other in the `.octattrs` from `attribute offset` (≥ 24). The geometry length is the geometry entry's stored length (not repeated) |
 | Geometry encoding | `u8` | As V7.3-pre |
 | Quantization error | `f64` | Finite, ≥ 0 |
 | Cell | 3 × `u32` | **Only if the node's level is < 32** (split node): the block origin is the node origin plus `cell << 32` quanta per axis; valid iff it satisfies the V7.4-pre split rule. Otherwise the origin is the node origin |
 | Payload entries | one per column: geometry, display colours, then the schema | Codec `u8`, CRC32 `u32`, stored length `u64`; the geometry entry also has its raw length `u64` |
 
-Column offsets inside the block are the running sum of the stored lengths, starting at 0, and must fill
-the payload length exactly. The raw length of the colour column is `3 × points` and of an attribute
+The geometry column starts at the block offset; the other columns' offsets are the running sum of their
+stored lengths starting at the attribute offset (V7.4-pre's split rule). Across the file the geometry
+sections tile `[24, pages_start)` and the attribute sections tile the `.octattrs` between its header and
+footer, without gaps or overlaps (checked by `verify` and by `FormatReader`). The raw length of the colour column is `3 × points` and of an attribute
 `points × components × width`. The codec rules (constant, dictionary, byte planes, none/LZ4 lengths)
 are V7.4-pre's.
 
@@ -136,12 +151,11 @@ are V7.4-pre's.
 pages rejects a page whose id range intersects another resident page's.
 
 The writer's `BlockId`s are not kept: a reader sees the ids above, so the converter validates the written file with the ids
-it reads back. Decision: this numbering is normative (a split node can own many blocks and a node id already uses up to
-64 bits, so no id function of the node alone exists).
+it reads back. Decision: this numbering is normative (a split node can own many blocks, so no id function of the node alone exists).
 
 ### Choosing `k`
 
-Per page, the writer takes the **largest `k` ≤ 5** (also ≤ `21 − d_anchor` and ≤ `64 − level`) whose
+Per page, the writer takes the **largest `k` ≤ 5** (also ≤ `64 − anchor level`) whose
 encoded page is ≤ 512 KB (`TARGET_PAGE_BYTES`); when even `k = 1` is larger it uses `k = 1`
 (R5 stop criterion: a `k = 1` page above 1 MiB stops the plan). The page size is computed from the
 records, so the choice is deterministic and does not depend on pointer values (fixed width).
@@ -152,7 +166,7 @@ A reader validates **each page** when it reads it, and rejects the page on any f
 
 1. Length ≥ minimum page and ≤ `max_page_bytes`; CRC32 matches.
 2. Header: anchor level ≤ 64, prefix fits the level and lies under the root prefix; `k` in 1 ..= 5,
-   `level + k ≤ 64`, anchor depth `+ k ≤ 21`; node count in 1 ..= 37 448 (+1 for the root page) and ≤ `max_nodes`.
+   `level + k ≤ 64`; node count in 1 ..= 37 448 (+1 for the root page) and ≤ `max_nodes`.
 3. **Anchor**: the root page's anchor is the stored root; a child page's anchor must equal the level and
    prefix of the node whose pointer was followed.
 4. Node keys: depth and path in range, strictly ascending; flags reserved bits 0; the first record of the
@@ -161,7 +175,7 @@ A reader validates **each page** when it reads it, and rejects the page on any f
    has children; every node with children and depth < `k` has at least one child in the page.
 6. Block ranges are inside the data section `[24, pages_start)` and **do not overlap** within the page;
    payload directories, split cells, spacing, point counts and geometric errors follow the rules above.
-7. A child pointer lies in `[pages_start, index_offset)` and its length is ≥ the minimum page and ≤ `max_page_bytes`.
+7. A child pointer lies in `[pages_start, index_offset)`, its length is ≥ the minimum page and ≤ `max_page_bytes`, and its page number is ≥ 1 (a reader holding several pages rejects a repeated number).
 8. **No `BlockId` repeats** across the pages a reader holds (checked when a page is added; a released page
    frees its ids).
 
@@ -169,7 +183,7 @@ The metadata block and the root page are validated at open (index CRC32 over bot
 length 0, frame rules of V7.4-pre). Checks that need every page — contiguous payload section without gaps,
 declared totals, one owner per block, parent/child prefix consistency across pages — are the job of
 `viewer_convert verify`. `FormatReader` (which reads every page eagerly) also runs them and exposes the
-assembled hierarchy with derived `NodeId`s; consumers must not assume they equal V7.4-pre's ids.
+assembled hierarchy with `(page, index)` `NodeId`s; `verify` also requires page numbers to follow the plan order; consumers must not assume they equal V7.4-pre's ids.
 
 ## Limits
 
@@ -186,18 +200,18 @@ two bound the declared totals and, for the eager `FormatReader`, the pages actua
 
 ## Converter and tools
 
-- `viewer_convert INPUT OUT.oct --format-version v7.5-pre` writes **only `OUT.oct`** (no `.octattrs`; monolithic,
-  as the table above says). Same global-octree semantics as v7.4-pre (fixed leaf 64 000, sample grid 256, 2 divisions).
+- `viewer_convert INPUT OUT.oct --format-version v7.5-pre` writes `OUT.oct` + `OUT.octattrs`. Same global-octree semantics as v7.4-pre (fixed leaf 64 000, sample grid 256, 2 divisions).
   EPT input, `--checkpoint`/`--resume` and Additive are refused with an explicit error.
 - `viewer_convert verify FILE.oct` reads every page and runs the global checks (page chain, child pages tiling the
-  page section, no gaps between payloads, one owner per block, totals); exit code 0 or 1. Payload bytes are not read.
+  page section, no gaps between payloads or attribute sections, one owner per block, totals; if `OUT.octattrs` exists, its footer
+  must name the same index); exit code 0 or 1. Payload bytes are not read.
 - `cargo run --release -p viewer_format --example synthetic_paged -- OUT.oct [NODES]` writes a deterministic file
-  (default 6 M nodes, two-point blocks, about 0.8 GB, about 1 min and 15 GB RAM).
+  (default 6 M nodes, two-point blocks, about 0.8 GB, about 1 min and 15 GB RAM; also writes `OUT.octattrs`).
 
 ## Writer restrictions
 
-- Everything in V7.4-pre's "Writer restrictions" except that split files are not offered and the
-  index is paged.
+- Everything in V7.4-pre's "Writer restrictions" except that the index is paged and the monolithic
+  file is not offered (`FormatWriter::new_for_version` refuses it; use `new_split_for_version`).
 - Output must be byte-identical between the web and native converters (RQ-08); the page plan depends only
   on the tree and the block records, never on timing or thread order.
 - `FormatWriterOptions::with_page_target_bytes` lowers the page target for tests and tools; the default is
@@ -209,13 +223,11 @@ two bound the declared totals and, for the eager `FormatReader`, the pages actua
   extension-length hook above and the reserved node flag bits are defined here.
 - Lazy loading in the viewer (P3) and HTTP Range (P4): the sync `PagedReader` is the format-level API
   those build on.
-- Nodes deeper than 21 levels below the root (depth limit): the converter fails with an explicit error. A cloud whose box straddles
-  the lattice sign bit has a level-0 root and a long single-child chain, so it cannot be written yet (open point 3).
 
 ## Open points for review
 
 1. **Total node and block counts** are informative until all pages are read; the lazy path cannot verify them.
 2. **Tail read size** (1 MiB) is a hint tuned for a 512 KB root page; `k = 1` root pages up to 1 MiB plus
    the metadata block can need a second request.
-3. **Depth limit 21** equals ADR 0030's "revisit if more than 21" threshold (OQ-07), now enforced by the id
-   encoding.
+3. **Node ids change with the page plan** (`k` choice or page target): consumers must not persist them across
+   files. Depth is unbounded (the earlier 21-level limit is gone; OQ-07 no longer applies).
