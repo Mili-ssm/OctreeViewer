@@ -194,11 +194,7 @@ impl WasmCoreConverter {
         .map_err(|error| conversion_error("conversion failed", &error))?;
         let (mut geometry, mut attributes) = (output.geometry, output.attributes);
         std::io::Write::flush(&mut geometry)
-            .and_then(|()| {
-                attributes
-                    .as_mut()
-                    .map_or(Ok(()), std::io::Write::flush)
-            })
+            .and_then(|()| attributes.as_mut().map_or(Ok(()), std::io::Write::flush))
             .map_err(|error| conversion_error("flushing output", &ConvertError::Io(error)))?;
         validate_output_serial(
             OpfsReader::new(self.geometry.clone()),
