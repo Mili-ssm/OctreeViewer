@@ -85,9 +85,18 @@ Decisión (02-11-2026): el criterio de parada se activó (toca `viewer_convert_c
 
 ## Tarea P3: lector perezoso local
 
-- [ ] Fuente de páginas sobre `read_at` / `Blob.slice`, con un **presupuesto propio para páginas**, separado del de bloques, y caché LRU con las páginas fijadas según P1.
-- [ ] Migrar las tres rutas de apertura (`bindings/lod.rs:118`, `viewer-worker.js:743`, `build-worker.js:266`) y los usos de `nodeCount` / `maxLevel` (`main.js:483-486` y tests de navegador). Eliminar el descriptor JS por nodo.
+- [x] Fuente de páginas sobre `read_at` / `Blob.slice`, con un **presupuesto propio para páginas** (64 MiB, separado del de bloques), y caché LRU con las páginas fijadas según P1.
+- [x] Migrar las rutas de apertura (`open_format` síncrono incluido: lee `v7.5-pre` en perezoso y las vistas leen y injertan páginas con `update_lod_view_paged`) y los usos de `nodeCount` / `maxLevel`. Eliminar el descriptor JS por nodo.
+- [x] Los rangos globales de atributos van en el bloque de metadatos (cambia los bytes de `v7.5-pre`: los ficheros anteriores se regeneran); `verify` y el lector completo los comparan con las páginas.
 - [x] **Pasa si** abrir el sintético de 6 M nodos tarda como máximo el doble que una nube de 24 k nodos, y la matriz de T7 no empeora (verificación con Playwright incluida).
+
+Resultado (02-11-2026, release, Chrome headless, equipo de T6b):
+
+- Ficheros con páginas pequeñas (`viewer_convert --page-target-bytes N`, opción oculta para pruebas y benchmarks): Belvedere con *k* = 1 (767 páginas, raíz de 17 nodos) y con 16 KB; Majadas con 16 KB (1 652 páginas, raíz de 37 nodos).
+- Belvedere *k* = 1: a 8 px se injertan 7 páginas, a 4 px 11; objetivo alcanzado, 0 nodos sin cubrir, vacíos 0,33 (8 px) y 0,31 (4 px) frente a 0,29–0,36 y 0,30–0,38 de T6b; el valor final en reposo (0,5177 a 8 px) es idéntico al de T6b. Con 16 KB la raíz (26 nodos) basta a 8 px y no se piden páginas. Majadas 16 KB a 4 px: raíz suficiente, 0,868 (T6b 0,85–0,87). Consola sin errores (salvo favicon).
+- Presión (presupuesto de páginas de 4 KB, compilación temporal): 19 expulsiones, sin errores ni huérfanos, 0 sin cubrir; pero con un presupuesto menor que el conjunto de trabajo queda una ancla pendiente en reposo y la sonda marca el objetivo como alcanzado (la etapa de la sonda no ve las páginas). Con 64 MiB no ocurre; sin resolver para presupuestos por debajo del conjunto de trabajo.
+- Apertura nativa (`lazy_open_time`, mediana): sintético 6 M 1,01 ms; Majadas 0,44 ms (razón 2,3); Belvedere 0,81 ms (1,25); Belvedere *k* = 1 0,10 ms. El coste sigue el tamaño de la página raíz (la del sintético es una página completa de *k* = 5), no el total de nodos; no se ajusta el umbral.
+- Playwright (escritorio 1280×720 y móvil 390×844): `sample.oct`, `sample-v7.oct`, v7.4 y v7.5, con cambios de fichero, consola limpia.
 
 ## Tarea P4: HTTP Range
 
