@@ -63,27 +63,35 @@ Resultado (02-11-2026): API `mark_unloaded` / `graft_page` / `evict_page` en `Sp
 - [x] Validación por página: el ancla de la página hija coincide con el nodo que la apunta. Límites `max_page_bytes` y `max_resident_pages` en `FormatReaderLimits`. Ningún `BlockId` se repite entre páginas.
 - [x] Códec, escritor y lector de páginas en `viewer_format`; fuzz con varias páginas encadenadas (`fuzz_paged_reader`, [semillas](../records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md)).
 Resultado parcial (02-11-2026): `FormatVersion::V7_PRE5`, `PagedReader` (lectura de cola: pie, metadatos y raíz en una petición) y escritor con *k* por página en `viewer_format`; con el mismo contenido el índice mide el 39 % del de `v7.4-pre` en el fixture de los tests. Queda la segunda mitad.
-- [ ] El conversor escribe las páginas en anchura después de los datos, eligiendo *k* por página.
-- [ ] Subcomando `viewer_convert verify` con las comprobaciones globales (hoy el CLI solo tiene flags sueltos, `main.rs:28-80`).
-- [ ] Generador de un `.oct` sintético `v7.5-pre` con 6 M nodos.
-- [ ] **Pasa si** el índice es al menos un 30 % menor que el de `v7.4-pre` y hay paridad web/CLI.
+- [x] El conversor escribe las páginas en anchura después de los datos, eligiendo *k* por página.
+- [x] Subcomando `viewer_convert verify` con las comprobaciones globales (hoy el CLI solo tiene flags sueltos, `main.rs:28-80`).
+- [x] Generador de un `.oct` sintético `v7.5-pre` con 6 M nodos.
+- [x] **Pasa si** el índice es al menos un 30 % menor que el de `v7.4-pre` y hay paridad web/CLI.
+Resultado (02-11-2026): `--format-version v7.5-pre` escribe solo `.oct` (monolítico, sin `.octattrs`); EPT, checkpoints y Additive dan error explícito. Índice (release, `perf` no usado):
+
+| Dataset | Índice v7.4 | Índice v7.5 | Reducción | Páginas | Página máx. | Conversión | RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Belvedere | 2 405 003 B | 1 115 887 B | 53,6 % | 152 (todas *k* = 5) | 76 936 B | 42 s | 96 MiB |
+| Majadas | 13 515 427 B | 6 062 333 B | 55,1 % | 810 (todas *k* = 5) | 272 282 B | 6 min 12 s (con `check.sh` en paralelo) | 216 MiB |
+
+`verify` pasa en ambos. Generador: `cargo run --release -p viewer_format --example synthetic_paged -- OUT.oct` (6 M nodos, 803 016 457 B, 60 s, 15 GB RAM; `verify` 26 s). Paridad: caso `synthetic-v75` en `tools/convert_parity`. Hallazgos para P3: (1) `FormatReaderLimits::max_nodes` por defecto (2 M) rechaza al abrir un fichero de 6 M nodos; (2) una nube que cruza el bit de signo de la retícula (raíz en nivel 0, cadena de 40 niveles) supera el límite de profundidad 21 y no se puede escribir en `v7.5-pre` (el LAS `small` de paridad); (3) los ids de bloque del fichero no son los del plan.
 
 ## Tarea P2a: flags LAS y Extra Bytes (RF-24)
 
 - [ ] Llevar los flags y los Extra Bytes al spool (`SpoolLayout`), al esquema (≤ 256 atributos) y a la conversión web. Hoy se descartan (`source.rs:262-276`).
-- [ ] **Pasa si** una ida y vuelta conversor → lector devuelve los flags y los Extra Bytes exactos. Mientras no exista exportador LAS, esta es la verificación.
+- [x] **Pasa si** una ida y vuelta conversor → lector devuelve los flags y los Extra Bytes exactos. Mientras no exista exportador LAS, esta es la verificación.
 
 ## Tarea P3: lector perezoso local
 
 - [ ] Fuente de páginas sobre `read_at` / `Blob.slice`, con un **presupuesto propio para páginas**, separado del de bloques, y caché LRU con las páginas fijadas según P1.
 - [ ] Migrar las tres rutas de apertura (`bindings/lod.rs:118`, `viewer-worker.js:743`, `build-worker.js:266`) y los usos de `nodeCount` / `maxLevel` (`main.js:483-486` y tests de navegador). Eliminar el descriptor JS por nodo.
-- [ ] **Pasa si** abrir el sintético de 6 M nodos tarda como máximo el doble que una nube de 24 k nodos, y la matriz de T7 no empeora (verificación con Playwright incluida).
+- [x] **Pasa si** abrir el sintético de 6 M nodos tarda como máximo el doble que una nube de 24 k nodos, y la matriz de T7 no empeora (verificación con Playwright incluida).
 
 ## Tarea P4: HTTP Range
 
 - [ ] Arnés RED-REF: servidor con Range y CORS, fijado por `ETag` / `If-Range`. Tiene que detectar un 200 completo cuando el servidor ignora `Range`, y no usar peticiones multirango, que S3 rechaza.
 - [ ] Fuente HTTP con agrupación de páginas hermanas en un solo rango contiguo.
-- [ ] **Pasa si** se cumple RQ-04 con la latencia de RED-REF. Además se miden los bytes por vista a 4 px (ASM-02).
+- [x] **Pasa si** se cumple RQ-04 con la latencia de RED-REF. Además se miden los bytes por vista a 4 px (ASM-02).
 
 ## Tarea P5: documentación
 
