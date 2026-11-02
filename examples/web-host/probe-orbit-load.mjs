@@ -20,6 +20,7 @@ import path from "node:path";
 
 import { createRequire } from "node:module";
 
+import { lodTargetReached } from "./benchmark-metrics.mjs";
 import { countEmptyPixels, convexHull, decodePng, projectBounds } from "./pixel-metrics.mjs";
 
 const args = process.argv.slice(2);
@@ -231,7 +232,7 @@ async function sceneDigestAtRest(pose, timeoutMs = 120_000) {
         trace.poseRestored = ["position", "target"].every(key => pose[key].every((value, axis) => Math.abs(value - current[key][axis]) < SAME_POSE_TOLERANCE));
         if (!trace.poseRestored) { previous = null; continue; }
         const lod = (await evalJson("window.__renderBench.apiCall('getStats')"))?.lod;
-        const idle = lod && !lod.lodError && !(lod.pendingBlockIds?.length) && lod.lodStagePixels <= lod.targetVoxelPixels;
+        const idle = Boolean(lod) && lodTargetReached({ ...lod, coverageComplete: true });
         const digest = idle ? lod.sceneDigest ?? null : null;
         if (digest !== null && digest === previous) return digest;
         previous = digest;
@@ -311,11 +312,11 @@ try {
             const c = window.__renderBench.latestLodCounters();
             return { status, reached: /target reached/.test(status), counters: c };
         })()`);
-        if (!state.reached) {
-            const lod = (await evalJson("window.__renderBench.apiCall('getStats')"))?.lod;
-            state.reached = Boolean(lod && !lod.lodError && lod.coverageComplete
-                && !lod.pendingBlockIds?.length && lod.lodStagePixels <= lod.targetVoxelPixels);
-        }
+        const lod = (await evalJson("window.__renderBench.apiCall('getStats')"))?.lod;
+        state.pageBudgetExhausted = Boolean(lod?.pageBudgetExhausted);
+        // A pending hierarchy page overrides a stale "target reached" status line.
+        if (state.reached && lod?.pendingPageAnchors?.length) state.reached = false;
+        if (!state.reached) state.reached = lodTargetReached(lod);
         return state;
     };
     result.vulkan = vulkanEvidence();
@@ -330,6 +331,7 @@ try {
         state = await isTarget();
     }
     result.targetReached = state.reached;
+    result.pageBudgetExhausted = Boolean(state.pageBudgetExhausted);
     result.finalStatus = state.status;
     result.loadElapsedMs = Date.now() - loadStartedMs;
     if (state.reached) {

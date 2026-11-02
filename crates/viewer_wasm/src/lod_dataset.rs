@@ -45,6 +45,8 @@ pub struct LodDataset {
     crs: Option<String>,
     /// Present when the hierarchy is paged (`v7.5-pre`): pages are grafted and evicted at run time.
     pages: Option<PageResidency>,
+    /// The last `graft_page` failed on the page budget and no page has been grafted since.
+    page_budget_exhausted: bool,
 }
 
 struct SelectionMemo {
@@ -187,6 +189,9 @@ pub struct LodViewStats {
     /// Anchors whose hierarchy page is missing and needed to refine the target, highest
     /// projected error first. The stage must not advance while any is pending.
     pub pending_page_anchors: Vec<NodeId>,
+    /// A needed page was fetched but could not be grafted because the pinned cut leaves no room
+    /// in the page budget: the anchors stay pending and the target cannot be reached.
+    pub page_budget_exhausted: bool,
     pub uncovered_nodes: usize,
     pub budget_omitted_nodes: usize,
     pub refinement_work: LodWorkStats,
@@ -292,6 +297,7 @@ impl LodDataset {
             state_epoch: 0,
             crs: None,
             pages: None,
+            page_budget_exhausted: false,
         }
     }
 
@@ -353,8 +359,18 @@ impl LodDataset {
                 viewer_core::SpatialError::NotUnloadedAnchor(page.anchor),
             ));
         };
-        if !residency.fits(page.bytes) {
-            self.evict_for(page.bytes, page.anchor)?;
+        if !residency.fits(page.bytes)
+            && let Err(error) = self.evict_for(page.bytes, page.anchor)
+        {
+            if matches!(error, LodDatasetError::PageBudget { .. }) {
+                self.page_budget_exhausted = true;
+                // The reader registered the page when it read it; without this a retry would
+                // fail on duplicate block ids.
+                if let Some(residency) = &self.pages {
+                    residency.discard(page.anchor);
+                }
+            }
+            return Err(error);
         }
         let PageInsert {
             anchor,
@@ -378,6 +394,7 @@ impl LodDataset {
         if let Some(residency) = &mut self.pages {
             residency.insert(anchor, number, bytes);
         }
+        self.page_budget_exhausted = false;
         self.invalidate_selection();
         Ok(())
     }
@@ -918,6 +935,13 @@ impl LodDataset {
             self.last_successful_build = Some(build_context);
         }
         let visible_plan = self.visible_plan.as_ref().unwrap_or(&plan);
+        let pending_anchors = pending_page_anchors(self.metadata.hierarchy(), &target, |node| {
+            view.projected_error_pixels(
+                node.bounds(),
+                node.representative_spacing(),
+                coordinate_origin,
+            )
+        });
         let stats = LodViewStats {
             visible_blocks: visible_plan.block_ids().len(),
             visible_points: visible_plan.point_count(),
@@ -939,17 +963,8 @@ impl LodDataset {
             cache_bytes: self.cache.used_bytes(),
             cache_budget_bytes: self.cache.max_bytes(),
             pending_block_ids: plan.pending_blocks().to_vec(),
-            pending_page_anchors: pending_page_anchors(
-                self.metadata.hierarchy(),
-                &target,
-                |node| {
-                    view.projected_error_pixels(
-                        node.bounds(),
-                        node.representative_spacing(),
-                        coordinate_origin,
-                    )
-                },
-            ),
+            page_budget_exhausted: self.page_budget_exhausted && !pending_anchors.is_empty(),
+            pending_page_anchors: pending_anchors,
             uncovered_nodes: plan.uncovered_nodes().len(),
             budget_omitted_nodes: plan.budget_omitted_nodes().len(),
             refinement_work: self.refinement_work.clone(),

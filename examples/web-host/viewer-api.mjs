@@ -129,8 +129,9 @@ export function createViewer(canvas, options = {}) {
             emit("stats", data);
             if (loading) ensureFrame();
         } else if (data.type === "lodProgress") {
-            loading = Boolean(data.lod && !data.lod.lodError
-                && (data.lod.pendingBlockIds.length || data.lod.lodStagePixels > data.lod.targetVoxelPixels));
+            loading = Boolean(data.lod && !data.lod.lodError && !data.lod.pageBudgetExhausted
+                && (data.lod.pendingBlockIds.length || data.lod.pendingPageAnchors?.length
+                    || data.lod.lodStagePixels > data.lod.targetVoxelPixels));
             emit("progress", data);
             if (loading) ensureFrame();
         } else if (data.type === "dataset") {

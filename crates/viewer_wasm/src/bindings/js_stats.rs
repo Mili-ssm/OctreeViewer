@@ -291,6 +291,11 @@ pub(super) fn lod_view_stats_to_js(
     js_sys::Reflect::set(&value, &"pendingPageAnchors".into(), &pending_page_anchors)?;
     js_sys::Reflect::set(
         &value,
+        &"pageBudgetExhausted".into(),
+        &JsValue::from_bool(stats.page_budget_exhausted),
+    )?;
+    js_sys::Reflect::set(
+        &value,
         &"uncoveredNodes".into(),
         &JsValue::from_f64(stats.uncovered_nodes as f64),
     )?;

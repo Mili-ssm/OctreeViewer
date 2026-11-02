@@ -145,7 +145,7 @@ def main() -> None:
     )
     main_js = require_replace(
         main_js,
-        'import {\n    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, measureFrameRate, summarizeFrameReplies,\n} from "./benchmark-metrics.mjs";\n',
+        'import {\n    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,\n    summarizeFrameReplies,\n} from "./benchmark-metrics.mjs";\n',
         "",
         "benchmark metrics import",
     )

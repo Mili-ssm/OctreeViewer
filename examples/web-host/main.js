@@ -1,6 +1,7 @@
 import { CoalescedCommandQueue } from "./coalesced-command-queue.mjs";
 import {
-    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, measureFrameRate, summarizeFrameReplies,
+    FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
+    summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
@@ -107,8 +108,8 @@ function formatBytes(bytes) {
 function updateProgressiveLoadState(lod) {
     if (!lod) return;
     loadingFile = observedRefinementId !== requestedRefinementId
-        || (!lod.lodError && (benchmarkRun?.refinement?.targetLodMs === null
-            || lod.pendingBlockIds.length > 0 || lod.lodStagePixels > lod.targetVoxelPixels));
+        || (!lod.lodError && !lod.pageBudgetExhausted && (benchmarkRun?.refinement?.targetLodMs === null
+            || lodStillLoading(lod)));
     cancelButton.hidden = !loadingFile;
     if (loadingFile) startRendering();
     else if (!benchmarkStopTimer) stopRendering();
@@ -314,7 +315,7 @@ function updateStats(message) {
         `visible blocks: ${message.gpu.visibleBlocks}`,
         `deepest visible LOD level: ${lod?.maxVisibleLevel ?? "—"}`,
         `LOD coverage: ${coverage}`,
-        `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
+        `pending blocks: ${lod?.pendingBlockIds.length ?? 0} · pending pages ${lod?.pendingPageAnchors?.length ?? 0}${lod?.pageBudgetExhausted ? " (page budget exhausted)" : ""} · evicted targets ${lod?.refinementWork?.evictedPendingBlocks ?? "—"}`,
         `decoded cache: ${cache} · evictions / rejects ${lod?.cacheActivity?.evictions ?? "—"} / ${lod?.cacheActivity ? Number(lod.cacheActivity.rejectedOversize) + Number(lod.cacheActivity.rejectedProtected) : "—"}`,
         `uploaded instance bytes: ${message.gpu.uploadedBytes}`,
         `worker render call: ${renderCallMs === null ? "—" : `${renderCallMs.toFixed(2)} ms`}`,
@@ -427,9 +428,7 @@ function startBenchmark() {
     benchmarkArmed = true;
     if (loadingFile) {
         startRendering();
-    } else if (latestLodStats?.coverageComplete
-        && latestLodStats.pendingBlockIds.length === 0
-        && latestLodStats.lodStagePixels <= latestLodStats.targetVoxelPixels) {
+    } else if (lodTargetReached(latestLodStats)) {
         beginBenchmarkWindow();
     } else {
         benchmarkArmed = false;
@@ -517,9 +516,11 @@ function handleWorkerMessage(event) {
         const firstView = data.firstCoarseMs === null
             ? "coarse frame pending"
             : `first coarse frame ${data.firstCoarseMs.toFixed(0)} ms`;
-        const targetView = data.targetLodMs === null
-            ? "target refining"
-            : `target reached ${data.targetLodMs.toFixed(0)} ms`;
+        const targetView = data.lod.pageBudgetExhausted
+            ? "page budget exhausted (target not reached)"
+            : data.targetLodMs === null || !lodTargetReached(data.lod)
+                ? "target refining"
+                : `target reached ${data.targetLodMs.toFixed(0)} ms`;
         statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
     } else if (data.type === "stats") {
         acknowledgeFrame();

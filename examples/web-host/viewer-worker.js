@@ -658,7 +658,7 @@ function syncBuildView(force = false, retryFailed = false) {
 }
 
 function lodStillLoading(lod) {
-    return !lod.lodError && (lod.pendingBlockIds.length > 0 || (lod.pendingPageAnchors?.length ?? 0) > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
+    return !lod.lodError && !lod.pageBudgetExhausted && (lod.pendingBlockIds.length > 0 || (lod.pendingPageAnchors?.length ?? 0) > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
 }
 
 function applyBuiltLod(lod, source) {

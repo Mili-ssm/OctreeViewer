@@ -90,6 +90,11 @@ impl PageResidency {
         }
     }
 
+    /// Tells the reader to forget `anchor`'s page, which was read but not grafted.
+    pub(crate) fn discard(&self, anchor: NodeId) {
+        (self.release)(anchor);
+    }
+
     /// Bytes of the pages `pinned` rejected for eviction, for the budget error.
     pub(crate) fn bytes_of(&self, anchors: &[NodeId]) -> usize {
         self.order

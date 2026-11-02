@@ -90,3 +90,20 @@ export function lodCounters(lod) {
         oversizedVoxels: lod.oversizedVoxels ?? null,
     };
 }
+
+// Whether a LOD stats object (`lod` of getStats / lodProgress) is at rest at the requested detail.
+// Hierarchy pages of a paged format count like blocks: an anchor whose page is still pending keeps
+// the target unreached. `pageBudgetExhausted` marks pending pages that can no longer be grafted
+// because the page budget is pinned by the cut; nothing more will load until the view changes.
+export function lodTargetReached(lod) {
+    return Boolean(lod && !lod.lodError && lod.coverageComplete
+        && !lod.pendingBlockIds?.length && !lod.pendingPageAnchors?.length
+        && lod.lodStagePixels <= lod.targetVoxelPixels);
+}
+
+// Whether more LOD work is expected: false once the page budget blocks the remaining pages.
+export function lodStillLoading(lod) {
+    return Boolean(lod && !lod.lodError && !lod.pageBudgetExhausted
+        && (lod.pendingBlockIds?.length || lod.pendingPageAnchors?.length
+            || lod.lodStagePixels > lod.targetVoxelPixels));
+}

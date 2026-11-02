@@ -28,6 +28,9 @@ let currentColorMode = "rgb";
 let latestView = null;
 let viewsSinceBuild = 0;
 let retryFailedNext = false;
+// View epoch for which a fetched page did not fit the page budget: refetching it before the view
+// changes would fail the same way, so the pending anchor is left to the exhausted-budget state.
+let pageBudgetBlockedEpoch = null;
 let buildTimer = 0;
 const asyncReadTasks = new Map();
 const failedAsyncBlocks = new Set();
@@ -126,7 +129,7 @@ function runBuild() {
             type: "lod", gen: generation, epoch: result.epoch, viewEpoch: view.epoch, lod: result.lod,
         });
     }
-    schedulePageReads(result.lod.pendingPageAnchors);
+    if (pageBudgetBlockedEpoch !== view.epoch) schedulePageReads(result.lod.pendingPageAnchors);
     refreshAsyncReads(retryFailedNext);
     retryFailedNext = false;
     if (result.needsRefinement) requestBuild();
@@ -150,7 +153,13 @@ function schedulePageReads(anchors) {
             builder.graftPage(page);
             requestBuild();
         }).catch((error) => {
-            if (taskGeneration === generation) postError("asyncPageRead", error, taskGeneration);
+            if (taskGeneration !== generation) return;
+            postError("asyncPageRead", error, taskGeneration);
+            if (String(error).includes("page budget exhausted")) {
+                // Rebuild once so the stats carry `pageBudgetExhausted`.
+                pageBudgetBlockedEpoch = latestView?.epoch ?? null;
+                requestBuild();
+            }
         }).finally(() => {
             pageReads.delete(anchor);
         });
@@ -281,6 +290,7 @@ async function openDataset(data) {
     viewsSinceBuild = 0;
     failedAsyncBlocks.clear();
     generation = data.gen;
+    pageBudgetBlockedEpoch = null;
     currentColorMode = "rgb";
     asyncHasAttributes = false;
     asyncAttributeIndices = new Map();

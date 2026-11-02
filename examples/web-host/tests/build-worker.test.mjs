@@ -23,8 +23,9 @@ const opened = () => ({
 
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
-async function runBuildWorker({ updates = [] } = {}) {
+async function runBuildWorker({ updates = [], graftFails = false } = {}) {
     const posted = [];
+    const grafted = [];
     const updateCalls = [];
     const builders = [];
     let receive;
@@ -44,13 +45,18 @@ async function runBuildWorker({ updates = [] } = {}) {
             return {
                 epoch: updateCalls.length, sceneBuffer: planned.scene === false ? null : new ArrayBuffer(8),
                 instanceCount: 1, blockIds: ["7"], digest: "00", needsRefinement: planned.needsRefinement ?? false,
-                lod: lod(),
+                lod: planned.lod ?? lod(),
             };
+        }
+        graftPage(page) {
+            grafted.push(page.anchor);
+            if (graftFails) throw new Error("page budget exhausted: a 100-byte page does not fit");
         }
         free() {}
     }
     class Reader {
         static async open() { return new Reader(); }
+        async loadPage(anchor) { return { anchor, free() {} }; }
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
@@ -83,7 +89,7 @@ async function runBuildWorker({ updates = [] } = {}) {
     send("init", {});
     send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200] });
     await settle();
-    return { posted, updateCalls, builders, send, settle };
+    return { posted, updateCalls, builders, grafted, send, settle };
 }
 
 test("build worker opens the dataset and reports its metadata", async () => {
@@ -131,6 +137,27 @@ test("build worker repeats the build while the planner asks for refinement and r
     assert.equal(worker.updateCalls.length, 2);
     assert.deepEqual(worker.posted.filter(item => item.type === "scene" || item.type === "lod")
         .map(item => [item.type, item.epoch, item.viewEpoch]), [["scene", 1, 1], ["lod", 2, 1]]);
+});
+
+test("build worker stops refetching a page the budget cannot hold until the view changes", async () => {
+    const pending = { ...lod(), pendingPageAnchors: ["5"] };
+    const exhausted = { ...pending, pageBudgetExhausted: true };
+    const worker = await runBuildWorker({
+        graftFails: true,
+        updates: [{ lod: pending }, { lod: exhausted }, { lod: exhausted }, { lod: exhausted }],
+    });
+    worker.send("view", { gen: 1, epoch: 1, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.grafted, ["5"], "no refetch loop while the view is unchanged");
+    assert.equal(worker.updateCalls.length, 2, "the failed graft refreshes the stats once");
+    assert.ok(worker.posted.filter(item => item.type === "scene" || item.type === "lod")
+        .some(item => item.lod.pageBudgetExhausted), "the host receives the exhausted state");
+    assert.ok(worker.posted.some(item => item.type === "error" && item.operation === "asyncPageRead"));
+    worker.send("view", { gen: 1, epoch: 2, camera: [2], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.grafted, ["5", "5"], "a new view retries the page");
 });
 
 test("build worker ignores views and color changes for another gen", async () => {

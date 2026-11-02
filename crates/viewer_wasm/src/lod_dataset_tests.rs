@@ -2572,7 +2572,8 @@ fn pinned_pages_are_never_evicted_and_a_full_budget_is_an_error() {
         matches!(error, LodDatasetError::PageBudget { pinned: 100, .. }),
         "{error}"
     );
-    assert!(released.borrow().is_empty());
+    // Only the rejected page is released; the pinned one stays.
+    assert_eq!(*released.borrow(), [NodeId::new(3)]);
     assert!(dataset.references_block(BlockId::new(20)));
     assert!(!dataset.references_block(BlockId::new(30)));
 }
@@ -2654,4 +2655,76 @@ fn a_synchronous_update_reads_the_pages_the_cut_lacks() {
     assert_eq!(reader, [NodeId::new(1)]);
     assert!(dataset.references_block(BlockId::new(12)));
     assert!(result.stats.pending_page_anchors.is_empty());
+}
+
+/// A page that cannot be grafted leaves its anchor pending for good: the stats must say the page
+/// budget is the reason, so hosts do not report the target as reached.
+#[test]
+fn a_page_that_does_not_fit_is_reported_as_page_budget_exhausted() {
+    let (_, blocks) = native_dataset(400);
+    let root = SpatialNode::new(
+        NodeId::new(1),
+        None,
+        0,
+        SpatialBounds::new([0.0; 3], [64.0; 3]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(11)],
+    )
+    .unwrap();
+    let mut hierarchy = SpatialHierarchy::new(vec![root], Vec::new(), Some(400)).unwrap();
+    hierarchy.mark_unloaded(NodeId::new(1)).unwrap();
+    let released = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let sink = std::rc::Rc::clone(&released);
+    let mut dataset = LodDataset::new([0.0; 3], hierarchy, 8 * blocks[0].estimated_memory_bytes())
+        .unwrap()
+        .with_pages(
+            &[NodeId::new(1)],
+            Box::new(move |anchor| sink.borrow_mut().push(anchor)),
+            50,
+        )
+        .unwrap();
+    dataset.insert_block(blocks[0].clone()).unwrap();
+    let view = native_view();
+    let update = |dataset: &mut LodDataset| {
+        dataset
+            .update_view_progressive(&view, 4.0, 4.0, 4.0, None, |_| Ok(None))
+            .unwrap()
+            .stats
+    };
+    let stats = update(&mut dataset);
+    assert_eq!(stats.pending_page_anchors, [NodeId::new(1)]);
+    assert!(!stats.page_budget_exhausted);
+
+    let child = SpatialNode::new(
+        NodeId::new(2),
+        Some(NodeId::new(1)),
+        1,
+        SpatialBounds::new([0.0; 3], [32.0, 64.0, 64.0]).unwrap(),
+        400,
+        0.0,
+        vec![BlockId::new(12)],
+    )
+    .unwrap();
+    let page = |bytes| crate::PageInsert {
+        anchor: NodeId::new(1),
+        number: 1,
+        nodes: vec![child.clone()],
+        unloaded: Vec::new(),
+        bytes,
+    };
+    assert!(matches!(
+        dataset.graft_page(page(100)),
+        Err(LodDatasetError::PageBudget { .. })
+    ));
+    // The reader forgets the rejected page so that a later retry can read it again.
+    assert_eq!(*released.borrow(), [NodeId::new(1)]);
+    let stats = update(&mut dataset);
+    assert_eq!(stats.pending_page_anchors, [NodeId::new(1)]);
+    assert!(stats.page_budget_exhausted);
+
+    // A page that fits clears the condition.
+    dataset.graft_page(page(40)).unwrap();
+    let stats = update(&mut dataset);
+    assert!(!stats.page_budget_exhausted);
 }
