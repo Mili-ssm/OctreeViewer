@@ -61,6 +61,11 @@ def main() -> None:
     converter_worker_js = (HOST / "converter-worker.js").read_text(encoding="utf-8")
     spool_tiers_js = (HOST / "spool-tiers.mjs").read_text(encoding="utf-8")
     converter_ui_js = (HOST / "converter-ui.mjs").read_text(encoding="utf-8")
+    range_source_js = (HOST / "http-range-source.mjs").read_text(encoding="utf-8")
+    inline_range_source_js = re.sub(r"^export ", "", range_source_js, flags=re.MULTILINE)
+    range_source_import = 'import { resolveSource } from "./http-range-source.mjs";\n'
+    worker_js = require_replace(worker_js, range_source_import, "", "range source import")
+    build_worker_js = require_replace(build_worker_js, range_source_import, "", "build worker range source import")
     embed_worker_js = worker_js
     embed_build_worker_js = build_worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
@@ -97,6 +102,8 @@ def main() -> None:
         "(value) => value.charCodeAt(0));\n"
         + wasm_js
         + "\n"
+        + inline_range_source_js
+        + "\n"
         + worker_js
     )
     # The build worker gets the WASM bytes from the viewer worker (init message), not a second copy.
@@ -106,7 +113,7 @@ def main() -> None:
     build_worker_js = require_replace(
         build_worker_js, "wasmExports = await init(", "wasmExports = await __wbg_init(", "build worker WASM init"
     )
-    build_worker_source = wasm_js + "\n" + build_worker_js
+    build_worker_source = wasm_js + "\n" + inline_range_source_js + "\n" + build_worker_js
     converter_worker_js = require_replace(
         converter_worker_js,
         wasm_import_line(converter_worker_js, "converter WASM import"),

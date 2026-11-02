@@ -102,9 +102,26 @@ Resultado (02-11-2026, release, Chrome headless, equipo de T6b):
 
 ## Tarea P4: HTTP Range
 
-- [ ] Arnés RED-REF: servidor con Range y CORS, fijado por `ETag` / `If-Range`. Tiene que detectar un 200 completo cuando el servidor ignora `Range`, y no usar peticiones multirango, que S3 rechaza.
-- [ ] Fuente HTTP con agrupación de páginas hermanas en un solo rango contiguo.
+- [x] Arnés RED-REF (`examples/web-host/red-ref-server.mjs`): servidor con Range y CORS, fijado por `ETag` / `If-Range`. Tiene que detectar un 200 completo cuando el servidor ignora `Range`, y no usar peticiones multirango, que S3 rechaza.
+- [x] Fuente HTTP (`http-range-source.mjs`, `?url=` en el visor) con agrupación de páginas hermanas en un solo rango contiguo.
 - [x] **Pasa si** se cumple RQ-04 con la latencia de RED-REF. Además se miden los bytes por vista a 4 px (ASM-02).
+
+Resultado (02-11-2026, release, Chrome headless 1280×720, RED-REF 100 Mbit/s y 50 ms de RTT simulados por `red-ref-server.mjs`, datos y app en orígenes distintos; sonda `probe-remote-open.mjs`):
+
+- Diseño: la fuente HTTP imita un `Blob` (`size`, `slice().arrayBuffer()`) y cada worker abre la suya. Apertura con una sola petición de sufijo (`Range: bytes=-1 MiB`: tamaño, ETag, pie, metadatos y raíz); el `.octattrs` pide su cabecera y su pie en paralelo. Después, un rango simple por petición con `If-Range: <ETag>`; las lecturas del mismo tick cuyos rangos se tocan se unen en una petición (hermanas contiguas). Un 200 ante un `Range`, un ETag distinto o un `Content-Range` incoherente son error (el cuerpo se aborta). Sin multirango.
+- Medidas (primer frame / objetivo 4 px / peticiones GET hasta el primer frame / GET totales / bytes de cuerpo):
+
+| Fichero | Primer frame | 4 px | GET hasta 1.er frame | GET totales | Bytes |
+| --- | --- | --- | --- | --- | --- |
+| belvedere-v75 | 377 ms | 954 ms | 11 | 23 | 2,05 MB |
+| belvedere-v75k1 (767 páginas) | 390 ms | 1 253 ms | 11 | 24 | 2,06 MB |
+| belvedere-v74 (línea base) | 784 ms | 1 500 ms | 13 | 25 | 4,46 MB |
+| majadas-v75 | 370 ms | 861 ms | 7 | 27 | 1,89 MB |
+| majadas-v74 (línea base) | 2 195 ms | 2 883 ms | 9 | 29 | 15,4 MB |
+
+- Criterios de parada: la paginación no añade peticiones al primer frame (v7.5 abre con 1 petición `.oct` frente a 3 de v7.4: cola, cabecera e índice). Con las páginas por defecto (*k* = 5) la raíz basta a 4 px (0 lecturas de página); con *k* = 1 hacen falta 4 lecturas en 1 oleada (≤ 3). RQ-04 (≤ 10 s / ≤ 120 s) se cumple con holgura. Bytes por vista a 4 px (ASM-02): 1,9–2,1 MB, de los cuales 1 MiB es la lectura de cola.
+- Escritorio y móvil (390×844): se abre `belvedere-v75.oct` por URL, objetivo alcanzado, consola sin errores salvo el 404 de `favicon.ico` del servidor estático; con `--ignore-range` el visor informa `HttpRangeError: the server ignores Range` y aborta.
+- Límites: vista fija sin órbita (no es la matriz T7); no se probó un S3 real ni un servidor con compresión; hueco de unión de rangos 0 (solo rangos contiguos).
 
 ## Tarea P5: documentación
 

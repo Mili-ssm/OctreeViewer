@@ -62,6 +62,7 @@ try {
     pageBudgetExhausted: lod.pageBudgetExhausted ?? null,
     pendingBlockIds: lod.pendingBlockIds?.length ?? null,
   };
+  result.pages = (await page.evaluate(() => window.__renderBench.workerMetrics()))?.buildWorker?.pages ?? null;
   const log = server.log;
   const first = log.find((entry) => entry.method === "GET")?.at ?? 0;
   const get = log.filter((entry) => entry.method === "GET");

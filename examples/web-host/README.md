@@ -71,6 +71,18 @@ y la generación/sintaxis del runtime y ambos workers autocontenidos. No sustitu
 de renderizado WebGPU en Chrome/Firefox: abrir el paquete generado con doble clic, cargar la
 muestra y comprobar la consola; comprobar también el arranque desde localhost.
 
+## Open a file over HTTP Range
+
+`index.html?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file from a server that answers
+`Range` (single range, `206`) and sends CORS headers (`Access-Control-Allow-Headers: Range, If-Range`,
+`Access-Control-Expose-Headers: Content-Range, ETag`). The workers read it with
+`http-range-source.mjs`: one suffix request opens a `v7.5-pre` file, later reads are single ranges
+pinned by `If-Range`, and a server that ignores `Range` (answers `200`) is an error.
+
+To measure with the RED-REF network (100 Mbit/s, 50 ms RTT), serve the repository root (for example
+`python3 -m http.server 8767`) and run `node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;
+`red-ref-server.mjs` can also be started alone (`--ignore-range` simulates a server without Range).
+
 ## Export a local single-file viewer
 
 To create a package that works offline and can be opened directly from `file://` without starting a

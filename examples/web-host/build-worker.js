@@ -38,6 +38,8 @@ const failedAsyncBlocks = new Set();
 const asyncReadCancelTokens = new Set();
 
 const workKinds = new Map();
+// `waves`: page reads started while none was in flight, i.e. sequential page round trips.
+const pageTotals = { reads: 0, waves: 0 };
 const asyncBlockTotals = { blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0 };
 const buildTotals = { builds: 0, scenes: 0, reused: 0, buildMs: 0, maxBuildMs: 0, viewsReceived: 0, viewsCoalesced: 0 };
 
@@ -58,6 +60,7 @@ function metricsSnapshot() {
         timeOrigin: performance.timeOrigin ?? null,
         busyByMessage: Object.fromEntries(workKinds),
         asyncBlocks: { ...asyncBlockTotals },
+        pages: { ...pageTotals },
         build: { ...buildTotals },
         wasmLinearMemoryBytes: wasmExports?.memory?.buffer.byteLength ?? null,
     };
@@ -145,6 +148,8 @@ function schedulePageReads(anchors) {
     for (const anchor of anchors) {
         if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
         if (pageReads.has(anchor)) continue;
+        if (pageReads.size === 0) pageTotals.waves += 1;
+        pageTotals.reads += 1;
         pageReads.add(anchor);
         void taskReader.loadPage(anchor).then((page) => {
             if (taskGeneration !== generation || taskReader !== reader) {
