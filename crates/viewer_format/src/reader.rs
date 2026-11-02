@@ -81,6 +81,8 @@ pub(crate) struct IndexedReader<R> {
     block_bounds: Arc<BTreeMap<BlockId, Vec<SpatialBounds>>>,
     /// Lazily read `v7.5-pre`: the block directory of the resident pages (`blocks` is empty).
     paged: Option<Arc<crate::lazy_pages::PageSource>>,
+    /// Reference spacing stored in the metadata block of an eagerly read `v7.5-pre` file.
+    stored_reference_spacing: Option<f64>,
     plan_owner: Arc<()>,
     attribute_range_cache: Arc<Mutex<VecDeque<CachedAttributeRange>>>,
     limits: FormatReaderLimits,
@@ -166,6 +168,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             blocks: Arc::new(blocks),
             block_bounds: Arc::new(block_bounds),
             paged: None,
+            stored_reference_spacing: None,
             attributes_attached: false,
             external_payloads_only: true,
             plan_owner: Arc::new(()),
@@ -240,6 +243,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             blocks: Arc::new(BTreeMap::new()),
             block_bounds: Arc::new(BTreeMap::new()),
             paged: Some(source),
+            stored_reference_spacing: None,
             plan_owner: Arc::new(()),
             attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
             limits,
@@ -303,7 +307,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             }
             // Eager view: every page is read and the global checks run. Lazy readers use
             // `PagedReader` instead.
-            let ((metadata, blocks, block_bounds), index_identity) =
+            let ((metadata, blocks, block_bounds), index_identity, reference_spacing) =
                 crate::paged_index::load_all(&mut reader, &limits)?;
             let attribute_file_length = split_attribute_file_length(&blocks)?;
             return Ok(Self {
@@ -319,6 +323,7 @@ impl<R: Read + Seek> IndexedReader<R> {
                 blocks: Arc::new(blocks),
                 block_bounds: Arc::new(block_bounds),
                 paged: None,
+                stored_reference_spacing: Some(reference_spacing),
                 plan_owner: Arc::new(()),
                 attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
                 limits,
@@ -377,6 +382,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             blocks: Arc::new(blocks),
             block_bounds: Arc::new(block_bounds),
             paged: None,
+            stored_reference_spacing: None,
             plan_owner: Arc::new(()),
             attribute_range_cache: Arc::new(Mutex::new(VecDeque::new())),
             limits,
@@ -421,6 +427,16 @@ impl<R: Read + Seek> IndexedReader<R> {
 
     pub fn has_attributes(&self) -> bool {
         !self.split || self.attributes_attached
+    }
+
+    /// Per-cloud reference spacing (RF-05): stored in `v7.5-pre`, otherwise computed from every
+    /// leaf of the resident hierarchy (always complete for the other formats).
+    pub fn reference_spacing(&self) -> Option<f64> {
+        match (&self.paged, self.stored_reference_spacing) {
+            (Some(source), _) => Some(source.reference_spacing()),
+            (None, Some(stored)) => Some(stored),
+            (None, None) => self.metadata.dataset().hierarchy().reference_spacing(),
+        }
     }
 
     /// Finite range over all node payloads, used consistently across LOD blocks.
@@ -876,6 +892,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             blocks: Arc::clone(&self.blocks),
             block_bounds: Arc::clone(&self.block_bounds),
             paged: self.paged.clone(),
+            stored_reference_spacing: self.stored_reference_spacing,
             plan_owner: Arc::clone(&self.plan_owner),
             attribute_range_cache: Arc::clone(&self.attribute_range_cache),
             limits: self.limits,

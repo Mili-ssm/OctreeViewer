@@ -50,7 +50,7 @@ pub use spatial::{
     AttributeDataType, AttributeDescriptor, BlockId, DEFAULT_LOD_PRIORITY_BYTES, FrustumPlane,
     HierarchySemantics, LodPriorityFallback, LodPriorityStats, LodSelection, LodSelectionConfig,
     LodSelectionError, NodeId, SpatialBounds, SpatialError, SpatialFrustum, SpatialHierarchy,
-    SpatialNode, SpatialQuery, SpatialStats, SpatialSubdivision,
+    SpatialNode, SpatialQuery, SpatialStats, SpatialSubdivision, reference_spacing,
 };
 pub use visibility::{VisibilityQuery, VisibleVoxel, VisibleVoxelBatch};
 pub use voxel_store::{

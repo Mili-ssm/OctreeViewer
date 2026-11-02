@@ -304,3 +304,33 @@ fn unloaded_anchor_without_points_is_not_dropped() {
         assert_eq!(anchors, (4..8).map(NodeId::new).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn reference_spacing_is_the_point_weighted_median_taking_the_smaller_on_a_tie() {
+    use viewer_core::reference_spacing;
+    assert_eq!(reference_spacing([]), None);
+    assert_eq!(reference_spacing([(5, 0.5)]), Some(0.5));
+    // 1 point at 0.25, 1 at 1.0, 3 at 0.5: the cumulative weight reaches half at 0.5.
+    assert_eq!(
+        reference_spacing([(1, 1.0), (3, 0.5), (1, 0.25)]),
+        Some(0.5)
+    );
+    // An exact half split picks the smaller value, whatever the input order.
+    assert_eq!(reference_spacing([(2, 1.0), (2, 0.25)]), Some(0.25));
+    assert_eq!(reference_spacing([(2, 0.25), (2, 1.0)]), Some(0.25));
+    // Without points every leaf weighs the same; non-positive spacings are ignored.
+    assert_eq!(
+        reference_spacing([(0, 4.0), (0, 1.0), (0, 2.0), (0, 0.0)]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn hierarchy_reference_spacing_needs_every_leaf_resident() {
+    let mut hierarchy = root_only();
+    assert_eq!(hierarchy.reference_spacing(), None);
+    load_all(&mut hierarchy);
+    // Leaves are the 64 level-6 nodes, each 1 point and spacing width / 8 = 1 / 8.
+    assert_eq!(hierarchy.reference_spacing(), Some(0.125));
+    assert_eq!(hierarchy.reference_spacing(), full().reference_spacing());
+}

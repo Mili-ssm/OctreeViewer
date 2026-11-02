@@ -999,3 +999,73 @@ fn lazy_attribute_range_covers_pages_that_are_not_loaded() {
         Err(FormatError::InvalidSchema)
     ));
 }
+
+/// RF-05: the reference spacing is the point-weighted median leaf spacing, stored in the metadata
+/// block, so a lazy reader reports it before any page is loaded and it never changes as pages
+/// are grafted.
+#[test]
+fn reference_spacing_is_stored_and_stable_while_pages_are_grafted() {
+    let tree = random_tree(9, 7, 20);
+    let (primary, attributes) = write_pair(V75, &tree, Some(2_000));
+    let eager = open_pair(primary.clone(), attributes);
+    let mut paged = PagedReader::open(Cursor::new(primary.clone())).unwrap();
+    let leaves: Vec<(u64, f64)> = all_pages(&mut paged)
+        .iter()
+        .flat_map(|(page, _)| page.nodes().to_vec())
+        .filter(|node| !node.has_children())
+        .map(|node| (node.point_count(), node.spacing()))
+        .collect();
+    let expected = viewer_core::reference_spacing(leaves).unwrap();
+    assert_eq!(eager.reference_spacing(), Some(expected));
+
+    let mut lazy =
+        FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
+    let source = std::sync::Arc::clone(lazy.page_source().unwrap());
+    assert_eq!(source.reference_spacing(), expected);
+    let mut pending: Vec<NodeId> = source.root_unloaded().to_vec();
+    assert!(!pending.is_empty());
+    while let Some(anchor) = pending.pop() {
+        pending.extend(lazy.read_page(anchor).unwrap().unloaded);
+        assert_eq!(source.reference_spacing(), expected);
+        assert_eq!(lazy.reference_spacing(), Some(expected));
+    }
+}
+
+fn patch_reference_spacing(bytes: &mut [u8], value: f64) {
+    let footer = bytes.len() - 40;
+    let index = u64::from_le_bytes(bytes[footer + 8..footer + 16].try_into().unwrap()) as usize;
+    let length = u64::from_le_bytes(bytes[footer + 16..footer + 24].try_into().unwrap()) as usize;
+    let reader = PagedReader::open(Cursor::new(bytes.to_vec())).unwrap();
+    let stored = reader.header().reference_spacing().to_le_bytes();
+    let at = bytes[index..index + length]
+        .windows(8)
+        .position(|window| window == stored)
+        .unwrap()
+        + index;
+    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    repair_index_and_footer(bytes);
+}
+
+#[test]
+fn reference_spacing_is_validated_and_checked_against_the_leaves() {
+    let tree = random_tree(9, 7, 20);
+    let primary = write_pair(V75, &tree, Some(2_000)).0;
+    let stored = PagedReader::open(Cursor::new(primary.clone()))
+        .unwrap()
+        .header()
+        .reference_spacing();
+    assert!(stored > 0.0 && stored.is_finite());
+    for bad in [f64::NAN, f64::INFINITY, 0.0, -stored] {
+        let mut bytes = primary.clone();
+        patch_reference_spacing(&mut bytes, bad);
+        assert!(PagedReader::open(Cursor::new(bytes)).is_err(), "{bad}");
+    }
+    // Well formed but not the median of the leaves: only readers that hold every page see it.
+    let mut bytes = primary;
+    patch_reference_spacing(&mut bytes, stored * 2.0);
+    assert!(PagedReader::open(Cursor::new(bytes.clone())).is_ok());
+    assert!(matches!(
+        FormatReader::new(Cursor::new(bytes)),
+        Err(FormatError::MalformedIndex(_))
+    ));
+}

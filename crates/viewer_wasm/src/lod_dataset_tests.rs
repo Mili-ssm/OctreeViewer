@@ -2545,6 +2545,30 @@ fn grafting_beyond_the_page_budget_evicts_the_oldest_unpinned_page() {
 }
 
 #[test]
+fn the_stored_reference_spacing_does_not_change_as_pages_are_grafted_or_evicted() {
+    let (dataset, _) = paged_dataset(150);
+    // Paged without a stored value: the leaves are not resident, so nothing is invented.
+    assert_eq!(dataset.reference_spacing(), None);
+    let mut dataset = dataset.with_reference_spacing(0.25);
+    dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();
+    assert_eq!(dataset.reference_spacing(), Some(0.25));
+    dataset.graft_page(page_below(3, 2, 30, 4.0, 6.0)).unwrap();
+    assert_eq!(dataset.page_stats().2, 1, "the first page was evicted");
+    assert_eq!(dataset.reference_spacing(), Some(0.25));
+}
+
+#[test]
+fn a_whole_hierarchy_computes_its_reference_spacing_from_all_leaves() {
+    let (dataset, _) = native_dataset(400);
+    // Without a stored value the dataset computes the median of its leaves' spacing.
+    assert_eq!(
+        dataset.reference_spacing(),
+        dataset.metadata.hierarchy().reference_spacing()
+    );
+    assert!(dataset.reference_spacing().is_some());
+}
+
+#[test]
 fn pinned_pages_are_never_evicted_and_a_full_budget_is_an_error() {
     let (mut dataset, released) = paged_dataset(150);
     dataset.graft_page(page_below(2, 1, 20, 0.0, 2.0)).unwrap();

@@ -158,6 +158,7 @@ pub(super) fn open_paged(
 fn with_page_source(dataset: LodDataset, source: &Arc<PageSource>) -> Result<LodDataset, JsValue> {
     let release_source = Arc::clone(source);
     dataset
+        .with_reference_spacing(source.reference_spacing())
         .with_pages(
             source.root_unloaded(),
             Box::new(move |anchor| release_source.release_page(anchor)),

@@ -168,6 +168,12 @@ impl<R: Read + Seek> FormatReader<R> {
         self.backend_mut().read_reserved(id, selection, reservation)
     }
 
+    /// Per-cloud reference spacing (RF-05): stored in `v7.5-pre`, computed from all leaves in the
+    /// other formats.
+    pub fn reference_spacing(&self) -> Option<f64> {
+        self.backend().reference_spacing()
+    }
+
     pub fn attribute_range(
         &self,
         schema_index: u32,

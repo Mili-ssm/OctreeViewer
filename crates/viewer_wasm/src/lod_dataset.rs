@@ -43,6 +43,8 @@ pub struct LodDataset {
     state_epoch: u64,
     /// CRS identity (`EPSG:code`) of a `v7.4-pre` cloud; older formats carry none.
     crs: Option<String>,
+    /// Reference spacing stored by the format (`v7.5-pre`); other formats compute it on demand.
+    stored_reference_spacing: Option<f64>,
     /// Present when the hierarchy is paged (`v7.5-pre`): pages are grafted and evicted at run time.
     pages: Option<PageResidency>,
     /// The last `graft_page` failed on the page budget and no page has been grafted since.
@@ -296,6 +298,7 @@ impl LodDataset {
             plan_memo: None,
             state_epoch: 0,
             crs: None,
+            stored_reference_spacing: None,
             pages: None,
             page_budget_exhausted: false,
         }
@@ -477,6 +480,20 @@ impl LodDataset {
 
     pub fn crs(&self) -> Option<&str> {
         self.crs.as_deref()
+    }
+
+    /// Uses the reference spacing the format stores for the whole cloud (`v7.5-pre`), whose
+    /// hierarchy is never resident in full.
+    pub fn with_reference_spacing(mut self, spacing: f64) -> Self {
+        self.stored_reference_spacing = Some(spacing);
+        self
+    }
+
+    /// Per-cloud reference spacing (RF-05). Paged clouds report the stored value, so grafting or
+    /// evicting pages never changes it; the other formats compute it from all their leaves.
+    pub fn reference_spacing(&self) -> Option<f64> {
+        self.stored_reference_spacing
+            .or_else(|| self.metadata.hierarchy().reference_spacing())
     }
 
     /// Selects the target cut for a view, or returns the previous selection when camera,

@@ -544,6 +544,37 @@ struct IndexedNode {
     children: Vec<NodeId>,
 }
 
+/// Reference spacing of a cloud (RF-05): the point-weighted median of its leaves' spacing, given
+/// as `(point count, spacing)` pairs. Spacings are sorted ascending and the first whose cumulative
+/// weight reaches half of the total wins, so an exact half picks the smaller value. A cloud
+/// without points weighs every leaf equally. `None` when there is no finite positive spacing.
+///
+/// `v7.5-pre` stores this value; the other formats compute it at open from all leaves.
+pub fn reference_spacing(leaves: impl IntoIterator<Item = (u64, f64)>) -> Option<f64> {
+    let mut leaves: Vec<(f64, u64)> = leaves
+        .into_iter()
+        .filter(|(_, spacing)| spacing.is_finite() && *spacing > 0.0)
+        .map(|(points, spacing)| (spacing, points))
+        .collect();
+    leaves.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    let weigh = |points: u64| u128::from(points);
+    let weighted_total: u128 = leaves.iter().map(|leaf| weigh(leaf.1)).sum();
+    let unit = weighted_total == 0;
+    let total = if unit {
+        leaves.len() as u128
+    } else {
+        weighted_total
+    };
+    let mut cumulative = 0_u128;
+    for (spacing, points) in &leaves {
+        cumulative += if unit { 1 } else { weigh(*points) };
+        if cumulative * 2 >= total {
+            return Some(*spacing);
+        }
+    }
+    None
+}
+
 /// Validated resident metadata index; point and block payloads are stored elsewhere.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpatialHierarchy {
@@ -718,6 +749,25 @@ impl SpatialHierarchy {
     /// Checks whether any node references the dataset-local block identifier.
     pub fn references_block(&self, block_id: BlockId) -> bool {
         self.block_ids.binary_search(&block_id).is_ok()
+    }
+
+    /// Per-cloud reference spacing (RF-05) over every leaf; see [`reference_spacing`]. `None` while
+    /// any anchor is unloaded, because the true leaves are then not resident.
+    pub fn reference_spacing(&self) -> Option<f64> {
+        if !self.unloaded.is_empty() {
+            return None;
+        }
+        reference_spacing(
+            self.nodes
+                .values()
+                .filter(|indexed| indexed.children.is_empty())
+                .map(|indexed| {
+                    (
+                        indexed.metadata.point_count(),
+                        indexed.metadata.representative_spacing(),
+                    )
+                }),
+        )
     }
 
     /// Whether an existing node has no structural children.

@@ -51,6 +51,9 @@ pub struct PagedHeader {
     total_nodes: u64,
     total_blocks: u64,
     pages_start: u64,
+    /// Point-weighted median leaf spacing of the whole cloud (RF-05), see
+    /// [`viewer_core::reference_spacing`]. Stored because a lazy reader never holds every leaf.
+    reference_spacing: f64,
     /// Range over every node of the file, per attribute and component; `None` when no node has a
     /// finite value. Stored here because a lazy reader never holds every page.
     attribute_ranges: Vec<Vec<Option<[f64; 2]>>>,
@@ -136,6 +139,12 @@ impl PagedHeader {
     /// Declared block total: informative until every page has been read (`verify`).
     pub fn total_blocks(&self) -> u64 {
         self.total_blocks
+    }
+
+    /// Per-cloud reference spacing in CRS units: the point-weighted median of the spacing of every
+    /// leaf. Fixed for the file, whichever pages are resident.
+    pub fn reference_spacing(&self) -> f64 {
+        self.reference_spacing
     }
 
     /// File offset where the block payloads end and the child pages begin.
@@ -274,6 +283,10 @@ fn parse_header_block(
     let total_nodes = cursor.u64()?;
     let total_blocks = cursor.u64()?;
     let pages_start = cursor.u64()?;
+    let reference_spacing = cursor.f64()?;
+    if !reference_spacing.is_finite() || reference_spacing <= 0.0 {
+        return Err(FormatError::MalformedIndex("invalid reference spacing"));
+    }
     let mut attribute_ranges = Vec::with_capacity(schema.len());
     for attribute in &schema {
         let mut row = Vec::with_capacity(attribute.component_count() as usize);
@@ -342,6 +355,7 @@ fn parse_header_block(
         total_nodes,
         total_blocks,
         pages_start,
+        reference_spacing,
         attribute_ranges,
     })
 }
@@ -755,15 +769,18 @@ fn read_all_pages<R: Read + Seek>(
     })
 }
 
+/// The assembled index, its identity (index offset, length, CRC) and the stored reference spacing.
+pub(crate) type LoadedIndex = (ParsedIndex, (u64, u64, u32), f64);
+
 /// Reads every page and assembles the whole-index view that `FormatReader` serves, with the
 /// global checks (contiguous blocks, totals) that single pages cannot make.
 pub(crate) fn load_all<R: Read + Seek>(
     reader: &mut R,
     limits: &FormatReaderLimits,
-) -> Result<(ParsedIndex, (u64, u64, u32)), FormatError> {
+) -> Result<LoadedIndex, FormatError> {
     let all = read_all_pages(reader, limits)?;
     let parsed = assemble(&all.header, &all.pages)?;
-    Ok((parsed, all.index_identity))
+    Ok((parsed, all.index_identity, all.header.reference_spacing))
 }
 
 /// Sizes of a fully verified `v7.5-pre` index.
@@ -913,6 +930,15 @@ pub(crate) fn assemble_with(
         }
     }
     if !partial {
+        let leaves = page_nodes
+            .iter()
+            .filter(|node| !node.has_children)
+            .map(|node| (node.point_count, node.spacing));
+        if viewer_core::reference_spacing(leaves) != Some(header.reference_spacing) {
+            return Err(FormatError::MalformedIndex(
+                "reference spacing does not match the leaves",
+            ));
+        }
         validate_attribute_layout(&page_nodes)?;
         validate_block_layout(&nodes, &blocks, header.pages_start)?;
     }
@@ -1087,6 +1113,12 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
         plan[index].children = children;
     }
     let root_index = index_of[&root.id()];
+    let reference_spacing = viewer_core::reference_spacing(
+        plan.iter()
+            .filter(|node| node.children.is_empty())
+            .map(|node| (node.node.point_count(), node.spacing)),
+    )
+    .ok_or(FormatError::InvalidMetadata("no leaf has a valid spacing"))?;
 
     // Breadth-first page planning: a page's child pages are queued together, so siblings are
     // contiguous in the file.
@@ -1265,6 +1297,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
         out.u64(plan.len() as u64)?;
         out.u64(blocks.len() as u64)?;
         out.u64(pages_start)?;
+        out.f64(reference_spacing)?;
         for row in global_attribute_ranges(
             hierarchy.attributes(),
             plan.iter()

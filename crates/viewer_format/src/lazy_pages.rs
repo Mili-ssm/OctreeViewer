@@ -93,6 +93,12 @@ impl PageSource {
             .attribute_range(schema_index, component)
     }
 
+    /// Reference spacing of the cloud (RF-05), from the metadata block: it does not change as
+    /// pages are loaded or released.
+    pub fn reference_spacing(&self) -> f64 {
+        self.lock().core.header().reference_spacing()
+    }
+
     /// Nodes of the root page whose child pages are not loaded.
     pub fn root_unloaded(&self) -> &[NodeId] {
         &self.root_unloaded
