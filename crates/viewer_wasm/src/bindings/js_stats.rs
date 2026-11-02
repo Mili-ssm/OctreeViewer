@@ -178,6 +178,17 @@ pub(super) fn add_cache_activity(
         )?;
     }
     js_sys::Reflect::set(value, &"cacheActivity".into(), &activity)?;
+    let (pages, page_bytes, page_evictions) = dataset.page_stats();
+    let page_activity = js_sys::Object::new();
+    for (name, count) in [
+        ("residentPages", pages as f64),
+        ("pageBytes", page_bytes as f64),
+        ("pageEvictions", page_evictions as f64),
+        ("residentNodes", dataset.resident_node_count() as f64),
+    ] {
+        js_sys::Reflect::set(&page_activity, &name.into(), &JsValue::from_f64(count))?;
+    }
+    js_sys::Reflect::set(value, &"pageActivity".into(), &page_activity)?;
     js_sys::Reflect::set(
         value,
         &"pendingTargetEvictions".into(),
@@ -272,6 +283,12 @@ pub(super) fn lod_view_stats_to_js(
         pending_block_ids.push(&JsValue::from_str(&block_id.get().to_string()));
     }
     js_sys::Reflect::set(&value, &"pendingBlockIds".into(), &pending_block_ids)?;
+    // Hierarchy pages the target needs, highest projected error first (paged formats only).
+    let pending_page_anchors = js_sys::Array::new();
+    for anchor in &stats.pending_page_anchors {
+        pending_page_anchors.push(&JsValue::from_str(&anchor.get().to_string()));
+    }
+    js_sys::Reflect::set(&value, &"pendingPageAnchors".into(), &pending_page_anchors)?;
     js_sys::Reflect::set(
         &value,
         &"uncoveredNodes".into(),

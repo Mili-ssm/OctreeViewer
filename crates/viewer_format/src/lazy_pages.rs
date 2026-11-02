@@ -49,6 +49,7 @@ struct State {
 pub struct PageSource {
     state: Mutex<State>,
     root_unloaded: Vec<NodeId>,
+    declared_nodes: u64,
 }
 
 impl PageSource {
@@ -60,6 +61,7 @@ impl PageSource {
         let root = core.root_page().clone();
         let mut source = Self {
             root_unloaded: Vec::new(),
+            declared_nodes: core.header().total_nodes(),
             state: Mutex::new(State {
                 core,
                 frame,
@@ -72,6 +74,11 @@ impl PageSource {
         let graft = source.lock().add_page(&root, None)?;
         source.root_unloaded = graft.unloaded.clone();
         Ok((Arc::new(source), graft))
+    }
+
+    /// Node total the file declares (informative until every page has been read).
+    pub fn declared_nodes(&self) -> u64 {
+        self.declared_nodes
     }
 
     /// Nodes of the root page whose child pages are not loaded.

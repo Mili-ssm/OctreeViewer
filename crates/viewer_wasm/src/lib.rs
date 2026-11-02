@@ -42,7 +42,7 @@ mod spool_host;
 #[cfg(target_arch = "wasm32")]
 pub use async_format_reader::{
     WasmAsyncFormatReader, WasmAsyncLodReadRequest, WasmAsyncLodReadResult, WasmAsyncReadBudget,
-    WasmAsyncReadCancelToken,
+    WasmAsyncReadCancelToken, WasmPageGraft,
 };
 #[cfg(target_arch = "wasm32")]
 pub use bindings::{WasmSceneBuilder, WasmVoxelViewer};

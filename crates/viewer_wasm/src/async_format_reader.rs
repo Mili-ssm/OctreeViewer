@@ -3,10 +3,11 @@ use std::{cell::Cell, io::Cursor, rc::Rc, sync::Arc};
 
 use js_sys::{ArrayBuffer, Float32Array, Promise, Uint8Array};
 use serde::Serialize;
-use viewer_core::{AttributeValues, BlockId, PointBatch};
+use viewer_core::{AttributeValues, BlockId, NodeId, PointBatch};
 use viewer_format::{
-    FormatReader, FormatReaderLimits, PayloadReadRange, ReadBudget, ReadReservation, ReadSelection,
-    ReadSource, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES, SelectedRead,
+    FormatReader, FormatReaderLimits, PageGraft, PagedCore, PayloadReadRange, ReadBudget,
+    ReadReservation, ReadSelection, ReadSource, SPLIT_FOOTER_BYTES, SPLIT_HEADER_BYTES,
+    SelectedRead, TAIL_READ_BYTES,
 };
 use wasm_bindgen::{JsCast, prelude::*};
 use wasm_bindgen_futures::JsFuture;
@@ -74,6 +75,20 @@ pub struct WasmAsyncLodReadResult {
     reservation: Option<ReadReservation>,
     read_ms: f64,
     decode_ms: f64,
+}
+
+/// A validated hierarchy page in flight between the reader and the dataset that grafts it.
+#[wasm_bindgen]
+pub struct WasmPageGraft {
+    graft: Option<PageGraft>,
+}
+
+impl WasmPageGraft {
+    pub(crate) fn take(&mut self) -> Result<PageGraft, JsValue> {
+        self.graft
+            .take()
+            .ok_or_else(|| err("page graft was already used"))
+    }
 }
 
 #[wasm_bindgen]
@@ -196,33 +211,62 @@ impl WasmAsyncFormatReader {
             |budget| budget.inner,
         );
         let primary_len = blob_length(&primary)?;
-        let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
-        let footer = read_range(
-            &primary,
-            primary_len
-                .checked_sub(SPLIT_FOOTER_BYTES)
-                .ok_or_else(|| err("primary Blob is shorter than footer"))?,
-            SPLIT_FOOTER_BYTES,
-        )
-        .await?;
-        let (offset, length) =
-            Reader::split_index_range(primary_len, &header, &footer, FormatReaderLimits::default())
-                .map_err(format_error)?;
-        let metadata_reservation = budget
-            .try_reserve(length)
-            .map_err(format_error)?
-            .ok_or_else(|| {
+        // One tail read serves both layouts: its last 40 bytes are the footer, and a paged file's
+        // metadata block and root page sit right before it.
+        let tail_len = primary_len.min(TAIL_READ_BYTES);
+        if tail_len < SPLIT_FOOTER_BYTES {
+            return Err(err("primary Blob is shorter than footer"));
+        }
+        let tail = read_range(&primary, primary_len - tail_len, tail_len).await?;
+        let footer = tail[tail.len() - SPLIT_FOOTER_BYTES as usize..].to_vec();
+        let (reader, metadata_reservation) = if PagedCore::is_paged_footer(&footer) {
+            let limits = FormatReaderLimits::default();
+            let location =
+                PagedCore::locate_index(primary_len, &footer, &limits).map_err(format_error)?;
+            let metadata_reservation = budget
+                .try_reserve(location.length)
+                .map_err(format_error)?
+                .ok_or_else(|| {
                 err("shared async read budget is unavailable for the resident format index")
             })?;
-        let index = read_range(&primary, offset, length).await?;
-        let mut reader = Reader::from_split_buffers(
-            primary_len,
-            &header,
-            &footer,
-            &index,
-            FormatReaderLimits::default(),
-        )
-        .map_err(format_error)?;
+            let tail_start = primary_len - tail_len;
+            let index = if location.offset >= tail_start {
+                let start = (location.offset - tail_start) as usize;
+                tail[start..tail.len() - SPLIT_FOOTER_BYTES as usize].to_vec()
+            } else {
+                read_range(&primary, location.offset, location.length).await?
+            };
+            let reader = Reader::paged_external(primary_len, &footer, &index, limits)
+                .map_err(format_error)?;
+            (reader, metadata_reservation)
+        } else {
+            drop(tail);
+            let header = read_range(&primary, 0, SPLIT_HEADER_BYTES).await?;
+            let (offset, length) = Reader::split_index_range(
+                primary_len,
+                &header,
+                &footer,
+                FormatReaderLimits::default(),
+            )
+            .map_err(format_error)?;
+            let metadata_reservation = budget
+                .try_reserve(length)
+                .map_err(format_error)?
+                .ok_or_else(|| {
+                    err("shared async read budget is unavailable for the resident format index")
+                })?;
+            let index = read_range(&primary, offset, length).await?;
+            let reader = Reader::from_split_buffers(
+                primary_len,
+                &header,
+                &footer,
+                &index,
+                FormatReaderLimits::default(),
+            )
+            .map_err(format_error)?;
+            (reader, metadata_reservation)
+        };
+        let mut reader = reader;
         if let Some(blob) = attributes.as_ref() {
             let n = blob_length(blob)?;
             if n < SPLIT_HEADER_BYTES + SPLIT_FOOTER_BYTES {
@@ -297,8 +341,26 @@ impl WasmAsyncFormatReader {
         set(&descriptor, "dataMin", &number_array(&data_bounds.min()))?;
         set(&descriptor, "dataMax", &number_array(&data_bounds.max()))?;
 
+        let paged = self.shared.reader.page_source();
+        // `nodeCount` is the declared total for a paged file (its hierarchy is not resident) and
+        // `maxLevel` the deepest resident node; paged files carry no per-node descriptor.
+        let node_count = paged.map_or_else(
+            || hierarchy.stats().node_count as f64,
+            |source| source.declared_nodes() as f64,
+        );
+        set(&descriptor, "paged", &JsValue::from_bool(paged.is_some()))?;
+        set(&descriptor, "nodeCount", &JsValue::from_f64(node_count))?;
+        set(
+            &descriptor,
+            "maxLevel",
+            &JsValue::from_f64(f64::from(hierarchy.stats().max_level)),
+        )?;
         let nodes = js_sys::Array::new();
-        let mut pending = vec![hierarchy.root_id()];
+        let mut pending = if paged.is_some() {
+            Vec::new()
+        } else {
+            vec![hierarchy.root_id()]
+        };
         while let Some(node_id) = pending.pop() {
             let node = hierarchy
                 .node(node_id)
@@ -373,6 +435,28 @@ impl WasmAsyncFormatReader {
         set(&descriptor, "attributeSchema", &schema.into())?;
         set(&descriptor, "attributeRanges", &attribute_ranges.into())?;
         Ok(descriptor.into())
+    }
+
+    /// Fetches, validates and registers the hierarchy page hanging from `anchor` (a decimal node
+    /// id). The result is grafted with `graftPage` on the viewer or builder that owns the
+    /// hierarchy. Page reads have no `ReadBudget`: the dataset's page budget bounds them.
+    #[wasm_bindgen(js_name = loadPage)]
+    pub async fn load_page(&self, anchor: String) -> Result<WasmPageGraft, JsValue> {
+        let id = NodeId::new(
+            anchor
+                .parse()
+                .map_err(|_| err("anchor must be an unsigned 64-bit integer string"))?,
+        );
+        let source = self
+            .shared
+            .reader
+            .page_source()
+            .ok_or_else(|| err("the format is not paged"))?
+            .clone();
+        let range = source.page_range(id).map_err(format_error)?;
+        let bytes = read_range(&self.shared.primary, range.offset, range.length).await?;
+        let graft = source.accept_page(id, &bytes).map_err(format_error)?;
+        Ok(WasmPageGraft { graft: Some(graft) })
     }
 
     /// Plans a block result with one shared reservation, ready for independent async execution.
@@ -781,4 +865,11 @@ fn err(message: &str) -> JsValue {
 }
 fn format_error(error: impl std::fmt::Display) -> JsValue {
     err(&error.to_string())
+}
+
+impl WasmAsyncFormatReader {
+    /// The metadata-only reader behind this facade (root page only when the format is paged).
+    pub(crate) fn format_reader(&self) -> &Reader {
+        &self.shared.reader
+    }
 }

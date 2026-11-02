@@ -195,6 +195,11 @@ pub struct PagedCore {
 }
 
 impl PagedCore {
+    /// Whether `footer` (the last 40 bytes of a file) carries the `v7.5-pre` footer magic.
+    pub fn is_paged_footer(footer: &[u8]) -> bool {
+        footer.len() == FOOTER_SIZE as usize && footer[..8] == *LAYOUT.footer_magic()
+    }
+
     /// Parses the 40-byte footer (the last bytes of the file) and checks the index range.
     pub fn locate_index(
         file_length: u64,

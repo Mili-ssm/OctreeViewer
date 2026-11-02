@@ -9,10 +9,14 @@ use super::{
     js_stats::{
         accumulate_browser_read_delta, reset_browser_read_stats, snapshot_browser_read_stats,
     },
-    lod::{insert_async_block, lod_update_stats_to_js, open_descriptor, open_format},
+    lod::{
+        graft_page, insert_async_block, lod_update_stats_to_js, open_descriptor, open_format,
+        open_paged,
+    },
     selected_range_to_js,
 };
 use crate::{
+    WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
     lod_driver::resolve_color_selection,
     lod_session::LodSession,
@@ -80,6 +84,40 @@ impl WasmSceneBuilder {
             &JsValue::from_f64(visual_scale),
         )?;
         Ok(result.into())
+    }
+
+    /// Opens a paged format: the reader's root page is resident, other pages arrive with
+    /// `graftPage` (see `lod.pendingPageAnchors` in `update`).
+    #[wasm_bindgen(js_name = openPagedLodDataset)]
+    pub fn open_paged_lod_dataset(
+        &mut self,
+        reader: &WasmAsyncFormatReader,
+        cache_bytes: u32,
+    ) -> Result<JsValue, JsValue> {
+        let (dataset, async_format_context) = open_paged(reader, cache_bytes)?;
+        let visual_scale = dataset.visual_scale();
+        self.install(LodSession::External(dataset), async_format_context, None);
+        let result = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &result,
+            &"status".into(),
+            &JsValue::from_str("metadata_ready"),
+        )?;
+        js_sys::Reflect::set(
+            &result,
+            &"visualScale".into(),
+            &JsValue::from_f64(visual_scale),
+        )?;
+        Ok(result.into())
+    }
+
+    /// Grafts a page returned by `WasmAsyncFormatReader.loadPage`.
+    #[wasm_bindgen(js_name = graftPage)]
+    pub fn graft_page(&mut self, page: WasmPageGraft) -> Result<(), JsValue> {
+        let core = self.core_mut()?;
+        graft_page(core.session_mut().dataset_mut(), page)?;
+        core.block_inserted();
+        Ok(())
     }
 
     /// Opens the random-access format from a Blob; the builder reads blocks itself.

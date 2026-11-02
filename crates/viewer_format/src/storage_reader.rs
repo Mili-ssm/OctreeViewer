@@ -330,6 +330,23 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
     }
 }
 
+impl FormatReader<std::io::Cursor<Vec<u8>>> {
+    /// Lazy `v7.5-pre` reader whose payloads and pages are fetched by the caller (browser Blobs).
+    /// `footer` is the last 40 bytes of the file and `index` the index region it names.
+    pub fn paged_external(
+        file_length: u64,
+        footer: &[u8],
+        index: &[u8],
+        limits: FormatReaderLimits,
+    ) -> Result<Self, FormatError> {
+        let location = crate::PagedCore::locate_index(file_length, footer, &limits)?;
+        let core = crate::PagedCore::from_index(index, location, limits)?;
+        Ok(Self {
+            backend: IndexedReader::from_paged_core(std::io::Cursor::new(Vec::new()), core, true)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -437,22 +454,5 @@ mod tests {
             fork.read_display_colors(BlockId::new(1)).unwrap(),
             vec![ColorRgb::new(10, 20, 30)]
         );
-    }
-}
-
-impl FormatReader<std::io::Cursor<Vec<u8>>> {
-    /// Lazy `v7.5-pre` reader whose payloads and pages are fetched by the caller (browser Blobs).
-    /// `footer` is the last 40 bytes of the file and `index` the index region it names.
-    pub fn paged_external(
-        file_length: u64,
-        footer: &[u8],
-        index: &[u8],
-        limits: FormatReaderLimits,
-    ) -> Result<Self, FormatError> {
-        let location = crate::PagedCore::locate_index(file_length, footer, &limits)?;
-        let core = crate::PagedCore::from_index(index, location, limits)?;
-        Ok(Self {
-            backend: IndexedReader::from_paged_core(std::io::Cursor::new(Vec::new()), core, true)?,
-        })
     }
 }

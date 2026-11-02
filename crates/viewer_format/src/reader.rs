@@ -1114,7 +1114,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         if self.external_payloads_only {
             return Err(FormatError::ExternalPayloadBuffersRequired);
         }
-        let range = self.payload_range(&block, column, attribute_width.is_some())?;
+        let range = self.payload_range(block, column, attribute_width.is_some())?;
         let size = usize::try_from(column.stored_length)
             .map_err(|_| FormatError::SizeOutOfRange(column.stored_length))?;
         let mut stored = Vec::new();

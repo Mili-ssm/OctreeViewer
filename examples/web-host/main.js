@@ -483,7 +483,7 @@ function handleWorkerMessage(event) {
             benchmarkRun.nodeCount = data.opened.nodeCount;
             benchmarkRun.sourcePointCount = data.opened.sourcePointCount ?? null;
         }
-        statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes · selecting visible blocks…`;
+        statusRoot.textContent = `${data.name}: ${data.opened.nodeCount} nodes${data.opened.paged ? " (declared, paged)" : ""} · selecting visible blocks…`;
     } else if (data.type === "lod") {
         latestLodStats = data.lod;
         updateProgressiveLoadState(data.lod);

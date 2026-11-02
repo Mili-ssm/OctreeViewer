@@ -126,9 +126,35 @@ function runBuild() {
             type: "lod", gen: generation, epoch: result.epoch, viewEpoch: view.epoch, lod: result.lod,
         });
     }
+    schedulePageReads(result.lod.pendingPageAnchors);
     refreshAsyncReads(retryFailedNext);
     retryFailedNext = false;
     if (result.needsRefinement) requestBuild();
+}
+
+// Hierarchy pages of a paged format load like blocks: the LOD names the anchors it lacks.
+const pageReads = new Set();
+function schedulePageReads(anchors) {
+    if (!reader || !builder || !anchors?.length) return;
+    const taskReader = reader;
+    const taskGeneration = generation;
+    for (const anchor of anchors) {
+        if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
+        if (pageReads.has(anchor)) continue;
+        pageReads.add(anchor);
+        void taskReader.loadPage(anchor).then((page) => {
+            if (taskGeneration !== generation || taskReader !== reader) {
+                page.free();
+                return;
+            }
+            builder.graftPage(page);
+            requestBuild();
+        }).catch((error) => {
+            if (taskGeneration === generation) postError("asyncPageRead", error, taskGeneration);
+        }).finally(() => {
+            pageReads.delete(anchor);
+        });
+    }
 }
 
 // Applies the planner's priority list to the scheduler, then starts reads for free slots.
@@ -271,9 +297,12 @@ async function openDataset(data) {
     const nextBuilder = new WasmSceneBuilder(maxVoxels, maxEstimatedBytes);
     const descriptor = nextReader.lodDatasetDescriptor(data.cacheBytes);
     const opened = {
-        ...nextBuilder.openLodDataset(descriptor),
-        nodeCount: descriptor.nodes.length,
-        maxLevel: descriptor.nodes.reduce((max, node) => Math.max(max, node.level), 0),
+        ...(descriptor.paged
+            ? nextBuilder.openPagedLodDataset(nextReader, data.cacheBytes)
+            : nextBuilder.openLodDataset(descriptor)),
+        nodeCount: descriptor.nodeCount,
+        maxLevel: descriptor.maxLevel,
+        paged: descriptor.paged,
         coordinateOrigin: new Float64Array(descriptor.coordinateOrigin),
         boundsMin: new Float64Array(descriptor.dataMin),
         boundsMax: new Float64Array(descriptor.dataMax),

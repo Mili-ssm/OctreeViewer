@@ -336,6 +336,7 @@ function postLodProgress(lod, afterRenderFrame = false) {
     }
     const targetReached = lod.coverageComplete
         && lod.pendingBlockIds.length === 0
+        && (lod.pendingPageAnchors?.length ?? 0) === 0
         && lod.lodStagePixels <= lod.targetVoxelPixels;
     if (afterRenderFrame && targetLodMs === null && targetReached) {
         targetLodMs = now - targetLodStartedAt;
@@ -370,7 +371,42 @@ function postLodProgress(lod, afterRenderFrame = false) {
     });
 }
 
+// Hierarchy pages of a paged format load like blocks: the LOD names the anchors it lacks.
+const pageReads = new Set();
+function schedulePageReads() {
+    if (!asyncFormatReader || !viewer || typeof viewer.pendingPageAnchors !== "function") return;
+    const reader = asyncFormatReader;
+    const generation = datasetGeneration;
+    for (const anchor of viewer.pendingPageAnchors()) {
+        if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
+        if (pageReads.has(anchor)) continue;
+        pageReads.add(anchor);
+        void reader.loadPage(anchor).then((page) => {
+            messageQueue = messageQueue.then(() => {
+                if (generation !== datasetGeneration || reader !== asyncFormatReader) {
+                    page.free();
+                    return;
+                }
+                viewer.graftPage(page);
+                const lod = viewer.updateLod(targetVoxelPixels);
+                self.postMessage({ type: "lod", lod });
+                recordLodMessage("asyncPage", lod);
+                postLodProgress(lod);
+            });
+            return messageQueue;
+        }).catch((error) => {
+            if (generation === datasetGeneration) {
+                self.postMessage({ type: "error", operation: "asyncPageRead", message: String(error) });
+            }
+        }).finally(() => {
+            pageReads.delete(anchor);
+            if (generation === datasetGeneration) scheduleAsyncLodRead();
+        });
+    }
+}
+
 function scheduleAsyncLodRead(retryFailed = false) {
+    schedulePageReads();
     if (!asyncFormatReader || !viewer || !asyncLodScheduler) return;
     const pending = typeof viewer.pendingAsyncLodBlocks === "function"
         ? viewer.pendingAsyncLodBlocks()
@@ -622,7 +658,7 @@ function syncBuildView(force = false, retryFailed = false) {
 }
 
 function lodStillLoading(lod) {
-    return !lod.lodError && (lod.pendingBlockIds.length > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
+    return !lod.lodError && (lod.pendingBlockIds.length > 0 || (lod.pendingPageAnchors?.length ?? 0) > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
 }
 
 function applyBuiltLod(lod, source) {
@@ -749,9 +785,12 @@ function startAsyncDataset(data, requestId = null) {
             }
             const descriptor = reader.lodDatasetDescriptor(data.cacheBytes);
             const opened = {
-                ...viewer.openLodDataset(descriptor),
-                nodeCount: descriptor.nodes.length,
-                maxLevel: descriptor.nodes.reduce((max, node) => Math.max(max, node.level), 0),
+                ...(descriptor.paged
+                    ? viewer.openPagedLodDataset(reader, data.cacheBytes)
+                    : viewer.openLodDataset(descriptor)),
+                nodeCount: descriptor.nodeCount,
+                maxLevel: descriptor.maxLevel,
+                paged: descriptor.paged,
                 coordinateOrigin: new Float64Array(descriptor.coordinateOrigin),
                 boundsMin: new Float64Array(descriptor.dataMin),
                 boundsMax: new Float64Array(descriptor.dataMax),

@@ -16,7 +16,8 @@ use super::{
     },
 };
 use crate::{
-    LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
+    DEFAULT_PAGE_BUDGET_BYTES, LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
+    PageInsert, WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
     lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view},
     lod_metadata::LodDatasetDescriptor,
@@ -104,6 +105,80 @@ pub(super) fn open_descriptor(
         .build()
         .map_err(|error| JsValue::from_str(&error))?;
     Ok((dataset, async_format_context))
+}
+
+/// Builds the dataset of a paged format: the root page's nodes are resident, every other page is
+/// grafted later with [`graft_page`]. Attribute ranges come from the root page's nodes.
+pub(super) fn open_paged(
+    reader: &WasmAsyncFormatReader,
+    cache_bytes: u32,
+) -> Result<(LodDataset, Option<AsyncFormatContext>), JsValue> {
+    let format = reader.format_reader();
+    let source = format
+        .page_source()
+        .ok_or_else(|| JsValue::from_str("the format is not paged"))?
+        .clone();
+    let metadata = format
+        .format_metadata()
+        .viewer_dataset()
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let crs = format
+        .format_metadata()
+        .global_frame()
+        .and_then(|_| format.format_metadata().crs())
+        .map(str::to_owned);
+    let mut attribute_ranges = Vec::new();
+    for (schema_index, attribute) in metadata.hierarchy().attributes().iter().enumerate() {
+        let mut row = Vec::new();
+        for component in 0..attribute.component_count() {
+            row.push(
+                format
+                    .attribute_range(schema_index as u32, component)
+                    .map_err(|error| JsValue::from_str(&error.to_string()))?,
+            );
+        }
+        attribute_ranges.push(row);
+    }
+    let unloaded = source.root_unloaded().to_vec();
+    let release_source = Arc::clone(&source);
+    let dataset = LodDataset::from_shared_metadata_and_visual_scale(
+        metadata,
+        format.format_metadata().visual_scale(),
+        cache_bytes as usize,
+    )
+    .with_crs(crs)
+    .with_pages(
+        &unloaded,
+        Box::new(move |anchor| release_source.release_page(anchor)),
+        DEFAULT_PAGE_BUDGET_BYTES,
+    )
+    .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let context = AsyncFormatContext {
+        has_attributes: format.has_attributes(),
+        attribute_ranges,
+    };
+    Ok((dataset, Some(context)))
+}
+
+/// Grafts a page fetched by the reader into `dataset`, evicting least-recently-used pages that
+/// the cut does not need when the page budget is full.
+pub(super) fn graft_page(
+    dataset: &mut LodDataset,
+    mut graft: WasmPageGraft,
+) -> Result<(), JsValue> {
+    let graft = graft.take()?;
+    let anchor = graft
+        .anchor
+        .ok_or_else(|| JsValue::from_str("the root page is grafted at open"))?;
+    dataset
+        .graft_page(PageInsert {
+            anchor,
+            number: graft.number,
+            nodes: graft.nodes,
+            unloaded: graft.unloaded,
+            bytes: graft.encoded_len,
+        })
+        .map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
 /// A format session with its read counters and the `format_ready` metadata object.
@@ -303,10 +378,61 @@ pub(super) fn insert_async_block(
 
 #[wasm_bindgen]
 impl WasmVoxelViewer {
+    /// Opens a paged format: the reader's root page is resident, other pages arrive with
+    /// `graftPage` as the LOD asks for them (`pendingPageAnchors`).
+    #[wasm_bindgen(js_name = openPagedLodDataset)]
+    pub fn open_paged_lod_dataset(
+        &mut self,
+        reader: &WasmAsyncFormatReader,
+        cache_bytes: u32,
+    ) -> Result<JsValue, JsValue> {
+        let (dataset, async_format_context) = open_paged(reader, cache_bytes)?;
+        let result = self.open_lod_dataset_from(dataset, async_format_context)?;
+        Ok(result)
+    }
+
+    /// Pages the last `updateLod` needed and lacked, highest projected error first.
+    #[wasm_bindgen(js_name = pendingPageAnchors)]
+    pub fn pending_page_anchors(&self) -> js_sys::Array {
+        self.last_lod_stats
+            .as_ref()
+            .map(|stats| {
+                stats
+                    .0
+                    .pending_page_anchors
+                    .iter()
+                    .map(|id| JsValue::from_str(&id.get().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Grafts a page returned by `WasmAsyncFormatReader.loadPage`.
+    #[wasm_bindgen(js_name = graftPage)]
+    pub fn graft_page(&mut self, page: WasmPageGraft) -> Result<(), JsValue> {
+        let session = self
+            .lod_session
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        graft_page(session.dataset_mut(), page)?;
+        self.lod_dirty = true;
+        Ok(())
+    }
+
     /// Opens resident hierarchy metadata for decoded block streaming.
     #[wasm_bindgen(js_name = openLodDataset)]
     pub fn open_lod_dataset(&mut self, descriptor: JsValue) -> Result<JsValue, JsValue> {
         let (dataset, async_format_context) = open_descriptor(descriptor)?;
+        self.open_lod_dataset_from(dataset, async_format_context)
+    }
+}
+
+impl WasmVoxelViewer {
+    fn open_lod_dataset_from(
+        &mut self,
+        dataset: LodDataset,
+        async_format_context: Option<AsyncFormatContext>,
+    ) -> Result<JsValue, JsValue> {
         let result = js_sys::Object::new();
         js_sys::Reflect::set(
             &result,
@@ -332,7 +458,10 @@ impl WasmVoxelViewer {
         self.gpu_scene_dirty = false;
         Ok(result.into())
     }
+}
 
+#[wasm_bindgen]
+impl WasmVoxelViewer {
     /// Opens the project's random-access format from a Blob; call from a dedicated worker.
     #[wasm_bindgen(js_name = openFormatDataset)]
     pub fn open_format_dataset(
