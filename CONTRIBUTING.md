@@ -80,5 +80,5 @@ Fuente única de las reglas.
   [requisitos](docs/requirements.md#preguntas-abiertas).
 - **Benchmarks**: las cifras no se trasladan entre revisiones, perfiles, navegadores, datasets ni
   equipos; registrar el perfil. `fast` es para tests; `perf` (`opt-level` 3, LTO thin) para
-  benchmarks nativos; `release` (`opt-level` "s", LTO completo) es el de producción. No son
+  benchmarks nativos; `release` (`opt-level` 3, LTO completo; desde el 02-11-2026, antes "s") es el de producción. No son
   intercambiables.
