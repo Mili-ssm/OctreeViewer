@@ -28,7 +28,7 @@ use crate::pipeline::{
 use crate::report::{ConversionProgress, ConversionStage, emit_progress};
 use crate::source::{SourceInfo, next_descriptor};
 
-const MAX_SPOOL_RECORD_BYTES: usize = 55 + 1 + MAX_EXTRA_BYTES_PER_POINT;
+pub(crate) const MAX_SPOOL_RECORD_BYTES: usize = 55 + 1 + MAX_EXTRA_BYTES_PER_POINT;
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
 pub const MAX_SPATIAL_DEPTH: u32 = 32;
 
@@ -100,6 +100,12 @@ impl SpoolLayout {
             + usize::from(self.has_nir) * 2
             + usize::from(self.has_flags)
             + usize::from(self.extra_len)
+    }
+
+    /// Offset of the RGB16 triplet in a record (valid when `has_color`).
+    #[inline]
+    fn rgb_offset(self) -> usize {
+        (if self.source_coordinates { 12 } else { 24 }) + 12 + usize::from(self.has_gps_time) * 8
     }
 
     /// The LAS coordinate before any snapping (header bounds are checked against it).
@@ -772,6 +778,21 @@ impl ChildSpool {
             self.flush(store)?;
         }
         write_point(&mut self.buffer, point, self.layout)?;
+        self.point_count += 1;
+        Ok(())
+    }
+
+    /// Appends an encoded record of the spool's layout unchanged.
+    #[inline]
+    pub fn write_record(
+        &mut self,
+        store: &impl SpoolStore,
+        record: &[u8],
+    ) -> Result<(), ConvertError> {
+        if self.buffer.len() + record.len() > CHILD_SPOOL_BUFFER_BYTES {
+            self.flush(store)?;
+        }
+        self.buffer.extend_from_slice(record);
         self.point_count += 1;
         Ok(())
     }
@@ -1702,7 +1723,41 @@ impl<S: PlanStore, C: Clock, X: BatchPlanner<S, C>> SpatialBuilder<'_, S, C, X> 
     }
 }
 
-#[derive(Default)]
+/// Fixed-size source records of the nearest points of a sample grid, indexed by slot: a cell
+/// keeps a `u32` slot instead of a decoded `SpoolPoint` (about 180 bytes with its Extra Bytes
+/// array), which keeps accumulators small and avoids decoding and copying a full point per
+/// candidate.
+pub struct NearestRecords {
+    record_bytes: usize,
+    bytes: Vec<u8>,
+}
+
+impl NearestRecords {
+    pub fn new(layout: SpoolLayout, reserve_records: usize) -> Self {
+        let record_bytes = layout.record_bytes();
+        Self {
+            record_bytes,
+            bytes: Vec::with_capacity(reserve_records * record_bytes),
+        }
+    }
+
+    fn push(&mut self, record: &[u8]) -> u32 {
+        let slot = (self.bytes.len() / self.record_bytes) as u32;
+        self.bytes.extend_from_slice(record);
+        slot
+    }
+
+    fn set(&mut self, slot: u32, record: &[u8]) {
+        let start = slot as usize * self.record_bytes;
+        self.bytes[start..start + self.record_bytes].copy_from_slice(record);
+    }
+
+    fn get(&self, slot: u32) -> &[u8] {
+        let start = slot as usize * self.record_bytes;
+        &self.bytes[start..start + self.record_bytes]
+    }
+}
+
 pub struct SampleAccumulator {
     count: u64,
     // `u64` sums hold `count * 65535` while `count < 2^48`, far above any point cloud; `u128`
@@ -1710,57 +1765,108 @@ pub struct SampleAccumulator {
     display_color: [u64; 3],
     rgb: [u64; 3],
     nearest_distance_squared: f64,
-    nearest_point: Option<SpoolPoint>,
+    /// Slot of the nearest record in the grid's [`NearestRecords`]; `NO_SLOT` before the first.
+    slot: u32,
+}
+
+impl Default for SampleAccumulator {
+    fn default() -> Self {
+        Self {
+            count: 0,
+            display_color: [0; 3],
+            rgb: [0; 3],
+            nearest_distance_squared: 0.0,
+            slot: Self::NO_SLOT,
+        }
+    }
 }
 
 impl SampleAccumulator {
+    const NO_SLOT: u32 = u32::MAX;
+
+    /// Adds the source record `record` (of `layout`) at `position`, which must be the position
+    /// `decode_position` returns for it.
     #[inline]
-    pub fn add(&mut self, point: &SpoolPoint, center: [f64; 3]) {
+    pub fn add(
+        &mut self,
+        records: &mut NearestRecords,
+        layout: SpoolLayout,
+        record: &[u8],
+        position: [f64; 3],
+        center: [f64; 3],
+    ) {
         self.count += 1;
+        let tail = record.len() - 3;
         for axis in 0..3 {
-            self.display_color[axis] += u64::from(point.display_color_component(axis));
-            self.rgb[axis] += u64::from(point.rgb[axis]);
+            self.display_color[axis] += u64::from(record[tail + axis]);
         }
-        let delta_x = point.position[0] - center[0];
-        let delta_y = point.position[1] - center[1];
-        let delta_z = point.position[2] - center[2];
+        if layout.has_color {
+            let offset = layout.rgb_offset();
+            for axis in 0..3 {
+                self.rgb[axis] += u64::from(u16::from_le_bytes([
+                    record[offset + 2 * axis],
+                    record[offset + 2 * axis + 1],
+                ]));
+            }
+        }
+        let delta_x = position[0] - center[0];
+        let delta_y = position[1] - center[1];
+        let delta_z = position[2] - center[2];
         let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
-        if self
-            .nearest_point
-            .is_none_or(|_| distance_squared < self.nearest_distance_squared)
-        {
+        if self.slot == Self::NO_SLOT {
+            self.slot = records.push(record);
             self.nearest_distance_squared = distance_squared;
-            self.nearest_point = Some(*point);
+        } else if distance_squared < self.nearest_distance_squared {
+            self.nearest_distance_squared = distance_squared;
+            records.set(self.slot, record);
         }
     }
 
     /// Folds in the accumulator of the points that follow this one's in the source order. The
     /// later nearest point wins only when strictly closer, as in `add`, so ties keep the earlier.
-    pub fn merge(&mut self, later: &Self) {
+    pub fn merge(
+        &mut self,
+        records: &mut NearestRecords,
+        later: &Self,
+        later_records: &NearestRecords,
+    ) {
         self.count += later.count;
         for axis in 0..3 {
             self.display_color[axis] += later.display_color[axis];
             self.rgb[axis] += later.rgb[axis];
         }
-        if let Some(point) = later.nearest_point
-            && self
-                .nearest_point
-                .is_none_or(|_| later.nearest_distance_squared < self.nearest_distance_squared)
-        {
-            self.nearest_distance_squared = later.nearest_distance_squared;
-            self.nearest_point = Some(point);
+        if later.slot == Self::NO_SLOT {
+            return;
         }
+        let record = later_records.get(later.slot);
+        if self.slot == Self::NO_SLOT {
+            self.slot = records.push(record);
+            self.nearest_distance_squared = later.nearest_distance_squared;
+        } else if later.nearest_distance_squared < self.nearest_distance_squared {
+            self.nearest_distance_squared = later.nearest_distance_squared;
+            records.set(self.slot, record);
+        }
+    }
+
+    fn nearest(&self, records: &NearestRecords, layout: SpoolLayout) -> SpoolPoint {
+        assert_ne!(self.slot, Self::NO_SLOT, "sample has a source point");
+        decode_point(records.get(self.slot), layout)
     }
 
     /// Sample placed at its nearest source point instead of the cell center: used where the cell
     /// is so large (`a < 32`) that a center far from the data could not be held in `f32`.
-    pub fn finish_at_nearest(&self) -> SpoolPoint {
-        let nearest = self.nearest_point.expect("sample has a source point");
-        self.finish(nearest.position)
+    pub fn finish_at_nearest(&self, records: &NearestRecords, layout: SpoolLayout) -> SpoolPoint {
+        let nearest = self.nearest(records, layout);
+        self.finish(records, layout, nearest.position)
     }
 
-    pub fn finish(&self, center: [f64; 3]) -> SpoolPoint {
-        let mut point = self.nearest_point.expect("sample has a source point");
+    pub fn finish(
+        &self,
+        records: &NearestRecords,
+        layout: SpoolLayout,
+        center: [f64; 3],
+    ) -> SpoolPoint {
+        let mut point = self.nearest(records, layout);
         point.position = center;
         point.display_color = ColorRgb::new(
             average(self.display_color[0], self.count) as u8,
@@ -1769,17 +1875,6 @@ impl SampleAccumulator {
         );
         point.rgb = std::array::from_fn(|axis| average(self.rgb[axis], self.count) as u16);
         point
-    }
-}
-
-impl SpoolPoint {
-    #[inline]
-    fn display_color_component(self, axis: usize) -> u8 {
-        match axis {
-            0 => self.display_color.r,
-            1 => self.display_color.g,
-            _ => self.display_color.b,
-        }
     }
 }
 
@@ -2172,6 +2267,20 @@ pub fn decode_point(bytes: &[u8], layout: SpoolLayout) -> SpoolPoint {
         extra,
         display_color,
     }
+}
+
+/// Position of a source-layout record: the first half of [`decode_point`] without the rest.
+#[inline(always)]
+pub fn decode_position(bytes: &[u8], layout: SpoolLayout) -> [f64; 3] {
+    debug_assert!(layout.source_coordinates);
+    let raw = std::array::from_fn(|axis| {
+        i32::from_le_bytes(
+            bytes[4 * axis..4 * axis + 4]
+                .try_into()
+                .expect("fixed width"),
+        )
+    });
+    layout.position(raw)
 }
 
 #[inline]
@@ -2696,15 +2805,25 @@ mod partition_tests {
     #[test]
     fn synthetic_lod_centers_preserve_f64_bits_outside_las_grid() {
         let (source, fixture) = spool_fixture(3);
-        let layout = SpoolLayout::source(&source).lod();
+        let source_layout = SpoolLayout::source(&source);
+        let layout = source_layout.lod();
         let center = [
             0.123_456_789_012_345,
             -1.234_567_890_123_456,
             987_654.321_098_765_4,
         ];
+        let mut record = Vec::new();
+        write_point(&mut record, &fixture, source_layout).unwrap();
+        let mut records = NearestRecords::new(source_layout, 1);
         let mut sample = SampleAccumulator::default();
-        sample.add(&fixture, center);
-        let synthetic = sample.finish(center);
+        sample.add(
+            &mut records,
+            source_layout,
+            &record,
+            fixture.position,
+            center,
+        );
+        let synthetic = sample.finish(&records, source_layout, center);
         let mut bytes = Vec::new();
         write_point(&mut bytes, &synthetic, layout).unwrap();
         assert_eq!(bytes.len(), 53);

@@ -16,10 +16,10 @@ use super::{
 use crate::ConvertError;
 use crate::source::SourceInfo;
 use crate::spatial::{
-    ChildSpool, GlobalCellFrame, MAX_SPATIAL_DEPTH, SampleAccumulator, SpoolLayout, SpoolPoint,
-    StoreWriter, center_rounding_error, cube_side, decode_point, global_level, lod_sample_error,
-    read_records, sample_cell, visit_source_points, voxel_center, voxel_center_global, write_point,
-    write_source_points,
+    ChildSpool, GlobalCellFrame, MAX_SPATIAL_DEPTH, MAX_SPOOL_RECORD_BYTES as MAX_RECORD_BYTES,
+    NearestRecords, SampleAccumulator, SpoolLayout, SpoolPoint, StoreWriter, center_rounding_error,
+    cube_side, decode_position, global_level, lod_sample_error, read_records, sample_cell,
+    visit_source_points, voxel_center, voxel_center_global, write_point, write_source_points,
 };
 
 /// Nodes at an absolute level below this are larger than one block (2^32 quanta).
@@ -241,7 +241,10 @@ impl SparseCells {
 /// whichever the storage.
 pub struct SampleGrid {
     grid: usize,
+    layout: SpoolLayout,
     cells: SampleCells,
+    /// Nearest source records of the cells' accumulators.
+    records: NearestRecords,
     /// Exact integer cells of a `v7.4-pre` node.
     global: bool,
     /// Constants of the node, taken from the first point added (all share the same bounds).
@@ -250,16 +253,20 @@ pub struct SampleGrid {
 
 impl SampleGrid {
     /// `expected_points` sizes the sparse table up front (0 when unknown).
-    fn new(grid: usize, expected_points: u64, global: bool) -> Self {
+    fn new(grid: usize, expected_points: u64, layout: SpoolLayout) -> Self {
+        let global = layout.is_global();
         let cell_count = grid.pow(3);
         let cells = if cell_count <= DENSE_SAMPLE_CELLS {
             SampleCells::Dense(std::iter::repeat_with(|| None).take(cell_count).collect())
         } else {
             SampleCells::Sparse(Box::new(SparseCells::with_capacity_hint(expected_points)))
         };
+        let reserve = expected_points.min(SparseCells::MAX_HINT as u64) as usize;
         Self {
             grid,
+            layout,
             cells,
+            records: NearestRecords::new(layout, reserve),
             global,
             frame: None,
         }
@@ -281,14 +288,14 @@ impl SampleGrid {
 
     // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
     #[inline(always)]
-    fn add(&mut self, point: &SpoolPoint, bounds: SpatialBounds) {
+    fn add(&mut self, record: &[u8], position: [f64; 3], bounds: SpatialBounds) {
         let (voxel_key, center) = if self.global {
             let grid = self.grid;
             self.frame
                 .get_or_insert_with(|| GlobalCellFrame::new(bounds, grid))
-                .cell(point.position)
+                .cell(position)
         } else {
-            sample_cell(point.position, bounds, self.grid)
+            sample_cell(position, bounds, self.grid)
         };
         let accumulator = match &mut self.cells {
             SampleCells::Dense(slots) => {
@@ -296,7 +303,7 @@ impl SampleGrid {
             }
             SampleCells::Sparse(cells) => cells.entry(voxel_key),
         };
-        accumulator.add(point, center);
+        accumulator.add(&mut self.records, self.layout, record, position, center);
     }
 }
 
@@ -304,21 +311,26 @@ impl SampleGrid {
     /// Folds in the grid of the points that follow this one's in the source order.
     pub fn merge(&mut self, later: SampleGrid) {
         debug_assert_eq!(self.grid, later.grid);
+        let later_records = later.records;
         match (&mut self.cells, later.cells) {
             (SampleCells::Dense(slots), SampleCells::Dense(later)) => {
                 for (slot, later) in slots.iter_mut().zip(later) {
-                    match (slot.as_mut(), later) {
-                        (Some(earlier), Some(later)) => earlier.merge(&later),
-                        (None, later) => *slot = later,
-                        (Some(_), None) => {}
+                    if let Some(later) = later {
+                        slot.get_or_insert_with(SampleAccumulator::default).merge(
+                            &mut self.records,
+                            &later,
+                            &later_records,
+                        );
                     }
                 }
             }
             (SampleCells::Sparse(earlier), SampleCells::Sparse(later)) => {
                 // Cells are independent, so the visiting order does not matter; an empty
-                // accumulator merges as the identity (`None` nearest point never wins).
+                // accumulator merges as the identity (no nearest record never wins).
                 for (key, later) in later.entries {
-                    earlier.entry(key as usize).merge(&later);
+                    earlier
+                        .entry(key as usize)
+                        .merge(&mut self.records, &later, &later_records);
                 }
             }
             _ => unreachable!("grids of one size share a storage"),
@@ -344,7 +356,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
     let mut children = (0..child_count)
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count, ctx.layout.is_global());
+    let mut samples = SampleGrid::new(ctx.sample_grid, job.point_count, ctx.layout);
     let sample_error = lod_sample_error(job.bounds, ctx.sample_grid, ctx.layout);
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(job.bounds, ctx.spatial_divisions)
@@ -380,16 +392,17 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
         }
         let classify_started = start_phase(clock, &metrics);
         for bytes in record_buffer[..records * record_bytes].chunks_exact(record_bytes) {
-            let point = decode_point(bytes, ctx.layout);
+            // Records of a spool already have the child layout: they are copied as they are.
+            let position = decode_position(bytes, ctx.layout);
             scanned += 1;
             for (axis, axis_bounds) in source_bounds.iter_mut().enumerate() {
-                axis_bounds[0] = axis_bounds[0].min(point.position[axis]);
-                axis_bounds[1] = axis_bounds[1].max(point.position[axis]);
+                axis_bounds[0] = axis_bounds[0].min(position[axis]);
+                axis_bounds[1] = axis_bounds[1].max(position[axis]);
             }
             if scanned.is_multiple_of(ctx.point_limit) {
                 progress(JobProgress::NodeHeartbeat)?;
             }
-            let child_key = subdivision.cell_index(point.position);
+            let child_key = subdivision.cell_index(position);
             let child = children[child_key].get_or_insert_with(|| {
                 ChildSpool::new(
                     SpoolId(job.first_output.0 + child_key as u64),
@@ -397,8 +410,8 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
                     ctx.collect_diagnostics,
                 )
             });
-            child.write_point(store, &point)?;
-            samples.add(&point, job.bounds);
+            child.write_record(store, bytes)?;
+            samples.add(bytes, position, job.bounds);
         }
         end_phase(clock, &mut metrics, classify_started, |m| {
             &mut m.partition_and_sample_ns
@@ -508,7 +521,7 @@ fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
     let mut children = (0..ctx.child_count())
         .map(|_| None)
         .collect::<Vec<Option<ChildSpool>>>();
-    let mut samples = SampleGrid::new(ctx.sample_grid, 0, ctx.layout.is_global());
+    let mut samples = SampleGrid::new(ctx.sample_grid, 0, ctx.layout);
     let mut source_bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     let subdivision = SpatialSubdivision::new(bounds, ctx.spatial_divisions)
         .expect("converter subdivisions are validated");
@@ -539,8 +552,12 @@ fn scan_root_range<P: PointSource, S: SpoolStore, C: Clock>(
                     ctx.collect_diagnostics,
                 )
             });
-            child.write_point(store, &point)?;
-            samples.add(&point, bounds);
+            let mut record = [0_u8; MAX_RECORD_BYTES];
+            let mut cursor = &mut record[..];
+            write_point(&mut cursor, &point, ctx.layout)?;
+            let record = &record[..ctx.layout.record_bytes()];
+            child.write_record(store, record)?;
+            samples.add(record, point.position, bounds);
             Ok(())
         })?;
         end_phase(clock, &mut metrics, classify_started, |m| {
@@ -872,7 +889,7 @@ pub fn write_lod(
         let mut grouped: Vec<([i64; 3], SpoolPoint)> = samples
             .iter()
             .map(|(_, accumulator)| {
-                let point = accumulator.finish_at_nearest();
+                let point = accumulator.finish_at_nearest(&samples.records, samples.layout);
                 let cell = point
                     .position
                     .map(|value| viewer_format::quantize_coordinate(value).unwrap_or(0) >> 32);
@@ -895,7 +912,11 @@ pub fn write_lod(
             } else {
                 voxel_center(key, bounds, samples.grid)
             };
-            write_point(&mut encoded, &accumulator.finish(center), layout.lod())?;
+            write_point(
+                &mut encoded,
+                &accumulator.finish(&samples.records, samples.layout, center),
+                layout.lod(),
+            )?;
             count += 1;
         }
     }
@@ -970,9 +991,9 @@ fn measure_leaf_spacing<S: SpoolStore>(
             break;
         }
         for bytes in buffer[..records * record_bytes].chunks_exact(record_bytes) {
-            let point = decode_point(bytes, ctx.layout);
+            let position = decode_position(bytes, ctx.layout);
             cells.push(std::array::from_fn::<i128, 3, _>(|axis| {
-                let q = viewer_format::quantize_coordinate(point.position[axis]).unwrap_or(0);
+                let q = viewer_format::quantize_coordinate(position[axis]).unwrap_or(0);
                 i128::from(q) - i128::from(origin[axis])
             }));
         }
