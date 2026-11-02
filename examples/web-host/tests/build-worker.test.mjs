@@ -55,6 +55,8 @@ async function runBuildWorker({ updates = [] } = {}) {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
                 dataMin: [0, 0, 0], dataMax: [0.5, 0.5, 0.5],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
             };
         }

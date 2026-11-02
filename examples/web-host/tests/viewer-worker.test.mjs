@@ -77,6 +77,8 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
                 coordinateOrigin: [0, 0, 0],
                 semantics: "replacement",
                 dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false,
                 attributeSchema: [],
@@ -330,6 +332,8 @@ test("async Blob reads leave the message queue responsive and discard stale gene
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
                 dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -375,6 +379,8 @@ test("async worker overlaps reads and retries budget-deferred blocks after a res
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
                 dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -427,6 +433,8 @@ test("replacing a dataset cancels multiple active tickets before scheduling its 
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
                 dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
@@ -480,6 +488,8 @@ test("async worker rejects a read plan larger than the configured logical read b
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
                 dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
                 nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
                 hasAttributes: false, attributeSchema: [],
             };
