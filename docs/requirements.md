@@ -160,7 +160,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | GPU mínima | GPU o iGPU con ≥ 4 GB disponibles para WebGPU; sustituye a P2. | [ADR 0033](adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), EQ-REF |
 | R3: hojas, claves e instancia | Continuación adaptativa de hojas, clave regional más allá de 21 bits e instancia de 12 B. | ADR 0032, R3-Q7 y R3-Q8 |
 | R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. | R3-Q9 |
-| R3: saltos de cámara | Con `DescendantTooFine` se retiene el corte anterior hasta completar el nuevo (ADR 0027). | R3-Q10 |
+| R3: saltos de pose | Con `DescendantTooFine` se retiene el corte anterior hasta completar el nuevo. | ADR 0033, R3-Q10 |
 | R3: corte mayor que el pool | Los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que el corte quepa. | ADR 0033, R3-Q11 |
 | R3: error proyectado | Medir una métrica ajustada y el nivel por octante antes de decidir. | [Cobertura T4](records/benchmarks/R3_T4_COVERAGE_05-11-2026.md) |
 

@@ -27,8 +27,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q7 | (05-11-2026) La cadena de cada hoja baja hasta separar las posiciones finitas distintas; más allá de 21 bits la clave es regional; el límite es la profundidad absoluta 63 |
 | R3-Q8 | (05-11-2026) Instancia de 12 B: 10 bits por eje relativos a la página y flags en `PageEntry`; W = 16 (16 B) queda como control en T5 |
 | R3-Q9 | (05-11-2026) Una hoja con todas sus posiciones separadas no se refina más: cubos mayores que el objetivo de px en primeros planos caen en la excepción «densidad de la fuente» de RQ-09 |
-| R3-Q10 | (05-11-2026) Una actualización de corte con `DescendantTooFine` se rechaza y se retiene el corte visible hasta que el nuevo esté completo (ADR 0027); la congelación se mide en la Tarea 11 |
-| R3-Q11 | (05-11-2026) Si el corte deseado no cabe en el pool, los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que quepa. GPU mínima de 4 GB ([requisitos](../requirements.md#resoluciones-del-05-11-2026)) |
+| R3-Q10 | (05-11-2026) Una actualización de corte con `DescendantTooFine` se rechaza y se retiene el corte visible hasta que el nuevo esté completo ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
+| R3-Q11 | (05-11-2026) Si el corte deseado no cabe en el pool, los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que quepa ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
 
 ## Restricciones globales
 
@@ -44,7 +44,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 - **T1:** alguna hoja con posiciones finitas distintas sin separar en la profundidad absoluta 63 → parar (R3-Q7).
 - **T4:** el corte ocupa más de 256 MiB, o hay más del doble de instancias en pantalla que en la ruta CPU en la pose rasante → replantear (nivel por octante) y volver al propietario.
-- **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara.
+- **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara. Revisado el 05-11-2026 ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)): 16,7 % solo en saltos de pose; se retiene el corte (R3-Q10). Vuelve a aplicar si aparece con navegación continua.
 - **T5:** más de 16,7 ms de GPU con los recuentos de T4 → revisar ADR 0019.
 - **T11:** cualquiera de estos → parar:
   - racha de `RetainedPrevious` de más de 1 s;
@@ -153,6 +153,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 ## Tarea 11: humo en navegador
 
 - [ ] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
+- [ ] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
 - [ ] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright.
 
 ## Tarea 12 ★: modos de color
