@@ -2,12 +2,19 @@
 //! path, for real v7.5 datasets and without a GPU. Empty pixels need the Task 7 renderer and are
 //! out of scope. Throwaway: not part of `scripts/check.sh`.
 //!
-//! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0]   (0 = no limit; larger cuts skip the case)
+//! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR]
+//! (0 = no limit; larger cuts skip the case).
+//!
+//! `--export DIR` writes, for the `octant_tight` variant only and for the poses/targets in
+//! `EXPORT_POSES`/`EXPORT_TARGETS`, the cube-pool files of
+//! `examples/web-host/spike-cube-pool-format.md`, and skips every other case and the CPU baseline.
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     error::Error,
-    fs::File,
-    path::Path,
+    fs::{self, File},
+    io::{BufWriter, Write},
+    ops::Range,
+    path::{Path, PathBuf},
     time::Instant,
 };
 
@@ -17,9 +24,9 @@ use viewer_core::{
 };
 use viewer_format::{FormatReader, OctreeReader, PagedReader};
 use viewer_render_wgpu::{
-    CellCutNode, CellGrid, NodeCellLevel, NodeCellSource, OrbitCamera, PointNodeCellSource,
-    RendererConfig, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
-    cell_cut, octant_ranges, representative_depth,
+    CellCutEntry, CellCutNode, CellGrid, InstanceRaw, NodeCell, NodeCellLevel, NodeCellSource,
+    OrbitCamera, PointNodeCellSource, RendererConfig, SceneBounds, ViewProjection,
+    VoxelBuildLimits, build_voxel_scene_with_limits, cell_cut, octant_ranges, representative_depth,
 };
 
 const VIEWPORT: [u32; 2] = [1280, 720];
@@ -32,8 +39,18 @@ const POOL_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_DECODED_BYTES: u64 = 6 * 1024 * 1024 * 1024;
 const POINT_BYTES: u64 = 16;
 const MAX_MASK_LEVELS: u8 = 3;
+const EXPORT_POSES: [&str; 3] = ["orbit-0", "grazing", "inside-leaf"];
+const EXPORT_TARGETS: [f64; 2] = [1.0, 4.0];
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// Per-cell attributes kept only for `--export`.
+struct CellAttr {
+    rgba: u32,
+    /// Mean intensity as the CPU path stores it (`-1` without the attribute).
+    intensity: f32,
+    class: i16,
+}
 
 struct Level {
     depth: u8,
@@ -41,6 +58,8 @@ struct Level {
     lo: [u64; 3],
     /// Cell coordinate minus `lo`.
     rel: Vec<[u32; 3]>,
+    /// Empty unless exporting.
+    attrs: Vec<CellAttr>,
     /// Octant starts of the library level; `None` for a level spanning octants.
     octant_offsets: Option<[u32; 9]>,
 }
@@ -239,11 +258,19 @@ struct Case {
     cut: Vec<NodeId>,
 }
 
-/// Draw ranges of one level for the octants in `octants`, through the library's `octant_ranges`.
-fn level_draw_ranges(level: &Level, octants: u8) -> usize {
+/// Cell ranges of one level for the octants in `octants`, through the library's `octant_ranges`.
+fn cell_ranges(level: &Level, octants: u8) -> Vec<Range<usize>> {
     match level.octant_offsets {
         // A spanning level is drawn once, whole.
-        None => usize::from(octants != 0),
+        None => {
+            if octants != 0 {
+                #[allow(clippy::single_range_in_vec_init)] // one range, not an expanded list
+                let whole = vec![0..level.rel.len()];
+                whole
+            } else {
+                Vec::new()
+            }
+        }
         Some(offsets) => octant_ranges(
             &NodeCellLevel {
                 depth: level.depth,
@@ -251,9 +278,12 @@ fn level_draw_ranges(level: &Level, octants: u8) -> usize {
                 octant_offsets: Some(offsets),
             },
             octants,
-        )
-        .len(),
+        ),
     }
+}
+
+fn level_draw_ranges(level: &Level, octants: u8) -> usize {
+    cell_ranges(level, octants).len()
 }
 
 fn fmt3(v: [f64; 3]) -> String {
@@ -282,10 +312,27 @@ fn too_fine_pairs(cut: &[NodeId], cache: &HashMap<NodeId, NodeData>) -> usize {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.is_empty() || args.len() > 2 {
-        return Err("usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0]".into());
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut export_dir: Option<PathBuf> = None;
+    if let Some(at) = args.iter().position(|a| a == "--export") {
+        if at + 1 >= args.len() {
+            return Err("--export needs a directory".into());
+        }
+        export_dir = Some(PathBuf::from(args.remove(at + 1)));
+        args.remove(at);
     }
+    if args.is_empty() || args.len() > 2 {
+        return Err("usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR]".into());
+    }
+    let dataset_name = Path::new(&args[0])
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dataset_name = dataset_name
+        .split('-')
+        .next()
+        .unwrap_or_default()
+        .to_string();
     let max_cut_nodes: usize = args
         .get(1)
         .map(|v| v.to_string_lossy().parse())
@@ -504,6 +551,11 @@ fn main() -> Result<()> {
                     cut.len(),
                     selection.point_count()
                 );
+                if export_dir.is_some()
+                    && !(EXPORT_POSES.contains(&pose.name) && EXPORT_TARGETS.contains(&target))
+                {
+                    continue;
+                }
                 if max_cut_nodes != 0 && cut.len() > max_cut_nodes {
                     eprintln!("  skipped: cut larger than MAX_CUT_NODES={max_cut_nodes}");
                     skipped.push(format!("{} {target}px budget {budget}", pose.name));
@@ -546,10 +598,16 @@ fn main() -> Result<()> {
                             })
                             .collect::<Result<Vec<_>>>()?;
                         cache_bytes += rel.capacity() * 12 + std::mem::size_of::<Level>();
+                        let attrs = if export_dir.is_some() {
+                            level.cells.iter().map(cell_attr).collect()
+                        } else {
+                            Vec::new()
+                        };
                         levels.push(Level {
                             depth: level.depth,
                             lo,
                             rel,
+                            attrs,
                             octant_offsets: level.octant_offsets,
                         });
                     }
@@ -582,7 +640,9 @@ fn main() -> Result<()> {
 
                 // CPU baseline.
                 let decoded_estimate = selection.point_count() * POINT_BYTES;
-                let cpu = if decoded_estimate > MAX_DECODED_BYTES {
+                let cpu = if export_dir.is_some() {
+                    Err("NA(export)".to_string())
+                } else if decoded_estimate > MAX_DECODED_BYTES {
                     Err(format!("NA(decoded>{}GiB)", MAX_DECODED_BYTES >> 30))
                 } else {
                     let mut blocks = HashMap::new();
@@ -618,6 +678,9 @@ fn main() -> Result<()> {
                 };
 
                 for (vi, variant) in RUN_VARIANTS.iter().copied().enumerate() {
+                    if export_dir.is_some() && variant != Variant::OctantTight {
+                        continue;
+                    }
                     let t0 = Instant::now();
                     let node_info = |id: NodeId| {
                         cache.get(&id).map(|n| {
@@ -654,6 +717,18 @@ fn main() -> Result<()> {
                                 variant.name()
                             )
                         })?;
+                    if let Some(dir) = &export_dir {
+                        export_case(&ExportCase {
+                            dir: dir.join(format!("{dataset_name}-{}-{target}px", pose.name)),
+                            dataset: &dataset_name,
+                            pose: pose.name,
+                            target,
+                            view: &view,
+                            grid: &grid,
+                            cache: &cache,
+                            entries: &entries,
+                        })?;
+                    }
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
                     let mut draw_ranges = 0_usize;
                     let (mut over, mut over_limited) = (0_u64, 0_u64);
@@ -1133,6 +1208,517 @@ fn main() -> Result<()> {
             "octant_mismatches: {octant_mismatches} (node, octant) pairs differ from level_ok"
         )
         .into());
+    }
+    Ok(())
+}
+
+// ---- `--export`: cube-pool files for the WebGPU spike (examples/web-host/spike-cube-pool-format.md) ----
+
+const SENTINEL: u32 = u32::MAX;
+const MISSING_INTENSITY: u16 = u16::MAX;
+/// Sampled drawn cells for `f32_max_error_px`: spread over all cells, plus the deepest depth.
+const ERROR_SAMPLES: u64 = 700;
+const ERROR_SAMPLES_DEEPEST: u64 = 300;
+
+fn cell_attr(cell: &NodeCell) -> CellAttr {
+    let count = u64::from(cell.count);
+    let [r, g, b] = cell
+        .rgb_sum
+        .map(|sum| ((sum + count / 2) / count).min(255) as u32);
+    CellAttr {
+        rgba: r | g << 8 | b << 16 | 255 << 24,
+        intensity: if cell.intensity_count == 0 {
+            -1.0
+        } else {
+            (cell.intensity_sum / f64::from(cell.intensity_count)) as f32
+        },
+        class: cell.classification,
+    }
+}
+
+/// Mean intensity rounded into `u16` (the CPU path keeps an `f32`); `0xFFFF` marks "missing", so a
+/// real 65535 is clamped to 65534.
+fn intensity_u16(attr: &CellAttr) -> u16 {
+    if attr.intensity < 0.0 {
+        MISSING_INTENSITY
+    } else {
+        attr.intensity.round().min(f32::from(MISSING_INTENSITY - 1)) as u16
+    }
+}
+
+struct ExportCase<'a> {
+    dir: PathBuf,
+    dataset: &'a str,
+    pose: &'a str,
+    target: f64,
+    view: &'a ViewProjection,
+    grid: &'a CellGrid,
+    cache: &'a HashMap<NodeId, NodeData>,
+    entries: &'a [CellCutEntry],
+}
+
+struct PageSpec {
+    start: usize,
+    end: usize,
+    /// Node-relative cell origin of the page (per-axis minimum).
+    origin: [u32; 3],
+}
+
+/// Greedy split in stored (Morton) order: a new page when the extent exceeds `2^bits` on any axis
+/// or the page holds `per_page` cells.
+fn split_pages(rel: &[[u32; 3]], bits: u32, per_page: usize) -> Vec<PageSpec> {
+    let limit = 1_u64 << bits;
+    let mut pages = Vec::new();
+    let Some(first) = rel.first() else {
+        return pages;
+    };
+    let (mut start, mut min, mut max) = (0, *first, *first);
+    for (i, c) in rel.iter().enumerate().skip(1) {
+        let new_min: [u32; 3] = std::array::from_fn(|a| min[a].min(c[a]));
+        let new_max: [u32; 3] = std::array::from_fn(|a| max[a].max(c[a]));
+        let too_wide = (0..3).any(|a| u64::from(new_max[a]) - u64::from(new_min[a]) + 1 > limit);
+        if too_wide || i - start == per_page {
+            pages.push(PageSpec {
+                start,
+                end: i,
+                origin: min,
+            });
+            (start, min, max) = (i, *c, *c);
+        } else {
+            (min, max) = (new_min, new_max);
+        }
+    }
+    pages.push(PageSpec {
+        start,
+        end: rel.len(),
+        origin: min,
+    });
+    pages
+}
+
+struct VariantOut {
+    name: &'static str,
+    bits: u32,
+    per_page: usize,
+    instances: BufWriter<File>,
+    pages: BufWriter<File>,
+    ranges: BufWriter<File>,
+    slots: u64,
+    page_count: u64,
+    empty: u64,
+    range_count: u64,
+    range_slots: u64,
+}
+
+impl VariantOut {
+    fn create(dir: &Path, name: &'static str, bits: u32, per_page: usize) -> Result<Self> {
+        let open = |file: &str| -> Result<BufWriter<File>> {
+            Ok(BufWriter::with_capacity(
+                1 << 20,
+                File::create(dir.join(format!("{name}_{file}.bin")))?,
+            ))
+        };
+        Ok(Self {
+            name,
+            bits,
+            per_page,
+            instances: open("instances")?,
+            pages: open("pages")?,
+            ranges: open("ranges")?,
+            slots: 0,
+            page_count: 0,
+            empty: 0,
+            range_count: 0,
+            range_slots: 0,
+        })
+    }
+
+    fn write_words(writer: &mut BufWriter<File>, words: &[u32]) -> Result<()> {
+        for word in words {
+            writer.write_all(&word.to_le_bytes())?;
+        }
+        Ok(())
+    }
+}
+
+/// Everything one (node, level) group needs, for either variant.
+struct GroupCtx<'a> {
+    level: &'a Level,
+    node_index: u32,
+    octant_bits: u32,
+    mask_shift: u32,
+    grid: &'a CellGrid,
+    /// Eye in the dataset-local frame (unscaled).
+    eye: [f64; 3],
+    scale: f64,
+    cell_ranges: &'a [Range<usize>],
+}
+
+fn cell_side(grid: &CellGrid, depth: u8) -> f64 {
+    grid.root_side / (1_u64 << depth) as f64
+}
+
+/// Page min corner relative to the eye, in dataset units x visual_scale (f64, then cast).
+fn page_origin_f32(ctx: &GroupCtx, origin: [u32; 3]) -> [f32; 3] {
+    let side = cell_side(ctx.grid, ctx.level.depth);
+    std::array::from_fn(|a| {
+        let corner = ctx.grid.root_min[a] + (ctx.level.lo[a] + u64::from(origin[a])) as f64 * side;
+        ((corner - ctx.eye[a]) * ctx.scale) as f32
+    })
+}
+
+/// Writes pages, slots and draw ranges of one group; returns its pages.
+fn write_group(vo: &mut VariantOut, ctx: &GroupCtx) -> Result<Vec<PageSpec>> {
+    let level = ctx.level;
+    let pages = split_pages(&level.rel, vo.bits, vo.per_page);
+    let side32 = (cell_side(ctx.grid, level.depth) * ctx.scale) as f32;
+    let mut slot_of = vec![0_u32; level.rel.len()];
+    for page in &pages {
+        let first_slot = vo.slots;
+        let origin = page_origin_f32(ctx, page.origin);
+        let mut record = [0_u32; 12];
+        for a in 0..3 {
+            record[a] = origin[a].to_bits();
+        }
+        record[3] = side32.to_bits();
+        record[4] = ctx.node_index;
+        record[5] = u32::from(level.depth);
+        record[6..9].copy_from_slice(&page.origin);
+        record[9] = ctx.octant_bits;
+        record[10] = ctx.mask_shift;
+        record[11] = 0;
+        VariantOut::write_words(&mut vo.pages, &record)?;
+        vo.page_count += 1;
+        for k in 0..vo.per_page {
+            let i = page.start + k;
+            if i >= page.end {
+                if vo.bits == 10 {
+                    VariantOut::write_words(&mut vo.instances, &[SENTINEL, 0, 0])?;
+                } else {
+                    VariantOut::write_words(&mut vo.instances, &[SENTINEL, SENTINEL, 0, 0])?;
+                }
+                vo.empty += 1;
+            } else {
+                slot_of[i] = (first_slot + k as u64) as u32;
+                let [x, y, z] =
+                    std::array::from_fn::<u32, 3, _>(|a| level.rel[i][a] - page.origin[a]);
+                let attr = &level.attrs[i];
+                let extra = u32::from(intensity_u16(attr)) | u32::from(attr.class as u16) << 16;
+                if vo.bits == 10 {
+                    VariantOut::write_words(
+                        &mut vo.instances,
+                        &[x | y << 10 | z << 20, attr.rgba, extra],
+                    )?;
+                } else {
+                    VariantOut::write_words(
+                        &mut vo.instances,
+                        &[x | y << 16, z, attr.rgba, extra],
+                    )?;
+                }
+            }
+            vo.slots += 1;
+        }
+    }
+    let mut merged: Vec<(u32, u32)> = Vec::new();
+    for range in ctx.cell_ranges.iter().filter(|r| !r.is_empty()) {
+        let (start, end) = (slot_of[range.start], slot_of[range.end - 1] + 1);
+        match merged.last_mut() {
+            Some(last) if last.1 >= start => last.1 = end,
+            _ => merged.push((start, end)),
+        }
+    }
+    for (start, end) in merged {
+        VariantOut::write_words(&mut vo.ranges, &[start, end - start])?;
+        vo.range_count += 1;
+        vo.range_slots += u64::from(end - start);
+    }
+    Ok(pages)
+}
+
+/// Clip-space NDC of `p` (eye-relative, scaled) for the column-major matrix `m`; `None` behind the eye.
+fn ndc(m: &[f64; 16], p: [f64; 3]) -> Option<[f64; 2]> {
+    let row = |r: usize| m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r];
+    let w = row(3);
+    (w > 0.0).then(|| [row(0) / w, row(1) / w])
+}
+
+fn export_case(case: &ExportCase) -> Result<()> {
+    let dir = &case.dir;
+    fs::create_dir_all(dir)?;
+    let scale = case.view.visual_scale();
+    let camera = case.view.camera();
+    let eye_scaled = camera.position();
+    let eye: [f64; 3] = eye_scaled.map(|v| v / scale);
+    let viewport = case.view.viewport();
+    let frame = camera.frame(viewport).ok_or("camera frame unavailable")?;
+    // The renderer draws `M * (center * scale - target)`; the exchange format feeds `p = center *
+    // scale - eye`, so the translation `eye - target` folds into the last column.
+    let target = camera.target();
+    let shift: [f64; 3] = std::array::from_fn(|a| eye_scaled[a] - target[a]);
+    let cols = frame.view_projection;
+    let mut m = [0.0_f64; 16];
+    for c in 0..3 {
+        for r in 0..4 {
+            m[c * 4 + r] = f64::from(cols[c][r]);
+        }
+    }
+    for r in 0..4 {
+        m[12 + r] = f64::from(cols[3][r])
+            + (0..3)
+                .map(|c| f64::from(cols[c][r]) * shift[c])
+                .sum::<f64>();
+    }
+    let m32: [f32; 16] = m.map(|v| v as f32);
+    let m: [f64; 16] = m32.map(f64::from);
+
+    let mut v10 = VariantOut::create(dir, "w10", 10, 682)?;
+    let mut v16 = VariantOut::create(dir, "w16", 16, 512)?;
+    let mut nodes = BufWriter::new(File::create(dir.join("nodes.bin"))?);
+    let mut i40 = BufWriter::with_capacity(1 << 20, File::create(dir.join("i40_instances.bin"))?);
+
+    let deepest = case
+        .entries
+        .iter()
+        .flat_map(|e| e.required_levels())
+        .max()
+        .unwrap_or(0);
+    let mut resident_cells = 0_u64;
+    let mut deepest_cells = 0_u64;
+    for entry in case.entries {
+        let node = &case.cache[&entry.node];
+        for depth in entry.required_levels() {
+            let len = node
+                .levels
+                .iter()
+                .find(|l| l.depth == depth)
+                .map_or(0, |l| l.rel.len() as u64);
+            resident_cells += len;
+            if depth == deepest {
+                deepest_cells += len;
+            }
+        }
+    }
+    let stride_all = (resident_cells / ERROR_SAMPLES).max(1);
+    let stride_deep = (deepest_cells / ERROR_SAMPLES_DEEPEST).max(1);
+    let (mut seen_all, mut seen_deep) = (0_u64, 0_u64);
+
+    let (mut drawn_cells, mut levels, mut lo_mismatches) = (0_u64, 0_u64, 0_u64);
+    let mut max_error_px = 0.0_f64;
+    let mut samples = 0_u64;
+    let half = [f64::from(viewport[0]) / 2.0, f64::from(viewport[1]) / 2.0];
+    for (node_index, entry) in case.entries.iter().enumerate() {
+        let node = &case.cache[&entry.node];
+        let words: Vec<u32> = entry
+            .mask
+            .iter()
+            .flat_map(|w| [*w as u32, (*w >> 32) as u32])
+            .collect();
+        for word in &words {
+            nodes.write_all(&word.to_le_bytes())?;
+        }
+        let any_mask = entry.mask.iter().any(|w| *w != 0);
+        for (depth, octants) in entry.draws() {
+            let level = node
+                .levels
+                .iter()
+                .find(|l| l.depth == depth)
+                .ok_or("drawn level not stored")?;
+            if any_mask && depth < node.rep {
+                return Err(format!(
+                    "node {} draws depth {depth} coarser than its masked 8^3 grid",
+                    entry.node.get()
+                )
+                .into());
+            }
+            let node_depth = node.rep.saturating_sub(3);
+            let signed_shift = i32::from(depth) - (i32::from(node_depth) + 3);
+            // Signed (two's complement): negative below node depth + 3, the page shifts left.
+            let mask_shift = signed_shift as u32;
+            if signed_shift >= 0 && (0..3).any(|a| level.lo[a] != node.rep_lo[a] << signed_shift) {
+                lo_mismatches += 1;
+            }
+            let ranges = cell_ranges(level, octants);
+            let ctx = GroupCtx {
+                level,
+                node_index: node_index as u32,
+                octant_bits: u32::from(octants),
+                mask_shift,
+                grid: case.grid,
+                eye,
+                scale,
+                cell_ranges: &ranges,
+            };
+            let pages10 = write_group(&mut v10, &ctx)?;
+            write_group(&mut v16, &ctx)?;
+            levels += 1;
+
+            let side = cell_side(case.grid, depth);
+            let side32 = (side * scale) as f32;
+            let rep_shift = depth.saturating_sub(node.rep);
+            for range in &ranges {
+                for i in range.clone() {
+                    let rel = level.rel[i];
+                    if any_mask {
+                        let mc: [u64; 3] = std::array::from_fn(|a| {
+                            ((level.lo[a] + u64::from(rel[a])) >> rep_shift)
+                                .wrapping_sub(node.rep_lo[a])
+                        });
+                        if mc.iter().all(|v| *v < 8)
+                            && entry.mask[mc[2] as usize] >> (mc[0] + 8 * mc[1]) & 1 == 1
+                        {
+                            continue;
+                        }
+                    }
+                    drawn_cells += 1;
+                    let reference: [f64; 3] = std::array::from_fn(|a| {
+                        (case.grid.root_min[a]
+                            + (level.lo[a] + u64::from(rel[a])) as f64 * side
+                            + side / 2.0
+                            - eye[a])
+                            * scale
+                    });
+                    let attr = &level.attrs[i];
+                    let rgb = [0, 8, 16].map(|s| (attr.rgba >> s & 0xFF) as u8);
+                    let instance = InstanceRaw {
+                        center: reference.map(|v| v as f32),
+                        size: side32,
+                        color: viewer_core::ColorRgb::new(rgb[0], rgb[1], rgb[2]).to_linear_rgba(),
+                        intensity: attr.intensity,
+                        classification: f32::from(attr.class),
+                    };
+                    i40.write_all(bytemuck::bytes_of(&instance))?;
+
+                    seen_all += 1;
+                    let take = (seen_all - 1) % stride_all == 0
+                        || depth == deepest && {
+                            seen_deep += 1;
+                            (seen_deep - 1) % stride_deep == 0
+                        };
+                    if take {
+                        let page_index = pages10.partition_point(|p| p.start <= i) - 1;
+                        let page = &pages10[page_index];
+                        let origin = page_origin_f32(&ctx, page.origin);
+                        let rebuilt: [f64; 3] = std::array::from_fn(|a| {
+                            let r = (rel[a] - page.origin[a]) as f32;
+                            f64::from(origin[a] + (r + 0.5) * side32)
+                        });
+                        if let (Some(a), Some(b)) = (ndc(&m, reference), ndc(&m, rebuilt))
+                            && a[0].abs() <= 1.5
+                            && a[1].abs() <= 1.5
+                        {
+                            let px = ((a[0] - b[0]) * half[0]).hypot((a[1] - b[1]) * half[1]);
+                            max_error_px = max_error_px.max(px);
+                            samples += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for writer in [&mut v10.instances, &mut v10.pages, &mut v10.ranges] {
+        writer.flush()?;
+    }
+    for writer in [&mut v16.instances, &mut v16.pages, &mut v16.ranges] {
+        writer.flush()?;
+    }
+    nodes.flush()?;
+    i40.flush()?;
+
+    let variant_json = |v: &VariantOut| {
+        format!(
+            "\"{}\": {{ \"slots_per_page\": {}, \"pages\": {}, \"slots_used\": {}, \"empty_slots\": {} }}",
+            v.name, v.per_page, v.page_count, v.slots, v.empty
+        )
+    };
+    let json = format!(
+        "{{\n  \"dataset\": \"{}\", \"pose\": \"{}\", \"target_px\": {},\n  \"viewport\": [{}, {}],\n  \"view_proj\": [{}],\n  \"eye\": [{}, {}, {}],\n  \"visual_scale\": {},\n  \"nodes\": {}, \"levels\": {levels},\n  \"variants\": {{\n    {},\n    {}\n  }},\n  \"drawn_cells\": {drawn_cells}, \"resident_cells\": {resident_cells},\n  \"ranges_w10\": {}, \"ranges_w16\": {},\n  \"f32_max_error_px\": {max_error_px}\n}}\n",
+        case.dataset,
+        case.pose,
+        case.target,
+        viewport[0],
+        viewport[1],
+        m32.map(|v| v.to_string()).join(", "),
+        eye[0],
+        eye[1],
+        eye[2],
+        scale,
+        case.entries.len(),
+        variant_json(&v10),
+        variant_json(&v16),
+        v10.range_count,
+        v16.range_count,
+    );
+    fs::write(dir.join("case.json"), json)?;
+    validate_export(dir, case.entries.len(), &v10, &v16)?;
+    println!(
+        "# export {}: drawn {drawn_cells} resident {resident_cells} levels {levels} | w10 pages {} slots {} empty {:.4} ranges {} range_slots {} | w16 pages {} slots {} empty {:.4} ranges {} range_slots {} | f32_max_error_px {max_error_px:.5} ({samples} samples) | lo mismatches {lo_mismatches}",
+        dir.display(),
+        v10.page_count,
+        v10.slots,
+        v10.empty as f64 / v10.slots.max(1) as f64,
+        v10.range_count,
+        v10.range_slots,
+        v16.page_count,
+        v16.slots,
+        v16.empty as f64 / v16.slots.max(1) as f64,
+        v16.range_count,
+        v16.range_slots,
+    );
+    Ok(())
+}
+
+/// Reads the files back: sizes, ranges within slots, non-empty slots decode inside `2^W`.
+fn validate_export(dir: &Path, nodes: usize, v10: &VariantOut, v16: &VariantOut) -> Result<()> {
+    let read = |name: &str| fs::read(dir.join(name));
+    let size = |name: &str| -> Result<u64> { Ok(fs::metadata(dir.join(name))?.len()) };
+    if size("nodes.bin")? != 64 * nodes as u64 {
+        return Err("nodes.bin size mismatch".into());
+    }
+    for (v, words) in [(v10, 3_usize), (v16, 4)] {
+        let stride = 4 * words;
+        let name = v.name;
+        let bytes = read(&format!("{name}_instances.bin"))?;
+        if bytes.len() != stride * v.slots as usize {
+            return Err(format!("{name}_instances.bin size mismatch").into());
+        }
+        if v.slots != v.page_count * v.per_page as u64 {
+            return Err(format!("{name}: slots != pages x slots_per_page").into());
+        }
+        if size(&format!("{name}_pages.bin"))? != 48 * v.page_count {
+            return Err(format!("{name}_pages.bin size mismatch").into());
+        }
+        let word = |slot: usize, w: usize| {
+            let at = slot * stride + 4 * w;
+            u32::from_le_bytes(bytes[at..at + 4].try_into().expect("4 bytes"))
+        };
+        let mut empty = 0_u64;
+        for slot in 0..v.slots as usize {
+            if word(slot, 0) == SENTINEL {
+                empty += 1;
+            } else if v.bits == 10 {
+                if word(slot, 0) >> 30 != 0 {
+                    return Err(format!("{name} slot {slot}: bits above 29 set").into());
+                }
+            } else if word(slot, 1) >> 16 != 0 {
+                return Err(format!("{name} slot {slot}: flags not zero").into());
+            }
+        }
+        if empty != v.empty {
+            return Err(format!("{name}: {empty} empty slots read, {} counted", v.empty).into());
+        }
+        let ranges = read(&format!("{name}_ranges.bin"))?;
+        if ranges.len() != 8 * v.range_count as usize {
+            return Err(format!("{name}_ranges.bin size mismatch").into());
+        }
+        for pair in ranges.as_chunks::<8>().0 {
+            let first = u64::from(u32::from_le_bytes(pair[..4].try_into().expect("4 bytes")));
+            let count = u64::from(u32::from_le_bytes(pair[4..].try_into().expect("4 bytes")));
+            if count == 0 || first + count > v.slots {
+                return Err(
+                    format!("{name}: range {first}+{count} outside {} slots", v.slots).into(),
+                );
+            }
+        }
     }
     Ok(())
 }

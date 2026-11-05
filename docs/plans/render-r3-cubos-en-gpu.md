@@ -125,6 +125,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 5: spike de GPU
 
+**Parada (05-11-2026):** [registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md). Belvedere dentro de una hoja a 4 px pasa (7,66 ms), pero Majadas a 4 px tarda 27,96 ms (> 16,7 ms) y la instancia de 12 B cuesta un 34 % más que la de 16 B. Dentro de una hoja solo se ve el 1–4 % de las celdas dibujadas. Vuelve al propietario.
+
 Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibujar los cortes reales de la Tarea 4 con la instancia de 12 B. Especificación del 05-11-2026, revisada con su pre-mortem. El código es desechable: la decodificación exacta es de la Tarea 6 y el pool de la Tarea 7.
 
 **T5a, tiempos (decide):**
