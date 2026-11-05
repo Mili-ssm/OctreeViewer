@@ -127,6 +127,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 - [ ] Con los recuentos de T4, comparar un `draw` por nodo con un `draw` único.
 - [ ] Comparar la instancia de 12 B (zancada de 3 `u32`) con el control de 16 B (W = 16), por R3-Q8.
+- [ ] Medir también el *overdraw* (fragmentos sometidos a la prueba de profundidad por píxel) en las poses de la Tarea 4, y en el spike de cobertura la fracción de celdas en pantalla tapadas por completo (Z-buffer de baja resolución), para OQ-08.
+- [ ] **Reglas:** con Belvedere a 4 px, si el `draw` por nodo tarda ≤ 8 ms → se queda el `draw` por nodo; si solo el `draw` único cumple ≤ 8 ms → la Tarea 16 pasa a obligatoria; si el `draw` único supera 16,7 ms → parar (criterio de parada).
 - [ ] **Pasa si** la GPU tarda 8 ms o menos con Belvedere a 4 px.
 
 ## Tarea 6: instancia y tabla de páginas
@@ -182,9 +184,10 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 - [ ] `cell_cut` elige un nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); `CellCutEntry` lleva un nivel por octante. Se hace antes de la Tarea 5. Lleva su propio pre-mortem.
 - [ ] **Pasa si** los tests de volumen de la Tarea 3 siguen en verde con niveles distintos por octante, y el spike de cobertura reproduce las cifras de `octant_tight` del [registro](../records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md).
 
-## Tarea 16 (condicional): compactación y HZB
+## Tarea 16 (condicional): compactación y oclusión sobre el pool
 
-- [ ] Como en el plan anterior.
+- [ ] Solo si la Tarea 5 lo exige o la Tarea 17 incumple RQ-01. Se generaliza `cull_instances` (`hzb.rs:890`) a un pase de compactación (corte, máscara, frustum y HZB) que escribe `visible_indices` y los argumentos indirectos. `firstInstance` en dibujo indirecto necesita la feature opcional `indirect-first-instance`, o índices absolutos.
+- [ ] Antes de empezar, elegir entre HZB en dos pasadas, raymarching o un híbrido según el *overdraw* medido en la Tarea 5 ([opciones](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md), OQ-08). Anexo con tareas y pre-mortem propio.
 
 ## Tarea 17: medida y ruta por defecto
 
