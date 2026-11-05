@@ -1,6 +1,6 @@
 # 0035 Instancia de 16 B con W = 16 y compactación con Hi-Z antes de la Tarea 6
 
-Estado: Aceptada · Fecha: 05-11-2026 · Decide: propietario · Enmienda a [ADR 0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) (instancia) y al plan de R3 (Tarea 16)
+Estado: Aceptada (técnica de oclusión enmendada por el [ADR 0036](0036-hi-z-por-celda.md)) · Fecha: 05-11-2026 · Decide: propietario · Enmienda a [ADR 0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) (instancia) y al plan de R3 (Tarea 16)
 
 ## Contexto
 - El [spike de GPU](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md) dibujó en la Radeon 880M los cortes reales empaquetados como el pool.

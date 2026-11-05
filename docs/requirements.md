@@ -166,6 +166,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RQ-09 con la cámara dentro | Tolerancia de ≤ 0,5 % de celdas en pantalla por encima del objetivo. | ADR 0034, R3-Q13 |
 | R3: instancia | 16 B con W = 16, en lugar de 12 B con W = 10. | [ADR 0035](adr/0035-instancia-de-16-b-con-w-16.md), R3-Q14 |
 | R3: compactación y oclusión | Tarea 16 obligatoria antes de la 6; raymarching solo si no basta. | ADR 0035, R3-Q15 |
+| R3: técnica de oclusión | Hi-Z por celda en dos fases, con caja ajustada por página; el Hi-Z solo por página no aporta. | [ADR 0036](adr/0036-hi-z-por-celda.md), R3-Q16 |
 
 ## Preguntas abiertas
 

@@ -10,7 +10,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 **Por qué:** con 256³ por nodo, el diseño de 0027 desborda el pool y dibuja lo lejano con detalle de más ([ADR 0031](../adr/0031-celdas-por-nodo-en-v7-5.md)).
 
 **Spec:**
-- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), [0034](../adr/0034-nivel-por-octante-con-arista-real.md), [0035](../adr/0035-instancia-de-16-b-con-w-16.md), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
+- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), [0034](../adr/0034-nivel-por-octante-con-arista-real.md), [0035](../adr/0035-instancia-de-16-b-con-w-16.md), [0036](../adr/0036-hi-z-por-celda.md), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
 - Requisitos: RF-03 a RF-08, RQ-01, RQ-02, RQ-05 y RQ-09.
 - [Contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md).
 
@@ -32,7 +32,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q12 | (05-11-2026) Nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); en la pose rasante, ≤ 2× las instancias de la CPU a 2–8 px y ≤ 2,5× a 1 px |
 | R3-Q13 | (05-11-2026) RQ-09 admite ≤ 0,5 % de celdas por encima del objetivo con la cámara dentro del dataset (ADR 0034) |
 | R3-Q14 | (05-11-2026) Instancia de 16 B con W = 16 y 512 huecos por página, en lugar de 12 B con W = 10 ([ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)) |
-| R3-Q15 | (05-11-2026) La Tarea 16 (compactación y Hi-Z por página) es obligatoria y va antes de la 6; raymarching solo si no basta (ADR 0035) |
+| R3-Q15 | (05-11-2026) La Tarea 16 (compactación y Hi-Z por página) es obligatoria y va antes de la 6; raymarching solo si no basta (ADR 0035). Técnica precisada por R3-Q16 |
+| R3-Q16 | (05-11-2026) Hi-Z por celda en dos fases (`kpc` de la Tarea 16a), con caja ajustada por página en `PageEntry` ([ADR 0036](../adr/0036-hi-z-por-celda.md)) |
 
 ## Restricciones globales
 
@@ -246,11 +247,11 @@ Regla en el [ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md). Se hac
 
 ## Tarea 16: compactación y oclusión sobre el pool (obligatoria antes de la Tarea 6, R3-Q15)
 
-Decidida en el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md): compactación con Hi-Z por página; raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Especificación del 05-11-2026.
+Decidida en el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md): compactación con Hi-Z por página (precisada por el [ADR 0036](../adr/0036-hi-z-por-celda.md): Hi-Z por celda); raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Especificación del 05-11-2026.
 
 El pool de producción aún no existe (Tarea 7), así que la técnica se mide primero sobre la página del spike de GPU, con los mismos casos y la misma sonda. El resultado fija qué campos de página añade la Tarea 6 y qué pases lleva la Tarea 7 a `SurfaceRenderer`. Referencias: la Tarea 5 ([registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md)) y las [opciones de oclusión](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md).
 
-**T16a hecha (05-11-2026):** [registro](../records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md). Pasa con `kpc`. En la peor dirección (Majadas dentro de una hoja mirando a +y, 4 px), 4,39 ms con la cámara quieta y p95 de 8,27 ms en movimiento, frente a 21,66 ms del `draw` por rango; 0 agujeros en los 21 casos con algo en pantalla. Entra el Hi-Z por celda (−42 % y −3,23 ms frente a `k`); el Hi-Z por página no aporta (+0,9 %). `PageEntry` lleva la caja ajustada de la página. **Pendiente del propietario:** el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md) decidió «Hi-Z por página», y lo que pasa es el Hi-Z por celda dentro de cada página.
+**T16a hecha (05-11-2026):** [registro](../records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md). Pasa con `kpc`. En la peor dirección (Majadas dentro de una hoja mirando a +y, 4 px), 4,39 ms con la cámara quieta y p95 de 8,27 ms en movimiento, frente a 21,66 ms del `draw` por rango; 0 agujeros en los 21 casos con algo en pantalla. Entra el Hi-Z por celda (−42 % y −3,23 ms frente a `k`); el Hi-Z por página no aporta (+0,9 %). `PageEntry` lleva la caja ajustada de la página. El propietario lo aceptó en el [ADR 0036](../adr/0036-hi-z-por-celda.md) (R3-Q16).
 
 **T16a, spike (decide):** amplía `examples/web-host/spike-cube-pool.*`, solo con la instancia de 16 B (W = 16). Sigue siendo código desechable. Enmendada con su pre-mortem del 05-11-2026.
 
@@ -307,7 +308,16 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
 
 - [ ] El margen de profundidad del Hi-Z sale de una cota del error entre la caja proyectada y el rasterizador; en el spike, 4 ulp solo están validados empíricamente.
 - [ ] La pirámide de `hzb.rs` se crea con tamaño potencia de dos, pero `copy_depth` copia 1:1 y la búsqueda escala por `pyramid_size / viewport`, de modo que a 1280×720 lee texeles de otra zona (pre-mortem del 05-11-2026; *inferido* leyendo el código, sin reproducir). El pase nuevo usa la convención del spike: cada texel guarda el máximo de todos sus píxeles.
-- [ ] Antes de la Tarea 6, se listan los bindings de cada etapa frente a los límites que pide `gpu.rs` (`downlevel_defaults`: 4 búferes de almacenamiento por etapa y 128 MiB por binding).
+- [x] **Bindings frente a los límites de producción** (05-11-2026). `gpu.rs:326` pide `downlevel_defaults`: 4 búferes de almacenamiento por etapa, 128 MiB por binding y 256 MiB por búfer. Búferes de almacenamiento de `kpc` en el spike:
+
+  | Pase | Búferes | Con la caja en `PageEntry` |
+  | --- | ---: | ---: |
+  | Páginas (cómputo) | ≤ 6 | ≤ 5 |
+  | Huecos (cómputo): instancias, páginas, máscaras, cajas, lista de páginas, visibles, argumentos, bits | 8 | 7 |
+  | Cierre (cómputo) | 3 | 3 |
+  | Dibujo (vértices): instancias, páginas, visibles | 3 | 3 |
+
+  Ni el pase de huecos ni el pool de 256 MiB (ADR 0033) caben en `downlevel_defaults`. Por eso, según el ADR 0036, la Tarea 7 pide `max_storage_buffers_per_shader_stage` ≥ 8, que es el mínimo del estándar WebGPU, y un `max_storage_buffer_binding_size` y un `max_buffer_size` que alojen el pool, sin pasar de lo que da el adaptador. Si el adaptador no llega, la ruta de celdas no se activa y se usa la ruta CPU (R3-Q5).
 - [ ] **Pasa si** la profundidad es idéntica con y sin oclusión, y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms.
 
 ## Tarea 17: medida y ruta por defecto

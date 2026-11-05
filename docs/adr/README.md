@@ -38,4 +38,5 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) | Hojas hasta separar posiciones, clave regional más allá de 21 bits e instancia de 12 B (enmienda a 0031) | Aceptada (instancia enmendada por 0035) |
 | [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) | GPU mínima de 4 GB y corte ajustado al pool (sustituye P2) | Aceptada |
 | [0034](0034-nivel-por-octante-con-arista-real.md) | Nivel por octante con la arista proyectada real y tolerancia de RQ-09 dentro del dataset (enmienda a 0031) | Aceptada |
-| [0035](0035-instancia-de-16-b-con-w-16.md) | Instancia de 16 B con W = 16 y compactación con Hi-Z antes de la Tarea 6 (enmienda a 0032) | Aceptada |
+| [0035](0035-instancia-de-16-b-con-w-16.md) | Instancia de 16 B con W = 16 y compactación con Hi-Z antes de la Tarea 6 (enmienda a 0032) | Aceptada (oclusión enmendada por 0036) |
+| [0036](0036-hi-z-por-celda.md) | Hi-Z por celda en dos fases sobre el pool (enmienda a 0035) | Aceptada |
