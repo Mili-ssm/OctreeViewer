@@ -1,6 +1,6 @@
 # 0032 Hojas hasta separar posiciones, clave regional más allá de 21 bits e instancia de 12 B
 
-Estado: Aceptada (diseño; las cifras de GPU se confirman en las Tareas 5 y 6 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)) · Fecha: 05-11-2026 · Decide: propietario · Enmienda a [ADR 0031](0031-celdas-por-nodo-en-v7-5.md)
+Estado: Aceptada · instancia enmendada por [0035](0035-instancia-de-16-b-con-w-16.md) (diseño; las cifras de GPU se confirman en las Tareas 5 y 6 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)) · Fecha: 05-11-2026 · Decide: propietario · Enmienda a [ADR 0031](0031-celdas-por-nodo-en-v7-5.md)
 
 ## Contexto
 - La Tarea 1 de R3 se detuvo por sus dos criterios de parada ([parada](../records/benchmarks/R3_T1_STOP_04-11-2026.md)):

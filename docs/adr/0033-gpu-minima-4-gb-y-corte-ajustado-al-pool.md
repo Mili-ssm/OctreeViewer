@@ -1,6 +1,6 @@
 # 0033 GPU mínima de 4 GB y corte ajustado al pool
 
-Estado: Aceptada · Fecha: 05-11-2026 · Decide: propietario · Sustituye la resolución P2 del [30-10-2026](../requirements.md#resoluciones-del-30-10-2026) y el supuesto de ~2 GB de los ADR [0019](0019-cubos-por-nodo-residentes-en-gpu.md) y [0027](0027-celdas-por-nodo-en-pool-paginado.md) · Revisa el disparador de `DescendantTooFine` del [ADR 0031](0031-celdas-por-nodo-en-v7-5.md)
+Estado: Aceptada · Fecha: 05-11-2026 · Decide: propietario · Sustituye la resolución P2 del [30-10-2026](../requirements.md#resoluciones-del-30-10-2026) y el supuesto de ~2 GB de los ADR [0019](0019-cubos-por-nodo-residentes-en-gpu.md) y [0027](0027-celdas-por-nodo-en-pool-paginado.md) · Revisa el disparador de `DescendantTooFine` del [ADR 0031](0031-celdas-por-nodo-en-v7-5.md) · Las cifras de bytes son con 12 B; la instancia pasa a 16 B en el [ADR 0035](0035-instancia-de-16-b-con-w-16.md)
 
 ## Contexto
 - P2 fijaba como equipo de referencia (EQ-REF) una iGPU con ~2 GB compartidos y 16 GB de RAM.

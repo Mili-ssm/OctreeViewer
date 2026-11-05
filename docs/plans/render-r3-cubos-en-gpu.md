@@ -10,7 +10,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 **Por qué:** con 256³ por nodo, el diseño de 0027 desborda el pool y dibuja lo lejano con detalle de más ([ADR 0031](../adr/0031-celdas-por-nodo-en-v7-5.md)).
 
 **Spec:**
-- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
+- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), [0034](../adr/0034-nivel-por-octante-con-arista-real.md), [0035](../adr/0035-instancia-de-16-b-con-w-16.md), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
 - Requisitos: RF-03 a RF-08, RQ-01, RQ-02, RQ-05 y RQ-09.
 - [Contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md).
 
@@ -25,12 +25,14 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q5 | La ruta CPU (Additive, v5 y `v7.1–3`) se mantiene hasta retirar V5/V6 |
 | R3-Q6 | ~~Límite de 21 bits relativos por eje; si se supera, se para~~ Sustituida el 05-11-2026 por R3-Q7 y R3-Q8 ([ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) |
 | R3-Q7 | (05-11-2026) La cadena de cada hoja baja hasta separar las posiciones finitas distintas; más allá de 21 bits la clave es regional; el límite es la profundidad absoluta 63 |
-| R3-Q8 | (05-11-2026) Instancia de 12 B: 10 bits por eje relativos a la página y flags en `PageEntry`; W = 16 (16 B) queda como control en T5 |
+| R3-Q8 | (05-11-2026) ~~Instancia de 12 B: 10 bits por eje relativos a la página y flags en `PageEntry`; W = 16 (16 B) queda como control en T5~~ Sustituida por R3-Q14 |
 | R3-Q9 | (05-11-2026) Una hoja con todas sus posiciones separadas no se refina más: cubos mayores que el objetivo de px en primeros planos caen en la excepción «densidad de la fuente» de RQ-09 |
 | R3-Q10 | (05-11-2026) Una actualización de corte con `DescendantTooFine` se rechaza y se retiene el corte visible hasta que el nuevo esté completo ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
 | R3-Q11 | (05-11-2026) Si el corte deseado no cabe en el pool, los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que quepa ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
 | R3-Q12 | (05-11-2026) Nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); en la pose rasante, ≤ 2× las instancias de la CPU a 2–8 px y ≤ 2,5× a 1 px |
 | R3-Q13 | (05-11-2026) RQ-09 admite ≤ 0,5 % de celdas por encima del objetivo con la cámara dentro del dataset (ADR 0034) |
+| R3-Q14 | (05-11-2026) Instancia de 16 B con W = 16 y 512 huecos por página, en lugar de 12 B con W = 10 ([ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)) |
+| R3-Q15 | (05-11-2026) La Tarea 16 (compactación y Hi-Z por página) es obligatoria y va antes de la 6; raymarching solo si no basta (ADR 0035) |
 
 ## Restricciones globales
 
@@ -125,13 +127,13 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 5: spike de GPU
 
-**Parada (05-11-2026):** [registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md). Belvedere dentro de una hoja a 4 px pasa (7,66 ms), pero Majadas a 4 px tarda 27,96 ms (> 16,7 ms) y la instancia de 12 B cuesta un 34 % más que la de 16 B. Dentro de una hoja solo se ve el 1–4 % de las celdas dibujadas. Vuelve al propietario.
+**Parada (05-11-2026), decidida en el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md) (16 B con W = 16 y Tarea 16 antes de la 6):** [registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md). Belvedere dentro de una hoja a 4 px pasa (7,66 ms), pero Majadas a 4 px tarda 27,96 ms (> 16,7 ms) y la instancia de 12 B cuesta un 34 % más que la de 16 B. Dentro de una hoja solo se ve el 0,75–4 % de las celdas dibujadas.
 
 Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibujar los cortes reales de la Tarea 4 con la instancia de 12 B. Especificación del 05-11-2026, revisada con su pre-mortem. El código es desechable: la decodificación exacta es de la Tarea 6 y el pool de la Tarea 7.
 
 **T5a, tiempos (decide):**
 
-- [ ] **Exportación** (`coverage_spike --export DIR`), para la variante `octant_tight`:
+- [x] **Exportación** (`coverage_spike --export DIR`), para la variante `octant_tight`:
   - por (nodo, nivel) de `required_levels()`, el nivel **completo**, empaquetado como el pool: páginas fijas de 8 KiB y reparto voraz en orden Morton (página nueva si el rango supera 2^W en algún eje o la página se llena);
   - dos empaquetados: W = 10 con instancia de 12 B (682 huecos por página) y el control W = 16 con 16 B (512 huecos);
   - rangos de dibujo = `octant_ranges` sobre esos niveles, en el espacio de huecos;
@@ -139,7 +141,7 @@ Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibuja
   - un control con la `InstanceRaw` de 40 B de la ruta actual, con las mismas celdas;
   - en el registro: instancias por variante, fracción de huecos vacíos y suma de rangos frente a celdas dibujadas;
   - error máximo en píxeles de origen de página `f32` + coordenada relativa × lado frente a `f64`, en celdas de muestra que incluyan las hojas más profundas.
-- [ ] **Página** `examples/web-host/spike-cube-pool.{html,mjs}`, WebGPU sin wasm:
+- [x] **Página** `examples/web-host/spike-cube-pool.{html,mjs}`, WebGPU sin wasm:
   - mismo pipeline que `gpu.rs`: cubo indexado con `CUBE_INDICES`, `Depth32Float` con `Less`, culling de caras traseras, mezcla alfa y el sombreado de fragmentos de `scene.rs`;
   - destino fuera de pantalla de 1280×720, cuyo tamaño se comprueba;
   - `requiredLimits` explícitos para los buffers grandes; se registran los límites concedidos y se falla con un mensaje claro si no bastan;
@@ -147,10 +149,10 @@ Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibuja
   - tiempo de GPU con `timestamp-query`, guardando los ticks crudos y su máximo común divisor, contrastado con `onSubmittedWorkDone`; tiempo de CPU de codificar y enviar por frame y por `draw`;
   - calentamiento de al menos 2 s, variantes intercaladas dentro de cada ronda y la serie completa por frame, no solo la mediana;
   - una variante con la cámara en movimiento leve y el corte fijo, que reescribe la tabla de páginas en cada frame y mide el `writeBuffer`.
-- [ ] **Sonda** `examples/web-host/probe-cube-pool.mjs`: lanza Chrome como `probe-orbit-load.mjs`, añadiendo `--enable-webgpu-developer-features` y rechazando adaptadores de software. Sirve el repositorio por HTTP, hace 3 rondas y registra antes y después la alimentación, el perfil de energía, `pp_dpm_sclk`, la temperatura y `gpu_busy_percent`.
-- [ ] **Registro** `R3_GPU_SPIKE_dd-mm-aaaa.md` con mediana y rango por caso y variante.
-- [ ] **Casos:** Belvedere y Majadas a 1 y 4 px en órbita, rasante y dentro de una hoja. Órbita y rasante dibujan pocas instancias y sirven solo de comprobación; deciden los casos «dentro de una hoja».
-- [ ] **Reglas** (sobre el `draw` por rango, fiel al pool):
+- [x] **Sonda** `examples/web-host/probe-cube-pool.mjs`: lanza Chrome como `probe-orbit-load.mjs`, añadiendo `--enable-webgpu-developer-features` y rechazando adaptadores de software. Sirve el repositorio por HTTP, hace 3 rondas y registra antes y después la alimentación, el perfil de energía, `pp_dpm_sclk`, la temperatura y `gpu_busy_percent`.
+- [x] **Registro** `R3_GPU_SPIKE_dd-mm-aaaa.md` con mediana y rango por caso y variante.
+- [x] **Casos:** Belvedere y Majadas a 1 y 4 px en órbita, rasante y dentro de una hoja. Órbita y rasante dibujan pocas instancias y sirven solo de comprobación; deciden los casos «dentro de una hoja».
+- [x] **Reglas** (sobre el `draw` por rango, fiel al pool), evaluadas: la de Belvedere pasa; la de Majadas y la de 12 B fallan (decidido en el ADR 0035):
   - Belvedere dentro de una hoja a 4 px: ≤ 8 ms → se queda el `draw` por nodo; si solo el `draw` único cumple → la Tarea 16 pasa a obligatoria;
   - Majadas dentro de una hoja a 4 px: > 16,7 ms → criterio de parada de T5 (revisar ADR 0019). Majadas dentro de una hoja a 1 px queda como prueba de carga, porque roza el pool;
   - 12 B frente a 16 B: se mantiene la de 12 B si no cuesta más de un 10 % de GPU. La regla solo se aplica a casos de ≥ 2 ms y si la variación A/A de una variante es ≤ 5 %;
@@ -162,12 +164,12 @@ Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibuja
 
 **T5b, diagnóstico para OQ-08 (no decide):**
 
-- [ ] *Overdraw* con consultas de oclusión (muestras que pasan) en el pase con prueba de profundidad, y una cuenta sin prueba de profundidad. Se registra el orden de dibujo.
-- [ ] Fracción de celdas visibles con un pase de identificadores de hueco global en `r32uint` (comprobando que `instance_index` incluye `firstInstance`). Límite documentado: como mucho 921.600 identificadores distintos, y los cubos de menos de un píxel se pierden.
+- [x] *Overdraw* con consultas de oclusión (muestras que pasan) en el pase con prueba de profundidad, y una cuenta sin prueba de profundidad. Se registra el orden de dibujo.
+- [x] Fracción de celdas visibles con un pase de identificadores de hueco global en `r32uint` (comprobando que `instance_index` incluye `firstInstance`). Límite documentado: como mucho 921.600 identificadores distintos, y los cubos de menos de un píxel se pierden.
 
 ## Tarea 6: instancia y tabla de páginas
 
-- [ ] Instancia de 12 B: un `u32` con 10 bits por eje relativos a la página, rgba8, intensidad `u16` y clase `i16`. Las páginas (8 KiB, 682 instancias) se parten en orden Morton si el rango supera 2¹⁰ o se llenan. `PageEntry` lleva el origen relativo a la cámara, el desplazamiento dentro del nodo y los flags `has_intensity` y `has_class`.
+- [ ] Instancia de 16 B (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)): x, y, z `u16` relativos a la página, 16 bits de flags, rgba8, intensidad `u16` y clase `i16`. Las páginas (8 KiB, 512 huecos) se parten en orden Morton si el rango supera 2¹⁶ o se llenan o cambian los flags. `PageEntry` lleva el origen relativo a la cámara, el desplazamiento dentro del nodo y los flags `has_intensity` y `has_class`.
 - [ ] **Pasa si** la decodificación es igual bit a bit en Rust y en WGSL, con raíz en nivel 0 y un origen a 10⁶ m.
 
 ## Tarea 7: pool en `SurfaceRenderer`
@@ -242,10 +244,10 @@ Regla en el [ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md). Se hac
   - los rangos de dibujo superan 3× los nodos del corte en Belvedere a 4 px (repetir la Tarea 5 antes de la 6);
   - un dataset real elige un nivel que abarca varios octantes y no tiene uno más fino guardado (replantear la cadena de la Tarea 1).
 
-## Tarea 16 (condicional): compactación y oclusión sobre el pool
+## Tarea 16: compactación y oclusión sobre el pool (obligatoria antes de la Tarea 6, R3-Q15)
 
-- [ ] Solo si la Tarea 5 lo exige o la Tarea 17 incumple RQ-01. Se generaliza `cull_instances` (`hzb.rs:890`) a un pase de compactación (corte, máscara, frustum y HZB) que escribe `visible_indices` y los argumentos indirectos. `firstInstance` en dibujo indirecto necesita la feature opcional `indirect-first-instance`, o índices absolutos.
-- [ ] Antes de empezar, elegir entre HZB en dos pasadas, raymarching o un híbrido según el *overdraw* medido en la Tarea 5 ([opciones](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md), OQ-08). Anexo con tareas y pre-mortem propio.
+- [ ] Obligatoria antes de la Tarea 6 (R3-Q15). Se generaliza `cull_instances` (`hzb.rs:890`) a un pase de compactación (corte, máscara, frustum y HZB) que escribe `visible_indices` y los argumentos indirectos. `firstInstance` en dibujo indirecto necesita la feature opcional `indirect-first-instance`, o índices absolutos.
+- [ ] Técnica decidida: compactación con Hi-Z por página. Raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Medidas de referencia del spike de GPU: *overdraw* y celdas visibles de la Tarea 5 ([opciones](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md), OQ-08). Anexo con tareas y pre-mortem propio.
 
 ## Tarea 17: medida y ruta por defecto
 

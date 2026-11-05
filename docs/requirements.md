@@ -164,6 +164,8 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: corte mayor que el pool | Los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que el corte quepa. | ADR 0033, R3-Q11 |
 | R3: error proyectado | Nivel por octante con la arista proyectada real; ≤ 2× la CPU a 2–8 px y ≤ 2,5× a 1 px en la pose rasante. | ADR 0034, R3-Q12 |
 | RQ-09 con la cámara dentro | Tolerancia de ≤ 0,5 % de celdas en pantalla por encima del objetivo. | ADR 0034, R3-Q13 |
+| R3: instancia | 16 B con W = 16, en lugar de 12 B con W = 10. | [ADR 0035](adr/0035-instancia-de-16-b-con-w-16.md), R3-Q14 |
+| R3: compactación y oclusión | Tarea 16 obligatoria antes de la 6; raymarching solo si no basta. | ADR 0035, R3-Q15 |
 
 ## Preguntas abiertas
 
