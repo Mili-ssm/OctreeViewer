@@ -11,8 +11,8 @@ use std::{
 use viewer_core::{DatasetSource, Point};
 use viewer_format::{FormatReader, OctreeReader, PagedReader};
 use viewer_render_wgpu::{
-    CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellSource,
-    PointNodeCellSource, chain_keep_mask, representative_depth, representative_depth_for_spacing,
+    CHAIN_MIN_GROWTH, CellGrid, NodeCell, NodeCellSource, PointNodeCellSource, chain_keep_mask,
+    representative_depth, representative_depth_for_spacing,
 };
 
 /// Planned GPU instance size (ADR 0027): 512 instances per 8 KiB page.
@@ -103,6 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut internal_seconds, mut internal_nodes) = (0.0_f64, 0_usize);
     let mut cells_total = 0_usize;
     let mut cells_by_depth = BTreeMap::<u8, usize>::new();
+    let mut regions_by_depth = BTreeMap::<u8, usize>::new();
+    let mut peak_nominal_key_bytes = 0_usize;
     let mut growth_stats = [GrowthStats::default(); CANDIDATE_GROWTH.len()];
 
     for node in &nodes {
@@ -134,6 +136,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|id| reader.read_block(*id))
             .collect::<Result<_, _>>()?;
         let point_count: usize = blocks.iter().map(|block| block.points().len()).sum();
+        let finite_count = blocks
+            .iter()
+            .flat_map(|block| block.points().points())
+            .filter(|p| p.position.iter().all(|v| v.is_finite()))
+            .count();
         let is_leaf = if leaf_flags.is_empty() {
             hierarchy.is_leaf(node.id())
         } else {
@@ -153,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for point in block.points().points() {
                         if point.position.iter().any(|v| !v.is_finite()) { continue; }
                         finite += 1;
-                        positions.insert(point.position.map(f32::to_bits));
+                        positions.insert(point.position.map(|value| if value == 0.0 { 0 } else { value.to_bits() }));
                         bins.insert(std::array::from_fn::<_, 3, _>(|axis| {
                             (((f64::from(point.position[axis]) - local.min()[axis]) / side) * (1_u64 << 21) as f64).floor() as u64
                         }));
@@ -168,16 +175,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             })?;
         let seconds = started.elapsed().as_secs_f64();
+        // The finest built level has the widest coordinate range and is always retained.
+        if let Some(level) = cells.levels.last() {
+            let count = 1_u64 << level.depth;
+            let cell_side = grid.root_side / count as f64;
+            let single_region = (0..3).all(|axis| {
+                let last = (count - 1) as f64;
+                let lo = ((local.min()[axis] - grid.root_min[axis]) / cell_side)
+                    .round()
+                    .clamp(0.0, last);
+                let hi = (((local.max()[axis] - grid.root_min[axis]) / cell_side).round() - 1.0)
+                    .clamp(lo, last);
+                (hi as u64) - (lo as u64) < (1 << 21)
+            });
+            let record_size = if single_region {
+                std::mem::size_of::<(u64, usize, usize, [u64; 3])>()
+            } else {
+                std::mem::size_of::<((u128, u64), usize, usize, [u64; 3])>()
+            };
+            peak_nominal_key_bytes = peak_nominal_key_bytes.max(finite_count * record_size);
+        }
         let cell_count: usize = cells.levels.iter().map(|level| level.cells.len()).sum();
         cells_total += cell_count;
         for level in &cells.levels {
             *cells_by_depth.entry(level.depth).or_default() += level.cells.len();
+            let count = (1_u64 << level.depth) as f64;
+            let cell_side = grid.root_side / count;
+            let node_origin: [u64; 3] = std::array::from_fn(|axis| {
+                ((local.min()[axis] - grid.root_min[axis]) / cell_side)
+                    .round()
+                    .clamp(0.0, (count - 1.0).max(0.0)) as u64
+            });
+            let regions: BTreeSet<_> = level
+                .cells
+                .iter()
+                .map(|cell| {
+                    std::array::from_fn::<_, 3, _>(|axis| {
+                        (cell.coord[axis] - node_origin[axis]) >> 21
+                    })
+                })
+                .collect();
+            *regions_by_depth.entry(level.depth).or_default() += regions.len();
         }
         if is_leaf {
             leaves += 1;
             *chain_histogram.entry(cells.levels.len()).or_default() += 1;
-            let cap = first.saturating_add(CHAIN_SPAN).min(MAX_CELL_DEPTH);
-            if let Some(last) = cells.levels.last().filter(|level| level.depth == cap) {
+            if let Some(last) = cells.levels.last() {
                 let positions = blocks
                     .iter()
                     .flat_map(|block| block.points().points().iter().map(|point| point.position));
@@ -265,17 +308,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if leaves > 0 {
         println!(
-            "leaves with unresolved distinct-position collisions at chain cap: {leaves_at_cap} ({:.3} %)",
+            "leaves with unresolved distinct-position collisions at terminal depth (experimental): {leaves_at_cap} ({:.3} %)",
             100.0 * leaves_at_cap as f64 / leaves as f64
         );
-        println!("leaves with only duplicate positions at chain cap: {duplicate_only}");
         println!(
-            "leaves with chain > 4x point bytes: {over_4x}; worst ratio {worst_ratio:.2}x; \
-             total chain bytes {leaf_cell_bytes} vs point bytes {leaf_point_bytes} ({:.2}x)",
+            "leaves with only duplicate positions at terminal depth (experimental): {duplicate_only}"
+        );
+        println!(
+            "leaves with unpruned chain > 4x point bytes: {over_4x}; worst ratio {worst_ratio:.2}x; \
+             total unpruned chain bytes {leaf_cell_bytes} vs point bytes {leaf_point_bytes} ({:.2}x)",
             leaf_cell_bytes as f64 / leaf_point_bytes.max(1) as f64
         );
         println!(
-            "leaf build: {:.3} ms/leaf, {:.1} ns/point, {:.1} chain B/leaf, {:.1} point B/leaf",
+            "unpruned leaf build (all levels): {:.3} ms/leaf, {:.1} ns/point, {:.1} unpruned chain B/leaf, {:.1} point B/leaf",
             1000.0 * leaf_seconds / leaves as f64,
             1.0e9 * leaf_seconds / leaf_points.max(1) as f64,
             leaf_cell_bytes as f64 / leaves as f64,
@@ -300,6 +345,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     println!("cells by depth: {cells_by_depth:?}");
+    println!("occupied regions summed per node by depth: {regions_by_depth:?}");
+    println!(
+        "peak nominal temporary key payload: {peak_nominal_key_bytes} bytes (finite points times narrow or wide record size at finest level; excludes allocation capacity and other memory; not RSS)"
+    );
     println!(
         "total cells: {cells_total}; CPU NodeCell payload bytes: {}; projected GPU instance payload bytes: {}",
         cells_total * std::mem::size_of::<NodeCell>(),

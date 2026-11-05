@@ -236,7 +236,7 @@ fn points_on_shared_and_max_faces_count_once() {
         [9.0, f32::INFINITY, 9.0],
         ColorRgb::new(1, 2, 3),
     ));
-    for leaf in [false, true] {
+    for leaf in [false] {
         let cells = cells_of(&grid(), bounds, leaf, &plain_block(points.clone()));
         for level in &cells.levels {
             let total: u32 = level.cells.iter().map(|cell| cell.count).sum();
@@ -268,21 +268,63 @@ fn points_on_shared_and_max_faces_count_once() {
 }
 
 #[test]
-fn leaf_chain_stops_when_cells_stop_growing() {
+fn adaptive_leaf_counts_shared_and_max_faces_and_clamps_to_node() {
+    let bounds = cube([8.0; 3], 8.0);
+    let points = vec![
+        Point::new([8.0; 3], ColorRgb::new(1, 2, 3)),
+        Point::new([12.0; 3], ColorRgb::new(4, 5, 6)),
+        Point::new([16.0; 3], ColorRgb::new(7, 8, 9)),
+        Point::new([16.0; 3], ColorRgb::new(10, 11, 12)),
+        Point::new([f32::NAN, 8.0, 8.0], ColorRgb::new(0, 0, 0)),
+    ];
+    let cells = cells_of(&grid(), bounds, true, &plain_block(points));
+    let level = cells.levels.last().unwrap();
+    assert_eq!(level.depth, 6);
+    assert_eq!(level.cells.iter().map(|cell| cell.count).sum::<u32>(), 4);
+    let max = level
+        .cells
+        .iter()
+        .find(|cell| cell.coord == [15, 15, 15])
+        .unwrap();
+    assert_eq!(max.count, 2);
+    assert_eq!(max.rgb_sum, [17, 19, 21]);
+    assert!(level.cells.iter().any(|cell| cell.coord == [12, 12, 12]));
+    assert!(level.cells.iter().any(|cell| cell.coord == [8, 8, 8]));
+}
+
+#[test]
+fn adaptive_leaf_rejects_distinct_points_clamped_to_same_face() {
+    let points = vec![
+        Point::new([16.0; 3], ColorRgb::new(1, 2, 3)),
+        Point::new([16.000_1; 3], ColorRgb::new(4, 5, 6)),
+    ];
+    let result = PointNodeCellSource::default().node_cells(
+        &grid(),
+        NodeId::new(1),
+        cube([8.0; 3], 8.0),
+        None,
+        true,
+        &[plain_block(points)],
+    );
+    assert!(matches!(
+        result,
+        Err(crate::NodeCellError::AbsoluteDepthExceeded)
+    ));
+}
+
+#[test]
+fn leaf_chain_stops_when_all_positions_are_duplicates() {
     let bounds = cube([0.0; 3], 16.0);
     let points = vec![Point::new([3.0, 4.0, 5.0], ColorRgb::new(9, 9, 9)); 40];
     let cells = cells_of(&grid(), bounds, true, &plain_block(points));
     assert_eq!(cells.levels.len(), 1);
-    assert_eq!(
-        cells.levels[0].depth,
-        representative_depth(&grid(), bounds) + CHAIN_SPAN
-    );
+    assert_eq!(cells.levels[0].depth, representative_depth(&grid(), bounds));
     assert_eq!(cells.levels[0].cells.len(), 1);
     assert_eq!(cells.levels[0].cells[0].count, 40);
 }
 
 #[test]
-fn leaf_chain_respects_ten_bit_span() {
+fn leaf_chain_extends_past_previous_fixed_span() {
     // Root-sized node: representative depth 3. Point `b_j` shares the level-(2 + j) cell of `a`
     // and separates at level 3 + j, so the cell count grows at every level.
     let bounds = cube([0.0; 3], SIDE);
@@ -305,7 +347,7 @@ fn leaf_chain_respects_ten_bit_span() {
         )
         .unwrap();
     let depths: Vec<_> = cells.levels.iter().map(|level| level.depth).collect();
-    let expected: Vec<_> = (d0..=d0 + CHAIN_SPAN).collect();
+    let expected: Vec<_> = (d0..=d0 + CHAIN_SPAN + 2).collect();
     assert_eq!(depths, expected);
     assert!(
         cells
@@ -442,7 +484,7 @@ fn blocks_preserve_missing_attributes_and_point_order() {
 }
 
 #[test]
-fn absolute_depth_above_24_and_relative_overflow() {
+fn absolute_depth_above_24_and_subregions() {
     let deep = CellGrid {
         root_min: [0.0; 3],
         root_side: 2.0_f64.powi(26),
@@ -467,10 +509,7 @@ fn absolute_depth_above_24_and_relative_overflow() {
         true,
         &[block],
     );
-    assert!(matches!(
-        result,
-        Err(crate::NodeCellError::RelativeDepthExceeded)
-    ));
+    assert!(result.is_ok());
 }
 
 #[test]
@@ -594,4 +633,238 @@ fn cpu_voxel_builder_matches_multiple_cells_and_attribute_presence() {
             assert_eq!(instance.classification, f32::from(cell.classification));
         }
     }
+}
+
+#[test]
+fn adaptive_leaf_separates_distinct_positions_after_old_limit_with_duplicates() {
+    let blocks = [
+        plain_block(vec![Point::new([0.0; 3], ColorRgb::new(1, 2, 3))]),
+        attributed_block(
+            vec![
+                Point::new([-0.0, 0.0, 0.0], ColorRgb::new(4, 5, 6)),
+                Point::new([0.03125, 0.0, 0.0], ColorRgb::new(7, 8, 9)),
+            ],
+            vec![10, 20],
+            vec![3, 4],
+        ),
+    ];
+    let cells = PointNodeCellSource::default()
+        .node_cells(
+            &grid(),
+            NodeId::new(1),
+            cube([0.0; 3], SIDE),
+            None,
+            true,
+            &blocks,
+        )
+        .unwrap();
+    let last = cells.levels.last().unwrap();
+    assert_eq!(last.depth, 11);
+    assert_eq!(last.cells.len(), 2);
+    assert_eq!(last.cells[0].count, 2);
+    assert_eq!(last.cells[0].rgb_sum, [5, 7, 9]);
+    assert_eq!(last.cells[0].intensity_sum, 10.0);
+}
+
+#[test]
+fn adaptive_leaf_crosses_region_limit_and_rejects_clamped_collisions() {
+    let source = PointNodeCellSource::default();
+    let bounds = cube([0.0; 3], SIDE);
+    let point = |x| Point::new([x, 0.0, 0.0], ColorRgb::new(1, 2, 3));
+    let build = |points| {
+        source.node_cells(
+            &grid(),
+            NodeId::new(1),
+            bounds,
+            Some(SIDE / 2.0_f64.powi(21)),
+            true,
+            &[plain_block(points)],
+        )
+    };
+    let cells = build(vec![point(0.0), point((SIDE / 2.0_f64.powi(21)) as f32)]).unwrap();
+    assert_eq!(cells.levels[0].depth, 21);
+    assert_eq!(cells.levels[0].cells.len(), 2);
+    assert_eq!(
+        build(vec![point(0.0), point((SIDE / 2.0_f64.powi(22)) as f32)])
+            .unwrap()
+            .levels
+            .last()
+            .unwrap()
+            .depth,
+        22
+    );
+    assert!(matches!(
+        build(vec![point(64.0), point(65.0)]),
+        Err(crate::NodeCellError::AbsoluteDepthExceeded)
+    ));
+    let max = build(vec![point(63.0), point(64.0)]).unwrap();
+    assert_eq!(max.levels[0].cells.len(), 2);
+}
+
+#[test]
+fn subregions_preserve_global_morton_order_and_aggregate_duplicates() {
+    let unit = SIDE / 2.0_f64.powi(23);
+    let coords = [
+        [2097152, 0, 0],
+        [0, 2097152, 0],
+        [0, 0, 2097152],
+        [2097151, 2097151, 2097151],
+        [2097152, 2097152, 2097152],
+        [4194304, 0, 0],
+        [0, 4194304, 0],
+        [0, 0, 4194304],
+    ];
+    let points: Vec<_> = coords
+        .iter()
+        .map(|coord| {
+            Point::new(
+                coord.map(|v| (f64::from(v) * unit) as f32),
+                ColorRgb::new(1, 2, 3),
+            )
+        })
+        .collect();
+    let blocks = [
+        plain_block(points.clone()),
+        attributed_block(vec![points[0]], vec![7], vec![9]),
+    ];
+    let cells = PointNodeCellSource::default()
+        .node_cells(
+            &grid(),
+            NodeId::new(1),
+            cube([0.0; 3], SIDE),
+            Some(unit),
+            true,
+            &blocks,
+        )
+        .unwrap();
+    let level = &cells.levels[0];
+    let mut expected: Vec<[u64; 3]> = coords.iter().map(|coord| coord.map(|v| v as u64)).collect();
+    expected.sort_by_key(|coord| morton(*coord));
+    assert_eq!(
+        level
+            .cells
+            .iter()
+            .map(|cell| cell.coord)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let duplicate = level
+        .cells
+        .iter()
+        .find(|cell| cell.coord == [2097152, 0, 0])
+        .unwrap();
+    assert_eq!(
+        (
+            duplicate.count,
+            duplicate.rgb_sum,
+            duplicate.intensity_sum,
+            duplicate.classification
+        ),
+        (2, [2, 4, 6], 7.0, -1)
+    );
+}
+
+#[test]
+fn subregions_keep_all_high_bits_at_maximum_depth() {
+    let grid = CellGrid {
+        root_min: [0.0; 3],
+        root_side: 2.0_f64.powi(63),
+    };
+    let positions = [
+        [2.0_f32.powi(62), 0.0, 0.0],
+        [0.0, 2.0_f32.powi(62), 0.0],
+        [0.0, 0.0, 2.0_f32.powi(62)],
+        [2.0_f32.powi(61), 0.0, 0.0],
+    ];
+    let block = plain_block(
+        positions
+            .into_iter()
+            .map(|p| Point::new(p, ColorRgb::new(1, 2, 3)))
+            .collect(),
+    );
+    let cells = PointNodeCellSource::default()
+        .node_cells(
+            &grid,
+            NodeId::new(1),
+            cube([0.0; 3], grid.root_side),
+            Some(1.0),
+            true,
+            &[block],
+        )
+        .unwrap();
+    let coords: Vec<_> = cells.levels[0]
+        .cells
+        .iter()
+        .map(|cell| cell.coord)
+        .collect();
+    assert_eq!(cells.levels[0].depth, 63);
+    assert_eq!(
+        coords,
+        vec![
+            [1_u64 << 61, 0, 0],
+            [0, 0, 1_u64 << 62],
+            [0, 1_u64 << 62, 0],
+            [1_u64 << 62, 0, 0]
+        ]
+    );
+}
+
+#[test]
+fn single_region_matches_generic_at_nonzero_node_origin() {
+    let grid = CellGrid {
+        root_min: [0.0; 3],
+        root_side: 2.0_f64.powi(23),
+    };
+    let origin = 2_097_152_f32;
+    let positions = [
+        [origin, origin, origin],
+        [origin + 2_097_151.0, origin, origin],
+        [origin, origin + 2_097_151.0, origin],
+        [origin, origin, origin + 2_097_151.0],
+    ];
+    let points: Vec<_> = positions
+        .into_iter()
+        .map(|p| Point::new(p, ColorRgb::new(1, 2, 3)))
+        .collect();
+    let shared = [
+        plain_block(points.clone()),
+        attributed_block(vec![points[0]], vec![7], vec![9]),
+        plain_block(vec![Point::new(
+            [f32::NAN, origin, origin],
+            ColorRgb::new(8, 8, 8),
+        )]),
+    ];
+    let source = PointNodeCellSource::default();
+    let build = |bounds, blocks: &[PointBlock]| {
+        source
+            .node_cells(&grid, NodeId::new(1), bounds, Some(1.0), true, blocks)
+            .unwrap()
+    };
+    let narrow = build(cube([f64::from(origin); 3], 2.0_f64.powi(21)), &shared);
+    let wide = build(cube([f64::from(origin); 3], 2.0_f64.powi(22)), &shared);
+    assert_eq!(narrow, wide);
+    let duplicate = &narrow.levels[0].cells[0];
+    assert_eq!(duplicate.coord, [origin as u64; 3]);
+    assert_eq!(duplicate.count, 2);
+    assert_eq!(duplicate.rgb_sum, [2, 4, 6]);
+    assert_eq!(
+        (duplicate.intensity_sum, duplicate.intensity_count),
+        (7.0, 1)
+    );
+    assert_eq!(duplicate.classification, -1);
+    let boundary = Point::new(
+        [origin + 2_097_152.0, origin, origin],
+        ColorRgb::new(4, 5, 6),
+    );
+    let mut with_boundary = shared.to_vec();
+    with_boundary.push(plain_block(vec![boundary]));
+    let mut wide_with_boundary = build(
+        cube([f64::from(origin); 3], 2.0_f64.powi(22)),
+        &with_boundary,
+    )
+    .levels
+    .remove(0)
+    .cells;
+    wide_with_boundary.retain(|cell| cell.coord != [4_194_304, 2_097_152, 2_097_152]);
+    assert_eq!(narrow.levels[0].cells, wide_with_boundary);
 }

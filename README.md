@@ -57,11 +57,11 @@ Ramas (sin push): el trabajo integrado está en `feat/render-r3-node-cells`; R3 
 
 | Orden | Trabajo | Estado | Siguiente paso |
 | --- | --- | --- | --- |
-| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), ADR [0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md) y [0032](docs/adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) | T0 y T0b hechos. T1 se paró ([parada](docs/records/benchmarks/R3_T1_STOP_04-11-2026.md)) y queda resuelto por 0032: continuación adaptativa de hojas, clave regional e instancia de 12 B ([layout por anchura](docs/records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md)) | T1 con el código de `experiment/r3-layout-narrow`; las Tareas 5 y 6 confirman 12 B frente al control de 16 B |
+| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), ADR [0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md) y [0032](docs/adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) | T0, T0b y T1 hechos ([aceptación de T1](docs/records/benchmarks/R3_T1_ACCEPT_05-11-2026.md)). 0032: continuación adaptativa de hojas, clave regional e instancia de 12 B ([layout por anchura](docs/records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md)) | Tarea 2 (oráculo de refinamiento); las Tareas 5 y 6 confirman 12 B frente al control de 16 B |
 | 2 | Velocidad de conversión (RQ-07) | v7.5/V5 ≈ 2,0× Belvedere y 1,7× Majadas; objetivo ≤ 1,3× ([registro](docs/records/benchmarks/EXPLORE_CONVERT_CPU_02-11-2026.md)) | Rediseñar el acumulador de muestreo disperso (fallos de caché) y la fase de bloques sin `i128`; requisito para promover V7 |
 | 3 | Integración | R4 y R5 completados y verificados (`check.sh` 24/24) | Revisión de la rama y PR a `main` cuando el propietario lo pida |
 
-Pendientes menores: con `?buildWorker=0` falta la guarda contra reintentos en bucle al fallar un injerto de página; medición remota sin órbita, S3 real ni compresión; borrar los worktrees `target/r1t7-control-a/b-20261101` y `~/.cache/codex-worktrees/octree-r1-t1a` (pendiente de confirmación del propietario).
+Pendientes menores: con `?buildWorker=0` falta la guarda contra reintentos en bucle al fallar un injerto de página; medición remota sin órbita, S3 real ni compresión. Worktrees obsoletos eliminados el 05-11-2026 con permiso del propietario; las ramas se conservan.
 
 ### Orden general
 

@@ -68,13 +68,15 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 1 (reabierta): celdas por nodo
 
+**Hecha (05-11-2026):** [aceptación en Belvedere y Majadas](../records/benchmarks/R3_T1_ACCEPT_05-11-2026.md): ninguna hoja sin separar.
+
 **Parada (04-11-2026):** Majadas presenta 16 hojas con colisiones entre posiciones `f32` distintas en el límite de profundidad; resuelta por el [ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md) (05-11-2026); T1 continúa con el código de `experiment/r3-layout-narrow`. [Diagnóstico, reproducción y límites](../records/benchmarks/R3_T1_STOP_04-11-2026.md); [salida completa del benchmark repetido](../records/benchmarks/R3_T1_BENCH_04-11-2026.md).
 
-- [ ] Continuación adaptativa de hojas y clave regional más allá de 21 bits (R3-Q7).
-- [ ] Claves `u64`, Morton de 64 bits relativo al nodo hasta 21 bits, firma `&[PointBlock]`, `intensity_count` y clase `i16` (−1 si falta).
-- [ ] Pirámide interna de +3 a +8, podada. Las hojas se reconocen por `has_children` = 0.
-- [ ] Bench sobre todos los nodos: celdas por nivel, bytes y hojas sin separar.
-- [ ] **Pasa si:**
+- [x] Continuación adaptativa de hojas y clave regional más allá de 21 bits (R3-Q7).
+- [x] Claves `u64`, Morton de 64 bits relativo al nodo hasta 21 bits, firma `&[PointBlock]`, `intensity_count` y clase `i16` (−1 si falta).
+- [x] Pirámide interna de +3 a +8, podada. Las hojas se reconocen por `has_children` = 0: lo decide quien llama (`is_leaf`); hoy el bench, y `LodDataset` en la Tarea 9.
+- [x] Bench sobre todos los nodos: celdas por nivel, bytes y hojas sin separar.
+- [x] **Pasa si:**
   - ninguna hoja queda con posiciones distintas sin separar;
   - las sumas coinciden con `accumulate_block`;
   - el color es igual al de la ruta CPU.

@@ -1,0 +1,45 @@
+file: target/render-data/belvedere-v75.oct
+nodes: 3941 (leaves 3174, internal 767), nodes with several blocks: 0
+size_of NodeCell: 80 B
+Byte ratios compare projected 16-byte GPU instance payload with Point struct payload; they exclude allocation capacity, attributes, page metadata and other overhead.
+non-cubic nodes: 0
+nodes whose 8-cells-per-axis depth is not an integer: 0
+representative depth by (level, depth): count
+  level 0 depth 8: 1
+  level 1 depth 9: 4
+  level 2 depth 10: 5
+  level 2 depth 16: 1
+  level 3 depth 11: 15
+  level 4 depth 12: 50
+  level 4 depth 16: 5
+  level 5 depth 13: 151
+  level 5 depth 16: 36
+  level 6 depth 14: 456
+  level 6 depth 16: 242
+  level 7 depth 15: 89
+  level 7 depth 16: 2267
+  level 7 depth 17: 6
+  level 7 depth 29: 3
+  level 8 depth 15: 1
+  level 8 depth 16: 603
+  level 8 depth 17: 4
+  level 8 depth 29: 2
+leaf chain length histogram (levels: leaves)
+  1: 55
+  2: 3116
+  3: 3
+leaves with unresolved distinct-position collisions at terminal depth (experimental): 0 (0.000 %)
+leaves with only duplicate positions at terminal depth (experimental): 3065
+leaves with unpruned chain > 4x point bytes: 0; worst ratio 2.43x; total unpruned chain bytes 2556919328 vs point bytes 1306917264 (1.96x)
+unpruned leaf build (all levels): 4.775 ms/leaf, 185.6 ns/point, 805582.6 unpruned chain B/leaf, 411757.2 point B/leaf
+worst unpruned leaf: node 68719476739 level 7 spacing Some(0.5): 42 points, (depth, cells) [(15, 28), (16, 36), (17, 38)]
+leaf chain pruning (default growth 1.5; 1.0 = no pruning):
+  growth 1: >4x 0, worst 2.43x, total 1.96x, 1.98 levels/leaf
+  growth 1.25: >4x 0, worst 1.59x, total 0.99x, 1.00 levels/leaf
+  growth 1.5: >4x 0, worst 1.37x, total 0.99x, 1.00 levels/leaf
+  growth 2: >4x 0, worst 1.00x, total 0.99x, 1.00 levels/leaf
+internal build: 30.244 ms/node
+cells by depth: {3: 16, 4: 112, 5: 578, 6: 3042, 7: 14590, 8: 69028, 9: 273524, 10: 918744, 11: 2909216, 12: 8428521, 13: 20728124, 14: 34229954, 15: 5013679, 16: 79180603, 17: 80626732, 29: 9}
+occupied regions summed per node by depth: {3: 1, 4: 5, 5: 10, 6: 25, 7: 75, 8: 226, 9: 681, 10: 762, 11: 757, 12: 742, 13: 692, 14: 541, 15: 90, 16: 3158, 17: 3128, 29: 5}
+peak nominal temporary key payload: 6928560 bytes (finite points times narrow or wide record size at finest level; excludes allocation capacity and other memory; not RSS)
+total cells: 232396472; CPU NodeCell payload bytes: 18591717760; projected GPU instance payload bytes: 3718343552
