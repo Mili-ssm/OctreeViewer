@@ -29,6 +29,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q9 | (05-11-2026) Una hoja con todas sus posiciones separadas no se refina más: cubos mayores que el objetivo de px en primeros planos caen en la excepción «densidad de la fuente» de RQ-09 |
 | R3-Q10 | (05-11-2026) Una actualización de corte con `DescendantTooFine` se rechaza y se retiene el corte visible hasta que el nuevo esté completo ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
 | R3-Q11 | (05-11-2026) Si el corte deseado no cabe en el pool, los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que quepa ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)) |
+| R3-Q12 | (05-11-2026) Nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); en la pose rasante, ≤ 2× las instancias de la CPU a 2–8 px y ≤ 2,5× a 1 px |
+| R3-Q13 | (05-11-2026) RQ-09 admite ≤ 0,5 % de celdas por encima del objetivo con la cámara dentro del dataset (ADR 0034) |
 
 ## Restricciones globales
 
@@ -43,7 +45,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 ## Criterios de parada
 
 - **T1:** alguna hoja con posiciones finitas distintas sin separar en la profundidad absoluta 63 → parar (R3-Q7).
-- **T4:** el corte ocupa más de 256 MiB, o hay más del doble de instancias en pantalla que en la ruta CPU en la pose rasante → replantear (nivel por octante) y volver al propietario.
+- **T4:** el corte ocupa más de 256 MiB, o en la pose rasante hay más de 2× las instancias en pantalla de la ruta CPU a 2–8 px, o más de 2,5× a 1 px (R3-Q12) → replantear y volver al propietario.
 - **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara. Revisado el 05-11-2026 ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)): 16,7 % solo en saltos de pose; se retiene el corte (R3-Q10). Vuelve a aplicar si aparece con navegación continua.
 - **T5:** más de 16,7 ms de GPU con los recuentos de T4 → revisar ADR 0019.
 - **T11:** cualquiera de estos → parar:
@@ -110,15 +112,16 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 **Parada (05-11-2026):** saltan los criterios de T4 y el disparador de `DescendantTooFine` ([registro](../records/benchmarks/R3_T4_COVERAGE_05-11-2026.md)): Majadas pasa de 256 MiB desde dentro de una hoja a 1 px, la pirámide da 2–4,6× las instancias de la CPU en la pose rasante de Majadas, y el 16,7 % de las transiciones (todas saltos de pose) dan `DescendantTooFine`. Causa principal: `projected_error_pixels` es una cota superior. Vuelve al propietario. Medidas nativas hechas; los píxeles vacíos quedan para después de la Tarea 7.
 
-**Alternativas (05-11-2026):** con métrica ajustada y nivel por octante, el corte cabe en 256 MiB y la razón frente a la CPU baja a 1,00–1,01× salvo 2,27× a 1 px en Majadas ([registro](../records/benchmarks/R3_T4_METRIC_05-11-2026.md)). Pendiente de decisión del propietario.
+**Alternativas (05-11-2026):** con métrica ajustada y nivel por octante, el corte cabe en 256 MiB y la razón frente a la CPU baja a 1,00–1,01× salvo 2,27× a 1 px en Majadas ([registro](../records/benchmarks/R3_T4_METRIC_05-11-2026.md)). Decidido el 05-11-2026: R3-Q12 y R3-Q13 ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md); [celdas por encima del objetivo](../records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md)).
 
-- [ ] Majadas y Belvedere en órbita, en pose rasante y desde dentro de una hoja, a 1, 2, 4 y 8 px. Comparar la pirámide con 256³ solo.
-- [ ] Registrar:
+- [x] Majadas y Belvedere en órbita, en pose rasante y desde dentro de una hoja, a 1, 2, 4 y 8 px. Comparar la pirámide con 256³ solo.
+- [x] Registrar (píxeles vacíos pendientes del render de la Tarea 7):
   - instancias totales y en pantalla;
-  - píxeles vacíos;
+  - píxeles vacíos (pendiente, abajo);
   - bytes del corte;
   - frecuencia de `DescendantTooFine`.
-- [ ] **Pasa si** no salta ningún criterio de parada de T4.
+- [x] **Pasa si** no salta ningún criterio de parada de T4: pasa con el nivel por octante y la arista real (R3-Q12) en los dos datasets. El de `DescendantTooFine` (16,7 %, solo en saltos de pose) se revisó en el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) (R3-Q10).
+- [ ] Píxeles vacíos, cuando exista el render (Tarea 7).
 
 ## Tarea 5: spike de GPU
 
@@ -174,9 +177,10 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 - [ ] Como en el plan anterior (antes R1-T1b).
 
-## Tarea 15 (condicional): nivel por octante
+## Tarea 15: nivel por octante (obligatoria desde el 05-11-2026)
 
-- [ ] Solo si T4 da más del doble de instancias que la ruta CPU con la pirámide. Riesgo: celdas lejanas demasiado finas. Lleva su propio pre-mortem.
+- [ ] `cell_cut` elige un nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); `CellCutEntry` lleva un nivel por octante. Se hace antes de la Tarea 5. Lleva su propio pre-mortem.
+- [ ] **Pasa si** los tests de volumen de la Tarea 3 siguen en verde con niveles distintos por octante, y el spike de cobertura reproduce las cifras de `octant_tight` del [registro](../records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md).
 
 ## Tarea 16 (condicional): compactación y HZB
 

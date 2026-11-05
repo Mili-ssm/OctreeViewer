@@ -37,3 +37,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0031](0031-celdas-por-nodo-en-v7-5.md) | Celdas por nodo en v7.5: pirámide por nodo, coordenadas por página del pool, claves de 64 bits (sustituye en parte a 0027) | Aceptada (enmendada por 0032) |
 | [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) | Hojas hasta separar posiciones, clave regional más allá de 21 bits e instancia de 12 B (enmienda a 0031) | Aceptada |
 | [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) | GPU mínima de 4 GB y corte ajustado al pool (sustituye P2) | Aceptada |
+| [0034](0034-nivel-por-octante-con-arista-real.md) | Nivel por octante con la arista proyectada real y tolerancia de RQ-09 dentro del dataset (enmienda a 0031) | Aceptada |
