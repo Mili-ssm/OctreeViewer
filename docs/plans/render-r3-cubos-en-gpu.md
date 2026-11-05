@@ -264,18 +264,21 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7a, residencia en CPU** (`crates/viewer_render_wgpu/src/cell_pool.rs`, sin GPU):
 
-- [ ] **Pool de páginas:** capacidad fija en páginas de 8 KiB (256 MiB = 32.768 páginas, [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)), con lista libre. Clave de un nivel: (sesión, nodo, profundidad, generación de color).
-- [ ] **Estados por (nodo, nivel):** pedido → subiendo → residente (R3-Q2: solo cuenta como residente con todas sus páginas). La entrada de datos es asíncrona, `offer(clave, PackedLevel)`, como la entregarán los workers (Tarea 10). Un nivel puede subirse en varios frames, con un presupuesto de bytes por frame. Si sale del corte, se cancela y se liberan sus páginas.
-- [ ] **El nivel más grueso de cada nodo del corte está siempre residente y fijado**, también el de los nodos con todos los octantes tapados por la máscara. Si un descendiente pierde residencia y la máscara se abre, el antepasado tiene qué dibujar. Se reserva 1/8 del pool para las transiciones.
-- [ ] **Prioridad de subida:** primero el nivel más grueso de los nodos que no tienen ningún nivel dibujable; después, los deseados, del nodo más cercano al más lejano.
-- [ ] **Ajuste al pool** (R3-Q11), calculado sobre el **corte deseado**, no sobre la residencia actual: `cell_cut` con `resident = stored`, y la suma de páginas de sus niveles `wanted`.
+**Hecha (06-11-2026).** 16 tests con un cargador y una GPU falsos. La GPU falsa falla si se escribe un hueco en uso en el frame actual o en el anterior, si un nivel activo no tiene todas sus páginas o si una máscara no coincide con la de `cell_cut`. Cuatro mutaciones (contadores fijos a 0, sin orden de prioridad, histéresis al 90 % y sin bloqueo por prioridad) hacen fallar los tests. Pendiente de medir con cortes reales en T7c: si la estimación de tamaño recorta de más con la cámara quieta, porque los niveles por encima del límite no se piden y conservan su tamaño estimado.
+
+- [x] **Pool de páginas:** capacidad fija en páginas de 8 KiB (256 MiB = 32.768 páginas, [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)), con lista libre. Clave de un nivel: (sesión, nodo, profundidad, generación de color).
+- [x] **Estados por (nodo, nivel):** pedido → subiendo → residente (R3-Q2: solo cuenta como residente con todas sus páginas). La entrada de datos es asíncrona, `offer(clave, PackedLevel)`, como la entregarán los workers (Tarea 10). Un nivel puede subirse en varios frames, con un presupuesto de bytes por frame. Si sale del corte, se cancela y se liberan sus páginas.
+- [x] **El nivel más grueso de cada nodo del corte está siempre residente y fijado**, también el de los nodos con todos los octantes tapados por la máscara. Si un descendiente pierde residencia y la máscara se abre, el antepasado tiene qué dibujar. Se reserva 1/8 del pool para las transiciones.
+- [x] **Prioridad de subida:** primero el nivel más grueso de los nodos que no tienen ningún nivel dibujable; después, los deseados, del nodo más cercano al más lejano.
+- [x] **Ajuste al pool** (R3-Q11), calculado sobre el **corte deseado**, no sobre la residencia actual: `cell_cut` con `resident = stored`, y la suma de páginas de sus niveles `wanted`.
+  - El tamaño de un nivel que aún no ha llegado se estima: `ceil(min(puntos del nodo, 8^(d − nodo)) / 512)` páginas. No es una cota estricta, porque `pack_level` abre página nueva si el rango pasa de 2¹⁶. Al recibirlo con `offer` se usa su tamaño exacto, y el ajuste se corrige en el frame siguiente; la reserva de 1/8 absorbe la diferencia.
   - Si no cabe, se recortan en bloque los nodos más lejanos (distancia del ojo a su caja, con la ordenación hecha una sola vez): se truncan su `stored` y su `resident` por debajo de su `max(wanted)` actual, y se repite hasta que quepa. `cell_cut` no cambia.
   - Histéresis: se recorta por encima del 90 % de la capacidad y se deshace por debajo del 80 %.
   - Cada nodo recortado cuenta en `pool_coarsened`, que impide «objetivo alcanzado» como una etapa.
-- [ ] **Desbordamiento:** si ni con todos los nodos en su nivel más grueso cabe, se mantiene el último corte completo y se cuenta `pool_overflow`.
-- [ ] **`DescendantTooFine`** (R3-Q10): `CutApply { Applied, RetainedPrevious }`. Mientras se retiene, el corte nuevo se planifica con los descendientes culpables fuera de `resident`, y se sube lo que le falta. Se sale cuando `cell_cut` da `Ok` y no queda ningún nodo sin nivel (`nodes_without_level = 0`).
-- [ ] **Expulsión:** LRU entre los niveles que no están fijados ni los usa el corte aplicado o el deseado. Cada expulsión emite `CellPoolEvent::Evict(clave)` (Tarea 10).
-- [ ] **Tests:**
+- [x] **Desbordamiento:** si ni con todos los nodos en su nivel más grueso cabe, se mantiene el último corte completo y se cuenta `pool_overflow`.
+- [x] **`DescendantTooFine`** (R3-Q10): `CutApply { Applied, RetainedPrevious }`. Los descendientes culpables solo deciden qué se pide: no se piden niveles que harían el corte `DescendantTooFine`. Se aplica según el corte real, con la residencia actual: cuando `cell_cut` da `Ok` y no queda ningún nodo sin nivel (`nodes_without_level = 0`), o cuando el corte aplicado tampoco estaba completo. Un corte cuyo `cell_cut` real da `DescendantTooFine` se retiene y se cuenta; corregirlo en el selector es de la Tarea 9, y la Tarea 11 para si la retención dura más de 1 s.
+- [x] **Expulsión:** LRU entre los niveles que no están fijados ni los usa el corte aplicado o el deseado. Cada expulsión emite `CellPoolEvent::Evict(clave)`, y cada nivel cancelado antes de ser residente, `CellPoolEvent::Cancel(clave)`, para que los workers suelten sus datos (Tarea 10). Las páginas expulsadas vuelven a la lista libre dos frames después del último que las dibujó.
+- [x] **Tests:**
   - `overflow_keeps_previous_complete_cut`;
   - `regraft_mid_cut_keeps_coverage`: expulsar y volver a subir un nivel a mitad del corte. Mientras falta, el oráculo de cobertura de la Tarea 15 cubre cada celda fina una sola vez, y la etapa nunca sube;
   - todo o nada, subida repartida en varios frames y cancelación;
@@ -315,6 +318,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 ## Tarea 9 ★: `LodDataset` con celdas
 
 - [ ] Una hoja es un nodo sin `has_children`.
+- [ ] El selector no entrega cortes con pares `DescendantTooFine` (un descendiente más de 3 niveles por debajo de un antepasado del corte): el pool no los pide, los cuenta en `nodes_without_level` y el antepasado dibuja esa zona más gruesa (Tarea 7a).
 - [ ] Los nodos fijados incluyen el corte confirmado por `poolAck`.
 - [ ] v5, `v7.1–3` y Additive devuelven `CellPathUnsupported`.
 - [ ] **Pasa si** expulsar y volver a injertar una página a mitad del corte no deja huecos y la etapa nunca sube.

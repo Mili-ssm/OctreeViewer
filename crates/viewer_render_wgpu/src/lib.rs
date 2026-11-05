@@ -9,6 +9,7 @@ mod cell_cut;
 mod cell_pages;
 #[cfg(test)]
 mod cell_pages_tests;
+mod cell_pool;
 mod cell_render;
 #[cfg(test)]
 mod cell_render_tests;
@@ -38,6 +39,11 @@ pub use cell_pages::{
     CELL_PAGES_WGSL, CellInstance, DecodedCell, FLAG_SPANS_OCTANTS, MAX_INTENSITY, MAX_PAGE_EXTENT,
     MISSING_INTENSITY, PAGE_HAS_CLASS, PAGE_HAS_INTENSITY, PAGE_SLOTS, PackedLevel, PageEntry,
     PageFrame, PageInfo, decode_cell, pack_level, srgb_to_linear_table,
+};
+pub use cell_pool::{
+    ActiveLevel, CellPool, CellPoolEvent, CutApply, DEFAULT_POOL_PAGES,
+    DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, LevelKey, MaskUpdate, POOL_PAGE_BYTES, PageUpload,
+    PoolConfig, PoolCounters, PoolNode,
 };
 pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
