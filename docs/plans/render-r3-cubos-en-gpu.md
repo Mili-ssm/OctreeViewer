@@ -110,6 +110,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 **Parada (05-11-2026):** saltan los criterios de T4 y el disparador de `DescendantTooFine` ([registro](../records/benchmarks/R3_T4_COVERAGE_05-11-2026.md)): Majadas pasa de 256 MiB desde dentro de una hoja a 1 px, la pirámide da 2–4,6× las instancias de la CPU en la pose rasante de Majadas, y el 16,7 % de las transiciones (todas saltos de pose) dan `DescendantTooFine`. Causa principal: `projected_error_pixels` es una cota superior. Vuelve al propietario. Medidas nativas hechas; los píxeles vacíos quedan para después de la Tarea 7.
 
+**Alternativas (05-11-2026):** con métrica ajustada y nivel por octante, el corte cabe en 256 MiB y la razón frente a la CPU baja a 1,00–1,01× salvo 2,27× a 1 px en Majadas ([registro](../records/benchmarks/R3_T4_METRIC_05-11-2026.md)). Pendiente de decisión del propietario.
+
 - [ ] Majadas y Belvedere en órbita, en pose rasante y desde dentro de una hoja, a 1, 2, 4 y 8 px. Comparar la pirámide con 256³ solo.
 - [ ] Registrar:
   - instancias totales y en pantalla;

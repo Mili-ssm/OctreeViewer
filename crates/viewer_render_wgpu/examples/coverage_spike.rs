@@ -52,17 +52,42 @@ struct NodeData {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // `Only256` is not in `RUN_VARIANTS` by default
 enum Variant {
     Pyramid,
     Only256,
+    /// Level test on the actual projected edge of a cube at the node's nearest point.
+    Tight,
+    /// Per child octant, conservative test (approximates Task 15).
+    Octant,
+    OctantTight,
 }
+
+/// Variants measured by default; `Only256` stays available.
+const RUN_VARIANTS: [Variant; 4] = [
+    Variant::Pyramid,
+    Variant::Tight,
+    Variant::Octant,
+    Variant::OctantTight,
+];
+/// `DescendantTooFine` depends on the cut structure, not on the level choice.
+const TRANSITION_VARIANTS: [Variant; 1] = [Variant::Pyramid];
 
 impl Variant {
     fn name(self) -> &'static str {
         match self {
             Self::Pyramid => "pyramid",
             Self::Only256 => "only256",
+            Self::Tight => "tight",
+            Self::Octant => "octant",
+            Self::OctantTight => "octant_tight",
         }
+    }
+    fn tight(self) -> bool {
+        matches!(self, Self::Tight | Self::OctantTight)
+    }
+    fn octants(self) -> bool {
+        matches!(self, Self::Octant | Self::OctantTight)
     }
     /// Indices into `levels` kept as stored.
     fn kept(self, node: &NodeData) -> Vec<usize> {
@@ -71,6 +96,57 @@ impl Variant {
             _ => (0..node.levels.len()).collect(),
         }
     }
+}
+
+/// First stored depth passing `ok`, else the finest.
+fn pick_depth(stored: &[u8], ok: impl Fn(u8) -> bool) -> u8 {
+    stored
+        .iter()
+        .copied()
+        .find(|d| ok(*d))
+        .unwrap_or_else(|| *stored.last().expect("stored levels are not empty"))
+}
+
+/// Does a level of `depth` meet `target` over `bounds` (local, unscaled frame)?
+fn level_ok(
+    view: &ViewProjection,
+    root_side: f64,
+    bounds: SpatialBounds,
+    depth: u8,
+    target: f64,
+    tight: bool,
+) -> bool {
+    let side = root_side / (1_u64 << depth) as f64;
+    if !tight {
+        return view.projected_error_pixels(bounds, side, [0.0; 3]) <= target;
+    }
+    let eye = view.camera().position().map(|v| v / view.visual_scale());
+    let min: [f64; 3] = std::array::from_fn(|a| {
+        let lo = bounds.min()[a];
+        let hi = (bounds.max()[a] - side).max(lo);
+        eye[a].clamp(bounds.min()[a], bounds.max()[a]).clamp(lo, hi)
+    });
+    SpatialBounds::new(min, min.map(|v| v + side))
+        .is_ok_and(|cube| view.projected_voxel_edge_pixels(cube, [0.0; 3]) <= target)
+}
+
+fn octant_bounds(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
+    let mid: [f64; 3] = std::array::from_fn(|a| (bounds.min()[a] + bounds.max()[a]) / 2.0);
+    let min = std::array::from_fn(|a| {
+        if octant >> a & 1 == 0 {
+            bounds.min()[a]
+        } else {
+            mid[a]
+        }
+    });
+    let max = std::array::from_fn(|a| {
+        if octant >> a & 1 == 0 {
+            mid[a]
+        } else {
+            bounds.max()[a]
+        }
+    });
+    SpatialBounds::new(min, max).ok()
 }
 
 struct Resident(HashMap<BlockId, PointBlock>);
@@ -314,9 +390,9 @@ fn main() -> Result<()> {
     let mut coarse_first_level_nodes = 0_usize;
     let mut cases: Vec<Case> = Vec::new();
     let mut rows = Vec::new();
-    let mut stop_bytes: Vec<String> = Vec::new();
-    let mut stop_grazing: Vec<String> = Vec::new();
-    let mut na_grazing: Vec<String> = Vec::new();
+    let mut stop_bytes: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
+    let mut stop_grazing: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
+    let mut na_grazing: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
     let mut skipped: Vec<String> = Vec::new();
     let source = PointNodeCellSource::default();
     let started_all = Instant::now();
@@ -452,16 +528,22 @@ fn main() -> Result<()> {
                         &project,
                         view.voxel_build_limits(),
                     )
-                    .map(|scene| scene.scene.instance_count())
+                    .map(|scene| (scene.scene.instance_count(), scene.oversized_voxels))
                     .map_err(|e| format!("NA({e:?})"))
                 };
 
-                for variant in [Variant::Pyramid, Variant::Only256] {
+                for (vi, variant) in RUN_VARIANTS.iter().copied().enumerate() {
                     let t0 = Instant::now();
                     let node_info = |id: NodeId| {
                         cache.get(&id).map(|n| {
-                            let stored: Vec<u8> =
-                                variant.kept(n).iter().map(|&i| n.levels[i].depth).collect();
+                            let stored: Vec<u8> = if variant == Variant::Tight {
+                                let all: Vec<u8> = n.levels.iter().map(|l| l.depth).collect();
+                                vec![pick_depth(&all, |d| {
+                                    level_ok(&view, grid.root_side, n.bounds, d, target, true)
+                                })]
+                            } else {
+                                variant.kept(n).iter().map(|&i| n.levels[i].depth).collect()
+                            };
                             CellCutNode {
                                 bounds: n.bounds,
                                 resident: stored.clone(),
@@ -478,87 +560,119 @@ fn main() -> Result<()> {
                             )
                         })?;
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
+                    let (mut over, mut over_limited) = (0_u64, 0_u64);
                     for entry in &entries {
                         stages += usize::from(entry.stage);
-                        let Some(depth) = entry.drawn else { continue };
                         let n = &cache[&entry.node];
-                        let level = n
-                            .levels
-                            .iter()
-                            .find(|l| l.depth == depth)
-                            .ok_or("drawn level not stored")?;
-                        let any_mask = entry.mask.iter().any(|w| *w != 0);
-                        if any_mask && depth < n.rep {
-                            return Err(format!(
-                                "node {} draws depth {depth} coarser than its masked 8^3 grid",
-                                entry.node.get()
-                            )
-                            .into());
-                        }
-                        let shift = depth.saturating_sub(n.rep);
-                        let cell_side = grid.root_side / (1_u64 << depth) as f64;
-                        for rel in &level.rel {
-                            if any_mask {
-                                let m: [u64; 3] = std::array::from_fn(|a| {
-                                    ((level.lo[a] + u64::from(rel[a])) >> shift)
-                                        .wrapping_sub(n.rep_lo[a])
-                                });
-                                if m.iter().all(|v| *v < 8)
-                                    && entry.mask[m[2] as usize] >> (m[0] + 8 * m[1]) & 1 == 1
-                                {
-                                    continue;
-                                }
+                        let depths: [u8; 8] = if variant.octants() {
+                            let all: Vec<u8> = n.levels.iter().map(|l| l.depth).collect();
+                            std::array::from_fn(|o| {
+                                let b = octant_bounds(n.bounds, o).unwrap_or(n.bounds);
+                                pick_depth(&all, |d| {
+                                    level_ok(&view, grid.root_side, b, d, target, variant.tight())
+                                })
+                            })
+                        } else {
+                            let Some(depth) = entry.drawn else { continue };
+                            [depth; 8]
+                        };
+                        let mut distinct = depths.to_vec();
+                        distinct.sort_unstable();
+                        distinct.dedup();
+                        let mid: [f64; 3] =
+                            std::array::from_fn(|a| (n.bounds.min()[a] + n.bounds.max()[a]) / 2.0);
+                        let finest = n.levels.last().map_or(0, |l| l.depth);
+                        for &depth in &distinct {
+                            let level = n
+                                .levels
+                                .iter()
+                                .find(|l| l.depth == depth)
+                                .ok_or("drawn level not stored")?;
+                            let any_mask = entry.mask.iter().any(|w| *w != 0);
+                            if any_mask && depth < n.rep {
+                                return Err(format!(
+                                    "node {} draws depth {depth} coarser than its masked 8^3 grid",
+                                    entry.node.get()
+                                )
+                                .into());
                             }
-                            total += 1;
-                            let min: [f64; 3] = std::array::from_fn(|a| {
-                                grid.root_min[a]
-                                    + (level.lo[a] + u64::from(rel[a])) as f64 * cell_side
-                            });
-                            let max = min.map(|v| v + cell_side);
-                            if let Ok(b) = SpatialBounds::new(min, max)
-                                && local_frustum.intersects(&b)
-                            {
-                                on_screen += 1;
+                            let shift = depth.saturating_sub(n.rep);
+                            let cell_side = grid.root_side / (1_u64 << depth) as f64;
+                            for rel in &level.rel {
+                                let min: [f64; 3] = std::array::from_fn(|a| {
+                                    grid.root_min[a]
+                                        + (level.lo[a] + u64::from(rel[a])) as f64 * cell_side
+                                });
+                                if distinct.len() > 1 {
+                                    let octant = (0..3).fold(0_usize, |acc, a| {
+                                        acc | usize::from(min[a] + cell_side / 2.0 >= mid[a]) << a
+                                    });
+                                    if depths[octant] != depth {
+                                        continue;
+                                    }
+                                }
+                                if any_mask {
+                                    let m: [u64; 3] = std::array::from_fn(|a| {
+                                        ((level.lo[a] + u64::from(rel[a])) >> shift)
+                                            .wrapping_sub(n.rep_lo[a])
+                                    });
+                                    if m.iter().all(|v| *v < 8)
+                                        && entry.mask[m[2] as usize] >> (m[0] + 8 * m[1]) & 1 == 1
+                                    {
+                                        continue;
+                                    }
+                                }
+                                total += 1;
+                                let max = min.map(|v| v + cell_side);
+                                if let Ok(b) = SpatialBounds::new(min, max)
+                                    && local_frustum.intersects(&b)
+                                {
+                                    on_screen += 1;
+                                    if view.projected_voxel_edge_pixels(b, [0.0; 3])
+                                        > target * (1.0 + 1e-6)
+                                    {
+                                        over += 1;
+                                        over_limited += u64::from(depth == finest);
+                                    }
+                                }
                             }
                         }
                     }
                     let build_ms = t0.elapsed().as_secs_f64() * 1000.0;
                     let bytes12 = total * 12;
-                    let (cpu_text, ratio_text) = match &cpu {
-                        Ok(count) => (
+                    let (cpu_text, ratio_text, cpu_over) = match &cpu {
+                        Ok((count, oversized)) => (
                             count.to_string(),
                             format!("{:.3}", on_screen as f64 / (*count).max(1) as f64),
+                            oversized.to_string(),
                         ),
-                        Err(text) => (text.clone(), "NA".to_string()),
+                        Err(text) => (text.clone(), "NA".to_string(), "NA".to_string()),
                     };
                     if bytes12 > POOL_BYTES {
-                        stop_bytes.push(format!(
-                            "{} {target}px budget {budget} {}: {bytes12} B",
-                            pose.name,
-                            variant.name()
+                        stop_bytes[vi].push(format!(
+                            "{} {target}px budget {budget}: {bytes12} B",
+                            pose.name
                         ));
                     }
                     if pose.name == "grazing" {
                         match &cpu {
-                            Ok(count) if on_screen > 2 * (*count as u64) => stop_grazing.push(format!(
-                                "{target}px budget {budget} {}: on-screen {on_screen} vs CPU {count}",
-                                variant.name()
-                            )),
+                            Ok((count, _)) if on_screen > 2 * (*count as u64) => stop_grazing[vi]
+                                .push(format!(
+                                    "{target}px budget {budget}: on-screen {on_screen} vs CPU {count}"
+                                )),
                             Ok(_) => {}
-                            Err(_) => na_grazing.push(format!(
-                                "{target}px budget {budget} {}",
-                                variant.name()
-                            )),
+                            Err(_) => na_grazing[vi].push(format!("{target}px budget {budget}")),
                         }
                     }
                     rows.push(format!(
-                        "{}\t{}\t{target}\t{budget}\t{}\t{}\t{}\t{total}\t{on_screen}\t{bytes12}\t{}\t{cpu_text}\t{ratio_text}\t{stages}\t{build_ms:.1}",
+                        "{}\t{}\t{target}\t{budget}\t{}\t{}\t{}\t{total}\t{on_screen}\t{bytes12}\t{}\t{cpu_text}\t{ratio_text}\t{stages}\t{build_ms:.1}\t{over}\t{:.4}\t{over_limited}\t{cpu_over}",
                         args[0].to_string_lossy(),
                         pose.name,
                         variant.name(),
                         cut.len(),
                         selection.point_count(),
                         total * 16,
+                        over as f64 / on_screen.max(1) as f64,
                     ));
                 }
                 cases.push(Case {
@@ -573,7 +687,7 @@ fn main() -> Result<()> {
 
     println!("# block case");
     println!(
-        "dataset_file\tpose\ttarget_px\tbudget\tvariant\tcut_nodes\tcut_points\tcells_total\tcells_on_screen\tbytes12\tbytes16\tcpu_instances\tratio_on_screen_vs_cpu\tstage_entries\tbuild_ms"
+        "dataset_file\tpose\ttarget_px\tbudget\tvariant\tcut_nodes\tcut_points\tcells_total\tcells_on_screen\tbytes12\tbytes16\tcpu_instances\tratio_on_screen_vs_cpu\tstage_entries\tbuild_ms\tover_target_cells\tover_target_frac\tover_target_source_limited\tcpu_oversized"
     );
     for row in &rows {
         println!("{row}");
@@ -624,8 +738,9 @@ fn main() -> Result<()> {
     println!(
         "transition\tbudget\tvariant\tprev_nodes\tnext_nodes\tunion_nodes\tresult\toffending_pairs"
     );
-    let mut counts = [(0_usize, 0_usize); 2];
-    let mut failing: [Vec<String>; 2] = [Vec::new(), Vec::new()];
+    let mut counts = [(0_usize, 0_usize); TRANSITION_VARIANTS.len()];
+    let mut failing: [Vec<String>; TRANSITION_VARIANTS.len()] =
+        [const { Vec::new() }; TRANSITION_VARIANTS.len()];
     for (name, a, b) in &transitions {
         let (prev, next) = (&cases[*a], &cases[*b]);
         let mut seen = HashSet::new();
@@ -642,7 +757,7 @@ fn main() -> Result<()> {
             visual_scale,
             build_limits,
         );
-        for (v, variant) in [Variant::Pyramid, Variant::Only256].into_iter().enumerate() {
+        for (v, variant) in TRANSITION_VARIANTS.into_iter().enumerate() {
             let node_info = |id: NodeId| {
                 cache.get(&id).map(|n| {
                     let stored: Vec<u8> =
@@ -682,7 +797,11 @@ fn main() -> Result<()> {
         "# transitions evaluated per variant: {} of {expected_transitions} expected (the rest involve skipped cases)",
         transitions.len()
     );
-    for (v, name) in ["pyramid", "only256"].into_iter().enumerate() {
+    for (v, name) in TRANSITION_VARIANTS
+        .map(Variant::name)
+        .into_iter()
+        .enumerate()
+    {
         println!(
             "# {name}: DescendantTooFine in {}/{} transitions (frequency {:.4})",
             counts[v].0,
@@ -705,34 +824,41 @@ fn main() -> Result<()> {
     } else {
         format!(" [skipped cases: {}]", skipped.join("; "))
     };
-    let (verdict, detail) = if !stop_bytes.is_empty() {
-        ("FAIL", format!(": {}", stop_bytes.join("; ")))
-    } else if !skipped.is_empty() {
-        ("UNKNOWN", String::new())
-    } else {
-        ("PASS", String::new())
-    };
-    println!("{verdict}\tcut bytes (12 B) <= 256 MiB in every case{detail}{skipped_text}");
     let skipped_grazing: Vec<_> = skipped
         .iter()
         .filter(|c| c.starts_with("grazing"))
         .cloned()
         .collect();
-    let (verdict, detail) = if !stop_grazing.is_empty() {
-        ("FAIL", format!(": {}", stop_grazing.join("; ")))
-    } else if !na_grazing.is_empty() || !skipped_grazing.is_empty() {
-        (
-            "UNKNOWN",
-            format!(
-                ": no CPU count for rows [{}], skipped [{}]",
-                na_grazing.join("; "),
-                skipped_grazing.join("; ")
-            ),
-        )
-    } else {
-        ("PASS", String::new())
-    };
-    println!("{verdict}\ton-screen instances <= 2x CPU instances in the grazing pose{detail}");
+    for (vi, variant) in RUN_VARIANTS.iter().enumerate() {
+        let name = variant.name();
+        let (verdict, detail) = if !stop_bytes[vi].is_empty() {
+            ("FAIL", format!(": {}", stop_bytes[vi].join("; ")))
+        } else if !skipped.is_empty() {
+            ("UNKNOWN", String::new())
+        } else {
+            ("PASS", String::new())
+        };
+        println!(
+            "{verdict}\t[{name}] cut bytes (12 B) <= 256 MiB in every case{detail}{skipped_text}"
+        );
+        let (verdict, detail) = if !stop_grazing[vi].is_empty() {
+            ("FAIL", format!(": {}", stop_grazing[vi].join("; ")))
+        } else if !na_grazing[vi].is_empty() || !skipped_grazing.is_empty() {
+            (
+                "UNKNOWN",
+                format!(
+                    ": no CPU count for rows [{}], skipped [{}]",
+                    na_grazing[vi].join("; "),
+                    skipped_grazing.join("; ")
+                ),
+            )
+        } else {
+            ("PASS", String::new())
+        };
+        println!(
+            "{verdict}\t[{name}] on-screen instances <= 2x CPU instances in the grazing pose{detail}"
+        );
+    }
     let verdict = if worst > 0.05 {
         "FAIL"
     } else if incomplete {
