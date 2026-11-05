@@ -22,6 +22,9 @@ mod js_marshal;
 mod js_stats;
 mod lod;
 mod points;
+#[cfg(feature = "test-reference-spacing")]
+#[path = "../../tests/support/reference_spacing_probe.rs"]
+mod reference_spacing_probe;
 mod render;
 
 #[wasm_bindgen]

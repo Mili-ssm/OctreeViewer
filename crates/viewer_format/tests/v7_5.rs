@@ -103,10 +103,22 @@ fn dataset_at(
     root_level: u32,
     root_prefix: [u64; 3],
 ) -> (FormatMetadata, Vec<SourcePointBlock>) {
+    dataset_for_fixture(tree, root_level, root_prefix, wkt_crs(), false)
+}
+
+fn dataset_for_fixture(
+    tree: &[TreeNode],
+    root_level: u32,
+    root_prefix: [u64; 3],
+    crs: CrsRecord,
+    depth_16_leaf: bool,
+) -> (FormatMetadata, Vec<SourcePointBlock>) {
     let cells: Vec<_> = tree
         .iter()
         .map(|n| {
-            let spacing = if n.has_children {
+            let spacing = if depth_16_leaf && !n.has_children {
+                2.0_f64.powi(33 - root_level as i32)
+            } else if n.has_children {
                 2.0_f64.powi(41 - (root_level + n.depth) as i32)
             } else {
                 2.0_f64.powi((49 - (root_level + n.depth) as i32).min(-5))
@@ -115,7 +127,7 @@ fn dataset_at(
         })
         .collect();
     // A level-0 root has its corner 2^48 units away; the frame origin sits at the cloud instead.
-    let origin = if root_level == 0 {
+    let origin = if root_level == 0 || crs.is_local() {
         [0; 3]
     } else {
         root_origin(root_level, root_prefix)
@@ -125,7 +137,7 @@ fn dataset_at(
         root_prefix,
         origin,
         origin.map(|q| q + 100 * 32_768),
-        wkt_crs(),
+        crs,
         None,
         cells,
     )
@@ -269,6 +281,102 @@ fn all_pages(
         }
     }
     pages
+}
+
+#[test]
+fn r3_small_fixtures_open_with_expected_relative_depths() {
+    for (name, root_level, root_prefix, crs) in [
+        ("crs-root0", 0, [0; 3], wkt_crs()),
+        ("crs", ROOT_LEVEL, ROOT_PREFIX, wkt_crs()),
+        ("local", ROOT_LEVEL, [0; 3], CrsRecord::local()),
+    ] {
+        let tree: Vec<_> = (0..=2_u32)
+            .map(|depth| TreeNode {
+                id: u64::from(depth),
+                parent: depth.checked_sub(1).map(u64::from),
+                depth,
+                prefix: if root_level == 0 && depth > 0 {
+                    [1_u64 << (depth - 1); 3]
+                } else {
+                    root_prefix.map(|p| p << depth)
+                },
+                has_children: depth < 2,
+            })
+            .collect();
+        for version in [V74, V75] {
+            let (metadata, blocks) =
+                dataset_for_fixture(&tree, root_level, root_prefix, crs.clone(), true);
+            let options = FormatWriterOptions::new(0.01, 1 << 24)
+                .unwrap()
+                .with_page_target_bytes(1);
+            let mut writer = FormatWriter::new_split_for_version(
+                version,
+                Cursor::new(Vec::new()),
+                Cursor::new(Vec::new()),
+                metadata,
+                options,
+            )
+            .unwrap();
+            for block in blocks {
+                writer.write_block(block).unwrap();
+            }
+            let (primary, attributes) = writer.finish_pair().unwrap();
+            let primary = primary.into_inner();
+            let attributes = attributes.unwrap().into_inner();
+            let reader = open_pair(primary.clone(), attributes.clone());
+            let metadata = reader.format_metadata();
+            let frame = metadata.global_frame().unwrap();
+            assert_eq!(frame.root_level(), root_level);
+            assert_eq!(frame.crs(), &crs);
+            let hierarchy = metadata.dataset().hierarchy();
+            let nodes: Vec<_> = hierarchy
+                .query(hierarchy.node(hierarchy.root_id()).unwrap().bounds())
+                .collect();
+            let root = nodes.iter().find(|node| node.level() == 0).unwrap();
+            let leaf = nodes.iter().find(|node| node.level() == 2).unwrap();
+            let side = |node: &SpatialNode| node.bounds().max()[0] - node.bounds().min()[0];
+            assert_eq!(side(root) / side(leaf), 4.0);
+            let spacing = frame.node_cell(leaf.id()).unwrap().spacing();
+            assert_eq!(side(root) / spacing, 2_f64.powi(16));
+            assert_eq!(side(leaf) / spacing, 2_f64.powi(14));
+            assert!(16 - leaf.level() <= 21);
+            let mut anchor = None;
+            let mut child_block = None;
+            if version == V75 {
+                let mut paged = PagedReader::open(Cursor::new(primary.clone())).unwrap();
+                anchor = Some(
+                    paged
+                        .root_page()
+                        .child_pages()
+                        .next()
+                        .unwrap()
+                        .1
+                        .anchor_node
+                        .get(),
+                );
+                let pages = all_pages(&mut paged);
+                assert!(pages.len() > 1);
+                child_block = Some(pages[1].0.nodes()[0].blocks()[0].id().get());
+                assert_eq!(pages.iter().map(|(p, _)| p.nodes().len()).sum::<usize>(), 3);
+            }
+            if let Some(dir) = std::env::var_os("R3_FIXTURE_DIR") {
+                let dir = std::path::Path::new(&dir);
+                std::fs::create_dir_all(dir).unwrap();
+                let revision = if version == V75 { "v75" } else { "v74" };
+                let stem = format!("{name}-{revision}");
+                std::fs::write(dir.join(format!("{stem}.oct")), &primary).unwrap();
+                std::fs::write(dir.join(format!("{stem}.octattrs")), &attributes).unwrap();
+                if let Some(anchor) = anchor {
+                    std::fs::write(dir.join(format!("{stem}.anchor")), anchor.to_string()).unwrap();
+                    std::fs::write(
+                        dir.join(format!("{stem}.block")),
+                        child_block.unwrap().to_string(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -1018,6 +1126,22 @@ fn reference_spacing_is_stored_and_stable_while_pages_are_grafted() {
     let expected = viewer_core::reference_spacing(leaves).unwrap();
     assert_eq!(eager.reference_spacing(), Some(expected));
 
+    // The browser's async Blob reader opens the same metadata via externally fetched ranges.
+    let footer = &primary[primary.len() - 40..];
+    let limits = FormatReaderLimits::default();
+    let location =
+        viewer_format::PagedCore::locate_index(primary.len() as u64, footer, &limits).unwrap();
+    let start = location.offset as usize;
+    let end = start + location.length as usize;
+    let external =
+        FormatReader::paged_external(primary.len() as u64, footer, &primary[start..end], limits)
+            .unwrap();
+    assert_eq!(external.reference_spacing(), eager.reference_spacing());
+    assert_eq!(
+        external.page_source().unwrap().reference_spacing(),
+        expected
+    );
+
     let mut lazy =
         FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
     let source = std::sync::Arc::clone(lazy.page_source().unwrap());
@@ -1064,6 +1188,13 @@ fn reference_spacing_is_validated_and_checked_against_the_leaves() {
     let mut bytes = primary;
     patch_reference_spacing(&mut bytes, stored * 2.0);
     assert!(PagedReader::open(Cursor::new(bytes.clone())).is_ok());
+    assert!(matches!(
+        viewer_format::verify_paged(
+            &mut Cursor::new(bytes.clone()),
+            &FormatReaderLimits::default()
+        ),
+        Err(FormatError::MalformedIndex(_))
+    ));
     assert!(matches!(
         FormatReader::new(Cursor::new(bytes)),
         Err(FormatError::MalformedIndex(_))
