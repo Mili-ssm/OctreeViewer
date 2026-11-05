@@ -1,0 +1,26 @@
+=== summary ===
+ok   tests (default features)
+ok   tests (all features)
+ok   fmt
+ok   clippy (default features)
+ok   clippy (all features)
+ok   clippy wasm32
+ok   core wasm32 check
+ok   core wasm32 clippy
+ok   core has no native-only deps
+ok   format parity wasm32
+skip format parity real blocks (no dataset)
+ok   convert parity wasm32
+ok   convert parity bindings
+ok   cargo doc
+ok   node tests
+ok   python web-host tests
+ok   python benchmark tests
+ok   python scripts tests
+ok   docs links
+ok   docs index
+ok   version literals
+ok   fuzz fmt
+ok   fuzz check
+ok   git diff --check
+all 24 steps passed

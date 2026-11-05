@@ -2,12 +2,15 @@
 //! path, for real v7.5 datasets and without a GPU. Empty pixels need the Task 7 renderer and are
 //! out of scope. Throwaway: not part of `scripts/check.sh`.
 //!
-//! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR]
+//! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]]
 //! (0 = no limit; larger cuts skip the case).
 //!
 //! `--export DIR` writes, for the `octant_tight` variant only and for the poses/targets in
 //! `EXPORT_POSES`/`EXPORT_TARGETS` plus the 4 px `DIRECTION_POSES`, the cube-pool files of
 //! `examples/web-host/spike-cube-pool-format.md`, and skips every other case and the CPU baseline.
+//! `--check-cell-pages` (with `--export`) packs every exported W16 level with the library's
+//! `pack_level` and compares it with the spike's own packing (pages, slots, words 0, 2, 3 and z),
+//! and measures the eye-frame pixel error of the decoded cells; it exits non-zero on a mismatch.
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     error::Error,
@@ -25,8 +28,9 @@ use viewer_core::{
 use viewer_format::{FormatReader, OctreeReader, PagedReader};
 use viewer_render_wgpu::{
     CellCutEntry, CellCutNode, CellGrid, InstanceRaw, NodeCell, NodeCellLevel, NodeCellSource,
-    OrbitCamera, PointNodeCellSource, RendererConfig, SceneBounds, ViewProjection,
-    VoxelBuildLimits, build_voxel_scene_with_limits, cell_cut, octant_ranges, representative_depth,
+    OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PointNodeCellSource,
+    RendererConfig, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
+    cell_cut, decode_cell, octant_ranges, pack_level, representative_depth, srgb_to_linear_table,
 };
 
 const VIEWPORT: [u32; 2] = [1280, 720];
@@ -74,6 +78,8 @@ struct Level {
     attrs: Vec<CellAttr>,
     /// Octant starts of the library level; `None` for a level spanning octants.
     octant_offsets: Option<[u32; 9]>,
+    /// The library packing, only with `--check-cell-pages`.
+    packed: Option<PackedLevel>,
 }
 
 struct NodeData {
@@ -333,8 +339,19 @@ fn main() -> Result<()> {
         export_dir = Some(PathBuf::from(args.remove(at + 1)));
         args.remove(at);
     }
+    let check_cell_pages = args
+        .iter()
+        .position(|a| a == "--check-cell-pages")
+        .map(|at| args.remove(at))
+        .is_some();
+    if check_cell_pages && export_dir.is_none() {
+        return Err("--check-cell-pages needs --export".into());
+    }
     if args.is_empty() || args.len() > 2 {
-        return Err("usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR]".into());
+        return Err(
+            "usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]]"
+                .into(),
+        );
     }
     let dataset_name = Path::new(&args[0])
         .file_stem()
@@ -529,6 +546,8 @@ fn main() -> Result<()> {
     println!("# orbit-90: OrbitCamera::orbit(0.25, 0.0) (quarter turn in normalized units)");
 
     let mut cache: HashMap<NodeId, NodeData> = HashMap::new();
+    let mut check_mismatches = 0_u64;
+    let mut check_groups = 0_u64;
     let mut cache_bytes = 0_usize;
     let mut coarse_first_level_nodes = 0_usize;
     let mut coarse_nodes: Vec<String> = Vec::new();
@@ -638,6 +657,7 @@ fn main() -> Result<()> {
                             rel,
                             attrs,
                             octant_offsets: level.octant_offsets,
+                            packed: check_cell_pages.then(|| pack_level(&grid, local, *id, level)),
                         });
                     }
                     if levels.is_empty() || levels.windows(2).any(|w| w[0].depth >= w[1].depth) {
@@ -747,7 +767,7 @@ fn main() -> Result<()> {
                             )
                         })?;
                     if let Some(dir) = &export_dir {
-                        export_case(&ExportCase {
+                        let (mismatches, groups) = export_case(&ExportCase {
                             dir: dir.join(format!("{dataset_name}-{}-{target}px", pose.name)),
                             dataset: &dataset_name,
                             pose: pose.name,
@@ -756,7 +776,10 @@ fn main() -> Result<()> {
                             grid: &grid,
                             cache: &cache,
                             entries: &entries,
+                            check: check_cell_pages,
                         })?;
+                        check_mismatches += mismatches;
+                        check_groups += groups;
                     }
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
                     let mut draw_ranges = 0_usize;
@@ -1241,6 +1264,12 @@ fn main() -> Result<()> {
         )
         .into());
     }
+    if check_cell_pages && check_groups == 0 {
+        return Err("check-cell-pages compared no (node, level) group".into());
+    }
+    if check_mismatches > 0 {
+        return Err(format!("check-cell-pages: {check_mismatches} mismatches").into());
+    }
     Ok(())
 }
 
@@ -1279,6 +1308,7 @@ fn intensity_u16(attr: &CellAttr) -> u16 {
 }
 
 struct ExportCase<'a> {
+    check: bool,
     dir: PathBuf,
     dataset: &'a str,
     pose: &'a str,
@@ -1340,6 +1370,8 @@ struct VariantOut {
     empty: u64,
     range_count: u64,
     range_slots: u64,
+    /// W16 instance words of the current group, only with `--check-cell-pages`.
+    captured: Option<Vec<[u32; 4]>>,
 }
 
 impl VariantOut {
@@ -1362,6 +1394,7 @@ impl VariantOut {
             empty: 0,
             range_count: 0,
             range_slots: 0,
+            captured: None,
         })
     }
 
@@ -1428,6 +1461,9 @@ fn write_group(vo: &mut VariantOut, ctx: &GroupCtx) -> Result<Vec<PageSpec>> {
                     VariantOut::write_words(&mut vo.instances, &[SENTINEL, 0, 0])?;
                 } else {
                     VariantOut::write_words(&mut vo.instances, &[SENTINEL, SENTINEL, 0, 0])?;
+                    if let Some(captured) = &mut vo.captured {
+                        captured.push([SENTINEL, SENTINEL, 0, 0]);
+                    }
                 }
                 vo.empty += 1;
             } else {
@@ -1442,10 +1478,11 @@ fn write_group(vo: &mut VariantOut, ctx: &GroupCtx) -> Result<Vec<PageSpec>> {
                         &[x | y << 10 | z << 20, attr.rgba, extra],
                     )?;
                 } else {
-                    VariantOut::write_words(
-                        &mut vo.instances,
-                        &[x | y << 16, z, attr.rgba, extra],
-                    )?;
+                    let words = [x | y << 16, z, attr.rgba, extra];
+                    VariantOut::write_words(&mut vo.instances, &words)?;
+                    if let Some(captured) = &mut vo.captured {
+                        captured.push(words);
+                    }
                 }
             }
             vo.slots += 1;
@@ -1474,7 +1511,85 @@ fn ndc(m: &[f64; 16], p: [f64; 3]) -> Option<[f64; 2]> {
     (w > 0.0).then(|| [row(0) / w, row(1) / w])
 }
 
-fn export_case(case: &ExportCase) -> Result<()> {
+/// Compares the spike's W16 group (`pages`, `words` in slot order) with the library packing and
+/// returns the number of differences: page count, page cell ranges and origins, words 0, 2, 3 and
+/// z, and the flags (word 1, high half) against the spike's own formula of
+/// `spike-cube-pool-format.md` ("Vertex-stage contract"): mask cell `(page origin + rel) >>
+/// mask_shift` (or `<<` when negative) in u32 math, bit 9 = the level has no octant offsets. The
+/// mask bits are compared where that math is valid (no u32 overflow, every axis below 8).
+struct GroupCheck {
+    mismatches: u64,
+    flag_mismatches: u64,
+    flag_skipped: u64,
+}
+
+fn check_group(
+    level: &Level,
+    pages: &[PageSpec],
+    words: &[[u32; 4]],
+    mask_shift: i32,
+) -> GroupCheck {
+    let mut out = GroupCheck {
+        mismatches: 0,
+        flag_mismatches: 0,
+        flag_skipped: 0,
+    };
+    let Some(packed) = &level.packed else {
+        out.mismatches = 1;
+        return out;
+    };
+    if pages.len() != packed.pages.len() || words.len() != packed.instances.len() {
+        out.mismatches = 1 + u64::from(pages.len() != packed.pages.len());
+        return out;
+    }
+    let mut mismatches = 0;
+    for (spike, page) in pages.iter().zip(&packed.pages) {
+        let origin = std::array::from_fn(|a| level.lo[a] + u64::from(spike.origin[a]));
+        mismatches += u64::from(
+            spike.start != page.first_cell
+                || spike.end - spike.start != page.cells as usize
+                || origin != page.origin,
+        );
+    }
+    for (slot, (spike, library)) in words.iter().zip(&packed.instances).enumerate() {
+        let library = library.0;
+        mismatches += u64::from(
+            [0, 2, 3].iter().any(|w| spike[*w] != library[*w])
+                || spike[1] & 0xFFFF != library[1] & 0xFFFF,
+        );
+        if spike[0] == SENTINEL {
+            continue;
+        }
+        let origin = pages[slot / PAGE_SLOTS].origin;
+        let rel = [spike[0] & 0xFFFF, spike[0] >> 16, spike[1] & 0xFFFF];
+        let mask: [Option<u32>; 3] = std::array::from_fn(|a| {
+            let cell = origin[a].checked_add(rel[a])?;
+            let shifted = if mask_shift >= 0 {
+                u64::from(cell)
+                    .checked_shr(mask_shift as u32)
+                    .filter(|_| mask_shift < 32)?
+            } else {
+                u64::from(cell).checked_shl(mask_shift.unsigned_abs())?
+            };
+            u32::try_from(shifted).ok().filter(|v| *v < 8)
+        });
+        let flags = library[1] >> 16;
+        let spans = u32::from(level.octant_offsets.is_none());
+        let mut wrong = flags >> 9 & 1 != spans || flags >> 10 != 0;
+        if let [Some(x), Some(y), Some(z)] = mask {
+            wrong |= flags & 0x1FF != x + 8 * y + 64 * z;
+        } else {
+            out.flag_skipped += 1;
+        }
+        out.flag_mismatches += u64::from(wrong);
+    }
+    out.mismatches = mismatches + out.flag_mismatches;
+    out
+}
+
+/// Returns the `--check-cell-pages` mismatches and compared (node, level) groups (0 without the
+/// flag).
+fn export_case(case: &ExportCase) -> Result<(u64, u64)> {
     let dir = &case.dir;
     fs::create_dir_all(dir)?;
     let scale = case.view.visual_scale();
@@ -1505,6 +1620,17 @@ fn export_case(case: &ExportCase) -> Result<()> {
 
     let mut v10 = VariantOut::create(dir, "w10", 10, 682)?;
     let mut v16 = VariantOut::create(dir, "w16", 16, 512)?;
+    let frame = PageFrame {
+        grid: *case.grid,
+        coordinate_origin: [0.0; 3],
+        visual_scale: scale,
+        eye_scaled,
+    };
+    let table = srgb_to_linear_table();
+    let (mut mismatches, mut library_pages, mut library_empty) = (0_u64, 0_u64, 0_u64);
+    let (mut groups, mut flag_mismatches, mut flag_skipped, mut eye_px_skipped) =
+        (0_u64, 0_u64, 0_u64, 0_u64);
+    let (mut eye_px, mut eye_px_at, mut eye_px_corners) = (0.0_f64, 0.0_f64, 0_u64);
     let mut nodes = BufWriter::new(File::create(dir.join("nodes.bin"))?);
     let mut i40 = BufWriter::with_capacity(1 << 20, File::create(dir.join("i40_instances.bin"))?);
 
@@ -1581,8 +1707,33 @@ fn export_case(case: &ExportCase) -> Result<()> {
                 cell_ranges: &ranges,
             };
             let pages10 = write_group(&mut v10, &ctx)?;
-            write_group(&mut v16, &ctx)?;
+            v16.captured = case.check.then(Vec::new);
+            let pages16 = write_group(&mut v16, &ctx)?;
+            if let Some(words) = v16.captured.take() {
+                let found = check_group(level, &pages16, &words, signed_shift);
+                if found.mismatches != 0 {
+                    eprintln!(
+                        "  MISMATCH node {} depth {depth}: {} differences ({} in flags)",
+                        entry.node.get(),
+                        found.mismatches,
+                        found.flag_mismatches
+                    );
+                }
+                mismatches += found.mismatches;
+                flag_mismatches += found.flag_mismatches;
+                flag_skipped += found.flag_skipped;
+                groups += 1;
+                if let Some(packed) = &level.packed {
+                    library_pages += packed.pages.len() as u64;
+                    library_empty += packed.empty_slots() as u64;
+                }
+            }
             levels += 1;
+            let check = level.packed.as_ref().filter(|_| case.check).map(|packed| {
+                let entries: Vec<PageEntry> =
+                    packed.pages.iter().map(|p| p.entry(&frame, 0, 0)).collect();
+                (packed, entries)
+            });
 
             let side = cell_side(case.grid, depth);
             let side32 = (side * scale) as f32;
@@ -1602,6 +1753,35 @@ fn export_case(case: &ExportCase) -> Result<()> {
                         }
                     }
                     drawn_cells += 1;
+                    if let Some((packed, entries)) = &check {
+                        let page = packed.pages.partition_point(|p| p.first_cell <= i) - 1;
+                        let slot = page * PAGE_SLOTS + (i - packed.pages[page].first_cell);
+                        let decoded = decode_cell(&entries[page], &packed.instances[slot], &table);
+                        let coord: [u64; 3] =
+                            std::array::from_fn(|a| level.lo[a] + u64::from(rel[a]));
+                        for (got, offset) in [(decoded.lo, 0.0), (decoded.hi, 1.0)] {
+                            // Both in the eye-relative frame that `m` expects.
+                            let exact: [f64; 3] = std::array::from_fn(|a| {
+                                (case.grid.root_min[a] + (coord[a] as f64 + offset) * side) * scale
+                                    - eye_scaled[a]
+                            });
+                            let seen: [f64; 3] = got.map(f64::from);
+                            match (ndc(&m, exact), ndc(&m, seen)) {
+                                (Some(a), Some(b)) if a[0].abs() <= 1.5 && a[1].abs() <= 1.5 => {
+                                    let px =
+                                        ((a[0] - b[0]) * half[0]).hypot((a[1] - b[1]) * half[1]);
+                                    eye_px_corners += 1;
+                                    if px > eye_px {
+                                        let metres =
+                                            exact.iter().map(|v| v * v).sum::<f64>().sqrt();
+                                        (eye_px, eye_px_at) = (px, metres / scale);
+                                    }
+                                }
+                                // Behind the eye or outside 1.5 NDC.
+                                _ => eye_px_skipped += 1,
+                            }
+                        }
+                    }
                     let reference: [f64; 3] = std::array::from_fn(|a| {
                         (case.grid.root_min[a]
                             + (level.lo[a] + u64::from(rel[a])) as f64 * side
@@ -1696,7 +1876,24 @@ fn export_case(case: &ExportCase) -> Result<()> {
         v16.range_count,
         v16.range_slots,
     );
-    Ok(())
+    if case.check {
+        if groups == 0 {
+            eprintln!(
+                "  MISMATCH {}: no (node, level) group was compared",
+                dir.display()
+            );
+            mismatches += 1;
+        }
+        println!(
+            "# check-cell-pages {}: groups {groups} pages {} (spike {}) slots {} empty {:.4} mismatches {mismatches} (flags {flag_mismatches}, flag cells skipped {flag_skipped}) | eye-frame max error {eye_px:.5} px at {eye_px_at:.2} m ({eye_px_corners} corners, {eye_px_skipped} skipped)",
+            dir.display(),
+            library_pages,
+            v16.page_count,
+            v16.slots,
+            library_empty as f64 / v16.slots.max(1) as f64,
+        );
+    }
+    Ok((mismatches, groups))
 }
 
 /// Reads the files back: sizes, ranges within slots, non-empty slots decode inside `2^W`.

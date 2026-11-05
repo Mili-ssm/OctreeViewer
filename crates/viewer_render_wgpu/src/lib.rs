@@ -6,6 +6,9 @@ mod block_sync;
 mod budget;
 mod camera;
 mod cell_cut;
+mod cell_pages;
+#[cfg(test)]
+mod cell_pages_tests;
 mod gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
@@ -27,6 +30,11 @@ pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection}
 pub use cell_cut::{
     CellCutEntry, CellCutError, CellCutNode, cell_cut, cell_cut_digest, octant_ranges,
     octant_wanted_depth, resident_depth,
+};
+pub use cell_pages::{
+    CELL_PAGES_WGSL, CellInstance, DecodedCell, FLAG_SPANS_OCTANTS, MAX_INTENSITY, MAX_PAGE_EXTENT,
+    MISSING_INTENSITY, PAGE_HAS_CLASS, PAGE_HAS_INTENSITY, PAGE_SLOTS, PackedLevel, PageEntry,
+    PageFrame, PageInfo, decode_cell, pack_level, srgb_to_linear_table,
 };
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use node_cells::{

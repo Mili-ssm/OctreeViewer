@@ -170,8 +170,65 @@ Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibuja
 
 ## Tarea 6: instancia y tabla de páginas
 
-- [ ] Instancia de 16 B (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)): x, y, z `u16` relativos a la página, 16 bits de flags, rgba8, intensidad `u16` y clase `i16`. Las páginas (8 KiB, 512 huecos) se parten en orden Morton si el rango supera 2¹⁶ o se llenan o cambian los flags. `PageEntry` lleva el origen relativo a la cámara, el desplazamiento dentro del nodo, la caja ajustada de los huecos usados (Tarea 16a) y los flags `has_intensity` y `has_class`.
-- [ ] **Pasa si** la decodificación es igual bit a bit en Rust y en WGSL, con raíz en nivel 0 y un origen a 10⁶ m.
+Instancia de 16 B con W = 16 (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)) y tabla de páginas con caja ajustada (R3-Q16, [ADR 0036](../adr/0036-hi-z-por-celda.md)). Especificación del 05-11-2026, enmendada con su pre-mortem. Solo empaqueta y decodifica: subir el pool, la residencia y los pases son de la Tarea 7.
+
+**Hecha (05-11-2026):** [aceptación](../records/benchmarks/R3_T6_ACCEPT_05-11-2026.md). Decodificación bit a bit en la Radeon 880M (Vulkan y GL) y en llvmpipe; mismas páginas que el spike en los 22 casos; error ≤ 0,0006 px con el origen relativo al ojo.
+
+- [x] **Módulo** `crates/viewer_render_wgpu/src/cell_pages.rs`, privado y reexportado desde `lib.rs` como `node_cells`, para que lo use el spike, con sus tests en `cell_pages_tests.rs`. Entrada: un `NodeCellLevel` de `node_cells.rs`, con su nodo, su `CellGrid` y el rango del nodo (`node_range`). Salida: las instancias, ya repartidas en páginas de 512 huecos con los vacíos rellenos, y los datos de cada página en la CPU.
+- [x] **Instancia** (`CellInstance`, 4 × `u32`, `Pod`):
+
+  | Palabra | Contenido |
+  | --- | --- |
+  | 0 | x `u16` (bits 0–15) e y `u16` (16–31), relativos al origen de la página |
+  | 1 | z `u16` (0–15) y flags `u16` (16–31) |
+  | 2 | rgba8 en sRGB, r en el byte bajo y a = 255: media redondeada, `(suma + n/2) / n` |
+  | 3 | intensidad `u16` (0–15): `intensity_sum / intensity_count` pasada a `f32` como la ruta CPU y después redondeada y limitada a 0–65 534; 0xFFFF si falta o si la media es negativa, como la ruta CPU (`scene.rs:433`); clase `i16` (16–31), −1 si falta |
+
+  - Hueco vacío: palabras 0 y 1 a `u32::MAX`, 2 y 3 a 0. El bit 15 de los flags siempre es 0, así que una celda nunca coincide con el centinela.
+- [x] **Flags de la instancia:**
+  - bits 0–8: la celda 8³ de la máscara del nodo (`x + 8y + 64z`), calculada en la CPU con aritmética entera desde la coordenada absoluta. Por eje, `m = min((coord − node_range(d).lo) >> (d − nodo − 3), 7)` si `d ≥ nodo + 3`, y `(coord − lo) << (nodo + 3 − d)`, también limitado a 7, si no. Es el mismo límite que `octant_offsets` (`node_cells.rs:253`). Sirve para cualquier profundidad, también las que pasan de 2³² celdas por eje con la clave regional ([ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md));
+  - los niveles con `d < nodo + 3` solo existen en hojas, porque los nodos internos guardan de nodo + 3 a nodo + 8 (`node_cells.rs:181-196`). Una hoja no tiene descendientes en el corte y su máscara es 0. La Tarea 7 da error si un nodo con máscara ≠ 0 tiene uno de esos niveles;
+  - bit 9: la celda abarca más de un octante (nivel con profundidad ≤ la del nodo). El shader no hace entonces las pruebas de octante ni de máscara;
+  - bits 10–15: reservados, a 0.
+  - El octante sale del índice: `4·(mx >> 2) + 2·(my >> 2) + (mz >> 2)`, el orden de la Tarea 15.
+  - Con esto, la página ya no necesita el origen de celda relativo al nodo ni el desplazamiento de máscara del spike.
+- [x] **Reparto en páginas:** voraz, en el orden de `cells`, que es Morton también con la clave regional (`node_cells.rs:409-416`). Se abre una página nueva si la actual tiene 512 celdas o si el rango de algún eje pasaría de 2¹⁶. La regla del ADR 0035 de partir al cambiar los flags de página no llega a actuar, porque son constantes por nivel (siguiente punto). El origen de la página es el mínimo por eje de sus celdas, y la caja ajustada es su máximo relativo (`u16` × 3).
+- [x] **Flags de página:** `has_intensity` y `has_class`, el OR de las celdas del nivel. Son constantes por (nodo, nivel), así que nunca parten páginas; cada celda conserva su centinela (0xFFFF, −1).
+- [x] **`PageEntry` en GPU** (8 × `u32`, 32 B, `Pod`):
+
+  | Palabra | Contenido | Se reescribe |
+  | --- | --- | --- |
+  | 0–2 | origen `f32` de la esquina mínima de la página, **relativo al ojo**: `(root_min + coord × lado − coordinate_origin) × visual_scale − ojo`, con el ojo escalado en `f64` de la cámara. Relativo al objetivo, como `scene.rs`, el error llegaba a 0,079 px en Majadas dentro de una hoja mirando a −z (ver «Parar si») | con la cámara |
+  | 3 | lado de celda × `visual_scale`, `f32` | con la cámara, si cambia la escala |
+  | 4 | índice del nodo en la tabla de máscaras (16 × `u32` por nodo, bit `x + 8y + 64z`) | con la residencia (T7) |
+  | 5 | bits de los octantes que dibujan este nivel (0–7) | con el corte (T7) |
+  | 6 | caja: máximo relativo x (0–15) e y (16–31) | nunca |
+  | 7 | caja: máximo relativo z (0–15); flags de página (16–31: bit 0 `has_intensity`, bit 1 `has_class`) | nunca |
+
+  - La CPU guarda por página el nodo, la profundidad, el origen absoluto (`u64` × 3), el número de celdas y la caja, para el picking y para reescribir el origen.
+- [x] **Decodificación**, idéntica en Rust y en WGSL, en una constante WGSL compartida (`CELL_PAGES_WGSL`) que usará la Tarea 7:
+  - esquinas `lo = fma(vec3<f32>(rel), lado, origen)` y `hi = fma(vec3<f32>(rel) + 1.0, lado, origen)`, con `f32::mul_add` en Rust. El `fma` explícito es obligatorio: en la Radeon 880M la expresión sin él sale fusionada y en llvmpipe no (sonda del pre-mortem, 100.000 casos: `fma()` = `mul_add` en los dos adaptadores);
+  - el vértice del cubo elige `lo` o `hi` por eje, y el pase de huecos de la Tarea 7 prueba el frustum y el Hi-Z con las mismas `lo` y `hi`. Así la caja que se prueba es la que se rasteriza;
+  - color: sRGB a lineal con una tabla de 256 `f32`, generada desde `ColorRgb::to_linear_rgba`, en un uniform. Es exacta y no ocupa búfer de almacenamiento.
+- [x] **Tests:**
+  - ida y vuelta: cada celda del nivel aparece en un solo hueco; origen de página + relativo = coordenada de la celda; color, intensidad y clase como sus medias;
+  - reparto: corte a 512, corte por un rango de 2¹⁶ + 1 en un eje, y los flags de página no parten páginas;
+  - flags: el índice de máscara y el octante coinciden con un oráculo que parte de la coordenada absoluta y de `node_range`, en niveles con profundidad nodo + 1, nodo + 2, nodo + 3, nodo + 8 y una más allá de 2³² celdas por eje; y el bit 9 en los niveles que abarcan octantes;
+  - marco: para las mismas celdas, `lo` y `hi` más `ojo − objetivo` coinciden (en `f64`) con la caja que da la fórmula de `scene.rs` a una `InstanceRaw` de esa celda;
+  - precisión: raíz en nivel 0, dataset con origen a 10⁶ m y `visual_scale` ≠ 1. El error de `lo` y `hi` en `f32` frente a `f64` no pasa de 4 ulp de `max(|origen|, (caja + 1) × lado)`. Además, ≤ 0,01 px con la geometría de la pose dentro de una hoja de la Tarea 4 (ojo dentro de la hoja más profunda y objetivo a `root_side / 16`), proyectando con una matriz de vista con el ojo en el origen;
+  - octante: en cada celda, el octante que sale del índice coincide con el de `octant_offsets`;
+  - WGSL: `naga` valida la constante. Un test de cómputo decodifica ≥ 10.000 instancias (con los extremos: relativo 65 535, clases −1, `i16::MIN` y `i16::MAX`, intensidad 0, 65 534 y ausente) y compara con Rust en cada adaptador disponible, real y de software. Muestra el nombre de cada adaptador. Sin adaptador real, lo dice y no falla, salvo con `CELL_PAGES_REQUIRE_GPU=1`;
+  - datos reales: `coverage_spike --check-cell-pages` empaqueta con el módulo los niveles de los cortes exportados de las Tareas 5 y 16. Exige las mismas páginas y los mismos huecos que la exportación del spike, y las mismas palabras 0, 2 y 3 y la misma z. Registra la fracción de huecos vacíos.
+- [x] **Pasa si:**
+  - los campos enteros, `lo`, `hi` y el color lineal salen iguales bit a bit en Rust y en WGSL, en la Radeon 880M (`CELL_PAGES_REQUIRE_GPU=1`) y en llvmpipe. Chrome (Tint) queda fuera: lo comprueba el humo de la Tarea 11;
+  - se cumplen los demás tests y `check.sh`.
+- **Parar si:**
+  - `fma()` no coincide con `mul_add` bit a bit en la Radeon 880M → vuelve al propietario;
+  - el octante del índice no coincide con `octant_offsets` en alguna celda;
+  - con los cortes reales de más de 1.000 páginas, más del 2 % de huecos vacíos, o más de 1,05 × las páginas del spike → replantear el reparto. En los cortes pequeños, el último hueco parcial de cada (nodo, nivel) pesa más en porcentaje, pero ocupa poco: el peor, Majadas en órbita a 4 px, tiene 12 páginas (96 KiB) con un 33,7 % vacío, unos 32 KiB;
+  - más de 0,01 px de error en el marco del objetivo → volver a orígenes relativos al ojo, lo que cambia la matriz de vista en la Tarea 7. **Saltó el 05-11-2026:** relativo al objetivo, 0,051 px en Majadas dentro de una hoja (celdas a 0,35 unidades del ojo) y 0,079 px mirando a −z (0,23 unidades); Belvedere, 0,012–0,023 px. Se pasa al ojo: la Tarea 7 dibuja las celdas con una matriz de vista con el ojo en el origen;
+  - más de 0,01 px también relativo al ojo → vuelve al propietario.
+- **Consecuencia para la Tarea 12:** la intensidad pasa a una media `u16` redondeada (hasta 0,5 de diferencia con la `f32` de la ruta CPU, `voxel_grid.rs:1068-1073`), y la elevación ya no tiene el `center.z` absoluto (`scene.rs:436`). Choca con el «bit a bit con la ruta CPU» de la Tarea 12 en los modos de intensidad y elevación. **Pregunta para el propietario** antes de la Tarea 12: tolerancia de 1 LSB de 8 bits (propuesta), o intensidad en `f32`, que no cabe en la instancia de 16 B.
 
 ## Tarea 7: pool en `SurfaceRenderer`
 

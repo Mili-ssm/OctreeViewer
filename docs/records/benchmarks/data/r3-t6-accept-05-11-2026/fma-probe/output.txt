@@ -1,0 +1,2 @@
+real Vulkan AMD Radeon 880M Graphics (RADV STRIX1): n=100000 fused!=unfused 1143 | plain==unfused 98857 plain==fused 100000 | fma()==mul_add 100000
+fallback Vulkan llvmpipe (LLVM 23.1.2, 256 bits): n=100000 fused!=unfused 1143 | plain==unfused 100000 plain==fused 98857 | fma()==mul_add 100000
