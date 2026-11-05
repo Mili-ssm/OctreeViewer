@@ -1,0 +1,10 @@
+Base HEAD: 3eb78f70f2a90d5a8b7b68d39efc5fd406d2983d
+Build: CARGO_TARGET_DIR=target cargo build --manifest-path target/r3-leaf-span-probe/Cargo.toml --profile perf --offline
+Bounds use the production node_range rounding/clamping; positions use production build_level scaling/clamping. Leaves classified using authoritative paged has_children; complete hierarchy node-ID coverage verified. No sorting/aggregation benchmarks run; output has no performance meaning.
+Each dataset run: target/perf/r3-leaf-span-probe target/render-data/NAME-v75.oct > target/r3-leaf-span-probe/NAME.txt
+target/r3-leaf-span-probe/src/main.rs sha256=15a6402ee045798b65ff1d80ceb70f433a873f4a882ef4c950a42f97bb3add57
+target/r3-leaf-span-probe/Cargo.toml sha256=36d866a5efa9c415fb6b5505ced2ffe1fb09ad277c8446da753c9998a2ec429e
+target/r3-leaf-span-probe/Cargo.lock sha256=1b0389ab768873f7e2eb0da4472fb1967d8073912f4ce5d042ceca5b20720033
+target/perf/r3-leaf-span-probe sha256=43f0b1763bf497180ec9becda4add8538d0a414ba65fb50bc8fd2021b0d2eaa9
+target/r3-leaf-span-probe/belvedere.txt sha256=ff9b45faa9b15e521f7f09ab84bfc594962d7b8b0ca89417f3910d2ca6bca18c
+target/r3-leaf-span-probe/majadas.txt sha256=d5c1038d1d3b75489f8e65d7dd0d4624ba14181da04e17affbb5255254ce49a8

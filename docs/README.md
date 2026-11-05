@@ -68,6 +68,8 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Prioridad sobre pendientes (R1-T3b)](records/benchmarks/RENDER_R1_T3B_01-11-2026.md) | Coste de proyección, equivalencia de orden y humo Majadas. | fechado |
 | [Medida después de R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_01-11-2026.md) | Matriz R0 tras R1, comparación con R2-T5 y contraste de expulsiones con revisiones anteriores. | fechado |
 | [Edad de escena tras R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_SCENE_AGE_01-11-2026.md) | Por qué sube `sceneAgeMs` desde T1a y por qué se resuelve en R3. | fechado |
+| [Diagnóstico de rango de hojas R3](records/benchmarks/R3_LEAF_SPAN_04-11-2026.md) | Tres hojas de Belvedere superan 21 bits al inicio; ninguna candidata en Majadas. | fechado |
+| [Experimento CPU de celdas adaptativas](records/benchmarks/R3_ADAPTIVE_EXPERIMENT_04-11-2026.md) | V5 entre ramas y celdas v7.5; Belvedere falla en ambas variantes. | fechado |
 | [Celdas por nodo sobre datos reales (R3-T1)](records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md) | Longitud y bytes de la cadena de hoja en Majadas y Belvedere; criterios de parada de R3. | fechado |
 | [Spike de densidad de la pirámide (R4-T1)](records/benchmarks/R4_DENSITY_SPIKE_02-11-2026.md) | Hoja × `sample_grid` en Majadas y Belvedere: salto de espaciado, disco, RSS y tiempo. | fechado |
 | [Memoria del conversor con g = 256 (R4-T1)](records/benchmarks/R4_SPARSE_GRID_RSS_02-11-2026.md) | Causa y corrección de la RSS (umbral `mmap` de glibc, rejilla dispersa compacta). | fechado |
@@ -86,6 +88,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Worker de construcción (R2)](records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md) | Escenas construidas fuera del hilo de render, activado y no: respuestas de frame y tiempo a objetivo en Majadas y Belvedere. | fechado |
 | [Digest del worker de construcción](records/benchmarks/RENDER_BUILD_WORKER_DIGEST_2026-10-30.md) | Digest en reposo distinto entre ambas rutas: la causa es la cámara de la sonda, no el worker. | fechado |
 | [Diagnóstico de T4](records/benchmarks/RENDER_T4_DIAGNOSIS_2026-10-30.md) | Causa de la regresión de T4 en Belvedere: orden de carga de los bloques pendientes. | fechado |
+| [R3: subregiones experimentales](records/benchmarks/R3_SUBREGIONS_04-11-2026.md) | Conteos y tiempos nativos individuales, con límites de comparación. | fechado |
 | [Puerta R7 de M2](records/benchmarks/M2_R7_2026-10-29.md) | Instrucciones (callgrind) y R7 corto en divisiones 8 tras extraer `viewer_convert_core`. | fechado |
 | [Paridad M3a](records/benchmarks/M3A_PARITY_2026-10-29.md) | Motor `core` frente al CLI en Chrome, Firefox y Node; hallazgo de `hypot`. | fechado |
 | [Spike OPFS (arenas)](records/benchmarks/OPFS_ARENA_SPIKE_2026-10-29.md) | Modelo de pico de arenas frente al nativo y MB/s de OPFS en Chrome/Firefox (HTTP y `file://`). | fechado |

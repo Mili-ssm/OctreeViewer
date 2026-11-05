@@ -1,0 +1,5 @@
+binary=/tmp/r3-adaptive-benchmark/adaptive-voxel
+dataset=/home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/majadas-tls.oct
+argv=/tmp/r3-adaptive-benchmark/adaptive-voxel /home/mili/Documentos/Mili-ssm.github.io/Private/Rust/octree_viewer_v3/data/datasets/sensoforest/majadas-tls.oct 3
+binary_sha256=ba3fed78b53d949492433cdc13ff82283ffe005e4de41a1fb9ba7ff3ea94104f
+dataset_sha256=f17646889c058a49262034ac28cdd744ffdcdc920069579c63e062d827180b39
