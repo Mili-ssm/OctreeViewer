@@ -236,23 +236,31 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7b1, pool estático en GPU y dibujo sin oclusión** (`gpu.rs`, `camera.rs` y un módulo nuevo `cell_render.rs`):
 
-- [ ] **Soporte:** `SurfaceRenderer::new` pide, sin pasar de lo que da el adaptador, `max_storage_buffers_per_shader_stage` ≥ 8 y `max_storage_buffer_binding_size` y `max_buffer_size` ≥ los bytes del pool ([ADR 0036](../adr/0036-hi-z-por-celda.md)). Además exige cómputo, dibujo indirecto, almacenamiento en la etapa de vértices y texturas de almacenamiento `r32float` (`DownlevelFlags`). Si algo falta, `cells_supported() = false` (R3-Q5).
-- [ ] **La ruta CPU no cambia:** sus comprobaciones de tamaño (`gpu.rs:1364`, `hzb.rs:263-265`) siguen usando los límites de `downlevel_defaults`. Los límites se pueden inyectar en `RendererConfig`, para el test.
-- [ ] **Pool perezoso:** se crea al recibir el primer nivel, no en `new()`, y se libera al volver a la ruta CPU. Así sus bytes no cuentan contra el presupuesto de las escenas CPU (`budget.rs:17`).
-- [ ] **Cámara:** `OrbitCamera` da una vista-proyección con el ojo en el origen (`look_at` desde 0 hacia `−offset`) y el ojo escalado en `f64`, para `PageFrame` (Tarea 6).
-- [ ] **Búferes:**
+**Hecha (05-11-2026).** 9 tests en `cell_render_tests.rs`, en la Radeon 880M (RADV) y en llvmpipe. El adaptador GL se salta porque no puede leer la profundidad. El oráculo por píxel da 0 diferencias fuera de los bordes y el mismo número de píxeles cubiertos; en la escena de cubos grandes, el 90 % de los píxeles es interior. Tres mutaciones (cubos 0,5 px más grandes, sin prueba de octante y sin la guarda de página inerte) hacen fallar los tests. Diferencias con lo especificado:
+- la máscara se reserva por (nodo, nivel), y la asignación por nodo queda para T7a;
+- el pase de páginas recorre los huecos hasta el más alto usado, en vez de una lista de activas;
+- llvmpipe no da los 256 MiB por binding, así que su test usa un pool de 64 páginas;
+- mientras existe el pool, el picking devuelve un error explícito hasta la Tarea 8.
+- **las dos rutas son excluyentes** (segunda revisión): solo `upload_cell_level` crea el pool; si esa primera subida falla, el pool se descarta y la escena CPU sigue intacta; si sale bien, se libera la escena CPU. Subir una escena CPU libera el pool;
+- sin test sobre un `SurfaceRenderer` real, que necesita una superficie: que tras la primera subida la escena CPU quede liberada y que las llamadas sin pool den `NoPool`. Los cubren dos tests de las funciones auxiliares y la compilación; se probarán en el humo de la Tarea 11.
+
+- [x] **Soporte:** `SurfaceRenderer::new` pide, sin pasar de lo que da el adaptador, `max_storage_buffers_per_shader_stage` ≥ 8 y `max_storage_buffer_binding_size` y `max_buffer_size` ≥ los bytes del pool ([ADR 0036](../adr/0036-hi-z-por-celda.md)). Además exige cómputo, dibujo indirecto, almacenamiento en la etapa de vértices y texturas de almacenamiento `r32float` (`DownlevelFlags`). Si algo falta, `cells_supported() = false` (R3-Q5).
+- [x] **La ruta CPU no cambia:** sus comprobaciones de tamaño (`gpu.rs:1364`, `hzb.rs:263-265`) siguen usando los límites de `downlevel_defaults`. Los límites se pueden inyectar en `RendererConfig`, para el test.
+- [x] **Pool perezoso:** se crea al recibir el primer nivel, no en `new()`, y se libera al volver a la ruta CPU. Así sus bytes no cuentan contra el presupuesto de las escenas CPU (`budget.rs:17`).
+- [x] **Cámara:** `OrbitCamera` da una vista-proyección con el ojo en el origen (`look_at` desde 0 hacia `−offset`) y el ojo escalado en `f64`, para `PageFrame` (Tarea 6).
+- [x] **Búferes:**
   - instancias (páginas × 512 × 16 B, con `COPY_SRC` para el picking de la Tarea 8);
   - tabla de páginas (32 B por página);
   - máscaras (16 × `u32` por nodo, con su propia lista libre);
   - tabla sRGB en un uniform;
   - índices visibles (un `u32` por hueco) y argumentos indirectos.
   - Todo cuenta en `allocated_gpu_bytes` y en `GpuResourceStats`.
-- [ ] **API mínima:** subir un `PackedLevel` a unas páginas dadas, liberar páginas, fijar la máscara de un nodo, y por frame la lista de páginas activas con sus bits de octante. Todas las escrituras van con `queue.write_buffer`. Orden en cada frame: expulsiones de lo que no se dibuja → subidas → tabla de páginas → envío.
-- [ ] **Pase `k`** (como la Tarea 16a): páginas con frustum; huecos con vacíos, octante, máscara y frustum; un `drawIndexedIndirect`. El frustum prueba las mismas esquinas `lo` y `hi` que dibuja el vértice, con la misma multiplicación por la matriz.
-- [ ] **Un solo codificador** `encode_cells(encoder, color, depth)`, que comparten `render()` y un arnés headless. Así los tests ejercitan el mismo código que el visor.
-- [ ] **Convivencia:** el renderer dibuja la ruta CPU o la de celdas, según lo que se le haya subido. El HZB de la ruta CPU no se usa con celdas.
-- [ ] **Oráculo por píxel:** cada celda con un color único. La imagen de celdas se compara con esas mismas celdas convertidas a `InstanceRaw` y dibujadas por la ruta CPU: mismo identificador en cada píxel salvo en los bordes, con profundidad dentro de una tolerancia derivada y 0 píxeles más profundos. Corre en la 880M y en llvmpipe, y falla si no corre en ninguno (`CELL_POOL_REQUIRE_GPU=1` exige la 880M).
-- [ ] Con los límites de `downlevel_defaults` inyectados, `cells_supported()` es falso y la ruta CPU dibuja igual que antes.
+- [x] **API mínima:** subir un `PackedLevel` a unas páginas dadas, liberar páginas, fijar la máscara de un nodo, y por frame la lista de páginas activas con sus bits de octante. Todas las escrituras van con `queue.write_buffer`. Orden en cada frame: expulsiones de lo que no se dibuja → subidas → tabla de páginas → envío.
+- [x] **Pase `k`** (como la Tarea 16a): páginas con frustum; huecos con vacíos, octante, máscara y frustum; un `drawIndexedIndirect`. El frustum prueba las mismas esquinas `lo` y `hi` que dibuja el vértice, con la misma multiplicación por la matriz.
+- [x] **Un solo codificador** `encode_cells(encoder, color, depth)`, que comparten `render()` y un arnés headless. Así los tests ejercitan el mismo código que el visor.
+- [x] **Convivencia:** el renderer dibuja la ruta CPU o la de celdas, según lo que se le haya subido. El HZB de la ruta CPU no se usa con celdas.
+- [x] **Oráculo por píxel:** cada celda con un color único. La imagen de celdas se compara con esas mismas celdas convertidas a `InstanceRaw` y dibujadas por la ruta CPU: mismo identificador en cada píxel salvo en los bordes, con profundidad dentro de una tolerancia derivada y 0 píxeles más profundos. Corre en la 880M y en llvmpipe, y falla si no corre en ninguno (`CELL_POOL_REQUIRE_GPU=1` exige la 880M).
+- [x] Con los límites de `downlevel_defaults` inyectados, `cells_supported()` es falso y la ruta CPU dibuja igual que antes.
 
 **T7a, residencia en CPU** (`crates/viewer_render_wgpu/src/cell_pool.rs`, sin GPU):
 

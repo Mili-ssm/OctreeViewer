@@ -9,6 +9,9 @@ mod cell_cut;
 mod cell_pages;
 #[cfg(test)]
 mod cell_pages_tests;
+mod cell_render;
+#[cfg(test)]
+mod cell_render_tests;
 mod gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
@@ -26,7 +29,7 @@ mod scene_digest_tests;
 mod voxel_grid;
 
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
-pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
+pub use camera::{CameraFrame, EyeFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
 pub use cell_cut::{
     CellCutEntry, CellCutError, CellCutNode, cell_cut, cell_cut_digest, octant_ranges,
     octant_wanted_depth, resident_depth,
@@ -36,6 +39,7 @@ pub use cell_pages::{
     MISSING_INTENSITY, PAGE_HAS_CLASS, PAGE_HAS_INTENSITY, PAGE_SLOTS, PackedLevel, PageEntry,
     PageFrame, PageInfo, decode_cell, pack_level, srgb_to_linear_table,
 };
+pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
@@ -57,6 +61,8 @@ pub struct RendererConfig {
     pub gpu_budget: GpuBudget,
     /// Independent CPU construction budget; estimated bytes are not a process RSS limit.
     pub voxel_build_limits: VoxelBuildLimits,
+    /// Device limits for the cell pool; `DownlevelOnly` is for tests of the CPU-only fallback.
+    pub cell_limits: CellLimitMode,
 }
 
 impl Default for RendererConfig {
@@ -70,6 +76,7 @@ impl Default for RendererConfig {
             },
             gpu_budget: GpuBudget::default(),
             voxel_build_limits: VoxelBuildLimits::default(),
+            cell_limits: CellLimitMode::default(),
         }
     }
 }

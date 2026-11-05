@@ -69,6 +69,7 @@ impl HzbResources {
         depth_texture: &wgpu::Texture,
         color_format: wgpu::TextureFormat,
         viewport: [u32; 2],
+        max_texture_dimension_2d: u32,
     ) -> Result<Option<Self>, GpuRendererError> {
         let downlevel = adapter.get_downlevel_capabilities();
         let format_features = adapter.get_texture_format_features(wgpu::TextureFormat::R32Float);
@@ -92,7 +93,7 @@ impl HzbResources {
         ];
         if pyramid_size
             .iter()
-            .any(|side| *side > device.limits().max_texture_dimension_2d)
+            .any(|side| *side > max_texture_dimension_2d)
         {
             return Ok(None);
         }
@@ -254,15 +255,15 @@ impl HzbResources {
 
     pub(crate) fn can_prepare_scene(
         &self,
-        device: &wgpu::Device,
+        limits: &wgpu::Limits,
         source_bytes: u64,
         instance_count: usize,
         available_bytes: u64,
     ) -> bool {
         let index_bytes = (instance_count as u64).saturating_mul(size_of::<u32>() as u64);
-        source_bytes <= device.limits().max_storage_buffer_binding_size
-            && index_bytes <= device.limits().max_storage_buffer_binding_size
-            && index_bytes <= device.limits().max_buffer_size
+        source_bytes <= limits.max_storage_buffer_binding_size
+            && index_bytes <= limits.max_storage_buffer_binding_size
+            && index_bytes <= limits.max_buffer_size
             && self
                 .resource_bytes
                 .saturating_add(index_bytes)
@@ -369,6 +370,7 @@ impl HzbResources {
         device: &wgpu::Device,
         depth_texture: &wgpu::Texture,
         viewport: [u32; 2],
+        max_texture_dimension_2d: u32,
     ) -> bool {
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let pyramid_size = [
@@ -377,7 +379,7 @@ impl HzbResources {
         ];
         if pyramid_size
             .iter()
-            .any(|side| *side > device.limits().max_texture_dimension_2d)
+            .any(|side| *side > max_texture_dimension_2d)
         {
             self.cull_bind_group = None;
             self.indexed_bind_group = None;
@@ -1036,6 +1038,7 @@ mod tests {
                 &depth_texture,
                 wgpu::TextureFormat::Rgba8Unorm,
                 [64, 64],
+                device.limits().max_texture_dimension_2d,
             )
             .await;
             if let Err(error) = result {
@@ -1112,6 +1115,7 @@ mod tests {
                 &depth_texture,
                 wgpu::TextureFormat::Rgba8Unorm,
                 [64, 64],
+                device.limits().max_texture_dimension_2d,
             )
             .await
             .expect("HZB resource validation") else {
