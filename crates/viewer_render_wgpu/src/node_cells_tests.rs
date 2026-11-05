@@ -842,7 +842,22 @@ fn single_region_matches_generic_at_nonzero_node_origin() {
     };
     let narrow = build(cube([f64::from(origin); 3], 2.0_f64.powi(21)), &shared);
     let wide = build(cube([f64::from(origin); 3], 2.0_f64.powi(22)), &shared);
-    assert_eq!(narrow, wide);
+    // Octant offsets are relative to each node, so they legitimately differ between the two;
+    // each must match the geometric classification.
+    assert_offsets_match_geometry(
+        &grid,
+        cube([f64::from(origin); 3], 2.0_f64.powi(21)),
+        &narrow,
+    );
+    assert_offsets_match_geometry(&grid, cube([f64::from(origin); 3], 2.0_f64.powi(22)), &wide);
+    let cells_only = |cells: &NodeCells| -> Vec<_> {
+        cells
+            .levels
+            .iter()
+            .map(|l| (l.depth, l.cells.clone()))
+            .collect()
+    };
+    assert_eq!(cells_only(&narrow), cells_only(&wide));
     let duplicate = &narrow.levels[0].cells[0];
     assert_eq!(duplicate.coord, [origin as u64; 3]);
     assert_eq!(duplicate.count, 2);
@@ -867,4 +882,136 @@ fn single_region_matches_generic_at_nonzero_node_origin() {
     .cells;
     wide_with_boundary.retain(|cell| cell.coord != [4_194_304, 2_097_152, 2_097_152]);
     assert_eq!(narrow.levels[0].cells, wide_with_boundary);
+}
+
+/// Octant of a cell from its geometry alone: the cell centre against the node's mid-planes.
+fn octant_geometric(grid: &CellGrid, bounds: SpatialBounds, depth: u8, coord: [u64; 3]) -> usize {
+    let cell_side = grid.root_side / (1_u64 << depth) as f64;
+    (0..3).fold(0, |acc, axis| {
+        let centre = grid.root_min[axis] + (coord[axis] as f64 + 0.5) * cell_side;
+        let mid = (bounds.min()[axis] + bounds.max()[axis]) / 2.0;
+        acc * 2 + usize::from(centre > mid)
+    })
+}
+
+fn assert_offsets_match_geometry(grid: &CellGrid, bounds: SpatialBounds, cells: &NodeCells) {
+    for level in &cells.levels {
+        let offsets = level
+            .octant_offsets
+            .expect("level is finer than the node halves");
+        assert_eq!(offsets[0], 0);
+        assert_eq!(offsets[8] as usize, level.cells.len());
+        let mut expected = [0_usize; 8];
+        for (index, cell) in level.cells.iter().enumerate() {
+            let octant = octant_geometric(grid, bounds, level.depth, cell.coord);
+            expected[octant] += 1;
+            assert!(
+                level.octant_range(octant).contains(&index),
+                "depth {} cell {index} not in octant {octant}",
+                level.depth
+            );
+        }
+        for (octant, count) in expected.iter().enumerate() {
+            assert_eq!(level.octant_range(octant).len(), *count);
+        }
+    }
+}
+
+#[test]
+fn octant_offsets_follow_morton_order() {
+    let shifted = CellGrid {
+        root_min: [-13.7, 5.3, 101.1],
+        root_side: SIDE,
+    };
+    let mut rng = Lcg(11);
+    // Asymmetric fixtures: only the +x half, only one octant (+x, -y, +z), a node away from the
+    // origin (node depth 1) with points in its lower corner, and the same on a grid whose origin
+    // is not dyadic.
+    let cases = [
+        (
+            grid(),
+            cube([0.0; 3], SIDE),
+            [34.0, 0.0, 0.0],
+            [28.0, 63.0, 63.0],
+        ),
+        (
+            grid(),
+            cube([0.0; 3], SIDE),
+            [34.0, 1.0, 36.0],
+            [27.0, 29.0, 27.0],
+        ),
+        (
+            grid(),
+            cube([32.0, 0.0, 32.0], 32.0),
+            [32.5, 1.0, 33.0],
+            [14.0, 14.0, 14.0],
+        ),
+        (
+            shifted,
+            cube(
+                [
+                    shifted.root_min[0] + 32.0,
+                    shifted.root_min[1],
+                    shifted.root_min[2] + 32.0,
+                ],
+                32.0,
+            ),
+            [
+                shifted.root_min[0] + 32.5,
+                shifted.root_min[1] + 1.0,
+                shifted.root_min[2] + 33.0,
+            ],
+            [14.0, 14.0, 14.0],
+        ),
+        (
+            shifted,
+            cube(shifted.root_min, SIDE),
+            [
+                shifted.root_min[0] + 34.0,
+                shifted.root_min[1] + 1.0,
+                shifted.root_min[2] + 36.0,
+            ],
+            [27.0, 29.0, 27.0],
+        ),
+    ];
+    for (grid, bounds, lo, size) in &cases {
+        for leaf in [true, false] {
+            let points: Vec<Point> = (0..3)
+                .flat_map(|_| {
+                    let part = random_points(&mut rng, [0.0; 3], 1.0, 40);
+                    part.into_iter().map(|p| {
+                        let position = std::array::from_fn(|axis| {
+                            (lo[axis] + f64::from(p.position[axis]) * size[axis]) as f32
+                        });
+                        Point::new(position, p.color)
+                    })
+                })
+                .collect();
+            let cells = cells_of(grid, *bounds, leaf, &plain_block(points));
+            assert!(!cells.levels.is_empty());
+            assert_offsets_match_geometry(grid, *bounds, &cells);
+            // Points are one-sided, so some octant is empty: the test is not vacuous.
+            assert!(
+                cells
+                    .levels
+                    .iter()
+                    .any(|l| (0..8).any(|o| l.octant_range(o).is_empty()))
+            );
+        }
+    }
+}
+
+#[test]
+fn leaf_level_coarser_than_the_octants_spans_them_all() {
+    let grid = grid();
+    let bounds = cube([0.0; 3], SIDE);
+    let block = plain_block(random_points(&mut Lcg(5), [1.0; 3], 60.0, 50));
+    let cells = PointNodeCellSource::default()
+        .node_cells(&grid, NodeId::new(7), bounds, Some(SIDE), true, &[block])
+        .unwrap();
+    let level = &cells.levels[0];
+    assert_eq!(level.depth, 0);
+    assert_eq!(level.octant_offsets, None);
+    assert!((0..8).all(|o| level.octant_range(o) == (0..level.cells.len())));
+    assert_eq!(crate::octant_ranges(level, 1), vec![0..level.cells.len()]);
 }

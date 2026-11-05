@@ -633,7 +633,7 @@ fn main() -> Result<()> {
                     let (mut over, mut over_limited) = (0_u64, 0_u64);
                     let (mut resident_cells, mut resident_levels) = (0_u64, 0_u64);
                     for entry in &entries {
-                        stages += usize::from(entry.stage);
+                        stages += usize::from(entry.stage[0]);
                         let n = &cache[&entry.node];
                         let depths: [u8; 8] = if variant.octants() {
                             let all: Vec<u8> = n.levels.iter().map(|l| l.depth).collect();
@@ -662,7 +662,9 @@ fn main() -> Result<()> {
                                 })
                             })
                         } else {
-                            let Some(depth) = entry.drawn else { continue };
+                            let Some(depth) = entry.drawn[0] else {
+                                continue;
+                            };
                             [depth; 8]
                         };
                         let mut distinct = depths.to_vec();

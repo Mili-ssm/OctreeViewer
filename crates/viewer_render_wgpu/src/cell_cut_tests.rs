@@ -7,7 +7,7 @@ use viewer_core::{HierarchySemantics, NodeId, PointBlock, SpatialBounds};
 
 use super::*;
 use crate::{
-    NodeCellSource, OrbitCamera, PointNodeCellSource, VoxelBuildLimits,
+    NodeCellLevel, NodeCellSource, OrbitCamera, PointNodeCellSource, VoxelBuildLimits,
     scene_digest_tests::{Fixture, ORIGIN, SIDE, VIEWPORT, cameras, fixture, ids},
 };
 
@@ -213,9 +213,9 @@ fn missing_level_draws_coarsest_resident_as_stage() {
         0.001,
     )
     .unwrap();
-    assert_eq!(entries[0].wanted, 5);
-    assert_eq!(entries[0].drawn, Some(3));
-    assert!(entries[0].stage);
+    assert_eq!(entries[0].wanted, [Some(5); 8]);
+    assert_eq!(entries[0].drawn, [Some(3); 8]);
+    assert_eq!(entries[0].stage, [true; 8]);
 }
 
 #[test]
@@ -232,8 +232,8 @@ fn no_resident_level_is_not_drawn() {
         0.001,
     )
     .unwrap();
-    assert_eq!(entries[0].drawn, None);
-    assert!(!entries[0].stage);
+    assert_eq!(entries[0].drawn, [None; 8]);
+    assert_eq!(entries[0].stage, [false; 8]);
 }
 
 /// A chain of nested nodes at levels 0..levels, each the lower octant of its parent. Ids are
@@ -290,7 +290,7 @@ fn descendant_beyond_three_levels_is_rejected() {
         .collect();
     let entries = run(&ids(&[1, 5]), &unloaded, &camera, &grid, ORIGIN, 4.0).unwrap();
     assert_eq!(entries[0].mask, [0; 8]);
-    assert_eq!(entries[1].drawn, None);
+    assert_eq!(entries[1].drawn, [None; 8]);
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn assert_exact_cover(
                     if !(0..3).all(|axis| (range[axis].0..=range[axis].1).contains(&local[axis])) {
                         continue;
                     }
-                    if entry.drawn.is_none() {
+                    if entry.drawn[0].is_none() {
                         continue;
                     }
                     if expected.is_none_or(|(deepest, _)| *rep > deepest) {
@@ -418,7 +418,7 @@ fn visible_volume_equals_covered_volume() {
                 let label = format!("{name}/{camera_name}/{target}px");
                 let entries = run(cut, nodes, &camera, &grid, ORIGIN, target).unwrap();
                 if name == "mixed_node3_absent" {
-                    assert_eq!(entries[2].drawn, None);
+                    assert_eq!(entries[2].drawn, [None; 8]);
                     // Node 3 is the +x octant: its mask cells stay visible through the root.
                     assert_eq!(entries[0].mask[0] >> 4 & 1, 0, "{label}");
                     assert_eq!(entries[0].mask[0] & 1, 1, "{label}");
@@ -561,4 +561,82 @@ fn cell_cut_digest_golden() {
             .collect();
         panic!("digest table changed; actual:\n{table}");
     }
+}
+
+fn level_with_offsets(offsets: [u32; 9]) -> NodeCellLevel {
+    NodeCellLevel {
+        depth: 4,
+        cells: Vec::new(),
+        octant_offsets: Some(offsets),
+    }
+}
+
+fn level_cell() -> crate::NodeCell {
+    crate::NodeCell {
+        coord: [0; 3],
+        rgb_sum: [0; 3],
+        intensity_sum: 0.0,
+        intensity_count: 0,
+        count: 1,
+        classification: -1,
+        z_min: 0.0,
+        z_max: 0.0,
+    }
+}
+
+#[test]
+fn octant_ranges_coalesce_adjacent_octants() {
+    // Octants 0, 1 and 3 hold 2 cells each, 2 is empty, 4..8 hold 1 each.
+    let level = level_with_offsets([0, 2, 4, 4, 6, 7, 8, 9, 10]);
+    assert_eq!(octant_ranges(&level, 0b0000_0011), vec![0..4]);
+    assert_eq!(octant_ranges(&level, 0b0000_1011), vec![0..6]);
+    assert_eq!(octant_ranges(&level, 0b0000_0111), vec![0..4]);
+    assert_eq!(octant_ranges(&level, 0b1111_1111), vec![0..10]);
+    assert_eq!(octant_ranges(&level, 0b0001_0001), vec![0..2, 6..7]);
+    assert!(octant_ranges(&level, 0).is_empty());
+
+    // A level with every cell in octant 7 is not a spanning level.
+    let last = level_with_offsets([0, 0, 0, 0, 0, 0, 0, 0, 5]);
+    assert!((0..7).all(|o| last.octant_range(o).is_empty()));
+    assert_eq!(last.octant_range(7), 0..5);
+    assert!(octant_ranges(&last, 1).is_empty());
+    assert_eq!(octant_ranges(&last, 0x80), vec![0..5]);
+
+    // A spanning level is the whole level for every octant, drawn once.
+    let mut spanning = level_with_offsets([0; 9]);
+    spanning.octant_offsets = None;
+    spanning.cells = vec![level_cell(); 5];
+    assert!((0..8).all(|o| spanning.octant_range(o) == (0..5)));
+    assert_eq!(octant_ranges(&spanning, 1), vec![0..5]);
+    assert_eq!(octant_ranges(&spanning, 0xff), vec![0..5]);
+    assert!(octant_ranges(&spanning, 0).is_empty());
+}
+
+#[test]
+fn draws_and_required_levels_on_uniform_entries() {
+    let camera = cameras().remove(0).1;
+    let nodes = root_with(&[3, 4, 5], &[4, 3]);
+    let entries = run(
+        &ids(&[1]),
+        &nodes,
+        &camera,
+        &dataset_grid(ORIGIN),
+        ORIGIN,
+        0.001,
+    )
+    .unwrap();
+    assert_eq!(entries[0].required_levels(), vec![3]);
+    assert_eq!(entries[0].draws(), vec![(3, 0xff)]);
+    let nodes = root_with(&[3, 4, 5], &[]);
+    let entries = run(
+        &ids(&[1]),
+        &nodes,
+        &camera,
+        &dataset_grid(ORIGIN),
+        ORIGIN,
+        0.001,
+    )
+    .unwrap();
+    assert!(entries[0].required_levels().is_empty());
+    assert!(entries[0].draws().is_empty());
 }

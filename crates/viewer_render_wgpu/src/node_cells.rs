@@ -4,7 +4,7 @@
 //! a chain of finer levels down to the density of its source points. Grid, node bounds and point
 //! positions must share one coordinate frame (the caller subtracts the coordinate origin).
 
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, ops::Range};
 
 use viewer_core::{NodeId, PointBlock, SpatialBounds};
 
@@ -75,6 +75,21 @@ pub struct NodeCell {
 pub struct NodeCellLevel {
     pub depth: u8,
     pub cells: Vec<NodeCell>,
+    /// Start in `cells` of each octant, then `cells.len()`. Octant `o = 4x + 2y + z` (x, y, z in
+    /// {0, 1} are the node's half on each axis, the Morton order), so the cells of one octant are
+    /// contiguous. `None` for a level that spans octants (depth <= node depth, possible in
+    /// leaves): only levels at depth >= node depth + 1 can be split by octant.
+    pub octant_offsets: Option<[u32; 9]>,
+}
+
+impl NodeCellLevel {
+    /// Cells of octant `octant` (0..8); the whole level when it spans octants.
+    pub fn octant_range(&self, octant: usize) -> Range<usize> {
+        match self.octant_offsets {
+            Some(offsets) => offsets[octant] as usize..offsets[octant + 1] as usize,
+            None => 0..self.cells.len(),
+        }
+    }
 }
 
 /// A pruned pyramid for an internal node; a chain of increasing depth for a leaf.
@@ -180,6 +195,7 @@ impl NodeCellSource for PointNodeCellSource {
         if last > MAX_CELL_DEPTH {
             return Err(NodeCellError::AbsoluteDepthExceeded);
         }
+        let node_depth = representative_depth(grid, bounds).saturating_sub(3);
         let points: Vec<_> = blocks.iter().map(Points::new).collect();
         let distinct_positions: HashSet<_> = blocks
             .iter()
@@ -195,7 +211,12 @@ impl NodeCellSource for PointNodeCellSource {
         for depth in first..=last {
             let cells = build_level(grid, bounds, &points, depth)?;
             let fully_separated = is_leaf && cells.len() == distinct_positions.len();
-            levels.push(NodeCellLevel { depth, cells });
+            let octant_offsets = octant_offsets(grid, bounds, node_depth, depth, &cells);
+            levels.push(NodeCellLevel {
+                depth,
+                cells,
+                octant_offsets,
+            });
             if fully_separated {
                 break;
             }
@@ -208,6 +229,39 @@ impl NodeCellSource for PointNodeCellSource {
         levels.retain(|_| keep.next().unwrap_or(true));
         Ok(NodeCells { node, levels })
     }
+}
+
+/// Octant starts of a level (see `NodeCellLevel::octant_offsets`). The octant of a cell is read
+/// from the bit of its coordinate relative to the node, the same relative coordinate that orders
+/// the Morton keys, so octants are contiguous.
+fn octant_offsets(
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    node_depth: u8,
+    depth: u8,
+    cells: &[NodeCell],
+) -> Option<[u32; 9]> {
+    if depth <= node_depth {
+        return None;
+    }
+    let shift = u32::from(depth - node_depth - 1);
+    let lo: [u64; 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis).0);
+    let mut counts = [0_u32; 8];
+    let mut previous = 0;
+    for cell in cells {
+        let octant = (0..3).fold(0_usize, |acc, axis| {
+            let half = ((cell.coord[axis] - lo[axis]) >> shift).min(1) as usize;
+            acc * 2 + half
+        });
+        debug_assert!(octant >= previous, "octants are contiguous in Morton order");
+        previous = octant;
+        counts[octant] += 1;
+    }
+    let mut offsets = [0_u32; 9];
+    for octant in 0..8 {
+        offsets[octant + 1] = offsets[octant] + counts[octant];
+    }
+    Some(offsets)
 }
 
 /// Which levels of a chain (cell counts, coarse to fine) to store. The finest level is always

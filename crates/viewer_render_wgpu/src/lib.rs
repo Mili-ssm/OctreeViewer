@@ -25,8 +25,8 @@ mod voxel_grid;
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
 pub use cell_cut::{
-    CellCutEntry, CellCutError, CellCutNode, cell_cut, cell_cut_digest, resident_depth,
-    wanted_depth,
+    CellCutEntry, CellCutError, CellCutNode, cell_cut, cell_cut_digest, octant_ranges,
+    resident_depth, wanted_depth,
 };
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use node_cells::{
