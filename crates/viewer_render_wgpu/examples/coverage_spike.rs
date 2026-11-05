@@ -440,8 +440,10 @@ fn main() -> Result<()> {
     let mut cache: HashMap<NodeId, NodeData> = HashMap::new();
     let mut cache_bytes = 0_usize;
     let mut coarse_first_level_nodes = 0_usize;
+    let mut coarse_nodes: Vec<String> = Vec::new();
     let mut cases: Vec<Case> = Vec::new();
     let mut rows = Vec::new();
+    let mut stop_resident: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
     let mut stop_bytes: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
     let mut stop_grazing: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
     let mut na_grazing: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
@@ -534,6 +536,12 @@ fn main() -> Result<()> {
                     // when a mask applies, which needs cut descendants (checked where it is used).
                     if levels[0].depth < rep {
                         coarse_first_level_nodes += 1;
+                        coarse_nodes.push(format!(
+                            "node {} node_depth {} first_stored_depth {} leaf {is_leaf}",
+                            id.get(),
+                            rep.saturating_sub(3),
+                            levels[0].depth
+                        ));
                     }
                     cache.insert(
                         *id,
@@ -623,6 +631,7 @@ fn main() -> Result<()> {
                         })?;
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
                     let (mut over, mut over_limited) = (0_u64, 0_u64);
+                    let (mut resident_cells, mut resident_levels) = (0_u64, 0_u64);
                     for entry in &entries {
                         stages += usize::from(entry.stage);
                         let n = &cache[&entry.node];
@@ -668,6 +677,8 @@ fn main() -> Result<()> {
                                 .iter()
                                 .find(|l| l.depth == depth)
                                 .ok_or("drawn level not stored")?;
+                            resident_cells += level.rel.len() as u64;
+                            resident_levels += 1;
                             let any_mask = entry.mask.iter().any(|w| *w != 0);
                             if any_mask && depth < n.rep {
                                 return Err(format!(
@@ -728,6 +739,13 @@ fn main() -> Result<()> {
                         ),
                         Err(text) => (text.clone(), "NA".to_string(), "NA".to_string()),
                     };
+                    let resident_bytes12 = resident_cells * 12;
+                    if resident_bytes12 > POOL_BYTES {
+                        stop_resident[vi].push(format!(
+                            "{} {target}px budget {budget}: {resident_bytes12} B",
+                            pose.name
+                        ));
+                    }
                     if bytes12 > POOL_BYTES {
                         stop_bytes[vi].push(format!(
                             "{} {target}px budget {budget}: {bytes12} B",
@@ -758,7 +776,7 @@ fn main() -> Result<()> {
                         }
                     }
                     rows.push(format!(
-                        "{}\t{}\t{target}\t{budget}\t{}\t{}\t{}\t{total}\t{on_screen}\t{bytes12}\t{}\t{cpu_text}\t{ratio_text}\t{stages}\t{build_ms:.1}\t{over}\t{:.4}\t{over_limited}\t{cpu_over}",
+                        "{}\t{}\t{target}\t{budget}\t{}\t{}\t{}\t{total}\t{on_screen}\t{bytes12}\t{}\t{cpu_text}\t{ratio_text}\t{stages}\t{build_ms:.1}\t{over}\t{:.4}\t{over_limited}\t{cpu_over}\t{resident_bytes12}\t{resident_levels}",
                         args[0].to_string_lossy(),
                         pose.name,
                         variant.name(),
@@ -780,7 +798,7 @@ fn main() -> Result<()> {
 
     println!("# block case");
     println!(
-        "dataset_file\tpose\ttarget_px\tbudget\tvariant\tcut_nodes\tcut_points\tcells_total\tcells_on_screen\tbytes12\tbytes16\tcpu_instances\tratio_on_screen_vs_cpu\tstage_entries\tbuild_ms\tover_target_cells\tover_target_frac\tover_target_source_limited\tcpu_oversized"
+        "dataset_file\tpose\ttarget_px\tbudget\tvariant\tcut_nodes\tcut_points\tcells_total\tcells_on_screen\tbytes12\tbytes16\tcpu_instances\tratio_on_screen_vs_cpu\tstage_entries\tbuild_ms\tover_target_cells\tover_target_frac\tover_target_source_limited\tcpu_oversized\tresident_bytes12\tresident_levels"
     );
     for row in &rows {
         println!("{row}");
@@ -934,6 +952,16 @@ fn main() -> Result<()> {
         println!(
             "{verdict}\t[{name}] cut bytes (12 B) <= 256 MiB in every case{detail}{skipped_text}"
         );
+        let (verdict, detail) = if !stop_resident[vi].is_empty() {
+            ("FAIL", format!(": {}", stop_resident[vi].join("; ")))
+        } else if !skipped.is_empty() {
+            ("UNKNOWN", String::new())
+        } else {
+            ("PASS", String::new())
+        };
+        println!(
+            "{verdict}\t[{name}] resident_bytes12 (whole drawn levels) <= 256 MiB in every case{detail}{skipped_text}"
+        );
         let limit_text = if matches!(
             variant,
             Variant::OctantTight
@@ -978,6 +1006,10 @@ fn main() -> Result<()> {
     println!(
         "# nodes whose first stored level is coarser than their 8^3 grid: {coarse_first_level_nodes}"
     );
+    println!("# nodes with a first stored level coarser than their 8^3 grid:");
+    for line in &coarse_nodes {
+        println!("#   {line}");
+    }
     eprintln!("total wall {:.1}s", started_all.elapsed().as_secs_f64());
     Ok(())
 }

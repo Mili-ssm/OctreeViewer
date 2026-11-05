@@ -181,8 +181,30 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 15: nivel por octante (obligatoria desde el 05-11-2026)
 
-- [ ] `cell_cut` elige un nivel por octante con la arista proyectada real ([ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md)); `CellCutEntry` lleva un nivel por octante. Se hace antes de la Tarea 5. Lleva su propio pre-mortem.
-- [ ] **Pasa si** los tests de volumen de la Tarea 3 siguen en verde con niveles distintos por octante, y el spike de cobertura reproduce las cifras de `octant_tight` del [registro](../records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md).
+Regla en el [ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md). Se hace antes de la Tarea 5. Especificación revisada con el pre-mortem del 05-11-2026.
+
+- [ ] **Octantes:** los 8 hijos del nodo, partido por la mitad en cada eje. El índice es `o = 4x + 2y + z`, el mismo orden que el Morton de `node_cells.rs` (x es el bit más alto), así que las celdas de un octante quedan contiguas en cada nivel. La relación con la máscara 8³ (bit `x + 8y + 64z`) se documenta y se prueba en un fixture asimétrico.
+- [ ] **Desplazamientos por octante:** cada `NodeCellLevel` guarda 9 desplazamientos, con el inicio de cada octante y el final, calculados al construir el nivel. Solo hacen falta en los niveles con profundidad ≥ nodo + 1.
+- [ ] **Marco de coordenadas:** las cajas de octante se pasan al marco local (`caja − origen`), el ojo es `posición / visual_scale` y la prueba es `projected_voxel_edge_pixels(cubo, [0; 3])`, el mismo marco que el spike. Un test de invariancia desplaza rejilla, cajas y origen 10⁶ con `visual_scale` = 0,0788 y exige los mismos niveles por octante.
+- [ ] **Nivel deseado del octante:** el primer nivel guardado `d` (ascendente) cuya celda de lado `root_side / 2^d`, colocada en el punto del octante más cercano al ojo (ajustada para quedar dentro), cumple el objetivo con `projected_voxel_edge_pixels`. Si ninguno lo cumple, el más fino (R3-Q9); con error infinito o NaN, también el más fino.
+  - Un octante tapado entero por la máscara no pide nivel: `wanted = None`, no exige residencia y no cuenta como etapa.
+  - Los niveles de hoja con profundidad ≤ nodo abarcan varios octantes. Si un octante elegiría uno de ellos, pasa al siguiente nivel guardado ≥ nodo + 1, que es más fino y respeta RQ-09. Si no hay ninguno, todo el nodo usa ese nivel.
+- [ ] **Nivel dibujado del octante:** `resident_depth` por octante (R3-Q3): el deseado si es residente; si no, el residente más grueso, que es etapa solo si es más grueso que el deseado. Las etapas se cuentan por (nodo, octante).
+- [ ] **`CellCutEntry`:** `wanted: [Option<u8>; 8]`, `drawn: [Option<u8>; 8]`, `stage: [bool; 8]` y la misma máscara 8³.
+  - `required_levels()` devuelve las profundidades distintas que se deben tener residentes.
+  - `draws()` devuelve, por profundidad dibujada, los rangos contiguos de instancias de los octantes que la usan, a partir de los desplazamientos. Es lo que dibujan las Tareas 6 y 7.
+- [ ] **Dorados:** `cell_cut_digest` añade los campos por octante solo cuando difieren entre octantes. Un primer commit de refactorización, con todos los octantes de un nodo en el nivel de la regla anterior, deja los dorados idénticos. El commit de la regla nueva cambia solo los que debe.
+- [ ] **Oráculos:**
+  - por octante, por fuerza bruta y con su propia colocación del cubo: todos los niveles guardados más gruesos fallan y el deseado pasa;
+  - de cobertura sobre `draws()`: cada celda de la rejilla más fina queda cubierta exactamente una vez, con el octante calculado desde coordenadas enteras;
+  - con una cámara dentro del dataset y `visual_scale` ≠ 1.
+- [ ] **Spike de cobertura:** `level_ok` sigue siendo un oráculo independiente. En cada caso debe haber 0 diferencias por (nodo, octante) con la librería, y los totales deben coincidir con las filas registradas de `octant_tight`. Se añaden los bytes residentes reales (niveles completos × 12 B) y el número de rangos de dibujo.
+- [ ] **Pasa si** se cumplen los oráculos y los tests de volumen de la Tarea 3, el spike no da diferencias, y los bytes residentes de Majadas desde dentro de una hoja caben en 256 MiB.
+- **Parar si:**
+  - los bytes residentes superan 256 MiB (vuelve al propietario por el ADR 0034);
+  - hay diferencias entre la librería y el oráculo, o el test de invariancia falla;
+  - los rangos de dibujo superan 3× los nodos del corte en Belvedere a 4 px (repetir la Tarea 5 antes de la 6);
+  - un dataset real elige un nivel que abarca varios octantes y no tiene uno más fino guardado (replantear la cadena de la Tarea 1).
 
 ## Tarea 16 (condicional): compactación y oclusión sobre el pool
 

@@ -1,0 +1,183 @@
+# coverage_spike target/render-data/belvedere-v75.oct
+# viewport 1280x720; root_side 16384; origin (413891.5100,5086642.4700,1471.0200)
+# point budget (viewer) 18446744073709551615 from crates/viewer_wasm/src/lod_dataset.rs:517; budgets run: [18446744073709551615]
+# selector: select_lod_stable_projector as lod_dataset.rs:517-522; visual_scale 0.01649201621495024 (dataset metadata, bindings/lod.rs:240); voxel limits max_voxels 8000000 (min of voxel_grid.rs:64 and budget.rs:19-22, via gpu.rs:721), max_estimated_bytes 268435456 (voxel_grid.rs:65); RendererConfig defaults, the web host may override
+# pose orbit-0: position (64.3269,348.9357,450.0557) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose orbit-90: position (-274.8862,9.7225,450.0557) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose grazing: position (64.3269,487.6169,152.6529) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose inside-leaf: position (46.3836,44.5537,14.7930) target (63.2715,44.5537,14.7930) (local coords x visual_scale)
+# inside-leaf: node 425201762329 with 63986 points, bounds SpatialBounds { min: [2748.489990234375, 2637.529998779297, 832.9800109863281], max: [2876.489990234375, 2765.529998779297, 960.9800109863281] }
+# grazing: eye 0.0873 rad above the horizontal plane through the root centre, looking down, fitted distance 479.7199
+# orbit-90: OrbitCamera::orbit(0.25, 0.0) (quarter turn in normalized units)
+# block case
+dataset_file	pose	target_px	budget	variant	cut_nodes	cut_points	cells_total	cells_on_screen	bytes12	bytes16	cpu_instances	ratio_on_screen_vs_cpu	stage_entries	build_ms	over_target_cells	over_target_frac	over_target_source_limited	cpu_oversized	resident_bytes12	resident_levels
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	pyramid	6	186763	186679	186679	2240148	2986864	46512	4.014	0	28.7	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	tight	6	186763	77821	77821	933852	1245136	46512	1.673	0	12.1	0	0.0000	0	0	933852	6
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	octant	6	186763	186679	186679	2240148	2986864	46512	4.014	0	28.8	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	octant_tight	6	186763	73999	73999	887988	1183984	46512	1.591	0	11.5	0	0.0000	0	0	1055340	7
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	octant_tight_guard	6	186763	73999	73999	887988	1183984	46512	1.591	0	11.6	0	0.0000	0	0	1055340	7
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	octant_tight_offaxis	6	186763	186679	186679	2240148	2986864	46512	4.014	0	28.7	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	orbit-0	1	18446744073709551615	octant_tight_near	6	186763	73999	73999	887988	1183984	46512	1.591	0	11.5	0	0.0000	0	0	1055340	7
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	pyramid	4	46512	46512	46512	558144	744192	11549	4.027	0	7.1	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	tight	4	46512	42957	42957	515484	687312	11549	3.720	0	6.6	0	0.0000	0	0	515484	4
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	octant	4	46512	46512	46512	558144	744192	11549	4.027	0	7.1	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	octant_tight	4	46512	19177	19177	230124	306832	11549	1.660	0	3.2	0	0.0000	0	0	639288	6
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	octant_tight_guard	4	46512	19177	19177	230124	306832	11549	1.660	0	3.2	0	0.0000	0	0	639288	6
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	octant_tight_offaxis	4	46512	46512	46512	558144	744192	11549	4.027	0	7.2	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	orbit-0	2	18446744073709551615	octant_tight_near	4	46512	19177	19177	230124	306832	11549	1.660	0	3.2	0	0.0000	0	0	639288	6
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	pyramid	4	46512	11549	11549	138588	184784	2921	3.954	0	1.8	0	0.0000	0	0	138588	4
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	tight	4	46512	10636	10636	127632	170176	2921	3.641	0	1.7	0	0.0000	0	0	127632	4
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	octant	4	46512	11549	11549	138588	184784	2921	3.954	0	1.8	0	0.0000	0	0	138588	4
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	octant_tight	4	46512	4796	4796	57552	76736	2921	1.642	0	0.8	0	0.0000	0	0	158856	6
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	octant_tight_guard	4	46512	4796	4796	57552	76736	2921	1.642	0	0.8	0	0.0000	0	0	158856	6
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	octant_tight_offaxis	4	46512	11549	11549	138588	184784	2921	3.954	0	1.8	0	0.0000	0	0	138588	4
+target/render-data/belvedere-v75.oct	orbit-0	4	18446744073709551615	octant_tight_near	4	46512	4796	4796	57552	76736	2921	1.642	0	0.8	0	0.0000	0	0	158856	6
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	pyramid	1	11549	11549	11549	138588	184784	761	15.176	0	1.8	0	0.0000	0	0	138588	1
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	tight	1	11549	2921	2921	35052	46736	761	3.838	0	0.4	0	0.0000	0	0	35052	1
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	octant	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	octant_tight	1	11549	2697	2697	32364	43152	761	3.544	0	0.4	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	octant_tight_guard	1	11549	2697	2697	32364	43152	761	3.544	0	0.4	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	octant_tight_offaxis	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	orbit-0	8	18446744073709551615	octant_tight_near	1	11549	2697	2697	32364	43152	761	3.544	0	0.4	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	pyramid	6	186763	186679	186679	2240148	2986864	46512	4.014	0	30.3	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	tight	6	186763	47825	47825	573900	765200	46512	1.028	0	7.7	0	0.0000	0	0	573900	6
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	octant	6	186763	186679	186679	2240148	2986864	46512	4.014	0	30.2	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	octant_tight	6	186763	47825	47825	573900	765200	46512	1.028	0	7.8	0	0.0000	0	0	573900	6
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	octant_tight_guard	6	186763	47825	47825	573900	765200	46512	1.028	0	7.8	0	0.0000	0	0	573900	6
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	octant_tight_offaxis	6	186763	186679	186679	2240148	2986864	46512	4.014	0	31.4	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	orbit-90	1	18446744073709551615	octant_tight_near	6	186763	47825	47825	573900	765200	46512	1.028	0	7.8	0	0.0000	0	0	573900	6
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	pyramid	4	46512	46512	46512	558144	744192	11549	4.027	0	7.6	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	tight	4	46512	44944	44944	539328	719104	11549	3.892	0	7.3	0	0.0000	0	0	539328	4
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	octant	4	46512	46512	46512	558144	744192	11549	4.027	0	7.6	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	octant_tight	4	46512	11549	11549	138588	184784	11549	1.000	0	2.3	0	0.0000	0	0	671160	6
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	octant_tight_guard	4	46512	11549	11549	138588	184784	11549	1.000	0	2.3	0	0.0000	0	0	671160	6
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	octant_tight_offaxis	4	46512	46512	46512	558144	744192	11549	4.027	0	7.6	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	orbit-90	2	18446744073709551615	octant_tight_near	4	46512	11549	11549	138588	184784	11549	1.000	0	2.2	0	0.0000	0	0	671160	6
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	pyramid	4	46512	11549	11549	138588	184784	2921	3.954	0	1.9	0	0.0000	0	0	138588	4
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	tight	4	46512	11151	11151	133812	178416	2921	3.818	0	1.8	0	0.0000	0	0	133812	4
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	octant	4	46512	11549	11549	138588	184784	2921	3.954	0	1.9	0	0.0000	0	0	138588	4
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	octant_tight	4	46512	2921	2921	35052	46736	2921	1.000	0	0.6	0	0.0000	0	0	166884	6
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	octant_tight_guard	4	46512	2921	2921	35052	46736	2921	1.000	0	0.6	0	0.0000	0	0	166884	6
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	octant_tight_offaxis	4	46512	11549	11549	138588	184784	2921	3.954	0	1.9	0	0.0000	0	0	138588	4
+target/render-data/belvedere-v75.oct	orbit-90	4	18446744073709551615	octant_tight_near	4	46512	2921	2921	35052	46736	2921	1.000	0	0.6	0	0.0000	0	0	166884	6
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	pyramid	1	11549	11549	11549	138588	184784	761	15.176	0	1.9	0	0.0000	0	0	138588	1
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	tight	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	35052	1
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	octant	1	11549	2921	2921	35052	46736	761	3.838	0	0.6	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	octant_tight	1	11549	2804	2804	33648	44864	761	3.685	0	0.5	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	octant_tight_guard	1	11549	2804	2804	33648	44864	761	3.685	0	0.5	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	octant_tight_offaxis	1	11549	2921	2921	35052	46736	761	3.838	0	0.6	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	orbit-90	8	18446744073709551615	octant_tight_near	1	11549	2804	2804	33648	44864	761	3.685	0	0.5	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	pyramid	6	186763	186679	186679	2240148	2986864	130932	1.426	0	28.8	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	tight	6	186763	172802	172802	2073624	2764832	130932	1.320	0	26.8	0	0.0000	0	0	2073624	6
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	octant	6	186763	186679	186679	2240148	2986864	130932	1.426	0	29.3	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	octant_tight	6	186763	172802	172802	2073624	2764832	130932	1.320	0	27.0	0	0.0000	0	0	2073624	6
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	octant_tight_guard	6	186763	172802	172802	2073624	2764832	130932	1.320	0	27.1	0	0.0000	0	0	2073624	6
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	octant_tight_offaxis	6	186763	186679	186679	2240148	2986864	130932	1.426	0	29.9	0	0.0000	0	0	2240148	6
+target/render-data/belvedere-v75.oct	grazing	1	18446744073709551615	octant_tight_near	6	186763	172802	172802	2073624	2764832	130932	1.320	0	27.2	0	0.0000	0	0	2073624	6
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	pyramid	4	46512	46512	46512	558144	744192	32877	1.415	0	7.8	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	tight	4	46512	42957	42957	515484	687312	32877	1.307	0	7.0	0	0.0000	0	0	515484	4
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	octant	4	46512	46512	46512	558144	744192	32877	1.415	0	7.3	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	octant_tight	4	46512	42957	42957	515484	687312	32877	1.307	0	6.8	0	0.0000	0	0	515484	4
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	octant_tight_guard	4	46512	42957	42957	515484	687312	32877	1.307	0	6.7	0	0.0000	0	0	515484	4
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	octant_tight_offaxis	4	46512	46512	46512	558144	744192	32877	1.415	0	7.3	0	0.0000	0	0	558144	4
+target/render-data/belvedere-v75.oct	grazing	2	18446744073709551615	octant_tight_near	4	46512	42957	42957	515484	687312	32877	1.307	0	6.7	0	0.0000	0	0	515484	4
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	pyramid	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	tight	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	octant	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	octant_tight	1	11549	10636	10636	127632	170176	8208	1.296	0	1.7	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	octant_tight_guard	1	11549	10636	10636	127632	170176	8208	1.296	0	1.7	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	octant_tight_offaxis	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1
+target/render-data/belvedere-v75.oct	grazing	4	18446744073709551615	octant_tight_near	1	11549	10636	10636	127632	170176	8208	1.296	0	1.7	0	0.0000	0	0	173640	2
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	pyramid	1	11549	2921	2921	35052	46736	2115	1.381	0	0.5	0	0.0000	0	0	35052	1
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	tight	1	11549	2921	2921	35052	46736	2115	1.381	0	0.4	0	0.0000	0	0	35052	1
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	octant	1	11549	2921	2921	35052	46736	2115	1.381	0	0.5	0	0.0000	0	0	35052	1
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	octant_tight	1	11549	2697	2697	32364	43152	2115	1.275	0	0.4	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	octant_tight_guard	1	11549	2697	2697	32364	43152	2115	1.275	0	0.4	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	octant_tight_offaxis	1	11549	2921	2921	35052	46736	2115	1.381	0	0.5	0	0.0000	0	0	35052	1
+target/render-data/belvedere-v75.oct	grazing	8	18446744073709551615	octant_tight_near	1	11549	2697	2697	32364	43152	2115	1.275	0	0.4	0	0.0000	0	0	44184	2
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	pyramid	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1103.2	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	tight	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1099.4	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	octant	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1093.0	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	octant_tight	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1098.0	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	octant_tight_guard	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1095.1	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	octant_tight_offaxis	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1101.2	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	1	18446744073709551615	octant_tight_near	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1101.9	83456	0.0116	83456	NA	101066976	334
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	pyramid	170	6072506	5924083	4604039	71088996	94785328	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	711.8	29505	0.0064	29505	NA	71088996	170
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	tight	170	6072506	5519819	4199775	66237828	88317104	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	664.4	31650	0.0075	29505	NA	66237828	170
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	octant	170	6072506	5715919	4413372	68591028	91454704	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	688.5	32453	0.0074	29505	NA	73753188	183
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	octant_tight	170	6072506	5295764	3975720	63549168	84732224	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	621.6	35506	0.0089	29505	NA	70218396	185
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	octant_tight_guard	170	6072506	5295764	3975720	63549168	84732224	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	658.6	35506	0.0089	29505	NA	70218396	185
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	octant_tight_offaxis	170	6072506	5787180	4462487	69446160	92594880	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	731.7	29505	0.0066	29505	NA	73472664	180
+target/render-data/belvedere-v75.oct	inside-leaf	2	18446744073709551615	octant_tight_near	170	6072506	5295764	3975720	63549168	84732224	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	622.6	35506	0.0089	29505	NA	70218396	185
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	pyramid	73	2954800	2944212	1919591	35330544	47107392	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	304.4	9067	0.0047	9067	NA	35330544	73
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	tight	73	2954800	2737415	1712794	32848980	43798640	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	296.1	9831	0.0057	9067	NA	32848980	73
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	octant	73	2954800	2865489	1842998	34385868	45847824	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	303.4	9067	0.0049	9067	NA	36678120	84
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	octant_tight	73	2954800	2571640	1549071	30859680	41146240	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	255.7	13071	0.0084	9067	NA	35232492	83
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	octant_tight_guard	73	2954800	2571640	1549071	30859680	41146240	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	253.7	13071	0.0084	9067	NA	35232492	83
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	octant_tight_offaxis	73	2954800	2884687	1860066	34616244	46154992	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	297.8	9067	0.0049	9067	NA	36290784	80
+target/render-data/belvedere-v75.oct	inside-leaf	4	18446744073709551615	octant_tight_near	73	2954800	2571640	1549071	30859680	41146240	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	251.0	13071	0.0084	9067	NA	35232492	83
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	pyramid	66	2614220	1577452	944318	18929424	25239232	427564	2.209	0	153.8	2479	0.0026	1765	0	18929424	66
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	tight	66	2614220	1807383	933024	21688596	28918128	427564	2.182	0	152.5	3141	0.0034	1765	0	21688596	66
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	octant	66	2614220	1577452	944318	18929424	25239232	427564	2.209	0	151.6	2479	0.0026	1765	0	19305528	72
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	octant_tight	66	2614220	1714751	865207	20577012	27436016	427564	2.024	0	150.2	3552	0.0041	1765	0	29265156	88
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	octant_tight_guard	66	2614220	1714751	865207	20577012	27436016	427564	2.024	0	149.1	3552	0.0041	1765	0	29265156	88
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	octant_tight_offaxis	66	2614220	1983161	1051300	23797932	31730576	427564	2.459	0	178.3	1765	0.0017	1765	0	30494424	82
+target/render-data/belvedere-v75.oct	inside-leaf	8	18446744073709551615	octant_tight_near	66	2614220	1714751	865207	20577012	27436016	427564	2.024	0	150.8	3552	0.0041	1765	0	29265156	88
+# block transitions
+transition	budget	variant	prev_nodes	next_nodes	union_nodes	result	offending_pairs
+within orbit-0 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-0 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-0 2->1px	18446744073709551615	pyramid	4	6	10	ok	0
+within orbit-90 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-90 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-90 2->1px	18446744073709551615	pyramid	4	6	10	ok	0
+between orbit-0->orbit-90 1px	18446744073709551615	pyramid	6	6	6	ok	0
+between orbit-0->orbit-90 2px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-0->orbit-90 4px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-0->orbit-90 8px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 8->4px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 4->2px	18446744073709551615	pyramid	1	4	5	ok	0
+within grazing 2->1px	18446744073709551615	pyramid	4	6	10	ok	0
+between orbit-90->grazing 1px	18446744073709551615	pyramid	6	6	6	ok	0
+between orbit-90->grazing 2px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-90->grazing 4px	18446744073709551615	pyramid	4	1	5	ok	0
+between orbit-90->grazing 8px	18446744073709551615	pyramid	1	1	1	ok	0
+within inside-leaf 8->4px	18446744073709551615	pyramid	66	73	79	ok	0
+within inside-leaf 4->2px	18446744073709551615	pyramid	73	170	200	ok	0
+within inside-leaf 2->1px	18446744073709551615	pyramid	170	334	378	ok	0
+between grazing->inside-leaf 1px	18446744073709551615	pyramid	6	334	339	DescendantTooFine	325
+between grazing->inside-leaf 2px	18446744073709551615	pyramid	4	170	174	DescendantTooFine	167
+between grazing->inside-leaf 4px	18446744073709551615	pyramid	1	73	74	DescendantTooFine	72
+between grazing->inside-leaf 8px	18446744073709551615	pyramid	1	66	67	DescendantTooFine	65
+# transitions evaluated per variant: 24 of 24 expected (the rest involve skipped cases)
+# pyramid: DescendantTooFine in 4/24 transitions (frequency 0.1667)
+#   fails: between grazing->inside-leaf 1px budget 18446744073709551615: 325 pairs
+#   fails: between grazing->inside-leaf 2px budget 18446744073709551615: 167 pairs
+#   fails: between grazing->inside-leaf 4px budget 18446744073709551615: 72 pairs
+#   fails: between grazing->inside-leaf 8px budget 18446744073709551615: 65 pairs
+# block stop_criteria
+PASS	[pyramid] cut bytes (12 B) <= 256 MiB in every case
+PASS	[pyramid] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[pyramid] on-screen instances <= 2x CPU instances in the grazing pose
+PASS	[tight] cut bytes (12 B) <= 256 MiB in every case
+PASS	[tight] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[tight] on-screen instances <= 2x CPU instances in the grazing pose
+PASS	[octant] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant] on-screen instances <= 2x CPU instances in the grazing pose
+PASS	[octant_tight] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_guard] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_guard] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_guard] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_offaxis] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_offaxis] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_offaxis] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_near] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_near] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_near] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+FAIL	DescendantTooFine in <= 5 % of cut updates (worst variant 0.1667)
+# cell cache: 424 nodes, 262903568 bytes (nothing evicted, so peak = final)
+# nodes whose first stored level is coarser than their 8^3 grid: 0
+# nodes with a first stored level coarser than their 8^3 grid:
