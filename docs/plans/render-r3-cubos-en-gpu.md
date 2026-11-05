@@ -47,7 +47,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 - **T1:** alguna hoja con posiciones finitas distintas sin separar en la profundidad absoluta 63 → parar (R3-Q7).
 - **T4:** el corte ocupa más de 256 MiB, o en la pose rasante hay más de 2× las instancias en pantalla de la ruta CPU a 2–8 px, o más de 2,5× a 1 px (R3-Q12) → replantear y volver al propietario.
 - **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara. Revisado el 05-11-2026 ([ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)): 16,7 % solo en saltos de pose; se retiene el corte (R3-Q10). Vuelve a aplicar si aparece con navegación continua.
-- **T5:** más de 16,7 ms de GPU con los recuentos de T4 → revisar ADR 0019.
+- **T5:** más de 16,7 ms de GPU en Majadas dentro de una hoja a 4 px, con el `draw` por rango → revisar ADR 0019.
 - **T11:** cualquiera de estos → parar:
   - racha de `RetainedPrevious` de más de 1 s;
   - `poolOverflow` > 0;
@@ -125,11 +125,43 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 5: spike de GPU
 
-- [ ] Con los recuentos de T4, comparar un `draw` por nodo con un `draw` único.
-- [ ] Comparar la instancia de 12 B (zancada de 3 `u32`) con el control de 16 B (W = 16), por R3-Q8.
-- [ ] Medir también el *overdraw* (fragmentos sometidos a la prueba de profundidad por píxel) en las poses de la Tarea 4, y en el spike de cobertura la fracción de celdas en pantalla tapadas por completo (Z-buffer de baja resolución), para OQ-08.
-- [ ] **Reglas:** con Belvedere a 4 px, si el `draw` por nodo tarda ≤ 8 ms → se queda el `draw` por nodo; si solo el `draw` único cumple ≤ 8 ms → la Tarea 16 pasa a obligatoria; si el `draw` único supera 16,7 ms → parar (criterio de parada).
-- [ ] **Pasa si** la GPU tarda 8 ms o menos con Belvedere a 4 px.
+Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibujar los cortes reales de la Tarea 4 con la instancia de 12 B. Especificación del 05-11-2026, revisada con su pre-mortem. El código es desechable: la decodificación exacta es de la Tarea 6 y el pool de la Tarea 7.
+
+**T5a, tiempos (decide):**
+
+- [ ] **Exportación** (`coverage_spike --export DIR`), para la variante `octant_tight`:
+  - por (nodo, nivel) de `required_levels()`, el nivel **completo**, empaquetado como el pool: páginas fijas de 8 KiB y reparto voraz en orden Morton (página nueva si el rango supera 2^W en algún eje o la página se llena);
+  - dos empaquetados: W = 10 con instancia de 12 B (682 huecos por página) y el control W = 16 con 16 B (512 huecos);
+  - rangos de dibujo = `octant_ranges` sobre esos niveles, en el espacio de huecos;
+  - el shader de vértices descarta las celdas tapadas por la máscara 8³ y las de octantes que dibujan otro nivel;
+  - un control con la `InstanceRaw` de 40 B de la ruta actual, con las mismas celdas;
+  - en el registro: instancias por variante, fracción de huecos vacíos y suma de rangos frente a celdas dibujadas;
+  - error máximo en píxeles de origen de página `f32` + coordenada relativa × lado frente a `f64`, en celdas de muestra que incluyan las hojas más profundas.
+- [ ] **Página** `examples/web-host/spike-cube-pool.{html,mjs}`, WebGPU sin wasm:
+  - mismo pipeline que `gpu.rs`: cubo indexado con `CUBE_INDICES`, `Depth32Float` con `Less`, culling de caras traseras, mezcla alfa y el sombreado de fragmentos de `scene.rs`;
+  - destino fuera de pantalla de 1280×720, cuyo tamaño se comprueba;
+  - `requiredLimits` explícitos para los buffers grandes; se registran los límites concedidos y se falla con un mensaje claro si no bastan;
+  - variantes: `draw` por rango; `draw` único sobre todos los huecos usados («cota inferior compactada»); 12 B; 16 B; 40 B;
+  - tiempo de GPU con `timestamp-query`, guardando los ticks crudos y su máximo común divisor, contrastado con `onSubmittedWorkDone`; tiempo de CPU de codificar y enviar por frame y por `draw`;
+  - calentamiento de al menos 2 s, variantes intercaladas dentro de cada ronda y la serie completa por frame, no solo la mediana;
+  - una variante con la cámara en movimiento leve y el corte fijo, que reescribe la tabla de páginas en cada frame y mide el `writeBuffer`.
+- [ ] **Sonda** `examples/web-host/probe-cube-pool.mjs`: lanza Chrome como `probe-orbit-load.mjs`, añadiendo `--enable-webgpu-developer-features` y rechazando adaptadores de software. Sirve el repositorio por HTTP, hace 3 rondas y registra antes y después la alimentación, el perfil de energía, `pp_dpm_sclk`, la temperatura y `gpu_busy_percent`.
+- [ ] **Registro** `R3_GPU_SPIKE_dd-mm-aaaa.md` con mediana y rango por caso y variante.
+- [ ] **Casos:** Belvedere y Majadas a 1 y 4 px en órbita, rasante y dentro de una hoja. Órbita y rasante dibujan pocas instancias y sirven solo de comprobación; deciden los casos «dentro de una hoja».
+- [ ] **Reglas** (sobre el `draw` por rango, fiel al pool):
+  - Belvedere dentro de una hoja a 4 px: ≤ 8 ms → se queda el `draw` por nodo; si solo el `draw` único cumple → la Tarea 16 pasa a obligatoria;
+  - Majadas dentro de una hoja a 4 px: > 16,7 ms → criterio de parada de T5 (revisar ADR 0019). Majadas dentro de una hoja a 1 px queda como prueba de carga, porque roza el pool;
+  - 12 B frente a 16 B: se mantiene la de 12 B si no cuesta más de un 10 % de GPU. La regla solo se aplica a casos de ≥ 2 ms y si la variación A/A de una variante es ≤ 5 %;
+  - CPU de codificación > 2 ms por frame con unos 1.000 rangos → revisar el `draw` por nodo antes de la Tarea 7.
+- **Parar si:**
+  - los ticks salen cuantizados a ~100 µs incluso con las funciones de desarrollador; entonces no se aplica la regla del 10 % y se vuelve al propietario;
+  - la variación A/A supera el 5 %; antes de dar veredicto hay que fijar el estado de energía;
+  - el spike necesita la decodificación de la Tarea 6 o la residencia de la Tarea 7 para dar cifras; entonces se replantea su alcance.
+
+**T5b, diagnóstico para OQ-08 (no decide):**
+
+- [ ] *Overdraw* con consultas de oclusión (muestras que pasan) en el pase con prueba de profundidad, y una cuenta sin prueba de profundidad. Se registra el orden de dibujo.
+- [ ] Fracción de celdas visibles con un pase de identificadores de hueco global en `r32uint` (comprobando que `instance_index` incluye `firstInstance`). Límite documentado: como mucho 921.600 identificadores distintos, y los cubos de menos de un píxel se pierden.
 
 ## Tarea 6: instancia y tabla de páginas
 
