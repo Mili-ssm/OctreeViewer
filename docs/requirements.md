@@ -26,7 +26,7 @@ No es objetivo una demostración técnica sin uso real ni convertir cientos de G
 | --- | --- | --- |
 | ESC-1 | Una nube de **400–500 GB de LAZ** (~10¹¹ puntos, ASM-01) | Puerta de escala |
 | ESC-2 | Varias nubes simultáneas de 50–200 GB, **hasta ~100 nubes**, total **< 1 TB** de LAZ | Referencia de uso, no límite |
-| EQ-REF | iGPU con ~2 GB compartidos + **16 GB de RAM** (Radeon 880M), Chrome/Edge de escritorio | Equipo de las puertas |
+| EQ-REF | GPU o iGPU con **≥ 4 GB** disponibles para WebGPU + **16 GB de RAM** (p. ej. Radeon 880M con su memoria compartida configurada a ≥ 4 GB), Chrome/Edge de escritorio. Sustituye a los ~2 GB de P2 (05-11-2026) | Equipo de las puertas |
 | RED-REF | **100 Mbit/s, 50 ms de RTT** simulados | Red de las puertas remotas |
 
 Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mosaico hasta ESC-1, en EQ-REF.
@@ -130,7 +130,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | W1 | Fusionar tras `check.sh`; etapa 4 integrada, sin evidencia registrada del chequeo previo. | Orden de trabajo |
 | W2 | Pedir `persist()` con mensaje; Firefox es mejor esfuerzo. | RF-29, CON-01 |
 | P1 | Cubos 3D obligatorios. | ADR 0019 |
-| P2 | iGPU 2 GB + 16 GB RAM. | EQ-REF |
+| P2 | ~~iGPU 2 GB + 16 GB RAM.~~ Sustituida el 05-11-2026: ≥ 4 GB de GPU. | EQ-REF |
 | P3 | Pirámide densa en V7. | ADR 0020 |
 | P4 | Literal por defecto; continuidad opcional por nube. | RF-04, RF-05, ADR 0019 |
 | P5 | Fijo progresivo por defecto; dinámico a 60 fps. | RF-06, RF-07, ADR 0019 |
@@ -152,6 +152,17 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | --- | --- | --- |
 | Orden de escala | R4 antes que R3. | ADR 0028 |
 | R4-Q1 a R4-Q4 | Coordenadas enteras globales de cuanto 2⁻¹⁵ con octree implícito en sus bits (ADR 0029); límite de hoja medido (16/32/64 k); espaciado ÷2 por nivel; PROJ fuera de `v7.4-pre`. | [Plan de R4](plans/render-r4-piramide-densa.md#resoluciones-del-propietario-01-11-2026) |
+
+## Resoluciones del 05-11-2026
+
+| Pregunta | Resolución | Registro |
+| --- | --- | --- |
+| GPU mínima | GPU o iGPU con ≥ 4 GB disponibles para WebGPU; sustituye a P2. | [ADR 0033](adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), EQ-REF |
+| R3: hojas, claves e instancia | Continuación adaptativa de hojas, clave regional más allá de 21 bits e instancia de 12 B. | ADR 0032, R3-Q7 y R3-Q8 |
+| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. | R3-Q9 |
+| R3: saltos de cámara | Con `DescendantTooFine` se retiene el corte anterior hasta completar el nuevo (ADR 0027). | R3-Q10 |
+| R3: corte mayor que el pool | Los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que el corte quepa. | ADR 0033, R3-Q11 |
+| R3: error proyectado | Medir una métrica ajustada y el nivel por octante antes de decidir. | [Cobertura T4](records/benchmarks/R3_T4_COVERAGE_05-11-2026.md) |
 
 ## Preguntas abiertas
 
