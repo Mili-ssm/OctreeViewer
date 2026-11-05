@@ -11,9 +11,10 @@
 //! its end, but the cut of that frame was computed before, so the level is first drawn (in
 //! `active`) one frame later, when every page has been executed. The pages of an evicted level
 //! return to the free list two frames after it last drew, so a slot is never rewritten while the
-//! current or the previous frame can read it. That delay also means pages freed this frame can
-//! only be uploaded next frame; a level that waits for them blocks the lower-priority levels from
-//! taking the free pages meanwhile (a one-frame stall in exchange for priority order).
+//! current or the previous frame can read it. Pages that never drew (a cancelled upload, or a
+//! level evicted before it was drawn) are free for the uploads of the same frame. A level that
+//! waits for delayed pages blocks the lower-priority levels from taking the free pages meanwhile
+//! (a one-frame stall in exchange for priority order).
 //!
 //! The wanted cut (resident = stored) only steers what is requested: nodes that would make it fail
 //! with `DescendantTooFine` get no requests. Applying is decided on the real cut, on the actual
