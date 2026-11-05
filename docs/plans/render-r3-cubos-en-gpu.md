@@ -95,10 +95,14 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 3: `cell_cut`
 
-- [ ] Elegir el nivel de cada nodo.
-- [ ] Máscara de 8³ por nodo, construida solo con descendientes residentes. `DescendantTooFine` para descendientes más allá de +3.
-- [ ] Una profundidad podada se resuelve con la menor guardada ≥ la deseada.
-- [ ] **Pasa si** el volumen visible es igual al cubierto, sin solapes, en los fixtures de T0.
+**Hecha (05-11-2026):** `cell_cut.rs`. El volumen visible coincide con el cubierto, sin solapes, en 156 casos (fixtures dorados, incluidos cortes mixtos y un hijo sin residencia, y casos de T0: origen CRS a 10⁶, nube local y hoja de nivel 2 a profundidad 16), contra un oráculo independiente que se comprobó que falla sin máscara. 48 dorados de `cell_cut_digest`. Una etapa es un nivel dibujado más grueso que el deseado.
+
+- [x] Elegir el nivel de cada nodo (`wanted_depth`): el primer nivel guardado cuyo error proyectado cumple el objetivo de px; si ninguno lo cumple, el más fino (R3-Q9). Error infinito (cámara dentro del nodo) → el más fino, sin NaN.
+- [x] Nivel dibujado (`resident_depth`, R3-Q2 y R3-Q3): el deseado si es residente; si no, el residente más grueso como etapa; sin ninguno, el nodo no se dibuja.
+- [x] Máscara de 8³ por nodo, construida solo con descendientes residentes. `DescendantTooFine` para descendientes más allá de +3.
+- [x] `cell_cut_digest` con dorados sobre los fixtures de `scene_digest_tests.rs`. Los modos de px y de huecos (`GapMode`) quedan para la Tarea 14.
+- [x] Una profundidad podada se resuelve con la menor guardada ≥ la deseada.
+- [x] **Pasa si** el volumen visible es igual al cubierto, sin solapes, en los fixtures de T0.
 
 ## Tarea 4: spike de cobertura (v7.5)
 

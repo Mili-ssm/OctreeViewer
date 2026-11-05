@@ -57,7 +57,7 @@ Ramas (sin push): el trabajo integrado está en `feat/render-r3-node-cells`; R3 
 
 | Orden | Trabajo | Estado | Siguiente paso |
 | --- | --- | --- | --- |
-| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), ADR [0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md) y [0032](docs/adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) | T0, T0b, T1 y T2 hechos ([aceptación de T1](docs/records/benchmarks/R3_T1_ACCEPT_05-11-2026.md); oráculo de refinamiento con R3-Q9). 0032: continuación adaptativa de hojas, clave regional e instancia de 12 B ([layout por anchura](docs/records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md)) | Tarea 3 (`cell_cut`, con la máscara de 8³ y los cortes mixtos); las Tareas 5 y 6 confirman 12 B frente al control de 16 B |
+| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), ADR [0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md) y [0032](docs/adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) | T0, T0b, T1, T2 y T3 hechos ([aceptación de T1](docs/records/benchmarks/R3_T1_ACCEPT_05-11-2026.md); oráculo de refinamiento con R3-Q9). 0032: continuación adaptativa de hojas, clave regional e instancia de 12 B ([layout por anchura](docs/records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md)) | Tarea 4 (spike de cobertura en v7.5); las Tareas 5 y 6 confirman 12 B frente al control de 16 B |
 | 2 | Velocidad de conversión (RQ-07) | v7.5/V5 ≈ 2,0× Belvedere y 1,7× Majadas; objetivo ≤ 1,3× ([registro](docs/records/benchmarks/EXPLORE_CONVERT_CPU_02-11-2026.md)) | Rediseñar el acumulador de muestreo disperso (fallos de caché) y la fase de bloques sin `i128`; requisito para promover V7 |
 | 3 | Integración | R4 y R5 completados y verificados (`check.sh` 24/24) | Revisión de la rama y PR a `main` cuando el propietario lo pida |
 

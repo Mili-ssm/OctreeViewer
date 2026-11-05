@@ -244,7 +244,12 @@ impl<'a> Points<'a> {
 }
 
 /// Inclusive cell range of the node on one axis at `depth`.
-fn node_range(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> (u64, u64) {
+pub(crate) fn node_range(
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    depth: u8,
+    axis: usize,
+) -> (u64, u64) {
     let count = 1_u64 << depth;
     let cell_side = grid.root_side / count as f64;
     let edge = |value: f64| ((value - grid.root_min[axis]) / cell_side).round();

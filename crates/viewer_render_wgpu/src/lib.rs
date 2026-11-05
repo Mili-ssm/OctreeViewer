@@ -5,6 +5,7 @@ mod attributes;
 mod block_sync;
 mod budget;
 mod camera;
+mod cell_cut;
 mod gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
@@ -23,6 +24,10 @@ mod voxel_grid;
 
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
+pub use cell_cut::{
+    CellCutEntry, CellCutError, CellCutNode, cell_cut, cell_cut_digest, resident_depth,
+    wanted_depth,
+};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
