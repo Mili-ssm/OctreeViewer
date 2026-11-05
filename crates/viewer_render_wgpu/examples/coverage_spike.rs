@@ -17,9 +17,9 @@ use viewer_core::{
 };
 use viewer_format::{FormatReader, OctreeReader, PagedReader};
 use viewer_render_wgpu::{
-    CellCutNode, CellGrid, NodeCellSource, OrbitCamera, PointNodeCellSource, RendererConfig,
-    SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits, cell_cut,
-    representative_depth,
+    CellCutNode, CellGrid, NodeCellLevel, NodeCellSource, OrbitCamera, PointNodeCellSource,
+    RendererConfig, SceneBounds, ViewProjection, VoxelBuildLimits, build_voxel_scene_with_limits,
+    cell_cut, octant_ranges, representative_depth,
 };
 
 const VIEWPORT: [u32; 2] = [1280, 720];
@@ -41,6 +41,8 @@ struct Level {
     lo: [u64; 3],
     /// Cell coordinate minus `lo`.
     rel: Vec<[u32; 3]>,
+    /// Octant starts of the library level; `None` for a level spanning octants.
+    octant_offsets: Option<[u32; 9]>,
 }
 
 struct NodeData {
@@ -235,6 +237,23 @@ struct Case {
     target: f64,
     budget: u64,
     cut: Vec<NodeId>,
+}
+
+/// Draw ranges of one level for the octants in `octants`, through the library's `octant_ranges`.
+fn level_draw_ranges(level: &Level, octants: u8) -> usize {
+    match level.octant_offsets {
+        // A spanning level is drawn once, whole.
+        None => usize::from(octants != 0),
+        Some(offsets) => octant_ranges(
+            &NodeCellLevel {
+                depth: level.depth,
+                cells: Vec::new(),
+                octant_offsets: Some(offsets),
+            },
+            octants,
+        )
+        .len(),
+    }
 }
 
 fn fmt3(v: [f64; 3]) -> String {
@@ -448,6 +467,11 @@ fn main() -> Result<()> {
     let mut stop_grazing: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
     let mut na_grazing: Vec<Vec<String>> = vec![Vec::new(); RUN_VARIANTS.len()];
     let mut skipped: Vec<String> = Vec::new();
+    // Library vs the spike's own `level_ok` choice, per (node, octant), for `octant_tight`.
+    let (mut octant_compared, mut octant_masked, mut octant_mismatches) = (0_u64, 0_u64, 0_u64);
+    let mut octant_examples: Vec<String> = Vec::new();
+    // (draw_ranges, cut_nodes, case) of `octant_tight` at 4 px, per case.
+    let mut ranges_4px: Vec<(usize, usize, String)> = Vec::new();
     let source = PointNodeCellSource::default();
     let started_all = Instant::now();
 
@@ -526,6 +550,7 @@ fn main() -> Result<()> {
                             depth: level.depth,
                             lo,
                             rel,
+                            octant_offsets: level.octant_offsets,
                         });
                     }
                     if levels.is_empty() || levels.windows(2).any(|w| w[0].depth >= w[1].depth) {
@@ -630,11 +655,20 @@ fn main() -> Result<()> {
                             )
                         })?;
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
+                    let mut draw_ranges = 0_usize;
                     let (mut over, mut over_limited) = (0_u64, 0_u64);
                     let (mut resident_cells, mut resident_levels) = (0_u64, 0_u64);
                     for entry in &entries {
-                        stages += usize::from(entry.stage[0]);
+                        stages += entry.stage.iter().filter(|stage| **stage).count();
                         let n = &cache[&entry.node];
+                        for (depth, octants) in entry.draws() {
+                            let level = n
+                                .levels
+                                .iter()
+                                .find(|l| l.depth == depth)
+                                .ok_or("drawn level not stored")?;
+                            draw_ranges += level_draw_ranges(level, octants);
+                        }
                         let depths: [u8; 8] = if variant.octants() {
                             let all: Vec<u8> = n.levels.iter().map(|l| l.depth).collect();
                             std::array::from_fn(|o| {
@@ -667,6 +701,41 @@ fn main() -> Result<()> {
                             };
                             [depth; 8]
                         };
+                        if variant == Variant::OctantTight {
+                            let node_depth = n.rep.saturating_sub(3);
+                            let finest = n.levels.last().map_or(0, |l| l.depth);
+                            for (spike_o, spike_depth) in depths.iter().enumerate() {
+                                // The spike indexes octants with x as bit 0; the library with x
+                                // as bit 2 (o = 4x + 2y + z).
+                                let o = (spike_o & 1) << 2 | (spike_o & 2) | spike_o >> 2;
+                                let Some(library) = entry.wanted[o] else {
+                                    octant_masked += 1;
+                                    continue;
+                                };
+                                // Levels spanning octants move to the next stored finer one, or
+                                // the finest when none exists.
+                                let expected = if *spike_depth > node_depth {
+                                    *spike_depth
+                                } else {
+                                    n.levels
+                                        .iter()
+                                        .map(|l| l.depth)
+                                        .find(|d| *d > node_depth)
+                                        .unwrap_or(finest)
+                                };
+                                octant_compared += 1;
+                                if library != expected {
+                                    octant_mismatches += 1;
+                                    if octant_examples.len() < 20 {
+                                        octant_examples.push(format!(
+                                            "{} {target}px budget {budget} node {} octant {o}: library {library}, spike {expected}",
+                                            pose.name,
+                                            entry.node.get()
+                                        ));
+                                    }
+                                }
+                            }
+                        }
                         let mut distinct = depths.to_vec();
                         distinct.sort_unstable();
                         distinct.dedup();
@@ -777,8 +846,15 @@ fn main() -> Result<()> {
                             Err(_) => na_grazing[vi].push(format!("{target}px budget {budget}")),
                         }
                     }
+                    if variant == Variant::OctantTight && target == 4.0 {
+                        ranges_4px.push((
+                            draw_ranges,
+                            cut.len(),
+                            format!("{} budget {budget}", pose.name),
+                        ));
+                    }
                     rows.push(format!(
-                        "{}\t{}\t{target}\t{budget}\t{}\t{}\t{}\t{total}\t{on_screen}\t{bytes12}\t{}\t{cpu_text}\t{ratio_text}\t{stages}\t{build_ms:.1}\t{over}\t{:.4}\t{over_limited}\t{cpu_over}\t{resident_bytes12}\t{resident_levels}",
+                        "{}\t{}\t{target}\t{budget}\t{}\t{}\t{}\t{total}\t{on_screen}\t{bytes12}\t{}\t{cpu_text}\t{ratio_text}\t{stages}\t{build_ms:.1}\t{over}\t{:.4}\t{over_limited}\t{cpu_over}\t{resident_bytes12}\t{resident_levels}\t{draw_ranges}",
                         args[0].to_string_lossy(),
                         pose.name,
                         variant.name(),
@@ -800,10 +876,18 @@ fn main() -> Result<()> {
 
     println!("# block case");
     println!(
-        "dataset_file\tpose\ttarget_px\tbudget\tvariant\tcut_nodes\tcut_points\tcells_total\tcells_on_screen\tbytes12\tbytes16\tcpu_instances\tratio_on_screen_vs_cpu\tstage_entries\tbuild_ms\tover_target_cells\tover_target_frac\tover_target_source_limited\tcpu_oversized\tresident_bytes12\tresident_levels"
+        "dataset_file\tpose\ttarget_px\tbudget\tvariant\tcut_nodes\tcut_points\tcells_total\tcells_on_screen\tbytes12\tbytes16\tcpu_instances\tratio_on_screen_vs_cpu\tstage_octants\tbuild_ms\tover_target_cells\tover_target_frac\tover_target_source_limited\tcpu_oversized\tresident_bytes12\tresident_levels\tdraw_ranges"
     );
     for row in &rows {
         println!("{row}");
+    }
+
+    println!("# block octant_mismatches");
+    println!(
+        "octant_mismatches\t{octant_mismatches}\t(compared {octant_compared} (node, octant) pairs of octant_tight; {octant_masked} fully masked octants skipped)"
+    );
+    for line in &octant_examples {
+        println!("#   mismatch: {line}");
     }
 
     // Transitions: mixed cut = previous union next, all resident, next view and target.
@@ -932,6 +1016,37 @@ fn main() -> Result<()> {
     let incomplete = transitions.len() < expected_transitions;
 
     println!("# block stop_criteria");
+    {
+        let failing: Vec<String> = ranges_4px
+            .iter()
+            .filter(|(ranges, nodes, _)| *ranges > 3 * *nodes)
+            .map(|(ranges, nodes, case)| format!("{case}: {ranges} ranges vs {nodes} nodes"))
+            .collect();
+        let worst = ranges_4px.iter().max_by(|a, b| {
+            (a.0 as f64 / a.1.max(1) as f64).total_cmp(&(b.0 as f64 / b.1.max(1) as f64))
+        });
+        let verdict = if ranges_4px.is_empty() {
+            "UNKNOWN"
+        } else if failing.is_empty() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        let detail = worst.map_or(String::new(), |(r, n, c)| {
+            format!(
+                " (worst {c}: draw_ranges {r}, cut_nodes {n}, limit {})",
+                3 * n
+            )
+        });
+        println!(
+            "{verdict}\t[octant_tight] draw_ranges <= 3 x cut_nodes at 4 px in every case{detail}{}",
+            if failing.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", failing.join("; "))
+            }
+        );
+    }
     let skipped_text = if skipped.is_empty() {
         String::new()
     } else {
@@ -1013,5 +1128,11 @@ fn main() -> Result<()> {
         println!("#   {line}");
     }
     eprintln!("total wall {:.1}s", started_all.elapsed().as_secs_f64());
+    if octant_mismatches > 0 {
+        return Err(format!(
+            "octant_mismatches: {octant_mismatches} (node, octant) pairs differ from level_ok"
+        )
+        .into());
+    }
     Ok(())
 }

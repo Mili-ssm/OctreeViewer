@@ -8,7 +8,8 @@
 //! Octants: a node's 8 children, halved on each axis; index `o = 4x + 2y + z` with x, y, z in
 //! {0, 1} (the Morton order of `node_cells`). Mask bit `x + 8y + 64z` of the 8^3 grid belongs to
 //! octant `4 * (x >> 2) + 2 * (y >> 2) + (z >> 2)`. The level choice is per octant in the data
-//! model; for now every octant carries the node-level value.
+//! model and in the rule (ADR 0034): each octant asks for the coarsest stored level whose cell,
+//! placed at the octant point nearest the eye, projects to at most the target.
 
 use std::{collections::HashMap, fmt, ops::Range};
 
@@ -127,16 +128,28 @@ impl fmt::Display for CellCutError {
 
 impl std::error::Error for CellCutError {}
 
-/// The first stored depth (ascending) whose projected error meets `target_px`, else the finest
-/// (source density, RQ-09/R3-Q9). A pruned depth thus resolves to the next stored finer one, and
-/// an infinite or NaN error (camera inside, corners behind) never meets the target.
+/// Octant `octant` of `bounds` (both in any one frame), split at the mid-plane of each axis.
+fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
+    let mid: [f64; 3] = std::array::from_fn(|a| (bounds.min()[a] + bounds.max()[a]) / 2.0);
+    let upper = |a: usize| octant >> (2 - a) & 1 == 1;
+    let min = std::array::from_fn(|a| if upper(a) { mid[a] } else { bounds.min()[a] });
+    let max = std::array::from_fn(|a| if upper(a) { bounds.max()[a] } else { mid[a] });
+    SpatialBounds::new(min, max).ok()
+}
+
+/// The first stored depth (ascending) for which a cell of that depth, placed at the point of
+/// `octant` nearest the eye and shifted to stay inside it, projects to at most `target_px`; else
+/// the finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never meets the target.
 ///
-/// `stored` must not be empty.
-pub fn wanted_depth(
+/// The test runs relative to `coordinate_origin` (bounds minus origin, eye `position / scale`,
+/// origin `[0; 3]` for the view), the frame the view itself uses, so large origins lose no
+/// precision. `stored` must not be empty and ascend.
+pub fn octant_wanted_depth(
     view: &ViewProjection,
     grid: &CellGrid,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
+    octant: usize,
     stored: &[u8],
     target_px: f64,
 ) -> u8 {
@@ -145,14 +158,49 @@ pub fn wanted_depth(
         "stored depths ascend"
     );
     let finest = *stored.last().expect("stored levels are not empty");
+    let Ok(relative) = SpatialBounds::new(
+        std::array::from_fn(|a| bounds.min()[a] - coordinate_origin[a]),
+        std::array::from_fn(|a| bounds.max()[a] - coordinate_origin[a]),
+    ) else {
+        return finest;
+    };
+    let Some(octant_box) = octant_box(relative, octant) else {
+        return finest;
+    };
+    let eye: [f64; 3] = view
+        .camera()
+        .position()
+        .map(|value| value / view.visual_scale());
     stored
         .iter()
         .copied()
         .find(|depth| {
-            let spacing = grid.root_side / 2.0_f64.powi(i32::from(*depth));
-            view.projected_error_pixels(bounds, spacing, coordinate_origin) <= target_px
+            let side = grid.root_side / 2.0_f64.powi(i32::from(*depth));
+            let min: [f64; 3] = std::array::from_fn(|a| {
+                let low = octant_box.min()[a];
+                let high = (octant_box.max()[a] - side).max(low);
+                eye[a]
+                    .clamp(octant_box.min()[a], octant_box.max()[a])
+                    .clamp(low, high)
+            });
+            SpatialBounds::new(min, min.map(|value| value + side))
+                .is_ok_and(|cube| view.projected_voxel_edge_pixels(cube, [0.0; 3]) <= target_px)
         })
         .unwrap_or(finest)
+}
+
+/// Octant of mask cell `(x, y, z)` of the 8^3 grid.
+fn mask_octant(x: usize, y: usize, z: usize) -> usize {
+    4 * (x >> 2) + 2 * (y >> 2) + (z >> 2)
+}
+
+/// Is the 4^3 block of `octant` fully hidden in `mask`?
+fn octant_fully_masked(mask: &[u64; 8], octant: usize) -> bool {
+    (0..8).all(|z| {
+        (0..8).all(|y| {
+            (0..8).all(|x| mask_octant(x, y, z) != octant || mask[z] >> (x + 8 * y) & 1 == 1)
+        })
+    })
 }
 
 /// `(depth, is_stage)`: the wanted level if resident, else the coarsest resident one. It is a stage
@@ -185,6 +233,7 @@ pub fn cell_cut(
     target_px: f64,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
     let mut entries = Vec::with_capacity(cut.len());
+    let mut nodes = Vec::with_capacity(cut.len());
     let mut placed = Vec::with_capacity(cut.len());
     let mut has_resident = Vec::with_capacity(cut.len());
     for id in cut {
@@ -192,20 +241,11 @@ pub fn cell_cut(
         if data.stored.is_empty() {
             return Err(CellCutError::NoStoredLevels(*id));
         }
-        let wanted = wanted_depth(
-            view,
-            grid,
-            coordinate_origin,
-            data.bounds,
-            &data.stored,
-            target_px,
-        );
-        let chosen = resident_depth(wanted, &data.resident);
         entries.push(CellCutEntry {
             node: *id,
-            wanted: [Some(wanted); 8],
-            drawn: [chosen.map(|(depth, _)| depth); 8],
-            stage: [chosen.is_some_and(|(_, stage)| stage); 8],
+            wanted: [None; 8],
+            drawn: [None; 8],
+            stage: [false; 8],
             mask: [0; 8],
         });
         let rep = representative_depth(grid, data.bounds);
@@ -217,6 +257,7 @@ pub fn cell_cut(
             hi: range.map(|(_, hi)| hi),
         });
         has_resident.push(!data.resident.is_empty());
+        nodes.push(data);
     }
 
     let mut by_cell: HashMap<(u8, [u64; 3]), usize> = HashMap::with_capacity(cut.len());
@@ -256,6 +297,61 @@ pub fn cell_cut(
             }
         }
     }
+
+    for ((entry, data), placed) in entries.iter_mut().zip(&nodes).zip(&placed) {
+        let finest = *data.stored.last().expect("checked above");
+        let node_depth = placed.rep.saturating_sub(MAX_MASK_LEVELS);
+        // A level at depth <= the node's spans octants and cannot be split; when no finer level is
+        // stored, the whole node uses the finest one.
+        let spans_all = finest <= node_depth;
+        for o in 0..8 {
+            if octant_fully_masked(&entry.mask, o) {
+                continue;
+            }
+            let mut wanted = if spans_all {
+                finest
+            } else {
+                octant_wanted_depth(
+                    view,
+                    grid,
+                    coordinate_origin,
+                    data.bounds,
+                    o,
+                    &data.stored,
+                    target_px,
+                )
+            };
+            if wanted <= node_depth && !spans_all {
+                wanted = data
+                    .stored
+                    .iter()
+                    .copied()
+                    .find(|depth| *depth > node_depth)
+                    .expect("a finer stored level exists");
+            }
+            entry.wanted[o] = Some(wanted);
+            if let Some((depth, stage)) = resident_depth(wanted, &data.resident) {
+                entry.drawn[o] = Some(depth);
+                entry.stage[o] = stage;
+            }
+        }
+        // A spanning level is drawn whole, so it must be the only level the node draws:
+        // otherwise its cells would overlap the finer ones of the other octants.
+        let spanning = entry
+            .drawn
+            .iter()
+            .flatten()
+            .copied()
+            .find(|d| *d <= node_depth);
+        if let Some(spanning) = spanning {
+            for o in 0..8 {
+                if let Some(wanted) = entry.wanted[o] {
+                    entry.drawn[o] = Some(spanning);
+                    entry.stage[o] = spanning < wanted;
+                }
+            }
+        }
+    }
     Ok(entries)
 }
 
@@ -272,13 +368,12 @@ pub fn cell_cut_digest(entries: &[CellCutEntry]) -> u64 {
     feed(&(entries.len() as u64).to_le_bytes());
     for entry in entries {
         feed(&entry.node.get().to_le_bytes());
-        let uniform = entry.wanted.iter().all(|w| *w == entry.wanted[0])
+        let uniform = entry.wanted[0].is_some()
+            && entry.wanted.iter().all(|w| *w == entry.wanted[0])
             && entry.drawn.iter().all(|d| *d == entry.drawn[0])
             && entry.stage.iter().all(|s| *s == entry.stage[0]);
         // A uniform entry feeds the node-level bytes of the former layout; per-octant values
-        // follow only when they differ. Step B must hash `wanted == None` distinctly from
-        // `Some(0)` here; step A entries are always `Some`.
-        debug_assert!(!uniform || entry.wanted[0].is_some());
+        // follow when they differ or an octant is hidden (`None` is tagged apart from `Some(0)`).
         feed(&[entry.wanted[0].unwrap_or(0)]);
         match entry.drawn[0] {
             Some(depth) => feed(&[1, depth]),
