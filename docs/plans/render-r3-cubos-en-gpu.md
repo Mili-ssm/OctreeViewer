@@ -232,8 +232,73 @@ Instancia de 16 B con W = 16 (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-c
 
 ## Tarea 7: pool en `SurfaceRenderer`
 
-- [ ] Residencia todo o nada por (nodo, nivel), con presupuesto por frame. `evict_page` emite `evict`.
-- [ ] **Pasa si** pasan `overflow_keeps_previous_complete_cut` y `regraft_mid_cut_keeps_coverage`.
+Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q2, R3-Q3, R3-Q10, R3-Q11, R3-Q16), sobre la instancia y las páginas de la Tarea 6. Incluye la Tarea 16b. Especificación del 05-11-2026, enmendada con su pre-mortem. Se hace en cuatro partes, en este orden, y cada una se commitea por separado. Nadie produce aún `NodeCells` fuera de tests y ejemplos: la carga desde el dataset es de la Tarea 9.
+
+**T7b1, pool estático en GPU y dibujo sin oclusión** (`gpu.rs`, `camera.rs` y un módulo nuevo `cell_render.rs`):
+
+- [ ] **Soporte:** `SurfaceRenderer::new` pide, sin pasar de lo que da el adaptador, `max_storage_buffers_per_shader_stage` ≥ 8 y `max_storage_buffer_binding_size` y `max_buffer_size` ≥ los bytes del pool ([ADR 0036](../adr/0036-hi-z-por-celda.md)). Además exige cómputo, dibujo indirecto, almacenamiento en la etapa de vértices y texturas de almacenamiento `r32float` (`DownlevelFlags`). Si algo falta, `cells_supported() = false` (R3-Q5).
+- [ ] **La ruta CPU no cambia:** sus comprobaciones de tamaño (`gpu.rs:1364`, `hzb.rs:263-265`) siguen usando los límites de `downlevel_defaults`. Los límites se pueden inyectar en `RendererConfig`, para el test.
+- [ ] **Pool perezoso:** se crea al recibir el primer nivel, no en `new()`, y se libera al volver a la ruta CPU. Así sus bytes no cuentan contra el presupuesto de las escenas CPU (`budget.rs:17`).
+- [ ] **Cámara:** `OrbitCamera` da una vista-proyección con el ojo en el origen (`look_at` desde 0 hacia `−offset`) y el ojo escalado en `f64`, para `PageFrame` (Tarea 6).
+- [ ] **Búferes:**
+  - instancias (páginas × 512 × 16 B, con `COPY_SRC` para el picking de la Tarea 8);
+  - tabla de páginas (32 B por página);
+  - máscaras (16 × `u32` por nodo, con su propia lista libre);
+  - tabla sRGB en un uniform;
+  - índices visibles (un `u32` por hueco) y argumentos indirectos.
+  - Todo cuenta en `allocated_gpu_bytes` y en `GpuResourceStats`.
+- [ ] **API mínima:** subir un `PackedLevel` a unas páginas dadas, liberar páginas, fijar la máscara de un nodo, y por frame la lista de páginas activas con sus bits de octante. Todas las escrituras van con `queue.write_buffer`. Orden en cada frame: expulsiones de lo que no se dibuja → subidas → tabla de páginas → envío.
+- [ ] **Pase `k`** (como la Tarea 16a): páginas con frustum; huecos con vacíos, octante, máscara y frustum; un `drawIndexedIndirect`. El frustum prueba las mismas esquinas `lo` y `hi` que dibuja el vértice, con la misma multiplicación por la matriz.
+- [ ] **Un solo codificador** `encode_cells(encoder, color, depth)`, que comparten `render()` y un arnés headless. Así los tests ejercitan el mismo código que el visor.
+- [ ] **Convivencia:** el renderer dibuja la ruta CPU o la de celdas, según lo que se le haya subido. El HZB de la ruta CPU no se usa con celdas.
+- [ ] **Oráculo por píxel:** cada celda con un color único. La imagen de celdas se compara con esas mismas celdas convertidas a `InstanceRaw` y dibujadas por la ruta CPU: mismo identificador en cada píxel salvo en los bordes, con profundidad dentro de una tolerancia derivada y 0 píxeles más profundos. Corre en la 880M y en llvmpipe, y falla si no corre en ninguno (`CELL_POOL_REQUIRE_GPU=1` exige la 880M).
+- [ ] Con los límites de `downlevel_defaults` inyectados, `cells_supported()` es falso y la ruta CPU dibuja igual que antes.
+
+**T7a, residencia en CPU** (`crates/viewer_render_wgpu/src/cell_pool.rs`, sin GPU):
+
+- [ ] **Pool de páginas:** capacidad fija en páginas de 8 KiB (256 MiB = 32.768 páginas, [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md)), con lista libre. Clave de un nivel: (sesión, nodo, profundidad, generación de color).
+- [ ] **Estados por (nodo, nivel):** pedido → subiendo → residente (R3-Q2: solo cuenta como residente con todas sus páginas). La entrada de datos es asíncrona, `offer(clave, PackedLevel)`, como la entregarán los workers (Tarea 10). Un nivel puede subirse en varios frames, con un presupuesto de bytes por frame. Si sale del corte, se cancela y se liberan sus páginas.
+- [ ] **El nivel más grueso de cada nodo del corte está siempre residente y fijado**, también el de los nodos con todos los octantes tapados por la máscara. Si un descendiente pierde residencia y la máscara se abre, el antepasado tiene qué dibujar. Se reserva 1/8 del pool para las transiciones.
+- [ ] **Prioridad de subida:** primero el nivel más grueso de los nodos que no tienen ningún nivel dibujable; después, los deseados, del nodo más cercano al más lejano.
+- [ ] **Ajuste al pool** (R3-Q11), calculado sobre el **corte deseado**, no sobre la residencia actual: `cell_cut` con `resident = stored`, y la suma de páginas de sus niveles `wanted`.
+  - Si no cabe, se recortan en bloque los nodos más lejanos (distancia del ojo a su caja, con la ordenación hecha una sola vez): se truncan su `stored` y su `resident` por debajo de su `max(wanted)` actual, y se repite hasta que quepa. `cell_cut` no cambia.
+  - Histéresis: se recorta por encima del 90 % de la capacidad y se deshace por debajo del 80 %.
+  - Cada nodo recortado cuenta en `pool_coarsened`, que impide «objetivo alcanzado» como una etapa.
+- [ ] **Desbordamiento:** si ni con todos los nodos en su nivel más grueso cabe, se mantiene el último corte completo y se cuenta `pool_overflow`.
+- [ ] **`DescendantTooFine`** (R3-Q10): `CutApply { Applied, RetainedPrevious }`. Mientras se retiene, el corte nuevo se planifica con los descendientes culpables fuera de `resident`, y se sube lo que le falta. Se sale cuando `cell_cut` da `Ok` y no queda ningún nodo sin nivel (`nodes_without_level = 0`).
+- [ ] **Expulsión:** LRU entre los niveles que no están fijados ni los usa el corte aplicado o el deseado. Cada expulsión emite `CellPoolEvent::Evict(clave)` (Tarea 10).
+- [ ] **Tests:**
+  - `overflow_keeps_previous_complete_cut`;
+  - `regraft_mid_cut_keeps_coverage`: expulsar y volver a subir un nivel a mitad del corte. Mientras falta, el oráculo de cobertura de la Tarea 15 cubre cada celda fina una sola vez, y la etapa nunca sube;
+  - todo o nada, subida repartida en varios frames y cancelación;
+  - ajuste por los nodos más lejanos, con los bytes residentes bajando, e histéresis sin oscilar con la cámara quieta;
+  - salida de `RetainedPrevious`;
+  - orden LRU y eventos de expulsión;
+  - `nodes_without_level = 0` tras la primera subida en todos los tests.
+
+**T7b2, oclusión** (Tarea 16b; módulo nuevo `cell_cull.rs`, que sustituye el plan de llevarla a `hzb.rs`):
+
+- [ ] Pases de `kpc` sobre `k`: Hi-Z sobre la caja ajustada en el pase de páginas, Hi-Z por celda en la fase 2, dos fases y un `drawIndexedIndirect` por fase. Los bits de visibilidad, en doble búfer y por hueco del pool, se ponen a cero cuando se reutiliza un hueco.
+- [ ] **Hi-Z propio:** cada texel guarda el máximo de todos sus píxeles. No usa la escala de `hzb.rs`, que no es conservadora fuera de potencias de dos. Se rehace al redimensionar y en `Outdated`.
+- [ ] **Margen de profundidad**, derivado y documentado: el pase y el vértice calculan los mismos `clip`, así que solo queda el redondeo de la interpolación del rasterizador. Si no se puede acotar, se mide el peor caso en los tests y se usa el doble.
+- [ ] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo.
+- [ ] **Tests:**
+  - profundidad idéntica con y sin oclusión, en un frame quieto y en 10 frames en movimiento desde un arranque en frío;
+  - la fase 1 dibuja algo tras el frame 0 y la fase 2 descarta algo;
+  - a mitad de secuencia se expulsa un nivel y otro reutiliza sus huecos.
+
+**T7c, medida nativa** (no decide; referencia para la Tarea 11):
+
+- [ ] `coverage_spike --export-pool DIR` escribe los niveles de los cortes exportados ya empaquetados con `cell_pages`. Un ejemplo nuevo, `cell_pool_bench`, los ofrece al pool, en la 880M y con `timestamp-query`:
+  - el corte quieto (los casos de la Tarea 16a);
+  - la cámara en movimiento, con expulsiones y subidas;
+  - el coste de CPU por frame del corte, el ajuste y la reescritura de la tabla de páginas.
+- **Parar si:**
+  - `kpc` en nativo tarda más de 2 × el spike (4,39 ms en Majadas mirando a +y): algo no se parece al spike;
+  - el corte, el ajuste y la tabla de páginas pasan de 2 ms de CPU por frame en `release` → actualización incremental o en GPU antes de la Tarea 9;
+  - con la pose quieta no converge en 120 frames, o siguen las subidas y expulsiones → más histéresis antes de la Tarea 9.
+
+- **Pasa si** se cumplen los tests de las cuatro partes, `check.sh` y la medida de T7c. El criterio de la Tarea 16b en el visor wasm (≤ 16,7 ms) se comprueba en la Tarea 11, cuando el visor ya cargue celdas.
 
 ## Tarea 8: picking sobre el pool
 
@@ -253,7 +318,7 @@ Instancia de 16 B con W = 16 (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-c
 
 ## Tarea 11: humo en navegador
 
-- [ ] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
+- [ ] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
 - [ ] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
 - [ ] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright.
 
@@ -361,7 +426,7 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
   - los recuentos de la GPU no coinciden con los de `case.json`;
   - la variación A/A supera el 5 % dos veces seguidas: antes de dar veredicto hay que fijar el estado de energía.
 
-**T16b, producción:** los pases van a `hzb.rs` (que hoy lee la instancia de 40 B) dentro de la Tarea 7, sobre la instancia y la tabla de páginas de la Tarea 6. El orden respeta el ADR 0035: la Tarea 16a decide antes de la 6 qué campos tiene la página, y el código de producción solo puede ir con el pool, que llega en la 7.
+**T16b, producción:** los pases van a un módulo nuevo, `cell_cull.rs` (Tarea 7b2), dentro de la Tarea 7, sobre la instancia y la tabla de páginas de la Tarea 6. El orden respeta el ADR 0035: la Tarea 16a decide antes de la 6 qué campos tiene la página, y el código de producción solo puede ir con el pool, que llega en la 7.
 
 - [ ] El margen de profundidad del Hi-Z sale de una cota del error entre la caja proyectada y el rasterizador; en el spike, 4 ulp solo están validados empíricamente.
 - [ ] La pirámide de `hzb.rs` se crea con tamaño potencia de dos, pero `copy_depth` copia 1:1 y la búsqueda escala por `pyramid_size / viewport`, de modo que a 1280×720 lee texeles de otra zona (pre-mortem del 05-11-2026; *inferido* leyendo el código, sin reproducir). El pase nuevo usa la convención del spike: cada texel guarda el máximo de todos sus píxeles.
@@ -375,7 +440,7 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
   | Dibujo (vértices): instancias, páginas, visibles | 3 | 3 |
 
   Ni el pase de huecos ni el pool de 256 MiB (ADR 0033) caben en `downlevel_defaults`. Por eso, según el ADR 0036, la Tarea 7 pide `max_storage_buffers_per_shader_stage` ≥ 8, que es el mínimo del estándar WebGPU, y un `max_storage_buffer_binding_size` y un `max_buffer_size` que alojen el pool, sin pasar de lo que da el adaptador. Si el adaptador no llega, la ruta de celdas no se activa y se usa la ruta CPU (R3-Q5).
-- [ ] **Pasa si** la profundidad es idéntica con y sin oclusión, y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms.
+- [ ] **Pasa si** la profundidad es idéntica con y sin oclusión (Tarea 7b), y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms (se mide en la Tarea 11).
 
 ## Tarea 17: medida y ruta por defecto
 
