@@ -1,0 +1,1 @@
+node examples/web-host/probe-orbit-load.mjs target/render-data/majadas-v75.oct target/r3-t0-04-11-2026/majadas-4-r1b.json --url=http://127.0.0.1:18767/examples/web-host/index.html --px=4 --max-load-s=300 --orbit-s=10 --browser=chrome

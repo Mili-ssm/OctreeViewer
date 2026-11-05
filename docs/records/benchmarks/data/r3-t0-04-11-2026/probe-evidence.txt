@@ -1,0 +1,25 @@
+R3 Task 0 fixtures — transcript-derived evidence, 04-11-2026 Europe/Madrid
+
+This is a transcription of the earlier tool output, not an independently captured browser log.
+Worktree: /home/mili/.cache/codex-worktrees/octree-r3-v75
+
+Native fixtures: R3_FIXTURE_DIR="$PWD/target/r3-fixtures" cargo test --offline -p viewer_format --test v7_5 r3_small_fixtures_open_with_expected_relative_depths
+Result: 1 passed, 0 failed, 25 filtered out.
+Native suite: cargo test --offline -p viewer_format --test v7_5
+Result: 26 passed, 0 failed.
+Wasm: cargo build --offline -p viewer_wasm --target wasm32-unknown-unknown
+Binding: wasm-bindgen --target web --out-dir target/r3-fixtures/pkg target/wasm32-unknown-unknown/debug/viewer_wasm.wasm
+
+Browser: playwright-cli 0.1.22, HeadlessChrome/156.0.0.0 on Linux x86_64.
+Served repository with python3 -m http.server 18766 --bind 127.0.0.1; browser evaluation:
+async () => ({version: navigator.userAgent, result: await (await import('/examples/web-host/tests/r3-fixtures.browser.mjs')).probe()})
+
+Actual result:
+crs-root0-v74: paged false, anchor null
+crs-root0-v75: paged true, anchor "1"
+crs-v74: paged false, anchor null
+crs-v75: paged true, anchor "1"
+local-v74: paged false, anchor null
+local-v75: paged true, anchor "1"
+
+Each session opened; v7.5 checked child geometry unavailable before load, loaded and grafted the child page, and read its geometry. Viewer post-graft resident-node count was not observed; the corresponding statistics require an initialized GPU renderer. No rendering or GPU claim. Initial attempt failed with 404 because the fixture directory was specified relative to cargo's test working directory; using the absolute path above fixed the export and the successful probe followed. Browser and server closed.

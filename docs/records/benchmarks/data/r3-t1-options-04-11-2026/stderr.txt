@@ -1,0 +1,3 @@
+   Compiling r3-options-diagnostic v0.1.0 (/home/mili/.cache/codex-worktrees/octree-r3-v75/target/r3-options)
+    Finished `perf` profile [optimized] target(s) in 0.54s
+     Running `target/perf/r3-options-diagnostic target/render-data/majadas-v75.oct`

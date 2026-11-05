@@ -49,20 +49,24 @@ Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que
 
 ## Tarea 0: línea base y fixtures
 
-- [ ] Nueva línea base de la ruta CPU sobre v7.5: Majadas a 4 px y Belvedere a 4 y 8 px, 3 rondas.
-- [ ] Fixtures paginados v7.4/v7.5 con estos casos:
+- [x] Nueva línea base de la ruta CPU sobre v7.5: Majadas a 4 px y Belvedere a 4 y 8 px, 3 rondas. [Matriz independiente](../records/benchmarks/R3_T0_CPU_04-11-2026.md): 9/9 muestras; no mezcla el [registro parcial anterior](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md), capturado en otro entorno.
+- [x] Fixtures en ambas versiones, v7.4 y v7.5, con estos casos ([evidencia y límites](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md)):
   - nube con CRS y raíz en nivel 0;
   - nube local;
   - hoja de nivel 2 con profundidad 16.
-- [ ] **Pasa si** las medidas quedan en un registro fechado y los fixtures se abren por la ruta paginada.
+- [x] **Pasa si** las medidas quedan en un registro fechado y todos los fixtures se abren en nativo y en la web real. En v7.5 se comprueban la carga diferida de jerarquía y el injerto de páginas; v7.4 conserva la ruta de compatibilidad con índice completo (criterio confirmado el 04-11-2026). Evidencia: [matriz CPU](../records/benchmarks/R3_T0_CPU_04-11-2026.md), [anfitrión web real](../records/benchmarks/R3_T0_WEB_REAL_04-11-2026.md) y [prueba nativa](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md).
 
 ## Tarea 0b: espaciado de referencia en v7.5 (R3-Q4)
 
-- [ ] Nuevo campo en el bloque de metadatos de `v7.5-pre` (spec, códec, conversor y `verify`), con semillas de fuzz y SHA nuevos.
-- [ ] Regenerar `target/render-data/*-v75`.
-- [ ] **Pasa si** hay ida y vuelta, paridad web/CLI y el valor es estable al injertar páginas.
+- [x] Nuevo campo en el bloque de metadatos de `v7.5-pre` (spec, códec, conversor y `verify`), con [semillas de fuzz y SHA nuevos](../records/benchmarks/R5_V75_REFERENCE_SHA_03-11-2026.md).
+- [x] Regenerar `target/render-data/*-v75`.
+- [x] **Pasa si** hay ida y vuelta, paridad web/CLI y el valor es estable al injertar páginas.
+
+**Evidencia (04-11-2026, rama `feat/r3-v75`):** tests de formato y jerarquía; para el mismo fixture, el lector nativo obtiene `0,03125` y el visor WebAssembly en Chromium obtiene el mismo valor antes y después de un injerto ([probe y comandos](../../examples/web-host/tests/reference-spacing.browser.mjs)). Belvedere y Majadas se regeneraron y pasaron `viewer_convert verify` en `target/render-data/` del worktree aislado; los originales del checkout principal se conservaron. La expulsión solo se probó en tests nativos; no se verificó GPU. `scripts/check.sh --offline` pasó los 24 pasos sin omisiones, incluidos fuzz, bindings y paridad con Belvedere real ([registro](../records/benchmarks/R3_T0_PARTIAL_04-11-2026.md)).
 
 ## Tarea 1 (reabierta): celdas por nodo
+
+**Parada (04-11-2026):** Majadas presenta 16 hojas con colisiones entre posiciones `f32` distintas en el límite de profundidad; T1 sigue pendiente. [Diagnóstico, reproducción y límites](../records/benchmarks/R3_T1_STOP_04-11-2026.md); [salida completa del benchmark repetido](../records/benchmarks/R3_T1_BENCH_04-11-2026.md).
 
 - [ ] Claves `u64`, Morton de 64 bits relativo al nodo, firma `&[PointBlock]`, `intensity_count` y clase `i16` (−1 si falta).
 - [ ] Pirámide interna de +3 a +8, podada. Las hojas se reconocen por `has_children` = 0.

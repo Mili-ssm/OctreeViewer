@@ -56,6 +56,9 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Referencia SHA v7.4-pre con extensión de datos (R4)](records/benchmarks/R4_V74_REFERENCE_SHA_3_02-11-2026.md) | SHA de `seed-sample-rev8*` tras guardar el máximo cuantizado de los datos en el índice; sustituye al anterior. | fechado |
 | [Referencia SHA de las semillas v7.5-pre (R5)](records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026.md) | SHA de `seed-sample-rev9` y de las semillas de páginas encadenadas (`fuzz_paged_reader`). | fechado |
 | [Referencia SHA de las semillas v7.5-pre, pareja y ids por página (R5)](records/benchmarks/R5_V75_REFERENCE_SHA_02-11-2026_2.md) | SHA de las semillas regeneradas tras volver a `.oct` + `.octattrs` y a ids `(página, índice)`; sustituye a la primera. | fechado |
+| [R3-T0: línea base CPU independiente](records/benchmarks/R3_T0_CPU_04-11-2026.md) | Nueve muestras en el entorno actual; no se mezclan con la captura parcial. | completado |
+| [R3-T0: fixtures en el anfitrión web real](records/benchmarks/R3_T0_WEB_REAL_04-11-2026.md) | Seis aperturas; jerarquía diferida e injerto en v7.5, índice completo en v7.4. | completado |
+| [R3-T0: fixtures y línea base CPU parcial](records/benchmarks/R3_T0_PARTIAL_04-11-2026.md) | Fixtures en ambas versiones y tres muestras CPU en el entorno anterior. | parcial |
 | [Referencia SHA de las semillas v7.5-pre con espaciado de referencia (R3-T0b)](records/benchmarks/R5_V75_REFERENCE_SHA_03-11-2026.md) | SHA de las semillas regeneradas al añadir el espaciado de referencia al bloque de metadatos; sustituye a la segunda. | fechado |
 | [S2: rangos de chunks LAZ](records/benchmarks/LAZ_CHUNK_RANGES_2026-10-29.md) | Decodificación por rangos de chunks sin `seek`, fixture de chunks variables y velocidad en wasm32 frente a nativo. | fechado |
 | [S10: RAM del híbrido](records/benchmarks/HYBRID_SPOOL_RAM_2026-10-29.md) | Pico de RAM y handles de spools híbridos RAM/OPFS; propuesta P3. | fechado |
@@ -68,6 +71,9 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Prioridad sobre pendientes (R1-T3b)](records/benchmarks/RENDER_R1_T3B_01-11-2026.md) | Coste de proyección, equivalencia de orden y humo Majadas. | fechado |
 | [Medida después de R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_01-11-2026.md) | Matriz R0 tras R1, comparación con R2-T5 y contraste de expulsiones con revisiones anteriores. | fechado |
 | [Edad de escena tras R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_SCENE_AGE_01-11-2026.md) | Por qué sube `sceneAgeMs` desde T1a y por qué se resuelve en R3. | fechado |
+| [R3-T1: alternativas de profundidad](records/benchmarks/R3_T1_OPTIONS_04-11-2026.md) | Diagnóstico de 16 hojas filtradas y propuesta sujeta a aprobación. | propuesta |
+| [R3-T1: repetición del benchmark en Majadas](records/benchmarks/R3_T1_BENCH_04-11-2026.md) | Salidas completas y confirmación del criterio de parada. | parada |
+| [R3-T1: parada por profundidad en Majadas](records/benchmarks/R3_T1_STOP_04-11-2026.md) | Colisiones entre posiciones `f32` distintas y duplicados en el límite de profundidad. | parada |
 | [Celdas por nodo sobre datos reales (R3-T1)](records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md) | Longitud y bytes de la cadena de hoja en Majadas y Belvedere; criterios de parada de R3. | fechado |
 | [Spike de densidad de la pirámide (R4-T1)](records/benchmarks/R4_DENSITY_SPIKE_02-11-2026.md) | Hoja × `sample_grid` en Majadas y Belvedere: salto de espaciado, disco, RSS y tiempo. | fechado |
 | [Memoria del conversor con g = 256 (R4-T1)](records/benchmarks/R4_SPARSE_GRID_RSS_02-11-2026.md) | Causa y corrección de la RSS (umbral `mmap` de glibc, rejilla dispersa compacta). | fechado |

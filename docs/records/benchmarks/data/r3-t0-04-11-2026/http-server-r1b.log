@@ -1,0 +1,51 @@
+Serving HTTP on 127.0.0.1 port 18767 (http://127.0.0.1:18767/) ...
+127.0.0.1 - - [04/Nov/2026 00:19:45] "GET /examples/web-host/index.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /pkg/viewer_wasm_bg.wasm HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/index.html?buildWorker=1 HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/main.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/coalesced-command-queue.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/rendering-budget.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/converter-api.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/benchmark-metrics.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/converter-ui.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/spool-tiers.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/viewer-worker.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] code 404, message File not found
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/http-range-source.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /pkg/viewer_wasm.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /pkg/viewer_wasm_bg.wasm HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:19:51] "GET /examples/web-host/build-worker.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /pkg/viewer_wasm_bg.wasm HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/index.html?buildWorker=1 HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/main.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/coalesced-command-queue.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/rendering-budget.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/converter-api.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/converter-ui.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/benchmark-metrics.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/spool-tiers.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/viewer-worker.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] code 404, message File not found
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /pkg/viewer_wasm.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/http-range-source.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /pkg/viewer_wasm_bg.wasm HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:20:38] "GET /examples/web-host/build-worker.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /pkg/viewer_wasm_bg.wasm HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/index.html?buildWorker=1 HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/main.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/benchmark-metrics.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/rendering-budget.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/coalesced-command-queue.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/converter-api.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/converter-ui.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/spool-tiers.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/viewer-worker.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] code 404, message File not found
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /pkg/viewer_wasm.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/http-range-source.mjs HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /pkg/viewer_wasm_bg.wasm HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:21:22] "GET /examples/web-host/build-worker.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/Nov/2026 00:24:09] "GET /examples/web-host/index.html HTTP/1.1" 200 -

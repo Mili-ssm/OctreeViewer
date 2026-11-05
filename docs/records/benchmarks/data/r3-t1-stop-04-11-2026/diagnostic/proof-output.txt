@@ -1,0 +1,4 @@
+node=19 leaf=true root_side=2048 node_side=256 stored_spacing=16 regular_depths=[7, 8, 9, 10, 11, 12, 13, 14]
+local_points=[[619.86, 456.267, 408.918], [619.754, 456.26, 408.917]] point_bits=[[1142617866, 1139024429, 1137472897], [1142616130, 1139024200, 1137472864]]
+cap_depth=14 cap_coords=[[4958, 3650, 3271], [4958, 3650, 3271]] shared_cell_count=2 saved_cells=382
+cap_plus_one_depth=15 coords=[[9917, 7300, 6542], [9916, 7300, 6542]] saved_cells=386 (diagnostic spacing=8)
