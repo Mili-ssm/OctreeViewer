@@ -169,7 +169,7 @@ Mide en la GPU de referencia (Radeon 880M, Chrome con WebGPU) el coste de dibuja
 
 ## Tarea 6: instancia y tabla de páginas
 
-- [ ] Instancia de 16 B (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)): x, y, z `u16` relativos a la página, 16 bits de flags, rgba8, intensidad `u16` y clase `i16`. Las páginas (8 KiB, 512 huecos) se parten en orden Morton si el rango supera 2¹⁶ o se llenan o cambian los flags. `PageEntry` lleva el origen relativo a la cámara, el desplazamiento dentro del nodo y los flags `has_intensity` y `has_class`.
+- [ ] Instancia de 16 B (R3-Q14, [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)): x, y, z `u16` relativos a la página, 16 bits de flags, rgba8, intensidad `u16` y clase `i16`. Las páginas (8 KiB, 512 huecos) se parten en orden Morton si el rango supera 2¹⁶ o se llenan o cambian los flags. `PageEntry` lleva el origen relativo a la cámara, el desplazamiento dentro del nodo, la caja ajustada de los huecos usados (Tarea 16a) y los flags `has_intensity` y `has_class`.
 - [ ] **Pasa si** la decodificación es igual bit a bit en Rust y en WGSL, con raíz en nivel 0 y un origen a 10⁶ m.
 
 ## Tarea 7: pool en `SurfaceRenderer`
@@ -246,8 +246,69 @@ Regla en el [ADR 0034](../adr/0034-nivel-por-octante-con-arista-real.md). Se hac
 
 ## Tarea 16: compactación y oclusión sobre el pool (obligatoria antes de la Tarea 6, R3-Q15)
 
-- [ ] Obligatoria antes de la Tarea 6 (R3-Q15). Se generaliza `cull_instances` (`hzb.rs:890`) a un pase de compactación (corte, máscara, frustum y HZB) que escribe `visible_indices` y los argumentos indirectos. `firstInstance` en dibujo indirecto necesita la feature opcional `indirect-first-instance`, o índices absolutos.
-- [ ] Técnica decidida: compactación con Hi-Z por página. Raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Medidas de referencia del spike de GPU: *overdraw* y celdas visibles de la Tarea 5 ([opciones](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md), OQ-08). Anexo con tareas y pre-mortem propio.
+Decidida en el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md): compactación con Hi-Z por página; raymarching (OQ-08) solo si con ella Majadas dentro de una hoja a 4 px no baja de 16,7 ms. Especificación del 05-11-2026.
+
+El pool de producción aún no existe (Tarea 7), así que la técnica se mide primero sobre la página del spike de GPU, con los mismos casos y la misma sonda. El resultado fija qué campos de página añade la Tarea 6 y qué pases lleva la Tarea 7 a `SurfaceRenderer`. Referencias: la Tarea 5 ([registro](../records/benchmarks/R3_GPU_SPIKE_05-11-2026.md)) y las [opciones de oclusión](../records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md).
+
+**T16a hecha (05-11-2026):** [registro](../records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md). Pasa con `kpc`. En la peor dirección (Majadas dentro de una hoja mirando a +y, 4 px), 4,39 ms con la cámara quieta y p95 de 8,27 ms en movimiento, frente a 21,66 ms del `draw` por rango; 0 agujeros en los 21 casos con algo en pantalla. Entra el Hi-Z por celda (−42 % y −3,23 ms frente a `k`); el Hi-Z por página no aporta (+0,9 %). `PageEntry` lleva la caja ajustada de la página. **Pendiente del propietario:** el [ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md) decidió «Hi-Z por página», y lo que pasa es el Hi-Z por celda dentro de cada página.
+
+**T16a, spike (decide):** amplía `examples/web-host/spike-cube-pool.*`, solo con la instancia de 16 B (W = 16). Sigue siendo código desechable. Enmendada con su pre-mortem del 05-11-2026.
+
+- [x] **Seis direcciones:** el corte de nodos depende del frustum (`coverage_spike.rs:528`), pero cada nodo se dibuja entero. Según el pre-mortem, el 72,9 % de las celdas dibujadas en Majadas dentro de una hoja a 4 px cae fuera del frustum. Por eso `coverage_spike --export` añade, solo a 4 px y en ambos datasets, la pose dentro de una hoja mirando a −x, ±y y ±z, con el mismo ojo; la actual mira a +x. Para ±z, `set_pose` limita el pitch a ±89° y recoloca el ojo, lo que se registra. Las filas ya registradas no cambian. **Decide la peor dirección.**
+- [x] **Caja de página ajustada:** al cargar el caso, el mínimo y el máximo de las coordenadas relativas de los huecos usados de cada página, calculados en la página desde `w16_instances.bin`. En producción serían campos de `PageEntry`.
+- [x] **Pase de páginas** (cómputo, un hilo por página): descarta la página si su caja queda fuera del frustum y, en las variantes con oclusión, si queda tapada en el Hi-Z. Escribe la lista de páginas que siguen y los argumentos de un despacho indirecto.
+- [x] **Pase de huecos** (cómputo con despacho indirecto, **un grupo de trabajo por página** que sigue):
+  - descarta los huecos vacíos, los de octantes que dibujan otro nivel, los tapados por la máscara 8³ y los que caen fuera del frustum; en la variante por celda, también los tapados en el Hi-Z;
+  - compacta con una suma de prefijos local y **un solo `atomicAdd` global por grupo**, que conserva el orden Morton dentro de la página;
+  - escribe índices **absolutos** de hueco y los argumentos de `drawIndexedIndirect`. Con índices absolutos no hace falta la feature `indirect-first-instance`;
+  - se comprueba en la CPU que el despacho no supera `maxComputeWorkgroupsPerDimension`. Si lo supera, se usa un despacho 2D; nunca se deja un despacho que no hace nada.
+- [x] **Dibujo:** un `drawIndexedIndirect` por fase. El shader de vértices toma el hueco de `visible_indices[instance_index]` y decodifica como el spike, sin las pruebas que ya hizo el pase de huecos.
+- [x] **Oclusión en dos fases** (Haar y Aaltonen, 2015), con bits de visibilidad por página y por hueco **en doble búfer**: cada fase lee `prev` y escribe `next`, y se ponen a cero al cambiar de variante o de caso.
+  - fase 1: compacta y dibuja lo que fue visible en el frame anterior y sigue dentro del frustum;
+  - Hi-Z propio, sin reutilizar las constantes de `hzb.rs`:
+    - la profundidad se copia a la escala de la pirámide, de forma que cada texel cubra todos sus píxeles con el máximo;
+    - el margen de profundidad es de unos pocos ulp, no el `depth_epsilon = 0.001` de NDC;
+  - fase 2: prueba contra el Hi-Z todas las páginas y huecos candidatos, escribe sus bits `next` y dibuja, sobre la misma profundidad, los que pasan y no se dibujaron en la fase 1.
+  - El primer frame, sin bits, dibuja todo en la fase 2.
+- [x] **Variantes**, intercaladas por ronda como en la Tarea 5:
+
+  | Variante | Qué hace |
+  | --- | --- |
+  | `w16-ranges` | Referencia: el `draw` por rango de la Tarea 5 |
+  | `k` | Pases de páginas y huecos sin oclusión (frustum, vacíos, octante, máscara) |
+  | `kp` | `k` + dos fases con Hi-Z solo por página |
+  | `kpc` | `kp` + Hi-Z por celda en el pase de huecos |
+  | `k-moving`, `kp-moving`, `kpc-moving` | Las anteriores durante 120 frames con un giro de 0,5° por frame y una traslación de una celda por frame, con el corte fijo |
+
+- [x] **Medida:**
+  - tiempo de GPU del frame entero, desde el inicio del primer pase hasta el final del último, más el de cada pase;
+  - con la cámara quieta, mediana; en movimiento, mediana y p95, el frame frío tras cambiar de variante y cuántos frames tarda la fase 2 en estabilizarse;
+  - fuera de los frames medidos, recuentos leídos de la GPU: páginas que siguen, celdas compactadas y celdas dibujadas en cada fase.
+- [x] **Recuentos correctos:** una variante de comprobación de `k` sin frustum debe compactar exactamente `drawn_cells` de `case.json`. Si no coincide, las cifras no valen.
+- [x] **Imagen correcta:** con `depthCompare: "less"`, la profundidad final es el mínimo de los fragmentos y no depende del orden de dibujo. Por eso la profundidad leída de cada variante debe ser **idéntica** a la de `w16-ranges`, bit a bit:
+  - con la cámara quieta, en cada caso;
+  - en movimiento, en un modo de comprobación sin medir tiempos, en todos los frames, incluidos los 10 primeros tras un arranque en frío.
+  - Un píxel más profundo que en la referencia es un agujero: la oclusión no es conservadora. Se registra además la fracción de píxeles con distinto color, que puede venir de caras coplanares dibujadas en otro orden.
+- [x] **Registro** `R3_T16_OCCLUSION_dd-mm-aaaa.md` con la misma identidad y reproducción que la Tarea 5.
+- **Reglas** (peor dirección, a 4 px):
+  - **pasa** si alguna variante deja Majadas dentro de una hoja en ≤ 16,7 ms, con variación A/A ≤ 5 %, sin agujeros y con el p95 en movimiento también ≤ 16,7 ms. Belvedere dentro de una hoja sigue en ≤ 8 ms. La Tarea 7 implementa la variante más simple que cumpla;
+  - el Hi-Z (`kp`, `kpc`) solo entra en la Tarea 7, y la caja de página solo entra en `PageEntry` (Tarea 6), si mejora a `k` en al menos un 10 % y 1 ms en el caso que decide. Si solo `k` cumple, se registra que el Hi-Z no está probado;
+  - `kp` a menos de un 5 % de `k` → se descarta el Hi-Z por página;
+  - en órbita y rasante, si los pases cuestan más de 1 ms sobre `w16-ranges`, la Tarea 7 solo los activa por encima de un número mínimo de huecos, como `MIN_OCCLUSION_CANDIDATES` en `hzb.rs`;
+  - Majadas dentro de una hoja a 1 px queda como prueba de carga: se registra frente a 33 ms y no decide.
+- **Parar si:**
+  - ninguna variante baja de 16,7 ms en la peor dirección de Majadas dentro de una hoja a 4 px → vuelve al propietario por el raymarching (OQ-08, ADR 0035);
+  - pasa con la cámara quieta, pero el p95 en movimiento o el frame frío superan 16,7 ms → vuelve al propietario;
+  - hay agujeros que no se explican por un error de la implementación;
+  - los recuentos de la GPU no coinciden con los de `case.json`;
+  - la variación A/A supera el 5 % dos veces seguidas: antes de dar veredicto hay que fijar el estado de energía.
+
+**T16b, producción:** los pases van a `hzb.rs` (que hoy lee la instancia de 40 B) dentro de la Tarea 7, sobre la instancia y la tabla de páginas de la Tarea 6. El orden respeta el ADR 0035: la Tarea 16a decide antes de la 6 qué campos tiene la página, y el código de producción solo puede ir con el pool, que llega en la 7.
+
+- [ ] El margen de profundidad del Hi-Z sale de una cota del error entre la caja proyectada y el rasterizador; en el spike, 4 ulp solo están validados empíricamente.
+- [ ] La pirámide de `hzb.rs` se crea con tamaño potencia de dos, pero `copy_depth` copia 1:1 y la búsqueda escala por `pyramid_size / viewport`, de modo que a 1280×720 lee texeles de otra zona (pre-mortem del 05-11-2026; *inferido* leyendo el código, sin reproducir). El pase nuevo usa la convención del spike: cada texel guarda el máximo de todos sus píxeles.
+- [ ] Antes de la Tarea 6, se listan los bindings de cada etapa frente a los límites que pide `gpu.rs` (`downlevel_defaults`: 4 búferes de almacenamiento por etapa y 128 MiB por binding).
+- [ ] **Pasa si** la profundidad es idéntica con y sin oclusión, y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms.
 
 ## Tarea 17: medida y ruta por defecto
 

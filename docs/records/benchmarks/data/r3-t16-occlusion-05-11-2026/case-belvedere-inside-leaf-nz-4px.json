@@ -1,0 +1,15 @@
+{
+  "dataset": "belvedere", "pose": "inside-leaf-nz", "target_px": 4,
+  "viewport": [1280, 720],
+  "view_proj": [-1.3579952, 0, 0, 0, 0, -2.4138458, -0.01745258, -0.017452406, 0, 0.042133838, -0.99985766, -0.9998477, 0, 0.00000005344419, -0.0037251767, 0.00000015541889],
+  "eye": [2812.489990234375, 2719.401262971075, 896.8240508264728],
+  "visual_scale": 0.01649201621495024,
+  "nodes": 122, "levels": 122,
+  "variants": {
+    "w10": { "slots_per_page": 682, "pages": 7157, "slots_used": 4881074, "empty_slots": 44076 },
+    "w16": { "slots_per_page": 512, "pages": 9513, "slots_used": 4870656, "empty_slots": 33658 }
+  },
+  "drawn_cells": 4836998, "resident_cells": 4836998,
+  "ranges_w10": 122, "ranges_w16": 122,
+  "f32_max_error_px": 0.0001036887715544153
+}

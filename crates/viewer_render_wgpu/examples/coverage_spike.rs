@@ -6,7 +6,7 @@
 //! (0 = no limit; larger cuts skip the case).
 //!
 //! `--export DIR` writes, for the `octant_tight` variant only and for the poses/targets in
-//! `EXPORT_POSES`/`EXPORT_TARGETS`, the cube-pool files of
+//! `EXPORT_POSES`/`EXPORT_TARGETS` plus the 4 px `DIRECTION_POSES`, the cube-pool files of
 //! `examples/web-host/spike-cube-pool-format.md`, and skips every other case and the CPU baseline.
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -41,6 +41,18 @@ const POINT_BYTES: u64 = 16;
 const MAX_MASK_LEVELS: u8 = 3;
 const EXPORT_POSES: [&str; 3] = ["orbit-0", "grazing", "inside-leaf"];
 const EXPORT_TARGETS: [f64; 2] = [1.0, 4.0];
+/// Extra inside-leaf directions (same eye as `inside-leaf`), built and exported only with `--export`, at
+/// `DIRECTION_POSE_TARGET` only: pose name, unit direction. For +-z, `set_pose` clamps the pitch to
+/// +-89 degrees and recomputes the eye from the orbit, so those two eyes move by ~1.7 % of the
+/// target distance and the view is tilted 1 degree.
+const DIRECTION_POSES: [(&str, [f64; 3]); 5] = [
+    ("inside-leaf-nx", [-1.0, 0.0, 0.0]),
+    ("inside-leaf-py", [0.0, 1.0, 0.0]),
+    ("inside-leaf-ny", [0.0, -1.0, 0.0]),
+    ("inside-leaf-pz", [0.0, 0.0, 1.0]),
+    ("inside-leaf-nz", [0.0, 0.0, -1.0]),
+];
+const DIRECTION_POSE_TARGET: f64 = 4.0;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -448,7 +460,7 @@ fn main() -> Result<()> {
         return Err("inside-leaf pose rejected".into());
     }
     drop(all_nodes);
-    let poses = [
+    let mut poses = vec![
         Pose {
             name: "orbit-0",
             camera: fitted,
@@ -466,6 +478,19 @@ fn main() -> Result<()> {
             camera: inside,
         },
     ];
+    // Transitions and their expected count only cover these; the direction poses are export-only.
+    let base_pose_count = poses.len();
+    if export_dir.is_some() {
+        let d = root_side * visual_scale / 16.0;
+        for (name, dir) in DIRECTION_POSES {
+            let target: [f64; 3] = std::array::from_fn(|a| leaf_eye[a] + d * dir[a]);
+            let mut camera = fitted;
+            if !camera.set_pose(leaf_eye, target) {
+                return Err(format!("{name} pose rejected").into());
+            }
+            poses.push(Pose { name, camera });
+        }
+    }
     let mut budgets = vec![VIEWER_BUDGET];
     if VIEWER_BUDGET != u64::MAX {
         budgets.push(u64::MAX);
@@ -528,6 +553,9 @@ fn main() -> Result<()> {
         let wf = view.spatial_frustum(origin).ok_or("no frustum")?;
         let local_frustum = view.spatial_frustum([0.0; 3]).ok_or("no frustum")?;
         for &target in &TARGETS {
+            if pose_index >= base_pose_count && target != DIRECTION_POSE_TARGET {
+                continue;
+            }
             for &budget in &budgets {
                 let selection = hierarchy
                     .select_lod_stable_projector(
@@ -553,6 +581,7 @@ fn main() -> Result<()> {
                 );
                 if export_dir.is_some()
                     && !(EXPORT_POSES.contains(&pose.name) && EXPORT_TARGETS.contains(&target))
+                    && pose_index < base_pose_count
                 {
                     continue;
                 }
@@ -921,7 +950,10 @@ fn main() -> Result<()> {
                             Err(_) => na_grazing[vi].push(format!("{target}px budget {budget}")),
                         }
                     }
-                    if variant == Variant::OctantTight && target == 4.0 {
+                    if variant == Variant::OctantTight
+                        && target == 4.0
+                        && pose_index < base_pose_count
+                    {
                         ranges_4px.push((
                             draw_ranges,
                             cut.len(),
@@ -972,7 +1004,7 @@ fn main() -> Result<()> {
     }
     let mut transitions: Vec<(String, usize, usize)> = Vec::new();
     for &budget in &budgets {
-        for pose in 0..poses.len() {
+        for pose in 0..base_pose_count {
             for pair in TARGETS.windows(2).rev() {
                 // 8 -> 4 -> 2 -> 1
                 if let (Some(&a), Some(&b)) = (
@@ -1063,8 +1095,8 @@ fn main() -> Result<()> {
             );
         }
     }
-    let expected_transitions =
-        budgets.len() * (poses.len() * (TARGETS.len() - 1) + (poses.len() - 1) * TARGETS.len());
+    let expected_transitions = budgets.len()
+        * (base_pose_count * (TARGETS.len() - 1) + (base_pose_count - 1) * TARGETS.len());
     println!(
         "# transitions evaluated per variant: {} of {expected_transitions} expected (the rest involve skipped cases)",
         transitions.len()

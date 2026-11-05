@@ -1,5 +1,7 @@
 // THROWAWAY SPIKE CODE (R3 Task 5a): GPU timing probe for the cube-pool spike page.
 //   node examples/web-host/probe-cube-pool.mjs OUTPUT.json CASE_DIR... [--rounds=3] [--warmup-s=2] [--frames=30]  [--diag]
+//   T16a (compaction + Hi-Z, W16 only): add --t16 to time the T16 variant set instead of the T5 one, or --t16-check
+//   for the untimed correctness check (compacted counts, bit-identical depth against w16-ranges); both are opt-in.
 // Case directories (format: spike-cube-pool-format.md) must live inside the repository root, which is served
 // over HTTP. Launches Chrome like probe-orbit-load.mjs (ANGLE-Vulkan, hardware adapter required) plus
 // --enable-webgpu-developer-features, runs ROUNDS rounds over all cases and writes one JSON with the adapter,
@@ -18,7 +20,9 @@ const positional = args.filter(arg => !arg.startsWith("--"));
 const option = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const [output, ...caseDirs] = positional;
 const diag = args.includes("--diag"); // T5b: overdraw and visible-fraction diagnostics, one pass, no timing
-const rounds = diag ? 1 : Number(option("rounds", "3"));
+const t16 = args.includes("--t16");
+const t16Check = args.includes("--t16-check");
+const rounds = diag || t16Check ? 1 : Number(option("rounds", "3"));
 const warmupMs = Number(option("warmup-s", "2")) * 1000;
 const frames = Number(option("frames", "30"));
 if (!output || !caseDirs.length || !(rounds >= 1) || warmupMs < 0 || !(frames >= 1)) {
@@ -93,6 +97,21 @@ try {
     for (const [index, { dir, url }] of caseUrls.entries()) {
         const name = path.basename(dir);
         result.cases[name] = { url, summary: await page.evaluate(base => window.__cubePool.loadCase(base), url), rounds: [] };
+        if (t16Check) {
+            const data = await page.evaluate(() => window.__cubePool.runT16Check());
+            result.cases[name].t16Check = data;
+            for (const message of data.failures) failures.push(`${name} t16-check: ${message}`);
+            const c = data.count;
+            console.log(`${name} count: drawn_cells ${c.drawn_cells} k-nofrustum ${c.k_nofrustum_compacted} (pages ${c.k_nofrustum_pages}/${c.total_pages}) k ${c.k_compacted} (pages ${c.k_pages})`);
+            for (const [kind, r] of Object.entries(data.static)) {
+                const last = r.frames[r.frames.length - 1];
+                console.log(`${name} static ${kind}: ${r.frames.length} frames, holes ${r.frames.reduce((a, f) => a + f.holes, 0)}, shallower ${r.frames.reduce((a, f) => a + f.shallower, 0)}, colour-diff ${(last.colorDiffFraction * 100).toFixed(4)} % , covered px ${last.coveredPixels}, last pages1 ${last.pages1} pages2 ${last.pages2 ?? "-"} cells1 ${last.cells1} cells2 ${last.cells2 ?? "-"}`);
+            }
+            for (const [kind, r] of Object.entries(data.moving)) {
+                console.log(`${name} moving ${kind}: ${r.frames} frames, holes ${r.holes}, shallower ${r.shallower}, colour-diff mean ${(r.colorDiffFractionMean * 100).toFixed(4)} % max ${(r.colorDiffFractionMax * 100).toFixed(4)} %`);
+            }
+            continue;
+        }
         if (diag) {
             const data = await page.evaluate(() => window.__cubePool.runDiag());
             result.cases[name].diag = data;
@@ -106,11 +125,19 @@ try {
         }
         for (let round = 0; round < rounds; round++) {
             const before = snapshot();
-            const data = await page.evaluate(opts => window.__cubePool.runRound(opts), { warmupMs, frames, round });
+            const data = await page.evaluate(opts => window.__cubePool.runRound(opts), { warmupMs, frames, round, ...(t16 ? { set: "t16" } : {}) });
             const after = snapshot();
             result.cases[name].rounds.push({ before, after, ...data });
             if (data.errors.length) failures.push(`${name} round ${round}: ${data.errors.join("; ")}`);
-            for (const v of data.variants) {
+            for (const v of t16 ? data.variants : []) {
+                if (!(v.nonBlackPixels > 0)) failures.push(`${name} round ${round} ${v.name}: rendered no non-black pixel`);
+                const s = v.summary.gpuMs;
+                const count = Array.isArray(v.counts) ? v.counts[v.counts.length - 1] : v.counts;
+                const extra = v.moving ? ` p95 ${s.p95.toFixed(3)} cold ${v.cold.gpuMs.toFixed(3)} stableFrame ${v.stableFrame?.frame ?? "-"}` : ` p95 ${s.p95.toFixed(3)}`;
+                const cnt = count ? ` pages ${count.pages1}${count.pages2 !== undefined ? `/${count.pages2}` : ""} cells ${count.cells1}${count.cells2 !== undefined ? `/${count.cells2}` : ""}` : "";
+                console.log(`${name} r${round} ${v.name.padEnd(18)} gpu median ${s.median.toFixed(3)} ms${extra}${cnt} | ${v.passes.map(p => `${p.name} ${p.ms.median.toFixed(3)}`).join(" ")}`);
+            }
+            for (const v of t16 ? [] : data.variants) {
                 if (!(v.nonBlackPixels > 0)) failures.push(`${name} round ${round} ${v.name}: rendered no non-black pixel`);
                 if (v.series.gpuMs.length !== frames) failures.push(`${name} ${v.name}: ${v.series.gpuMs.length} frames, expected ${frames}`);
                 console.log(`${name} r${round} ${v.name.padEnd(18)} gpu median ${v.summary.gpuMs.median.toFixed(3)} ms  wall ${v.summary.wallMs.median.toFixed(3)}  encode ${v.summary.encodeMs.median.toFixed(3)}  tickGCD ${v.tickGcd}  px ${v.nonBlackPixels}`);

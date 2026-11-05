@@ -80,6 +80,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [R3: subregiones experimentales](records/benchmarks/R3_SUBREGIONS_04-11-2026.md) | Conteos y tiempos nativos de una ejecución con clave por subregiones. | fechado |
 | [R3: scratch compacto de una región](records/benchmarks/R3_LAYOUT_COMPACT_05-11-2026.md) | Registro de 48 B cuando el nodo cabe en una región; comparación nativa emparejada. | fechado |
 | [R3-T5: spike de GPU en la Radeon 880M](records/benchmarks/R3_GPU_SPIKE_05-11-2026.md) | Primer tiempo de GPU: pool real con 12 B, 16 B y 40 B, *overdraw* y celdas visibles; salta el criterio de parada. | parada |
+| [R3-T16a: compactación y Hi-Z sobre el pool](records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md) | Compactación en GPU con Hi-Z por celda en dos fases: Majadas dentro de una hoja a 4 px de 21,66 a 4,39 ms, sin agujeros; el Hi-Z por página no aporta. | completado |
 | [R3-T15: aceptación del nivel por octante](records/benchmarks/R3_T15_ACCEPT_05-11-2026.md) | 0 diferencias por octante entre `cell_cut` y el oráculo del spike; rangos de dibujo por corte. | completado |
 | [R3-T15: bytes residentes con nivel por octante](records/benchmarks/R3_T15_RESIDENT_05-11-2026.md) | Niveles completos residentes; `octant_tight` cabe en 256 MiB (238,9 MiB en el peor caso). | fechado |
 | [R3: opciones para no dibujar celdas ocultas](records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md) | HZB en dos pasadas, raymarching, híbrido o puntos por cómputo; estado actual y qué medir (OQ-08). | evaluación |

@@ -1,7 +1,7 @@
 // THROWAWAY SPIKE CODE (R3 Task 5a): writes a small synthetic case in the format of
 // examples/web-host/spike-cube-pool-format.md so the browser page can be tested without the Rust
 // exporter. Usage: node examples/web-host/tests/spike-cube-pool-synthetic.mjs [OUT_DIR]
-// Two nodes (side 1, depth 0), two full levels (depth 3 draws octants 0-3, depth 4 octants 4-7),
+// Three nodes (side 1, depth 0; the third behind the first), two full levels (depth 3 draws octants 0-3, depth 4 octants 4-7),
 // some cells hidden by the 8^3 mask and one empty tail slot.
 import fs from "node:fs";
 import path from "node:path";
@@ -14,7 +14,8 @@ fs.mkdirSync(out, { recursive: true });
 const WIDTH = 1280, HEIGHT = 720;
 const eye = [0.6, 0.5, 2.5];
 const visualScale = 1;
-const nodeMins = [[0, 0, 0], [1.2, 0, 0]];
+// The third node sits behind the first one (the camera looks down -z), so Hi-Z occlusion has pages to cull.
+const nodeMins = [[0, 0, 0], [1.2, 0, 0], [0.1, 0, -4]];
 const levels = [{ depth: 3, shift: 0, octants: 0x0f }, { depth: 4, shift: 1, octants: 0xf0 }];
 const SPP = { w10: 682, w16: 512 };
 
