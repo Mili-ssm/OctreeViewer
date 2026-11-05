@@ -27,7 +27,8 @@ trabajo nuevo va en un plan nuevo.
 | --- | --- | --- |
 | [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
-| [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | listo (ADR 0031) |
+| [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | en curso (ADR 0031 y 0032) |
+| [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
 | [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
 | [R5: jerarquía paginada](plans/render-r5-jerarquia-paginada.md) | Revisión `v7.5-pre`: páginas por niveles desde anclas, k por página, lector perezoso local y HTTP Range; flags LAS y Extra Bytes. | completado |
 | [Conversor web paralelo](plans/conversor-web-paralelo.md) | Spec: paridad byte a byte con el CLI, núcleo sin I/O y pool de workers hasta escala Majadas; siguiente hito M6. | en pausa |
@@ -74,6 +75,10 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [R3-T1: alternativas de profundidad](records/benchmarks/R3_T1_OPTIONS_04-11-2026.md) | Diagnóstico de 16 hojas filtradas y propuesta sujeta a aprobación. | propuesta |
 | [R3-T1: repetición del benchmark en Majadas](records/benchmarks/R3_T1_BENCH_04-11-2026.md) | Salidas completas y confirmación del criterio de parada. | parada |
 | [R3-T1: parada por profundidad en Majadas](records/benchmarks/R3_T1_STOP_04-11-2026.md) | Colisiones entre posiciones `f32` distintas y duplicados en el límite de profundidad. | parada |
+| [R3: experimento CPU de celdas adaptativas](records/benchmarks/R3_ADAPTIVE_EXPERIMENT_04-11-2026.md) | V5 entre ramas y celdas v7.5 con continuación adaptativa; Belvedere falla por 22 bits. | fechado |
+| [R3: rango de hojas](records/benchmarks/R3_LEAF_SPAN_04-11-2026.md) | Tres hojas de Belvedere necesitan 22 bits relativos; ninguna en Majadas. | fechado |
+| [R3: subregiones experimentales](records/benchmarks/R3_SUBREGIONS_04-11-2026.md) | Conteos y tiempos nativos de una ejecución con clave por subregiones. | fechado |
+| [R3: layout de páginas por anchura de región](records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md) | Anchuras 8–32 con flags por página o por instancia sobre Belvedere y Majadas completos; gana W = 10 con instancia de 12 B. | fechado |
 | [Celdas por nodo sobre datos reales (R3-T1)](records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md) | Longitud y bytes de la cadena de hoja en Majadas y Belvedere; criterios de parada de R3. | fechado |
 | [Spike de densidad de la pirámide (R4-T1)](records/benchmarks/R4_DENSITY_SPIKE_02-11-2026.md) | Hoja × `sample_grid` en Majadas y Belvedere: salto de espaciado, disco, RSS y tiempo. | fechado |
 | [Memoria del conversor con g = 256 (R4-T1)](records/benchmarks/R4_SPARSE_GRID_RSS_02-11-2026.md) | Causa y corrección de la RSS (umbral `mmap` de glibc, rejilla dispersa compacta). | fechado |

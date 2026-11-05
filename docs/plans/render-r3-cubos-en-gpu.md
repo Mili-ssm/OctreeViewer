@@ -1,6 +1,6 @@
 # R3 — Cubos por nodo residentes en GPU (v7.5-pre): plan de implementación
 
-Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que sigue en el historial de git)
+Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustituye el plan del 30-10-2026, que sigue en el historial de git)
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -10,7 +10,7 @@ Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que
 **Por qué:** con 256³ por nodo, el diseño de 0027 desborda el pool y dibuja lo lejano con detalle de más ([ADR 0031](../adr/0031-celdas-por-nodo-en-v7-5.md)).
 
 **Spec:**
-- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
+- ADR: [0019](../adr/0019-cubos-por-nodo-residentes-en-gpu.md), [0027](../adr/0027-celdas-por-nodo-en-pool-paginado.md) (en lo vigente), [0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md), [0029](../adr/0029-octree-global-por-bits-de-enteros.md), [0030](../adr/0030-jerarquia-paginada-por-anclas.md) y [0031](../adr/0031-celdas-por-nodo-en-v7-5.md).
 - Requisitos: RF-03 a RF-08, RQ-01, RQ-02, RQ-05 y RQ-09.
 - [Contrato de celdas](../explanation/REGIONAL_VOXEL_LOD.md).
 
@@ -23,7 +23,9 @@ Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que
 | R3-Q3 | Mientras falta el nivel deseado se dibuja el residente más grueso como etapa, y se cuenta. «Objetivo alcanzado» exige que no quede ninguno |
 | R3-Q4 | RF-05: espaciado de referencia por nube en los metadatos de `v7.5-pre` (hay que regenerar) |
 | R3-Q5 | La ruta CPU (Additive, v5 y `v7.1–3`) se mantiene hasta retirar V5/V6 |
-| R3-Q6 | Límite de 21 bits relativos por eje; si se supera, se para (propuesta por defecto, sin objeción del propietario) |
+| R3-Q6 | ~~Límite de 21 bits relativos por eje; si se supera, se para~~ Sustituida el 05-11-2026 por R3-Q7 y R3-Q8 ([ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) |
+| R3-Q7 | (05-11-2026) La cadena de cada hoja baja hasta separar las posiciones finitas distintas; más allá de 21 bits la clave es regional; el límite es la profundidad absoluta 63 |
+| R3-Q8 | (05-11-2026) Instancia de 12 B: 10 bits por eje relativos a la página y flags en `PageEntry`; W = 16 (16 B) queda como control en T5 |
 
 ## Restricciones globales
 
@@ -37,7 +39,7 @@ Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que
 
 ## Criterios de parada
 
-- **T1:** algún nodo recortado en profundidad, o con más de 21 bits relativos → parar.
+- **T1:** alguna hoja con posiciones finitas distintas sin separar en la profundidad absoluta 63 → parar (R3-Q7).
 - **T4:** el corte ocupa más de 256 MiB, o hay más del doble de instancias en pantalla que en la ruta CPU en la pose rasante → replantear (nivel por octante) y volver al propietario.
 - **T4/T9:** `DescendantTooFine` en más del 5 % de las actualizaciones de corte → rediseñar la máscara.
 - **T5:** más de 16,7 ms de GPU con los recuentos de T4 → revisar ADR 0019.
@@ -66,13 +68,14 @@ Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que
 
 ## Tarea 1 (reabierta): celdas por nodo
 
-**Parada (04-11-2026):** Majadas presenta 16 hojas con colisiones entre posiciones `f32` distintas en el límite de profundidad; T1 sigue pendiente. [Diagnóstico, reproducción y límites](../records/benchmarks/R3_T1_STOP_04-11-2026.md); [salida completa del benchmark repetido](../records/benchmarks/R3_T1_BENCH_04-11-2026.md).
+**Parada (04-11-2026):** Majadas presenta 16 hojas con colisiones entre posiciones `f32` distintas en el límite de profundidad; resuelta por el [ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md) (05-11-2026); T1 continúa con el código de `experiment/r3-layout-narrow`. [Diagnóstico, reproducción y límites](../records/benchmarks/R3_T1_STOP_04-11-2026.md); [salida completa del benchmark repetido](../records/benchmarks/R3_T1_BENCH_04-11-2026.md).
 
-- [ ] Claves `u64`, Morton de 64 bits relativo al nodo, firma `&[PointBlock]`, `intensity_count` y clase `i16` (−1 si falta).
+- [ ] Continuación adaptativa de hojas y clave regional más allá de 21 bits (R3-Q7).
+- [ ] Claves `u64`, Morton de 64 bits relativo al nodo hasta 21 bits, firma `&[PointBlock]`, `intensity_count` y clase `i16` (−1 si falta).
 - [ ] Pirámide interna de +3 a +8, podada. Las hojas se reconocen por `has_children` = 0.
-- [ ] Bench sobre todos los nodos: celdas por nivel, bytes y nodos recortados.
+- [ ] Bench sobre todos los nodos: celdas por nivel, bytes y hojas sin separar.
 - [ ] **Pasa si:**
-  - no hay ningún nodo recortado;
+  - ninguna hoja queda con posiciones distintas sin separar;
   - las sumas coinciden con `accumulate_block`;
   - el color es igual al de la ruta CPU.
 
@@ -101,11 +104,12 @@ Estado: listo para ejecutar · 03-11-2026 (sustituye el plan del 30-10-2026, que
 ## Tarea 5: spike de GPU
 
 - [ ] Con los recuentos de T4, comparar un `draw` por nodo con un `draw` único.
+- [ ] Comparar la instancia de 12 B (zancada de 3 `u32`) con el control de 16 B (W = 16), por R3-Q8.
 - [ ] **Pasa si** la GPU tarda 8 ms o menos con Belvedere a 4 px.
 
 ## Tarea 6: instancia y tabla de páginas
 
-- [ ] 10 bits por eje relativos a la página. Las páginas se parten en orden Morton si el rango supera 2¹⁰. `PageEntry` lleva el origen relativo a la cámara y el desplazamiento dentro del nodo.
+- [ ] Instancia de 12 B: un `u32` con 10 bits por eje relativos a la página, rgba8, intensidad `u16` y clase `i16`. Las páginas (8 KiB, 682 instancias) se parten en orden Morton si el rango supera 2¹⁰ o se llenan. `PageEntry` lleva el origen relativo a la cámara, el desplazamiento dentro del nodo y los flags `has_intensity` y `has_class`.
 - [ ] **Pasa si** la decodificación es igual bit a bit en Rust y en WGSL, con raíz en nivel 0 y un origen a 10⁶ m.
 
 ## Tarea 7: pool en `SurfaceRenderer`

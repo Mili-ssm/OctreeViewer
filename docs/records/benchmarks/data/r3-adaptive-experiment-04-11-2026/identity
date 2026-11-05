@@ -1,0 +1,18 @@
+worktree=/home/mili/.cache/codex-worktrees/octree-r3-adaptive
+head=3eb78f70f2a90d5a8b7b68d39efc5fd406d2983d
+status:
+ M crates/viewer_render_wgpu/examples/node_cells_bench.rs
+ M crates/viewer_render_wgpu/src/node_cells.rs
+ M crates/viewer_render_wgpu/src/node_cells_tests.rs
+
+rustc 1.101.0-nightly (41089d07a 2026-10-27)
+binary: rustc
+commit-hash: 41089d07a0a2afc16adfe28a760d94d73d7298a4
+commit-date: 2026-10-27
+host: x86_64-unknown-linux-gnu
+release: 1.101.0-nightly
+LLVM version: 23.1.4
+
+cargo 1.101.0-nightly (cad07cf8e 2026-10-23)
+
+nightly-2026-10-28-x86_64-unknown-linux-gnu (overridden by '/home/mili/.cache/codex-worktrees/octree-r3-adaptive/rust-toolchain.toml')

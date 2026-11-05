@@ -34,4 +34,5 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0028](0028-r4-antes-que-r3.md) | R4 (pirámide densa) antes que R3 | Aceptada |
 | [0029](0029-octree-global-por-bits-de-enteros.md) | Octree global sobre coordenadas enteras con cuanto binario (precisa 0021) | Aceptada |
 | [0030](0030-jerarquia-paginada-por-anclas.md) | Jerarquía paginada por niveles desde anclas de prefijo (R5) | Aceptada |
-| [0031](0031-celdas-por-nodo-en-v7-5.md) | Celdas por nodo en v7.5: pirámide por nodo, coordenadas por página del pool, claves de 64 bits (sustituye en parte a 0027) | Aceptada |
+| [0031](0031-celdas-por-nodo-en-v7-5.md) | Celdas por nodo en v7.5: pirámide por nodo, coordenadas por página del pool, claves de 64 bits (sustituye en parte a 0027) | Aceptada (enmendada por 0032) |
+| [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) | Hojas hasta separar posiciones, clave regional más allá de 21 bits e instancia de 12 B (enmienda a 0031) | Aceptada |

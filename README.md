@@ -51,13 +51,13 @@ Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
 
 ## Prioridades pendientes
 
-### Estado al pausar (03-11-2026)
+### Estado (05-11-2026)
 
-Ramas: el trabajo integrado está en `feat/render-r3-node-cells` (sin push). R3 se ejecuta en `feat/r3-v75`, cuyo último commit (`3eb78f7`) es un **WIP sin verificar** de la Tarea 0b; ejecutar `scripts/check.sh --offline` antes de seguir.
+Ramas (sin push): el trabajo integrado está en `feat/render-r3-node-cells`; R3 se ejecuta en `feat/r3-v75`. Los experimentos de R3 quedan en `experiment/r3-adaptive-depth`, `experiment/r3-layout-narrow` (base de la Tarea 1) y `experiment/r3-region-widths`.
 
 | Orden | Trabajo | Estado | Siguiente paso |
 | --- | --- | --- | --- |
-| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), [ADR 0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md)) | Plan aceptado; T0b a medias | Terminar T0b (espaciado de referencia por nube = mediana ponderada por puntos del espaciado de hoja, `f64`, en metadatos v7.5), luego T0 (línea base CPU) y T1 |
+| 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md), ADR [0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md) y [0032](docs/adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) | T0 y T0b hechos. T1 se paró ([parada](docs/records/benchmarks/R3_T1_STOP_04-11-2026.md)) y queda resuelto por 0032: continuación adaptativa de hojas, clave regional e instancia de 12 B ([layout por anchura](docs/records/benchmarks/R3_REGION_LAYOUT_05-11-2026.md)) | T1 con el código de `experiment/r3-layout-narrow`; las Tareas 5 y 6 confirman 12 B frente al control de 16 B |
 | 2 | Velocidad de conversión (RQ-07) | v7.5/V5 ≈ 2,0× Belvedere y 1,7× Majadas; objetivo ≤ 1,3× ([registro](docs/records/benchmarks/EXPLORE_CONVERT_CPU_02-11-2026.md)) | Rediseñar el acumulador de muestreo disperso (fallos de caché) y la fase de bloques sin `i128`; requisito para promover V7 |
 | 3 | Integración | R4 y R5 completados y verificados (`check.sh` 24/24) | Revisión de la rama y PR a `main` cuando el propietario lo pida |
 

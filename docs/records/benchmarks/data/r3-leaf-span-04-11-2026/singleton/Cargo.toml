@@ -1,0 +1,11 @@
+[package]
+name = "r3-singleton-probe"
+version = "0.1.0"
+edition = "2024"
+[workspace]
+[dependencies]
+viewer_core = { path = "../../crates/viewer_core" }
+viewer_format = { path = "../../crates/viewer_format" }
+viewer_render_wgpu = { path = "../../crates/viewer_render_wgpu" }
+[profile.perf]
+inherits = "release"
