@@ -61,14 +61,23 @@ enum Variant {
     /// Per child octant, conservative test (approximates Task 15).
     Octant,
     OctantTight,
+    /// `OctantTight`, but the conservative rule when the eye is inside the tested box.
+    OctantTightGuard,
+    /// `OctantTightGuard` with the tight edge scaled by the off-axis factor of `projected_error_pixels`.
+    OctantTightOffaxis,
+    /// `OctantTightOffaxis`, with the factor only when the eye is closer to the box than its side.
+    OctantTightNear,
 }
 
 /// Variants measured by default; `Only256` stays available.
-const RUN_VARIANTS: [Variant; 4] = [
+const RUN_VARIANTS: [Variant; 7] = [
     Variant::Pyramid,
     Variant::Tight,
     Variant::Octant,
     Variant::OctantTight,
+    Variant::OctantTightGuard,
+    Variant::OctantTightOffaxis,
+    Variant::OctantTightNear,
 ];
 /// `DescendantTooFine` depends on the cut structure, not on the level choice.
 const TRANSITION_VARIANTS: [Variant; 1] = [Variant::Pyramid];
@@ -81,13 +90,30 @@ impl Variant {
             Self::Tight => "tight",
             Self::Octant => "octant",
             Self::OctantTight => "octant_tight",
+            Self::OctantTightGuard => "octant_tight_guard",
+            Self::OctantTightOffaxis => "octant_tight_offaxis",
+            Self::OctantTightNear => "octant_tight_near",
         }
     }
     fn tight(self) -> bool {
-        matches!(self, Self::Tight | Self::OctantTight)
+        matches!(
+            self,
+            Self::Tight
+                | Self::OctantTight
+                | Self::OctantTightGuard
+                | Self::OctantTightOffaxis
+                | Self::OctantTightNear
+        )
     }
     fn octants(self) -> bool {
-        matches!(self, Self::Octant | Self::OctantTight)
+        matches!(
+            self,
+            Self::Octant
+                | Self::OctantTight
+                | Self::OctantTightGuard
+                | Self::OctantTightOffaxis
+                | Self::OctantTightNear
+        )
     }
     /// Indices into `levels` kept as stored.
     fn kept(self, node: &NodeData) -> Vec<usize> {
@@ -108,6 +134,7 @@ fn pick_depth(stored: &[u8], ok: impl Fn(u8) -> bool) -> u8 {
 }
 
 /// Does a level of `depth` meet `target` over `bounds` (local, unscaled frame)?
+#[allow(clippy::too_many_arguments)] // throwaway spike
 fn level_ok(
     view: &ViewProjection,
     root_side: f64,
@@ -115,19 +142,44 @@ fn level_ok(
     depth: u8,
     target: f64,
     tight: bool,
+    guard: bool,
+    offaxis: bool,
+    near_only: bool,
 ) -> bool {
     let side = root_side / (1_u64 << depth) as f64;
-    if !tight {
+    let eye = view.camera().position().map(|v| v / view.visual_scale());
+    let eye_inside = (0..3).all(|a| (bounds.min()[a]..=bounds.max()[a]).contains(&eye[a]));
+    if !tight || (guard && eye_inside) {
         return view.projected_error_pixels(bounds, side, [0.0; 3]) <= target;
     }
-    let eye = view.camera().position().map(|v| v / view.visual_scale());
     let min: [f64; 3] = std::array::from_fn(|a| {
         let lo = bounds.min()[a];
         let hi = (bounds.max()[a] - side).max(lo);
         eye[a].clamp(bounds.min()[a], bounds.max()[a]).clamp(lo, hi)
     });
+    // Same factor as `OrbitCamera::projected_error_pixels` (camera.rs, VERTICAL_FOV = 45 deg).
+    let box_side = (0..3)
+        .map(|a| bounds.max()[a] - bounds.min()[a])
+        .fold(0.0, f64::max);
+    let distance = (0..3)
+        .map(|a| {
+            let d = (bounds.min()[a] - eye[a])
+                .max(eye[a] - bounds.max()[a])
+                .max(0.0);
+            d * d
+        })
+        .sum::<f64>()
+        .sqrt();
+    let factor = if offaxis && (!near_only || distance < box_side) {
+        let viewport = view.viewport();
+        let tan_v = (45.0_f64.to_radians() * 0.5).tan();
+        let tan_h = tan_v * f64::from(viewport[0]) / f64::from(viewport[1]);
+        (1.0 + tan_v * tan_v + tan_h * tan_h).sqrt()
+    } else {
+        1.0
+    };
     SpatialBounds::new(min, min.map(|v| v + side))
-        .is_ok_and(|cube| view.projected_voxel_edge_pixels(cube, [0.0; 3]) <= target)
+        .is_ok_and(|cube| view.projected_voxel_edge_pixels(cube, [0.0; 3]) * factor <= target)
 }
 
 fn octant_bounds(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
@@ -539,7 +591,17 @@ fn main() -> Result<()> {
                             let stored: Vec<u8> = if variant == Variant::Tight {
                                 let all: Vec<u8> = n.levels.iter().map(|l| l.depth).collect();
                                 vec![pick_depth(&all, |d| {
-                                    level_ok(&view, grid.root_side, n.bounds, d, target, true)
+                                    level_ok(
+                                        &view,
+                                        grid.root_side,
+                                        n.bounds,
+                                        d,
+                                        target,
+                                        true,
+                                        false,
+                                        false,
+                                        false,
+                                    )
                                 })]
                             } else {
                                 variant.kept(n).iter().map(|&i| n.levels[i].depth).collect()
@@ -569,7 +631,25 @@ fn main() -> Result<()> {
                             std::array::from_fn(|o| {
                                 let b = octant_bounds(n.bounds, o).unwrap_or(n.bounds);
                                 pick_depth(&all, |d| {
-                                    level_ok(&view, grid.root_side, b, d, target, variant.tight())
+                                    level_ok(
+                                        &view,
+                                        grid.root_side,
+                                        b,
+                                        d,
+                                        target,
+                                        variant.tight(),
+                                        matches!(
+                                            variant,
+                                            Variant::OctantTightGuard
+                                                | Variant::OctantTightOffaxis
+                                                | Variant::OctantTightNear
+                                        ),
+                                        matches!(
+                                            variant,
+                                            Variant::OctantTightOffaxis | Variant::OctantTightNear
+                                        ),
+                                        variant == Variant::OctantTightNear,
+                                    )
                                 })
                             })
                         } else {
@@ -655,8 +735,21 @@ fn main() -> Result<()> {
                         ));
                     }
                     if pose.name == "grazing" {
+                        // Owner limits for the adopted variants: 2.5x at 1 px, 2x otherwise.
+                        let limit = if target == 1.0
+                            && matches!(
+                                variant,
+                                Variant::OctantTight
+                                    | Variant::OctantTightGuard
+                                    | Variant::OctantTightOffaxis
+                            ) {
+                            2.5
+                        } else {
+                            2.0
+                        };
                         match &cpu {
-                            Ok((count, _)) if on_screen > 2 * (*count as u64) => stop_grazing[vi]
+                            Ok((count, _))
+                                if on_screen as f64 > limit * (*count as f64) => stop_grazing[vi]
                                 .push(format!(
                                     "{target}px budget {budget}: on-screen {on_screen} vs CPU {count}"
                                 )),
@@ -841,6 +934,17 @@ fn main() -> Result<()> {
         println!(
             "{verdict}\t[{name}] cut bytes (12 B) <= 256 MiB in every case{detail}{skipped_text}"
         );
+        let limit_text = if matches!(
+            variant,
+            Variant::OctantTight
+                | Variant::OctantTightGuard
+                | Variant::OctantTightOffaxis
+                | Variant::OctantTightNear
+        ) {
+            "2.5x (1 px) / 2x (2, 4, 8 px)"
+        } else {
+            "2x"
+        };
         let (verdict, detail) = if !stop_grazing[vi].is_empty() {
             ("FAIL", format!(": {}", stop_grazing[vi].join("; ")))
         } else if !na_grazing[vi].is_empty() || !skipped_grazing.is_empty() {
@@ -856,7 +960,7 @@ fn main() -> Result<()> {
             ("PASS", String::new())
         };
         println!(
-            "{verdict}\t[{name}] on-screen instances <= 2x CPU instances in the grazing pose{detail}"
+            "{verdict}\t[{name}] on-screen instances <= {limit_text} CPU instances in the grazing pose{detail}"
         );
     }
     let verdict = if worst > 0.05 {

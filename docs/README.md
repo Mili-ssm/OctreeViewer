@@ -79,6 +79,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [R3: rango de hojas](records/benchmarks/R3_LEAF_SPAN_04-11-2026.md) | Tres hojas de Belvedere necesitan 22 bits relativos; ninguna en Majadas. | fechado |
 | [R3: subregiones experimentales](records/benchmarks/R3_SUBREGIONS_04-11-2026.md) | Conteos y tiempos nativos de una ejecución con clave por subregiones. | fechado |
 | [R3: scratch compacto de una región](records/benchmarks/R3_LAYOUT_COMPACT_05-11-2026.md) | Registro de 48 B cuando el nodo cabe en una región; comparación nativa emparejada. | fechado |
+| [R3-T4: celdas por encima del objetivo](records/benchmarks/R3_T4_OFFAXIS_05-11-2026.md) | Protección dentro del octante y factor fuera de eje; solo `octant_tight` pasa los criterios. | fechado |
 | [R3-T4: alternativas al error proyectado](records/benchmarks/R3_T4_METRIC_05-11-2026.md) | Métrica ajustada y nivel por octante frente a la cota; `octant_tight` casi iguala a la CPU salvo 2,27× a 1 px. | fechado |
 | [R3-T4: spike de cobertura nativo](records/benchmarks/R3_T4_COVERAGE_05-11-2026.md) | Instancias, bytes y `DescendantTooFine` por pose en Belvedere y Majadas; saltan los criterios de parada. | parada |
 | [R3-T1: aceptación de celdas por nodo](records/benchmarks/R3_T1_ACCEPT_05-11-2026.md) | Ninguna hoja sin separar en Belvedere y Majadas completos con la continuación adaptativa. | fechado |
