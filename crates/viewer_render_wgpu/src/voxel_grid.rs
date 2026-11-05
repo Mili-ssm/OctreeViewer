@@ -550,6 +550,27 @@ pub fn build_voxel_scene_with_limits(
     project: &dyn Fn(SpatialBounds) -> f64,
     limits: VoxelBuildLimits,
 ) -> Result<VoxelScene, VoxelSceneBuildError> {
+    prepare_voxel_builder(
+        hierarchy,
+        node_ids,
+        cache,
+        coordinate_origin,
+        target_pixels,
+        project,
+        limits,
+    )?
+    .try_finish(project)
+}
+
+fn prepare_voxel_builder(
+    hierarchy: &SpatialHierarchy,
+    node_ids: &[NodeId],
+    cache: &dyn ResidentBlockSource,
+    coordinate_origin: [f64; 3],
+    target_pixels: f64,
+    project: &dyn Fn(SpatialBounds) -> f64,
+    limits: VoxelBuildLimits,
+) -> Result<VoxelSceneBuilder, VoxelSceneBuildError> {
     let selected =
         (hierarchy.semantics() == viewer_core::HierarchySemantics::Replacement).then(|| {
             node_ids
@@ -629,7 +650,71 @@ pub fn build_voxel_scene_with_limits(
             )?;
         }
     }
-    builder.try_finish(project)
+    Ok(builder)
+}
+
+/// One occupied CPU voxel with its exact accumulators, for refinement tests.
+#[cfg(test)]
+pub(crate) struct ExactVoxel {
+    pub depth: u8,
+    pub coord: [u32; 3],
+    pub rgb: [u64; 3],
+    pub count: u64,
+    pub intensity_count: u64,
+    pub projected_edge: f64,
+}
+
+/// The voxels `try_finish` would keep (`project > 0`), before color averaging, plus the grid.
+#[cfg(test)]
+pub(crate) struct ExactVoxels {
+    pub origin: [f64; 3],
+    pub side: f64,
+    pub voxels: Vec<ExactVoxel>,
+}
+
+#[cfg(test)]
+pub(crate) fn exact_voxels_with_limits(
+    hierarchy: &SpatialHierarchy,
+    node_ids: &[NodeId],
+    cache: &dyn ResidentBlockSource,
+    coordinate_origin: [f64; 3],
+    target_pixels: f64,
+    project: &dyn Fn(SpatialBounds) -> f64,
+    limits: VoxelBuildLimits,
+) -> Result<ExactVoxels, VoxelSceneBuildError> {
+    let builder = prepare_voxel_builder(
+        hierarchy,
+        node_ids,
+        cache,
+        coordinate_origin,
+        target_pixels,
+        project,
+        limits,
+    )?;
+    if let Some(error) = builder.error {
+        return Err(error);
+    }
+    let grid = builder.grid;
+    let voxels = builder
+        .voxels
+        .into_iter()
+        .filter_map(|(key, accumulator)| {
+            let projected_edge = project(grid.bounds(key));
+            (projected_edge > 0.0).then_some(ExactVoxel {
+                depth: key.depth,
+                coord: key.coord,
+                rgb: accumulator.rgb,
+                count: accumulator.count,
+                intensity_count: accumulator.intensity_count,
+                projected_edge,
+            })
+        })
+        .collect();
+    Ok(ExactVoxels {
+        origin: grid.origin,
+        side: grid.side,
+        voxels,
+    })
 }
 
 fn validate_mixed_cut(

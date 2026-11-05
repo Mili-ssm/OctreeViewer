@@ -14,6 +14,8 @@ pub use headless::{OffscreenImage, render_offscreen};
 mod node_cells;
 #[cfg(test)]
 mod node_cells_tests;
+#[cfg(test)]
+mod refinement_tests;
 mod scene;
 #[cfg(test)]
 mod scene_digest_tests;

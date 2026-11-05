@@ -26,6 +26,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q6 | ~~Límite de 21 bits relativos por eje; si se supera, se para~~ Sustituida el 05-11-2026 por R3-Q7 y R3-Q8 ([ADR 0032](../adr/0032-hojas-adaptativas-e-instancia-de-12-b.md)) |
 | R3-Q7 | (05-11-2026) La cadena de cada hoja baja hasta separar las posiciones finitas distintas; más allá de 21 bits la clave es regional; el límite es la profundidad absoluta 63 |
 | R3-Q8 | (05-11-2026) Instancia de 12 B: 10 bits por eje relativos a la página y flags en `PageEntry`; W = 16 (16 B) queda como control en T5 |
+| R3-Q9 | (05-11-2026) Una hoja con todas sus posiciones separadas no se refina más: cubos mayores que el objetivo de px en primeros planos caen en la excepción «densidad de la fuente» de RQ-09 |
 
 ## Restricciones globales
 
@@ -83,8 +84,14 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 
 ## Tarea 2: oráculo de refinamiento
 
-- [ ] `refinement_relation_holds` con las precondiciones de A8, ahora con pirámide.
-- [ ] **Pasa si** se cumple sin excepciones nuevas y los dorados existentes no cambian.
+**Hecha (05-11-2026):** `refinement_tests.rs` pasa 32 casos × 2 elecciones de nivel (43.682 vóxeles CPU; 0 con error ∞; 23.179 por densidad de la fuente, R3-Q9) y los 48 dorados no cambian.
+
+- [x] `refinement_relation_holds` con las precondiciones de A8, ahora con pirámide:
+  - casos: fixtures de `scene_digest_tests.rs`, cortes Replacement sin mezcla (raíz e hijos) × 4 cámaras × {1, 2, 4, 8} px; los cortes mixtos esperan a la máscara de T3 y Additive no usa la ruta de celdas;
+  - por nodo, el nivel guardado más grueso ≥ la profundidad CPU (RQ-09) y también el más fino de la pirámide;
+  - relaciones: toda celda nueva cae en una sola celda CPU; toda celda CPU contiene alguna; por celda CPU, Σ rgb, Σ recuentos y Σ `intensity_count` exactos; sin solapes;
+  - precondiciones (A8): solo celdas dentro del frustum y cámaras fuera de los nodos. Divergencias conocidas, lista cerrada, que se excluyen y se cuentan: vóxeles CPU con una esquina detrás de la cámara (error ∞, `camera.rs:470`) junto con las celdas nuevas que contienen, y celdas del nivel más fino de una hoja separada que contienen exactamente un vóxel CPU con sus mismas sumas (R3-Q9). Al sumar, cada vóxel CPU visible cuenta todas las celdas nuevas que contiene, también las que quedan fuera del frustum.
+- [x] **Pasa si** se cumple sin excepciones nuevas y los dorados existentes no cambian.
 
 ## Tarea 3: `cell_cut`
 
