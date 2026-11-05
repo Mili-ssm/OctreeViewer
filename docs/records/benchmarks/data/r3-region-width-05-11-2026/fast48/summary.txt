@@ -1,0 +1,17 @@
+majadas-v75.oct 0 leaf=false points=8504 fast48_ns=507544 best_width=21 fast=true ratio=0.7753 sample_range=0.7726..0.8131 regions=1
+majadas-v75.oct 1 leaf=false points=23708 fast48_ns=1328656 best_width=21 fast=true ratio=0.9032 sample_range=0.9017..0.907 regions=1
+majadas-v75.oct 2 leaf=true points=782 fast48_ns=37200 best_width=18 fast=true ratio=1.2464 sample_range=1.2342..1.2582 regions=1
+majadas-v75.oct 3 leaf=true points=464 fast48_ns=21931 best_width=12 fast=true ratio=1.4596 sample_range=1.4466..1.4731 regions=1
+majadas-v75.oct 5 leaf=true points=30996 fast48_ns=1937411 best_width=18 fast=true ratio=2.5773 sample_range=2.4789..2.594 regions=1
+majadas-v75.oct 6 leaf=false points=4745 fast48_ns=262514 best_width=21 fast=true ratio=0.8644 sample_range=0.8573..0.8731 regions=1
+majadas-v75.oct 120259084303 leaf=true points=8131 fast48_ns=489440 best_width=21 fast=true ratio=2.5739 sample_range=2.5323..2.5805 regions=1
+majadas-v75.oct 300647710726 leaf=true points=132 fast48_ns=6823 best_width=16 fast=true ratio=2.8076 sample_range=2.7776..2.8371 regions=1
+belvedere-v75.oct 0 leaf=false points=11549 fast48_ns=625826 best_width=18 fast=true ratio=0.8335 sample_range=0.8311..0.8373 regions=1
+belvedere-v75.oct 1 leaf=false points=4521 fast48_ns=224562 best_width=21 fast=true ratio=0.8903 sample_range=0.8794..0.904 regions=1
+belvedere-v75.oct 2 leaf=false points=266 fast48_ns=9788 best_width=15 fast=true ratio=1.0185 sample_range=1.0142..1.0286 regions=1
+belvedere-v75.oct 10 leaf=true points=1401 fast48_ns=74119 best_width=16 fast=true ratio=2.7773 sample_range=2.7316..2.8237 regions=1
+belvedere-v75.oct 26 leaf=true points=5454 fast48_ns=326323 best_width=16 fast=true ratio=2.6536 sample_range=2.5689..2.6599 regions=1
+belvedere-v75.oct 35 leaf=true points=6798 fast48_ns=407215 best_width=21 fast=true ratio=2.6636 sample_range=2.6186..2.7219 regions=1
+belvedere-v75.oct 120259084303 leaf=true points=1 fast48_ns=221 best_width=18 fast=false ratio=1.9955 sample_range=1.8375..2.05 regions=1
+belvedere-v75.oct 124554051592 leaf=true points=2 fast48_ns=340 best_width=8 fast=true ratio=1.574 sample_range=1.4886..1.7251 regions=1
+belvedere-v75.oct 300647710726 leaf=true points=1 fast48_ns=230 best_width=10 fast=true ratio=1.9174 sample_range=1.8375..2.0955 regions=1

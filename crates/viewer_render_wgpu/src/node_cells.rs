@@ -1,18 +1,18 @@
 //! Camera-independent cells per LOD node on the dyadic grid anchored at the root.
 //!
-//! An internal node yields one level at its representative depth (8 cells per axis); a leaf yields
+//! An internal node yields a pruned pyramid of levels from 8 to 256 cells per axis; a leaf yields
 //! a chain of finer levels down to the density of its source points. Grid, node bounds and point
 //! positions must share one coordinate frame (the caller subtracts the coordinate origin).
 
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use viewer_core::{NodeId, PointBlock, SpatialBounds};
 
 use crate::attributes::ScalarAttribute;
 
-/// Deepest dyadic level a cell can have (24 bits per axis).
-pub const MAX_CELL_DEPTH: u8 = 24;
-/// Levels a leaf chain may add to its representative depth: 10 bits per axis for a root-sized node.
+/// Deepest absolute dyadic level representable by the grid coordinate type.
+pub const MAX_CELL_DEPTH: u8 = 63;
+/// Previous fixed leaf-chain span, retained for benchmark comparisons.
 pub const CHAIN_SPAN: u8 = 7;
 /// Minimum cell-count growth between two stored levels of a leaf chain. Stored counts then grow
 /// geometrically towards the finest level, which holds at most one cell per point, so the chain
@@ -59,12 +59,13 @@ fn side_of(bounds: SpatialBounds) -> f64 {
 /// Exact per-cell sums, accumulated in point order like the CPU voxel build.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NodeCell {
-    pub coord: [u32; 3],
+    pub coord: [u64; 3],
     pub rgb_sum: [u64; 3],
     pub intensity_sum: f64,
+    pub intensity_count: u32,
     pub count: u32,
-    /// Classification of the first point of the cell; 0 without the attribute.
-    pub classification: u8,
+    /// Classification of the first point of the cell; -1 without the attribute.
+    pub classification: i16,
     pub z_min: f32,
     pub z_max: f32,
 }
@@ -76,7 +77,7 @@ pub struct NodeCellLevel {
     pub cells: Vec<NodeCell>,
 }
 
-/// One level for an internal node; a chain of increasing depth for a leaf.
+/// A pruned pyramid for an internal node; a chain of increasing depth for a leaf.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeCells {
     pub node: NodeId,
@@ -89,6 +90,8 @@ pub enum NodeCellError {
     InvalidGrid,
     /// The node has no extent, so no representative depth exists.
     DegenerateBounds,
+    RelativeDepthExceeded,
+    AbsoluteDepthExceeded,
 }
 
 impl fmt::Display for NodeCellError {
@@ -96,6 +99,10 @@ impl fmt::Display for NodeCellError {
         match self {
             Self::InvalidGrid => f.write_str("cell grid anchor or side is not finite and positive"),
             Self::DegenerateBounds => f.write_str("node bounds have no extent"),
+            Self::AbsoluteDepthExceeded => f.write_str("absolute cell depth exceeds 63"),
+            Self::RelativeDepthExceeded => {
+                f.write_str("node requires more than 21 relative bits per axis")
+            }
         }
     }
 }
@@ -110,7 +117,7 @@ pub trait NodeCellSource {
         bounds: SpatialBounds,
         spacing: Option<f64>,
         is_leaf: bool,
-        block: &PointBlock,
+        blocks: &[PointBlock],
     ) -> Result<NodeCells, NodeCellError>;
 }
 
@@ -137,7 +144,7 @@ impl NodeCellSource for PointNodeCellSource {
         bounds: SpatialBounds,
         spacing: Option<f64>,
         is_leaf: bool,
-        block: &PointBlock,
+        blocks: &[PointBlock],
     ) -> Result<NodeCells, NodeCellError> {
         if !(grid.root_side.is_finite()
             && grid.root_side > 0.0
@@ -148,33 +155,59 @@ impl NodeCellSource for PointNodeCellSource {
         if (0..3).all(|axis| bounds.max()[axis] <= bounds.min()[axis]) {
             return Err(NodeCellError::DegenerateBounds);
         }
-        let first = match spacing {
-            Some(spacing) => representative_depth_for_spacing(grid, spacing),
-            None => representative_depth(grid, bounds),
+        let requested_spacing = if is_leaf {
+            spacing.unwrap_or(side_of(bounds) / 8.0)
+        } else {
+            side_of(bounds) / 8.0
+        };
+        if !requested_spacing.is_finite()
+            || requested_spacing <= 0.0
+            || (grid.root_side / requested_spacing).log2() > f64::from(MAX_CELL_DEPTH)
+        {
+            return Err(NodeCellError::AbsoluteDepthExceeded);
+        }
+        let first = if is_leaf {
+            spacing.map_or_else(
+                || representative_depth(grid, bounds),
+                |spacing| representative_depth_for_spacing(grid, spacing),
+            )
+        } else {
+            representative_depth(grid, bounds)
         };
         let last = if is_leaf {
-            first.saturating_add(CHAIN_SPAN).min(MAX_CELL_DEPTH)
+            MAX_CELL_DEPTH
         } else {
-            first
+            first.saturating_add(5)
         };
-        let points = Points::new(block);
-        let mut levels: Vec<NodeCellLevel> = Vec::new();
+        if last > MAX_CELL_DEPTH {
+            return Err(NodeCellError::AbsoluteDepthExceeded);
+        }
+        let points: Vec<_> = blocks.iter().map(Points::new).collect();
+        let distinct_positions: HashSet<_> = blocks
+            .iter()
+            .flat_map(|block| block.points().points())
+            .filter(|point| is_leaf && point.position.iter().all(|value| value.is_finite()))
+            .map(|point| {
+                point
+                    .position
+                    .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
+            })
+            .collect();
+        let mut levels = Vec::new();
         for depth in first..=last {
-            let cells = build_level(grid, bounds, &points, depth);
-            // A level with as many cells as the previous one adds no detail.
-            if levels
-                .last()
-                .is_some_and(|previous| previous.cells.len() == cells.len())
-            {
+            let cells = build_level(grid, bounds, &points, depth)?;
+            let fully_separated = is_leaf && cells.len() == distinct_positions.len();
+            levels.push(NodeCellLevel { depth, cells });
+            if fully_separated {
                 break;
             }
-            levels.push(NodeCellLevel { depth, cells });
+            if is_leaf && depth == MAX_CELL_DEPTH {
+                return Err(NodeCellError::AbsoluteDepthExceeded);
+            }
         }
-        if is_leaf {
-            let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
-            let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
-            levels.retain(|_| keep.next().unwrap_or(true));
-        }
+        let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
+        let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
+        levels.retain(|_| keep.next().unwrap_or(true));
         Ok(NodeCells { node, levels })
     }
 }
@@ -213,44 +246,65 @@ impl<'a> Points<'a> {
 }
 
 /// Inclusive cell range of the node on one axis at `depth`.
-fn node_range(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> (u32, u32) {
+fn node_range(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> (u64, u64) {
     let count = 1_u64 << depth;
     let cell_side = grid.root_side / count as f64;
     let edge = |value: f64| ((value - grid.root_min[axis]) / cell_side).round();
     let last = (count - 1) as f64;
     let lo = edge(bounds.min()[axis]).clamp(0.0, last);
     let hi = (edge(bounds.max()[axis]) - 1.0).clamp(lo, last);
-    (lo as u32, hi as u32)
+    (lo as u64, hi as u64)
 }
+
+#[cfg(test)]
+type KeyedPoint = (u64, usize, usize, [u64; 3]);
 
 fn build_level(
     grid: &CellGrid,
     bounds: SpatialBounds,
-    points: &Points<'_>,
+    points: &[Points<'_>],
     depth: u8,
-) -> Vec<NodeCell> {
-    let count = f64::from(1_u32 << depth);
-    let range: [(u32, u32); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
-    let mut keyed: Vec<(u128, usize, [u32; 3])> = Vec::new();
-    for (index, point) in points.block.points().points().iter().enumerate() {
-        if point.position.iter().any(|value| !value.is_finite()) {
-            continue;
-        }
-        // Same floor as the CPU grid, then clamped to the node: a point on the max face (or off
-        // by rounding) lands in the node's last cell and every finite point counts once.
-        let coord = std::array::from_fn(|axis| {
-            let scaled = ((f64::from(point.position[axis]) - grid.root_min[axis]) / grid.root_side
-                * count)
-                .floor();
-            (scaled.clamp(f64::from(range[axis].0), f64::from(range[axis].1))) as u32
-        });
-        keyed.push((morton(coord), index, coord));
+) -> Result<Vec<NodeCell>, NodeCellError> {
+    let count = (1_u64 << depth) as f64;
+    let range: [(u64, u64); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
+    let single_region = range.iter().all(|(lo, hi)| hi - lo < (1 << 21));
+    if single_region {
+        build_level_keyed(grid, points, count, range, morton)
+    } else {
+        build_level_keyed(grid, points, count, range, region_morton)
     }
-    // Stable by construction: the index breaks ties, so sums follow point order.
-    keyed.sort_unstable_by_key(|(key, index, _)| (*key, *index));
+}
+
+fn build_level_keyed<K: Ord + Copy>(
+    grid: &CellGrid,
+    points: &[Points<'_>],
+    count: f64,
+    range: [(u64, u64); 3],
+    key_for: impl Fn([u64; 3]) -> K,
+) -> Result<Vec<NodeCell>, NodeCellError> {
+    let mut keyed: Vec<(K, usize, usize, [u64; 3])> = Vec::new();
+    for (block_index, block) in points.iter().enumerate() {
+        for (index, point) in block.block.points().points().iter().enumerate() {
+            if point.position.iter().any(|value| !value.is_finite()) {
+                continue;
+            }
+            let coord = std::array::from_fn(|axis| {
+                let scaled = ((f64::from(point.position[axis]) - grid.root_min[axis])
+                    / grid.root_side
+                    * count)
+                    .floor();
+                scaled.clamp(range[axis].0 as f64, range[axis].1 as f64) as u64
+            });
+            let relative = std::array::from_fn(|axis| coord[axis] - range[axis].0);
+            let key = key_for(relative);
+            keyed.push((key, block_index, index, coord));
+        }
+    }
+    keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
     let mut cells: Vec<NodeCell> = Vec::new();
     let mut current = None;
-    for (key, index, coord) in keyed {
+    for (key, block_index, index, coord) in keyed {
+        let points = &points[block_index];
         let point = &points.block.points().points()[index];
         if current != Some(key) {
             current = Some(key);
@@ -258,11 +312,12 @@ fn build_level(
                 coord,
                 rgb_sum: [0; 3],
                 intensity_sum: 0.0,
+                intensity_count: 0,
                 count: 0,
                 classification: points
                     .classification
                     .and_then(|values| values.value_at(index))
-                    .map_or(0, |value| value as u8),
+                    .map_or(-1, |value| value as i16),
                 z_min: point.position[2],
                 z_max: point.position[2],
             });
@@ -270,6 +325,7 @@ fn build_level(
         let cell = cells.last_mut().expect("a cell was just pushed");
         if let Some(value) = points.intensity.and_then(|values| values.value_at(index)) {
             cell.intensity_sum += f64::from(value);
+            cell.intensity_count += 1;
         }
         cell.rgb_sum[0] += u64::from(point.color.r);
         cell.rgb_sum[1] += u64::from(point.color.g);
@@ -278,15 +334,24 @@ fn build_level(
         cell.z_min = cell.z_min.min(point.position[2]);
         cell.z_max = cell.z_max.max(point.position[2]);
     }
-    cells
+    Ok(cells)
 }
 
-/// Interleaves 24 bits per axis (x most significant) into a 72-bit Morton code.
-fn morton(coord: [u32; 3]) -> u128 {
-    let mut code = 0_u128;
-    for bit in 0..u32::from(MAX_CELL_DEPTH) {
+fn region_morton(coord: [u64; 3]) -> (u128, u64) {
+    let mut high = 0_u128;
+    for bit in 0..42 {
         for (axis, value) in coord.iter().enumerate() {
-            code |= u128::from((value >> bit) & 1) << (3 * bit + (2 - axis as u32));
+            high |= u128::from((value >> (bit + 21)) & 1) << (3 * bit + (2 - axis));
+        }
+    }
+    (high, morton(coord))
+}
+
+fn morton(coord: [u64; 3]) -> u64 {
+    let mut code = 0_u64;
+    for bit in 0..21 {
+        for (axis, value) in coord.iter().enumerate() {
+            code |= ((value >> bit) & 1) << (3 * bit + (2 - axis));
         }
     }
     code
@@ -315,11 +380,22 @@ pub fn node_cells_digest(cells: &NodeCells) -> u64 {
                 feed(&value.to_le_bytes());
             }
             feed(&cell.intensity_sum.to_bits().to_le_bytes());
+            feed(&cell.intensity_count.to_le_bytes());
             feed(&cell.count.to_le_bytes());
-            feed(&[cell.classification]);
+            feed(&cell.classification.to_le_bytes());
             feed(&cell.z_min.to_bits().to_le_bytes());
             feed(&cell.z_max.to_bits().to_le_bytes());
         }
     }
     hash
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn single_region_record_fits_six_machine_words() {
+        assert!(std::mem::size_of::<KeyedPoint>() <= 6 * std::mem::size_of::<u64>());
+    }
 }

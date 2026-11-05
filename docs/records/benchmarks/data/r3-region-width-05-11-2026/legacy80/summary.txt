@@ -1,0 +1,32 @@
+belvedere-v75.oct fast=false
+8 median_of_node_paired_ratios 1.996 range 1.553 3.266
+10 median_of_node_paired_ratios 1.804 range 1.462 3.224
+12 median_of_node_paired_ratios 1.964 range 1.521 3.196
+15 median_of_node_paired_ratios 1.844 range 1.487 3.198
+16 median_of_node_paired_ratios 1.877 range 1.476 3.192
+18 median_of_node_paired_ratios 1.884 range 1.472 3.194
+21 median_of_node_paired_ratios 1.844 range 1.47 3.197
+belvedere-v75.oct fast=true
+8 median_of_node_paired_ratios 1.797 range 0.74 3.257
+10 median_of_node_paired_ratios 1.804 range 0.724 3.219
+12 median_of_node_paired_ratios 1.873 range 0.71 3.192
+15 median_of_node_paired_ratios 1.844 range 0.69 2.356
+16 median_of_node_paired_ratios 1.837 range 0.684 2.356
+18 median_of_node_paired_ratios 1.844 range 0.682 2.356
+21 median_of_node_paired_ratios 1.844 range 0.681 2.359
+majadas-v75.oct fast=false
+8 median_of_node_paired_ratios 2.128 range 1.52 3.333
+10 median_of_node_paired_ratios 2.124 range 1.477 3.324
+12 median_of_node_paired_ratios 2.096 range 1.507 3.324
+15 median_of_node_paired_ratios 2.097 range 1.478 3.319
+16 median_of_node_paired_ratios 2.097 range 1.444 3.321
+18 median_of_node_paired_ratios 2.095 range 1.419 3.315
+21 median_of_node_paired_ratios 2.096 range 1.401 3.311
+majadas-v75.oct fast=true
+8 median_of_node_paired_ratios 1.182 range 0.742 2.907
+10 median_of_node_paired_ratios 1.18 range 0.705 2.845
+12 median_of_node_paired_ratios 1.156 range 0.735 2.803
+15 median_of_node_paired_ratios 1.154 range 0.706 2.428
+16 median_of_node_paired_ratios 1.154 range 0.681 2.428
+18 median_of_node_paired_ratios 1.156 range 0.657 2.43
+21 median_of_node_paired_ratios 1.156 range 0.646 2.425

@@ -68,6 +68,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Prioridad sobre pendientes (R1-T3b)](records/benchmarks/RENDER_R1_T3B_01-11-2026.md) | Coste de proyección, equivalencia de orden y humo Majadas. | fechado |
 | [Medida después de R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_01-11-2026.md) | Matriz R0 tras R1, comparación con R2-T5 y contraste de expulsiones con revisiones anteriores. | fechado |
 | [Edad de escena tras R1 (R1-T7)](records/benchmarks/RENDER_R1_T7_SCENE_AGE_01-11-2026.md) | Por qué sube `sceneAgeMs` desde T1a y por qué se resuelve en R3. | fechado |
+| [Scratch compacto de una región (R3)](records/benchmarks/R3_LAYOUT_COMPACT_05-11-2026.md) | Comparación experimental nativa con muestras pareadas y límites de identidad. | fechado |
 | [Celdas por nodo sobre datos reales (R3-T1)](records/benchmarks/RENDER_R3_T1_NODE_CELLS_01-11-2026.md) | Longitud y bytes de la cadena de hoja en Majadas y Belvedere; criterios de parada de R3. | fechado |
 | [Spike de densidad de la pirámide (R4-T1)](records/benchmarks/R4_DENSITY_SPIKE_02-11-2026.md) | Hoja × `sample_grid` en Majadas y Belvedere: salto de espaciado, disco, RSS y tiempo. | fechado |
 | [Memoria del conversor con g = 256 (R4-T1)](records/benchmarks/R4_SPARSE_GRID_RSS_02-11-2026.md) | Causa y corrección de la RSS (umbral `mmap` de glibc, rejilla dispersa compacta). | fechado |
@@ -92,6 +93,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Modelo de arenas por nodo](records/benchmarks/NODE_JOB_ARENA_MODEL_2026-10-29.md) | Pico modelado de los trabajos por nodo frente al nativo (variantes a, b, c) y fórmula para M6. | fechado |
 | [Cuota OPFS](records/benchmarks/OPFS_QUOTA_2026-10-29.md) | Cuota real de OPFS y `persist()` en Chrome y Firefox, y si cabe Majadas. | fechado |
 | [Spike OPFS (un fichero por spool)](records/benchmarks/OPFS_SPOOL_FILES_2026-10-29.md) | Ficheros vivos, handles síncronos concurrentes y coste por fichero en Chrome/Firefox. | fechado |
+| [Anchura de región R3](records/benchmarks/R3_REGION_WIDTH_05-11-2026.md) | Exploración CPU por nodo de siete anchuras y límites de reproducción. | fechado |
 | [Web](records/benchmarks/WEB_PERFORMANCE_BENCH.md) | Métricas de navegador, flujos y limitaciones visuales. | histórico |
 | [Memoria v5](records/benchmarks/V5_MEMORY_BENCH.md) | Conversión, acceso a bloques, memoria y perfiles nativos. | histórico |
 | [Vóxeles](records/benchmarks/VOXEL_BUILD_BENCH.md) | Construcción, memoria conjunta y reutilización de celdas. | histórico |
