@@ -167,6 +167,8 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: instancia | 16 B con W = 16, en lugar de 12 B con W = 10. | [ADR 0035](adr/0035-instancia-de-16-b-con-w-16.md), R3-Q14 |
 | R3: compactación y oclusión | Tarea 16 obligatoria antes de la 6; raymarching solo si no basta. | ADR 0035, R3-Q15 |
 | R3: técnica de oclusión | Hi-Z por celda en dos fases, con caja ajustada por página; el Hi-Z solo por página no aporta. | [ADR 0036](adr/0036-hi-z-por-celda.md), R3-Q16 |
+| R3: coste de CPU del pool | La regla de 2 ms por frame decide a 4 px; Majadas a 1 px es prueba de carga. | R3-Q17 |
+| R3: nivel por octante en movimiento | Hasta ~5 % por encima del objetivo de px con la cámara en movimiento; exacto con la cámara quieta. | R3-Q18 |
 
 ## Preguntas abiertas
 

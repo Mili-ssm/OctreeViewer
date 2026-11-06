@@ -3,7 +3,7 @@ use viewer_core::{FrustumPlane, SpatialBounds, SpatialFrustum};
 
 use crate::{SceneBounds, VoxelBuildLimits};
 
-const VERTICAL_FOV: f64 = 45.0_f64.to_radians();
+pub(crate) const VERTICAL_FOV: f64 = 45.0_f64.to_radians();
 const MIN_PITCH: f64 = -89.0_f64.to_radians();
 const MAX_PITCH: f64 = 89.0_f64.to_radians();
 /// Largest far/near ratio of the render projection; keeps `Depth32Float` (non-reversed)

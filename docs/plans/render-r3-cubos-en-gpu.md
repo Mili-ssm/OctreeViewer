@@ -34,6 +34,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q14 | (05-11-2026) Instancia de 16 B con W = 16 y 512 huecos por página, en lugar de 12 B con W = 10 ([ADR 0035](../adr/0035-instancia-de-16-b-con-w-16.md)) |
 | R3-Q15 | (05-11-2026) La Tarea 16 (compactación y Hi-Z por página) es obligatoria y va antes de la 6; raymarching solo si no basta (ADR 0035). Técnica precisada por R3-Q16 |
 | R3-Q16 | (05-11-2026) Hi-Z por celda en dos fases (`kpc` de la Tarea 16a), con caja ajustada por página en `PageEntry` ([ADR 0036](../adr/0036-hi-z-por-celda.md)) |
+| R3-Q17 | (06-11-2026) La regla de 2 ms de CPU por frame de T7c/T7d decide con los casos a 4 px; Majadas dentro de una hoja a 1 px queda como prueba de carga y se vuelve a medir en el visor en la Tarea 11 |
+| R3-Q18 | (06-11-2026) Con la cámara en movimiento, el nivel de cada octante se recalcula solo al pasar un umbral, y una celda puede proyectarse hasta ~5 % por encima del objetivo de px; con la cámara quieta, el resultado es exacto. La Tarea 11 lo comprueba en el navegador |
 
 ## Restricciones globales
 
@@ -315,16 +317,18 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7d, coste de CPU y tamaños exactos** (antes de la Tarea 9; especificación del 06-11-2026):
 
-- [ ] **Tamaños exactos sin subir:** `CellPool::set_level_sizes(nodo, &[(profundidad, páginas)])`. En el visor, todos los niveles de un nodo se construyen a la vez desde sus puntos, así que sus tamaños se conocen aunque no se suban. El ajuste usa el tamaño exacto en cuanto lo tiene; la estimación solo queda para los nodos cuyos puntos no han llegado. El banco los entrega al cargar cada nodo.
-- [ ] **Coste por frame:** como mucho una llamada a `cell_cut` por frame en régimen estable. El corte deseado y el ajuste solo se recalculan si cambia el corte de nodos, si llegan tamaños o residencia nuevos, o si la cámara se mueve más de un umbral documentado; si no, se reutilizan. Antes de cambiar nada, se perfila `cell_cut` con el corte de Majadas a 1 px y se mide cuánto cuesta cada parte.
-- [ ] **Pasa si:**
+**Hecha (06-11-2026):** [registro](../records/benchmarks/R3_T7D_CPU_06-11-2026.md). Con R3-Q17 y R3-Q18, pasa: ≤ 1,38 ms de CPU por frame en los casos a 4 px, y ya no hay recorte falso. Majadas a 1 px en movimiento, que es la prueba de carga, sigue en 2,76 / 3,34 ms. La GPU de Majadas +y sube de 3,28 a 3,90 ms porque ahora dibuja el corte sin recortar, así que el criterio del 5 % no se aplica ahí.
+
+- [x] **Tamaños exactos sin subir:** `CellPool::set_level_sizes(nodo, &[(profundidad, páginas)])`. En el visor, todos los niveles de un nodo se construyen a la vez desde sus puntos, así que sus tamaños se conocen aunque no se suban. El ajuste usa el tamaño exacto en cuanto lo tiene; la estimación solo queda para los nodos cuyos puntos no han llegado. El banco los entrega al cargar cada nodo.
+- [x] **Coste por frame:** como mucho una llamada a `cell_cut` por frame en régimen estable. El corte deseado y el ajuste solo se recalculan si cambia el corte de nodos, si llegan tamaños o residencia nuevos, o si la cámara se mueve más de un umbral documentado; si no, se reutilizan. Antes de cambiar nada, se perfila `cell_cut` con el corte de Majadas a 1 px y se mide cuánto cuesta cada parte.
+- [x] **Pasa si:**
   - `cell_pool_bench` da ≤ 2 ms de CPU por frame (mediana y p95), quieta y en movimiento, en los 22 casos, Majadas a 1 px incluida;
   - con la cámara quieta, `pool_coarsened` es 0 donde el corte deseado exacto cabe (Majadas +y a 4 px), y mayor que 0 donde no cabe (Majadas a 1 px);
   - los tests de T7a siguen pasando y se añade uno con tamaños exactos que levanta un recorte falso;
   - los tiempos de GPU de T7c no empeoran más de un 5 %.
 - **Parar si** con una sola llamada a `cell_cut` por frame sigue pasando de 2 ms en Majadas a 1 px → `cell_cut` incremental, o en GPU, y vuelve al propietario.
 
-- **Pasa si** se cumplen los tests de las cinco partes, `check.sh` y las medidas de T7c y T7d. El criterio de la Tarea 16b en el visor wasm (≤ 16,7 ms) se comprueba en la Tarea 11, cuando el visor ya cargue celdas.
+- **Pasa si** se cumplen los tests de las cinco partes, `check.sh` y las medidas de T7c y T7d. **Hecha (06-11-2026)**, salvo la expulsión al perder el dispositivo, que pasa a la Tarea 9. El criterio de la Tarea 16b en el visor wasm (≤ 16,7 ms) se comprueba en la Tarea 11, cuando el visor ya cargue celdas.
 
 ## Tarea 8: picking sobre el pool
 

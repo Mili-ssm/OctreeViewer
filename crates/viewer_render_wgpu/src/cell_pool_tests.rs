@@ -882,3 +882,293 @@ fn mask_slots_follow_the_cut_and_pinned_levels_cover_masked_nodes() {
     // Both coarsest levels stay resident while their nodes are in the cut.
     assert!(rig.pool.is_resident(rig.pool.key(NodeId::new(1), 3)));
 }
+
+#[test]
+fn exact_sizes_lift_a_false_coarsening() {
+    // Usable 39 pages: with the estimate (4 pages per deep level) eight depth-7 levels need 40
+    // and two nodes are coarsened, and the estimate of those two keeps the caps (the open total
+    // stays above 31); the loader really packs depth 7 into 3 pages, 32 in all.
+    let sizes = [(4_u8, 1_usize), (5, 4), (6, 4), (7, 3)];
+    let run = |exact: bool| {
+        let mut rig = Rig::new(octant_nodes(), 44, 64, 2);
+        rig.deep = Some(3);
+        if exact {
+            for id in CHILDREN {
+                rig.pool.set_level_sizes(NodeId::new(id), &sizes);
+            }
+        }
+        rig.run(30, &ids(&CHILDREN), &camera("fit"), 4.0)
+    };
+    assert_eq!(run(false).counters.pool_coarsened, 2);
+    let plan = run(true);
+    assert_eq!(plan.counters.pool_coarsened, 0);
+    assert_eq!(plan.counters.nodes_without_level, 0);
+    assert_eq!(plan.counters.stages, 0);
+}
+
+#[test]
+fn a_steady_frame_calls_cell_cut_at_most_once_and_changes_invalidate_the_reuse() {
+    let mut rig = Rig::new(octant_nodes(), 256, 64, 0);
+    let cut = ids(&CHILDREN);
+    let zoom = camera("zoom");
+    rig.run(12, &cut, &zoom, 4.0);
+    let steady = rig.step(&cut, &zoom, 4.0);
+    assert!(steady.counters.cut_evaluations <= 1);
+    assert!(steady.counters.wanted_reused && steady.counters.real_reused);
+    assert_eq!(steady.counters.depth_refreshes, 0);
+
+    // A new size for a level, a smaller cut and another target each redo the wanted cut.
+    rig.pool.set_level_sizes(NodeId::new(2), &[(5, 3)]);
+    assert!(!rig.step(&cut, &zoom, 4.0).counters.wanted_reused);
+    assert!(rig.step(&cut, &zoom, 4.0).counters.wanted_reused);
+    assert!(!rig.step(&cut[..7], &zoom, 4.0).counters.wanted_reused);
+    let far = rig.step(&cut[..7], &zoom, 64.0);
+    assert!(!far.counters.wanted_reused && far.counters.depth_refreshes > 0);
+
+    // Residency changes redo the real cut (here also the wanted one: an evicted level is back to
+    // its estimated size).
+    rig.run(8, &cut[..7], &zoom, 64.0);
+    let key = rig.pool.key(NodeId::new(2), 7);
+    assert!(rig.pool.evict(key));
+    let plan = rig.step(&cut[..7], &zoom, 64.0);
+    assert!(!plan.counters.real_reused);
+
+    // A camera that stops is exact: it refreshes once, then everything is reused again.
+    let moved = camera("fit");
+    rig.step(&cut[..7], &moved, 64.0);
+    let still = rig.run(3, &cut[..7], &moved, 64.0);
+    assert!(still.counters.wanted_reused && still.counters.real_reused);
+    assert!(still.counters.cut_evaluations <= 1);
+}
+
+fn full_depths(cam: &OrbitCamera, node: &PoolNode, target: f64) -> [u8; 8] {
+    std::array::from_fn(|o| {
+        octant_wanted_depth(
+            &view(cam),
+            &grid(),
+            ORIGIN,
+            node.bounds,
+            o,
+            &node.stored,
+            target,
+        )
+    })
+}
+
+#[test]
+fn a_still_pose_is_exact_after_a_moving_sequence() {
+    let nodes = octant_nodes();
+    let cut = ids(&CHILDREN);
+    let mut pool = CellPool::new(PoolConfig {
+        capacity_pages: 4096,
+        ..PoolConfig::default()
+    });
+    let mut cam = camera("zoom");
+    let run = |pool: &mut CellPool, cam: &OrbitCamera| {
+        pool.frame(
+            &cut,
+            &|id| nodes.get(&id).cloned(),
+            &view(cam),
+            &grid(),
+            ORIGIN,
+            4.0,
+        )
+        .expect("frame");
+    };
+    for _ in 0..20 {
+        cam.orbit(0.004, 0.002);
+        run(&mut pool, &cam);
+    }
+    // R3-Q18: one settled frame redoes every hinted entry with the full search.
+    for _ in 0..2 {
+        run(&mut pool, &cam);
+    }
+    for id in &cut {
+        let cached = &pool.depths[id];
+        assert!(cached.exact);
+        assert_eq!(
+            cached.depths,
+            full_depths(&cam, &nodes[id], 4.0),
+            "node {id:?}"
+        );
+    }
+}
+
+/// Deterministic xorshift for the property tests.
+fn next(state: &mut u64) -> f64 {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    (*state >> 11) as f64 / (1_u64 << 53) as f64
+}
+
+#[test]
+fn the_hinted_search_equals_the_full_search() {
+    let mut state = 0x2545_F491_4F6C_DD1D_u64;
+    let nodes = octant_nodes();
+    let mut checked = 0;
+    for _ in 0..4000 {
+        let mut cam = camera("fit");
+        // Eyes inside, next to and far from the octants, looking anywhere.
+        let eye: [f64; 3] =
+            std::array::from_fn(|a| ORIGIN[a] + SIDE * (next(&mut state) * 2.2 - 0.6));
+        let target: [f64; 3] = std::array::from_fn(|a| ORIGIN[a] + SIDE * next(&mut state));
+        if !cam.set_pose(eye, target) {
+            continue;
+        }
+        let node = &nodes[&NodeId::new(2 + (next(&mut state) * 8.0) as u64 % 8)];
+        let stored: Vec<u8> = (3..=12)
+            .filter(|_| next(&mut state) < 0.6)
+            .collect::<Vec<_>>();
+        if stored.is_empty() {
+            continue;
+        }
+        let target_px = [1.0, 4.0, 16.0][(next(&mut state) * 3.0) as usize % 3];
+        let octant = (next(&mut state) * 8.0) as usize % 8;
+        let hint = stored[(next(&mut state) * stored.len() as f64) as usize % stored.len()];
+        let v = view(&cam);
+        let full =
+            octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, &stored, target_px);
+        let near = crate::cell_cut::octant_wanted_depth_near(
+            &v,
+            &grid(),
+            ORIGIN,
+            node.bounds,
+            octant,
+            &stored,
+            target_px,
+            hint,
+        );
+        assert_eq!(
+            near, full,
+            "eye {eye:?} target {target:?} stored {stored:?} hint {hint}"
+        );
+        checked += 1;
+    }
+    assert!(checked > 2000);
+}
+
+#[test]
+fn caps_lift_when_the_capped_levels_are_bigger_than_the_uncapped_ones() {
+    // Exact sizes only (nothing is offered). First depth 6 is smaller than depth 7, so the fit
+    // caps nodes at 6; then depth 6 grows past depth 7 and the capped total (> low) is larger
+    // than the uncapped one (<= low): the caps must lift.
+    let nodes = octant_nodes();
+    let cut = ids(&CHILDREN);
+    let cam = camera("fit");
+    let mut pool = CellPool::new(PoolConfig {
+        capacity_pages: 44,
+        ..PoolConfig::default()
+    });
+    let set = |pool: &mut CellPool, six: usize, seven: usize| {
+        for id in CHILDREN {
+            pool.set_level_sizes(NodeId::new(id), &[(4, 1), (5, 1), (6, six), (7, seven)]);
+        }
+    };
+    let frame = |pool: &mut CellPool| {
+        pool.frame(
+            &cut,
+            &|id| nodes.get(&id).cloned(),
+            &view(&cam),
+            &grid(),
+            ORIGIN,
+            4.0,
+        )
+        .expect("frame")
+    };
+    set(&mut pool, 2, 4);
+    let mut plan = frame(&mut pool);
+    for _ in 0..4 {
+        plan = frame(&mut pool);
+    }
+    assert!(plan.counters.pool_coarsened > 0);
+    set(&mut pool, 9, 2);
+    for _ in 0..4 {
+        plan = frame(&mut pool);
+    }
+    assert_eq!(plan.counters.pool_coarsened, 0);
+}
+
+#[test]
+fn an_eye_that_drifts_redoes_the_fit_while_caps_are_active() {
+    let nodes = octant_nodes();
+    let cut = ids(&CHILDREN);
+    let mut pool = CellPool::new(PoolConfig {
+        capacity_pages: 44,
+        ..PoolConfig::default()
+    });
+    for id in CHILDREN {
+        pool.set_level_sizes(NodeId::new(id), &[(4, 1), (5, 4), (6, 4), (7, 4)]);
+    }
+    let mut cam = camera("fit");
+    let frame = |pool: &mut CellPool, cam: &OrbitCamera| {
+        pool.frame(
+            &cut,
+            &|id| nodes.get(&id).cloned(),
+            &view(cam),
+            &grid(),
+            ORIGIN,
+            4.0,
+        )
+        .expect("frame")
+    };
+    for _ in 0..4 {
+        frame(&mut pool, &cam);
+    }
+    let plan = frame(&mut pool, &cam);
+    assert!(plan.counters.pool_coarsened > 0 && plan.counters.wanted_reused);
+    // Dolly the eye by a tenth of the distance to the nearest node: past the 5 % limit, and
+    // far too little to change any depth.
+    let (eye, target) = (cam.position(), cam.target());
+    let moved: [f64; 3] = std::array::from_fn(|a| eye[a] + (target[a] - eye[a]) * 0.1);
+    assert!(cam.set_pose(moved, target));
+    let plan = frame(&mut pool, &cam);
+    assert!(!plan.counters.wanted_reused);
+}
+
+#[test]
+fn the_drift_limit_bounds_the_edge_change_also_off_axis() {
+    let mut cam = camera("fit");
+    let eye = [
+        ORIGIN[0] + SIDE * 0.5,
+        ORIGIN[1] - SIDE * 2.0,
+        ORIGIN[2] + SIDE * 0.5,
+    ];
+    // A cube whose centre is 60 degrees off the view axis, at distance 3 SIDE.
+    let forward = [0.0, 1.0, 0.0];
+    let centre: [f64; 3] = [
+        eye[0] + 3.0 * SIDE * (60.0_f64.to_radians()).sin(),
+        eye[1] + 3.0 * SIDE * (60.0_f64.to_radians()).cos(),
+        eye[2],
+    ];
+    let side = SIDE / 64.0;
+    let cube = cube(centre.map(|v| v - side / 2.0), side);
+    let target = [eye[0], eye[1] + 1.0, eye[2]];
+    assert!(cam.set_pose(eye, target));
+    let pose = Pose { eye, forward };
+    let bounds = cube;
+    let depth = effective_depth(pose, bounds, [0.0; 3]);
+    assert!(depth > 0.0);
+    let base = view(&cam).projected_voxel_edge_pixels(bounds, [0.0; 3]);
+    let step = DRIFT_FRACTION * depth;
+    for direction in [
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ] {
+        let moved: [f64; 3] = std::array::from_fn(|a| eye[a] + direction[a] * step);
+        let mut other = cam;
+        assert!(other.set_pose(
+            moved,
+            std::array::from_fn(|a| moved[a] + (target[a] - eye[a]))
+        ));
+        let edge = view(&other).projected_voxel_edge_pixels(bounds, [0.0; 3]);
+        assert!(
+            (edge / base - 1.0).abs() <= 0.05,
+            "{direction:?}: {}",
+            edge / base
+        );
+    }
+}

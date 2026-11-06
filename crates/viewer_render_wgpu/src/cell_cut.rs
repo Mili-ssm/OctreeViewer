@@ -11,7 +11,12 @@
 //! model and in the rule (ADR 0034): each octant asks for the coarsest stored level whose cell,
 //! placed at the octant point nearest the eye, projects to at most the target.
 
-use std::{collections::HashMap, fmt, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    hash::{BuildHasherDefault, Hasher},
+    ops::Range,
+};
 
 use viewer_core::{NodeId, SpatialBounds};
 
@@ -19,6 +24,46 @@ use crate::{
     ViewProjection,
     node_cells::{CellGrid, NodeCellLevel, node_range, representative_depth},
 };
+
+/// Hasher for the small integer keys of the cut and the pool (Fx): these maps are probed per node
+/// per frame, where SipHash dominated the profile. Not DoS-resistant, which does not matter for
+/// keys the renderer itself produces.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct FxHasher(u64);
+
+impl FxHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl Hasher for FxHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0_u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(word));
+        }
+    }
+    fn write_u8(&mut self, value: u8) {
+        self.add(u64::from(value));
+    }
+    fn write_u32(&mut self, value: u32) {
+        self.add(u64::from(value));
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.add(value);
+    }
+    fn write_usize(&mut self, value: usize) {
+        self.add(value as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
+pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
 /// Deepest ancestor-descendant gap (in node levels) a mask can express: 8 cells -> 1 cell.
 const MAX_MASK_LEVELS: u8 = 3;
@@ -158,49 +203,129 @@ pub fn octant_wanted_depth(
         "stored depths ascend"
     );
     let finest = *stored.last().expect("stored levels are not empty");
-    let Ok(relative) = SpatialBounds::new(
-        std::array::from_fn(|a| bounds.min()[a] - coordinate_origin[a]),
-        std::array::from_fn(|a| bounds.max()[a] - coordinate_origin[a]),
-    ) else {
+    let Some(meets) = OctantProbe::new(view, grid, coordinate_origin, bounds, octant, target_px)
+    else {
         return finest;
     };
-    let Some(octant_box) = octant_box(relative, octant) else {
-        return finest;
-    };
-    let eye: [f64; 3] = view
-        .camera()
-        .position()
-        .map(|value| value / view.visual_scale());
     stored
         .iter()
         .copied()
-        .find(|depth| {
-            let side = grid.root_side / 2.0_f64.powi(i32::from(*depth));
-            let min: [f64; 3] = std::array::from_fn(|a| {
-                let low = octant_box.min()[a];
-                let high = (octant_box.max()[a] - side).max(low);
-                eye[a]
-                    .clamp(octant_box.min()[a], octant_box.max()[a])
-                    .clamp(low, high)
-            });
-            SpatialBounds::new(min, min.map(|value| value + side))
-                .is_ok_and(|cube| view.projected_voxel_edge_pixels(cube, [0.0; 3]) <= target_px)
-        })
+        .find(|depth| meets.at(*depth))
         .unwrap_or(finest)
 }
 
-/// Octant of mask cell `(x, y, z)` of the 8^3 grid.
-fn mask_octant(x: usize, y: usize, z: usize) -> usize {
-    4 * (x >> 2) + 2 * (y >> 2) + (z >> 2)
+/// `octant_wanted_depth` searched outward from `hint` (the answer of a nearby view), assuming that
+/// once a depth meets the target every finer one does too (a finer cell sits inside the coarser
+/// one at the same nearest point, so its edges project shorter). It then costs 2 projections when
+/// the answer has not moved, instead of one per coarser stored level, and returns the same depth
+/// whenever that holds. A `hint` that is not stored falls back to the full search.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn octant_wanted_depth_near(
+    view: &ViewProjection,
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    bounds: SpatialBounds,
+    octant: usize,
+    stored: &[u8],
+    target_px: f64,
+    hint: u8,
+) -> u8 {
+    let Some(at) = stored.iter().position(|depth| *depth == hint) else {
+        return octant_wanted_depth(
+            view,
+            grid,
+            coordinate_origin,
+            bounds,
+            octant,
+            stored,
+            target_px,
+        );
+    };
+    let finest = stored.len() - 1;
+    let Some(meets) = OctantProbe::new(view, grid, coordinate_origin, bounds, octant, target_px)
+    else {
+        return stored[finest];
+    };
+    let mut index = at;
+    if meets.at(stored[index]) {
+        while index > 0 && meets.at(stored[index - 1]) {
+            index -= 1;
+        }
+        stored[index]
+    } else {
+        while index < finest {
+            index += 1;
+            if meets.at(stored[index]) {
+                return stored[index];
+            }
+        }
+        stored[finest]
+    }
 }
 
-/// Is the 4^3 block of `octant` fully hidden in `mask`?
-fn octant_fully_masked(mask: &[u64; 8], octant: usize) -> bool {
-    (0..8).all(|z| {
-        (0..8).all(|y| {
-            (0..8).all(|x| mask_octant(x, y, z) != octant || mask[z] >> (x + 8 * y) & 1 == 1)
+/// The test of `octant_wanted_depth` for one octant: does a cell of a given depth, placed at the
+/// point of the octant nearest the eye and shifted to stay inside it, project to at most the
+/// target?
+struct OctantProbe<'a> {
+    view: &'a ViewProjection,
+    grid: &'a CellGrid,
+    octant_box: SpatialBounds,
+    eye: [f64; 3],
+    target_px: f64,
+}
+
+impl<'a> OctantProbe<'a> {
+    /// `None` when the octant has no valid box: every depth then fails and the finest is used.
+    fn new(
+        view: &'a ViewProjection,
+        grid: &'a CellGrid,
+        coordinate_origin: [f64; 3],
+        bounds: SpatialBounds,
+        octant: usize,
+        target_px: f64,
+    ) -> Option<Self> {
+        let relative = SpatialBounds::new(
+            std::array::from_fn(|a| bounds.min()[a] - coordinate_origin[a]),
+            std::array::from_fn(|a| bounds.max()[a] - coordinate_origin[a]),
+        )
+        .ok()?;
+        let octant_box = octant_box(relative, octant)?;
+        let eye: [f64; 3] = view
+            .camera()
+            .position()
+            .map(|value| value / view.visual_scale());
+        Some(Self {
+            view,
+            grid,
+            octant_box,
+            eye,
+            target_px,
         })
-    })
+    }
+
+    fn at(&self, depth: u8) -> bool {
+        let side = self.grid.root_side / 2.0_f64.powi(i32::from(depth));
+        let min: [f64; 3] = std::array::from_fn(|a| {
+            let low = self.octant_box.min()[a];
+            let high = (self.octant_box.max()[a] - side).max(low);
+            self.eye[a]
+                .clamp(self.octant_box.min()[a], self.octant_box.max()[a])
+                .clamp(low, high)
+        });
+        SpatialBounds::new(min, min.map(|value| value + side)).is_ok_and(|cube| {
+            self.view.projected_voxel_edge_pixels(cube, [0.0; 3]) <= self.target_px
+        })
+    }
+}
+
+/// Is the 4^3 block of `octant` fully hidden in `mask`? Bit `x + 8y` of word `z`: the block is a
+/// 4x4 patch (`x`, `y`) in each of 4 words (`z`).
+fn octant_fully_masked(mask: &[u64; 8], octant: usize) -> bool {
+    let (x_half, y_half, z_half) = (octant >> 2 & 1, octant >> 1 & 1, octant & 1);
+    let patch = 0x0F0F_0F0F_u64 << (4 * x_half) << (32 * y_half);
+    mask[4 * z_half..4 * z_half + 4]
+        .iter()
+        .all(|word| word & patch == patch)
 }
 
 /// `(depth, is_stage)`: the wanted level if resident, else the coarsest resident one. It is a stage
@@ -232,6 +357,29 @@ pub fn cell_cut(
     coordinate_origin: [f64; 3],
     target_px: f64,
 ) -> Result<Vec<CellCutEntry>, CellCutError> {
+    cell_cut_with(cut, node, grid, &|_, octant, data| {
+        octant_wanted_depth(
+            view,
+            grid,
+            coordinate_origin,
+            data.bounds,
+            octant,
+            &data.stored,
+            target_px,
+        )
+    })
+}
+
+/// `cell_cut` with the per-octant depth of the view supplied by `wanted_depth(node, octant,
+/// data)`, which must return what `octant_wanted_depth` would for `data.stored`. It lets a caller
+/// that evaluates the same view several times (the cell pool) compute each depth once; the output
+/// is identical to `cell_cut` when the depths are.
+pub(crate) fn cell_cut_with(
+    cut: &[NodeId],
+    node: &dyn Fn(NodeId) -> Option<CellCutNode>,
+    grid: &CellGrid,
+    wanted_depth: &dyn Fn(NodeId, usize, &CellCutNode) -> u8,
+) -> Result<Vec<CellCutEntry>, CellCutError> {
     let mut entries = Vec::with_capacity(cut.len());
     let mut nodes = Vec::with_capacity(cut.len());
     let mut placed = Vec::with_capacity(cut.len());
@@ -260,9 +408,12 @@ pub fn cell_cut(
         nodes.push(data);
     }
 
-    let mut by_cell: HashMap<(u8, [u64; 3]), usize> = HashMap::with_capacity(cut.len());
+    let mut by_cell: FastMap<(u8, [u64; 3]), usize> =
+        FastMap::with_capacity_and_hasher(cut.len(), BuildHasherDefault::default());
+    let mut present = [false; 256];
     for (index, node) in placed.iter().enumerate() {
         by_cell.entry((node.rep, node.lo)).or_insert(index);
+        present[usize::from(node.rep)] = true;
     }
     for (child, d) in placed.iter().enumerate() {
         if !has_resident[child] {
@@ -271,6 +422,9 @@ pub fn cell_cut(
         // Ancestors are nodes with a smaller representative depth (>= 3) whose aligned 8-cell
         // block contains this node's first cell.
         for k in 1..=d.rep.saturating_sub(3) {
+            if !present[usize::from(d.rep - k)] {
+                continue;
+            }
             let ancestor_lo = d.lo.map(|c| (c >> k) & !7);
             let Some(&parent) = by_cell.get(&(d.rep - k, ancestor_lo)) else {
                 continue;
@@ -311,15 +465,7 @@ pub fn cell_cut(
             let mut wanted = if spans_all {
                 finest
             } else {
-                octant_wanted_depth(
-                    view,
-                    grid,
-                    coordinate_origin,
-                    data.bounds,
-                    o,
-                    &data.stored,
-                    target_px,
-                )
+                wanted_depth(entry.node, o, data)
             };
             if wanted <= node_depth && !spans_all {
                 wanted = data

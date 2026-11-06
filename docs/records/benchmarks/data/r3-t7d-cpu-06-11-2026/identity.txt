@@ -1,0 +1,9 @@
+cc2694323f056021eda39d1d91246913ba48942ea53372ddf69e0653d236088f  target/perf/examples/cell_pool_bench
+44ae966690b9a8e813979c399d588916b5306626541c6eb43a303b47a79ac55c  crates/viewer_render_wgpu/examples/cell_pool_bench.rs
+e8024f01d114dbaa244b0df7f77f14c366ed8c68ca206a5279500a5c8e57bff9  crates/viewer_render_wgpu/src/cell_pool.rs
+ffd3ed8e143169f2324ed4b6ede974116afa3a40ff61de7033b8c1e24cbdb962  crates/viewer_render_wgpu/src/cell_cut.rs
+6502d53bf9a0220ab46d97e5d1e4e79e2d8e7d5374b3860c0b35eee157c92c1e  crates/viewer_render_wgpu/src/camera.rs
+101464e9152145270f525f3be6818e702aca5c8bd9456e133641d339c26ed148  target/render-data/belvedere-v75.oct
+269d5df1e6da8485a0fd5ded3798a0f79bdde61ff298f624e5497dba6b29f1b1  target/render-data/majadas-v75.oct
+base d5c307bc4ef972cc2523782443ce9a29f6846860 on feat/r3-v75 + uncommitted changes committed with the record; pools exported by coverage_spike --export-pool at d5c307b
+rustc 1.101.0-nightly (41089d07a 2026-10-27)

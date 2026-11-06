@@ -22,22 +22,38 @@
 //! is itself incomplete; otherwise the previous cut stays (`RetainedPrevious`). A real cut that
 //! fails with `DescendantTooFine` stays retained and is reported in the counters.
 //!
-//! Sizes: a level that has not arrived is estimated as `ceil(min(points, 8^gap) / 512)` pages.
+//! Sizes: the fit uses, per level, the packed size once offered, else the exact size given by
+//! [`CellPool::set_level_sizes`] (in the viewer every level of a node is built together, so its
+//! sizes are known before any upload), else an estimate `ceil(min(points, 8^gap) / 512)` pages.
 //! `pack_level` may split a page when its extent would exceed 2^16, so the estimate is not a strict
-//! upper bound; once offered, the exact size replaces it, the fit corrects on the next frame, and
-//! the 1/8 reserve absorbs the transient.
+//! upper bound; an exact size replaces it, the fit corrects on the next frame, and the 1/8 reserve
+//! absorbs the transient.
+//!
+//! CPU cost (R3 Task 7d): the depth each octant of a cut node asks for (the expensive part of
+//! `cell_cut`, one projection per stored level) is cached per node, and it is computed for the
+//! node's full stored list: for a capped list the answer is `min(depth, last stored depth)`. A
+//! cached depth is refreshed when the node's data changes, or when the camera has drifted from the
+//! pose it was computed at by more than [`DRIFT_FRACTION`] of the eye-to-node distance or
+//! [`ROTATION_RAD`] (each scaled by a per-node factor in 0.5..=1, so refreshes do not all land on
+//! one frame; nodes past half their limit are refreshed ahead of time, within a per-frame budget),
+//! or as soon as the camera stops (a still pose is always exact). That bounds the change of a
+//! projected edge to about 5 % (6 % by rotation), which only matters for octants within that
+//! margin of the target. A drift refresh searches outward from the cached depth and assumes that
+//! finer levels project smaller (`octant_wanted_depth_near`). The wanted cut and the fit are reused while the cut, the sizes, the view
+//! parameters and every cached depth are unchanged; the real cut also needs the same residency.
+//! In steady state a frame therefore calls `cell_cut` zero times; a change calls it once per
+//! stage that has to be redone (wanted, fit steps, real).
 
-use std::{
-    cell::Cell,
-    collections::{BTreeSet, HashMap, HashSet},
-    ops::Range,
-};
+use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
+use crate::camera::VERTICAL_FOV;
+
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
-    cell_cut, representative_depth,
+    cell_cut::{FastMap, FastSet, cell_cut_with, octant_wanted_depth, octant_wanted_depth_near},
+    representative_depth,
 };
 
 /// Bytes of one pool page.
@@ -54,6 +70,18 @@ const LOW_PERCENT: u64 = 80;
 const SOFT_PERCENT: u64 = 80;
 /// Frames between the last draw of a level and the reuse of its pages.
 const FREE_DELAY: u64 = 2;
+/// A cached depth is refreshed when the eye has moved more than this share of the node's
+/// effective view depth since it was computed: a projected edge is inversely proportional to the
+/// depth, so it changes by about that share (about 5 % of the target at the decision boundary, 4 % plus second order).
+const DRIFT_FRACTION: f64 = 0.04;
+/// ... or when the view direction has turned by an angle `w` with `w * tan(half diagonal fov)`
+/// above this share: a point at the corner of the frame changes depth by that much per radian,
+/// the worst case. The half diagonal fov comes from the camera's vertical fov and the viewport.
+const ROTATION_SHARE: f64 = 0.05;
+/// Nodes that have used this share of their limit are refreshed ahead of time, `1 / EARLY_FRACTION`
+/// of the cut per frame at most (at least 8), the closest to the limit first.
+const EARLY_SHARE: f64 = 0.5;
+const EARLY_FRACTION: usize = 8;
 
 /// Identity of a resident level (R3 global constraints).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -149,6 +177,12 @@ pub struct PoolCounters {
     pub descendant_too_fine: bool,
     /// Bytes planned for upload this frame.
     pub uploaded_bytes: u64,
+    /// Cut nodes whose cached octant depths were recomputed this frame (camera drift or new data).
+    pub depth_refreshes: u32,
+    /// The wanted cut and the fit of the previous frame were reused.
+    pub wanted_reused: bool,
+    /// The real cut of the previous frame was reused (same wanted cut, same residency).
+    pub real_reused: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +198,64 @@ pub struct FramePlan {
     pub active: Vec<ActiveLevel>,
     pub events: Vec<CellPoolEvent>,
     pub counters: PoolCounters,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Pose {
+    eye: [f64; 3],
+    forward: [f64; 3],
+}
+
+/// The wanted depth of each octant of a cut node, for its full stored list, at the pose it was
+/// computed at.
+struct NodeDepths {
+    node: PoolNode,
+    depths: [u8; 8],
+    pose: Pose,
+    /// Effective view depth of the node at that pose, in scaled units: the depth of its nearest
+    /// point along the view direction, times the cosine of its off-axis angle (`depth^2 /
+    /// distance`), so that moving the eye by a share of it changes a projected edge by about
+    /// that share also away from the axis. 0 when the nearest point is not in front.
+    depth: f64,
+    /// Computed by the full search at exactly this pose (R3-Q18); a hinted search is not.
+    exact: bool,
+    /// Per-node factor in 0.5..=1 on the refresh thresholds.
+    scale: f64,
+}
+
+/// What the cached depths depend on besides the node and the pose; a change drops them all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ViewKey {
+    target_px: f64,
+    viewport: [u32; 2],
+    visual_scale: f64,
+    grid: CellGrid,
+    origin: [f64; 3],
+}
+
+/// Result of the wanted cut and the fit, valid while its inputs are.
+struct WantedMemo {
+    cut: Vec<NodeId>,
+    size_epoch: u64,
+    generation: u64,
+    needed: Rc<FastSet<LevelKey>>,
+    overflow: bool,
+    /// Eye the fit ranked the nodes from, and the nearest eye-to-node view depth of the cut:
+    /// while caps are active the memo is dropped when the eye moves past the drift limit.
+    eye: [f64; 3],
+    min_depth: f64,
+    had_caps: bool,
+}
+
+/// Result of the real cut, valid for one wanted generation and one residency epoch.
+struct RealMemo {
+    generation: u64,
+    residency_epoch: u64,
+    /// `None`: the cut failed with `DescendantTooFine`.
+    entries: Option<Vec<CellCutEntry>>,
+    planned_missing: u32,
+    /// `self.applied` already holds `entries`.
+    applied: bool,
 }
 
 enum LevelState {
@@ -203,16 +295,29 @@ pub struct CellPool {
     free: BTreeSet<u32>,
     /// `(free_frame, slots)`: released at the start of that frame.
     pending: Vec<(u64, Vec<u32>)>,
-    levels: HashMap<LevelKey, Level>,
-    caps: HashMap<NodeId, u8>,
+    levels: FastMap<LevelKey, Level>,
+    caps: FastMap<NodeId, u8>,
+    /// Exact page counts given before the data arrives.
+    sizes: FastMap<LevelKey, usize>,
+    sizes_prune_at: usize,
+    /// Bumped when the size the fit uses for some level changes.
+    size_epoch: u64,
+    /// Bumped when a level becomes resident or leaves residency.
+    residency_epoch: u64,
+    depths: FastMap<NodeId, NodeDepths>,
+    last_pose: Option<Pose>,
+    depth_key: Option<ViewKey>,
+    wanted_memo: Option<WantedMemo>,
+    wanted_generation: u64,
+    real_memo: Option<RealMemo>,
     overflow: u32,
     applied: Vec<CellCutEntry>,
     /// The applied cut had no node without a level when it was applied.
     applied_complete: bool,
-    applied_levels: HashSet<LevelKey>,
-    applied_pins: HashSet<LevelKey>,
-    pinned: HashSet<LevelKey>,
-    mask_slots: HashMap<NodeId, (u32, [u64; 8])>,
+    applied_levels: FastSet<LevelKey>,
+    applied_pins: FastSet<LevelKey>,
+    pinned: FastSet<LevelKey>,
+    mask_slots: FastMap<NodeId, (u32, [u64; 8])>,
     free_masks: BTreeSet<u32>,
     next_mask: u32,
     events: Vec<CellPoolEvent>,
@@ -238,13 +343,40 @@ fn distance_sq(eye: [f64; 3], bounds: SpatialBounds, origin: [f64; 3]) -> f64 {
         .sum()
 }
 
+/// `NodeDepths::depth` of a node.
+fn effective_depth(pose: Pose, bounds: SpatialBounds, origin: [f64; 3]) -> f64 {
+    let offset: [f64; 3] = std::array::from_fn(|a| {
+        pose.eye[a].clamp(bounds.min()[a] - origin[a], bounds.max()[a] - origin[a]) - pose.eye[a]
+    });
+    let depth: f64 = (0..3).map(|a| offset[a] * pose.forward[a]).sum();
+    let distance = offset.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if depth <= 0.0 {
+        0.0
+    } else {
+        depth * depth / distance
+    }
+}
+
+fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
+    (0..3).map(|i| (a[i] - b[i]).powi(2)).sum::<f64>().sqrt()
+}
+
 /// Everything one frame computes from the arguments of `frame`.
 struct Ctx<'a> {
-    view: &'a ViewProjection,
     grid: &'a CellGrid,
     origin: [f64; 3],
-    target_px: f64,
+    depths: &'a FastMap<NodeId, NodeDepths>,
     evaluations: Cell<u32>,
+}
+
+impl Ctx<'_> {
+    /// `octant_wanted_depth` of the octant for `data.stored`, from the cache of the full list: the
+    /// first stored depth that meets the target, else the finest, so a prefix of the list gets
+    /// the same depth capped at its last element.
+    fn depth(&self, id: NodeId, octant: usize, data: &CellCutNode) -> u8 {
+        let last = *data.stored.last().expect("stored levels are not empty");
+        self.depths[&id].depths[octant].min(last)
+    }
 }
 
 impl CellPool {
@@ -254,15 +386,25 @@ impl CellPool {
             frame: 0,
             free: (0..config.capacity_pages).collect(),
             pending: Vec::new(),
-            levels: HashMap::new(),
-            caps: HashMap::new(),
+            levels: FastMap::default(),
+            caps: FastMap::default(),
+            sizes: FastMap::default(),
+            sizes_prune_at: 1024,
+            size_epoch: 0,
+            residency_epoch: 0,
+            depths: FastMap::default(),
+            last_pose: None,
+            depth_key: None,
+            wanted_memo: None,
+            wanted_generation: 0,
+            real_memo: None,
             overflow: 0,
             applied: Vec::new(),
             applied_complete: false,
-            applied_levels: HashSet::new(),
-            applied_pins: HashSet::new(),
-            pinned: HashSet::new(),
-            mask_slots: HashMap::new(),
+            applied_levels: FastSet::default(),
+            applied_pins: FastSet::default(),
+            pinned: FastSet::default(),
+            mask_slots: FastMap::default(),
             free_masks: BTreeSet::new(),
             next_mask: 0,
             events: Vec::new(),
@@ -299,18 +441,48 @@ impl CellPool {
     /// data, or one larger than the pool is dropped (`false`).
     pub fn offer(&mut self, key: LevelKey, level: PackedLevel) -> bool {
         let capacity = self.config.capacity_pages as usize;
-        match self.levels.get_mut(&key) {
+        match self.levels.get(&key) {
             Some(entry)
                 if matches!(entry.state, LevelState::Requested)
                     && entry.data.is_none()
                     && !level.pages.is_empty()
                     && level.pages.len() <= capacity =>
             {
-                entry.data = Some(level);
+                let before = self.known_pages(key);
+                let pages = level.pages.len();
+                if let Some(entry) = self.levels.get_mut(&key) {
+                    entry.data = Some(level);
+                }
+                if before != Some(pages) {
+                    self.size_epoch += 1;
+                }
                 true
             }
             _ => false,
         }
+    }
+
+    /// Exact page counts of the levels of `node` as `(depth, pages)`, known before any upload. The
+    /// fit uses them instead of the estimate until the data itself arrives; they must equal the
+    /// size `pack_level` gives. Sizes of nodes that leave the cut and hold no level are dropped
+    /// eventually.
+    pub fn set_level_sizes(&mut self, node: NodeId, sizes: &[(u8, usize)]) {
+        for (depth, pages) in sizes {
+            let key = self.key(node, *depth);
+            let before = self.known_pages(key);
+            self.sizes.insert(key, (*pages).max(1));
+            if self.known_pages(key) != before {
+                self.size_epoch += 1;
+            }
+        }
+    }
+
+    /// The size of a level when known: its data, else its exact size.
+    fn known_pages(&self, key: LevelKey) -> Option<usize> {
+        self.levels
+            .get(&key)
+            .and_then(Level::pages)
+            .or_else(|| self.sizes.get(&key).copied())
     }
 
     /// Drops a resident level that is neither pinned nor drawn by the applied (or retained) cut
@@ -330,10 +502,15 @@ impl CellPool {
     }
 
     fn evict_resident(&mut self, key: LevelKey, now: u64) {
+        let before = self.known_pages(key);
         let Some(level) = self.levels.remove(&key) else {
             return;
         };
+        if before != self.known_pages(key) {
+            self.size_epoch += 1;
+        }
         if let LevelState::Resident { slots } = level.state {
+            self.residency_epoch += 1;
             let free_at = if level.last_active == 0 {
                 now
             } else {
@@ -379,13 +556,10 @@ impl CellPool {
     }
 
     fn pages_of(&self, key: LevelKey, node: &PoolNode, grid: &CellGrid) -> usize {
-        self.levels
-            .get(&key)
-            .and_then(Level::pages)
-            .unwrap_or_else(|| {
-                let node_depth = representative_depth(grid, node.bounds).saturating_sub(3);
-                estimate_pages(node.points, key.depth, node_depth)
-            })
+        self.known_pages(key).unwrap_or_else(|| {
+            let node_depth = representative_depth(grid, node.bounds).saturating_sub(3);
+            estimate_pages(node.points, key.depth, node_depth)
+        })
     }
 
     /// Wanted entries with resident = stored (minus the offenders and below the caps). A
@@ -393,8 +567,8 @@ impl CellPool {
     fn wanted_cut(
         &self,
         cut: &[NodeId],
-        nodes: &HashMap<NodeId, PoolNode>,
-        caps: &HashMap<NodeId, u8>,
+        nodes: &FastMap<NodeId, PoolNode>,
+        caps: &FastMap<NodeId, u8>,
         offenders: &mut BTreeSet<NodeId>,
         ctx: &Ctx,
     ) -> Result<Vec<CellCutEntry>, CellCutError> {
@@ -414,7 +588,9 @@ impl CellPool {
                 })
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            match cell_cut(cut, &lookup, ctx.view, ctx.grid, ctx.origin, ctx.target_px) {
+            match cell_cut_with(cut, &lookup, ctx.grid, &|id, o, data| {
+                ctx.depth(id, o, data)
+            }) {
                 Err(CellCutError::DescendantTooFine { descendant, .. })
                     if !offenders.contains(&descendant) =>
                 {
@@ -429,14 +605,14 @@ impl CellPool {
     fn needed_levels(
         &self,
         entries: &[CellCutEntry],
-        nodes: &HashMap<NodeId, PoolNode>,
-        caps: &HashMap<NodeId, u8>,
-    ) -> HashSet<LevelKey> {
-        let mut set = HashSet::new();
+        nodes: &FastMap<NodeId, PoolNode>,
+        caps: &FastMap<NodeId, u8>,
+    ) -> FastSet<LevelKey> {
+        let mut set = FastSet::default();
         for entry in entries {
             let node = &nodes[&entry.node];
-            if let Some(coarsest) = capped(&node.stored, caps.get(&entry.node)).first() {
-                set.insert(self.key(entry.node, *coarsest));
+            if let Some(coarsest) = coarsest(&node.stored, caps.get(&entry.node)) {
+                set.insert(self.key(entry.node, coarsest));
             }
             for depth in entry.wanted.iter().flatten() {
                 set.insert(self.key(entry.node, *depth));
@@ -445,44 +621,52 @@ impl CellPool {
         set
     }
 
-    fn total_pages(
+    /// The levels the entries need and their pages.
+    fn needed_and_pages(
         &self,
         entries: &[CellCutEntry],
-        nodes: &HashMap<NodeId, PoolNode>,
-        caps: &HashMap<NodeId, u8>,
+        nodes: &FastMap<NodeId, PoolNode>,
+        caps: &FastMap<NodeId, u8>,
         grid: &CellGrid,
-    ) -> u64 {
-        self.needed_levels(entries, nodes, caps)
-            .into_iter()
-            .map(|key| self.pages_of(key, &nodes[&key.node], grid) as u64)
-            .sum()
+    ) -> (FastSet<LevelKey>, u64) {
+        let needed = self.needed_levels(entries, nodes, caps);
+        let total = needed
+            .iter()
+            .map(|key| self.pages_of(*key, &nodes[&key.node], grid) as u64)
+            .sum();
+        (needed, total)
     }
 
-    /// R3-Q11. Returns the wanted entries after the fit, and whether even the coarsest levels
-    /// overflow the usable capacity.
+    /// R3-Q11. Returns the levels the wanted entries need after the fit, and whether even the
+    /// coarsest levels overflow the usable capacity.
     #[allow(clippy::too_many_arguments)]
     fn fit(
         &mut self,
         cut: &[NodeId],
-        nodes: &HashMap<NodeId, PoolNode>,
+        nodes: &FastMap<NodeId, PoolNode>,
         offenders: &mut BTreeSet<NodeId>,
         eye: [f64; 3],
         ctx: &Ctx,
-    ) -> Result<(Vec<CellCutEntry>, bool), CellCutError> {
+    ) -> Result<(FastSet<LevelKey>, bool), CellCutError> {
         let usable = self.usable();
         let (high, low) = (usable * HIGH_PERCENT / 100, usable * LOW_PERCENT / 100);
         let mut caps = std::mem::take(&mut self.caps);
         caps.retain(|id, _| nodes.contains_key(id));
         let mut entries = self.wanted_cut(cut, nodes, &caps, offenders, ctx)?;
+        let (mut needed, mut total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid);
+        // Lifting the caps needs the uncapped cut to fit under `low`. This runs only when the
+        // wanted cut is recomputed (cut, sizes or depths changed), never on a reused frame; sizes
+        // are not monotone in depth, so the capped total says nothing about the uncapped one.
         if !caps.is_empty() {
-            let none = HashMap::new();
+            let none = FastMap::default();
             let open = self.wanted_cut(cut, nodes, &none, offenders, ctx)?;
-            if self.total_pages(&open, nodes, &none, ctx.grid) <= low {
+            let (open_needed, open_total) = self.needed_and_pages(&open, nodes, &none, ctx.grid);
+            if open_total <= low {
                 caps.clear();
                 entries = open;
+                (needed, total) = (open_needed, open_total);
             }
         }
-        let mut total = self.total_pages(&entries, nodes, &caps, ctx.grid);
         if total > high {
             // Farthest first, ordered once; coarsened in blocks of an eighth of the cut.
             let mut order: Vec<NodeId> = cut.to_vec();
@@ -494,7 +678,7 @@ impl CellPool {
                 db.total_cmp(&da).then(a.cmp(b))
             });
             // `entries` follow the order of `cut`.
-            let position: HashMap<NodeId, usize> =
+            let position: FastMap<NodeId, usize> =
                 cut.iter().enumerate().map(|(i, id)| (*id, i)).collect();
             let block = (order.len() / 8).max(1);
             let mut cursor = 0;
@@ -527,11 +711,11 @@ impl CellPool {
                     break;
                 }
                 entries = self.wanted_cut(cut, nodes, &caps, offenders, ctx)?;
-                total = self.total_pages(&entries, nodes, &caps, ctx.grid);
+                (needed, total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid);
             }
         }
         self.caps = caps;
-        Ok((entries, total > usable))
+        Ok((needed, total > usable))
     }
 
     fn alloc_mask(&mut self) -> u32 {
@@ -539,6 +723,123 @@ impl CellPool {
             self.next_mask += 1;
             self.next_mask - 1
         })
+    }
+
+    /// Recomputes the cached octant depths of the cut nodes that need it. Returns how many were
+    /// recomputed and whether any depth, or the node data they came from, differs from before.
+    #[allow(clippy::too_many_arguments)]
+    fn refresh_depths(
+        &mut self,
+        cut: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        pose: Pose,
+        view: &ViewProjection,
+        grid: &CellGrid,
+        origin: [f64; 3],
+        target_px: f64,
+    ) -> (u32, bool) {
+        let settled = self.last_pose == Some(pose);
+        self.last_pose = Some(pose);
+        let key = ViewKey {
+            target_px,
+            viewport: view.viewport(),
+            visual_scale: view.visual_scale(),
+            grid: *grid,
+            origin,
+        };
+        if self.depth_key != Some(key) {
+            self.depth_key = Some(key);
+            self.depths.clear();
+        }
+        self.depths.retain(|id, _| nodes.contains_key(id));
+        let (mut refreshed, mut changed) = (0, false);
+        let aspect = f64::from(view.viewport()[0]) / f64::from(view.viewport()[1].max(1));
+        let tan_corner = (VERTICAL_FOV * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
+        let rotation_limit = ROTATION_SHARE / tan_corner;
+        let mut due: Vec<NodeId> = Vec::new();
+        let mut early: Vec<(f64, NodeId)> = Vec::new();
+        for id in cut {
+            let data = &nodes[id];
+            let current = self.depths.get(id).filter(|cached| cached.node == *data);
+            let Some(cached) = current else {
+                due.push(*id);
+                continue;
+            };
+            let moved = distance(cached.pose.eye, pose.eye);
+            let turned = distance(cached.pose.forward, pose.forward);
+            if moved == 0.0 && turned == 0.0 {
+                // A hinted entry of a camera that has stopped is redone in full, once: every
+                // such entry is due on the first settled frame, so a still pose is exact.
+                if settled && !cached.exact {
+                    due.push(*id);
+                }
+                continue;
+            }
+            // Share of the node's own limit already used; unbounded when the eye is on the node.
+            let used = (moved / (cached.scale * DRIFT_FRACTION * cached.depth))
+                .max(turned / (cached.scale * rotation_limit));
+            if settled || used.is_nan() || used >= 1.0 {
+                due.push(*id);
+            } else if used >= EARLY_SHARE {
+                early.push((used, *id));
+            }
+        }
+        // Nodes close to their limit go first, worst first, within a per-frame budget: a rotating
+        // camera would otherwise bring every node to its limit on the same frame.
+        early.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        due.extend(
+            early
+                .into_iter()
+                .take((cut.len() / EARLY_FRACTION).max(8))
+                .map(|(_, id)| id),
+        );
+        for id in due {
+            let data = &nodes[&id];
+            let was = self.depths.get(&id).filter(|cached| cached.node == *data);
+            refreshed += 1;
+            // A drift refresh starts from the cached answer; a new node or a settled camera
+            // searches in full, so a still pose is exactly `octant_wanted_depth`.
+            let hints = (!settled)
+                .then_some(was)
+                .flatten()
+                .map(|cached| cached.depths);
+            let exact = hints.is_none();
+            let depths = std::array::from_fn(|octant| match hints {
+                Some(hints) => octant_wanted_depth_near(
+                    view,
+                    grid,
+                    origin,
+                    data.bounds,
+                    octant,
+                    &data.stored,
+                    target_px,
+                    hints[octant],
+                ),
+                None => octant_wanted_depth(
+                    view,
+                    grid,
+                    origin,
+                    data.bounds,
+                    octant,
+                    &data.stored,
+                    target_px,
+                ),
+            });
+            changed |= was.is_none_or(|cached| cached.depths != depths);
+            let hashed = id.get().wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40;
+            self.depths.insert(
+                id,
+                NodeDepths {
+                    node: data.clone(),
+                    depths,
+                    pose,
+                    depth: effective_depth(pose, data.bounds, origin),
+                    exact,
+                    scale: 0.5 + 0.5 * hashed as f64 / (1_u64 << 24) as f64,
+                },
+            );
+        }
+        (refreshed, changed)
     }
 
     /// Plans one frame for `cut`. `UnknownNode` and `NoStoredLevels` are the caller's errors; a
@@ -552,14 +853,8 @@ impl CellPool {
         coordinate_origin: [f64; 3],
         target_px: f64,
     ) -> Result<FramePlan, CellCutError> {
-        let ctx = Ctx {
-            view,
-            grid,
-            origin: coordinate_origin,
-            target_px,
-            evaluations: Cell::new(0),
-        };
-        let mut nodes: HashMap<NodeId, PoolNode> = HashMap::with_capacity(cut.len());
+        let mut nodes: FastMap<NodeId, PoolNode> =
+            FastMap::with_capacity_and_hasher(cut.len(), Default::default());
         for id in cut {
             let data = node(*id).ok_or(CellCutError::UnknownNode(*id))?;
             if data.stored.is_empty() {
@@ -568,26 +863,115 @@ impl CellPool {
             nodes.insert(*id, data);
         }
         self.frame += 1;
-        let frame = self.frame;
-        let mut page_frees = Vec::new();
-        self.release(frame, &mut page_frees);
         let eye: [f64; 3] = view
             .camera()
             .position()
             .map(|value| value / view.visual_scale());
+        let camera = view.camera();
+        let (position, target) = (camera.position(), camera.target());
+        let heading: [f64; 3] = std::array::from_fn(|a| target[a] - position[a]);
+        let length = heading.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let pose = Pose {
+            eye,
+            forward: heading.map(|v| if length > 0.0 { v / length } else { 0.0 }),
+        };
+        let (refreshed, depths_changed) =
+            self.refresh_depths(cut, &nodes, pose, view, grid, coordinate_origin, target_px);
+        let depths = std::mem::take(&mut self.depths);
+        let result = self.plan(
+            cut,
+            &nodes,
+            &depths,
+            (refreshed, depths_changed),
+            view,
+            grid,
+            coordinate_origin,
+        );
+        self.depths = depths;
+        result
+    }
 
-        // Wanted cut and fit.
-        let mut offenders = BTreeSet::new();
-        let (wanted, overflow) = self.fit(cut, &nodes, &mut offenders, eye, &ctx)?;
+    #[allow(clippy::too_many_arguments)]
+    fn plan(
+        &mut self,
+        cut: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        depths: &FastMap<NodeId, NodeDepths>,
+        (refreshed, depths_changed): (u32, bool),
+        view: &ViewProjection,
+        grid: &CellGrid,
+        coordinate_origin: [f64; 3],
+    ) -> Result<FramePlan, CellCutError> {
+        let ctx = Ctx {
+            grid,
+            origin: coordinate_origin,
+            depths,
+            evaluations: Cell::new(0),
+        };
+        let eye: [f64; 3] = view
+            .camera()
+            .position()
+            .map(|value| value / view.visual_scale());
+        let frame = self.frame;
+        if self.sizes.len() > self.sizes_prune_at {
+            let levels = &self.levels;
+            self.sizes
+                .retain(|key, _| nodes.contains_key(&key.node) || levels.contains_key(key));
+            self.sizes_prune_at = (self.sizes.len() * 2).max(1024);
+        }
+        let mut page_frees = Vec::new();
+        self.release(frame, &mut page_frees);
+
+        // Wanted cut and fit, reused while nothing they read has changed.
+        let reusable = !depths_changed
+            && self.wanted_memo.as_ref().is_some_and(|memo| {
+                let moved = distance(memo.eye, eye);
+                memo.cut == cut
+                    && memo.size_epoch == self.size_epoch
+                    && !(memo.had_caps && moved > DRIFT_FRACTION * memo.min_depth && moved > 0.0)
+            });
+        if !reusable {
+            let mut offenders = BTreeSet::new();
+            let (mut needed, overflow) = self.fit(cut, nodes, &mut offenders, eye, &ctx)?;
+            needed.retain(|key| !offenders.contains(&key.node));
+            self.wanted_generation += 1;
+            let min_depth = cut
+                .iter()
+                .map(|id| {
+                    effective_depth(
+                        Pose {
+                            eye,
+                            forward: self.last_pose.map_or([0.0; 3], |p| p.forward),
+                        },
+                        nodes[id].bounds,
+                        coordinate_origin,
+                    )
+                })
+                .fold(f64::INFINITY, f64::min);
+            self.wanted_memo = Some(WantedMemo {
+                cut: cut.to_vec(),
+                size_epoch: self.size_epoch,
+                generation: self.wanted_generation,
+                needed: Rc::new(needed),
+                overflow,
+                eye,
+                min_depth,
+                had_caps: !self.caps.is_empty(),
+            });
+        }
+        let memo = self.wanted_memo.as_ref().expect("set above");
+        let (overflow, generation, needed) =
+            (memo.overflow, memo.generation, Rc::clone(&memo.needed));
         if overflow {
             self.overflow += 1;
         }
         let caps = self.caps.clone();
-        let mut needed = self.needed_levels(&wanted, &nodes, &caps);
-        needed.retain(|key| !offenders.contains(&key.node));
 
         // Real cut on the resident levels.
-        let real = {
+        let real_reused = self.real_memo.as_ref().is_some_and(|memo| {
+            memo.generation == generation && memo.residency_epoch == self.residency_epoch
+        });
+        if !real_reused {
             let lookup = |id: NodeId| {
                 let data = nodes.get(&id)?;
                 let stored = capped(&data.stored, caps.get(&id));
@@ -603,34 +987,38 @@ impl CellPool {
                 })
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
-            cell_cut(cut, &lookup, view, grid, coordinate_origin, target_px)
+            let entries =
+                match cell_cut_with(cut, &lookup, grid, &|id, o, data| ctx.depth(id, o, data)) {
+                    Ok(entries) => Some(entries),
+                    Err(CellCutError::DescendantTooFine { .. }) => None,
+                    Err(other) => return Err(other),
+                };
+            let planned_missing = entries.as_deref().map_or(cut.len() as u32, missing_levels);
+            self.real_memo = Some(RealMemo {
+                generation,
+                residency_epoch: self.residency_epoch,
+                entries,
+                planned_missing,
+                applied: false,
+            });
+        }
+        let memo = self.real_memo.as_mut().expect("set above");
+        let (too_fine, planned_missing) = (memo.entries.is_none(), memo.planned_missing);
+        let apply = if !too_fine && !overflow && (planned_missing == 0 || !self.applied_complete) {
+            CutApply::Applied
+        } else {
+            CutApply::RetainedPrevious
         };
-        let (real, too_fine) = match real {
-            Ok(entries) => (Some(entries), false),
-            Err(CellCutError::DescendantTooFine { .. }) => (None, true),
-            Err(other) => return Err(other),
-        };
-        let missing_levels = |entries: &[CellCutEntry]| {
-            entries
-                .iter()
-                .filter(|entry| {
-                    (0..8).any(|o| entry.wanted[o].is_some() && entry.drawn[o].is_none())
-                })
-                .count() as u32
-        };
-        let planned_missing = real.as_deref().map_or(cut.len() as u32, missing_levels);
-        let apply =
-            if real.is_some() && !overflow && (planned_missing == 0 || !self.applied_complete) {
-                CutApply::Applied
-            } else {
-                CutApply::RetainedPrevious
-            };
 
         // Levels in use: the drawn ones and, when retaining, the previous cut's.
-        let mut protected: HashSet<LevelKey> = HashSet::new();
-        let mut pinned: HashSet<LevelKey> = HashSet::new();
-        if let (CutApply::Applied, Some(real)) = (apply, real) {
-            self.applied = real;
+        let mut protected: FastSet<LevelKey> = FastSet::default();
+        let mut pinned: FastSet<LevelKey> = FastSet::default();
+        if apply == CutApply::Applied {
+            let memo = self.real_memo.as_mut().expect("set above");
+            if !memo.applied {
+                self.applied = memo.entries.clone().expect("applied cut exists");
+                memo.applied = true;
+            }
             self.applied_complete = planned_missing == 0;
         }
         for entry in &self.applied {
@@ -639,8 +1027,8 @@ impl CellPool {
             }
         }
         for id in cut {
-            if let Some(depth) = capped(&nodes[id].stored, caps.get(id)).first() {
-                pinned.insert(self.key(*id, *depth));
+            if let Some(depth) = coarsest(&nodes[id].stored, caps.get(id)) {
+                pinned.insert(self.key(*id, depth));
             }
         }
         if apply == CutApply::Applied {
@@ -649,11 +1037,8 @@ impl CellPool {
             pinned.extend(self.applied_pins.iter().copied());
         }
         // Overflow keeps only the previous cut: nothing of the new one is requested.
-        let want: HashSet<LevelKey> = if overflow {
-            HashSet::new()
-        } else {
-            needed.clone()
-        };
+        let no_levels = FastSet::default();
+        let want: &FastSet<LevelKey> = if overflow { &no_levels } else { &needed };
         protected.extend(want.iter().copied());
         protected.extend(pinned.iter().copied());
         self.pinned = pinned;
@@ -667,7 +1052,11 @@ impl CellPool {
             .map(|(key, _)| *key)
             .collect();
         for key in cancelled {
+            let before = self.known_pages(key);
             if let Some(level) = self.levels.remove(&key) {
+                if before != self.known_pages(key) {
+                    self.size_epoch += 1;
+                }
                 if let LevelState::Uploading { slots, .. } = level.state {
                     freed_now.extend(slots);
                 }
@@ -688,7 +1077,7 @@ impl CellPool {
         // Requests.
         let mut order: Vec<(LevelKey, Need)> = Vec::new();
         let mut fetch_requests = Vec::new();
-        let mut drawable: HashSet<NodeId> = HashSet::new();
+        let mut drawable: FastSet<NodeId> = FastSet::default();
         for key in self
             .levels
             .iter()
@@ -712,7 +1101,7 @@ impl CellPool {
             }
             if !self.levels[&key].is_resident() {
                 let first = !drawable.contains(&key.node)
-                    && capped(&data.stored, caps.get(&key.node)).first() == Some(&key.depth);
+                    && coarsest(&data.stored, caps.get(&key.node)) == Some(key.depth);
                 order.push((
                     key,
                     Need {
@@ -807,6 +1196,7 @@ impl CellPool {
             if *pages_done == pages {
                 let slots = std::mem::take(slots);
                 level.state = LevelState::Resident { slots };
+                self.residency_epoch += 1;
             }
         }
 
@@ -814,7 +1204,7 @@ impl CellPool {
         let mut mask_updates = Vec::new();
         let mut active = Vec::new();
         if apply == CutApply::Applied {
-            let live: HashSet<NodeId> = self.applied.iter().map(|entry| entry.node).collect();
+            let live: FastSet<NodeId> = self.applied.iter().map(|entry| entry.node).collect();
             let gone: Vec<NodeId> = self
                 .mask_slots
                 .keys()
@@ -843,7 +1233,7 @@ impl CellPool {
                 }
             }
         }
-        let mut applied_levels = HashSet::new();
+        let mut applied_levels = FastSet::default();
         for entry in &self.applied {
             let Some((slot, _)) = self.mask_slots.get(&entry.node) else {
                 continue;
@@ -885,6 +1275,9 @@ impl CellPool {
             cut_evaluations: ctx.evaluations.get(),
             descendant_too_fine: too_fine,
             uploaded_bytes: uploaded_pages as u64 * POOL_PAGE_BYTES,
+            depth_refreshes: refreshed,
+            wanted_reused: reusable,
+            real_reused,
         };
         Ok(FramePlan {
             apply,
@@ -898,6 +1291,21 @@ impl CellPool {
             counters,
         })
     }
+}
+
+/// The first depth of `stored` truncated to the cap, if any.
+fn coarsest(stored: &[u8], cap: Option<&u8>) -> Option<u8> {
+    stored
+        .first()
+        .copied()
+        .filter(|depth| cap.is_none_or(|cap| depth <= cap))
+}
+
+fn missing_levels(entries: &[CellCutEntry]) -> u32 {
+    entries
+        .iter()
+        .filter(|entry| (0..8).any(|o| entry.wanted[o].is_some() && entry.drawn[o].is_none()))
+        .count() as u32
 }
 
 /// `stored` truncated to depths at or below the cap.

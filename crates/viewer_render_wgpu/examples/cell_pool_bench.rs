@@ -18,7 +18,7 @@
 //! * CPU per frame: `CellPool::frame` (cut + fit), the page-table entries of every active page and
 //!   `set_active_pages` (diff + `write_buffer`), still and moving.
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fs,
     path::{Path, PathBuf},
@@ -363,6 +363,8 @@ struct Rig<'a> {
     pool: CellPool,
     /// Pool page slot of each page of a level that is uploading or resident.
     slots: HashMap<LevelKey, Vec<u32>>,
+    /// Nodes whose exact level sizes the pool already has (the viewer gives them on load).
+    sized: HashSet<NodeId>,
     masks_allocated: u32,
     frame_period: f64,
 }
@@ -405,6 +407,7 @@ impl<'a> Rig<'a> {
                 ..PoolConfig::default()
             }),
             slots: HashMap::new(),
+            sized: HashSet::new(),
             masks_allocated: 0,
             frame_period: 0.0,
         }
@@ -434,6 +437,16 @@ impl<'a> Rig<'a> {
     fn step(&mut self, camera: OrbitCamera) -> Result<(FramePlan, FrameStats)> {
         let case = self.case;
         let view = self.view(camera);
+        for id in &case.cut {
+            if self.sized.insert(*id) {
+                let sizes: Vec<(u8, usize)> = case.nodes[id]
+                    .levels
+                    .iter()
+                    .map(|(depth, file)| (*depth, file.pages))
+                    .collect();
+                self.pool.set_level_sizes(*id, &sizes);
+            }
+        }
         let t0 = Instant::now();
         let plan = self.pool.frame(
             &case.cut,
@@ -632,6 +645,7 @@ fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
         } else {
             quiet_run = 0;
             last_noisy = frames;
+            cpu.clear();
         }
         last = stats;
         last_plan = Some(plan);
@@ -639,6 +653,11 @@ fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
     let converged = quiet_run >= QUIET_FRAMES;
     let plan = last_plan.ok_or("no frame ran")?;
     let counters = last.counters;
+    let still_evals = cpu
+        .iter()
+        .map(|s| s.counters.cut_evaluations)
+        .max()
+        .unwrap_or(0);
     let converge = json!({
         "converged": converged,
         "frames": last_noisy,
@@ -647,6 +666,7 @@ fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
         "evictions": total_evictions,
         "cancels": total_cancels,
         "pool_coarsened": counters.pool_coarsened,
+        "still_cut_evaluations_max": still_evals,
         "pool_overflow": counters.pool_overflow,
         "descendant_too_fine": counters.descendant_too_fine,
         "nodes_without_level": counters.nodes_without_level,
@@ -754,6 +774,9 @@ fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
         "descendant_too_fine_frames": series.iter().filter(|s| s.counters.descendant_too_fine).count(),
         "retained_frames": series.iter().filter(|s| s.apply == Some(false)).count(),
         "cut_evaluations": summary(&per_frame(&|s| f64::from(s.counters.cut_evaluations))),
+        "depth_refreshes": summary(&per_frame(&|s| f64::from(s.counters.depth_refreshes))),
+        "wanted_reused_frames": series.iter().filter(|s| s.counters.wanted_reused).count(),
+        "real_reused_frames": series.iter().filter(|s| s.counters.real_reused).count(),
         "cpu": cpu_summary(&series),
         "kpc_cells_phase1_phase2_sampled": moving_phase_cells,
     });
