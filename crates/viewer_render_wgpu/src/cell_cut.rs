@@ -66,7 +66,7 @@ pub(crate) type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub(crate) type FastSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
 /// Deepest ancestor-descendant gap (in node levels) a mask can express: 8 cells -> 1 cell.
-const MAX_MASK_LEVELS: u8 = 3;
+pub(crate) const MAX_MASK_LEVELS: u8 = 3;
 
 /// What `cell_cut` needs to know about a cut node.
 #[derive(Debug, Clone, PartialEq)]

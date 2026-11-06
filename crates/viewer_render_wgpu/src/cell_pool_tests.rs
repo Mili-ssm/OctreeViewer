@@ -162,6 +162,8 @@ struct Rig {
     shrink: bool,
     deep: Option<usize>,
     inflight: Vec<(u64, LevelKey)>,
+    /// Nodes whose data is not delivered while they are here (a slow region).
+    held: HashSet<NodeId>,
     frame: u64,
 }
 
@@ -184,6 +186,7 @@ impl Rig {
             shrink: false,
             deep: None,
             inflight: Vec::new(),
+            held: HashSet::new(),
             frame: 0,
         }
     }
@@ -206,7 +209,11 @@ impl Rig {
             .into_iter()
             .partition(|(at, _)| *at <= self.frame);
         self.inflight = later;
-        for (_, key) in due {
+        for (at, key) in due {
+            if self.held.contains(&key.node) {
+                self.inflight.push((at, key));
+                continue;
+            }
             let pages = self.pages(key);
             self.pool.offer(key, fake_level(key, pages));
         }
@@ -341,7 +348,7 @@ fn levels_become_active_only_with_all_pages_and_uploads_span_frames() {
 }
 
 #[test]
-fn uploads_start_with_nodes_that_draw_nothing_and_then_go_nearest_first() {
+fn uploads_give_every_node_its_first_level_before_refining_and_go_nearest_first() {
     let mut rig = Rig::new(octant_nodes(), 128, 1, 0);
     let cut = ids(&CHILDREN);
     let cam = camera("zoom");
@@ -750,8 +757,8 @@ fn a_level_waiting_for_pending_pages_blocks_lower_priority_levels() {
     assert_eq!(started.first(), Some(&(8, 7)), "{started:?}");
 }
 
-/// Nodes of the `RetainedPrevious` scenario: the root, a node 4 levels below it (too fine for the
-/// mask) and one 3 levels below it.
+/// Nodes of the `RetainedPrevious` scenario: the root, a node `MAX_MASK_LEVELS + 1` levels below
+/// it (too fine for the mask) and one `MAX_MASK_LEVELS` below it.
 fn chain_nodes() -> HashMap<NodeId, PoolNode> {
     HashMap::from([
         (
@@ -765,7 +772,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
         (
             NodeId::new(20),
             PoolNode {
-                bounds: cube(ORIGIN, SIDE / 16.0),
+                bounds: cube(ORIGIN, SIDE / f64::from(1_u32 << (MAX_MASK_LEVELS + 1))),
                 stored: vec![7, 8],
                 points: 2000,
             },
@@ -773,7 +780,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
         (
             NodeId::new(21),
             PoolNode {
-                bounds: cube(ORIGIN, SIDE / 8.0),
+                bounds: cube(ORIGIN, SIDE / f64::from(1_u32 << MAX_MASK_LEVELS)),
                 stored: vec![6, 7],
                 points: 2000,
             },
@@ -790,13 +797,14 @@ fn a_cut_that_is_too_fine_is_retained_and_reported_until_the_cut_changes() {
     assert_eq!(alone.apply, CutApply::Applied);
     assert_eq!(alone.counters.nodes_without_level, 0);
     assert!(!alone.counters.descendant_too_fine);
-    // Together with the root it is 4 levels below it: the mask cannot express it.
+    // Together with the root it is `MAX_MASK_LEVELS + 1` levels below it: the mask cannot express it.
     let held = alone.entries.clone();
     for _ in 0..10 {
         let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);
         assert_eq!(plan.apply, CutApply::RetainedPrevious);
         assert!(plan.counters.descendant_too_fine);
         assert_eq!(plan.entries, held);
+        assert_no_holes(&plan, &chain_nodes());
         assert_eq!(plan.counters.nodes_without_level, 0);
         assert!(
             plan.fetch_requests
@@ -808,34 +816,45 @@ fn a_cut_that_is_too_fine_is_retained_and_reported_until_the_cut_changes() {
         rig.pool.is_resident(rig.pool.key(NodeId::new(20), 7)),
         "retained levels stay"
     );
-    // Node 21 is 3 levels below the root: the cut applies once its coarsest level is resident.
-    let mut applied_at = None;
+    // Node 21 is `MAX_MASK_LEVELS` below the root, which is resident from the previous steps: the
+    // cut applies at once (R3-Q19: the root draws where node 21 has no level); T7a waited for the
+    // level. Every frame is complete, and what is missing only goes down.
+    let nodes = chain_nodes();
+    let mut previous = u32::MAX;
     for frame in 0..12 {
         let plan = rig.step(&ids(&[1, 21]), &cam, 64.0);
-        if plan.apply == CutApply::Applied {
-            applied_at.get_or_insert(frame);
-            assert_eq!(plan.counters.nodes_without_level, 0);
-            assert_eq!(plan.entries.len(), 2);
-            assert!(!plan.counters.descendant_too_fine);
-        } else {
-            assert!(applied_at.is_none(), "left the applied state again");
-            assert_eq!(plan.entries, held);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_eq!(plan.entries.len(), 2, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        assert!(!plan.counters.descendant_too_fine, "frame {frame}");
+        assert!(
+            plan.counters.nodes_without_level <= previous,
+            "frame {frame}"
+        );
+        if frame == 0 {
+            assert_eq!(plan.counters.nodes_without_level, 1);
+            assert!(plan.counters.stages > 0);
         }
+        previous = plan.counters.nodes_without_level;
     }
-    assert!(matches!(applied_at, Some(n) if n > 0), "{applied_at:?}");
+    assert_eq!(previous, 0);
+    let last = rig.step(&ids(&[1, 21]), &cam, 64.0);
+    assert_eq!(last.counters.stages, 0);
 }
 
 #[test]
-fn a_new_cut_replaces_an_incomplete_one_but_waits_for_a_complete_one() {
+fn a_node_without_a_level_and_without_an_ancestor_waits_for_its_level() {
     let mut rig = Rig::new(octant_nodes(), 64, 8, 3);
     let cam = camera("fit");
-    // Nothing is resident for [2, 3]: it applies with holes, since there is nothing to keep.
+    // R3-Q19: nothing is resident for [2, 3] and no ancestor covers them, so nothing is applied
+    // (T7a applied it with holes, since there was nothing to keep).
     let first = rig.step(&ids(&[2, 3]), &cam, 64.0);
-    assert_eq!(first.apply, CutApply::Applied);
+    assert_eq!(first.apply, CutApply::RetainedPrevious);
+    assert!(first.entries.is_empty());
     assert_eq!(first.counters.nodes_without_level, 2);
-    // That cut is incomplete, so a different one replaces it at once.
+    // A different cut does not apply either; its levels are requested.
     let second = rig.step(&ids(&[4, 5]), &cam, 64.0);
-    assert_eq!(second.apply, CutApply::Applied);
+    assert_eq!(second.apply, CutApply::RetainedPrevious);
     assert_eq!(second.counters.nodes_without_level, 2);
     let done = rig.run(8, &ids(&[4, 5]), &cam, 64.0);
     assert_eq!(done.counters.nodes_without_level, 0);
@@ -846,6 +865,12 @@ fn a_new_cut_replaces_an_incomplete_one_but_waits_for_a_complete_one() {
     let back = rig.run(8, &ids(&[2, 3]), &cam, 64.0);
     assert_eq!(back.apply, CutApply::Applied);
     assert_eq!(back.counters.nodes_without_level, 0);
+    // A cut whose levels are all resident replaces the applied one at once, with no hole.
+    let swap = rig.step(&ids(&[4, 5]), &cam, 64.0);
+    assert_eq!(swap.apply, CutApply::Applied);
+    assert_eq!(swap.entries.len(), 2);
+    assert_eq!(swap.counters.nodes_without_level, 0);
+    assert_no_holes(&swap, &octant_nodes());
 }
 
 #[test]
@@ -1171,4 +1196,529 @@ fn the_drift_limit_bounds_the_edge_change_also_off_axis() {
             edge / base
         );
     }
+}
+
+// R3-Q19: local fallback, coarse to fine and reset.
+
+fn side_of(bounds: SpatialBounds) -> f64 {
+    bounds.max()[0] - bounds.min()[0]
+}
+
+/// The eight children of `parent`, with ids from `first_id`, in the order of the octants of
+/// `octant_nodes`.
+fn octants_of(parent: &PoolNode, first_id: u64, stored: &[u8]) -> Vec<(NodeId, PoolNode)> {
+    let half = side_of(parent.bounds) / 2.0;
+    (0..8)
+        .map(|index| {
+            let min = std::array::from_fn(|axis| {
+                parent.bounds.min()[axis] + half * ((index >> axis) & 1) as f64
+            });
+            (
+                NodeId::new(first_id + index as u64),
+                PoolNode {
+                    bounds: cube(min, half),
+                    stored: stored.to_vec(),
+                    points: 2000,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Nodes 2 and 3 (regions A and B), each with eight children: 10..=17 under 2, 20..=27 under 3.
+fn two_regions() -> HashMap<NodeId, PoolNode> {
+    let mut nodes = octant_nodes();
+    nodes.retain(|id, _| id.get() <= 3);
+    for (parent, first) in [(2, 10), (3, 20)] {
+        let children = octants_of(&nodes[&NodeId::new(parent)], first, &[5, 6, 7]);
+        nodes.extend(children);
+    }
+    nodes
+}
+
+fn region_children(first: u64) -> Vec<u64> {
+    (first..first + 8).collect()
+}
+
+/// No hole in the plan: every unhidden octant of every entry is drawn by a resident level of its
+/// own, or lies under an ancestor entry of the cut that draws there and does not hide it
+/// (geometry computed here, from the bounds).
+fn assert_no_holes(plan: &FramePlan, nodes: &HashMap<NodeId, PoolNode>) {
+    let drawn_by = |node: NodeId, octant: usize| {
+        plan.active
+            .iter()
+            .any(|a| a.key.node == node && a.octant_bits >> octant & 1 == 1)
+    };
+    for entry in &plan.entries {
+        let bounds = nodes[&entry.node].bounds;
+        for octant in (0..8).filter(|o| entry.wanted[*o].is_some()) {
+            if entry.drawn[octant].is_some() {
+                assert!(drawn_by(entry.node, octant), "{:?}", entry.node);
+                continue;
+            }
+            let half = side_of(bounds) / 2.0;
+            let point: [f64; 3] = std::array::from_fn(|a| {
+                bounds.min()[a] + half * (((octant >> (2 - a)) & 1) as f64 + 0.5)
+            });
+            let covered = plan.entries.iter().any(|ancestor| {
+                let outer = nodes[&ancestor.node].bounds;
+                if ancestor.node == entry.node
+                    || !(0..3).all(|a| {
+                        outer.min()[a] <= bounds.min()[a] && bounds.max()[a] <= outer.max()[a]
+                    })
+                {
+                    return false;
+                }
+                let cell = side_of(outer) / 8.0;
+                let at: [usize; 3] =
+                    std::array::from_fn(|a| (((point[a] - outer.min()[a]) / cell) as usize).min(7));
+                let hidden = ancestor.mask[at[2]] >> (at[0] + 8 * at[1]) & 1 == 1;
+                let octant_there = ((at[0] / 4) << 2) | ((at[1] / 4) << 1) | (at[2] / 4);
+                !hidden
+                    && ancestor.drawn[octant_there].is_some()
+                    && drawn_by(ancestor.node, octant_there)
+            });
+            assert!(covered, "node {:?} octant {octant} is a hole", entry.node);
+        }
+    }
+}
+
+fn has_entry(plan: &FramePlan, node: u64) -> bool {
+    plan.entries.iter().any(|e| e.node == NodeId::new(node))
+}
+
+fn coarse_resident(rig: &Rig, node: u64) -> bool {
+    let depth = rig.nodes[&NodeId::new(node)].stored[0];
+    rig.pool.is_resident(rig.pool.key(NodeId::new(node), depth))
+}
+
+#[test]
+fn a_region_that_waits_for_a_level_does_not_block_an_unrelated_one() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 256, 64, 1);
+    let cam = camera("fit");
+    let before = rig.run(10, &ids(&[2, 3]), &cam, 64.0);
+    assert_eq!(before.apply, CutApply::Applied);
+    // Both regions refine; node 10 of region A never arrives while the rest does.
+    let cut: Vec<NodeId> = region_children(10)
+        .into_iter()
+        .chain(region_children(20))
+        .map(NodeId::new)
+        .collect();
+    rig.held.insert(NodeId::new(10));
+    // B draws one frame after the frame that uploads its last page: the cut of that frame was
+    // computed before, so `ready` (residency at the start of the frame) is what must apply.
+    let (mut resident_after, mut first_drawn) = (None, None);
+    for frame in 0..20 {
+        let ready = region_children(20)
+            .into_iter()
+            .all(|c| coarse_resident(&rig, c));
+        let plan = rig.step(&cut, &cam, 64.0);
+        assert_no_holes(&plan, &nodes);
+        assert!(!coarse_resident(&rig, 10));
+        let drawn = region_children(20)
+            .into_iter()
+            .all(|c| plan.active.iter().any(|a| a.key.node == NodeId::new(c)));
+        if resident_after.is_none()
+            && region_children(20)
+                .into_iter()
+                .all(|c| coarse_resident(&rig, c))
+        {
+            resident_after = Some(frame);
+        }
+        if ready {
+            // Same frame: region B draws its new levels although node 10 has none.
+            assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+            assert!(drawn, "frame {frame}: region B is not drawn");
+        }
+        if drawn && first_drawn.is_none() {
+            first_drawn = Some(frame);
+        }
+    }
+    assert!(resident_after.is_some());
+    assert_eq!(first_drawn, resident_after.map(|frame| frame + 1));
+    let plan = rig.step(&cut, &cam, 64.0);
+    assert_eq!(plan.apply, CutApply::Applied);
+    // Region A keeps its ancestor, region B has none left, and node 10 is counted as a stage.
+    assert!(has_entry(&plan, 2) && !has_entry(&plan, 3));
+    assert_eq!(plan.entries.len(), cut.len() + 1);
+    assert!(plan.counters.stages >= 8, "{}", plan.counters.stages);
+    assert_eq!(plan.counters.nodes_without_level, 1);
+}
+
+#[test]
+fn the_fallback_ancestor_leaves_on_the_first_frame_after_the_node_is_resident() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 256, 64, 1);
+    let cam = camera("fit");
+    rig.run(10, &ids(&[2, 3]), &cam, 64.0);
+    let cut: Vec<NodeId> = region_children(10).into_iter().map(NodeId::new).collect();
+    rig.held.insert(NodeId::new(10));
+    rig.run(8, &cut, &cam, 64.0);
+    rig.held.clear();
+    let (mut with, mut without) = (0, 0);
+    for frame in 0..12 {
+        let resident = coarse_resident(&rig, 10);
+        let plan = rig.step(&cut, &cam, 64.0);
+        assert_no_holes(&plan, &nodes);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_eq!(has_entry(&plan, 2), !resident, "frame {frame}");
+        if resident {
+            without += 1;
+            assert_eq!(plan.entries.len(), cut.len());
+            assert_eq!(plan.counters.nodes_without_level, 0);
+        } else {
+            with += 1;
+        }
+    }
+    assert!(with > 0 && without > 0, "{with} {without}");
+}
+
+#[test]
+fn a_missing_node_without_an_ancestor_in_the_applied_cut_retains_the_previous_cut() {
+    let mut rig = Rig::new(octant_nodes(), 64, 8, 3);
+    let cam = camera("fit");
+    let held = rig.run(10, &ids(&[2, 3]), &cam, 64.0);
+    assert_eq!(held.apply, CutApply::Applied);
+    // Node 4 is not below any node of the applied cut: the cut waits for it.
+    let mut retained = 0;
+    let mut plan = rig.step(&ids(&[2, 4]), &cam, 64.0);
+    while plan.apply == CutApply::RetainedPrevious {
+        retained += 1;
+        assert_eq!(plan.entries, held.entries);
+        assert_eq!(plan.active, held.active);
+        plan = rig.step(&ids(&[2, 4]), &cam, 64.0);
+        assert!(retained < 12);
+    }
+    assert!(retained > 0);
+    assert_eq!(plan.entries.len(), 2);
+    assert_eq!(plan.counters.nodes_without_level, 0);
+}
+
+#[test]
+fn the_fallback_reaches_max_mask_levels_up_but_not_further() {
+    let nodes = chain_nodes();
+    let mut rig = Rig::new(nodes.clone(), 64, 8, 3);
+    let cam = camera("fit");
+    let held = rig.run(10, &ids(&[1]), &cam, 64.0);
+    assert_eq!(held.apply, CutApply::Applied);
+    // Node 20 is `MAX_MASK_LEVELS + 1` levels below the root: the root cannot hide it, so the cut
+    // waits.
+    let mut retained = 0;
+    let mut plan = rig.step(&ids(&[20]), &cam, 64.0);
+    while plan.apply == CutApply::RetainedPrevious {
+        retained += 1;
+        assert_eq!(plan.entries, held.entries);
+        plan = rig.step(&ids(&[20]), &cam, 64.0);
+        assert!(retained < 12);
+    }
+    assert!(retained > 0);
+    assert!(!has_entry(&plan, 1));
+    // Back to the root, then to node 21, `MAX_MASK_LEVELS` below it: the root draws until 21
+    // arrives.
+    rig.run(10, &ids(&[1]), &cam, 64.0);
+    let mut seen_fallback = false;
+    let mut seen_alone = false;
+    for frame in 0..12 {
+        let resident = coarse_resident(&rig, 21);
+        let plan = rig.step(&ids(&[21]), &cam, 64.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        assert_eq!(has_entry(&plan, 1), !resident, "frame {frame}");
+        if resident {
+            seen_alone = true;
+        } else {
+            seen_fallback = true;
+            assert!(plan.counters.stages > 0);
+        }
+    }
+    assert!(seen_fallback && seen_alone);
+}
+
+#[test]
+fn the_fallback_never_makes_the_real_cut_too_fine() {
+    // Applied {root}; the cut is {Y, Z}: Y is a node one level below the root that never arrives
+    // and Z is resident `MAX_MASK_LEVELS + 1` levels below it. The root would cover Y, but with Z
+    // in the cut it cannot hide Z: the real cut would fail with `DescendantTooFine`.
+    let mut nodes = chain_nodes();
+    nodes.insert(
+        NodeId::new(22),
+        PoolNode {
+            bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
+            stored: vec![4, 5],
+            points: 2000,
+        },
+    );
+    let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
+    let cam = camera("fit");
+    // Z becomes resident first (alone), then the root is the applied cut.
+    rig.run(8, &ids(&[20]), &cam, 64.0);
+    let held = rig.run(10, &ids(&[1]), &cam, 64.0);
+    assert_eq!(held.apply, CutApply::Applied);
+    assert!(
+        rig.pool.is_resident(rig.pool.key(NodeId::new(20), 7)),
+        "setup"
+    );
+    rig.held.insert(NodeId::new(22));
+    for frame in 0..10 {
+        let plan = rig.step(&ids(&[22, 20]), &cam, 64.0);
+        assert!(!plan.counters.descendant_too_fine, "frame {frame}");
+        // No valid ancestor: the previous cut stays (a nearer valid ancestor would also do).
+        assert_eq!(plan.apply, CutApply::RetainedPrevious, "frame {frame}");
+        assert_eq!(plan.entries, held.entries, "frame {frame}");
+    }
+}
+
+#[test]
+fn a_resident_level_beyond_the_fit_cap_is_not_a_fallback() {
+    // The root's only resident level is depth 4, but the fit capped it at 3 (as a previous frame's
+    // fit could have): it does not draw, so it cannot cover node 21 while that waits.
+    let nodes = chain_nodes();
+    let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
+    let cam = camera("fit");
+    let held = rig.run(12, &ids(&[1]), &cam, 1.0);
+    assert_eq!(held.apply, CutApply::Applied);
+    let (coarse, fine) = (
+        rig.pool.key(NodeId::new(1), 3),
+        rig.pool.key(NodeId::new(1), 4),
+    );
+    assert!(rig.pool.is_resident(fine), "setup: the root draws depth 4");
+    rig.pool.levels.remove(&coarse);
+    rig.pool.residency_epoch += 1;
+    rig.pool.caps.insert(NodeId::new(1), 3);
+    rig.held.insert(NodeId::new(21));
+    let plan = rig.step(&ids(&[21]), &cam, 1.0);
+    assert_eq!(plan.apply, CutApply::RetainedPrevious);
+    assert_eq!(plan.entries, held.entries);
+    assert!(!has_entry(&plan, 21));
+}
+
+#[test]
+fn a_far_node_that_draws_nothing_is_not_starved_by_refinements_elsewhere() {
+    // Node 8 draws its depth 4 and wants depth 5; node 2 (farther) draws nothing and stores
+    // depth 6 and deeper. By absolute depth alone the refinement of node 8 would go first.
+    let mut nodes = octant_nodes();
+    nodes.get_mut(&NodeId::new(8)).unwrap().stored = vec![4, 5];
+    nodes.get_mut(&NodeId::new(2)).unwrap().stored = vec![6, 7];
+    let mut rig = Rig::new(nodes, 128, 1, 0);
+    let cam = camera("zoom");
+    assert_eq!(by_distance(&cam, &[2, 8]), vec![8, 2], "setup");
+    rig.run(8, &ids(&[8]), &camera("fit"), 64.0);
+    assert!(
+        rig.pool.is_resident(rig.pool.key(NodeId::new(8), 4)),
+        "setup"
+    );
+    let cut = ids(&[8, 2]);
+    // One page per frame: the first frame with data uploads the first level of node 2.
+    let requests = rig.step(&cut, &cam, 4.0).fetch_requests;
+    let order: Vec<(u64, u8)> = requests.iter().map(|k| (k.node.get(), k.depth)).collect();
+    assert!(
+        order.contains(&(8, 5)) && order.contains(&(2, 6)),
+        "{order:?}"
+    );
+    assert_eq!(order.first(), Some(&(2, 6)), "{order:?}");
+    let uploads = rig.step(&cut, &cam, 4.0).uploads;
+    let first = uploads.first().expect("an upload");
+    assert_eq!(
+        (first.key.node.get(), first.key.depth),
+        (2, 6),
+        "{uploads:?}"
+    );
+}
+
+#[test]
+fn requests_and_uploads_go_coarse_to_fine() {
+    // Node 8 is the nearest and wants depth 7; node 2, farther, stores up to depth 5. By distance
+    // alone the depth-7 level of node 8 would come first.
+    let mut nodes = octant_nodes();
+    nodes.get_mut(&NodeId::new(2)).unwrap().stored = vec![4, 5];
+    let mut rig = Rig::new(nodes, 128, 64, 0);
+    let cut = ids(&[8, 2]);
+    let cam = camera("zoom");
+    assert_eq!(by_distance(&cam, &[2, 8]), vec![8, 2], "setup");
+    // Far away both nodes want only their coarsest level.
+    rig.run(4, &cut, &camera("fit"), 64.0);
+    let requests = rig.step(&cut, &cam, 4.0).fetch_requests;
+    let order: Vec<(u64, u8)> = requests.iter().map(|k| (k.node.get(), k.depth)).collect();
+    assert!(
+        order.contains(&(2, 5)) && order.contains(&(8, 7)),
+        "{order:?}"
+    );
+    assert!(
+        requests.windows(2).all(|w| w[0].depth <= w[1].depth),
+        "{order:?}"
+    );
+    let started: Vec<u8> = rig
+        .step(&cut, &cam, 4.0)
+        .uploads
+        .iter()
+        .filter(|u| u.page_range.start == 0)
+        .map(|u| u.key.depth)
+        .collect();
+    assert!(
+        started.len() >= 2 && started.windows(2).all(|w| w[0] <= w[1]),
+        "{started:?}"
+    );
+
+    // Nodes that draw nothing: the first level of a parent is requested before the first level of
+    // its child, whatever the order of the cut.
+    let mut rig = Rig::new(two_regions(), 128, 64, 0);
+    let requests = rig.step(&ids(&[10, 2]), &cam, 4.0).fetch_requests;
+    let at = |node: u64| requests.iter().position(|k| k.node.get() == node);
+    assert!(
+        at(2)
+            .zip(at(10))
+            .is_some_and(|(parent, child)| parent < child),
+        "{requests:?}"
+    );
+}
+
+#[test]
+fn reset_evicts_every_level_and_the_pool_converges_back() {
+    // `reset` assumes a fresh GPU (device lost, or the renderer dropped its pool), so the fake GPU
+    // starts empty: there is no "same GPU" case to model.
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 256, 4, 2);
+    let cam = camera("fit");
+    let cut = ids(&[2, 3]);
+    let fine = {
+        let mut cut = region_children(10);
+        cut.extend(region_children(20));
+        ids(&cut)
+    };
+    rig.run(10, &cut, &cam, 64.0);
+    let before = rig.run(60, &fine, &cam, 4.0);
+    let resident = |rig: &Rig| -> Vec<LevelKey> {
+        let mut keys: Vec<LevelKey> = rig
+            .pool
+            .levels
+            .iter()
+            .filter(|(_, l)| l.is_resident())
+            .map(|(k, _)| *k)
+            .collect();
+        keys.sort();
+        keys
+    };
+    let keys = resident(&rig);
+    let parent_pages: u32 = keys
+        .iter()
+        .filter(|k| k.node.get() <= 3)
+        .map(|k| rig.pool.level(*k).unwrap().pages.len() as u32)
+        .sum();
+    assert!(keys.len() > 16, "setup: {} levels", keys.len());
+
+    let mut events = rig.pool.reset();
+    events.sort_by_key(|event| match event {
+        CellPoolEvent::Evict(key) | CellPoolEvent::Cancel(key) => *key,
+    });
+    let expected: Vec<CellPoolEvent> = keys.iter().map(|k| CellPoolEvent::Evict(*k)).collect();
+    assert_eq!(events, expected);
+    assert_eq!(rig.pool.resident_pages(), 0);
+    // Every page is free at once: nothing is delayed.
+    assert_eq!(rig.pool.free.len(), 256);
+    assert!(rig.pool.pending.is_empty());
+    rig.inflight.clear();
+    rig.gpu = FakeGpu::default();
+
+    let mut empty_frames = 0;
+    let mut mask_slots = HashSet::new();
+    let mut last = None;
+    for _ in 0..80 {
+        let plan = rig.step(&fine, &cam, 4.0);
+        // Nothing is drawn before the cut is complete again, and never with a hole.
+        assert_no_holes(&plan, &nodes);
+        assert!(plan.page_frees.is_empty(), "the old GPU pages are gone");
+        mask_slots.extend(plan.mask_updates.iter().map(|update| update.slot));
+        if plan.entries.is_empty() {
+            empty_frames += 1;
+        }
+        last = Some(plan);
+    }
+    assert!(empty_frames > 0);
+    // A new renderer hands mask slots out from 0, with no gap.
+    assert_eq!(
+        mask_slots,
+        (0..mask_slots.len() as u32).collect::<HashSet<u32>>()
+    );
+    let after = last.unwrap();
+    assert_eq!(after.apply, CutApply::Applied);
+    assert_eq!(after.entries, before.entries);
+    // The coarse levels of the parents were not pinned by the cut any more.
+    let children: Vec<LevelKey> = keys.iter().filter(|k| k.node.get() > 3).copied().collect();
+    assert_eq!(resident(&rig), children);
+    for (name, a, b) in [
+        ("stages", after.counters.stages, before.counters.stages),
+        (
+            "nodes_without_level",
+            after.counters.nodes_without_level,
+            before.counters.nodes_without_level,
+        ),
+        (
+            "pool_coarsened",
+            after.counters.pool_coarsened,
+            before.counters.pool_coarsened,
+        ),
+        (
+            "pool_overflow",
+            after.counters.pool_overflow,
+            before.counters.pool_overflow,
+        ),
+        (
+            "resident_pages",
+            after.counters.resident_pages,
+            before.counters.resident_pages - parent_pages,
+        ),
+    ] {
+        assert_eq!(a, b, "{name}");
+    }
+    rig.assert_gpu_matches_pool();
+}
+
+#[test]
+fn reset_cancels_requests_and_evicts_uploading_levels() {
+    let mut rig = Rig::new(octant_nodes(), 128, 1, 4);
+    let cam = camera("zoom");
+    let cut = ids(&CHILDREN);
+    rig.run(14, &cut, &cam, 4.0);
+    let (mut evict, mut cancel) = (Vec::new(), Vec::new());
+    for (key, level) in &rig.pool.levels {
+        match level.state {
+            LevelState::Requested => cancel.push(*key),
+            _ => evict.push(*key),
+        }
+    }
+    assert!(!evict.is_empty() && !cancel.is_empty(), "setup");
+    assert!(!rig.gpu.partial().is_empty(), "setup: an upload in flight");
+    let events = rig.pool.reset();
+    let evicted: HashSet<LevelKey> = events
+        .iter()
+        .filter_map(|e| match e {
+            CellPoolEvent::Evict(k) => Some(*k),
+            CellPoolEvent::Cancel(_) => None,
+        })
+        .collect();
+    let cancelled: HashSet<LevelKey> = events
+        .iter()
+        .filter_map(|e| match e {
+            CellPoolEvent::Cancel(k) => Some(*k),
+            CellPoolEvent::Evict(_) => None,
+        })
+        .collect();
+    assert_eq!(evicted, evict.into_iter().collect());
+    assert_eq!(cancelled, cancel.into_iter().collect());
+    assert!(rig.pool.levels.is_empty());
+    // The GPU is fresh, so the slots of the half-uploaded levels are free at once, with no
+    // `page_frees`, and the pool keeps all its pages.
+    assert_eq!(rig.pool.free.len(), 128);
+    assert!(rig.pool.pending.is_empty());
+    rig.inflight.clear();
+    rig.gpu = FakeGpu::default();
+    for _ in 0..4 {
+        assert!(rig.step(&cut, &cam, 4.0).page_frees.is_empty());
+    }
+    rig.assert_gpu_matches_pool();
+    assert_eq!(
+        rig.pool.free.len() + rig.pool.pending_pages() + rig.gpu.owner.len(),
+        128
+    );
 }

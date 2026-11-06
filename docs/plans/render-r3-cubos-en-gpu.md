@@ -378,10 +378,10 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
 - `SurfaceRenderer` suelta el pool en `sync_visible_blocks`, `upload_voxel_cut`, `clear_dataset` y al cambiar el modo de color.
 
 **T9a, pool y driver** (`viewer_render_wgpu`):
-- [ ] **R3-Q19 en `CellPool`:**
+- [x] **R3-Q19 en `CellPool`** (hecho el 06-11-2026, T9a1; límite conocido: si un antepasado del corte dibuja solo algunos octantes, el nodo que falta debajo retiene el corte en vez de buscar un respaldo más arriba; no deja huecos, y no se da mientras el nivel más grueso, que cubre todo el nodo, siga fijado):
   - el corte se aplica si cada nodo sin nivel residente tiene un antepasado en el corte que dibuja; si no, se retiene el anterior (R3-Q10);
   - un nodo sin nivel mantiene en el corte su antepasado del último corte aplicado, con salto ≤ 3, hasta que el nodo es residente. Es una etapa contada (`stages`). Así la retención es local;
-  - las peticiones y las subidas van de grueso a fino: profundidad absoluta y después distancia;
+  - las peticiones y las subidas van de grueso a fino: primero los nodos que no dibujan nada, después la profundidad absoluta y después la distancia. El primer nivel de un hijo va detrás del de su padre, y un nodo vacío no espera tras los refinamientos de otras zonas;
   - los tests de T7a que fijan la regla anterior se cambian. Uno nuevo: con un nodo sin nivel en una zona, otra zona sin relación se aplica en ese mismo frame.
 - [ ] **`cell_driver.rs`, `CellDriver`:**
   - posee el `CellPool` y un `PackedLevel` por (nodo, nivel), compartido con el pool sin copiarlo. Empaqueta al recibir las celdas de un nodo, pasa los tamaños exactos (`set_level_sizes`) y no guarda `NodeCell`. Quita los niveles vacíos de `stored`;
