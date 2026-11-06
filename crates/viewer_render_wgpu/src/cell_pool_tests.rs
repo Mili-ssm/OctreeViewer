@@ -2647,3 +2647,207 @@ fn a_zone_covered_by_one_sub_cell_of_a_descendant_is_lost() {
         .collect();
     assert_eq!(lost(&all), 0);
 }
+
+/// `(drawn, wanted)` at `point` like `drawn_and_wanted_at`, without the `resident_depth` oracle: a
+/// capped node may keep drawing a level above its cap (R3-Q21), so the drawn level must be
+/// resident in the pool and drawn by an active level instead.
+fn drawn_depth_at(
+    plan: &FramePlan,
+    nodes: &HashMap<NodeId, PoolNode>,
+    rig: &Rig,
+    point: [f64; 3],
+) -> Option<(u8, u8)> {
+    let hits: Vec<(u8, u8)> = plan
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            let at = cell_of(nodes[&entry.node].bounds, point)?;
+            if entry.mask[at[2]] >> (at[0] + 8 * at[1]) & 1 == 1 {
+                return None;
+            }
+            let octant = ((at[0] / 4) << 2) | ((at[1] / 4) << 1) | (at[2] / 4);
+            let drawn = entry.drawn[octant]?;
+            plan.active
+                .iter()
+                .any(|a| {
+                    a.key.node == entry.node
+                        && a.key.depth == drawn
+                        && a.octant_bits >> octant & 1 == 1
+                })
+                .then(|| {
+                    assert!(rig.pool.is_resident(rig.pool.key(entry.node, drawn)));
+                    (
+                        drawn,
+                        entry.wanted[octant].expect("a drawn octant is wanted"),
+                    )
+                })
+        })
+        .collect();
+    assert!(hits.len() <= 1, "{point:?} is drawn by {hits:?}");
+    hits.first().copied()
+}
+
+/// Six children draw depth 7 (5 pages each with the pinned level 4). Returns the rig, the camera,
+/// the six ids (nearest last), their samples and what they drew. The capacity leaves the caps that
+/// a test inserts in place: the six at depth 7 sit between the 80 % and 90 % thresholds.
+#[allow(clippy::type_complexity)]
+fn cap_drop_rig(
+    capacity: u32,
+    delay: u64,
+) -> (
+    Rig,
+    OrbitCamera,
+    Vec<NodeId>,
+    Vec<[f64; 3]>,
+    Vec<Option<u8>>,
+) {
+    let nodes = octant_nodes();
+    let mut rig = Rig::new(nodes.clone(), capacity, 64, delay);
+    let cam = camera("fit");
+    let near = by_distance(&cam, &CHILDREN);
+    let cut = ids(&near[2..]);
+    rig.run(30, &cut, &cam, 4.0);
+    let points: Vec<[f64; 3]> = cut
+        .iter()
+        .flat_map(|id| sample_points(nodes[id].bounds))
+        .collect();
+    let plan = rig.step(&cut, &cam, 4.0);
+    let before: Vec<Option<u8>> = points
+        .iter()
+        .map(|p| drawn_depth_at(&plan, &nodes, &rig, *p).map(|(d, _)| d))
+        .collect();
+    assert!(before.iter().all(|d| *d == Some(7)), "setup");
+    (rig, cam, cut, points, before)
+}
+
+/// Steps `frames` frames and counts the samples drawn below `min(before, wanted now)` per frame.
+fn cap_drop_run(
+    rig: &mut Rig,
+    cam: &OrbitCamera,
+    cut: &[NodeId],
+    points: &[[f64; 3]],
+    before: &[Option<u8>],
+    frames: usize,
+) -> Vec<(FramePlan, usize)> {
+    let nodes = rig.nodes.clone();
+    let mut out = Vec::new();
+    for frame in 0..frames {
+        rig.pool.size_epoch += u64::from(frame == 0);
+        let plan = rig.step(cut, cam, 4.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_eq!(plan.counters.lost_nodes, 0, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        let mut coarsened = 0;
+        for (point, was) in points.iter().zip(before) {
+            let (now, wanted) = drawn_depth_at(&plan, &nodes, rig, *point)
+                .unwrap_or_else(|| panic!("frame {frame}: {point:?} lost"));
+            coarsened += usize::from(now < was.unwrap().min(wanted));
+        }
+        out.push((plan, coarsened));
+    }
+    out
+}
+
+fn depth_drawn(plan: &FramePlan, node: NodeId) -> Vec<u8> {
+    let mut depths: Vec<u8> = plan
+        .entries
+        .iter()
+        .filter(|e| e.node == node)
+        .flat_map(|e| e.drawn.iter().flatten().copied())
+        .collect();
+    depths.sort_unstable();
+    depths.dedup();
+    depths
+}
+
+#[test]
+fn a_cap_drop_keeps_the_finer_level_until_the_capped_one_is_resident() {
+    let (mut rig, cam, cut, points, before) = cap_drop_rig(40, 3);
+    let node = cut[0];
+    let key6 = rig.pool.key(node, 6);
+    assert!(
+        !rig.pool.is_resident(key6),
+        "setup: depth 6 is not resident"
+    );
+    rig.pool.caps.insert(node, 6);
+    let frames = cap_drop_run(&mut rig, &cam, &cut, &points, &before, 20);
+    assert_eq!(rig.pool.caps.get(&node), Some(&6), "setup: the cap stays");
+    assert!(
+        frames.iter().all(|(_, coarsened)| *coarsened == 0),
+        "no frame draws below min(before, wanted now)"
+    );
+    // The node keeps drawing 7 while 6 is missing, switches the frame after it is resident, and
+    // the old level is then released.
+    let mut switched = None;
+    for (frame, (plan, _)) in frames.iter().enumerate() {
+        let drawn = depth_drawn(plan, node);
+        if switched.is_none() && drawn == [6] {
+            switched = Some(frame);
+        }
+        if switched.is_some() {
+            assert_eq!(drawn, [6], "frame {frame}");
+        } else {
+            assert_eq!(drawn, [7], "frame {frame}");
+        }
+    }
+    let switched = switched.expect("the node switches to the capped level");
+    assert!(switched >= 2, "the capped level takes frames to arrive");
+    assert!(
+        !rig.pool.is_resident(rig.pool.key(node, 7)),
+        "old level released"
+    );
+    assert_eq!(rig.pool.overflow, 0);
+}
+
+#[test]
+fn a_cap_drop_whose_capped_level_is_resident_switches_at_once() {
+    // The frame planned right after the capped level became resident (while the finer one is
+    // still resident and drew the frame before) already draws the capped level: no extra frame.
+    let (mut rig, cam, cut, points, before) = cap_drop_rig(40, 1);
+    let node = cut[0];
+    rig.pool.caps.insert(node, 6);
+    let mut waited = 0;
+    loop {
+        let frames = cap_drop_run(&mut rig, &cam, &cut, &points, &before, 1);
+        let resident = rig.pool.is_resident(rig.pool.key(node, 6));
+        if resident {
+            assert!(
+                rig.pool.is_resident(rig.pool.key(node, 7)),
+                "setup: both resident"
+            );
+            assert_eq!(depth_drawn(&frames[0].0, node), [7]);
+            break;
+        }
+        waited += 1;
+        assert!(waited < 10, "the capped level never arrives");
+    }
+    let frames = cap_drop_run(&mut rig, &cam, &cut, &points, &before, 1);
+    assert_eq!(depth_drawn(&frames[0].0, node), [6], "immediate switch");
+    assert_eq!(frames[0].1, 0);
+}
+
+#[test]
+fn a_cap_drop_in_a_tight_pool_releases_the_old_level_and_completes() {
+    let (mut rig, cam, cut, points, before) = cap_drop_rig(40, 2);
+    for id in &cut {
+        rig.pool.caps.insert(*id, 6);
+    }
+    let frames = cap_drop_run(&mut rig, &cam, &cut, &points, &before, 40);
+    // The six capped levels (24 pages) do not fit beside the six depth-7 levels: the old levels
+    // are given up when the capped ones need their pages, so coarser frames are allowed (counted)
+    // but the transition ends and nothing overflows.
+    let last = &frames.last().unwrap().0;
+    for id in &cut {
+        assert_eq!(depth_drawn(last, *id), [6], "node {id:?}");
+    }
+    assert_eq!(rig.pool.overflow, 0);
+    assert!(
+        frames
+            .iter()
+            .all(|(plan, _)| plan.counters.pool_overflow == 0)
+    );
+    println!(
+        "tight pool coarsened samples per frame: {:?}",
+        frames.iter().map(|(_, c)| *c).collect::<Vec<_>>()
+    );
+}

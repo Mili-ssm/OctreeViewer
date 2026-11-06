@@ -316,6 +316,8 @@ struct RealMemo {
     /// Digest of the drawn depths of the applied cut the hold decisions read; the memo is stale
     /// when it differs.
     applied_digest: u64,
+    /// Capped nodes whose finer level from the applied cut stands in for the capped one.
+    kept_finer: Vec<NodeId>,
     /// Held set the entries lead to (equal to the input at a fixed point).
     next_hold: FastSet<NodeId>,
     /// Nodes that are held in the input or in `next_hold` and have a covering ancestor: where the
@@ -670,6 +672,9 @@ pub struct CellPool {
     wait_ages: FastMap<NodeId, u32>,
     /// Passes of the hold search per frame (`HOLD_PASSES`; the tests lower it).
     hold_passes: usize,
+    /// Nodes whose finer level (above the fit cap) stopped drawing because the capped level
+    /// could not get pages, with the cap at that moment (see `finer_drawn`).
+    old_released: FastMap<NodeId, u8>,
     /// Drawn depths per octant of each node of the applied cut, and their digest.
     applied_drawn: FastMap<NodeId, [Option<u8>; 8]>,
     applied_digest: u64,
@@ -780,6 +785,7 @@ impl CellPool {
             applied_digest: 0,
             applied_cover: FastSet::default(),
             hold_passes: HOLD_PASSES,
+            old_released: FastMap::default(),
             carry: Carry::default(),
             overflow_frame: 0,
             applied_covered: 0,
@@ -921,6 +927,7 @@ impl CellPool {
         self.applied_cover.clear();
         self.overflow_frame = 0;
         self.applied_drawn.clear();
+        self.old_released.clear();
         self.applied_digest = 0;
         self.carry = Carry::default();
         self.applied.clear();
@@ -1154,8 +1161,49 @@ impl CellPool {
                 (needed, total) = self.needed_and_pages(&entries, nodes, &caps, ctx.grid);
             }
         }
+        self.old_released
+            .retain(|id, cap| caps.get(id) == Some(cap));
         self.caps = caps;
         Ok((needed, total > usable))
+    }
+
+    /// R3-Q21 under a fit cap: a capped node (`node`: its levels below `cap`) that lacks, in an
+    /// octant whose wanted level is requested, a resident level at or above that wanted depth
+    /// keeps drawing the levels above the cap it drew in the last applied cut (while resident),
+    /// instead of dropping to a coarser resident level until the capped level arrives. It is per
+    /// node (the lookup cannot express octants): the kept levels replace the node's resident
+    /// list, so every octant of the node draws a finer or equal level than before. The
+    /// kept levels are protected as part of the applied cut; once the capped levels are resident
+    /// they stop drawing and become evictable. `old_released` ends the stand-in when the capped
+    /// level cannot get pages.
+    fn finer_drawn(
+        &self,
+        id: NodeId,
+        cap: u8,
+        node: &CellCutNode,
+        needed: &FastSet<LevelKey>,
+        ctx: &Ctx,
+    ) -> Option<Vec<u8>> {
+        if self.old_released.get(&id) == Some(&cap) {
+            return None;
+        }
+        let drawn = self.applied_drawn.get(&id)?;
+        let mut old: Vec<u8> = drawn
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|depth| *depth > cap && self.is_resident(self.key(id, *depth)))
+            .collect();
+        old.sort_unstable();
+        old.dedup();
+        if old.is_empty() {
+            return None;
+        }
+        let lacks = (0..8).any(|octant| {
+            let wanted = ctx.depth(id, octant, node);
+            needed.contains(&self.key(id, wanted)) && !node.resident.iter().any(|d| *d >= wanted)
+        });
+        lacks.then_some(old)
     }
 
     /// Does any stored level of the node, below its fit cap, have pages resident?
@@ -1949,6 +1997,7 @@ impl CellPool {
                 joined = live_cut.iter().chain(fallback).copied().collect();
                 &joined
             };
+            let kept = std::cell::RefCell::new(Vec::new());
             let lookup = |id: NodeId| {
                 let data = nodes.get(&id)?;
                 let stored = capped(&data.stored, caps.get(&id));
@@ -1961,11 +2010,19 @@ impl CellPool {
                         .filter(|depth| self.is_resident(self.key(id, *depth)))
                         .collect()
                 };
-                Some(CellCutNode {
+                let mut node = CellCutNode {
                     bounds: data.bounds,
                     stored,
                     resident,
-                })
+                };
+                if !hold.contains(&id)
+                    && let Some(cap) = caps.get(&id)
+                    && let Some(old) = self.finer_drawn(id, *cap, &node, &needed, &ctx)
+                {
+                    node.resident = old;
+                    kept.borrow_mut().push(id);
+                }
+                Some(node)
             };
             ctx.evaluations.set(ctx.evaluations.get() + 1);
             let entries = match cell_cut_with(real_cut, &lookup, grid, &|id, o, data| {
@@ -2020,6 +2077,12 @@ impl CellPool {
                 blank,
                 hold_digest,
                 applied_digest: self.applied_digest,
+                kept_finer: {
+                    let mut kept = kept.into_inner();
+                    kept.sort();
+                    kept.dedup();
+                    kept
+                },
                 next_hold: eval.hold,
                 settle: eval.settle,
                 hold_ancestors: eval.ancestors,
@@ -2239,6 +2302,21 @@ impl CellPool {
                 break;
             }
             self.evict_resident(key, frame);
+        }
+        // The finer levels kept for capped nodes (`finer_drawn`) are protected while they draw;
+        // when the capped levels still lack pages after every other eviction, they are given up
+        // (the real cut drops to the resident capped levels next frame, which unprotects them).
+        if self.free.len() + self.pending_pages() < missing
+            && let Some(memo) = self.real_memo.as_ref().filter(|memo| memo.applied)
+            && !memo.kept_finer.is_empty()
+        {
+            let kept = memo.kept_finer.clone();
+            for id in kept {
+                if let Some(cap) = caps.get(&id) {
+                    self.old_released.insert(id, *cap);
+                }
+            }
+            self.residency_epoch += 1;
         }
         self.release(frame, &mut page_frees);
 

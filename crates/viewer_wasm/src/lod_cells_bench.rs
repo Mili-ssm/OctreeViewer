@@ -227,7 +227,7 @@ fn cells_bench() {
 \"pool_resident_pages_peak\":{},\"fallback_pages_peak\":{},\"held_nodes_peak\":{},\
 \"excluded_nodes_peak\":{},\"hold_age_max\":{},\"hold_unsettled_total\":{},\"wait_frames\":{},\
 \"hole_frames\":{},\"lost_samples\":{},\"first_failure\":{first_failure:?},\
-\"cross_node_coarsenings\":{},\"octant_coarsenings\":{},\"wall_s\":{wall:.1},\
+\"cross_node_coarsenings\":{},\"octant_coarsenings\":{},\"octant_lowered\":{},\"wall_s\":{wall:.1},\
 \"peak_rss_kib\":{rss},\"final_cut_nodes\":{},\"stages\":{:?}}}\n",
         t.frames,
         settled_at.map_or("null".to_owned(), |n| n.to_string()),
@@ -257,6 +257,7 @@ fn cells_bench() {
         h.lost_samples,
         h.zone_coarsenings,
         h.octant_coarsenings,
+        h.octant_lowered,
         last.cut_nodes,
         t.stages,
     );

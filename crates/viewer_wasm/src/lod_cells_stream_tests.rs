@@ -447,6 +447,8 @@ struct Harness {
     /// When set, a (node, octant) that gets coarser is counted here instead of failing the frame.
     count_octant_coarsenings: bool,
     octant_coarsenings: usize,
+    /// Per-octant drops regardless of the wish (informative).
+    octant_lowered: usize,
     last_cut_digest: Option<u64>,
     /// The cut of the last frame that changed it.
     last_cut: Option<CutView>,
@@ -494,6 +496,7 @@ impl Harness {
             soft_checks: false,
             count_octant_coarsenings: false,
             octant_coarsenings: 0,
+            octant_lowered: 0,
             last_cut_digest: None,
             last_cut: None,
             last_stage: None,
@@ -565,7 +568,15 @@ impl Harness {
                         };
                         let before = self.octant_depths.insert((*node, octant), now);
                         if self.count_octant_coarsenings {
-                            self.octant_coarsenings += usize::from(before.is_some_and(|b| now < b));
+                            // Same rule as the cross-node metric: only below what the capped
+                            // wish allows counts (a fit-forced lowering to the wish is legitimate).
+                            let wanted = cut.entries[i].wanted[octant].unwrap_or(u8::MAX);
+                            if before.is_some_and(|b| now < b) {
+                                self.octant_lowered += 1;
+                            }
+                            if before.is_some_and(|b| now < b.min(wanted)) {
+                                self.octant_coarsenings += 1;
+                            }
                         } else {
                             assert!(
                                 before.is_none_or(|before| now >= before),
