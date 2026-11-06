@@ -426,15 +426,17 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
 **T9c, precarga y solo refinar** (R3-Q20 y R3-Q21 con sus precisiones; `cell_pool.rs`, `cell_cut.rs`, `cell_driver.rs`). Spec enmendada tras el pre-mortem del 06-11-2026. Dos partes, cada una con su commit:
 
 **T9c1, solo refinar (R3-Q21):**
-- [ ] `resident_depth`: si el nivel deseado no es residente, el residente más cercano a él (el más fino de los más gruesos, o el más grueso de los más finos si no hay ninguno más grueso). Los dorados de `cell_cut_digest` que cambien se listan con su motivo.
-- [ ] Un hijo «retenido» mientras no dibuje, en todos sus octantes, un nivel ≥ `min(nivel que dibujaba el antepasado ahí, deseado del hijo, tope del ajuste)`, según lo que `cell_cut` pondría en `drawn`. Un hijo retenido no dibuja ni enmascara al antepasado (`resident = []` en el corte real) y cuenta como sin nivel en el respaldo.
-- [ ] Memorias: claves con un digest de las profundidades dibujadas y del conjunto retenido; `reset()` lo vacía todo.
-- [ ] Contadores: los hijos retenidos cuentan en `nodes_without_level` y sus octantes en `stages`; páginas de los antepasados de respaldo en un contador nuevo.
+- [x] `resident_depth`: si el nivel deseado no es residente, el residente más cercano a él (el más fino de los más gruesos, o el más grueso de los más finos si no hay ninguno más grueso). Los dorados de `cell_cut_digest` que cambien se listan con su motivo.
+- [x] Un hijo «retenido» mientras no dibuje, en todos sus octantes, un nivel ≥ `min(nivel que dibujaba el antepasado ahí, deseado del hijo, tope del ajuste)`, según lo que `cell_cut` pondría en `drawn`. Un hijo retenido no dibuja ni enmascara al antepasado (`resident = []` en el corte real) y cuenta como sin nivel en el respaldo.
+- [x] Memorias: claves con un digest de las profundidades dibujadas y del conjunto retenido; `reset()` lo vacía todo.
+- [x] Contadores: los hijos retenidos cuentan en `nodes_without_level` y sus octantes en `stages`; páginas de los antepasados de respaldo en un contador nuevo.
+- **Hecha (06-11-2026).** Ningún dorado de `cell_cut_digest` cambia (todos con todos los niveles residentes). Límite: un hijo bajo un antepasado a más de 3 niveles de otro nodo residente no se puede retener (la máscara no llega) y dibuja un instante su nivel más grueso, sin huecos. Si la búsqueda de retenidos no se estabiliza en 3 pasadas, se retiene de más y se cuenta (`hold_unsettled`).
 
 **T9c2, precarga (R3-Q20):**
 - [ ] Un nodo sin nivel y sin antepasado que dibuje sale del corte aplicado; su nivel más grueso se pide y sube con prioridad; entra al ser residente. Cuenta en `nodes_without_level`.
 - [ ] Respaldo por descendientes: si ese nodo tiene descendientes en el último corte aplicado (salto ≤ 3) que dibujaban, siguen en el corte real hasta que el nodo es residente.
-- [ ] Se retiene el corte anterior solo si una zona que dibujaba no se puede cubrir así. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
+- [ ] Se retiene el corte anterior solo si una zona que dibujaba no se puede cubrir así.
+- [ ] Contador de la retención más larga de un hijo (frames seguidos retenido con su nivel umbral pedido o en vuelo), para el criterio de parada de 120 frames. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
 
 **Pasa si** (T9c1 y T9c2):
 - tests sintéticos de alejar, salto de pose y bajada del tope, además de los de T9a1 y T9b2a;

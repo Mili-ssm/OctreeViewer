@@ -636,9 +636,12 @@ fn draws_cover_each_lattice_cell_of_the_drawn_octants_once() {
     let (mixed, _) = assert_draw_cover(0, &[3, 4, 5, 6], &[3, 4, 5, 6], 6, &targets, "split");
     assert!(mixed > 0, "no case drew two levels at once");
     // A resident spanning level at node depth 0 and 1, while finer wanted levels are absent.
-    let (_, spanning) = assert_draw_cover(0, &[0, 3, 4, 5], &[0, 3, 4], 5, &targets, "span0");
+    // (R3-Q21: it is the closest level only when it is the only one coarser than the wanted.)
+    assert_draw_cover(0, &[0, 3, 4, 5], &[0, 3, 4], 5, &targets, "span0_mixed");
+    let (_, spanning) = assert_draw_cover(0, &[0, 3, 4, 5], &[0], 5, &targets, "span0");
     assert!(spanning > 0, "no case drew the spanning level");
-    let (_, spanning) = assert_draw_cover(1, &[1, 3, 4, 5], &[1, 3, 4], 5, &targets, "span1");
+    assert_draw_cover(1, &[1, 3, 4, 5], &[1, 3, 4], 5, &targets, "span1_mixed");
+    let (_, spanning) = assert_draw_cover(1, &[1, 3, 4, 5], &[1], 5, &targets, "span1");
     assert!(spanning > 0, "no case drew the spanning level");
     assert_draw_cover(1, &[1, 3, 4, 5], &[1, 3, 4, 5], 5, &targets, "span1_all");
 }
@@ -690,10 +693,14 @@ fn root_with(stored: &[u8], resident: &[u8]) -> HashMap<NodeId, CellCutNode> {
 }
 
 #[test]
-fn missing_level_draws_coarsest_resident_as_stage() {
+fn missing_level_draws_the_closest_resident_level() {
     assert_eq!(resident_depth(5, &[3, 5]), Some((5, false)));
-    assert_eq!(resident_depth(5, &[4, 3]), Some((3, true)));
+    // R3-Q21: the finest of the coarser levels ...
+    assert_eq!(resident_depth(5, &[4, 3]), Some((4, true)));
+    assert_eq!(resident_depth(5, &[3, 7, 4]), Some((4, true)));
+    // ... else the coarsest of the finer ones, which meets the target (not a stage).
     assert_eq!(resident_depth(5, &[7]), Some((7, false)));
+    assert_eq!(resident_depth(5, &[9, 7]), Some((7, false)));
     assert_eq!(resident_depth(5, &[]), None);
     let camera = cameras().remove(0).1;
     let nodes = root_with(&[3, 4, 5], &[4, 3]);
@@ -707,8 +714,50 @@ fn missing_level_draws_coarsest_resident_as_stage() {
     )
     .unwrap();
     assert_eq!(entries[0].wanted, [Some(5); 8]);
-    assert_eq!(entries[0].drawn, [Some(3); 8]);
+    assert_eq!(entries[0].drawn, [Some(4); 8]);
     assert_eq!(entries[0].stage, [true; 8]);
+}
+
+#[test]
+fn the_closest_level_avoids_coarsening_within_a_node() {
+    // Octants 0..4 want depth 4 (resident), octants 4..8 want depth 6 (not resident): the second
+    // half draws depth 4 too, not the coarsest depth 3 (R3-Q21).
+    let nodes = root_with(&[3, 4, 6], &[3, 4]);
+    let entries = cell_cut_with(
+        &ids(&[1]),
+        &|id| nodes.get(&id).cloned(),
+        &dataset_grid(ORIGIN),
+        &|_, octant, _| if octant < 4 { 4 } else { 6 },
+    )
+    .unwrap();
+    assert_eq!(entries[0].drawn, [Some(4); 8]);
+    assert_eq!(
+        entries[0].stage,
+        [false, false, false, false, true, true, true, true]
+    );
+    assert_eq!(entries[0].draws(), vec![(4, 0xff)]);
+}
+
+#[test]
+fn a_spanning_level_wins_also_when_other_octants_have_finer_resident_levels() {
+    // Octant 0 wants depth 1 (above the node's detail), the others depth 3. With 0 and 3
+    // resident, the closest level of octant 0 is the spanning 0 (nothing is coarser than 1 but
+    // it), so the node draws 0 whole even though depth 3 is resident for the other octants.
+    let nodes = root_with(&[0, 1, 3], &[0, 3]);
+    let entries = cell_cut_with(
+        &ids(&[1]),
+        &|id| nodes.get(&id).cloned(),
+        &dataset_grid(ORIGIN),
+        &|_, octant, _| if octant == 0 { 1 } else { 3 },
+    )
+    .unwrap();
+    assert_eq!(entries[0].wanted[0], Some(1));
+    assert_eq!(entries[0].drawn, [Some(0); 8]);
+    assert_eq!(entries[0].draws(), vec![(0, 0xff)]);
+    assert_eq!(
+        entries[0].stage,
+        [true, true, true, true, true, true, true, true]
+    );
 }
 
 #[test]
@@ -1118,8 +1167,8 @@ fn draws_and_required_levels_on_uniform_entries() {
         0.001,
     )
     .unwrap();
-    assert_eq!(entries[0].required_levels(), vec![3]);
-    assert_eq!(entries[0].draws(), vec![(3, 0xff)]);
+    assert_eq!(entries[0].required_levels(), vec![4]);
+    assert_eq!(entries[0].draws(), vec![(4, 0xff)]);
     let nodes = root_with(&[3, 4, 5], &[]);
     let entries = run(
         &ids(&[1]),

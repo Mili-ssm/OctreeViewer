@@ -30,7 +30,19 @@
 //! for that. The ancestor's mask hides only resident descendants, so it draws exactly where the
 //! node is missing. The wanted cut and the fit never see the fallback nodes (they steer requests);
 //! the real cut does, and its memo is keyed on the fallback set and the depths of those nodes.
-//! The octants of covered nodes count as stages. Requests and uploads go coarse to fine: the first
+//! The octants of covered nodes count as stages.
+//!
+//! Only refine (R3-Q21): a cut node `C` whose ancestor `A` drew its zone in the last applied cut
+//! stays *held* while `C` would not draw, in every octant, a level at or above `min(depth A drew
+//! over that octant, wanted depth of C, cap of C)`, judged on what `cell_cut` would put in `drawn`
+//! (the closest resident level). Only a `C` with a covering ancestor can be held (`CoverRule`, the
+//! rule of the fallback). A held `C` gets no resident level in the real cut, so it neither draws
+//! nor masks `A`, and it counts as missing in the fallback, so `A` stays in the cut. The hold is
+//! decided on the real cut and then fed back to it: `frame` runs the planning again (at most
+//! `HOLD_PASSES` times) until the held set no longer changes; when it does not settle, the nodes
+//! held in either set stay held and `hold_unsettled` counts them. It is per node because the
+//! mask hides the whole footprint of `C`. The levels of `C` are requested and uploaded as usual.
+//! Requests and uploads go coarse to fine: the first
 //! level of the nodes that draw nothing, then absolute level depth, then distance.
 //!
 //! Sizes: the fit uses, per level, the packed size once offered, else the exact size given by
@@ -65,7 +77,7 @@ use crate::node_cells::node_range;
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
-        FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, octant_wanted_depth,
+        FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, drawn_levels, octant_wanted_depth,
         octant_wanted_depth_near,
     },
     representative_depth,
@@ -198,6 +210,15 @@ pub struct PoolCounters {
     pub wanted_reused: bool,
     /// The real cut of the previous frame was reused (same wanted cut, same residency).
     pub real_reused: bool,
+    /// Cut nodes held back by R3-Q21 (they count in `nodes_without_level` and their octants in
+    /// `stages`).
+    pub held_nodes: u32,
+    /// Pages of the levels the applied cut draws for the fallback ancestors and for the ancestors
+    /// of held nodes: the cost of "only refine", to compare with the fit's reserve.
+    pub fallback_pages: u32,
+    /// Held nodes the hold search did not settle in `HOLD_PASSES` passes: they stay held while an
+    /// ancestor of the real cut covers them, so the image never draws coarser than before.
+    pub hold_unsettled: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,8 +296,166 @@ struct RealMemo {
     covered_octants: u32,
     /// Fallback ancestors the real cut was computed with.
     fallback: Vec<NodeId>,
+    /// Digest of the held set the real cut was computed with.
+    hold_digest: u64,
+    /// Digest of the drawn depths of the applied cut the hold decisions read; the memo is stale
+    /// when it differs.
+    applied_digest: u64,
+    /// Held set the entries lead to (equal to the input at a fixed point).
+    next_hold: FastSet<NodeId>,
+    /// Nodes that are held in the input or in `next_hold` and have a covering ancestor: where the
+    /// search settles when it does not converge.
+    settle: FastSet<NodeId>,
+    /// Ancestors that cover the nodes of `settle`.
+    hold_ancestors: FastSet<NodeId>,
     /// `self.applied` already holds `entries`.
     applied: bool,
+}
+
+/// Maximum times `frame` plans again because the held set changed.
+const HOLD_PASSES: usize = 3;
+
+/// What `plan` leaves for the next pass of the same frame.
+#[derive(Default)]
+struct Carry {
+    page_frees: Vec<u32>,
+    evaluations: u32,
+    wanted_reused: Option<bool>,
+    unsettled: u32,
+}
+
+/// How a pass treats a held set that differs from the one its cut leads to.
+#[derive(Clone, Copy, PartialEq)]
+enum Round {
+    /// Plan again with the new set.
+    Free,
+    /// The last free pass: settle on the nodes that stay held and plan once more.
+    Last,
+    /// Apply the settled set as it is.
+    Settled,
+}
+
+enum Pass {
+    Done(Box<FramePlan>),
+    /// The held set changed: plan again with it.
+    Redo(FastSet<NodeId>),
+}
+
+/// Held nodes of a real cut and the applied ancestors that cover them.
+#[derive(Default)]
+struct HoldEval {
+    hold: FastSet<NodeId>,
+    settle: FastSet<NodeId>,
+    ancestors: FastSet<NodeId>,
+}
+
+/// Order-free digest of a set of nodes.
+fn set_digest(set: &FastSet<NodeId>) -> u64 {
+    set.iter().fold(set.len() as u64, |acc, id| {
+        acc.wrapping_add(id.get().wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29))
+    })
+}
+
+/// Where the cover of a node without a level comes from (R3-Q19); the fallback and the hold of
+/// R3-Q21 share it, so that a held node always has an ancestor in the real cut.
+struct CoverRule {
+    in_cut: FastSet<NodeId>,
+    /// Cells that hold a resident cut node more than `MAX_MASK_LEVELS` below them.
+    too_deep: FastSet<(u8, [u64; 3])>,
+    /// Cells of the cut nodes that draw (`with_level`).
+    drawing: FastSet<(u8, [u64; 3])>,
+}
+
+enum Cover {
+    /// A cut node that draws lies over the node, at this cell: no fallback is needed.
+    Cut {
+        cell: (u8, [u64; 3]),
+        gap: u8,
+    },
+    /// The nearest applied ancestor outside the cut that has a resident level.
+    Fallback {
+        ancestor: NodeId,
+        gap: u8,
+    },
+    Nothing,
+}
+
+impl CoverRule {
+    fn new(
+        cut: &[NodeId],
+        with_level: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        grid: &CellGrid,
+    ) -> Self {
+        let mut too_deep = FastSet::default();
+        let mut drawing = FastSet::default();
+        for id in with_level {
+            let f = Footprint::new(grid, nodes[id].bounds);
+            for k in MAX_MASK_LEVELS + 1..=f.rep.saturating_sub(3) {
+                too_deep.insert(f.ancestor(k));
+            }
+            drawing.insert((f.rep, f.lo));
+        }
+        Self {
+            in_cut: cut.iter().copied().collect(),
+            too_deep,
+            drawing,
+        }
+    }
+
+    fn cover(&self, pool: &CellPool, f: &Footprint) -> Cover {
+        let mut nearest = None;
+        for gap in f.gaps() {
+            let cell = f.ancestor(gap);
+            if self.drawing.contains(&cell) {
+                return Cover::Cut { cell, gap };
+            }
+            if nearest.is_none()
+                && let Some(&ancestor) = pool.applied_index.cells.get(&cell)
+                && !self.in_cut.contains(&ancestor)
+                && !self.too_deep.contains(&cell)
+                && pool.has_resident_level(ancestor, &pool.applied_index.nodes[&ancestor].stored)
+            {
+                nearest = Some(Cover::Fallback { ancestor, gap });
+            }
+        }
+        nearest.unwrap_or(Cover::Nothing)
+    }
+}
+
+/// Does `ancestor` (`gap` levels above `f`) draw, in the real cut `entries`, everywhere `f` lies?
+/// A hidden octant (`wanted` is None) is drawn by the resident nodes that hide it.
+fn covers_in(
+    entries: &[CellCutEntry],
+    position: &FastMap<NodeId, usize>,
+    ancestor: NodeId,
+    f: &Footprint,
+    gap: u8,
+) -> bool {
+    let Some(&index) = position.get(&ancestor) else {
+        return false;
+    };
+    let parent = &entries[index];
+    f.octants_in(gap)
+        .all(|o| parent.drawn[o].is_some() || parent.wanted[o].is_none())
+}
+
+/// FNV-1a digest of the drawn depths of a cut, in order.
+fn drawn_digest(entries: &[CellCutEntry]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |byte: u8| hash = (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+    for entry in entries {
+        entry
+            .node
+            .get()
+            .to_le_bytes()
+            .into_iter()
+            .for_each(&mut feed);
+        for drawn in entry.drawn {
+            feed(drawn.map_or(0, |depth| depth + 1));
+        }
+    }
+    hash
 }
 
 /// The nodes of the applied cut, as the fallback of R3-Q19 needs them.
@@ -296,6 +475,7 @@ struct FallbackMemo {
     residency_epoch: u64,
     applied_epoch: u64,
     grid: CellGrid,
+    hold_digest: u64,
     ids: Vec<NodeId>,
 }
 
@@ -330,11 +510,37 @@ impl Footprint {
 
     /// Octants of the ancestor `k` levels up that this node's span touches.
     fn octants_in(&self, k: u8) -> impl Iterator<Item = usize> {
+        self.octants_span(k, self.lo, self.hi)
+    }
+
+    /// Octants of the ancestor `k` levels up that the given `octant` of this node touches.
+    fn octants_of(&self, k: u8, octant: usize) -> impl Iterator<Item = usize> {
+        let (mut lo, mut hi) = (self.lo, self.hi);
+        for axis in 0..3 {
+            let size = self.hi[axis] - self.lo[axis] + 1;
+            if size >= 2 {
+                let middle = self.lo[axis] + size / 2;
+                if octant >> (2 - axis) & 1 == 1 {
+                    lo[axis] = middle;
+                } else {
+                    hi[axis] = middle - 1;
+                }
+            }
+        }
+        self.octants_span(k, lo, hi)
+    }
+
+    fn octants_span(
+        &self,
+        k: u8,
+        lo: [u64; 3],
+        hi: [u64; 3],
+    ) -> impl Iterator<Item = usize> + use<> {
         let base = self.ancestor(k).1;
         let span: [(usize, usize); 3] = std::array::from_fn(|axis| {
             (
-                ((self.lo[axis] >> k) - base[axis]).min(7) as usize,
-                ((self.hi[axis] >> k) - base[axis]).min(7) as usize,
+                ((lo[axis] >> k) - base[axis]).min(7) as usize,
+                ((hi[axis] >> k) - base[axis]).min(7) as usize,
             )
         });
         (span[0].0 >> 2..=span[0].1 >> 2).flat_map(move |x| {
@@ -402,6 +608,18 @@ pub struct CellPool {
     applied: Vec<CellCutEntry>,
     applied_index: AppliedIndex,
     fallback_memo: Option<FallbackMemo>,
+    /// R3-Q21: cut nodes held back in the last frame.
+    hold: FastSet<NodeId>,
+    /// Passes of the hold search per frame (`HOLD_PASSES`; the tests lower it).
+    hold_passes: usize,
+    /// Drawn depths per octant of each node of the applied cut, and their digest.
+    applied_drawn: FastMap<NodeId, [Option<u8>; 8]>,
+    applied_digest: u64,
+    /// `RealMemo::hold_ancestors` of the applied cut.
+    applied_cover: FastSet<NodeId>,
+    carry: Carry,
+    /// Last frame that counted an overflow (a frame can plan more than once).
+    overflow_frame: u64,
     /// `RealMemo::covered_octants` of the applied cut.
     applied_covered: u32,
     applied_levels: FastSet<LevelKey>,
@@ -497,6 +715,13 @@ impl CellPool {
                 epoch: 0,
             },
             fallback_memo: None,
+            hold: FastSet::default(),
+            applied_drawn: FastMap::default(),
+            applied_digest: 0,
+            applied_cover: FastSet::default(),
+            hold_passes: HOLD_PASSES,
+            carry: Carry::default(),
+            overflow_frame: 0,
             applied_covered: 0,
             applied_levels: FastSet::default(),
             applied_pins: FastSet::default(),
@@ -631,6 +856,12 @@ impl CellPool {
         self.wanted_memo = None;
         self.real_memo = None;
         self.fallback_memo = None;
+        self.hold.clear();
+        self.applied_cover.clear();
+        self.overflow_frame = 0;
+        self.applied_drawn.clear();
+        self.applied_digest = 0;
+        self.carry = Carry::default();
         self.applied.clear();
         self.applied_covered = 0;
         self.applied_levels.clear();
@@ -884,23 +1115,27 @@ impl CellPool {
         cut: &[NodeId],
         nodes: &FastMap<NodeId, PoolNode>,
         grid: &CellGrid,
+        hold: &FastSet<NodeId>,
     ) -> Vec<NodeId> {
+        let hold_digest = set_digest(hold);
         if let Some(memo) = &self.fallback_memo
             && memo.cut == cut
             && memo.caps == self.caps
             && memo.residency_epoch == self.residency_epoch
             && memo.applied_epoch == self.applied_index.epoch
             && memo.grid == *grid
+            && memo.hold_digest == hold_digest
         {
             return memo.ids.clone();
         }
-        let ids = self.compute_fallback(cut, nodes, grid);
+        let ids = self.compute_fallback(cut, nodes, grid, hold);
         self.fallback_memo = Some(FallbackMemo {
             cut: cut.to_vec(),
             caps: self.caps.clone(),
             residency_epoch: self.residency_epoch,
             applied_epoch: self.applied_index.epoch,
             grid: *grid,
+            hold_digest,
             ids: ids.clone(),
         });
         ids
@@ -911,55 +1146,23 @@ impl CellPool {
         cut: &[NodeId],
         nodes: &FastMap<NodeId, PoolNode>,
         grid: &CellGrid,
+        hold: &FastSet<NodeId>,
     ) -> Vec<NodeId> {
         if self.applied_index.nodes.is_empty() || self.applied_index.grid != Some(*grid) {
             return Vec::new();
         }
-        let (with_level, missing): (Vec<NodeId>, Vec<NodeId>) = cut
-            .iter()
-            .partition(|id| self.has_resident_level(**id, &nodes[*id].stored));
+        let (with_level, missing): (Vec<NodeId>, Vec<NodeId>) = cut.iter().partition(|id| {
+            !hold.contains(*id) && self.has_resident_level(**id, &nodes[*id].stored)
+        });
         if missing.is_empty() {
             return Vec::new();
         }
-        let in_cut: FastSet<NodeId> = cut.iter().copied().collect();
-        // Cells that hold a resident cut node more than `MAX_MASK_LEVELS` below them.
-        let mut too_deep: FastSet<(u8, [u64; 3])> = FastSet::default();
-        for id in &with_level {
-            let f = Footprint::new(grid, nodes[id].bounds);
-            for k in MAX_MASK_LEVELS + 1..=f.rep.saturating_sub(3) {
-                too_deep.insert(f.ancestor(k));
-            }
-        }
-        let drawing: FastSet<(u8, [u64; 3])> = with_level
-            .iter()
-            .map(|id| {
-                let f = Footprint::new(grid, nodes[id].bounds);
-                (f.rep, f.lo)
-            })
-            .collect();
+        let rule = CoverRule::new(cut, &with_level, nodes, grid);
         let mut out = Vec::new();
         let mut seen: FastSet<NodeId> = FastSet::default();
         for id in missing {
             let f = Footprint::new(grid, nodes[&id].bounds);
-            let mut nearest = None;
-            let mut covered = false;
-            for k in f.gaps() {
-                let cell = f.ancestor(k);
-                if drawing.contains(&cell) {
-                    covered = true;
-                    break;
-                }
-                if nearest.is_none()
-                    && let Some(&ancestor) = self.applied_index.cells.get(&cell)
-                    && !in_cut.contains(&ancestor)
-                    && !too_deep.contains(&cell)
-                    && self
-                        .has_resident_level(ancestor, &self.applied_index.nodes[&ancestor].stored)
-                {
-                    nearest = Some(ancestor);
-                }
-            }
-            if let Some(ancestor) = nearest.filter(|_| !covered)
+            if let Cover::Fallback { ancestor, .. } = rule.cover(self, &f)
                 && seen.insert(ancestor)
             {
                 out.push(ancestor);
@@ -993,6 +1196,97 @@ impl CellPool {
         }
     }
 
+    /// R3-Q21: the cut nodes of the real cut `entries` (computed with `hold` as the held set) that
+    /// would draw, in some octant, a level below `min(depth their applied ancestor drew there,
+    /// wanted depth)`, judged as `cell_cut` would draw them with their resident levels. Only a node
+    /// with a covering ancestor (`CoverRule`, the one of the fallback) can be held; one that is
+    /// already held keeps the hold only while that ancestor is in the real cut.
+    fn eval_hold(
+        &self,
+        entries: &[CellCutEntry],
+        cut: &[NodeId],
+        nodes: &FastMap<NodeId, PoolNode>,
+        grid: &CellGrid,
+        hold: &FastSet<NodeId>,
+    ) -> HoldEval {
+        let mut out = HoldEval::default();
+        if self.applied_drawn.is_empty() {
+            return out;
+        }
+        let position: FastMap<NodeId, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.node, index))
+            .collect();
+        let mut rule: Option<CoverRule> = None;
+        for entry in &entries[..cut.len()] {
+            let id = entry.node;
+            let data = &nodes[&id];
+            let resident: Vec<u8> = capped(&data.stored, self.caps.get(&id))
+                .into_iter()
+                .filter(|depth| self.is_resident(self.key(id, *depth)))
+                .collect();
+            if resident.is_empty() {
+                continue;
+            }
+            let f = Footprint::new(grid, data.bounds);
+            if !f
+                .gaps()
+                .any(|k| self.applied_index.cells.contains_key(&f.ancestor(k)))
+            {
+                continue;
+            }
+            let rule = rule.get_or_insert_with(|| {
+                let with_level: Vec<NodeId> = cut
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        !hold.contains(id) && self.has_resident_level(*id, &nodes[id].stored)
+                    })
+                    .collect();
+                CoverRule::new(cut, &with_level, nodes, grid)
+            });
+            let (ancestor, gap) = match rule.cover(self, &f) {
+                Cover::Fallback { ancestor, gap } => (ancestor, gap),
+                Cover::Cut { cell, gap } => {
+                    let Some(&ancestor) = self.applied_index.cells.get(&cell) else {
+                        continue;
+                    };
+                    (ancestor, gap)
+                }
+                Cover::Nothing => continue,
+            };
+            let Some(drawn) = self.applied_drawn.get(&ancestor) else {
+                continue;
+            };
+            let held = hold.contains(&id);
+            if held && !covers_in(entries, &position, ancestor, &f, gap) {
+                continue;
+            }
+            let (here, _) = drawn_levels(
+                &entry.wanted,
+                &resident,
+                f.rep.saturating_sub(MAX_MASK_LEVELS),
+            );
+            // Per octant: what the ancestor drew over it against what the node would draw.
+            let short = (0..8).any(|o| {
+                let Some(wanted) = entry.wanted[o] else {
+                    return false;
+                };
+                let limit = f.octants_of(gap, o).filter_map(|a| drawn[a]).max();
+                limit.is_some_and(|l| here[o].is_none_or(|d| d < l.min(wanted)))
+            });
+            if short {
+                out.hold.insert(id);
+            }
+            if short || held {
+                out.settle.insert(id);
+                out.ancestors.insert(ancestor);
+            }
+        }
+        out
+    }
+
     fn alloc_mask(&mut self) -> u32 {
         self.free_masks.pop_first().unwrap_or_else(|| {
             self.next_mask += 1;
@@ -1014,9 +1308,8 @@ impl CellPool {
         grid: &CellGrid,
         origin: [f64; 3],
         target_px: f64,
+        settled: bool,
     ) -> (u32, bool, bool) {
-        let settled = self.last_pose == Some(pose);
-        self.last_pose = Some(pose);
         let key = ViewKey {
             target_px,
             viewport: view.viewport(),
@@ -1146,10 +1439,7 @@ impl CellPool {
             nodes.insert(*id, data);
         }
         self.frame += 1;
-        let fallback = self.fallback_ancestors(cut, &nodes, grid);
-        for id in &fallback {
-            nodes.insert(*id, self.applied_index.nodes[id].clone());
-        }
+        self.carry = Carry::default();
         let eye: [f64; 3] = view
             .camera()
             .position()
@@ -1162,29 +1452,65 @@ impl CellPool {
             eye,
             forward: heading.map(|v| if length > 0.0 { v / length } else { 0.0 }),
         };
-        let (refreshed, depths_changed, fallback_changed) = self.refresh_depths(
-            cut,
-            &fallback,
-            &nodes,
-            pose,
-            view,
-            grid,
-            coordinate_origin,
-            target_px,
-        );
-        let depths = std::mem::take(&mut self.depths);
-        let result = self.plan(
-            cut,
-            &fallback,
-            &nodes,
-            &depths,
-            (refreshed, depths_changed, fallback_changed),
-            view,
-            grid,
-            coordinate_origin,
-        );
-        self.depths = depths;
-        result
+        let settled = self.last_pose == Some(pose);
+        self.last_pose = Some(pose);
+        let mut hold: FastSet<NodeId> = self
+            .hold
+            .iter()
+            .filter(|id| nodes.contains_key(id))
+            .copied()
+            .collect();
+        let mut refreshed_total = 0;
+        let mut previous: Vec<NodeId> = Vec::new();
+        for pass in 1..=self.hold_passes + 1 {
+            let fallback = self.fallback_ancestors(cut, &nodes, grid, &hold);
+            for id in &previous {
+                nodes.remove(id);
+            }
+            for id in &fallback {
+                nodes.insert(*id, self.applied_index.nodes[id].clone());
+            }
+            previous.clone_from(&fallback);
+            let (refreshed, depths_changed, fallback_changed) = self.refresh_depths(
+                cut,
+                &fallback,
+                &nodes,
+                pose,
+                view,
+                grid,
+                coordinate_origin,
+                target_px,
+                settled,
+            );
+            refreshed_total += refreshed;
+            let depths = std::mem::take(&mut self.depths);
+            let result = self.plan(
+                cut,
+                &fallback,
+                &nodes,
+                &depths,
+                (depths_changed, fallback_changed),
+                &hold,
+                match pass.cmp(&self.hold_passes) {
+                    std::cmp::Ordering::Less => Round::Free,
+                    std::cmp::Ordering::Equal => Round::Last,
+                    std::cmp::Ordering::Greater => Round::Settled,
+                },
+                view,
+                grid,
+                coordinate_origin,
+            );
+            self.depths = depths;
+            match result? {
+                Pass::Done(mut plan) => {
+                    self.hold = hold;
+                    plan.counters.depth_refreshes = refreshed_total;
+                    return Ok(*plan);
+                }
+                Pass::Redo(next) => hold = next,
+            }
+        }
+        unreachable!("a settled pass never asks for another")
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1194,11 +1520,13 @@ impl CellPool {
         fallback: &[NodeId],
         nodes: &FastMap<NodeId, PoolNode>,
         depths: &FastMap<NodeId, NodeDepths>,
-        (refreshed, depths_changed, fallback_changed): (u32, bool, bool),
+        (depths_changed, fallback_changed): (bool, bool),
+        hold: &FastSet<NodeId>,
+        round: Round,
         view: &ViewProjection,
         grid: &CellGrid,
         coordinate_origin: [f64; 3],
-    ) -> Result<FramePlan, CellCutError> {
+    ) -> Result<Pass, CellCutError> {
         let ctx = Ctx {
             grid,
             origin: coordinate_origin,
@@ -1216,7 +1544,7 @@ impl CellPool {
                 .retain(|key, _| nodes.contains_key(&key.node) || levels.contains_key(key));
             self.sizes_prune_at = (self.sizes.len() * 2).max(1024);
         }
-        let mut page_frees = Vec::new();
+        let mut page_frees = std::mem::take(&mut self.carry.page_frees);
         self.release(frame, &mut page_frees);
 
         // Wanted cut and fit, reused while nothing they read has changed.
@@ -1259,17 +1587,22 @@ impl CellPool {
         let memo = self.wanted_memo.as_ref().expect("set above");
         let (overflow, generation, needed) =
             (memo.overflow, memo.generation, Rc::clone(&memo.needed));
-        if overflow {
+        if overflow && self.overflow_frame != frame {
             self.overflow += 1;
+            self.overflow_frame = frame;
         }
+        self.carry.wanted_reused.get_or_insert(reusable);
         let caps = self.caps.clone();
 
         // Real cut on the resident levels.
+        let hold_digest = set_digest(hold);
         let real_reused = !fallback_changed
             && self.real_memo.as_ref().is_some_and(|memo| {
                 memo.generation == generation
                     && memo.residency_epoch == self.residency_epoch
                     && memo.fallback == fallback
+                    && memo.hold_digest == hold_digest
+                    && memo.applied_digest == self.applied_digest
             });
         if !real_reused {
             let joined: Vec<NodeId>;
@@ -1282,11 +1615,15 @@ impl CellPool {
             let lookup = |id: NodeId| {
                 let data = nodes.get(&id)?;
                 let stored = capped(&data.stored, caps.get(&id));
-                let resident = stored
-                    .iter()
-                    .copied()
-                    .filter(|depth| self.is_resident(self.key(id, *depth)))
-                    .collect();
+                let resident = if hold.contains(&id) {
+                    Vec::new()
+                } else {
+                    stored
+                        .iter()
+                        .copied()
+                        .filter(|depth| self.is_resident(self.key(id, *depth)))
+                        .collect()
+                };
                 Some(CellCutNode {
                     bounds: data.bounds,
                     stored,
@@ -1306,6 +1643,14 @@ impl CellPool {
                 entries.as_deref().map_or((cut.len() as u32, 0), |entries| {
                     uncovered_levels(entries, nodes, grid)
                 });
+            let eval = entries.as_deref().map_or_else(
+                || HoldEval {
+                    hold: hold.clone(),
+                    settle: hold.clone(),
+                    ..HoldEval::default()
+                },
+                |entries| self.eval_hold(entries, cut, nodes, grid, hold),
+            );
             self.real_memo = Some(RealMemo {
                 generation,
                 residency_epoch: self.residency_epoch,
@@ -1314,10 +1659,54 @@ impl CellPool {
                 uncovered,
                 covered_octants,
                 fallback: fallback.to_vec(),
+                hold_digest,
+                applied_digest: self.applied_digest,
+                next_hold: eval.hold,
+                settle: eval.settle,
+                hold_ancestors: eval.ancestors,
                 applied: false,
             });
         }
         let memo = self.real_memo.as_mut().expect("set above");
+        if round != Round::Settled && memo.next_hold != *hold {
+            let next = if round == Round::Last {
+                // No fixed point: keep held what is held in either set and has a covering
+                // ancestor (a drawn octant never gets coarser), and count it.
+                self.carry.unsettled = memo
+                    .settle
+                    .iter()
+                    .filter(|id| hold.contains(id) != memo.next_hold.contains(id))
+                    .count() as u32;
+                memo.settle.clone()
+            } else {
+                memo.next_hold.clone()
+            };
+            if next != *hold {
+                self.carry.page_frees = page_frees;
+                self.carry.evaluations += ctx.evaluations.get();
+                return Ok(Pass::Redo(next));
+            }
+        }
+        debug_assert!(
+            memo.uncovered > 0
+                || memo.entries.as_ref().is_none_or(|entries| {
+                    let position: FastMap<NodeId, usize> = entries
+                        .iter()
+                        .enumerate()
+                        .map(|(index, entry)| (entry.node, index))
+                        .collect();
+                    hold.iter().all(|id| {
+                        let f = Footprint::new(grid, nodes[id].bounds);
+                        f.gaps().any(|gap| {
+                            self.applied_index
+                                .cells
+                                .get(&f.ancestor(gap))
+                                .is_some_and(|a| covers_in(entries, &position, *a, &f, gap))
+                        })
+                    })
+                }),
+            "a held node has no covering ancestor in the real cut"
+        );
         let (too_fine, planned_missing) = (memo.entries.is_none(), memo.planned_missing);
         let apply = if !too_fine && !overflow && memo.uncovered == 0 {
             CutApply::Applied
@@ -1335,6 +1724,13 @@ impl CellPool {
             self.applied_covered = memo.covered_octants;
             if fresh {
                 self.applied = memo.entries.clone().expect("applied cut exists");
+                self.applied_drawn = self
+                    .applied
+                    .iter()
+                    .map(|entry| (entry.node, entry.drawn))
+                    .collect();
+                self.applied_digest = drawn_digest(&self.applied);
+                self.applied_cover.clone_from(&memo.hold_ancestors);
                 self.index_applied(nodes, grid);
             }
         }
@@ -1587,6 +1983,23 @@ impl CellPool {
         }
         self.applied_levels = applied_levels;
 
+        let cover: FastSet<NodeId> = fallback
+            .iter()
+            .chain(&self.applied_cover)
+            .copied()
+            .collect();
+        let fallback_pages = self
+            .applied
+            .iter()
+            .filter(|entry| cover.contains(&entry.node))
+            .flat_map(|entry| {
+                entry
+                    .required_levels()
+                    .into_iter()
+                    .map(|depth| self.key(entry.node, depth))
+            })
+            .filter_map(|key| self.known_pages(key))
+            .sum::<usize>() as u32;
         let counters = PoolCounters {
             stages: self
                 .applied
@@ -1602,14 +2015,17 @@ impl CellPool {
             pool_coarsened: caps.len() as u32,
             pool_overflow: self.overflow,
             resident_pages: self.resident_pages(),
-            cut_evaluations: ctx.evaluations.get(),
+            cut_evaluations: self.carry.evaluations + ctx.evaluations.get(),
             descendant_too_fine: too_fine,
             uploaded_bytes: uploaded_pages as u64 * POOL_PAGE_BYTES,
-            depth_refreshes: refreshed,
-            wanted_reused: reusable,
+            depth_refreshes: 0,
+            wanted_reused: self.carry.wanted_reused.unwrap_or(reusable),
             real_reused,
+            held_nodes: hold.len() as u32,
+            fallback_pages,
+            hold_unsettled: self.carry.unsettled,
         };
-        Ok(FramePlan {
+        Ok(Pass::Done(Box::new(FramePlan {
             apply,
             entries: self.applied.clone(),
             fetch_requests,
@@ -1619,7 +2035,7 @@ impl CellPool {
             active,
             events: std::mem::take(&mut self.events),
             counters,
-        })
+        })))
     }
 }
 

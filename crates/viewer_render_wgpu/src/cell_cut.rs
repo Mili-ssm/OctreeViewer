@@ -328,18 +328,54 @@ fn octant_fully_masked(mask: &[u64; 8], octant: usize) -> bool {
         .all(|word| word & patch == patch)
 }
 
-/// `(depth, is_stage)`: the wanted level if resident, else the coarsest resident one. It is a stage
-/// only when coarser than `wanted`; a finer level already meets the target (ADR 0031).
+/// `(depth, is_stage)`: the wanted level if resident, else the resident level closest to it
+/// (R3-Q21): the finest of the coarser ones, or when none is coarser the coarsest of the finer
+/// ones. It is a stage only when coarser than `wanted`; a finer level already meets the target
+/// (ADR 0031).
 pub fn resident_depth(wanted: u8, resident: &[u8]) -> Option<(u8, bool)> {
     if resident.contains(&wanted) {
-        Some((wanted, false))
-    } else {
-        resident
-            .iter()
-            .copied()
-            .min()
-            .map(|depth| (depth, depth < wanted))
+        return Some((wanted, false));
     }
+    let coarser = resident
+        .iter()
+        .copied()
+        .filter(|depth| *depth < wanted)
+        .max();
+    match coarser {
+        Some(depth) => Some((depth, true)),
+        None => resident.iter().copied().min().map(|depth| (depth, false)),
+    }
+}
+
+/// `(drawn, stage)` of a node from its `wanted` depths and `resident` levels, as `cell_cut`
+/// decides them; `node_depth` is the depth whose levels span octants.
+pub(crate) fn drawn_levels(
+    wanted: &[Option<u8>; 8],
+    resident: &[u8],
+    node_depth: u8,
+) -> ([Option<u8>; 8], [bool; 8]) {
+    let mut drawn = [None; 8];
+    let mut stage = [false; 8];
+    for o in 0..8 {
+        if let Some(w) = wanted[o]
+            && let Some((depth, is_stage)) = resident_depth(w, resident)
+        {
+            drawn[o] = Some(depth);
+            stage[o] = is_stage;
+        }
+    }
+    // A spanning level is drawn whole, so it must be the only level the node draws:
+    // otherwise its cells would overlap the finer ones of the other octants.
+    let spanning = drawn.iter().flatten().copied().find(|d| *d <= node_depth);
+    if let Some(spanning) = spanning {
+        for o in 0..8 {
+            if let Some(w) = wanted[o] {
+                drawn[o] = Some(spanning);
+                stage[o] = spanning < w;
+            }
+        }
+    }
+    (drawn, stage)
 }
 
 struct Placed {
@@ -476,27 +512,8 @@ pub(crate) fn cell_cut_with(
                     .expect("a finer stored level exists");
             }
             entry.wanted[o] = Some(wanted);
-            if let Some((depth, stage)) = resident_depth(wanted, &data.resident) {
-                entry.drawn[o] = Some(depth);
-                entry.stage[o] = stage;
-            }
         }
-        // A spanning level is drawn whole, so it must be the only level the node draws:
-        // otherwise its cells would overlap the finer ones of the other octants.
-        let spanning = entry
-            .drawn
-            .iter()
-            .flatten()
-            .copied()
-            .find(|d| *d <= node_depth);
-        if let Some(spanning) = spanning {
-            for o in 0..8 {
-                if let Some(wanted) = entry.wanted[o] {
-                    entry.drawn[o] = Some(spanning);
-                    entry.stage[o] = spanning < wanted;
-                }
-            }
-        }
+        (entry.drawn, entry.stage) = drawn_levels(&entry.wanted, &data.resident, node_depth);
     }
     Ok(entries)
 }

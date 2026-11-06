@@ -1499,3 +1499,543 @@ fn reset_cancels_requests_and_evicts_uploading_levels() {
         128
     );
 }
+
+// R3-Q21: the image only refines.
+
+fn sample_points(bounds: SpatialBounds) -> Vec<[f64; 3]> {
+    let mut points = Vec::new();
+    for x in [0.17, 0.5, 0.83] {
+        for y in [0.17, 0.5, 0.83] {
+            for z in [0.17, 0.5, 0.83] {
+                let at = [x, y, z];
+                points.push(std::array::from_fn(|a| {
+                    bounds.min()[a] + at[a] * (bounds.max()[a] - bounds.min()[a])
+                }));
+            }
+        }
+    }
+    points
+}
+
+/// Where the cell of `point` sits in the 8x8x8 grid of `bounds`, if the point is inside.
+fn cell_of(bounds: SpatialBounds, point: [f64; 3]) -> Option<[usize; 3]> {
+    if !(0..3).all(|a| bounds.min()[a] <= point[a] && point[a] < bounds.max()[a]) {
+        return None;
+    }
+    let cell = side_of(bounds) / 8.0;
+    Some(std::array::from_fn(|a| {
+        (((point[a] - bounds.min()[a]) / cell) as usize).min(7)
+    }))
+}
+
+/// Does the mask of `node` hide `point`?
+fn masked_at(
+    plan: &FramePlan,
+    nodes: &HashMap<NodeId, PoolNode>,
+    node: u64,
+    point: [f64; 3],
+) -> bool {
+    let entry = plan
+        .entries
+        .iter()
+        .find(|entry| entry.node == NodeId::new(node))
+        .expect("entry");
+    let at = cell_of(nodes[&entry.node].bounds, point).expect("point in node");
+    entry.mask[at[2]] >> (at[0] + 8 * at[1]) & 1 == 1
+}
+
+/// Resident levels of the nodes, as the cut of the next `step` reads them (caps applied).
+fn resident_levels(rig: &Rig) -> HashMap<NodeId, Vec<u8>> {
+    rig.nodes
+        .iter()
+        .map(|(id, node)| {
+            let levels = capped(&node.stored, rig.pool.caps.get(id))
+                .into_iter()
+                .filter(|depth| rig.pool.is_resident(rig.pool.key(*id, *depth)))
+                .collect();
+            (*id, levels)
+        })
+        .collect()
+}
+
+/// Depth the plan really draws at `point`: the unhidden octant of an entry that has a resident
+/// level in `active` there (geometry computed here). `resident` is `resident_levels` taken
+/// before the step: each drawn depth is checked against it and `resident_depth`, and no point may
+/// be drawn by two entries.
+fn drawn_at(
+    plan: &FramePlan,
+    nodes: &HashMap<NodeId, PoolNode>,
+    resident: &HashMap<NodeId, Vec<u8>>,
+    point: [f64; 3],
+) -> Option<u8> {
+    let depths: Vec<u8> = plan
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            let at = cell_of(nodes[&entry.node].bounds, point)?;
+            if entry.mask[at[2]] >> (at[0] + 8 * at[1]) & 1 == 1 {
+                return None;
+            }
+            let octant = ((at[0] / 4) << 2) | ((at[1] / 4) << 1) | (at[2] / 4);
+            plan.active
+                .iter()
+                .any(|a| a.key.node == entry.node && a.octant_bits >> octant & 1 == 1)
+                .then(|| entry.drawn[octant])
+                .flatten()
+                .inspect(|depth| {
+                    let wanted = entry.wanted[octant].expect("a drawn octant is wanted");
+                    assert_eq!(
+                        crate::resident_depth(wanted, &resident[&entry.node]).map(|(d, _)| d),
+                        Some(*depth),
+                        "node {:?} octant {octant}",
+                        entry.node
+                    );
+                })
+        })
+        .collect();
+    assert!(depths.len() <= 1, "{point:?} is drawn by {depths:?}");
+    depths.first().copied()
+}
+
+/// `rig.run` that also returns the resident levels the last frame planned with.
+fn run_with_resident(
+    rig: &mut Rig,
+    frames: usize,
+    cut: &[NodeId],
+    camera: &OrbitCamera,
+    target: f64,
+) -> (FramePlan, HashMap<NodeId, Vec<u8>>) {
+    rig.run(frames - 1, cut, camera, target);
+    let resident = resident_levels(rig);
+    (rig.step(cut, camera, target), resident)
+}
+
+fn resident_at(rig: &Rig, node: u64, depth: u8) -> bool {
+    rig.pool.is_resident(rig.pool.key(NodeId::new(node), depth))
+}
+
+/// Region A drew depth 6 (8 px) and refines: in the fallback variant the cut becomes its eight
+/// children (node 2 is a fallback ancestor), in the other it keeps node 2 and adds child 10.
+fn only_refine(in_cut: bool) {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    let cam = camera("fit");
+    let (before, resident) = run_with_resident(&mut rig, 60, &ids(&[2, 3]), &cam, 8.0);
+    assert_eq!(before.apply, CutApply::Applied);
+    assert_eq!(depth_of(&before, 2), [Some(6); 8], "setup");
+    let points = sample_points(nodes[&NodeId::new(2)].bounds);
+    let base: Vec<Option<u8>> = points
+        .iter()
+        .map(|p| drawn_at(&before, &nodes, &resident, *p))
+        .collect();
+    assert!(base.iter().all(|d| *d == Some(6)), "setup");
+    let (cut, watched): (Vec<NodeId>, Vec<u64>) = if in_cut {
+        (ids(&[2, 10, 3]), vec![10])
+    } else {
+        let mut cut = ids(&region_children(10));
+        cut.push(NodeId::new(3));
+        (cut, region_children(10))
+    };
+    let (mut saw_held, mut saw_taken_over) = (false, false);
+    for frame in 0..40 {
+        let ready: Vec<bool> = watched.iter().map(|c| resident_at(&rig, *c, 6)).collect();
+        let coarse: Vec<bool> = watched.iter().map(|c| resident_at(&rig, *c, 5)).collect();
+        let resident = resident_levels(&rig);
+        let plan = rig.step(&cut, &cam, 8.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        assert!(!plan.counters.descendant_too_fine, "frame {frame}");
+        assert_eq!(plan.counters.hold_unsettled, 0, "frame {frame}");
+        // No zone is ever drawn coarser than before.
+        for (point, was) in points.iter().zip(&base) {
+            let now = drawn_at(&plan, &nodes, &resident, *point);
+            assert!(now >= *was, "frame {frame}: {point:?} {now:?} < {was:?}");
+        }
+        // A child draws exactly when its level 6 (the ancestor's depth and its wanted one) is
+        // resident, and a coarser one is held (it neither draws nor hides node 2).
+        let mut missing = 0;
+        let mut held = 0;
+        for (index, child) in watched.iter().enumerate() {
+            let drawn = depth_of(&plan, *child);
+            assert_eq!(
+                drawn[0].is_some(),
+                ready[index],
+                "frame {frame} node {child}"
+            );
+            let centre = sample_points(nodes[&NodeId::new(*child)].bounds)[13];
+            if has_entry(&plan, 2) {
+                assert_eq!(
+                    masked_at(&plan, &nodes, 2, centre),
+                    ready[index],
+                    "frame {frame} node {child}"
+                );
+            }
+            missing += usize::from(!ready[index]);
+            held += usize::from(coarse[index] && !ready[index]);
+            saw_taken_over |= ready[index];
+        }
+        saw_held |= held > 0;
+        assert_eq!(plan.counters.held_nodes as usize, held, "frame {frame}");
+        assert_eq!(plan.counters.nodes_without_level as usize, missing);
+        assert_eq!(has_entry(&plan, 2), in_cut || missing > 0, "frame {frame}");
+        if missing == 0 {
+            assert_eq!(plan.counters.stages, 0);
+            assert_eq!(plan.counters.fallback_pages, 0);
+        } else {
+            assert!(plan.counters.stages as usize >= 8 * held, "frame {frame}");
+            let pages = rig.pages(rig.pool.key(NodeId::new(2), 6)) as u32;
+            let covers = if in_cut { held > 0 } else { true };
+            assert_eq!(plan.counters.fallback_pages, if covers { pages } else { 0 });
+        }
+    }
+    assert!(saw_held && saw_taken_over);
+}
+
+#[test]
+fn a_child_whose_first_level_is_coarser_than_the_ancestor_drew_is_held() {
+    only_refine(false);
+}
+
+#[test]
+fn a_child_in_the_cut_with_its_ancestor_is_held_the_same_way() {
+    only_refine(true);
+}
+
+/// `two_regions` whose children of node 2 also store depth 4, so they have a level coarser than
+/// what the ancestor drew to be held with.
+fn two_regions_with_coarse_children() -> HashMap<NodeId, PoolNode> {
+    let mut nodes = two_regions();
+    let parent = nodes[&NodeId::new(2)].clone();
+    nodes.extend(octants_of(&parent, 10, &[4, 5, 6, 7]));
+    nodes
+}
+
+/// Region A drew depth 6 at 8 px; its children (which also store depth 4) replace it at
+/// `target` px with room for `capacity` pages. A child is held when what it would draw is below
+/// `min(what node 2 drew, what the child wants)`; the test recomputes that from the resident
+/// levels (`resident_depth`) and the plan's wanted depths, and checks the image never gets
+/// coarser than the ancestor drew while the children take over within `limit` frames.
+fn takes_over_at(capacity: u32, target: f64, expect_held: bool, limit: u64) {
+    let nodes = two_regions_with_coarse_children();
+    let mut rig = Rig::new(nodes.clone(), capacity, 3, 1);
+    let cam = camera("fit");
+    let mut previous = rig.run(60, &ids(&[2, 3]), &cam, 8.0);
+    assert_eq!(depth_of(&previous, 2), [Some(6); 8], "setup");
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    let (mut gone, mut saw_held) = (None, false);
+    for frame in 0..60 {
+        let resident = resident_levels(&rig);
+        let plan = rig.step(&cut, &cam, target);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        let mut held = 0;
+        for child in region_children(10) {
+            // Node 2 drew this child's zone at its octant (child bits are x, y, z from the low).
+            let index = child - 10;
+            let octant = ((index & 1) << 2 | (index >> 1 & 1) << 1 | (index >> 2 & 1)) as usize;
+            let ancestor = has_entry(&previous, 2).then(|| depth_of(&previous, 2)[octant]);
+            let entry = plan.entries.iter().find(|e| e.node.get() == child).unwrap();
+            let id = entry.node;
+            let wanted = entry.wanted[0].unwrap();
+            let would = crate::resident_depth(wanted, &resident[&id]).map(|(d, _)| d);
+            let short = match (ancestor.flatten(), would) {
+                (Some(a), Some(d)) => d < a.min(wanted),
+                _ => false,
+            };
+            held += usize::from(short);
+            assert_eq!(entry.drawn[0].is_some(), would.is_some() && !short);
+        }
+        assert_eq!(plan.counters.held_nodes as usize, held, "frame {frame}");
+        saw_held |= held > 0 && has_entry(&plan, 2);
+        if !has_entry(&plan, 2) && gone.is_none() {
+            gone = Some(frame);
+            assert_eq!(plan.counters.nodes_without_level, 0);
+        }
+        previous = plan;
+    }
+    assert_eq!(saw_held, expect_held, "a child was held while node 2 drew");
+    assert!(gone.is_some_and(|frame| frame < limit), "{gone:?}");
+}
+
+#[test]
+fn a_child_that_wants_less_than_the_ancestor_drew_takes_over_at_its_wanted_level() {
+    // At 16 px the children want depth 5 < the 6 the ancestor drew; the ancestor itself wants 4
+    // now and redraws coarser, so the children are not held behind it.
+    takes_over_at(512, 16.0, false, 15);
+}
+
+#[test]
+fn a_child_whose_fit_cap_is_below_the_ancestor_depth_takes_over_at_the_cap() {
+    // The pool cannot hold depth 6 for the farthest children: their cap (5) is the threshold,
+    // and the nearest ones still want 6.
+    takes_over_at(40, 8.0, true, 30);
+}
+
+#[test]
+fn the_hold_follows_what_would_be_drawn_and_not_mere_residency() {
+    // Node 10 wants 6 (the depth node 2 drew). With 5 and 7 resident the closest level below 6
+    // is 5, so it is held although 7 is resident.
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    let cam = camera("fit");
+    let before = rig.run(60, &ids(&[2, 3]), &cam, 8.0);
+    assert_eq!(depth_of(&before, 2), [Some(6); 8], "setup");
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    rig.held.insert(NodeId::new(10));
+    seed_resident(&mut rig.pool, 10, &[5, 7]);
+    let points = sample_points(nodes[&NodeId::new(10)].bounds);
+    for frame in 0..12 {
+        let resident = resident_levels(&rig);
+        let plan = rig.step(&cut, &cam, 8.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert!(rig.pool.hold.contains(&NodeId::new(10)), "frame {frame}");
+        assert_eq!(depth_of(&plan, 10), [None; 8]);
+        for point in &points {
+            let now = drawn_at(&plan, &nodes, &resident, *point);
+            assert!(now >= Some(6), "frame {frame}");
+        }
+    }
+    rig.held.clear();
+    let mut taken_over = false;
+    for _ in 0..12 {
+        let resident = resident_levels(&rig);
+        let plan = rig.step(&cut, &cam, 8.0);
+        assert!(
+            points
+                .iter()
+                .all(|p| drawn_at(&plan, &nodes, &resident, *p) >= Some(6))
+        );
+        taken_over |= depth_of(&plan, 10)[0] == Some(6);
+    }
+    assert!(taken_over);
+}
+
+#[test]
+fn the_closest_resident_level_decides_whether_a_node_is_held() {
+    // Node 2 drew 6 and node 10 wants 6.
+    for (resident, held) in [
+        (vec![5_u8], true),
+        (vec![5, 7], true),
+        (vec![4, 5], true),
+        (vec![6], false),
+        (vec![5, 6], false),
+        (vec![7], false),
+        (vec![7, 9], false),
+    ] {
+        let mut rig = rig_with_coarse_children(None);
+        let key = rig.pool.key(NodeId::new(10), 5);
+        rig.pool.levels.remove(&key);
+        seed_resident(&mut rig.pool, 10, &resident);
+        let (eval, _) = eval_with(&rig, &ids(&[10]), 6);
+        assert_eq!(eval.hold.contains(&NodeId::new(10)), held, "{resident:?}");
+    }
+}
+
+/// Marks the levels resident without uploading, to set up a state by hand.
+fn seed_resident(pool: &mut CellPool, node: u64, depths: &[u8]) {
+    for depth in depths {
+        let key = pool.key(NodeId::new(node), *depth);
+        pool.levels.insert(
+            key,
+            Level {
+                state: LevelState::Resident { slots: Vec::new() },
+                data: None,
+                last_used: 0,
+                last_active: 0,
+            },
+        );
+    }
+}
+
+/// `eval_hold` on `cut` as `cell_cut` would draw it with the resident levels of the pool, every
+/// octant wanting `wanted`, and nothing held.
+fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
+    let grid = grid();
+    let nodes: &FastMap<NodeId, PoolNode> = &rig
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    let entries = cell_cut_with(
+        cut,
+        &|id| {
+            let node = nodes.get(&id)?;
+            Some(CellCutNode {
+                bounds: node.bounds,
+                stored: node.stored.clone(),
+                resident: node
+                    .stored
+                    .iter()
+                    .copied()
+                    .filter(|d| rig.pool.is_resident(rig.pool.key(id, *d)))
+                    .collect(),
+            })
+        },
+        &grid,
+        &|_, _, _| wanted,
+    )
+    .unwrap();
+    let none = FastSet::default();
+    let eval = rig.pool.eval_hold(&entries, cut, nodes, &grid, &none);
+    let fallback = rig.pool.compute_fallback(cut, nodes, &grid, &eval.hold);
+    (eval, fallback)
+}
+
+/// A rig that drew `[2, 3]` (node 2 at depth 6) and whose children 10 and 17 of node 2 hold a
+/// resident level 5.
+fn rig_with_coarse_children(extra: Option<(u64, PoolNode)>) -> Rig {
+    let mut nodes = two_regions();
+    nodes.extend(extra.map(|(id, node)| (NodeId::new(id), node)));
+    let mut rig = Rig::new(nodes, 512, 3, 1);
+    rig.run(60, &ids(&[2, 3]), &camera("fit"), 8.0);
+    for child in [10, 17] {
+        seed_resident(&mut rig.pool, child, &[5]);
+    }
+    rig.pool.residency_epoch += 1;
+    rig
+}
+
+#[test]
+fn only_a_node_with_an_ancestor_the_fallback_would_use_can_be_held() {
+    let rig = rig_with_coarse_children(None);
+    let (eval, fallback) = eval_with(&rig, &ids(&[10]), 7);
+    assert!(eval.hold.contains(&NodeId::new(10)));
+    assert_eq!(
+        fallback,
+        ids(&[2]),
+        "the held node's ancestor is in the real cut"
+    );
+    // A resident cut node four levels below node 2 rules it out as a fallback (it would make the
+    // real cut too fine), so the node cannot be held on it either: it would draw nothing.
+    let deep = (
+        50,
+        PoolNode {
+            bounds: cube([ORIGIN[0] + SIDE / 4.0, ORIGIN[1], ORIGIN[2]], SIDE / 32.0),
+            stored: vec![8, 9, 10],
+            points: 2000,
+        },
+    );
+    let mut rig = rig_with_coarse_children(Some(deep));
+    seed_resident(&mut rig.pool, 50, &[8]);
+    let (eval, fallback) = eval_with(&rig, &ids(&[10, 50]), 7);
+    assert!(
+        eval.hold.is_empty() && eval.settle.is_empty(),
+        "{:?}",
+        eval.hold
+    );
+    assert!(fallback.is_empty());
+}
+
+#[test]
+fn the_hold_threshold_is_the_depth_the_ancestor_drew_over_the_octant_of_the_child() {
+    // Node 2 drew depth 6 over its octants 0..7 and 5 over octant 7. Child 10 (octant 0) has
+    // level 5 and wants 7: short of the 6 drawn there, held. Child 17 (octant 7) is not: 5 is
+    // what node 2 drew there.
+    let mut rig = rig_with_coarse_children(None);
+    let mut drawn = [Some(6); 8];
+    drawn[7] = Some(5);
+    rig.pool.applied_drawn.insert(NodeId::new(2), drawn);
+    let (eval, _) = eval_with(&rig, &ids(&[10, 17]), 7);
+    assert!(eval.hold.contains(&NodeId::new(10)));
+    assert!(!eval.hold.contains(&NodeId::new(17)));
+}
+
+#[test]
+fn octants_of_a_node_touch_the_ancestor_octants_below_them() {
+    let f = Footprint {
+        rep: 6,
+        lo: [0; 3],
+        hi: [15; 3],
+    };
+    assert_eq!(f.octants_in(1).count(), 8);
+    for octant in 0..8 {
+        assert_eq!(f.octants_of(1, octant).collect::<Vec<_>>(), vec![octant]);
+    }
+    // From two levels up the whole node lies in one octant of the ancestor.
+    for octant in 0..8 {
+        assert_eq!(f.octants_of(2, octant).collect::<Vec<_>>(), vec![0]);
+    }
+}
+
+#[test]
+fn a_hold_that_does_not_settle_stays_held_and_never_draws_coarser() {
+    // One pass cannot reach a fixed point whenever the held set changes: the nodes held in the
+    // input or in the new set stay held (so the image never gets coarser) and are counted.
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    rig.pool.hold_passes = 1;
+    let cam = camera("fit");
+    let (before, resident) = run_with_resident(&mut rig, 60, &ids(&[2, 3]), &cam, 8.0);
+    assert_eq!(before.counters.hold_unsettled, 0);
+    let points = sample_points(nodes[&NodeId::new(2)].bounds);
+    let base: Vec<Option<u8>> = points
+        .iter()
+        .map(|p| drawn_at(&before, &nodes, &resident, *p))
+        .collect();
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    let (mut unsettled, mut held) = (0, Vec::new());
+    for frame in 0..40 {
+        let resident = resident_levels(&rig);
+        let plan = rig.step(&cut, &cam, 8.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        for (point, was) in points.iter().zip(&base) {
+            let now = drawn_at(&plan, &nodes, &resident, *point);
+            assert!(now >= *was, "frame {frame}: {point:?} {now:?} < {was:?}");
+        }
+        unsettled += plan.counters.hold_unsettled;
+        held.push(plan.counters.held_nodes);
+    }
+    assert!(unsettled > 0, "the hold always settled");
+    assert!(held.windows(2).all(|w| w[0] <= w[1]), "{held:?}");
+    assert!(held[30..].iter().all(|h| *h == held[39]), "{held:?}");
+}
+
+#[test]
+fn the_real_cut_is_not_reused_when_the_applied_depths_changed() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes, 512, 3, 1);
+    let cam = camera("fit");
+    rig.run(60, &ids(&[2, 3]), &cam, 8.0);
+    assert!(rig.step(&ids(&[2, 3]), &cam, 8.0).counters.real_reused);
+    rig.pool.applied_digest ^= 1;
+    assert!(!rig.step(&ids(&[2, 3]), &cam, 8.0).counters.real_reused);
+}
+
+#[test]
+fn reset_with_held_nodes_converges_back() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    let cam = camera("fit");
+    rig.run(60, &ids(&[2, 3]), &cam, 8.0);
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    let mut frames = 0;
+    while rig.step(&cut, &cam, 8.0).counters.held_nodes == 0 {
+        frames += 1;
+        assert!(frames < 20, "setup: nothing was held");
+    }
+    assert!(!rig.pool.hold.is_empty());
+    let _ = rig.pool.reset();
+    assert!(rig.pool.hold.is_empty() && rig.pool.applied_drawn.is_empty());
+    assert_eq!(rig.pool.applied_digest, 0);
+    rig.inflight.clear();
+    rig.gpu = FakeGpu::default();
+    let mut last = None;
+    for _ in 0..80 {
+        let plan = rig.step(&cut, &cam, 8.0);
+        assert_no_holes(&plan, &nodes);
+        last = Some(plan);
+    }
+    let plan = last.unwrap();
+    assert_eq!(plan.apply, CutApply::Applied);
+    assert_eq!(plan.entries.len(), cut.len());
+    assert_eq!(plan.counters.held_nodes, 0);
+    assert_eq!(plan.counters.nodes_without_level, 0);
+    assert_eq!(plan.counters.fallback_pages, 0);
+    assert!(rig.pool.hold.is_empty());
+    rig.assert_gpu_matches_pool();
+}
