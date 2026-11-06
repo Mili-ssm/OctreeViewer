@@ -13,10 +13,10 @@ use viewer_render_wgpu::{
     PageEntry, PageFrame, PoolConfig, SceneBounds, ViewProjection, VoxelBuildLimits,
 };
 
-const SIDE: f64 = 64.0;
+pub(super) const SIDE: f64 = 64.0;
 
 /// Root (1) over its eight octants (2..=9); node 2 also has eight children (10..=17).
-fn octree_nodes() -> Vec<SpatialNode> {
+pub(super) fn octree_nodes() -> Vec<SpatialNode> {
     let cube = |min: [f64; 3], side: f64| SpatialBounds::new(min, min.map(|v| v + side)).unwrap();
     let node = |id: u64, parent: Option<u64>, level: u32, bounds| {
         SpatialNode::new(
@@ -53,7 +53,7 @@ fn octree_nodes() -> Vec<SpatialNode> {
     nodes
 }
 
-fn octree_dataset(
+pub(super) fn octree_dataset(
     nodes: Vec<SpatialNode>,
     semantics: HierarchySemantics,
     global_frame: bool,
@@ -71,7 +71,7 @@ fn cell_dataset() -> LodDataset {
 }
 
 /// 200 pseudo-random points inside the bounds of the node that owns `block`.
-fn node_block(dataset: &LodDataset, node: u64) -> PointBlock {
+pub(super) fn node_block(dataset: &LodDataset, node: u64) -> PointBlock {
     let bounds = dataset
         .metadata
         .hierarchy()
@@ -108,7 +108,7 @@ fn load_all(dataset: &mut LodDataset) {
     }
 }
 
-fn view_at(eye: Option<[f64; 3]>) -> ViewProjection {
+pub(super) fn view_at(eye: Option<[f64; 3]>) -> ViewProjection {
     let viewport = [800, 600];
     let mut camera = OrbitCamera::default();
     assert!(camera.fit(
@@ -189,7 +189,7 @@ impl CellTarget for NullTarget {
     }
 }
 
-fn driver_for(dataset: &LodDataset, cpu_budget_bytes: u64) -> CellDriver {
+pub(super) fn driver_for(dataset: &LodDataset, cpu_budget_bytes: u64) -> CellDriver {
     CellDriver::new(DriverConfig {
         pool: PoolConfig::default(),
         grid: dataset.cell_grid(),

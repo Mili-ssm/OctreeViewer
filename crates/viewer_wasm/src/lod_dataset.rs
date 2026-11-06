@@ -1414,3 +1414,7 @@ mod tests;
 #[cfg(test)]
 #[path = "lod_cells_tests.rs"]
 mod cells_tests;
+
+#[cfg(test)]
+#[path = "lod_cells_stream_tests.rs"]
+mod cells_stream_tests;

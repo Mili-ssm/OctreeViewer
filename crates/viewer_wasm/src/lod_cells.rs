@@ -175,6 +175,20 @@ impl LodDataset {
         plan
     }
 
+    /// Whether the cut selected at `target_px` is complete with only built nodes resident: the
+    /// ladder may start at the target stage.
+    #[cfg(any(target_arch = "wasm32", test))]
+    #[cfg_attr(not(test), allow(dead_code))] // only the ladder in `lod_driver` calls it, and that is test-only for now
+    pub(crate) fn target_cells_are_ready(
+        &mut self,
+        view: &ViewProjection,
+        target_px: f64,
+    ) -> Result<bool, LodDatasetError> {
+        let (_, selection) = self.select_target(view, target_px)?;
+        let plan = self.prepare_cell_plan(&selection);
+        Ok(super::resident_target_plan_is_complete(&selection, &plan))
+    }
+
     /// Tells the dataset the caller reset the driver (`CellDriver::reset`): the pool draws
     /// nothing until the next update, so no node is pinned for it.
     pub fn pool_was_reset(&mut self) {
@@ -318,6 +332,38 @@ impl LodDataset {
         driver: &mut CellDriver,
         target: &mut T,
         async_priority_order: Option<&mut Vec<BlockId>>,
+        load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+    ) -> Result<LodCellUpdate, LodDatasetError> {
+        self.update_cells_at_stage(
+            view,
+            target_px,
+            target_px,
+            config,
+            driver,
+            target,
+            async_priority_order,
+            load_block,
+        )
+    }
+
+    /// [`LodDataset::update_cells`] selecting the nodes at `stage_px` (a rung of the px ladder,
+    /// see `lod_driver::update_cells_staged`) while the driver still chooses cell levels for
+    /// `target_px`. Coarser nodes get their cells first and stay as the fallback of the finer
+    /// ones (R3-Q19).
+    ///
+    /// The caller owns the ladder: when the camera moves it resets `stage_pixels = None` and sets
+    /// `dirty = true`; otherwise the nodes of a new region load at a fine stage without their
+    /// parents' cells as fallback (see `lod_driver::update_cells_staged`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_cells_at_stage<T: CellTarget>(
+        &mut self,
+        view: &ViewProjection,
+        stage_px: f64,
+        target_px: f64,
+        config: CellUpdateConfig,
+        driver: &mut CellDriver,
+        target: &mut T,
+        async_priority_order: Option<&mut Vec<BlockId>>,
         mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodCellUpdate, LodDatasetError> {
         if !self.supports_cells() {
@@ -327,7 +373,7 @@ impl LodDataset {
         // The driver is the truth about stored cells (it forgets, a caller may swap it).
         self.cells.built.retain(|id| driver.has_node(*id));
         let coordinate_origin = self.coordinate_origin();
-        let (frustum, selection) = self.select_target(view, target_px)?;
+        let (frustum, selection) = self.select_target(view, stage_px)?;
 
         let initial_plan = self.prepare_cell_plan(&selection);
         // Blocks that are decoded but wait for their cells are not read again.

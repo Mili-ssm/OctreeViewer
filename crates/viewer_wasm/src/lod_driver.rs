@@ -5,10 +5,11 @@
 //! is what lets native tests pin both bindings to the same scene digests.
 
 use viewer_core::{AttributeColumn, AttributeDescriptor, BlockId, NodeId, PointBatch, PointBlock};
-use viewer_render_wgpu::{ColorMode, ViewProjection};
+use viewer_render_wgpu::{CellDriver, CellTarget, ColorMode, ViewProjection};
 
 use crate::{
-    LodBuiltScene, LodDataset, LodViewStats, PageInsert,
+    CellUpdateConfig, LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError, LodViewStats,
+    PageInsert,
     lod_dataset::{WorkClock, next_lod_stage},
 };
 
@@ -40,6 +41,30 @@ pub(crate) struct LodStepResult {
     pub async_priority_order: Vec<BlockId>,
 }
 
+/// The px ladder shared by the CPU and the cells paths: the first update starts at the target
+/// stage when `target_ready` says its cut is already built, otherwise at the current coarse
+/// stage. `at_stage` runs one update at a stage and advances `stage_pixels` for the next one. With
+/// `retry_coarse` a failure at the target stage (a fine cut can exceed the build budget) is
+/// retried through the coarse stage instead of reported.
+fn run_stage_ladder<C, T, E>(
+    context: &mut C,
+    stage_pixels: &mut Option<f64>,
+    target: f64,
+    retry_coarse: bool,
+    target_ready: impl FnOnce(&mut C) -> Result<bool, E>,
+    mut at_stage: impl FnMut(&mut C, f64, &mut Option<f64>) -> Result<T, E>,
+) -> Result<T, E> {
+    if stage_pixels.is_none() && target < COARSEST_STAGE_PIXELS && target_ready(context)? {
+        match at_stage(context, target, stage_pixels) {
+            Ok(result) => return Ok(result),
+            Err(error) if !retry_coarse => return Err(error),
+            Err(_) => *stage_pixels = None,
+        }
+    }
+    let stage = stage_pixels.unwrap_or(COARSEST_STAGE_PIXELS);
+    at_stage(context, stage, stage_pixels)
+}
+
 /// Runs one update: starts at the target stage when its cut is already resident, otherwise at
 /// the current coarse stage, then advances `stage_pixels`/`dirty` for the next refinement.
 pub(crate) fn update_lod_view(
@@ -50,24 +75,100 @@ pub(crate) fn update_lod_view(
     sink: &mut impl SceneSink,
     load_block: &mut impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
 ) -> Result<LodStepResult, String> {
-    let target = step.target_pixels;
-    if stage_pixels.is_none()
-        && target < COARSEST_STAGE_PIXELS
-        && dataset
-            .target_cut_is_resident(step.view, target)
-            .map_err(|error| error.to_string())?
-    {
-        match update_at_stage(dataset, step, target, stage_pixels, dirty, sink, load_block) {
-            Ok(result) => return Ok(result),
-            Err(_) => {
-                // A fine resident cut can still exceed the voxel/GPU build budget. Retry
-                // through the normal coarse stage before reporting the failure.
-                *stage_pixels = None;
-            }
-        }
-    }
-    let stage = stage_pixels.unwrap_or(COARSEST_STAGE_PIXELS);
-    update_at_stage(dataset, step, stage, stage_pixels, dirty, sink, load_block)
+    run_stage_ladder(
+        dataset,
+        stage_pixels,
+        step.target_pixels,
+        true,
+        |dataset| {
+            dataset
+                .target_cut_is_resident(step.view, step.target_pixels)
+                .map_err(|error| error.to_string())
+        },
+        |dataset, stage, stage_pixels| {
+            update_at_stage(dataset, step, stage, stage_pixels, dirty, sink, load_block)
+        },
+    )
+}
+
+/// Inputs of one cells ladder step.
+#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
+pub(crate) struct CellStep<'a> {
+    pub view: &'a ViewProjection,
+    pub target_pixels: f64,
+    pub config: CellUpdateConfig,
+    /// Whether missing blocks can be supplied, either by a reader or by the host.
+    pub can_load_blocks: bool,
+}
+
+/// One cells update and the rung of the ladder it ran at.
+#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
+pub(crate) struct CellStageUpdate {
+    pub update: LodCellUpdate,
+    pub stage_pixels: f64,
+}
+
+/// The px ladder of the cells path (R3-Q19), same stage machine as [`update_lod_view`]: coarse
+/// to fine, never loading a node's cells before its parents'. Each rung's cut stays as the
+/// planner's retained fallback for the next, and the rung halves toward `target_pixels` once the
+/// rung's cut has all its cells built. The caller keeps `stage_pixels` and `dirty` between
+/// frames (`dirty`: another update is worth running even if the view does not change).
+///
+/// When the camera moves the caller resets `stage_pixels = None` and sets `dirty = true`: the
+/// ladder then restarts coarse, so the nodes of the new region get their parents' cells first
+/// (R3-Q19) instead of loading fine nodes without a fallback.
+///
+/// `dirty` also stays true while builds are deferred by the cap or the driver has work
+/// (`CellDriver::needs_frame`), which includes a permanent pool overflow and a failed frame:
+/// the caller stops on `pool_overflow > 0` or on errors that repeat.
+#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn update_cells_staged<T: CellTarget>(
+    dataset: &mut LodDataset,
+    step: &CellStep<'_>,
+    stage_pixels: &mut Option<f64>,
+    dirty: &mut bool,
+    driver: &mut CellDriver,
+    target: &mut T,
+    mut async_priority_order: Option<&mut Vec<BlockId>>,
+    mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+) -> Result<CellStageUpdate, LodDatasetError> {
+    run_stage_ladder(
+        dataset,
+        stage_pixels,
+        step.target_pixels,
+        false,
+        |dataset| dataset.target_cells_are_ready(step.view, step.target_pixels),
+        |dataset, stage, stage_pixels| {
+            let update = dataset.update_cells_at_stage(
+                step.view,
+                stage,
+                step.target_pixels,
+                step.config,
+                driver,
+                target,
+                async_priority_order.as_deref_mut(),
+                &mut load_block,
+            )?;
+            // Nodes deferred by the build cap are pending too: the rung is not left, and the
+            // update repeats, until every selected node has its cells.
+            let pending = !update.stats.pending_block_ids.is_empty()
+                || !update.stats.pending_page_anchors.is_empty()
+                || update.stats.build_deferred > 0;
+            (*stage_pixels, *dirty) = next_lod_stage(
+                Some(stage),
+                step.target_pixels,
+                pending,
+                step.can_load_blocks,
+            );
+            // Builds and the driver's own work (uploads, retained cut) need no new input.
+            *dirty |= update.stats.build_deferred > 0 || driver.needs_frame();
+            Ok(CellStageUpdate {
+                update,
+                stage_pixels: stage,
+            })
+        },
+    )
 }
 
 /// Most page-fetch rounds one synchronous update runs before it returns what it has.

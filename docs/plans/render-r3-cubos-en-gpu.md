@@ -402,8 +402,8 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
 
 **T9b, `LodDataset`** (★: `lod_dataset.rs`; los bindings no cambian):
 - [x] (T9b1) En la apertura, `LodDataset` sabe si admite celdas: v7.4 y v7.5 con reemplazo, a partir de `uses_global_frame()` y sin literales de versión. v5, `v7.1–3` y Additive dan `CellPathUnsupported` (R3-Q5).
-- [ ] `update_cells(view, target_px)` (T9b1 hecho salvo la escalera de px, que es de T9b2; en Majadas y Belvedere v7.5 ningún bloque tiene más de un dueño):
-  - con la escalera de px de la ruta CPU (`lod_driver`), de grueso a fino (R3-Q19, 06-11-2026: no se carga el nivel de un nodo antes que el de sus padres). Cada etapa del corte queda como respaldo retenido de la siguiente, y la etapa avanza cuando su corte tiene las celdas construidas. Sustituye «al px objetivo, sin escalera», que saltaba a los nodos finos sin construir antes sus padres;
+- [x] `update_cells(view, target_px)` (T9b1 y T9b2a; el tope de construcciones mantiene la vista sucia mientras queden nodos aplazados, de forma preventiva: ningún test encontró un caso que se atascara sin ello; en Majadas y Belvedere v7.5 ningún bloque tiene más de un dueño):
+  - [x] (T9b2a) con la escalera de px de la ruta CPU (`lod_driver`), compartida con ella, de grueso a fino (R3-Q19, 06-11-2026: no se carga el nivel de un nodo antes que el de sus padres). Cada etapa del corte queda como respaldo retenido de la siguiente, y la etapa avanza cuando su corte tiene las celdas construidas. Sustituye «al px objetivo, sin escalera», que saltaba a los nodos finos sin construir antes sus padres;
   - el plan ve los bloques de un nodo como residentes solo cuando sus celdas existen. Lo hace un `ResidentBlockSource` que envuelve la caché, así que el plan cubre con el respaldo los nodos sin construir y el pool nunca recibe un nodo sin niveles;
   - se construyen como mucho N nodos por actualización, primero los más cercanos;
   - las celdas se construyen en el marco local de los puntos, y el pool y `PageFrame` usan el del mundo, con el `coordinate_origin` del renderer;
@@ -424,6 +424,8 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
 ## Tarea 10 ★: protocolo de workers
 
 - [ ] `nodeCells` y `evict` con la clave del pool, sin coalescer. `poolAck` y `poolResync`.
+- [ ] Al mover la cámara, el visor reinicia la escalera de px de celdas (`stage_pixels = None`) y marca la vista sucia; si no, las zonas nuevas cargan sus nodos finos sin los padres (R3-Q19; hallazgo de T9b2). La ruta CPU de hoy solo marca la vista sucia.
+- [ ] El visor dibuja mientras `CellDriver::needs_frame()` sea cierto y reescribe la tabla de páginas en cada movimiento de cámara (T9a).
 - [ ] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`.
 
 ## Tarea 11: humo en navegador
