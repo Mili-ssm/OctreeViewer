@@ -37,6 +37,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q17 | (06-11-2026) La regla de 2 ms de CPU por frame de T7c/T7d decide con los casos a 4 px; Majadas dentro de una hoja a 1 px queda como prueba de carga y se vuelve a medir en el visor en la Tarea 11 |
 | R3-Q18 | (06-11-2026) Con la cámara en movimiento, el nivel de cada octante se recalcula solo al pasar un umbral, y una celda puede proyectarse hasta ~5 % por encima del objetivo de px; con la cámara quieta, el resultado es exacto. La Tarea 11 lo comprueba en el navegador |
 | R3-Q19 | (06-11-2026) Un corte de celdas se aplica si no deja huecos: cada nodo sin nivel en GPU queda cubierto por un antepasado dibujado, que sigue en el corte hasta que el nodo tiene nivel, y lo que falta en una zona no bloquea las demás. Se carga de grueso a fino: no se pide el nivel de un nodo antes que el de su antepasado. Sustituye la regla de aplicar de T7a («ningún nodo sin nivel»), que se acercaba a la alternativa que el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) recuerda rechazada en 0031; R3-Q10 sigue igual para `DescendantTooFine` |
+| R3-Q20 | (06-11-2026) Un nodo del corte sin nivel en GPU y sin antepasado que dibuje no entra en el corte aplicado: su nivel más grueso se precarga con prioridad y entra cuando es residente. No bloquea el resto del corte. Si aplicar el corte dejaría de dibujar una zona que el corte anterior dibujaba, se retiene el anterior. Precisa R3-Q19 (hallazgo de T9b2b: la imagen se congelaba mientras llegaban nodos) Precisión del 06-11-2026: al alejar la cámara, los descendientes que ya se dibujaban siguen dibujando la zona del nodo grueso nuevo hasta que es residente; solo se retiene todo el corte si la zona no se puede cubrir así |
+| R3-Q21 | (06-11-2026) La imagen solo se refina: el antepasado sigue dibujando la zona de un hijo hasta que el hijo tiene ahí un nivel al menos tan fino como el que dibujaba el antepasado. Precisa R3-Q19 (hallazgo de T9b2b: al sustituir un nodo se veía un instante un nivel más grueso) Precisión del 06-11-2026: el umbral es el más grueso entre el nivel que dibujaba el antepasado y el que se pide ahora (deseado y tope del ajuste), y se decide por nodo entero (la máscara no distingue octantes del hijo). Dentro de un nodo, si falta el nivel deseado, se dibuja el residente más cercano a él |
 
 ## Restricciones globales
 
@@ -420,6 +422,27 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
   - hay un salto > 1 en un plan real;
   - hay un `NoStoredLevels` o un `UnknownNode`;
   - las celdas pasan de 512 MiB de memoria en Majadas a 4 px → cambiar el almacenamiento antes de la Tarea 10.
+
+**T9c, precarga y solo refinar** (R3-Q20 y R3-Q21 con sus precisiones; `cell_pool.rs`, `cell_cut.rs`, `cell_driver.rs`). Spec enmendada tras el pre-mortem del 06-11-2026. Dos partes, cada una con su commit:
+
+**T9c1, solo refinar (R3-Q21):**
+- [ ] `resident_depth`: si el nivel deseado no es residente, el residente más cercano a él (el más fino de los más gruesos, o el más grueso de los más finos si no hay ninguno más grueso). Los dorados de `cell_cut_digest` que cambien se listan con su motivo.
+- [ ] Un hijo «retenido» mientras no dibuje, en todos sus octantes, un nivel ≥ `min(nivel que dibujaba el antepasado ahí, deseado del hijo, tope del ajuste)`, según lo que `cell_cut` pondría en `drawn`. Un hijo retenido no dibuja ni enmascara al antepasado (`resident = []` en el corte real) y cuenta como sin nivel en el respaldo.
+- [ ] Memorias: claves con un digest de las profundidades dibujadas y del conjunto retenido; `reset()` lo vacía todo.
+- [ ] Contadores: los hijos retenidos cuentan en `nodes_without_level` y sus octantes en `stages`; páginas de los antepasados de respaldo en un contador nuevo.
+
+**T9c2, precarga (R3-Q20):**
+- [ ] Un nodo sin nivel y sin antepasado que dibuje sale del corte aplicado; su nivel más grueso se pide y sube con prioridad; entra al ser residente. Cuenta en `nodes_without_level`.
+- [ ] Respaldo por descendientes: si ese nodo tiene descendientes en el último corte aplicado (salto ≤ 3) que dibujaban, siguen en el corte real hasta que el nodo es residente.
+- [ ] Se retiene el corte anterior solo si una zona que dibujaba no se puede cubrir así. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
+
+**Pasa si** (T9c1 y T9c2):
+- tests sintéticos de alejar, salto de pose y bajada del tope, además de los de T9a1 y T9b2a;
+- el oráculo de huecos también mira las zonas de los nodos excluidos o retenidos (`lost_samples`: un punto que se dibujaba y ya no, y sigue en el corte), y el banco lo ejecuta de verdad;
+- un engrosado entre nodos solo cuenta si `después < min(antes, deseado ahora)`; debe ser 0 en todas las poses del banco, también en las órbitas;
+- el banco de T9b2b llega a la etapa final en Majadas dentro de una hoja (4 px; 1 px como carga), con la racha de `RetainedPrevious` ≤ 60 frames y 0 huecos; se miden la memoria de celdas, el tiempo de construcción y las páginas de respaldo (criterio de parada de T9b: 512 MiB a 4 px).
+
+**Parar si:** `lost_samples` > 0 al alejar o en un salto de pose; un antepasado retenido más de 120 frames sin que el nivel umbral del hijo esté pedido o en vuelo; `pool_coarsened` o `pool_overflow` por encima de T9b2b durante las retenciones; `nodes_without_level` = 0 con nodos excluidos o retenidos.
 
 ## Tarea 10 ★: protocolo de workers
 

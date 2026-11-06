@@ -170,6 +170,8 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: coste de CPU del pool | La regla de 2 ms por frame decide a 4 px; Majadas a 1 px es prueba de carga. | R3-Q17 |
 | R3: nivel por octante en movimiento | Hasta ~5 % por encima del objetivo de px con la cámara en movimiento; exacto con la cámara quieta. | R3-Q18 |
 | R3: aplicar un corte de celdas | Sin huecos y con retención local: el antepasado dibuja la zona de un nodo hasta que el nivel del nodo está en GPU, y lo que falta en una zona no bloquea las demás. Carga de grueso a fino. | R3-Q19 |
+| R3: nodos nuevos sin respaldo | Se precarga su nivel más grueso y entran al ser residentes, sin bloquear el resto; al alejar, los descendientes que ya se dibujaban cubren la zona hasta entonces; se retiene el corte anterior solo si la zona no se puede cubrir. | R3-Q20 |
+| R3: la imagen solo se refina | El antepasado dibuja la zona de un hijo hasta que el hijo dibuja ahí un nivel al menos tan fino como el del antepasado o el pedido, el más grueso de los dos, por nodo entero; dentro de un nodo se dibuja el residente más cercano al deseado. | R3-Q21 |
 
 ## Preguntas abiertas
 
