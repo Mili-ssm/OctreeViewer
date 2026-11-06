@@ -401,15 +401,15 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
   - un error del renderer o una oferta rechazada hacen fallar el frame: el renderer suelta su pool y el siguiente frame empieza de cero.
 
 **T9b, `LodDataset`** (★: `lod_dataset.rs`; los bindings no cambian):
-- [ ] En la apertura, `LodDataset` sabe si admite celdas: v7.4 y v7.5 con reemplazo, a partir de `uses_global_frame()` y sin literales de versión. v5, `v7.1–3` y Additive dan `CellPathUnsupported` (R3-Q5).
-- [ ] `update_cells(view, target_px)`:
-  - selección al px objetivo, sin la escalera de px (la progresión la dan el plan y las etapas del pool);
+- [x] (T9b1) En la apertura, `LodDataset` sabe si admite celdas: v7.4 y v7.5 con reemplazo, a partir de `uses_global_frame()` y sin literales de versión. v5, `v7.1–3` y Additive dan `CellPathUnsupported` (R3-Q5).
+- [ ] `update_cells(view, target_px)` (T9b1 hecho salvo la escalera de px, que es de T9b2; en Majadas y Belvedere v7.5 ningún bloque tiene más de un dueño):
+  - con la escalera de px de la ruta CPU (`lod_driver`), de grueso a fino (R3-Q19, 06-11-2026: no se carga el nivel de un nodo antes que el de sus padres). Cada etapa del corte queda como respaldo retenido de la siguiente, y la etapa avanza cuando su corte tiene las celdas construidas. Sustituye «al px objetivo, sin escalera», que saltaba a los nodos finos sin construir antes sus padres;
   - el plan ve los bloques de un nodo como residentes solo cuando sus celdas existen. Lo hace un `ResidentBlockSource` que envuelve la caché, así que el plan cubre con el respaldo los nodos sin construir y el pool nunca recibe un nodo sin niveles;
   - se construyen como mucho N nodos por actualización, primero los más cercanos;
   - las celdas se construyen en el marco local de los puntos, y el pool y `PageFrame` usan el del mundo, con el `coordinate_origin` del renderer;
   - hoja = `is_leaf(id) && !is_unloaded(id)`, contrastado con `has_children` de la página en un test;
   - un `NodeCellError` es un error de la ruta de celdas.
-- [ ] Los nodos fijados incluyen los nodos que el pool dibuja, también durante `RetainedPrevious` (`poolAck` en la Tarea 10).
+- [x] (T9b1) Los nodos fijados incluyen los nodos que el pool dibuja, también durante `RetainedPrevious` (`poolAck` en la Tarea 10).
 - [ ] **Pasa si:**
   - expulsar y volver a injertar una página no deja huecos (el oráculo de cobertura de T15 sobre celdas finas), sobre un fixture v7.5 de T0. La cámara se aleja, la página se expulsa y la cámara vuelve. Se vuelve a injertar con los mismos `NodeId`, y el `cell_cut_digest` es el de antes, tras k frames aplicados sin subidas, con un pool holgado;
   - una página con nodos que el pool dibuja no se expulsa;

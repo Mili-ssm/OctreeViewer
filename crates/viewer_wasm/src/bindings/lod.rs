@@ -24,7 +24,9 @@ use crate::{
     lod_session::LodSession,
 };
 use viewer_core::NodeId;
-use viewer_format::{FormatReader, FormatReaderLimits, PageGraft, PageSource, probe_format};
+use viewer_format::{
+    FormatReader, FormatReaderLimits, OctreeReader, PageGraft, PageSource, probe_format,
+};
 use viewer_render_wgpu::{ColorMode, SurfaceRenderer, ViewProjection};
 
 /// Uploads each rebuilt scene to the viewer's own GPU renderer.
@@ -145,7 +147,8 @@ pub(super) fn open_paged(
         format.format_metadata().visual_scale(),
         cache_bytes as usize,
     )
-    .with_crs(crs);
+    .with_crs(crs)
+    .with_global_frame(format.format_version().uses_global_frame());
     let dataset = with_page_source(dataset, &source)?;
     let context = AsyncFormatContext {
         has_attributes: format.has_attributes(),
@@ -255,7 +258,8 @@ pub(super) fn open_format(
         visual_scale,
         cache_bytes as usize,
     )
-    .with_crs(crs);
+    .with_crs(crs)
+    .with_global_frame(reader.format_version().uses_global_frame());
     let page_source = reader.page_source().cloned();
     let dataset = match &page_source {
         Some(source) => with_page_source(dataset, source)?,

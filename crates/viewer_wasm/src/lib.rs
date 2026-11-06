@@ -22,7 +22,8 @@ pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
 };
 pub use lod_dataset::{
-    LodBuiltScene, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate, LodWorkStats,
+    CellUpdateConfig, CellUpdateStats, LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError,
+    LodViewStats, LodViewUpdate, LodWorkStats,
 };
 pub use lod_pages::{DEFAULT_PAGE_BUDGET_BYTES, PageInsert, PageRelease};
 

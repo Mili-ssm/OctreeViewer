@@ -11,9 +11,13 @@ use viewer_core::{
     PointBlock, SpatialFrustum, SpatialHierarchy, SpatialNode,
 };
 use viewer_render_wgpu::{
-    GpuRendererError, OrbitCamera, SurfaceRenderer, ViewProjection, VoxelBuildMemoryStats,
-    VoxelScene, VoxelSceneBuildError, build_voxel_scene_with_limits,
+    CellCutError, GpuRendererError, NodeCellError, OrbitCamera, SurfaceRenderer, ViewProjection,
+    VoxelBuildMemoryStats, VoxelScene, VoxelSceneBuildError, build_voxel_scene_with_limits,
 };
+
+#[path = "lod_cells.rs"]
+mod cells;
+pub use cells::{CellUpdateConfig, CellUpdateStats, LodCellUpdate};
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
@@ -49,6 +53,10 @@ pub struct LodDataset {
     pages: Option<PageResidency>,
     /// The last `graft_page` failed on the page budget and no page has been grafted since.
     page_budget_exhausted: bool,
+    /// The format has the global integer frame (`v7.4-pre`, `v7.5-pre`), which the cell path needs.
+    global_frame: bool,
+    /// Cells-mode bookkeeping, see `lod_cells.rs`.
+    cells: cells::CellState,
 }
 
 struct SelectionMemo {
@@ -243,6 +251,25 @@ pub enum LodDatasetError {
     Gpu(#[from] GpuRendererError),
     #[error("voxel scene build failed: {0}")]
     VoxelScene(#[from] VoxelSceneBuildError),
+    #[error(
+        "the cell path needs a v7.4/v7.5 dataset with replacement semantics (R3-Q5: older formats and additive clouds use the CPU path)"
+    )]
+    CellPathUnsupported,
+    #[error("cells of a node could not be built: {0}")]
+    NodeCells(#[from] NodeCellError),
+    #[error("cell cut rejected: {0}")]
+    CellCut(#[from] CellCutError),
+    #[error("cell driver failed: {0}")]
+    CellDriver(String),
+    #[error(
+        "node {descendant:?} lies {gap} levels below its cut ancestor {ancestor:?}; the mask holds {max}"
+    )]
+    CellCutGap {
+        ancestor: NodeId,
+        descendant: NodeId,
+        gap: u32,
+        max: u32,
+    },
 }
 
 impl LodDatasetError {
@@ -301,6 +328,8 @@ impl LodDataset {
             stored_reference_spacing: None,
             pages: None,
             page_budget_exhausted: false,
+            global_frame: false,
+            cells: cells::CellState::default(),
         }
     }
 
@@ -350,6 +379,8 @@ impl LodDataset {
         if let Some(memo) = &self.selection_memo {
             nodes.extend_from_slice(memo.selection.node_ids());
         }
+        // The pool keeps drawing these, also while it retains the previous cut.
+        nodes.extend_from_slice(self.cells.pool_drawn());
         nodes
     }
 
@@ -470,6 +501,13 @@ impl LodDataset {
         self.selection_memo = None;
         self.plan_memo = None;
         self.state_epoch += 1;
+    }
+
+    /// Declares that the format has the global integer frame (`FormatVersion::uses_global_frame`),
+    /// the precondition of the cell path together with replacement semantics.
+    pub fn with_global_frame(mut self, global_frame: bool) -> Self {
+        self.global_frame = global_frame;
+        self
     }
 
     /// Records the CRS identity checked when another cloud is opened (RF-02).
@@ -723,44 +761,21 @@ impl LodDataset {
         )
     }
 
-    /// Selects, loads at most one block and rebuilds the scene when the cut or view changed.
-    ///
-    /// Needs no GPU: the built scene is returned for the caller to upload (and to call
-    /// `discard_visible_scene` if that fails). `view.visual_scale()` must equal
-    /// `self.visual_scale()`.
-    pub fn update_view_progressive(
+    /// Selects the target cut of `view` at `selection_error_pixels`. A base cut over budget also
+    /// resets the planner state (the caller releases the GPU cut on that error).
+    fn select_target(
         &mut self,
         view: &ViewProjection,
-        target_voxel_pixels: f64,
         selection_error_pixels: f64,
-        stage_voxel_pixels: f64,
-        async_priority_order: Option<&mut Vec<BlockId>>,
-        mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
-    ) -> Result<LodViewUpdate, LodDatasetError> {
-        let build_context = SuccessfulBuildContext {
-            camera: view.camera(),
-            viewport: view.viewport(),
-            stage_voxel_pixels,
-        };
-        if self.last_successful_build.as_ref() != Some(&build_context)
-            || self.cache_cycle.as_ref().is_some_and(|cycle| {
-                cycle.selection_error_pixels != selection_error_pixels
-                    || cycle.target_voxel_pixels != target_voxel_pixels
-            })
-        {
-            self.cache_cycle = None;
-        }
-        if self.cache_cycle.as_ref().is_some_and(|cycle| cycle.paused) {
-            return Err(LodDatasetError::CacheCyclePaused);
-        }
-        self.refinement_work.update_calls += 1;
+    ) -> Result<(SpatialFrustum, Arc<LodSelection>), LodDatasetError> {
+        let camera = view.camera();
         let frustum = view
             .spatial_frustum(self.metadata.coordinate_frame().origin())
             .ok_or(LodDatasetError::CameraUnavailable)?;
         let coordinate_origin = self.metadata.coordinate_frame().origin();
         let selection = self.resolve_target(
-            &build_context.camera,
-            build_context.viewport,
+            &camera,
+            view.viewport(),
             selection_error_pixels,
             &frustum,
             |node| {
@@ -792,30 +807,42 @@ impl LodDataset {
                 target.budget_limited().len(),
             ));
         }
-        let initial_plan = self.resolve_plan(&target);
+        Ok((frustum, target))
+    }
+
+    /// The pending block to read next (uncovered owners first, then highest projected error).
+    /// With `async_priority_order` the whole order is reported for the host's prefetch.
+    fn next_block_to_load(
+        &mut self,
+        view: &ViewProjection,
+        frustum: &SpatialFrustum,
+        pending_blocks: &[BlockId],
+        uncovered_nodes: &[NodeId],
+        async_priority_order: Option<&mut Vec<BlockId>>,
+    ) -> Option<BlockId> {
         let planning_started = WorkClock::start();
-        let initial_epoch = self.state_epoch;
-        let uncovered_blocks: HashSet<_> = initial_plan
-            .uncovered_nodes()
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
+        let uncovered_blocks: HashSet<_> = uncovered_nodes
             .iter()
             .filter_map(|id| self.metadata.hierarchy().node(*id))
             .flat_map(|node| node.blocks().iter().copied())
-            .filter(|id| initial_plan.pending_blocks().binary_search(id).is_ok())
+            .filter(|id| pending_blocks.binary_search(id).is_ok())
             .collect();
+        let project = |node: &SpatialNode| {
+            view.projected_error_pixels(
+                node.bounds(),
+                node.representative_spacing(),
+                coordinate_origin,
+            )
+        };
         let next_block = if let Some(priority_order) = async_priority_order {
             let ordered = prioritized_pending_blocks(
                 self.metadata.hierarchy(),
                 &self.block_owners,
-                initial_plan.pending_blocks(),
+                pending_blocks,
                 &uncovered_blocks,
-                &frustum,
-                |node| {
-                    view.projected_error_pixels(
-                        node.bounds(),
-                        node.representative_spacing(),
-                        coordinate_origin,
-                    )
-                },
+                frustum,
+                project,
             );
             priority_order.clear();
             priority_order.extend(ordered.iter().map(|(id, _)| *id));
@@ -824,43 +851,95 @@ impl LodDataset {
             highest_priority_pending_block(
                 self.metadata.hierarchy(),
                 &self.block_owners,
-                initial_plan.pending_blocks(),
+                pending_blocks,
                 &uncovered_blocks,
-                &frustum,
-                |node| {
-                    view.projected_error_pixels(
-                        node.bounds(),
-                        node.representative_spacing(),
-                        coordinate_origin,
-                    )
-                },
+                frustum,
+                project,
             )
         };
         self.refinement_work.planning_ms += planning_started.elapsed_ms();
+        next_block
+    }
+
+    /// Reads `requested` and caches it; `Ok(false)` when the loader had nothing to give.
+    fn load_block_step(
+        &mut self,
+        requested: BlockId,
+        load_block: &mut impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+        evicted_blocks: &mut Vec<BlockId>,
+    ) -> Result<bool, LodDatasetError> {
+        self.refinement_work.block_load_calls += 1;
+        let load_started = WorkClock::start();
+        let loaded = load_block(requested);
+        self.refinement_work.block_load_ms += load_started.elapsed_ms();
+        let Some(block) = loaded.map_err(LodDatasetError::BlockRead)? else {
+            return Ok(false);
+        };
+        if block.id() != requested {
+            return Err(LodDatasetError::UnexpectedBlock {
+                requested,
+                actual: block.id(),
+            });
+        }
+        if let CacheInsertResult::Cached {
+            evicted_blocks: evicted,
+            ..
+        } = self.cache_block(block)?
+        {
+            evicted_blocks.extend(evicted);
+        }
+        self.refinement_work.loaded_blocks += 1;
+        Ok(true)
+    }
+
+    /// Selects, loads at most one block and rebuilds the scene when the cut or view changed.
+    ///
+    /// Needs no GPU: the built scene is returned for the caller to upload (and to call
+    /// `discard_visible_scene` if that fails). `view.visual_scale()` must equal
+    /// `self.visual_scale()`.
+    pub fn update_view_progressive(
+        &mut self,
+        view: &ViewProjection,
+        target_voxel_pixels: f64,
+        selection_error_pixels: f64,
+        stage_voxel_pixels: f64,
+        async_priority_order: Option<&mut Vec<BlockId>>,
+        mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+    ) -> Result<LodViewUpdate, LodDatasetError> {
+        let build_context = SuccessfulBuildContext {
+            camera: view.camera(),
+            viewport: view.viewport(),
+            stage_voxel_pixels,
+        };
+        if self.last_successful_build.as_ref() != Some(&build_context)
+            || self.cache_cycle.as_ref().is_some_and(|cycle| {
+                cycle.selection_error_pixels != selection_error_pixels
+                    || cycle.target_voxel_pixels != target_voxel_pixels
+            })
+        {
+            self.cache_cycle = None;
+        }
+        if self.cache_cycle.as_ref().is_some_and(|cycle| cycle.paused) {
+            return Err(LodDatasetError::CacheCyclePaused);
+        }
+        self.refinement_work.update_calls += 1;
+        let coordinate_origin = self.metadata.coordinate_frame().origin();
+        let (frustum, target) = self.select_target(view, selection_error_pixels)?;
+        let initial_plan = self.resolve_plan(&target);
+        let initial_epoch = self.state_epoch;
+        let next_block = self.next_block_to_load(
+            view,
+            &frustum,
+            initial_plan.pending_blocks(),
+            initial_plan.uncovered_nodes(),
+            async_priority_order,
+        );
         let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
         let mut loaded_block = std::mem::take(&mut self.arrived_blocks) > 0;
-        if let Some(requested) = next_block {
-            self.refinement_work.block_load_calls += 1;
-            let load_started = WorkClock::start();
-            let loaded = load_block(requested);
-            self.refinement_work.block_load_ms += load_started.elapsed_ms();
-            if let Some(block) = loaded.map_err(LodDatasetError::BlockRead)? {
-                if block.id() != requested {
-                    return Err(LodDatasetError::UnexpectedBlock {
-                        requested,
-                        actual: block.id(),
-                    });
-                }
-                if let CacheInsertResult::Cached {
-                    evicted_blocks: evicted,
-                    ..
-                } = self.cache_block(block)?
-                {
-                    evicted_blocks.extend(evicted);
-                }
-                self.refinement_work.loaded_blocks += 1;
-                loaded_block = true;
-            }
+        if let Some(requested) = next_block
+            && self.load_block_step(requested, &mut load_block, &mut evicted_blocks)?
+        {
+            loaded_block = true;
         }
         let plan = self.replan_after_load(initial_plan, initial_epoch, &target);
         let evicted_pending_blocks = evicted_blocks
@@ -1331,3 +1410,7 @@ fn priority_precedes(candidate: (BlockId, f64), current: (BlockId, f64)) -> bool
 #[cfg(test)]
 #[path = "lod_dataset_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "lod_cells_tests.rs"]
+mod cells_tests;
