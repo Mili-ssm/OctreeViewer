@@ -7,6 +7,7 @@ mod budget;
 mod camera;
 #[doc(hidden)]
 pub mod cell_bench;
+mod cell_codec;
 mod cell_cull;
 mod cell_cut;
 mod cell_driver;
@@ -38,13 +39,14 @@ mod voxel_grid;
 
 pub use budget::{DEFAULT_MAX_VISIBLE_VOXELS, GpuBudget};
 pub use camera::{CameraFrame, EyeFrame, ORBIT_CAMERA_F64_LEN, OrbitCamera, ViewProjection};
+pub use cell_codec::{CODEC_VERSION, CodecError, decode_node_levels, encode_node_levels};
 pub use cell_cut::{
     CellCutEntry, CellCutError, CellCutNode, cell_cut, cell_cut_digest, octant_ranges,
     octant_wanted_depth, resident_depth,
 };
 pub use cell_driver::{
     CellDriver, CellDriverError, CellTarget, DriverConfig, FramePhase, FrameReport, NodeAdded,
-    NodeInput, NodeInputError,
+    NodeInput, NodeInputError, PackedNode, pack_node,
 };
 pub use cell_pages::{
     CELL_PAGES_WGSL, CellInstance, DecodedCell, FLAG_SPANS_OCTANTS, MAX_INTENSITY, MAX_PAGE_EXTENT,

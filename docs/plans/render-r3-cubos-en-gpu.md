@@ -487,7 +487,7 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
 
 **T10a1, códec y empaquetado** (`viewer_render_wgpu`):
 - [ ] Códec de `PackedLevel` (cabecera, `PageInfo` de tamaño fijo, instancias `Pod`), con ida y vuelta exacta y errores en datos truncados o mal formados.
-- [ ] `pack_node`: empaqueta las celdas de un nodo fuera del driver (lo que hoy hace `CellDriver::add_node`), para hacerlo en el worker de construcción. `add_packed` ignora el duplicado con la misma generación.
+- [ ] `pack_node`: empaqueta las celdas de un nodo fuera del driver (lo que hoy hace `CellDriver::add_node`), para hacerlo en el worker de construcción. `add_packed_generation` ignora el duplicado con la misma generación (`AlreadyStored`); con otra generación es `Duplicate` y se resuelve con `driverReplaced`.
 - [ ] **Pasa si** el códec da exactamente los mismos bytes de GPU que el empaquetado directo, y los datos malformados dan error, nunca pánico.
 
 **T10a2, tres pasos, padres primero y simulación** (`lod_cells.rs`, `lod_driver.rs`, `lod_dataset.rs`):

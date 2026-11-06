@@ -101,6 +101,9 @@ pub struct NodeInput<'a> {
 pub enum NodeAdded {
     /// Stored; its non-empty levels are known to the pool.
     Stored { levels: usize },
+    /// The node was stored before by the same generation (`add_packed_generation`): the message
+    /// was repeated, and nothing changed.
+    AlreadyStored,
     /// Every level was empty: nothing is stored, and the node must not be in a cut.
     NoLevels,
 }
@@ -109,7 +112,8 @@ pub enum NodeAdded {
 pub enum NodeInputError {
     /// The local grid is not the world grid shifted by the coordinate origin.
     GridMismatch { expected: CellGrid, found: CellGrid },
-    /// The node is already stored (forget happens by the budget only).
+    /// The node is already stored and the new one is not a repeat of the same generation (forget
+    /// happens by the budget only).
     Duplicate(NodeId),
     /// Local bounds are degenerate or the cells belong to another node.
     InvalidNode(NodeId),
@@ -207,11 +211,12 @@ struct StoredNode {
     bytes: u64,
     /// Levels offered to the pool and not evicted or cancelled yet.
     live: u32,
+    /// The generation of the message that brought it, when it came with one.
+    generation: Option<u64>,
 }
 
 pub struct CellDriver {
     config: DriverConfig,
-    local_grid: CellGrid,
     pool: CellPool,
     nodes: HashMap<NodeId, StoredNode>,
     cpu_bytes: u64,
@@ -240,6 +245,87 @@ fn shift(grid: &CellGrid, origin: [f64; 3]) -> CellGrid {
     }
 }
 
+/// A node with its levels packed, ready for [`CellDriver::add_packed_generation`] or the codec.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PackedNode {
+    pub id: NodeId,
+    /// Node bounds in the world frame.
+    pub bounds: SpatialBounds,
+    pub points: u64,
+    /// Non-empty levels only.
+    pub levels: Vec<PackedLevel>,
+}
+
+fn check_grid(world: &CellGrid, origin: [f64; 3], found: CellGrid) -> Result<(), NodeInputError> {
+    // The side is not shifted, so it must be identical. The anchor only differs by the
+    // rounding of `world - origin` (half an ulp of the larger operand) and of the sum back.
+    let same = found.root_side == world.root_side
+        && (0..3).all(|axis| {
+            let scale = world.root_min[axis].abs().max(origin[axis].abs());
+            (found.root_min[axis] + origin[axis] - world.root_min[axis]).abs()
+                <= 4.0 * f64::EPSILON * scale
+        });
+    if same {
+        Ok(())
+    } else {
+        Err(NodeInputError::GridMismatch {
+            expected: shift(world, origin),
+            found,
+        })
+    }
+}
+
+/// Packs the non-empty levels of a node built in the local frame, without a driver, so the build
+/// worker can do it. `grid` and `coordinate_origin` are the driver's `DriverConfig` ones; the
+/// grid contract is checked as in [`CellDriver::add_node`]. The pages hold the integer cell
+/// coordinates of the world grid (the local grid gives the same integers).
+pub fn pack_node(
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    input: NodeInput<'_>,
+) -> Result<PackedNode, NodeInputError> {
+    check_grid(grid, coordinate_origin, input.local_grid)?;
+    pack_checked(grid, coordinate_origin, input)
+}
+
+/// [`pack_node`] after the caller checked the grid contract.
+fn pack_checked(
+    grid: &CellGrid,
+    coordinate_origin: [f64; 3],
+    input: NodeInput<'_>,
+) -> Result<PackedNode, NodeInputError> {
+    let NodeInput {
+        id,
+        bounds,
+        points,
+        cells,
+        ..
+    } = input;
+    if cells.node != id {
+        return Err(NodeInputError::InvalidNode(id));
+    }
+    let local = SpatialBounds::new(
+        std::array::from_fn(|axis| bounds.min()[axis] - coordinate_origin[axis]),
+        std::array::from_fn(|axis| bounds.max()[axis] - coordinate_origin[axis]),
+    )
+    .map_err(|_| NodeInputError::InvalidNode(id))?;
+    // Packed on the driver's own local grid (validated above, equal to `local_grid` up to the
+    // rounding of the shift).
+    let packing_grid = shift(grid, coordinate_origin);
+    let levels = cells
+        .levels
+        .iter()
+        .filter(|level| !level.cells.is_empty())
+        .map(|level| pack_level(&packing_grid, local, id, level))
+        .collect();
+    Ok(PackedNode {
+        id,
+        bounds,
+        points,
+        levels,
+    })
+}
+
 /// Distance in dataset units from `point` to the box.
 fn distance_to(point: [f64; 3], bounds: SpatialBounds) -> f64 {
     (0..3)
@@ -254,7 +340,6 @@ fn distance_to(point: [f64; 3], bounds: SpatialBounds) -> f64 {
 impl CellDriver {
     pub fn new(config: DriverConfig) -> Self {
         Self {
-            local_grid: shift(&config.grid, config.coordinate_origin),
             pool: CellPool::new(config.pool),
             config,
             nodes: HashMap::new(),
@@ -281,37 +366,19 @@ impl CellDriver {
         self.nodes.contains_key(&node)
     }
 
-    /// Packs the levels of a node built in the local frame. The grid contract is checked here.
+    /// Packs the levels of a node built in the local frame (see [`pack_node`]) and stores them.
+    /// The grid contract is checked here.
     pub fn add_node(&mut self, input: NodeInput<'_>) -> Result<NodeAdded, NodeInputError> {
-        let NodeInput {
-            id,
-            bounds,
-            points,
-            local_grid,
-            cells,
-        } = input;
-        self.check_grid(local_grid)?;
-        if self.nodes.contains_key(&id) {
-            return Err(NodeInputError::Duplicate(id));
+        check_grid(
+            &self.config.grid,
+            self.config.coordinate_origin,
+            input.local_grid,
+        )?;
+        if self.nodes.contains_key(&input.id) {
+            return Err(NodeInputError::Duplicate(input.id));
         }
-        if cells.node != id {
-            return Err(NodeInputError::InvalidNode(id));
-        }
-        let origin = self.config.coordinate_origin;
-        let local = SpatialBounds::new(
-            std::array::from_fn(|axis| bounds.min()[axis] - origin[axis]),
-            std::array::from_fn(|axis| bounds.max()[axis] - origin[axis]),
-        )
-        .map_err(|_| NodeInputError::InvalidNode(id))?;
-        // Packed on the driver's own local grid (validated above, equal to `local_grid` up to the
-        // rounding of the shift); the integer cell coordinates are the world grid's too.
-        let levels = cells
-            .levels
-            .iter()
-            .filter(|level| !level.cells.is_empty())
-            .map(|level| pack_level(&self.local_grid, local, id, level))
-            .collect();
-        self.add_packed(id, bounds, points, levels)
+        let node = pack_checked(&self.config.grid, self.config.coordinate_origin, input)?;
+        self.add_packed(node.id, node.bounds, node.points, node.levels)
     }
 
     /// Stores a node whose levels are already packed. The pages hold integer cell coordinates of
@@ -323,10 +390,50 @@ impl CellDriver {
         id: NodeId,
         bounds: SpatialBounds,
         points: u64,
+        levels: Vec<PackedLevel>,
+    ) -> Result<NodeAdded, NodeInputError> {
+        self.store_packed(None, id, bounds, points, levels)
+    }
+
+    /// [`add_packed`](Self::add_packed) for nodes that arrive in messages, which may repeat.
+    ///
+    /// `generation` is the dataset generation the sender stamps on its `nodeCells` messages. It is
+    /// not the pool's `LevelKey::session` / `color_gen`: those are fixed per driver and say which
+    /// pool a level lives in, while the generation says which build of the dataset a node comes
+    /// from (a new dataset or builder gets a new one). A node already stored with the same
+    /// generation is a repeated message and is ignored ([`NodeAdded::AlreadyStored`]). The same id
+    /// with another generation, or stored without one, is `Duplicate`: replacing it would leave
+    /// the pool with levels of the old build, so the caller replaces the driver
+    /// (`driverReplaced`) instead. A repeat is assumed to carry the same content (the build is
+    /// deterministic per generation) and is not compared.
+    pub fn add_packed_generation(
+        &mut self,
+        generation: u64,
+        node: PackedNode,
+    ) -> Result<NodeAdded, NodeInputError> {
+        self.store_packed(
+            Some(generation),
+            node.id,
+            node.bounds,
+            node.points,
+            node.levels,
+        )
+    }
+
+    fn store_packed(
+        &mut self,
+        generation: Option<u64>,
+        id: NodeId,
+        bounds: SpatialBounds,
+        points: u64,
         mut levels: Vec<PackedLevel>,
     ) -> Result<NodeAdded, NodeInputError> {
-        if self.nodes.contains_key(&id) {
-            return Err(NodeInputError::Duplicate(id));
+        if let Some(stored) = self.nodes.get(&id) {
+            return if generation.is_some() && stored.generation == generation {
+                Ok(NodeAdded::AlreadyStored)
+            } else {
+                Err(NodeInputError::Duplicate(id))
+            };
         }
         levels.retain(|level| !level.pages.is_empty());
         levels.sort_by_key(|level| level.depth);
@@ -357,29 +464,11 @@ impl CellDriver {
                 levels: levels.into_iter().map(Arc::new).collect(),
                 bytes,
                 live: 0,
+                generation,
             },
         );
         self.dirty = true;
         Ok(NodeAdded::Stored { levels: count })
-    }
-
-    fn check_grid(&self, found: CellGrid) -> Result<(), NodeInputError> {
-        let expected = self.local_grid;
-        let world = self.config.grid;
-        let origin = self.config.coordinate_origin;
-        // The side is not shifted, so it must be identical. The anchor only differs by the
-        // rounding of `world - origin` (half an ulp of the larger operand) and of the sum back.
-        let same = found.root_side == world.root_side
-            && (0..3).all(|axis| {
-                let scale = world.root_min[axis].abs().max(origin[axis].abs());
-                (found.root_min[axis] + origin[axis] - world.root_min[axis]).abs()
-                    <= 4.0 * f64::EPSILON * scale
-            });
-        if same {
-            Ok(())
-        } else {
-            Err(NodeInputError::GridMismatch { expected, found })
-        }
     }
 
     /// Empties the pool and the bookkeeping of the target (device lost, or the renderer dropped

@@ -260,6 +260,11 @@ impl LodDataset {
             .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
         match added {
             NodeAdded::Stored { .. } => self.cells.built.insert(id),
+            // `add_node` never answers this (only `add_packed_generation` does): nothing to record.
+            NodeAdded::AlreadyStored => {
+                debug_assert!(false, "add_node answered AlreadyStored for {id:?}");
+                false
+            }
             NodeAdded::NoLevels => {
                 debug_assert!(
                     blocks.iter().all(|block| block
