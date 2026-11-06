@@ -55,7 +55,7 @@
 //! In steady state a frame therefore calls `cell_cut` zero times; a change calls it once per
 //! stage that has to be redone (wanted, fit steps, real).
 
-use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc};
+use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use viewer_core::{NodeId, SpatialBounds};
 
@@ -353,7 +353,8 @@ enum LevelState {
 
 struct Level {
     state: LevelState,
-    data: Option<PackedLevel>,
+    /// Shared with the owner of the data (`CellDriver`), never copied.
+    data: Option<Arc<PackedLevel>>,
     last_used: u64,
     /// Last frame this level was in `active`; 0 when never.
     last_active: u64,
@@ -522,7 +523,7 @@ impl CellPool {
 
     /// Packed data of a requested, uploading or resident level, for the GPU glue.
     pub fn level(&self, key: LevelKey) -> Option<&PackedLevel> {
-        self.levels.get(&key)?.data.as_ref()
+        self.levels.get(&key)?.data.as_deref()
     }
 
     pub fn resident_pages(&self) -> u32 {
@@ -534,8 +535,10 @@ impl CellPool {
     }
 
     /// Delivers the data of a requested level. A level nobody wants any more, one that already has
-    /// data, or one larger than the pool is dropped (`false`).
-    pub fn offer(&mut self, key: LevelKey, level: PackedLevel) -> bool {
+    /// data, an empty one (no pages) or one larger than the pool is dropped (`false`). An `Arc`
+    /// is shared, not copied.
+    pub fn offer(&mut self, key: LevelKey, level: impl Into<Arc<PackedLevel>>) -> bool {
+        let level = level.into();
         let capacity = self.config.capacity_pages as usize;
         match self.levels.get(&key) {
             Some(entry)

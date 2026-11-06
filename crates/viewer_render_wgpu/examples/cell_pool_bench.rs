@@ -7,7 +7,8 @@
 //! real adapter with `timestamp-query` and refuses software ones (llvmpipe).
 //!
 //! Per case, offscreen 1280x720, pool of 32 768 pages, upload budget of the default config, a fake
-//! loader that offers every requested level in the same frame (data from `levels.bin`):
+//! loader: the driver holds every level of the cut nodes (from `levels.bin`) and offers each
+//! requested level in the same frame:
 //! * convergence: frames of a still camera until 30 consecutive frames have no upload, page free,
 //!   request or pool event;
 //! * static: `kpc` and `k`, 3 rounds x 30 frames each (interleaved, 3 warm-up frames after each
@@ -15,10 +16,13 @@
 //! * moving: 120 frames, yaw 0.5 degrees about the world z axis through the eye per frame (cumulative)
 //!   and a translation of one median cell side per frame along the initial view direction, as the
 //!   T16a spike, with the cut fixed and `CellPool::frame` run every frame (`kpc`);
-//! * CPU per frame: `CellPool::frame` (cut + fit), the page-table entries of every active page and
-//!   `set_active_pages` (diff + `write_buffer`), still and moving.
+//! * CPU per frame, still and moving, timed from the driver's phase marks (`FramePhase`) with the
+//!   spans of the T7c/T7d records: `pool_frame_ms` (cut + fit), `page_table_ms` (page entries of
+//!   the active pages), `set_active_pages_ms`, and their `cut_fit_plus_table_ms` sum (the "cpu"
+//!   column). `driver_frame_ms` (the whole `CellDriver::frame`, loader and GPU writes included) is
+//!   an extra key and the "drv" column.
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     error::Error,
     fs,
     path::{Path, PathBuf},
@@ -28,9 +32,9 @@ use std::{
 use serde_json::{Value, json};
 use viewer_core::{NodeId, SpatialBounds};
 use viewer_render_wgpu::{
-    CellCutNode, CellGrid, CellInstance, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey,
-    MASK_WORDS, OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolConfig,
-    PoolNode, RendererConfig, ViewProjection, VoxelBuildLimits,
+    CellCutNode, CellDriver, CellGrid, CellInstance, CutApply, DriverConfig, FramePhase, FramePlan,
+    OrbitCamera, PAGE_SLOTS, PackedLevel, PageInfo, PoolConfig, PoolNode, RendererConfig,
+    ViewProjection, VoxelBuildLimits,
     cell_bench::{BenchRenderer, bench_cells_supported, bench_device_limits},
     cell_cut, representative_depth,
 };
@@ -353,29 +357,27 @@ fn read_back(gpu: &Gpu, buffer: &wgpu::Buffer) -> Vec<u8> {
     data
 }
 
-// ---- Pool + renderer glue (the Task 9 glue in miniature) ----
+// ---- Driver + renderer ----
 
 struct Rig<'a> {
     case: &'a Case,
     gpu: &'a Gpu,
     targets: Targets,
     renderer: BenchRenderer,
-    pool: CellPool,
-    /// Pool page slot of each page of a level that is uploading or resident.
-    slots: HashMap<LevelKey, Vec<u32>>,
-    /// Nodes whose exact level sizes the pool already has (the viewer gives them on load).
-    sized: HashSet<NodeId>,
-    masks_allocated: u32,
+    driver: CellDriver,
     frame_period: f64,
 }
 
 #[derive(Default, Clone)]
 struct FrameStats {
+    /// `CellPool::frame` (cut + fit), as the T7c/T7d records timed it.
     pool_ms: f64,
+    /// Page entries of the active pages.
     table_ms: f64,
     set_active_ms: f64,
+    /// Whole `CellDriver::frame`: the three above plus loader and GPU writes.
+    frame_ms: f64,
     uploads_pages: usize,
-    uploads_levels: usize,
     evictions: usize,
     cancels: usize,
     frees: usize,
@@ -396,21 +398,36 @@ impl FrameStats {
 }
 
 impl<'a> Rig<'a> {
-    fn new(case: &'a Case, gpu: &'a Gpu) -> Self {
-        Self {
+    fn new(case: &'a Case, gpu: &'a Gpu) -> Result<Self> {
+        // The fake loader gives the driver every level of the cut nodes up front (the viewer gives
+        // the cells of a node once); the driver answers the pool's requests from them.
+        let mut driver = CellDriver::new(DriverConfig {
+            pool: PoolConfig {
+                capacity_pages: POOL_PAGES,
+                ..PoolConfig::default()
+            },
+            grid: case.grid,
+            coordinate_origin: [0.0; 3],
+            cpu_budget_bytes: u64::MAX,
+        });
+        for id in &case.cut {
+            let node = &case.nodes[id];
+            let levels = node
+                .pool
+                .stored
+                .iter()
+                .map(|depth| case.load(*id, *depth))
+                .collect();
+            driver.add_packed(*id, node.pool.bounds, node.pool.points, levels)?;
+        }
+        Ok(Self {
             case,
             gpu,
             targets: make_targets(gpu, case.viewport),
             renderer: BenchRenderer::new(&gpu.device, &gpu.queue, COLOR_FORMAT, POOL_PAGES),
-            pool: CellPool::new(PoolConfig {
-                capacity_pages: POOL_PAGES,
-                ..PoolConfig::default()
-            }),
-            slots: HashMap::new(),
-            sized: HashSet::new(),
-            masks_allocated: 0,
+            driver,
             frame_period: 0.0,
-        }
+        })
     }
 
     fn view(&self, camera: OrbitCamera) -> ViewProjection {
@@ -425,123 +442,37 @@ impl<'a> Rig<'a> {
         ViewProjection::new(camera, self.case.viewport, self.case.visual_scale, limits)
     }
 
-    fn ensure_mask(&mut self, slot: u32) {
-        while self.masks_allocated <= slot {
-            let allocated = self.renderer.alloc_mask_slot().expect("mask slot");
-            assert_eq!(allocated, self.masks_allocated, "renderer mask order");
-            self.masks_allocated += 1;
-        }
-    }
-
-    /// One frame of the viewer loop without drawing: pool plan, loader, GPU writes, page table.
+    /// One frame of the viewer loop without drawing.
     fn step(&mut self, camera: OrbitCamera) -> Result<(FramePlan, FrameStats)> {
-        let case = self.case;
         let view = self.view(camera);
-        for id in &case.cut {
-            if self.sized.insert(*id) {
-                let sizes: Vec<(u8, usize)> = case.nodes[id]
-                    .levels
-                    .iter()
-                    .map(|(depth, file)| (*depth, file.pages))
-                    .collect();
-                self.pool.set_level_sizes(*id, &sizes);
-            }
-        }
+        self.renderer.set_eye(camera.position());
         let t0 = Instant::now();
-        let plan = self.pool.frame(
-            &case.cut,
-            &|id| case.nodes.get(&id).map(|n| n.pool.clone()),
+        let mut ends = [t0; 5];
+        let report = self.driver.frame_marked(
+            &mut self.renderer,
+            &self.case.cut,
             &view,
-            &case.grid,
-            [0.0; 3],
-            case.target_px,
+            self.case.target_px,
+            &mut |phase| ends[phase as usize] = Instant::now(),
         )?;
-        let mut stats = FrameStats {
-            pool_ms: t0.elapsed().as_secs_f64() * 1e3,
-            ..FrameStats::default()
+        let end = Instant::now();
+        let span = |from: Instant, to: Instant| to.duration_since(from).as_secs_f64() * 1e3;
+        let at = |phase: FramePhase| ends[phase as usize];
+        let stats = FrameStats {
+            pool_ms: span(t0, at(FramePhase::Planned)),
+            table_ms: span(at(FramePhase::Written), at(FramePhase::TableBuilt)),
+            set_active_ms: span(at(FramePhase::TableBuilt), at(FramePhase::ActivePagesSet)),
+            frame_ms: span(t0, end),
+            uploads_pages: report.uploaded_pages,
+            evictions: report.evicted,
+            cancels: report.cancelled,
+            frees: report.freed_pages,
+            requests: report.requested,
+            active_pages: report.active_pages,
+            counters: report.plan.counters,
+            apply: Some(report.plan.apply == CutApply::Applied),
         };
-        for key in &plan.fetch_requests {
-            let level = case.load(key.node, key.depth);
-            if !self.pool.offer(*key, level) {
-                return Err(format!("offer of {key:?} refused").into());
-            }
-        }
-        for event in &plan.events {
-            match event {
-                CellPoolEvent::Evict(key) => {
-                    stats.evictions += 1;
-                    self.slots.remove(key);
-                }
-                CellPoolEvent::Cancel(key) => {
-                    stats.cancels += 1;
-                    self.slots.remove(key);
-                }
-            }
-        }
-        // Order of the plan: frees, uploads, masks, page table.
-        self.renderer.free_pages(&plan.page_frees)?;
-        stats.frees = plan.page_frees.len();
-        for upload in &plan.uploads {
-            let level = self
-                .pool
-                .level(upload.key)
-                .expect("uploaded level has data");
-            let table = self
-                .slots
-                .entry(upload.key)
-                .or_insert_with(|| vec![u32::MAX; level.pages.len()]);
-            table[upload.page_range.clone()].copy_from_slice(&upload.slots);
-            if upload.page_range.len() == level.pages.len() {
-                self.renderer.upload_level(level, &upload.slots)?;
-            } else {
-                let part = PackedLevel {
-                    node: level.node,
-                    depth: level.depth,
-                    instances: level.instances
-                        [upload.page_range.start * PAGE_SLOTS..upload.page_range.end * PAGE_SLOTS]
-                        .to_vec(),
-                    pages: level.pages[upload.page_range.clone()].to_vec(),
-                };
-                self.renderer.upload_level(&part, &upload.slots)?;
-            }
-            stats.uploads_pages += upload.page_range.len();
-            stats.uploads_levels += 1;
-        }
-        for update in &plan.mask_updates {
-            self.ensure_mask(update.slot);
-            let words: [u32; MASK_WORDS] =
-                std::array::from_fn(|i| (update.mask[i / 2] >> (32 * (i % 2))) as u32);
-            self.renderer.set_node_mask(update.slot, &words)?;
-        }
-        if let Some(max) = plan.active.iter().map(|a| a.mask_slot).max() {
-            self.ensure_mask(max);
-        }
-        let t1 = Instant::now();
-        let frame = PageFrame {
-            grid: case.grid,
-            coordinate_origin: [0.0; 3],
-            visual_scale: case.visual_scale,
-            eye_scaled: camera.position(),
-        };
-        let mut table: Vec<(u32, PageEntry)> = Vec::new();
-        for active in &plan.active {
-            let level = self.pool.level(active.key).expect("active level has data");
-            let slots = &self.slots[&active.key];
-            for (page, slot) in level.pages.iter().zip(slots) {
-                table.push((
-                    *slot,
-                    page.entry(&frame, active.mask_slot, u32::from(active.octant_bits)),
-                ));
-            }
-        }
-        stats.table_ms = t1.elapsed().as_secs_f64() * 1e3;
-        let t2 = Instant::now();
-        self.renderer.set_active_pages(&table)?;
-        stats.set_active_ms = t2.elapsed().as_secs_f64() * 1e3;
-        stats.active_pages = table.len();
-        stats.counters = plan.counters;
-        stats.apply = Some(plan.apply == CutApply::Applied);
-        Ok((plan, stats))
+        Ok((report.plan, stats))
     }
 
     /// Draws one frame and returns the GPU milliseconds between the two timestamps, and the
@@ -622,7 +553,7 @@ fn num(value: &Value, key: &str) -> f64 {
 // ---- One case ----
 
 fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
-    let mut rig = Rig::new(case, gpu);
+    let mut rig = Rig::new(case, gpu)?;
     let camera = case.camera;
 
     // d. Convergence with a still camera.
@@ -718,7 +649,7 @@ fn run_case(case: &Case, gpu: &Gpu) -> Result<Value> {
     let sides: Vec<f64> = plan
         .active
         .iter()
-        .filter_map(|a| rig.pool.level(a.key))
+        .filter_map(|a| rig.driver.pool().level(a.key))
         .filter_map(|l| l.pages.first())
         .map(|p| p.cell_side(&case.grid) * case.visual_scale)
         .collect();
@@ -804,6 +735,7 @@ fn cpu_summary(frames: &[FrameStats]) -> Value {
         "page_table_ms": summary(&get(&|s| s.table_ms)),
         "cut_fit_plus_table_ms": summary(&total),
         "set_active_pages_ms": summary(&get(&|s| s.set_active_ms)),
+        "driver_frame_ms": summary(&get(&|s| s.frame_ms)),
     })
 }
 
@@ -925,7 +857,7 @@ fn main() -> Result<()> {
         gpu.adapter.get_info().backend
     );
     println!(
-        "{:<34} {:>6} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>6} {:>5} {:>8} {:>8} {:>8}",
+        "{:<34} {:>6} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>7} {:>6} {:>5} {:>8} {:>8} {:>8}",
         "case",
         "nodes",
         "kpc med",
@@ -936,6 +868,8 @@ fn main() -> Result<()> {
         "mv p95",
         "cpu med",
         "cpu p95",
+        "drv med",
+        "drv p95",
         "conv",
         "coars",
         "act pgs",
@@ -950,8 +884,10 @@ fn main() -> Result<()> {
         let m = &result["moving"];
         let cpu = &m["cpu"]["cut_fit_plus_table_ms"];
         let still = &result["cpu_still"]["cut_fit_plus_table_ms"];
+        let drv = &m["cpu"]["driver_frame_ms"];
+        let drv_still = &result["cpu_still"]["driver_frame_ms"];
         println!(
-            "{:<34} {:>6} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>3.2}/{:<3.2} {:>3.2}/{:<3.2} {:>6} {:>5} {:>8} {:>8} {:>8}",
+            "{:<34} {:>6} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>7.2} {:>3.2}/{:<3.2} {:>3.2}/{:<3.2} {:>3.2}/{:<3.2} {:>3.2}/{:<3.2} {:>6} {:>5} {:>8} {:>8} {:>8}",
             case.name,
             case.cut.len(),
             num(&s["kpc"], "median"),
@@ -964,6 +900,10 @@ fn main() -> Result<()> {
             num(cpu, "median"),
             num(still, "p95"),
             num(cpu, "p95"),
+            num(drv_still, "median"),
+            num(drv, "median"),
+            num(drv_still, "p95"),
+            num(drv, "p95"),
             result["convergence"]["frames"],
             result["convergence"]["pool_coarsened"],
             result["active_pages"],
@@ -973,6 +913,7 @@ fn main() -> Result<()> {
         results.push(result);
     }
     println!("# cpu columns: median and p95 ms of cut+fit+page table, still/moving");
+    println!("# drv columns: the same for the whole CellDriver::frame (loader and GPU writes too)");
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent)?;
     }

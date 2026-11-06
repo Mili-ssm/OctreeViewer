@@ -34,6 +34,10 @@ mod cull;
 #[path = "cell_pick_tests.rs"]
 mod pick;
 
+/// Task 9a2: the cell driver on a real pool, at a far coordinate origin.
+#[path = "cell_driver_gpu_tests.rs"]
+mod driver;
+
 // ---------------------------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------------------------

@@ -383,7 +383,7 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
   - un nodo sin nivel mantiene en el corte su antepasado del último corte aplicado, con salto ≤ 3, hasta que el nodo es residente. Es una etapa contada (`stages`). Así la retención es local;
   - las peticiones y las subidas van de grueso a fino: primero los nodos que no dibujan nada, después la profundidad absoluta y después la distancia. El primer nivel de un hijo va detrás del de su padre, y un nodo vacío no espera tras los refinamientos de otras zonas;
   - los tests de T7a que fijan la regla anterior se cambian. Uno nuevo: con un nodo sin nivel en una zona, otra zona sin relación se aplica en ese mismo frame.
-- [ ] **`cell_driver.rs`, `CellDriver`:**
+- [x] **`cell_driver.rs`, `CellDriver`** (hecho el 06-11-2026, T9a2):
   - posee el `CellPool` y un `PackedLevel` por (nodo, nivel), compartido con el pool sin copiarlo. Empaqueta al recibir las celdas de un nodo, pasa los tamaños exactos (`set_level_sizes`) y no guarda `NodeCell`. Quita los niveles vacíos de `stored`;
   - tiene un presupuesto de bytes de CPU: olvida, primero los más lejanos, los nodos que no están en el corte ni tienen niveles residentes o pedidos;
   - generaliza el `step` de `cell_pool_bench`: eventos, liberaciones, subidas, máscaras, tabla de páginas con su `PageFrame`. El banco pasa a usar el driver;
@@ -391,10 +391,14 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
   - `reset()`: residencia vacía (API nueva del pool) y `Evict` de todo. Se llama al perder el dispositivo y siempre que el renderer ya no tenga pool;
   - `needs_frame()`: hay peticiones, subidas o retención pendientes. El visor (Tarea 10) dibuja mientras sea cierto y reescribe la tabla de páginas en cada movimiento de cámara;
   - sin `Instant` (rompe en wasm32).
-- [ ] **Pasa si:**
+- [x] **Pasa si:**
   - en GPU real, con el oráculo por píxel de T7b1, el driver dibuja bien con `coordinate_origin` en 10⁶ y `visual_scale` 0,0788;
   - con el doble estricto, tras `reset()` converge al mismo corte y los mismos contadores, sin huecos en ningún frame;
   - el banco da los mismos contadores que antes de pasar al driver, en un caso de T7d.
+- **Resultado de T9a** (06-11-2026; según el implementador salvo lo marcado):
+  - oráculo por píxel con origen en 10⁶ y escala 0,0788: cobertura exacta en RADV y llvmpipe. El ancla de la rejilla es diádica (`[0,125, −0,25, 0,0625]`). Con anclas no diádicas, la cobertura sigue exacta, pero falla un píxel de borde con una sola muestra de referencia (comprobado);
+  - el banco da los mismos contadores antes y después de pasar al driver en Majadas +y a 4 px, y conserva las claves JSON de T7c/T7d. La columna nueva `drv` (el driver entero, con las escrituras en GPU) da 0,50 / 1,10 ms de mediana (quieta / en movimiento) y 2,05 ms de p95 en movimiento: se vigila en la Tarea 11;
+  - un error del renderer o una oferta rechazada hacen fallar el frame: el renderer suelta su pool y el siguiente frame empieza de cero.
 
 **T9b, `LodDataset`** (★: `lod_dataset.rs`; los bindings no cambian):
 - [ ] En la apertura, `LodDataset` sabe si admite celdas: v7.4 y v7.5 con reemplazo, a partir de `uses_global_frame()` y sin literales de versión. v5, `v7.1–3` y Additive dan `CellPathUnsupported` (R3-Q5).

@@ -11,6 +11,7 @@ use crate::{
     block_sync::ResidentBlockInfo,
     block_sync::plan_block_sync,
     budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
+    cell_driver::CellTarget,
     cell_pages::{PackedLevel, PageEntry, PageFrame},
     cell_pick::{PoolPick, prepare_pool_pick},
     cell_render::{
@@ -2017,6 +2018,55 @@ pub(crate) async fn create_pipeline_resources(
         vertex_buffer,
         index_buffer,
     })
+}
+
+/// The cell driver (`CellDriver`) writes through the renderer's public cell methods.
+impl CellTarget for SurfaceRenderer<'_> {
+    type Error = GpuRendererError;
+
+    fn has_pool(&self) -> bool {
+        self.cells_active()
+    }
+
+    fn drop_pool(&mut self) {
+        self.clear_cells();
+    }
+
+    fn eye(&self) -> [f64; 3] {
+        self.cell_eye()
+    }
+
+    fn upload_level(
+        &mut self,
+        level: &PackedLevel,
+        page_slots: &[u32],
+    ) -> Result<(), GpuRendererError> {
+        self.upload_cell_level(level, page_slots)
+    }
+
+    fn free_pages(&mut self, page_slots: &[u32]) -> Result<(), GpuRendererError> {
+        self.free_cell_pages(page_slots)
+    }
+
+    fn alloc_mask_slot(&mut self) -> Result<Option<u32>, GpuRendererError> {
+        self.alloc_cell_mask_slot()
+    }
+
+    fn set_node_mask(
+        &mut self,
+        slot: u32,
+        mask: &[u32; MASK_WORDS],
+    ) -> Result<(), GpuRendererError> {
+        self.set_cell_node_mask(slot, mask)
+    }
+
+    fn set_active_pages(
+        &mut self,
+        pages: &[(u32, PageEntry)],
+        frame: &PageFrame,
+    ) -> Result<(), GpuRendererError> {
+        self.set_active_cell_pages(pages, frame)
+    }
 }
 
 #[cfg(test)]
