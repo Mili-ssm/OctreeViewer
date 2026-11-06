@@ -27,7 +27,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::cell_cull::{HiZ, HiZBuilder, bits_bytes, clear_page_bits, occlusion_wgsl};
 use crate::cell_pages::{
-    CELL_PAGES_WGSL, PAGE_SLOTS, PackedLevel, PageEntry, srgb_to_linear_table,
+    CELL_PAGES_WGSL, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table,
 };
 use crate::gpu::CUBE_INDICES;
 
@@ -483,6 +483,31 @@ pub(crate) fn shader_sources() -> [String; 4] {
     ]
 }
 
+/// The frame the page entries were built with (`PageFrame` without the grid). Picking runs in
+/// this frame, not in the renderer's current one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PageFrameStamp {
+    pub eye_scaled: [f64; 3],
+    pub visual_scale: f64,
+    pub coordinate_origin: [f64; 3],
+}
+
+impl PageFrameStamp {
+    pub(crate) fn of(frame: &PageFrame) -> Self {
+        Self {
+            eye_scaled: frame.eye_scaled,
+            visual_scale: frame.visual_scale,
+            coordinate_origin: frame.coordinate_origin,
+        }
+    }
+
+    /// Whether the stamp uses the given scale and origin (compared exactly: they are copied, not
+    /// computed).
+    pub(crate) fn same_units(&self, visual_scale: f64, coordinate_origin: [f64; 3]) -> bool {
+        self.visual_scale == visual_scale && self.coordinate_origin == coordinate_origin
+    }
+}
+
 /// The pool, its page and mask tables and the pipelines that draw it. Built from a device only, so
 /// a headless harness and `SurfaceRenderer` share the code.
 pub(crate) struct CellRenderer {
@@ -525,6 +550,12 @@ pub(crate) struct CellRenderer {
     free_masks: Vec<u32>,
     next_mask: u32,
     mask_allocated: Vec<bool>,
+    /// CPU copy of every node mask, kept exactly like the GPU one: zeroed only when the slot is
+    /// taken, set by `set_node_mask`, untouched when the slot is freed. Picking reads it.
+    mask_mirror: Vec<[u32; MASK_WORDS]>,
+    /// The frame the entries of `shadow` were built with; `None` until the first
+    /// `set_page_frame`.
+    page_frame: Option<PageFrameStamp>,
 }
 
 impl CellRenderer {
@@ -836,6 +867,8 @@ impl CellRenderer {
             free_masks: Vec::new(),
             next_mask: 0,
             mask_allocated: vec![false; capacity as usize],
+            mask_mirror: vec![[0; MASK_WORDS]; capacity as usize],
+            page_frame: None,
         }
     }
 
@@ -985,6 +1018,7 @@ impl CellRenderer {
             })
         })?;
         self.mask_allocated[slot as usize] = true;
+        self.mask_mirror[slot as usize] = [0; MASK_WORDS];
         self.queue.write_buffer(
             &self.masks,
             u64::from(slot) * (MASK_WORDS * 4) as u64,
@@ -1016,12 +1050,39 @@ impl CellRenderer {
         mask: &[u32; MASK_WORDS],
     ) -> Result<(), CellPoolError> {
         self.check_mask_slot(slot)?;
+        self.mask_mirror[slot as usize] = *mask;
         self.queue.write_buffer(
             &self.masks,
             u64::from(slot) * (MASK_WORDS * 4) as u64,
             bytemuck::cast_slice(mask),
         );
         Ok(())
+    }
+
+    /// The mask the GPU holds for `slot` (see `mask_mirror`).
+    pub(crate) fn node_mask(&self, slot: u32) -> &[u32; MASK_WORDS] {
+        &self.mask_mirror[slot as usize]
+    }
+
+    /// Records the frame that the page entries are relative to; call it after `set_active_pages`,
+    /// which does not know the frame and clears the stored one so a stale eye is never used.
+    pub(crate) fn set_page_frame(&mut self, frame: PageFrameStamp) {
+        self.page_frame = Some(frame);
+    }
+
+    pub(crate) fn page_frame(&self) -> Option<PageFrameStamp> {
+        self.page_frame
+    }
+
+    pub(crate) fn instances_buffer(&self) -> &wgpu::Buffer {
+        &self.instances
+    }
+
+    /// Active slots with their page-table entries, as last written.
+    pub(crate) fn active_entries(&self) -> impl Iterator<Item = (u32, PageEntry)> + '_ {
+        self.active
+            .iter()
+            .map(|&slot| (slot, self.shadow[slot as usize]))
     }
 
     fn check_mask_slot(&self, slot: u32) -> Result<(), CellPoolError> {
@@ -1076,6 +1137,7 @@ impl CellRenderer {
             self.high_water = self.high_water.max(slot + 1);
         }
         self.active = pages.iter().map(|(slot, _)| *slot).collect();
+        self.page_frame = None;
         self.shrink_high_water();
         if dirty.0 < dirty.1 {
             self.queue.write_buffer(

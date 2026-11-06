@@ -11,10 +11,11 @@ use crate::{
     block_sync::ResidentBlockInfo,
     block_sync::plan_block_sync,
     budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
-    cell_pages::{PackedLevel, PageEntry},
+    cell_pages::{PackedLevel, PageEntry, PageFrame},
+    cell_pick::{PoolPick, prepare_pool_pick},
     cell_render::{
-        CellFrame, CellRenderer, MASK_WORDS, POOL_PAGES, cells_supported, plan_device_limits,
-        pool_resource_bytes,
+        CellFrame, CellRenderer, MASK_WORDS, POOL_PAGES, PageFrameStamp, cells_supported,
+        plan_device_limits, pool_resource_bytes,
     },
     instance_buffer_layout,
 };
@@ -50,6 +51,8 @@ pub enum GpuRendererError {
     PipelineValidation(String),
     SurfaceAcquisition(String),
     CellPool(CellPoolError),
+    /// The `PageFrame` of the page entries uses another coordinate origin or visual scale.
+    PageFrameMismatch,
 }
 
 impl std::fmt::Display for GpuRendererError {
@@ -102,6 +105,9 @@ impl std::fmt::Display for GpuRendererError {
             Self::PipelineValidation(error) => write!(f, "GPU pipeline is invalid: {error}"),
             Self::SurfaceAcquisition(error) => write!(f, "GPU surface acquisition failed: {error}"),
             Self::CellPool(error) => write!(f, "cell pool: {error}"),
+            Self::PageFrameMismatch => f.write_str(
+                "page frame does not match the renderer's coordinate origin and visual scale",
+            ),
         }
     }
 }
@@ -142,41 +148,55 @@ struct GpuInstanceBuffer {
 }
 
 const PICK_CHUNK_INSTANCES: usize = 256;
-const PICK_MAX_CANDIDATE_INSTANCES: usize = 65_536;
+pub(crate) const PICK_MAX_CANDIDATE_INSTANCES: usize = 65_536;
 const MAX_FRAMEBUFFER_PIXELS: u64 = 4_194_304;
 const MAX_FRAMEBUFFER_DIMENSION: u32 = 4_096;
 
 #[derive(Debug, Clone, Copy)]
-struct PickChunk {
-    first_instance: usize,
-    instance_count: usize,
-    bounds: SceneBounds,
+pub(crate) struct PickChunk {
+    pub(crate) first_instance: usize,
+    pub(crate) instance_count: usize,
+    pub(crate) bounds: SceneBounds,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct PickCopy {
-    staging_offset: u64,
-    first_instance: usize,
-    instance_count: usize,
+pub(crate) struct PickCopy {
+    pub(crate) staging_offset: u64,
+    pub(crate) first_instance: usize,
+    pub(crate) instance_count: usize,
 }
 
-pub struct PickReadback {
+/// Staging copy of a CPU-path pick.
+pub struct CpuPick {
     buffer: wgpu::Buffer,
     copies: Vec<PickCopy>,
     ray: PickRay,
+    /// The units of the scene at `prepare_pick`: the host awaits the mapping before `resolve_pick`.
+    visual_scale: f64,
+    coordinate_origin: [f64; 3],
+}
+
+/// What `prepare_pick` copied; `resolve_pick` decides by the variant, not by the renderer's current
+/// mode, because the host awaits the mapping between the two calls.
+pub enum PickReadback {
+    Cpu(CpuPick),
+    Pool(PoolPick),
 }
 
 #[derive(Debug, Clone, Copy)]
-struct PickRay {
-    origin: glam::DVec3,
-    direction: glam::DVec3,
-    near_distance: f64,
-    far_distance: f64,
+pub(crate) struct PickRay {
+    pub(crate) origin: glam::DVec3,
+    pub(crate) direction: glam::DVec3,
+    pub(crate) near_distance: f64,
+    pub(crate) far_distance: f64,
 }
 
 impl PickReadback {
     pub fn buffer(&self) -> &wgpu::Buffer {
-        &self.buffer
+        match self {
+            Self::Cpu(pick) => &pick.buffer,
+            Self::Pool(pick) => pick.buffer(),
+        }
     }
 }
 
@@ -787,14 +807,23 @@ impl<'window> SurfaceRenderer<'window> {
     }
 
     /// The pages to draw this frame, with eye-relative origins and octant bits (see
-    /// `PageInfo::entry` and `cell_eye`).
+    /// `PageInfo::entry` and `cell_eye`). `frame` is the one the entries were built with: its
+    /// coordinate origin and visual scale must be the renderer's, and its eye is kept for picking.
     pub fn set_active_cell_pages(
         &mut self,
         pages: &[(u32, PageEntry)],
+        frame: &PageFrame,
     ) -> Result<(), GpuRendererError> {
-        self.existing_cell_pool()?
-            .set_active_pages(pages)
-            .map_err(GpuRendererError::CellPool)
+        let (visual_scale, coordinate_origin) = (self.visual_scale, self.coordinate_origin);
+        let pool = self.existing_cell_pool()?;
+        let stamp = PageFrameStamp::of(frame);
+        if !stamp.same_units(visual_scale, coordinate_origin) {
+            return Err(GpuRendererError::PageFrameMismatch);
+        }
+        pool.set_active_pages(pages)
+            .map_err(GpuRendererError::CellPool)?;
+        pool.set_page_frame(stamp);
+        Ok(())
     }
 
     /// Frees the pool; `render` draws the CPU scene again.
@@ -1065,8 +1094,31 @@ impl<'window> SurfaceRenderer<'window> {
 
     /// Copies only ray-intersecting instance ranges into a bounded staging buffer.
     pub fn prepare_pick(&self, pixel: [f64; 2]) -> Result<Option<PickReadback>, String> {
-        if self.cell_pool.is_some() {
-            return Err("picking is not supported on the cells path yet".to_owned());
+        if let Some(pool) = &self.cell_pool {
+            let Some((origin, direction, near_distance, far_distance)) =
+                self.camera.ray(pixel, self.viewport_size())
+            else {
+                return Ok(None);
+            };
+            let headroom = self.gpu_budget.max_bytes.saturating_sub(
+                self.allocated_gpu_bytes()
+                    .map_err(|error| error.to_string())?,
+            );
+            return Ok(prepare_pool_pick(
+                &self.device,
+                &self.queue,
+                pool,
+                PickRay {
+                    origin,
+                    direction,
+                    near_distance,
+                    far_distance,
+                },
+                self.visual_scale,
+                self.coordinate_origin,
+                headroom,
+            )?
+            .map(PickReadback::Pool));
         }
         let Some(source) = self.scene_buffer.as_ref() else {
             return Ok(None);
@@ -1148,7 +1200,7 @@ impl<'window> SurfaceRenderer<'window> {
             staging_offset += size;
         }
         self.queue.submit([encoder.finish()]);
-        Ok(Some(PickReadback {
+        Ok(Some(PickReadback::Cpu(CpuPick {
             buffer: staging,
             copies,
             ray: PickRay {
@@ -1157,7 +1209,9 @@ impl<'window> SurfaceRenderer<'window> {
                 near_distance,
                 far_distance,
             },
-        }))
+            visual_scale: self.visual_scale,
+            coordinate_origin: self.coordinate_origin,
+        })))
     }
 
     pub fn resolve_pick(
@@ -1165,13 +1219,16 @@ impl<'window> SurfaceRenderer<'window> {
         readback: &PickReadback,
         mapped: &[u8],
     ) -> Result<Option<PickHit>, String> {
-        resolve_pick_instances(
-            readback.ray,
-            &readback.copies,
-            mapped,
-            self.visual_scale,
-            self.coordinate_origin,
-        )
+        match readback {
+            PickReadback::Cpu(pick) => resolve_pick_instances(
+                pick.ray,
+                &pick.copies,
+                mapped,
+                pick.visual_scale,
+                pick.coordinate_origin,
+            ),
+            PickReadback::Pool(pick) => pick.resolve(mapped),
+        }
     }
 
     pub fn pan_camera(&mut self, delta_x: f64, delta_y: f64) -> bool {
@@ -1637,7 +1694,7 @@ fn create_instance_buffer(
     })
 }
 
-fn build_pick_chunks(instances: &[InstanceRaw], visual_scale: f64) -> Vec<PickChunk> {
+pub(crate) fn build_pick_chunks(instances: &[InstanceRaw], visual_scale: f64) -> Vec<PickChunk> {
     instances
         .chunks(PICK_CHUNK_INSTANCES)
         .enumerate()
@@ -1685,7 +1742,7 @@ fn check_pick_candidate_budget(candidate_count: usize) -> Result<(), String> {
     }
 }
 
-fn resolve_pick_instances(
+pub(crate) fn resolve_pick_instances(
     ray: PickRay,
     copies: &[PickCopy],
     mapped: &[u8],
@@ -1765,7 +1822,7 @@ fn ray_box_entry(
     ray_box_interval(origin, direction, min, max).map(|(near, _)| near)
 }
 
-fn ray_box_interval(
+pub(crate) fn ray_box_interval(
     origin: glam::DVec3,
     direction: glam::DVec3,
     min: [f64; 3],

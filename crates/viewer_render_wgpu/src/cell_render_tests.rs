@@ -30,6 +30,10 @@ const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 #[path = "cell_cull_tests.rs"]
 mod cull;
 
+/// Task 8: picking on the pool against the CPU-path picking.
+#[path = "cell_pick_tests.rs"]
+mod pick;
+
 // ---------------------------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------------------------
@@ -588,27 +592,38 @@ impl Scene {
     }
 
     fn cpu_instances_skipping(&self, skip: &[usize]) -> Vec<InstanceRaw> {
+        self.drawn_cells()
+            .into_iter()
+            .filter(|(level, ..)| !skip.contains(level))
+            .map(|(.., instance)| instance)
+            .collect()
+    }
+
+    /// The cells the shader draws as `(level, index in the level's cells, instance)`, in the order
+    /// of `cpu_instances`.
+    fn drawn_cells(&self) -> Vec<(usize, usize, InstanceRaw)> {
         let mut out = Vec::new();
         for (index, level) in self.levels.iter().enumerate() {
-            if skip.contains(&index) {
-                continue;
-            }
             let grid = self.nodes[level.node].grid;
             let side = grid.root_side / (1_u64 << level.level.depth) as f64;
-            for cell in &level.level.cells {
+            for (cell_index, cell) in level.level.cells.iter().enumerate() {
                 if !self.drawn(level, cell) {
                     continue;
                 }
                 let rgb = cell.rgb_sum.map(|c| c as u8);
-                out.push(InstanceRaw {
-                    center: std::array::from_fn(|axis| {
-                        (grid.root_min[axis] + (cell.coord[axis] as f64 + 0.5) * side) as f32
-                    }),
-                    size: side as f32,
-                    color: ColorRgb::new(rgb[0], rgb[1], rgb[2]).to_linear_rgba(),
-                    intensity: -1.0,
-                    classification: -1.0,
-                });
+                out.push((
+                    index,
+                    cell_index,
+                    InstanceRaw {
+                        center: std::array::from_fn(|axis| {
+                            (grid.root_min[axis] + (cell.coord[axis] as f64 + 0.5) * side) as f32
+                        }),
+                        size: side as f32,
+                        color: ColorRgb::new(rgb[0], rgb[1], rgb[2]).to_linear_rgba(),
+                        intensity: -1.0,
+                        classification: -1.0,
+                    },
+                ));
             }
         }
         out

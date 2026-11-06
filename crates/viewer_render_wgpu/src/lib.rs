@@ -12,6 +12,7 @@ mod cell_cut;
 mod cell_pages;
 #[cfg(test)]
 mod cell_pages_tests;
+mod cell_pick;
 mod cell_pool;
 mod cell_render;
 #[cfg(test)]
