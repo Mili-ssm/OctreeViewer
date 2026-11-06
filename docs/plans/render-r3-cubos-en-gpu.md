@@ -289,11 +289,13 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7b2, oclusión** (Tarea 16b; módulo nuevo `cell_cull.rs`, que sustituye el plan de llevarla a `hzb.rs`):
 
-- [ ] Pases de `kpc` sobre `k`: Hi-Z sobre la caja ajustada en el pase de páginas, Hi-Z por celda en la fase 2, dos fases y un `drawIndexedIndirect` por fase. Los bits de visibilidad, en doble búfer y por hueco del pool, se ponen a cero cuando se reutiliza un hueco.
-- [ ] **Hi-Z propio:** cada texel guarda el máximo de todos sus píxeles. No usa la escala de `hzb.rs`, que no es conservadora fuera de potencias de dos. Se rehace al redimensionar y en `Outdated`.
-- [ ] **Margen de profundidad**, derivado y documentado: el pase y el vértice calculan los mismos `clip`, así que solo queda el redondeo de la interpolación del rasterizador. Si no se puede acotar, se mide el peor caso en los tests y se usa el doble.
-- [ ] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo.
-- [ ] **Tests:**
+**Hecha (06-11-2026).** 10 tests de oclusión en la Radeon 880M (RADV) y en llvmpipe, sobre una escena con una envoltura cerrada alrededor de 6.000 celdas ocultas. La profundidad sale idéntica bit a bit con y sin oclusión en cada frame: cámara quieta, 10 frames en movimiento desde frío, una órbita que desocluye más de 100 celdas en la fase 2, la cámara dentro de la envoltura cruzando el plano cercano, reutilización de huecos y redimensionado. El color también es idéntico, salvo en 8 píxeles de empate de profundidad que llvmpipe resuelve distinto en cada ejecución. Con la cámara quieta se dibujan 434 de 7.342 celdas. El margen de profundidad es de 8 u (u = 2⁻²⁴). Medido en la GPU con la misma `cell_clip` del shader y cámaras reales, giradas y oblicuas, sobre más de un millón de píxeles, ningún fragmento queda más de 2,00 u por delante de la esquina más cercana de su celda. El pase de cierre usa los 8 búferes de almacenamiento, así que no queda holgura. Siete mutaciones hacen fallar los tests.
+
+- [x] Pases de `kpc` sobre `k`: Hi-Z sobre la caja ajustada en el pase de páginas, Hi-Z por celda en la fase 2, dos fases y un `drawIndexedIndirect` por fase. Los bits de visibilidad, en doble búfer y por hueco del pool, se ponen a cero cuando se reutiliza un hueco.
+- [x] **Hi-Z propio:** cada texel guarda el máximo de todos sus píxeles. No usa la escala de `hzb.rs`, que no es conservadora fuera de potencias de dos. Se rehace al redimensionar y en `Outdated`.
+- [x] **Margen de profundidad**, derivado y documentado: el pase y el vértice calculan los mismos `clip`, así que solo queda el redondeo de la interpolación del rasterizador. Si no se puede acotar, se mide el peor caso en los tests y se usa el doble.
+- [ ] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo. Pasa a la integración de la Tarea 9, que une `cell_pool` con el renderer; los bits y el Hi-Z son estado derivado que se rehace con el renderer.
+- [x] **Tests:**
   - profundidad idéntica con y sin oclusión, en un frame quieto y en 10 frames en movimiento desde un arranque en frío;
   - la fase 1 dibuja algo tras el frame 0 y la fase 2 descarta algo;
   - a mitad de secuencia se expulsa un nivel y otro reutiliza sus huecos.

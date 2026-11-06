@@ -5,6 +5,7 @@ mod attributes;
 mod block_sync;
 mod budget;
 mod camera;
+mod cell_cull;
 mod cell_cut;
 mod cell_pages;
 #[cfg(test)]

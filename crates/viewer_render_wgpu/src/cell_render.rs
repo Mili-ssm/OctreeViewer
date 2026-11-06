@@ -1,10 +1,15 @@
-//! Static GPU pool of cells and its compacting, occlusion-free draw (R3 Task 7b1).
+//! Static GPU pool of cells and its compacting draw, with two-phase occlusion (R3 Tasks 7b1, 7b2).
 //!
 //! The pool holds the 16-byte instances of `cell_pages` in 8 KiB pages. Every frame four passes run
 //! on the GPU: a page pass (frustum on the tight box of each active page), a finalize step (indirect
 //! dispatch and draw arguments), a slot pass (one workgroup per surviving page: empty, octant, node
 //! mask and frustum tests, a prefix sum and one `atomicAdd` per workgroup) and one
 //! `drawIndexedIndirect` of the surviving cells.
+//!
+//! With occlusion on (the default) that sequence runs twice, as `kpc` of Task 16: phase 1 draws what
+//! was visible last frame, a Hi-Z pyramid is built from its depth, and phase 2 tests everything
+//! against it (page box and each cell) and draws what phase 1 did not. `cell_cull.rs` documents the
+//! scheme, the Hi-Z and the depth margin. With occlusion off only the first sequence runs (`k`).
 //!
 //! Conventions shared with the CPU side:
 //! - a mask bit set means "the cell is replaced by finer cells": it is not drawn;
@@ -20,6 +25,7 @@ use std::{mem::size_of, num::NonZeroU64};
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::cell_cull::{HiZ, HiZBuilder, bits_bytes, clear_page_bits, occlusion_wgsl};
 use crate::cell_pages::{
     CELL_PAGES_WGSL, PAGE_SLOTS, PackedLevel, PageEntry, srgb_to_linear_table,
 };
@@ -32,10 +38,11 @@ pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
         + pages * 32 // page table
         + pages * (MASK_WORDS as u64 * 4) // masks
         + 1024 // sRGB table
-        + 80 // frame uniform
+        + size_of::<FrameUniform>() as u64
         + (pages + 1) * 4 // page list
         + pages * PAGE_SLOTS as u64 * 4 // visible indices
-        + 20 // draw arguments
+        + bits_bytes(pages) // visibility bits
+        + 2 * DRAW_ARGS_BYTES // draw arguments, one set per phase
         + 12 // dispatch arguments
         + 72 // cube indices
 }
@@ -46,12 +53,17 @@ pub const PAGE_BYTES: u64 = (PAGE_SLOTS * 16) as u64;
 pub const POOL_PAGES: u32 = 32_768;
 /// Bytes of the production instance buffer; the device must allow a storage binding this large.
 pub const POOL_BYTES: u64 = POOL_PAGES as u64 * PAGE_BYTES;
-/// Storage buffers per shader stage that the passes need: the compute group binds six and the
-/// finalize group one, with one to spare.
+/// Storage buffers per shader stage that the passes need. The compute group binds seven
+/// (instances, pages, masks, page list, visible, draw arguments, visibility bits) and the finalize
+/// pipeline adds the dispatch arguments in its own group: 8, the WebGPU minimum, with no headroom.
+/// The page and slot pipelines have one spare; a new buffer in the compute group would break
+/// finalize. `slot_pass_stays_within_eight_storage_buffers` checks every pipeline.
 pub const MIN_STORAGE_BUFFERS: u32 = 8;
 /// `u32` words of the mask of one node (8 x 8 x 8 bits).
 pub const MASK_WORDS: usize = 16;
 
+/// Bytes of the draw arguments of one phase; phase 2 follows phase 1 in the buffer.
+const DRAW_ARGS_BYTES: u64 = 20;
 const PAGE_PASS_GROUP: u32 = 64;
 const SLOT_PASS_GROUP: u32 = 256;
 
@@ -102,8 +114,8 @@ pub(crate) fn plan_device_limits(adapter: &wgpu::Adapter, mode: CellLimitMode) -
 }
 
 /// Whether the device can run the production pool: the raised limits, compute, indirect
-/// execution, storage buffers in the vertex stage and `r32float` storage textures (the Hi-Z of
-/// Task 7b2).
+/// execution, storage buffers in the vertex stage, `r32float` storage textures and a sampleable
+/// depth texture (the Hi-Z of Task 7b2).
 pub(crate) fn cells_supported(adapter: &wgpu::Adapter, device_limits: &wgpu::Limits) -> bool {
     cells_supported_for(adapter, device_limits, POOL_BYTES)
 }
@@ -116,11 +128,15 @@ pub(crate) fn cells_supported_for(
     pool_bytes: u64,
 ) -> bool {
     let flags = adapter.get_downlevel_capabilities().flags;
+    let depth = adapter.get_texture_format_features(wgpu::TextureFormat::Depth32Float);
     let needed = wgpu::DownlevelFlags::COMPUTE_SHADERS
         | wgpu::DownlevelFlags::INDIRECT_EXECUTION
         | wgpu::DownlevelFlags::VERTEX_STORAGE;
     let r32float = adapter.get_texture_format_features(wgpu::TextureFormat::R32Float);
     flags.contains(needed)
+        && depth
+            .allowed_usages
+            .contains(wgpu::TextureUsages::TEXTURE_BINDING)
         && r32float
             .allowed_usages
             .contains(wgpu::TextureUsages::STORAGE_BINDING)
@@ -206,6 +222,8 @@ pub(crate) struct CellFrame {
     pub clear_color: wgpu::Color,
     /// The face and depth shading of the CPU path; off gives the plain cell colour.
     pub depth_shading: bool,
+    /// Size in pixels of the colour and depth targets; the Hi-Z follows it.
+    pub viewport: [u32; 2],
 }
 
 #[repr(C)]
@@ -214,16 +232,24 @@ struct FrameUniform {
     view_projection: [[f32; 4]; 4],
     num_pages: u32,
     shading: u32,
-    _padding: [u32; 2],
+    /// Half of the visibility bits that phase 1 and phase 2 read (0 or 1).
+    prev: u32,
+    capacity: u32,
+    viewport: [f32; 2],
+    mip_count: u32,
+    _padding: u32,
 }
 
-const COMMON_WGSL: &str = r"
+pub(crate) const COMMON_WGSL: &str = r"
 struct CellFrame {
     view_proj: mat4x4<f32>,
     num_pages: u32,
     shading: u32,
+    prev: u32,
+    capacity: u32,
+    viewport: vec2<f32>,
+    mip_count: u32,
     pad0: u32,
-    pad1: u32,
 };
 
 @group(0) @binding(1)
@@ -263,6 +289,7 @@ fn cell_outside_frustum(lo: vec3<f32>, hi: vec3<f32>) -> bool {
 }
 ";
 
+// `PHASE` is prepended per module: 0 = plain compaction (`k`), 1 = phase 1, 2 = phase 2.
 const COMPUTE_WGSL: &str = r"
 @group(1) @binding(0) var<storage, read> inst: array<vec4<u32>>;
 @group(1) @binding(1) var<storage, read> pages: array<CellPage>;
@@ -270,7 +297,22 @@ const COMPUTE_WGSL: &str = r"
 @group(1) @binding(3) var<storage, read_write> page_list: array<atomic<u32>>;
 @group(1) @binding(4) var<storage, read_write> visible: array<u32>;
 @group(1) @binding(5) var<storage, read_write> draw_args: array<atomic<u32>>;
+@group(1) @binding(6) var<storage, read_write> bits: array<u32>;
 @group(2) @binding(0) var<storage, read_write> dispatch_args: array<u32>;
+
+// Visibility bits: one word per page in each half, then sixteen words (512 slot bits) per page.
+fn page_bit_index(half: u32, page: u32) -> u32 {
+    return half * frame.capacity + page;
+}
+
+fn slot_word_index(half: u32, page: u32, word: u32) -> u32 {
+    return 2u * frame.capacity + half * frame.capacity * 16u + page * 16u + word;
+}
+
+// Phase 2 writes its draw arguments after those of phase 1.
+fn args_base() -> u32 {
+    return select(0u, 5u, PHASE == 2u);
+}
 
 fn page_box_hi(page: CellPage) -> vec3<f32> {
     let box_max = vec3<f32>(
@@ -283,11 +325,21 @@ fn page_main(@builtin(global_invocation_id) id: vec3<u32>) {
     let p = id.x;
     if p >= frame.num_pages { return; }
     let page = pages[p];
-    if page.octants == 0u { return; }
     // The page box starts at the page origin: its minimum cell has relative coordinate 0.
-    if cell_outside_frustum(page.origin, page_box_hi(page)) { return; }
-    let i = atomicAdd(&page_list[0], 1u);
-    atomicStore(&page_list[1u + i], p);
+    let hi = page_box_hi(page);
+    // An inert page (octant word 0) is never kept, but phase 2 still writes its bit.
+    var keep = page.octants != 0u && !cell_outside_frustum(page.origin, hi);
+    if PHASE == 1u && keep {
+        keep = bits[page_bit_index(frame.prev, p)] != 0u;
+    }
+    if PHASE == 2u {
+        if keep { keep = !cell_occluded(page.origin, hi); }
+        bits[page_bit_index(1u - frame.prev, p)] = select(0u, 1u, keep);
+    }
+    if keep {
+        let i = atomicAdd(&page_list[0], 1u);
+        atomicStore(&page_list[1u + i], p);
+    }
 }
 
 @compute @workgroup_size(1)
@@ -295,35 +347,60 @@ fn finalize_main() {
     dispatch_args[0] = atomicLoad(&page_list[0]);
     dispatch_args[1] = 1u;
     dispatch_args[2] = 1u;
-    atomicStore(&draw_args[0], 36u);
-    atomicStore(&draw_args[1], 0u);
-    atomicStore(&draw_args[2], 0u);
-    atomicStore(&draw_args[3], 0u);
-    atomicStore(&draw_args[4], 0u);
+    let base = args_base();
+    atomicStore(&draw_args[base], 36u);
+    atomicStore(&draw_args[base + 1u], 0u);
+    atomicStore(&draw_args[base + 2u], 0u);
+    atomicStore(&draw_args[base + 3u], 0u);
+    atomicStore(&draw_args[base + 4u], 0u);
 }
 
 var<workgroup> scan: array<u32, 256>;
+var<workgroup> next_words: array<atomic<u32>, 16>;
 var<workgroup> wg_base: u32;
 
-fn slot_drawn(page: CellPage, page_index: u32, local: u32) -> bool {
+// Bit 0: draw the slot in this phase. Bit 1: the slot is visible for the next frame (phase 2).
+// Phase 2 skips what phase 1 drew with the predicate phase 1 used: the page was kept on its
+// previous bit (the page pass of phase 1) and the slot passed on its previous bit.
+fn slot_state(page: CellPage, page_index: u32, local: u32, page_was_drawn: bool) -> u32 {
     let cell = inst[page_index * 512u + local];
-    if cell_is_empty(cell) { return false; }
+    if cell_is_empty(cell) { return 0u; }
     if !cell_spans_octants(cell) {
-        if ((page.octants >> cell_octant(cell)) & 1u) == 0u { return false; }
+        if ((page.octants >> cell_octant(cell)) & 1u) == 0u { return 0u; }
         let bit = cell_mask_index(cell);
-        if ((masks[page.node * 16u + (bit >> 5u)] >> (bit & 31u)) & 1u) == 1u { return false; }
+        if ((masks[page.node * 16u + (bit >> 5u)] >> (bit & 31u)) & 1u) == 1u { return 0u; }
     }
-    return !cell_outside_frustum(cell_lo(page, cell), cell_hi(page, cell));
+    let lo = cell_lo(page, cell);
+    let hi = cell_hi(page, cell);
+    if cell_outside_frustum(lo, hi) { return 0u; }
+    if PHASE == 0u { return 1u; }
+    let was_visible =
+        ((bits[slot_word_index(frame.prev, page_index, local >> 5u)] >> (local & 31u)) & 1u) == 1u;
+    if PHASE == 1u { return select(0u, 1u, was_visible); }
+    if cell_occluded(lo, hi) { return 0u; }
+    return select(3u, 2u, page_was_drawn && was_visible);
 }
 
 @compute @workgroup_size(256)
 fn slot_main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_index) lid: u32) {
     let page_index = atomicLoad(&page_list[1u + wid.x]);
     let page = pages[page_index];
+    var page_was_drawn = false;
+    if PHASE == 2u {
+        page_was_drawn = bits[page_bit_index(frame.prev, page_index)] != 0u;
+        if lid < 16u { atomicStore(&next_words[lid], 0u); }
+        workgroupBarrier();
+    }
     let l0 = lid * 2u;
     let l1 = l0 + 1u;
-    let c0 = select(0u, 1u, slot_drawn(page, page_index, l0));
-    let c1 = select(0u, 1u, slot_drawn(page, page_index, l1));
+    let s0 = slot_state(page, page_index, l0, page_was_drawn);
+    let s1 = slot_state(page, page_index, l1, page_was_drawn);
+    if PHASE == 2u {
+        if (s0 & 2u) != 0u { atomicOr(&next_words[l0 >> 5u], 1u << (l0 & 31u)); }
+        if (s1 & 2u) != 0u { atomicOr(&next_words[l1 >> 5u], 1u << (l1 & 31u)); }
+    }
+    let c0 = s0 & 1u;
+    let c1 = s1 & 1u;
     scan[lid] = c0 + c1;
     workgroupBarrier();
     for (var off = 1u; off < 256u; off = off << 1u) {
@@ -335,12 +412,15 @@ fn slot_main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_in
     }
     let total = scan[255];
     let exclusive = scan[lid] - (c0 + c1);
-    if lid == 0u && total > 0u { wg_base = atomicAdd(&draw_args[1], total); }
+    if lid == 0u && total > 0u { wg_base = atomicAdd(&draw_args[args_base() + 1u], total); }
     workgroupBarrier();
     if total > 0u {
         let out = wg_base + exclusive;
         if c0 == 1u { visible[out] = page_index * 512u + l0; }
         if c1 == 1u { visible[out + c0] = page_index * 512u + l1; }
+    }
+    if PHASE == 2u && lid < 16u {
+        bits[slot_word_index(1u - frame.prev, page_index, lid)] = atomicLoad(&next_words[lid]);
     }
 }
 ";
@@ -386,10 +466,19 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
-/// WGSL sources of the compute passes and of the draw, for validation in tests.
-pub(crate) fn shader_sources() -> [String; 2] {
+/// WGSL sources of the compute passes (plain, phase 1, phase 2) and of the draw, for validation in
+/// tests.
+pub(crate) fn shader_sources() -> [String; 4] {
+    let compute = |phase: u32| {
+        format!(
+            "const PHASE: u32 = {phase}u;\n{CELL_PAGES_WGSL}{COMMON_WGSL}{}{COMPUTE_WGSL}",
+            occlusion_wgsl()
+        )
+    };
     [
-        format!("{CELL_PAGES_WGSL}{COMMON_WGSL}{COMPUTE_WGSL}"),
+        compute(0),
+        compute(1),
+        compute(2),
         format!("{CELL_PAGES_WGSL}{COMMON_WGSL}{DRAW_WGSL}"),
     ]
 }
@@ -397,6 +486,7 @@ pub(crate) fn shader_sources() -> [String; 2] {
 /// The pool, its page and mask tables and the pipelines that draw it. Built from a device only, so
 /// a headless harness and `SurfaceRenderer` share the code.
 pub(crate) struct CellRenderer {
+    device: wgpu::Device,
     queue: wgpu::Queue,
     capacity: u32,
     instances: wgpu::Buffer,
@@ -407,14 +497,25 @@ pub(crate) struct CellRenderer {
     draw_args: wgpu::Buffer,
     dispatch_args: wgpu::Buffer,
     cube_indices: wgpu::Buffer,
+    /// Visibility bits of the two-phase occlusion, double-buffered (see `cell_cull.rs`).
+    bits: wgpu::Buffer,
     common_group: wgpu::BindGroup,
     compute_group: wgpu::BindGroup,
     finalize_group: wgpu::BindGroup,
     draw_group: wgpu::BindGroup,
-    page_pipeline: wgpu::ComputePipeline,
-    finalize_pipeline: wgpu::ComputePipeline,
-    slot_pipeline: wgpu::ComputePipeline,
+    /// Indexed by phase: 0 plain, 1 phase 1, 2 phase 2.
+    page_pipelines: [wgpu::ComputePipeline; 3],
+    finalize_pipelines: [wgpu::ComputePipeline; 3],
+    slot_pipelines: [wgpu::ComputePipeline; 3],
     draw_pipeline: wgpu::RenderPipeline,
+    hiz_builder: HiZBuilder,
+    hiz: HiZ,
+    /// Two-phase occlusion (`kpc`) when true, plain compaction (`k`) when false.
+    occlusion: bool,
+    /// Half of `bits` that phase 1 and 2 read this frame; phase 2 writes the other.
+    prev_half: u32,
+    /// The bits describe the last frame drawn with occlusion; false forces a full clear.
+    bits_valid: bool,
     resource_bytes: u64,
     /// CPU copy of the page table, to rewrite only what changed.
     shadow: Vec<PageEntry>,
@@ -476,7 +577,12 @@ impl CellRenderer {
         );
         let page_list = buffer("cell-page-list", (pages + 1) * 4, U::STORAGE | U::COPY_DST);
         let visible = buffer("cell-visible", pages * PAGE_SLOTS as u64 * 4, U::STORAGE);
-        let draw_args = buffer("cell-draw-args", 20, U::STORAGE | U::INDIRECT | U::COPY_SRC);
+        let bits = buffer(
+            "cell-visibility-bits",
+            bits_bytes(pages),
+            U::STORAGE | U::COPY_DST,
+        );
+        let draw_args = buffer("cell-draw-args", 40, U::STORAGE | U::INDIRECT | U::COPY_SRC);
         let dispatch_args = buffer("cell-dispatch-args", 12, U::STORAGE | U::INDIRECT);
         let cube_indices = buffer("cell-cube-indices", 72, U::INDEX | U::COPY_DST);
         queue.write_buffer(&srgb, 0, bytemuck::bytes_of(&srgb_to_linear_table()));
@@ -489,6 +595,7 @@ impl CellRenderer {
             &frame_uniform,
             &page_list,
             &visible,
+            &bits,
             &draw_args,
             &dispatch_args,
             &cube_indices,
@@ -539,6 +646,7 @@ impl CellRenderer {
                 entry(3, S::COMPUTE, storage(false)),
                 entry(4, S::COMPUTE, storage(false)),
                 entry(5, S::COMPUTE, storage(false)),
+                entry(6, S::COMPUTE, storage(false)),
             ],
         });
         // The dispatch arguments are indirect input of the slot pass, so no pass that uses them
@@ -581,6 +689,7 @@ impl CellRenderer {
                 &page_list,
                 &visible,
                 &draw_args,
+                &bits,
             ],
         );
         let finalize_group = bind("cell-finalize", &finalize_layout, &[&dispatch_args]);
@@ -590,14 +699,20 @@ impl CellRenderer {
             &[&instances, &page_table, &visible],
         );
 
-        let [compute_source, draw_source] = shader_sources();
+        let hiz_builder = HiZBuilder::new(device);
+        let hiz = HiZ::new(device, &hiz_builder, [1, 1]);
+        let [plain_source, phase1_source, phase2_source, draw_source] = shader_sources();
         let module = |label, source: String| {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(label),
                 source: wgpu::ShaderSource::Wgsl(source.into()),
             })
         };
-        let compute_module = module("cell-compute", compute_source);
+        let compute_modules = [
+            module("cell-compute-plain", plain_source),
+            module("cell-compute-phase1", phase1_source),
+            module("cell-compute-phase2", phase2_source),
+        ];
         let draw_module = module("cell-draw", draw_source);
         let layout = |label, groups: &[Option<&wgpu::BindGroupLayout>]| {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -606,9 +721,16 @@ impl CellRenderer {
                 immediate_size: 0,
             })
         };
+        // Group 2 is the finalize group in the finalize pipelines and group 3 the Hi-Z in the
+        // page and slot passes; the page and slot modules reference no group 2 binding.
         let page_layout = layout(
             "cell-page-layout",
-            &[Some(&common_layout), Some(&compute_layout)],
+            &[
+                Some(&common_layout),
+                Some(&compute_layout),
+                None,
+                Some(&hiz_builder.sample_layout),
+            ],
         );
         let finalize_pipeline_layout = layout(
             "cell-finalize-pipeline-layout",
@@ -622,23 +744,29 @@ impl CellRenderer {
             "cell-draw-pipeline-layout",
             &[Some(&common_layout), Some(&draw_layout)],
         );
-        let compute = |label, layout: &wgpu::PipelineLayout, entry_point| {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(label),
-                layout: Some(layout),
-                module: &compute_module,
-                entry_point: Some(entry_point),
-                compilation_options: Default::default(),
-                cache: None,
-            })
+        let compute =
+            |label, module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, entry_point| {
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(layout),
+                    module,
+                    entry_point: Some(entry_point),
+                    compilation_options: Default::default(),
+                    cache: None,
+                })
+            };
+        let per_phase = |label, layout: &wgpu::PipelineLayout, entry_point| {
+            compute_modules
+                .each_ref()
+                .map(|module| compute(label, module, layout, entry_point))
         };
-        let page_pipeline = compute("cell-page-pass", &page_layout, "page_main");
-        let finalize_pipeline = compute(
+        let page_pipelines = per_phase("cell-page-pass", &page_layout, "page_main");
+        let finalize_pipelines = per_phase(
             "cell-finalize-pass",
             &finalize_pipeline_layout,
             "finalize_main",
         );
-        let slot_pipeline = compute("cell-slot-pass", &page_layout, "slot_main");
+        let slot_pipelines = per_phase("cell-slot-pass", &page_layout, "slot_main");
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("cell-draw-pipeline"),
             layout: Some(&draw_pipeline_layout),
@@ -676,6 +804,7 @@ impl CellRenderer {
         });
 
         Self {
+            device: device.clone(),
             queue: queue.clone(),
             capacity,
             instances,
@@ -686,14 +815,20 @@ impl CellRenderer {
             draw_args,
             dispatch_args,
             cube_indices,
+            bits,
             common_group,
             compute_group,
             finalize_group,
             draw_group,
-            page_pipeline,
-            finalize_pipeline,
-            slot_pipeline,
+            page_pipelines,
+            finalize_pipelines,
+            slot_pipelines,
             draw_pipeline,
+            hiz_builder,
+            hiz,
+            occlusion: true,
+            prev_half: 0,
+            bits_valid: false,
             resource_bytes,
             shadow: vec![PageEntry::zeroed(); capacity as usize],
             active: Vec::new(),
@@ -706,7 +841,42 @@ impl CellRenderer {
 
     /// Bytes of every buffer of the pool, for `allocated_gpu_bytes` and `GpuResourceStats`.
     pub fn resource_bytes(&self) -> u64 {
-        self.resource_bytes
+        self.resource_bytes + self.hiz.bytes()
+    }
+
+    /// Turns the two-phase occlusion on (`kpc`, the default) or off (`k`: compaction only). Turning
+    /// it on again starts from empty visibility bits.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "toggle for tests; the T7c bench will expose it")
+    )]
+    pub fn set_occlusion(&mut self, enabled: bool) {
+        self.occlusion = enabled;
+    }
+
+    /// Forgets last frame's visibility: the next occlusion frame draws everything in phase 2.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "used by the camera-jump tests; a camera cut may call it"
+        )
+    )]
+    pub fn reset_visibility(&mut self) {
+        self.bits_valid = false;
+    }
+
+    /// The viewport changed or the surface was reconfigured (`resize`, `Outdated`): rebuild the
+    /// Hi-Z at the next frame and start the visibility bits again.
+    pub fn invalidate_viewport(&mut self) {
+        self.hiz = HiZ::new(&self.device, &self.hiz_builder, [1, 1]);
+        self.bits_valid = false;
+    }
+
+    /// The Hi-Z of the current viewport, read back by the tests.
+    #[cfg(test)]
+    pub(crate) fn hiz(&self) -> &HiZ {
+        &self.hiz
     }
 
     /// Indirect draw arguments; word 1 is the number of cells drawn. Read back by the tests.
@@ -768,6 +938,8 @@ impl CellRenderer {
             );
             start = end;
         }
+        // The slots hold other cells now: whatever the bits said about the old ones is stale.
+        clear_page_bits(&self.queue, &self.bits, self.capacity, page_slots);
         Ok(())
     }
 
@@ -790,6 +962,7 @@ impl CellRenderer {
                 bytemuck::bytes_of(&PageEntry::zeroed()),
             );
         }
+        clear_page_bits(&self.queue, &self.bits, self.capacity, page_slots);
         let freed: std::collections::HashSet<u32> = page_slots.iter().copied().collect();
         self.active.retain(|slot| !freed.contains(slot));
         self.shrink_high_water();
@@ -888,12 +1061,17 @@ impl CellRenderer {
         }
         let mut dirty = (u32::MAX, 0_u32);
         let mut touch = |slot: u32| dirty = (dirty.0.min(slot), dirty.1.max(slot + 1));
+        let mut deactivated = Vec::new();
         for &slot in &self.active {
             if !keep.contains(&slot) && self.shadow[slot as usize] != PageEntry::zeroed() {
                 self.shadow[slot as usize] = PageEntry::zeroed();
                 touch(slot);
+                deactivated.push(slot);
             }
         }
+        // The page pass stops writing bits for slots above the high-water mark, so a page that
+        // leaves the active set must not keep a bit that a later activation would read.
+        clear_page_bits(&self.queue, &self.bits, self.capacity, &deactivated);
         for &(slot, entry) in pages {
             if self.shadow[slot as usize] != entry {
                 self.shadow[slot as usize] = entry;
@@ -913,16 +1091,32 @@ impl CellRenderer {
         Ok(())
     }
 
-    /// Records the four passes into `encoder`. The frame uniform is written with the queue at this
+    /// Records the frame into `encoder`: with occlusion on, phase 1, the Hi-Z build and phase 2;
+    /// with it off, one compaction and one draw. The frame uniform is written with the queue at this
     /// call, so a submission must carry at most one `encode_cells` (a second call would change the
-    /// matrix of the first).
+    /// matrix of the first). `depth_view` must be a view of the whole depth texture, which needs
+    /// `TEXTURE_BINDING` and the size `frame.viewport`.
     pub fn encode_cells(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color_view: &wgpu::TextureView,
         depth_view: &wgpu::TextureView,
         frame: &CellFrame,
     ) {
+        if self.occlusion {
+            if self.hiz.size() != frame.viewport.map(|v| v.max(1)) {
+                self.hiz = HiZ::new(&self.device, &self.hiz_builder, frame.viewport);
+                self.bits_valid = false;
+            }
+            if !self.bits_valid {
+                encoder.clear_buffer(&self.bits, 0, None);
+                self.prev_half = 0;
+                self.bits_valid = true;
+            }
+        } else {
+            // Bits are only meaningful across consecutive occlusion frames.
+            self.bits_valid = false;
+        }
         self.queue.write_buffer(
             &self.frame_uniform,
             0,
@@ -930,18 +1124,40 @@ impl CellRenderer {
                 view_projection: frame.view_projection,
                 num_pages: self.high_water,
                 shading: u32::from(frame.depth_shading),
-                _padding: [0; 2],
+                prev: self.prev_half,
+                capacity: self.capacity,
+                viewport: frame.viewport.map(|v| v as f32),
+                mip_count: self.hiz.mip_count(),
+                _padding: 0,
             }),
         );
+        if self.occlusion {
+            self.encode_compaction(encoder, 1);
+            self.encode_draw(encoder, color_view, depth_view, Some(frame.clear_color), 0);
+            self.hiz
+                .encode_build(&self.device, &self.hiz_builder, encoder, depth_view);
+            self.encode_compaction(encoder, 2);
+            self.encode_draw(encoder, color_view, depth_view, None, DRAW_ARGS_BYTES);
+            // Only occlusion frames flip the halves: the next frame reads what this one wrote.
+            self.prev_half = 1 - self.prev_half;
+        } else {
+            self.encode_compaction(encoder, 0);
+            self.encode_draw(encoder, color_view, depth_view, Some(frame.clear_color), 0);
+        }
+    }
+
+    /// Page pass, finalize and slot pass of `phase` (0 plain, 1, 2).
+    fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder, phase: usize) {
         encoder.clear_buffer(&self.page_list, 0, Some(4));
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("cell-page-pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.page_pipeline);
+            pass.set_pipeline(&self.page_pipelines[phase]);
             pass.set_bind_group(0, &self.common_group, &[]);
             pass.set_bind_group(1, &self.compute_group, &[]);
+            pass.set_bind_group(3, &self.hiz.sample_group, &[]);
             pass.dispatch_workgroups(self.high_water.div_ceil(PAGE_PASS_GROUP), 1, 1);
         }
         {
@@ -949,22 +1165,33 @@ impl CellRenderer {
                 label: Some("cell-finalize-pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.finalize_pipeline);
+            pass.set_pipeline(&self.finalize_pipelines[phase]);
             pass.set_bind_group(0, &self.common_group, &[]);
             pass.set_bind_group(1, &self.compute_group, &[]);
             pass.set_bind_group(2, &self.finalize_group, &[]);
             pass.dispatch_workgroups(1, 1, 1);
         }
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("cell-slot-pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.slot_pipeline);
-            pass.set_bind_group(0, &self.common_group, &[]);
-            pass.set_bind_group(1, &self.compute_group, &[]);
-            pass.dispatch_workgroups_indirect(&self.dispatch_args, 0);
-        }
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("cell-slot-pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.slot_pipelines[phase]);
+        pass.set_bind_group(0, &self.common_group, &[]);
+        pass.set_bind_group(1, &self.compute_group, &[]);
+        pass.set_bind_group(3, &self.hiz.sample_group, &[]);
+        pass.dispatch_workgroups_indirect(&self.dispatch_args, 0);
+    }
+
+    /// One `drawIndexedIndirect`. `clear` is the clear colour of the first draw of the frame (which
+    /// also clears depth); the second draw loads both attachments.
+    fn encode_draw(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        color_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+        clear: Option<wgpu::Color>,
+        args_offset: u64,
+    ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("cell-draw-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -972,14 +1199,14 @@ impl CellRenderer {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(frame.clear_color),
+                    load: clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear),
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_view,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: clear.map_or(wgpu::LoadOp::Load, |_| wgpu::LoadOp::Clear(1.0)),
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
@@ -992,6 +1219,6 @@ impl CellRenderer {
         pass.set_bind_group(0, &self.common_group, &[]);
         pass.set_bind_group(1, &self.draw_group, &[]);
         pass.set_index_buffer(self.cube_indices.slice(..), wgpu::IndexFormat::Uint16);
-        pass.draw_indexed_indirect(&self.draw_args, 0);
+        pass.draw_indexed_indirect(&self.draw_args, args_offset);
     }
 }

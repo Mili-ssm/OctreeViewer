@@ -26,6 +26,10 @@ const HEIGHT: u32 = 192;
 const POOL_PAGES_FOR_TESTS: u32 = 64;
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
+/// Task 7b2: two-phase occlusion against the compaction-only path.
+#[path = "cell_cull_tests.rs"]
+mod cull;
+
 // ---------------------------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------------------------
@@ -176,14 +180,15 @@ fn read_buffer(h: &Harness, buffer: &wgpu::Buffer) -> Vec<u8> {
     data
 }
 
-/// Copies both targets (and optionally word 1 of the draw arguments) out after the passes.
+/// Copies both targets (and optionally the cell counts of the draw arguments: word 1 of phase 1
+/// or of the plain pass, word 6 of phase 2) out after the passes.
 fn finish(
     h: &Harness,
     mut encoder: wgpu::CommandEncoder,
     color: &wgpu::Texture,
     depth: &wgpu::Texture,
     draw_args: Option<&wgpu::Buffer>,
-) -> (Image, Option<u32>) {
+) -> (Image, Option<[u32; 2]>) {
     let row = WIDTH * 4;
     assert_eq!(row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0);
     let staging = |label, size| {
@@ -199,7 +204,7 @@ fn finish(
         staging("color-out", image_bytes),
         staging("depth-out", image_bytes),
     );
-    let count_out = staging("count-out", 4);
+    let count_out = staging("count-out", 28);
     let extent = wgpu::Extent3d {
         width: WIDTH,
         height: HEIGHT,
@@ -268,14 +273,14 @@ fn finish(
     }
     encoder.copy_buffer_to_buffer(&depth_storage, 0, &depth_out, 0, image_bytes);
     if let Some(args) = draw_args {
-        encoder.copy_buffer_to_buffer(args, 4, &count_out, 0, 4);
+        encoder.copy_buffer_to_buffer(args, 0, &count_out, 0, 28);
     }
     h.queue.submit([encoder.finish()]);
     let color = read_buffer(h, &color_out);
     let depth = read_buffer(h, &depth_out);
     let count = draw_args.map(|_| {
-        let bytes = read_buffer(h, &count_out);
-        u32::from_le_bytes(bytes[..4].try_into().unwrap())
+        let words: Vec<u32> = bytemuck::pod_collect_to_vec(&read_buffer(h, &count_out));
+        [words[1], words[6]]
     });
     (
         Image {
@@ -353,7 +358,24 @@ fn render_cpu(h: &Harness, instances: &[InstanceRaw], camera: &OrbitCamera, lit:
     finish(h, encoder, &color, &depth, None).0
 }
 
-fn render_cells(h: &Harness, pool: &CellRenderer, camera: &OrbitCamera, lit: bool) -> (Image, u32) {
+fn render_cells(
+    h: &Harness,
+    pool: &mut CellRenderer,
+    camera: &OrbitCamera,
+    lit: bool,
+) -> (Image, u32) {
+    let (image, counts) = render_cells_phases(h, pool, camera, lit);
+    (image, counts[0])
+}
+
+/// Like [`render_cells`], with the cells drawn by phase 1 and by phase 2 (phase 2 is 0 when the
+/// pool draws without occlusion).
+fn render_cells_phases(
+    h: &Harness,
+    pool: &mut CellRenderer,
+    camera: &OrbitCamera,
+    lit: bool,
+) -> (Image, [u32; 2]) {
     let eye_frame = camera.eye_frame([WIDTH, HEIGHT]).unwrap();
     let (color, depth) = target_textures(h);
     let (color_view, depth_view) = (
@@ -369,10 +391,11 @@ fn render_cells(h: &Harness, pool: &CellRenderer, camera: &OrbitCamera, lit: boo
             view_projection: eye_frame.view_projection,
             clear_color: clear_color(),
             depth_shading: lit,
+            viewport: [WIDTH, HEIGHT],
         },
     );
-    let (image, count) = finish(h, encoder, &color, &depth, Some(pool.draw_args_buffer()));
-    (image, count.unwrap())
+    let (image, counts) = finish(h, encoder, &color, &depth, Some(pool.draw_args_buffer()));
+    (image, counts.unwrap())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -730,7 +753,15 @@ fn entries(scene: &Scene, placed: &[Placed], eye: [f64; 3]) -> Vec<(u32, PageEnt
     out
 }
 
+/// A pool that compacts without occlusion (`k`): its draw count is the count of the shader tests.
 fn new_pool(h: &Harness) -> CellRenderer {
+    let mut pool = new_occlusion_pool(h);
+    pool.set_occlusion(false);
+    pool
+}
+
+/// A pool with the default two-phase occlusion.
+fn new_occlusion_pool(h: &Harness) -> CellRenderer {
     CellRenderer::new(&h.device, &h.queue, COLOR_FORMAT, POOL_PAGES_FOR_TESTS)
 }
 
@@ -901,7 +932,7 @@ fn compare_images(
 
 fn run_oracle(
     h: &Harness,
-    pool: &CellRenderer,
+    pool: &mut CellRenderer,
     scene: &Scene,
     camera: &OrbitCamera,
     lit: bool,
@@ -911,7 +942,7 @@ fn run_oracle(
 
 fn run_oracle_against(
     h: &Harness,
-    pool: &CellRenderer,
+    pool: &mut CellRenderer,
     instances: &[InstanceRaw],
     camera: &OrbitCamera,
     lit: bool,
@@ -975,10 +1006,10 @@ fn cells_match_the_cpu_path_per_pixel_on_every_adapter() {
         let placed = place(&mut pool, &scene, 0..);
         pool.set_active_pages(&entries(&scene, &placed, camera.position()))
             .unwrap();
-        let stats = run_oracle(h, &pool, &scene, &camera, false);
+        let stats = run_oracle(h, &mut pool, &scene, &camera, false);
         println!("# adapter {}: oracle {stats:?}", h.label);
         // Lighting on: the colour also depends on interpolated normals and on depth.
-        let lit = run_oracle(h, &pool, &scene, &camera, true);
+        let lit = run_oracle(h, &mut pool, &scene, &camera, true);
         println!("# adapter {}: lit oracle {lit:?}", h.label);
         true
     });
@@ -996,7 +1027,7 @@ fn large_cells_are_mostly_interior_pixels_on_every_adapter() {
         let placed = place(&mut pool, &scene, 0..);
         pool.set_active_pages(&entries(&scene, &placed, camera.position()))
             .unwrap();
-        let stats = run_oracle(h, &pool, &scene, &camera, false);
+        let stats = run_oracle(h, &mut pool, &scene, &camera, false);
         let ratio = stats.interior_covered as f64 / stats.covered_reference as f64;
         println!(
             "# adapter {}: large cells, interior {ratio:.3}, {stats:?}",
@@ -1111,7 +1142,7 @@ fn compaction_count_matches_a_cpu_count_on_every_adapter() {
             expected > 0 && expected < eligible,
             "{expected} of {eligible}"
         );
-        let (_, gpu_count) = render_cells(h, &pool, &camera, false);
+        let (_, gpu_count) = render_cells(h, &mut pool, &camera, false);
         assert_eq!(
             gpu_count as usize, expected,
             "{}: compacted {gpu_count}, CPU model {expected} of {eligible} eligible",
@@ -1180,7 +1211,7 @@ fn reused_page_and_mask_slots_still_match_the_cpu_path() {
         let placed = place(&mut pool, &first, 0..);
         pool.set_active_pages(&entries(&first, &placed, camera.position()))
             .unwrap();
-        run_oracle(h, &pool, &first, &camera, false);
+        run_oracle(h, &mut pool, &first, &camera, false);
 
         // Free everything, then fill the same slots (and mask slots) with another scene, in
         // descending order.
@@ -1205,14 +1236,14 @@ fn reused_page_and_mask_slots_still_match_the_cpu_path() {
         assert!(reused > 5, "the second scene reuses slots of the first");
         pool.set_active_pages(&entries(&second, &placed2, camera.position()))
             .unwrap();
-        let stats = run_oracle(h, &pool, &second, &camera, false);
+        let stats = run_oracle(h, &mut pool, &second, &camera, false);
 
         // A moved camera rewrites the eye-relative origins; the oracle holds there too.
         let mut moved = camera;
         assert!(moved.orbit(-0.4, 0.1));
         pool.set_active_pages(&entries(&second, &placed2, moved.position()))
             .unwrap();
-        run_oracle(h, &pool, &second, &moved, false);
+        run_oracle(h, &mut pool, &second, &moved, false);
         println!("# adapter {}: reuse oracle {stats:?}", h.label);
         true
     });
@@ -1236,8 +1267,8 @@ fn freed_pages_below_the_high_water_mark_stay_inert() {
         let model = |skip: &[usize]| {
             cpu_compaction_count(&scene, &placed, &page_entries, &matrix, 1.0e-4, skip).0
         };
-        let (full, _) = (model(&[]), run_oracle(h, &pool, &scene, &camera, false));
-        assert_eq!(render_cells(h, &pool, &camera, false).1 as usize, full);
+        let (full, _) = (model(&[]), run_oracle(h, &mut pool, &scene, &camera, false));
+        assert_eq!(render_cells(h, &mut pool, &camera, false).1 as usize, full);
 
         // An active page with octant word 0 draws nothing, even for a level that spans octants
         // (whose cells skip the octant test): that is the page pass guard, not the slot pass.
@@ -1251,11 +1282,11 @@ fn freed_pages_below_the_high_water_mark_stay_inert() {
         let spanning_cells = model(&[scene.levels.len() - 1]);
         assert!(spanning_cells < full);
         assert_eq!(
-            render_cells(h, &pool, &camera, false).1 as usize,
+            render_cells(h, &mut pool, &camera, false).1 as usize,
             spanning_cells
         );
         pool.set_active_pages(&page_entries).unwrap();
-        assert_eq!(render_cells(h, &pool, &camera, false).1 as usize, full);
+        assert_eq!(render_cells(h, &mut pool, &camera, false).1 as usize, full);
 
         // set_active_pages -> free_pages -> encode, without a new active list.
         let spanning = scene.levels.len() - 1;
@@ -1271,10 +1302,13 @@ fn freed_pages_below_the_high_water_mark_stay_inert() {
             without < full,
             "the spanning cell must be on screen: {full} vs {without}"
         );
-        assert_eq!(render_cells(h, &pool, &camera, false).1 as usize, without);
+        assert_eq!(
+            render_cells(h, &mut pool, &camera, false).1 as usize,
+            without
+        );
         run_oracle_against(
             h,
-            &pool,
+            &mut pool,
             &scene.cpu_instances_skipping(&[spanning]),
             &camera,
             false,
@@ -1285,12 +1319,12 @@ fn freed_pages_below_the_high_water_mark_stay_inert() {
         let without_both = model(&[spanning, 0]);
         assert!(without_both < without);
         assert_eq!(
-            render_cells(h, &pool, &camera, false).1 as usize,
+            render_cells(h, &mut pool, &camera, false).1 as usize,
             without_both
         );
         run_oracle_against(
             h,
-            &pool,
+            &mut pool,
             &scene.cpu_instances_skipping(&[spanning, 0]),
             &camera,
             false,

@@ -1257,6 +1257,9 @@ impl<'window> SurfaceRenderer<'window> {
         self.depth_texture =
             create_depth_texture(&self.device, &self.surface_config, self.hzb_depth_supported);
         self.refresh_hzb_targets();
+        if let Some(pool) = &mut self.cell_pool {
+            pool.invalidate_viewport();
+        }
         if !self.camera.is_fitted()
             && let Some(bounds) = self.display_bounds()
         {
@@ -1399,6 +1402,9 @@ impl<'window> SurfaceRenderer<'window> {
                     self.hzb_depth_supported,
                 );
                 self.refresh_hzb_targets();
+                if let Some(pool) = &mut self.cell_pool {
+                    pool.invalidate_viewport();
+                }
                 return Ok(FrameStatus::Reconfigured);
             }
             wgpu::CurrentSurfaceTexture::Lost => {
@@ -1438,7 +1444,7 @@ impl<'window> SurfaceRenderer<'window> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("octree-viewer-frame"),
             });
-        if use_cells && let Some(pool) = &self.cell_pool {
+        if use_cells && let Some(pool) = &mut self.cell_pool {
             pool.encode_cells(
                 &mut encoder,
                 &view,
@@ -1447,6 +1453,7 @@ impl<'window> SurfaceRenderer<'window> {
                     view_projection,
                     clear_color: self.clear_color,
                     depth_shading: self.depth_shading,
+                    viewport,
                 },
             );
         }
@@ -1563,6 +1570,9 @@ impl<'window> SurfaceRenderer<'window> {
             self.depth_texture =
                 create_depth_texture(&self.device, &self.surface_config, self.hzb_depth_supported);
             self.refresh_hzb_targets();
+            if let Some(pool) = &mut self.cell_pool {
+                pool.invalidate_viewport();
+            }
             return Ok(FrameStatus::Reconfigured);
         }
         Ok(FrameStatus::Presented)
