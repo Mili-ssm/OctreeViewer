@@ -23,6 +23,8 @@ use viewer_render_wgpu::{
 
 /// Longest run of `RetainedPrevious` frames the pool may take while blocks stream in.
 const MAX_RETAINED_STREAK: usize = 60;
+/// Longest wait of a held or excluded node whose threshold level is requested (R3-Q20/Q21).
+const MAX_HOLD_FRAMES: u32 = 120;
 
 // ---------------------------------------------------------------------------------------------
 // Strict recording target
@@ -300,6 +302,19 @@ impl CutView {
         self.active[j][octant_of_cell(c)].is_some() && !cell_hidden(&self.entries[j].mask, c)
     }
 
+    /// Depth the cut wants at `p`: the finest wanted depth of the unhidden cells holding it.
+    fn wanted_at(&self, p: [f64; 3]) -> Option<u8> {
+        (0..self.nodes.len())
+            .filter_map(|i| {
+                let c = self.cell_at(i, p)?;
+                if cell_hidden(&self.entries[i].mask, c) {
+                    return None;
+                }
+                self.entries[i].wanted[octant_of_cell(c)]
+            })
+            .max()
+    }
+
     /// Finest depth drawn at `p` (unhidden), if any.
     fn depth_at(&self, p: [f64; 3]) -> Option<u8> {
         (0..self.nodes.len())
@@ -369,6 +384,12 @@ struct FrameInfo {
     digest: u64,
     pending_blocks: usize,
     cut_nodes: usize,
+    build_ms: f64,
+    cpu_cell_bytes: u64,
+    resident_pages: u32,
+    fallback_pages: u32,
+    held_nodes: u32,
+    excluded_nodes: u32,
 }
 
 #[derive(Default, Debug)]
@@ -382,6 +403,15 @@ struct Totals {
     graft_refused: usize,
     grafted: usize,
     stage_drops: usize,
+    /// Longest wait of a held or excluded node (`hold_age_max`) and the peaks of the pool counters.
+    hold_age_max: u32,
+    held_peak: u32,
+    excluded_peak: u32,
+    fallback_peak: u32,
+    resident_peak: u32,
+    hold_unsettled: u64,
+    /// Held or excluded waits seen (frames with at least one).
+    wait_frames: usize,
     /// The rungs of the ladder in the order they ran, each once.
     stages: Vec<f64>,
     /// Digest of the applied (drawn) cut of the last frame.
@@ -403,7 +433,20 @@ struct Harness {
     sample_depths: Vec<Option<u8>>,
     /// Depth last drawn per (node, octant) while the camera is still.
     octant_depths: HashMap<(NodeId, usize), u8>,
+    /// Cross-node coarsenings: a sample point drawn at depth `before` is drawn at `after` with
+    /// `after < min(before, wanted now)`.
     zone_coarsenings: usize,
+    /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
+    lost_samples: usize,
+    /// Frames whose cut had holes (only counted, not asserted, when `soft_checks` is set).
+    hole_frames: usize,
+    /// First failed check, kept when `soft_checks` is set.
+    first_failure: Option<String>,
+    /// The bench counts holes, lost samples and long waits instead of failing the frame.
+    soft_checks: bool,
+    /// When set, a (node, octant) that gets coarser is counted here instead of failing the frame.
+    count_octant_coarsenings: bool,
+    octant_coarsenings: usize,
     last_cut_digest: Option<u64>,
     /// The cut of the last frame that changed it.
     last_cut: Option<CutView>,
@@ -445,6 +488,12 @@ impl Harness {
             sample_depths,
             octant_depths: HashMap::new(),
             zone_coarsenings: 0,
+            lost_samples: 0,
+            hole_frames: 0,
+            first_failure: None,
+            soft_checks: false,
+            count_octant_coarsenings: false,
+            octant_coarsenings: 0,
             last_cut_digest: None,
             last_cut: None,
             last_stage: None,
@@ -463,6 +512,12 @@ impl Harness {
         self.last_cut_digest = None;
         self.last_stage = None;
         self.retained_run = 0;
+    }
+
+    /// A failed check: panics, or is counted when `soft_checks` is set.
+    fn fail(&mut self, message: String) {
+        assert!(self.soft_checks, "{message}");
+        self.first_failure.get_or_insert(message);
     }
 
     fn frame(&mut self, view: &ViewProjection) -> FrameInfo {
@@ -492,12 +547,14 @@ impl Harness {
         if self.last_cut_digest != Some(digest) {
             let cut = CutView::new(&self.dataset, plan);
             let holes = cut.holes();
-            assert!(
-                holes.is_empty(),
-                "frame {number}: {} holes, first: {:?}",
-                holes.len(),
-                &holes[..holes.len().min(3)]
-            );
+            if !holes.is_empty() {
+                self.hole_frames += 1;
+                self.fail(format!(
+                    "frame {number}: {} holes, first: {:?}",
+                    holes.len(),
+                    &holes[..holes.len().min(3)]
+                ));
+            }
             if self.check_zones {
                 // The pool stage of the brief: the depth drawn per (node, octant) never gets
                 // coarser while the camera is still.
@@ -507,27 +564,60 @@ impl Harness {
                             continue;
                         };
                         let before = self.octant_depths.insert((*node, octant), now);
-                        assert!(
-                            before.is_none_or(|before| now >= before),
-                            "frame {number}: node {node:?} octant {octant} went from depth \
-                             {before:?} to {now}"
-                        );
+                        if self.count_octant_coarsenings {
+                            self.octant_coarsenings += usize::from(before.is_some_and(|b| now < b));
+                        } else {
+                            assert!(
+                                before.is_none_or(|before| now >= before),
+                                "frame {number}: node {node:?} octant {octant} went from depth \
+                                 {before:?} to {now}"
+                            );
+                        }
                     }
                 }
-                // Across nodes (an ancestor replaced by its child) is only counted here: R3-Q19
-                // lets a child draw its first resident level while the ancestor's finer one stops
-                // (the ancestor leaves the cut once the child is in the GPU). The real-data tests
-                // assert the count is 0; the synthetic ones only print it.
+                // Across nodes (an ancestor replaced by its child) a point only counts as coarsened
+                // if it ends below what it drew before and below what the cut wants now (the
+                // wish may have dropped: zoom-out). The real-data tests assert the count is 0;
+                // the synthetic ones only print it. A lost sample is a point the previous cut
+                // drew, the planner's cut still covers and the new cut draws with nothing.
+                let hierarchy = self.dataset.metadata.hierarchy();
+                let planner: Vec<SpatialBounds> = self
+                    .dataset
+                    .visible_plan
+                    .as_ref()
+                    .map(|plan| plan.node_ids())
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|id| self.driver.has_node(**id))
+                    .filter_map(|id| hierarchy.node(*id).map(SpatialNode::bounds))
+                    .collect();
+                let mut lost = 0;
                 for (i, p) in self.sample_points.iter().enumerate() {
                     let now = cut.depth_at(*p);
                     if let (Some(before), Some(after)) = (self.sample_depths[i], now)
-                        && after < before
+                        && after < before.min(cut.wanted_at(*p).unwrap_or(u8::MAX))
                     {
                         self.zone_coarsenings += 1;
+                    }
+                    let drawn_before = self
+                        .last_cut
+                        .as_ref()
+                        .is_some_and(|c| c.depth_at(*p).is_some());
+                    if drawn_before
+                        && now.is_none()
+                        && planner
+                            .iter()
+                            .any(|b| (0..3).all(|a| p[a] >= b.min()[a] && p[a] <= b.max()[a]))
+                    {
+                        lost += 1;
                     }
                     if now.is_some() {
                         self.sample_depths[i] = now;
                     }
+                }
+                if lost > 0 {
+                    self.lost_samples += lost;
+                    self.fail(format!("frame {number}: {lost} lost samples"));
                 }
             }
             self.last_cut_digest = Some(digest);
@@ -553,7 +643,27 @@ impl Harness {
             digest,
             pending_blocks: stats.pending_block_ids.len(),
             cut_nodes: stats.cut_nodes,
+            build_ms: stats.build_ms,
+            cpu_cell_bytes: stats.cpu_cell_bytes,
+            resident_pages: stats.counters.resident_pages,
+            fallback_pages: stats.counters.fallback_pages,
+            held_nodes: stats.counters.held_nodes,
+            excluded_nodes: stats.counters.excluded_nodes,
         };
+        {
+            let c = &stats.counters;
+            let t = &mut self.totals;
+            t.hold_age_max = t.hold_age_max.max(c.hold_age_max);
+            t.held_peak = t.held_peak.max(c.held_nodes);
+            t.excluded_peak = t.excluded_peak.max(c.excluded_nodes);
+            t.fallback_peak = t.fallback_peak.max(c.fallback_pages);
+            t.resident_peak = t.resident_peak.max(c.resident_pages);
+            t.hold_unsettled += u64::from(c.hold_unsettled);
+            t.wait_frames += usize::from(c.held_nodes + c.excluded_nodes > 0);
+            if c.hold_age_max > MAX_HOLD_FRAMES {
+                self.fail(format!("frame {number}: hold_age_max {}", c.hold_age_max));
+            }
+        }
         let anchors = stats.pending_page_anchors.clone();
         self.totals.frames += 1;
         self.totals.uploads += info.uploaded_pages;
@@ -613,7 +723,8 @@ impl Harness {
         println!(
             "{label}: frames {} | longest RetainedPrevious streak {} | max gap {} (gaps>1: {}) | \
              DescendantTooFine {} | uploads {} | grafted {} refused {} | stage drops {} | \
-             digest {:016x} | pages used {} | zone coarsenings {}",
+             digest {:016x} | pages used {} | zone coarsenings {} | lost samples {} | hold age max {} (waiting frames {}, held peak {}, \
+             excluded peak {}, fallback pages peak {}, unsettled {})",
             t.frames,
             t.longest_retained,
             t.max_gap,
@@ -626,6 +737,13 @@ impl Harness {
             t.drawn_digest,
             self.dataset.pages.as_ref().map_or(0, |p| p.pages()),
             self.zone_coarsenings,
+            self.lost_samples,
+            t.hold_age_max,
+            t.wait_frames,
+            t.held_peak,
+            t.excluded_peak,
+            t.fallback_peak,
+            t.hold_unsettled,
         );
     }
 }
@@ -797,6 +915,8 @@ fn synthetic_build_cap_defers_without_waiting_for_the_camera() {
     capped.target = StrictTarget::default();
     capped.dataset.pool_was_reset();
     capped.camera_moved();
+    // The new pool draws nothing yet: the old image is not a baseline for lost samples.
+    capped.last_cut = None;
     capped.totals = Totals::default();
     // The ladder is already at the target rung: every selected node waits for the cap.
     capped.stage = Some(2.0);
@@ -966,6 +1086,9 @@ fn real_path(name: &str) -> Option<std::path::PathBuf> {
     }
 }
 
+#[path = "lod_cells_bench.rs"]
+mod bench;
+
 fn open_real(name: &str, target_px: f64, page_budget: usize) -> Option<Real> {
     let path = real_path(name)?;
     let file = std::fs::File::open(path).unwrap();
@@ -1111,6 +1234,7 @@ fn real_streaming_ladder_belvedere() {
     // Coarse to fine through every rung; a straight jump to 4 px would show up here.
     assert_eq!(t.stages, vec![16.0, 8.0, 4.0]);
     assert_eq!(real.harness.zone_coarsenings, 0);
+    assert_eq!(real.harness.lost_samples, 0);
 }
 
 /// Two far-apart regions of belvedere: the views look at the nearest and the farthest root
@@ -1180,6 +1304,7 @@ fn real_regraft_belvedere() {
     assert!(t.max_gap <= MAX_CELL_CUT_GAP);
     assert_eq!(t.dtf, 0);
     assert_eq!(real.harness.zone_coarsenings, 0);
+    assert_eq!(real.harness.lost_samples, 0);
 }
 
 #[test]
@@ -1231,4 +1356,6 @@ fn real_pages_with_drawn_nodes_are_not_evicted() {
     real.harness.report("belvedere pinned");
     println!("belvedere pinned: {refused} grafts refused, {retained_frames} frames retained");
     assert!(refused > 0, "the budget must refuse at least one graft");
+    assert_eq!(real.harness.zone_coarsenings, 0);
+    assert_eq!(real.harness.lost_samples, 0);
 }
