@@ -332,7 +332,34 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 8: picking sobre el pool
 
-- [ ] **Pasa si** pasa `pick_on_pool_hits_same_cell_as_cpu_path`.
+Spec del 06-11-2026, enmendada tras el pre-mortem. Mantiene la API asíncrona de la ruta CPU (`prepare_pick` copia a un búfer de lectura y `resolve_pick` resuelve sobre los bytes mapeados), así que los bindings no cambian.
+
+- [ ] **Dónde vive:** un módulo `cell_pick.rs` con la preparación (candidatas y copias) y la resolución, que toman el rayo en el marco de las entradas. `SurfaceRenderer::prepare_pick` y `resolve_pick` solo lo envuelven. Motivo: `SurfaceRenderer::new` exige una superficie y ningún test la crea.
+- [ ] **Estado en la CPU:**
+  - `CellRenderer` guarda una copia de cada máscara, igual que la GPU: se pone a cero solo al tomar el hueco (`alloc_mask_slot`); liberarlo no la toca.
+  - `set_active_cell_pages` recibe además el `PageFrame` de las entradas. Si su `coordinate_origin` o su `visual_scale` no coinciden con los del renderer, da error. El renderer guarda el ojo (`eye_scaled`) junto a la copia de la tabla de páginas.
+  - *Límite conocido:* `render` dibuja con el ojo de la cámara actual. Si la cámara se mueve sin reescribir las páginas, el dibujo se desplaza, pero el picking sigue siendo correcto en el mundo. El host reescribe las páginas en cada frame.
+- [ ] **`prepare_pick` en la ruta de celdas:**
+  - rayo de la cámara actual, pasado al marco de las entradas (origen − ojo guardado);
+  - candidatas: páginas activas con algún octante cuya caja ajustada (origen + [0, `box_max` + 1] × lado, ensanchada un ulp) corta el rayo dentro de [near, far];
+  - orden por distancia de entrada (desempate por hueco); se copian como mucho 128 páginas (8 KiB cada una; 65.536 huecos, el mismo tope que la ruta CPU). El presupuesto se comprueba con `allocated_gpu_bytes()`, que incluye el pool, más el búfer de lectura;
+  - cada copia guarda su hueco, su entrada y la máscara del nodo en ese momento. Si quedan candidatas sin copiar, se guarda la distancia de entrada de la primera (`cutoff`);
+  - `PickReadback` pasa a ser un enum (CPU | pool). La variante del pool guarda el ojo, `visual_scale` y `coordinate_origin`, y `resolve_pick` decide por la variante, no por el modo actual, porque entre las dos llamadas hay un `await` en el host.
+- [ ] **`resolve_pick`:**
+  - por cada celda no vacía, los mismos filtros que el pase de huecos: si no abarca octantes, su octante debe estar en los bits de la página y su bit de máscara a cero; sin frustum ni Hi-Z;
+  - caja con `decode_cell` (el mismo `fma`), intersección en `f64`; gana la más cercana, y a igual distancia, el hueco global menor;
+  - con `cutoff` puesto, error si no hay ganadora o si su distancia es ≥ `cutoff` («el rayo cruza más de 128 páginas antes del primer impacto»): el resultado no sería seguro;
+  - `PickHit`: `instance_index` = hueco de página × 512 + hueco; posición, centro, lado y distancia en unidades del dataset, como la ruta CPU.
+- [ ] **Pasa si** pasa `pick_on_pool_hits_same_cell_as_cpu_path` (GPU real; falla sin adaptador con `CELL_POOL_REQUIRE_GPU=1`, como `cell_render_tests`):
+  - un fixture con dos niveles de un nodo, un octante al nivel fino y la máscara del grueso puesta (como la escena de `cell_render_tests`);
+  - el oráculo es el picking de la ruta CPU: `build_pick_chunks` y `resolve_pick_instances` (`pub(crate)`) sobre las celdas que dibuja el pool, como `InstanceRaw` (`cpu_instances`);
+  - una rejilla de ≥ 32 × 18 píxeles, más píxeles a ±0,1 px de las aristas proyectadas;
+  - **misma celda:** el índice del oráculo se traduce a hueco de página × 512 + hueco, con el mismo lado, el centro a ≤ 10⁻³ × lado (las vecinas distan un lado entero) y la distancia a ≤ 2⁻²⁰ · (d + |c|);
+  - se excluyen, y se cuentan (≤ 2 %), los píxeles en que las dos mejores distancias del oráculo difieren menos de 10⁻⁵ en relativo;
+  - no es vacío: impactos en ≥ 50 % de la rejilla, y alguno en que una celda enmascarada o de otro octante queda delante;
+  - mutaciones, que se informan: quitar el filtro de máscara, el de octante, el de huecos vacíos o el atajo de «abarca octantes», usar el ojo actual en lugar del guardado y quitar la comprobación de `cutoff`. Cada una debe hacer fallar algún test.
+- [ ] Tests de `cutoff` (error si el impacto queda tras la última página copiada o si no hay impacto con páginas sin copiar; acierto si cae en las copiadas) y de mover la cámara sin reescribir las páginas (mismo punto del mundo → misma celda).
+- [ ] **Parar si**, tras estas tolerancias, el oráculo discrepa en más del 2 % de los píxeles no excluidos: se revisan los filtros o la decodificación antes de tocar tolerancias.
 
 ## Tarea 9 ★: `LodDataset` con celdas
 
