@@ -372,7 +372,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 9 ★: `LodDataset` con celdas
 
-Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tarea 7) con el dataset en Rust nativo. **El visor recibe las celdas por el worker en la Tarea 10** (decisión del propietario del 06-11-2026): construir un nodo interno cuesta 26–39 ms en nativo ([T1](../records/benchmarks/R3_T1_ACCEPT_05-11-2026.md)), demasiado para el hilo principal. Esta tarea no toca los bindings. Dos partes, cada una con su commit.
+**Hecha (06-11-2026).** Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tarea 7) con el dataset en Rust nativo. **El visor recibe las celdas por el worker en la Tarea 10** (decisión del propietario del 06-11-2026): construir un nodo interno cuesta 26–39 ms en nativo ([T1](../records/benchmarks/R3_T1_ACCEPT_05-11-2026.md)), demasiado para el hilo principal. Esta tarea no toca los bindings. Dos partes, cada una con su commit.
 
 **Hechos de partida** (comprobados en el código):
 - El plan visible de `LodTransitionPlanner` no es una antichain: mientras cargan los hijos, contiene al padre y a sus hijos directos alineados ya cargados (`resolve_replacement`; test `partial.node_ids() == [1, 2]` en `viewer_core/tests/lod_transition.rs`). El salto es siempre 1, y la máscara de 8³ lo cubre. Por construcción no hay pares `DescendantTooFine`; se comprueba un salto ≤ 3 en cada actualización y se cuentan los `DescendantTooFine` (deben ser 0).
@@ -412,13 +412,13 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
   - hoja = `is_leaf(id) && !is_unloaded(id)`, contrastado con `has_children` de la página en un test;
   - un `NodeCellError` es un error de la ruta de celdas.
 - [x] (T9b1) Los nodos fijados incluyen los nodos que el pool dibuja, también durante `RetainedPrevious` (`poolAck` en la Tarea 10).
-- [ ] **Pasa si:**
+- [x] **Pasa si:**
   - expulsar y volver a injertar una página no deja huecos (el oráculo de cobertura de T15 sobre celdas finas), sobre un fixture v7.5 de T0. La cámara se aleja, la página se expulsa y la cámara vuelve. Se vuelve a injertar con los mismos `NodeId`, y el `cell_cut_digest` es el de antes, tras k frames aplicados sin subidas, con un pool holgado;
   - una página con nodos que el pool dibuja no se expulsa;
   - mientras llegan los bloques (bloque a bloque), la racha más larga de `RetainedPrevious` es ≤ 60 frames y la etapa del pool no sube en ninguna zona;
   - salto ≤ 3 y 0 `DescendantTooFine` en todas las actualizaciones del test;
   - en nativo, en Majadas a 4 px y a 1 px, se miden la memoria de CPU de las celdas y el tiempo de construcción por actualización.
-- [ ] **Parar si:**
+- **Parar si** (no saltó ninguno):
   - hay un salto > 1 en un plan real;
   - hay un `NoStoredLevels` o un `UnknownNode`;
   - las celdas pasan de 512 MiB de memoria en Majadas a 4 px → cambiar el almacenamiento antes de la Tarea 10.
@@ -439,13 +439,15 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
 - [x] Contador de la retención más larga de un hijo (frames seguidos retenido con su nivel umbral pedido o en vuelo), para el criterio de parada de 120 frames. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
 - **Hecha la parte del pool (T9c2a, 06-11-2026).** Al alejar, el nodo grueso espera con la misma regla de T9c1 frente a los descendientes que dibujaban. Un nodo excluido que sería demasiado fino para un antepasado del corte no se pide: su antepasado dibuja la zona y cuenta como etapa, no como nodo sin nivel. En el banco de T7d, los contadores son idénticos y la CPU a 4 px sigue por debajo de 2 ms; Majadas a 1 px (carga) pasa de 2,76 a 3,11 ms de mediana en movimiento. Falta T9c2b: el oráculo de zonas perdidas en el banco de `LodDataset` y la medida en Majadas.
 
-**Pasa si** (T9c1 y T9c2):
+**Pasa si** (T9c1 y T9c2) — **pasa** ([registro](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)):
 - tests sintéticos de alejar, salto de pose y bajada del tope, además de los de T9a1 y T9b2a;
 - el oráculo de huecos también mira las zonas de los nodos excluidos o retenidos (`lost_samples`: un punto que se dibujaba y ya no, y sigue en el corte), y el banco lo ejecuta de verdad;
 - un engrosado entre nodos solo cuenta si `después < min(antes, deseado ahora)`; debe ser 0 en todas las poses del banco, también en las órbitas;
 - el banco de T9b2b llega a la etapa final en Majadas dentro de una hoja (4 px; 1 px como carga), con la racha de `RetainedPrevious` ≤ 60 frames y 0 huecos; se miden la memoria de celdas, el tiempo de construcción y las páginas de respaldo (criterio de parada de T9b: 512 MiB a 4 px).
 
 **Parar si:** `lost_samples` > 0 al alejar o en un salto de pose; un antepasado retenido más de 120 frames sin que el nivel umbral del hijo esté pedido o en vuelo; `pool_coarsened` o `pool_overflow` por encima de T9b2b durante las retenciones; `nodes_without_level` = 0 con nodos excluidos o retenidos.
+
+**Tarea 9 hecha (06-11-2026)** ([registro](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): los 9 casos del banco nativo se asientan sin huecos, sin zonas perdidas, sin retener la imagen y con un salto máximo de 1; dentro de una hoja de Majadas a 4 px, las celdas ocupan como mucho 303 MiB. Incluye T9c3: con un recorte del ajuste, el nodo conserva su nivel fino hasta que el recortado está en GPU. La GPU y el navegador se miden en la Tarea 11.
 
 ## Tarea 10 ★: protocolo de workers
 

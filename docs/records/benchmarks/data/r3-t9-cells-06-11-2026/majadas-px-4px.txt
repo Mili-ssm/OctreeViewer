@@ -1,0 +1,9 @@
+
+running 1 test
+BENCH {"dataset":"majadas","pose":"px","px":4,"viewport":[1280,720],"stop":"settled","updates":283,"updates_to_settle":281,"nodes_built":279,"build_ms_all":{"median":6.853,"p95":61.735,"max":100.877},"build_ms_with_builds":{"n":279,"median":6.873,"p95":62.121,"max":100.877},"frame_ms":{"median":11.274,"p95":66.937,"max":107.242},"driver_cpu_bytes_end":273676888,"driver_cpu_bytes_peak":273676888,"cpu_cell_bytes_end":273676888,"cpu_cell_bytes_peak":273676888,"pool_resident_pages_end":22743,"dataset_pages_resident":17,"longest_retained_streak":0,"max_gap":1,"gaps_over_one":0,"dtf":0,"pool_resident_pages_peak":23326,"fallback_pages_peak":670,"held_nodes_peak":0,"excluded_nodes_peak":2,"hold_age_max":2,"hold_unsettled_total":0,"wait_frames":69,"hole_frames":0,"lost_samples":0,"first_failure":"","cross_node_coarsenings":0,"octant_coarsenings":0,"octant_lowered":0,"wall_s":5.5,"peak_rss_kib":630168,"final_cut_nodes":232,"stages":[16.0, 8.0, 4.0]}
+
+BENCH json: /home/mili/.cache/codex-worktrees/octree-r3-v75/crates/viewer_wasm/../../target/r3-t9c2b-majadas-px-4px.json
+majadas px 4px: frames 283 | longest RetainedPrevious streak 0 | max gap 1 (gaps>1: 0) | DescendantTooFine 0 | uploads 24879 | grafted 17 refused 0 | stage drops 0 | digest 15e05db302129cd8 | pages used 17 | zone coarsenings 0 | lost samples 0 | hold age max 2 (waiting frames 69, held peak 0, excluded peak 2, fallback pages peak 670, unsettled 0)
+test lod_dataset::cells_stream_tests::bench::cells_bench ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 86 filtered out; finished in 5.84s
