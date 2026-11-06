@@ -285,7 +285,8 @@ fn overflow_keeps_previous_complete_cut() {
         assert_eq!(plan.entries, held);
         assert_eq!(plan.active, active);
         assert_eq!(plan.counters.pool_overflow, n);
-        assert_eq!(plan.counters.nodes_without_level, 0);
+        // Seven of the eight nodes have no level (excluded, R3-Q20): the target is not reached.
+        assert_eq!(plan.counters.nodes_without_level, 7);
         assert!(plan.fetch_requests.is_empty() && plan.uploads.is_empty());
     }
     let back = rig.step(&ids(&[2]), &cam, 64.0);
@@ -657,15 +658,31 @@ fn a_cut_that_is_too_fine_is_retained_and_reported_until_the_cut_changes() {
     assert_eq!(alone.apply, CutApply::Applied);
     assert_eq!(alone.counters.nodes_without_level, 0);
     assert!(!alone.counters.descendant_too_fine);
-    // Together with the root it is `MAX_MASK_LEVELS + 1` levels below it: the mask cannot express it.
+    // The root has no level yet: it is excluded (R3-Q20) and node 20 keeps drawing. Together with
+    // the root's level it is `MAX_MASK_LEVELS + 1` levels below it: the mask cannot express it.
     let held = alone.entries.clone();
+    let mut waited = 0;
+    loop {
+        let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);
+        if plan.counters.descendant_too_fine {
+            break;
+        }
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert_eq!(plan.entries, held);
+        assert_eq!(plan.counters.nodes_without_level, 1);
+        waited += 1;
+        assert!(waited < 12);
+    }
+    assert!(waited > 0);
     for _ in 0..10 {
         let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);
         assert_eq!(plan.apply, CutApply::RetainedPrevious);
         assert!(plan.counters.descendant_too_fine);
         assert_eq!(plan.entries, held);
         assert_no_holes(&plan, &chain_nodes());
-        assert_eq!(plan.counters.nodes_without_level, 0);
+        // The retained cut does not draw the root, whatever the pool holds.
+        assert_eq!(plan.counters.nodes_without_level, 1);
+        assert_eq!(plan.counters.excluded_nodes, 1);
         assert!(
             plan.fetch_requests
                 .iter()
@@ -706,26 +723,29 @@ fn a_cut_that_is_too_fine_is_retained_and_reported_until_the_cut_changes() {
 fn a_node_without_a_level_and_without_an_ancestor_waits_for_its_level() {
     let mut rig = Rig::new(octant_nodes(), 64, 8, 3);
     let cam = camera("fit");
-    // R3-Q19: nothing is resident for [2, 3] and no ancestor covers them, so nothing is applied
-    // (T7a applied it with holes, since there was nothing to keep).
+    // R3-Q20: nothing is resident for [2, 3] and no ancestor covers them: they are excluded and
+    // their coarsest levels requested. Nothing was drawn before, so nothing is lost.
     let first = rig.step(&ids(&[2, 3]), &cam, 64.0);
-    assert_eq!(first.apply, CutApply::RetainedPrevious);
+    assert_eq!(first.apply, CutApply::Applied);
     assert!(first.entries.is_empty());
     assert_eq!(first.counters.nodes_without_level, 2);
-    // A different cut does not apply either; its levels are requested.
+    assert_eq!(first.counters.excluded_nodes, 2);
+    assert_eq!(first.fetch_requests.len(), 2);
+    // A different cut does not draw anything either; its levels are requested.
     let second = rig.step(&ids(&[4, 5]), &cam, 64.0);
-    assert_eq!(second.apply, CutApply::RetainedPrevious);
+    assert_eq!(second.apply, CutApply::Applied);
     assert_eq!(second.counters.nodes_without_level, 2);
     let done = rig.run(8, &ids(&[4, 5]), &cam, 64.0);
     assert_eq!(done.counters.nodes_without_level, 0);
-    // The applied cut is complete now: [2, 3] waits for its levels.
-    let wait = rig.step(&ids(&[2, 3]), &cam, 64.0);
+    // A pose jump to a cut disjoint from the drawn one, whose levels are not resident: the image
+    // stays until the first coarsest level arrives, because the real cut would draw nothing.
+    let wait = rig.step(&ids(&[6, 7]), &cam, 64.0);
     assert_eq!(wait.apply, CutApply::RetainedPrevious);
     assert_eq!(wait.entries, done.entries);
-    let back = rig.run(8, &ids(&[2, 3]), &cam, 64.0);
+    assert_eq!(wait.counters.nodes_without_level, 2);
+    let back = rig.run(8, &ids(&[6, 7]), &cam, 64.0);
     assert_eq!(back.apply, CutApply::Applied);
     assert_eq!(back.counters.nodes_without_level, 0);
-    // A cut whose levels are all resident replaces the applied one at once, with no hole.
     let swap = rig.step(&ids(&[4, 5]), &cam, 64.0);
     assert_eq!(swap.apply, CutApply::Applied);
     assert_eq!(swap.entries.len(), 2);
@@ -1152,22 +1172,27 @@ fn the_fallback_ancestor_leaves_on_the_first_frame_after_the_node_is_resident() 
 }
 
 #[test]
-fn a_missing_node_without_an_ancestor_in_the_applied_cut_retains_the_previous_cut() {
+fn a_missing_node_without_an_ancestor_in_the_applied_cut_is_left_out_until_its_level_arrives() {
     let mut rig = Rig::new(octant_nodes(), 64, 8, 3);
     let cam = camera("fit");
     let held = rig.run(10, &ids(&[2, 3]), &cam, 64.0);
     assert_eq!(held.apply, CutApply::Applied);
-    // Node 4 is not below any node of the applied cut: the cut waits for it.
-    let mut retained = 0;
+    // Node 4 is not below any node of the applied cut: it waits outside the cut (R3-Q20) while
+    // node 2 keeps drawing; node 3 left the cut and is not a loss.
+    let mut waited = 0;
     let mut plan = rig.step(&ids(&[2, 4]), &cam, 64.0);
-    while plan.apply == CutApply::RetainedPrevious {
-        retained += 1;
-        assert_eq!(plan.entries, held.entries);
-        assert_eq!(plan.active, held.active);
+    while !has_entry(&plan, 4) {
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert_eq!(plan.entries.len(), 1);
+        assert_eq!(plan.entries[0], held.entries[0]);
+        assert_eq!(plan.counters.nodes_without_level, 1);
+        assert_eq!(plan.counters.lost_nodes, 0);
+        waited += 1;
         plan = rig.step(&ids(&[2, 4]), &cam, 64.0);
-        assert!(retained < 12);
+        assert!(waited < 12);
     }
-    assert!(retained > 0);
+    assert!(waited > 0);
+    assert_eq!(plan.apply, CutApply::Applied);
     assert_eq!(plan.entries.len(), 2);
     assert_eq!(plan.counters.nodes_without_level, 0);
 }
@@ -1878,8 +1903,13 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
     )
     .unwrap();
     let none = FastSet::default();
-    let eval = rig.pool.eval_hold(&entries, cut, nodes, &grid, &none);
-    let fallback = rig.pool.compute_fallback(cut, nodes, &grid, &eval.hold);
+    let eval = rig
+        .pool
+        .eval_hold(&entries, cut, nodes, &grid, &none, &|_, _, _| wanted);
+    let fallback = rig
+        .pool
+        .compute_fallbacks(cut, nodes, &grid, &eval.hold)
+        .ancestors;
     (eval, fallback)
 }
 
@@ -2038,4 +2068,582 @@ fn reset_with_held_nodes_converges_back() {
     assert_eq!(plan.counters.fallback_pages, 0);
     assert!(rig.pool.hold.is_empty());
     rig.assert_gpu_matches_pool();
+}
+
+// R3-Q20: nodes without a level wait outside the cut.
+
+/// What the pool held when a frame was planned: the resident levels before the step and the caps
+/// after it (the caps the plan was cut with).
+struct Seen {
+    resident: HashMap<NodeId, Vec<u8>>,
+    caps: FastMap<NodeId, u8>,
+}
+
+fn observe(rig: &mut Rig, cut: &[NodeId], camera: &OrbitCamera, target: f64) -> (FramePlan, Seen) {
+    let resident = rig
+        .nodes
+        .iter()
+        .map(|(id, node)| {
+            let levels = node
+                .stored
+                .iter()
+                .copied()
+                .filter(|depth| rig.pool.is_resident(rig.pool.key(*id, *depth)))
+                .collect();
+            (*id, levels)
+        })
+        .collect();
+    let plan = rig.step(cut, camera, target);
+    let caps = rig.pool.caps.clone();
+    (plan, Seen { resident, caps })
+}
+
+/// `(drawn, wanted)` depth of the entry that really draws `point` (not masked, octant in
+/// `active`); the geometry is computed here from the bounds. The drawn depth must be the one
+/// `resident_depth` gives for the wanted one over the levels that were resident, and no point may
+/// be drawn by two entries.
+fn drawn_and_wanted_at(
+    plan: &FramePlan,
+    nodes: &HashMap<NodeId, PoolNode>,
+    seen: &Seen,
+    point: [f64; 3],
+) -> Option<(u8, u8)> {
+    let hits: Vec<(u8, u8)> = plan
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            let at = cell_of(nodes[&entry.node].bounds, point)?;
+            if entry.mask[at[2]] >> (at[0] + 8 * at[1]) & 1 == 1 {
+                return None;
+            }
+            let octant = ((at[0] / 4) << 2) | ((at[1] / 4) << 1) | (at[2] / 4);
+            plan.active
+                .iter()
+                .any(|a| a.key.node == entry.node && a.octant_bits >> octant & 1 == 1)
+                .then(|| Some((entry.drawn[octant]?, entry.wanted[octant]?)))
+                .flatten()
+                .inspect(|(drawn, wanted)| {
+                    let levels = capped(&seen.resident[&entry.node], seen.caps.get(&entry.node));
+                    assert_eq!(
+                        crate::resident_depth(*wanted, &levels).map(|(d, _)| d),
+                        Some(*drawn),
+                        "node {:?} octant {octant}",
+                        entry.node
+                    );
+                })
+        })
+        .collect();
+    assert!(hits.len() <= 1, "{point:?} is drawn by {hits:?}");
+    hits.first().copied()
+}
+
+/// What `points` drew: the drawn depth per point.
+fn snapshot(
+    plan: &FramePlan,
+    nodes: &HashMap<NodeId, PoolNode>,
+    seen: &Seen,
+    points: &[[f64; 3]],
+) -> Vec<Option<u8>> {
+    points
+        .iter()
+        .map(|p| drawn_and_wanted_at(plan, nodes, seen, *p).map(|(drawn, _)| drawn))
+        .collect()
+}
+
+/// No sample that was drawn is lost, and none is drawn below `min(before, wanted now)` (R3-Q21).
+fn assert_kept(
+    plan: &FramePlan,
+    nodes: &HashMap<NodeId, PoolNode>,
+    seen: &Seen,
+    points: &[[f64; 3]],
+    before: &[Option<u8>],
+    label: &str,
+) {
+    for (point, was) in points.iter().zip(before) {
+        let Some(was) = was else { continue };
+        let (now, wanted) = drawn_and_wanted_at(plan, nodes, seen, *point)
+            .unwrap_or_else(|| panic!("{label}: {point:?} was drawn and is lost"));
+        assert!(
+            now >= (*was).min(wanted),
+            "{label}: {point:?} {now} < min({was}, {wanted})"
+        );
+    }
+}
+
+#[test]
+fn the_first_rung_streams_in_one_node_per_frame_without_retaining() {
+    let nodes = octant_nodes();
+    let mut rig = Rig::new(nodes.clone(), 128, 8, 1);
+    let cam = camera("fit");
+    let mut seen_before: Vec<(u64, Vec<[f64; 3]>)> = Vec::new();
+    for frame in 0..30 {
+        let count = (frame + 1).min(CHILDREN.len());
+        let cut = ids(&CHILDREN[..count]);
+        let ready: Vec<bool> = CHILDREN[..count]
+            .iter()
+            .map(|id| coarse_resident(&rig, *id))
+            .collect();
+        let (plan, seen) = observe(&mut rig, &cut, &cam, 64.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_eq!(plan.counters.lost_nodes, 0, "frame {frame}");
+        let mut waiting = 0;
+        for (index, id) in CHILDREN[..count].iter().enumerate() {
+            // A node draws from the frame after its coarsest level is resident.
+            assert_eq!(
+                has_entry(&plan, *id),
+                ready[index],
+                "frame {frame} node {id}"
+            );
+            for point in sample_points(nodes[&NodeId::new(*id)].bounds) {
+                assert_eq!(
+                    drawn_and_wanted_at(&plan, &nodes, &seen, point).is_some(),
+                    ready[index],
+                    "frame {frame} node {id} {point:?}"
+                );
+            }
+            waiting += usize::from(!ready[index]);
+        }
+        assert_eq!(plan.counters.nodes_without_level as usize, waiting);
+        assert_eq!(plan.counters.excluded_nodes as usize, waiting);
+        assert_eq!(plan.counters.hold_age_max > 0, waiting > 0, "frame {frame}");
+        // Drawn nodes never stop drawing.
+        for (id, points) in &seen_before {
+            for point in points {
+                assert!(
+                    drawn_and_wanted_at(&plan, &nodes, &seen, *point).is_some(),
+                    "frame {frame}: node {id} lost"
+                );
+            }
+        }
+        seen_before = CHILDREN[..count]
+            .iter()
+            .zip(&ready)
+            .filter(|(_, ready)| **ready)
+            .map(|(id, _)| (*id, sample_points(nodes[&NodeId::new(*id)].bounds)))
+            .collect();
+    }
+    let last = rig.step(&ids(&CHILDREN), &cam, 64.0);
+    assert_eq!(last.counters.nodes_without_level, 0);
+    assert_eq!(last.counters.hold_age_max, 0);
+    assert_eq!(last.entries.len(), CHILDREN.len());
+}
+
+/// Region A's children drew at 4 px and node 2 (their parent) was never loaded; the tests then
+/// zoom out to the cut `{2}`.
+fn zoom_out_rig() -> (Rig, HashMap<NodeId, PoolNode>, OrbitCamera) {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    let cam = camera("fit");
+    rig.run(60, &ids(&region_children(10)), &cam, 4.0);
+    assert!(!coarse_resident(&rig, 2), "setup: node 2 was never loaded");
+    (rig, nodes, cam)
+}
+
+/// Zooming out to node 2 at `target` px. At 64 px node 2 wants its coarsest level (4); at 4 px it
+/// wants 7, finer than its coarsest, so the children keep drawing after node 2 has a level until
+/// the level they drew is resident (R3-Q21).
+fn zoom_out(target: f64) {
+    let (mut rig, nodes, cam) = zoom_out_rig();
+    let points = sample_points(nodes[&NodeId::new(2)].bounds);
+    let (before_plan, seen) = observe(&mut rig, &ids(&region_children(10)), &cam, 4.0);
+    let before = snapshot(&before_plan, &nodes, &seen, &points);
+    assert!(before.iter().all(|d| *d == Some(7)), "setup");
+    let cut = ids(&[2]);
+    let done = |rig: &Rig| {
+        if target < 8.0 {
+            resident_at(rig, 2, 7)
+        } else {
+            coarse_resident(rig, 2)
+        }
+    };
+    let (mut waiting, mut taken, mut held_with_level) = (0_u32, false, false);
+    for frame in 0..60 {
+        let ready = done(&rig);
+        let coarse = coarse_resident(&rig, 2);
+        let (plan, seen) = observe(&mut rig, &cut, &cam, target);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert!(!plan.counters.descendant_too_fine, "frame {frame}");
+        assert_eq!(plan.counters.lost_nodes, 0, "frame {frame}");
+        assert_no_holes(&plan, &nodes);
+        assert_kept(
+            &plan,
+            &nodes,
+            &seen,
+            &points,
+            &before,
+            &format!("frame {frame}"),
+        );
+        if ready {
+            taken = true;
+            assert!(
+                has_entry(&plan, 2) && plan.entries.len() == 1,
+                "frame {frame}"
+            );
+            assert_eq!(plan.counters.nodes_without_level, 0);
+            assert_eq!(plan.counters.hold_age_max, 0);
+        } else {
+            waiting += 1;
+            assert!(
+                !has_entry(&plan, 2) || plan.entries.len() == 9,
+                "frame {frame}"
+            );
+            assert_eq!(plan.counters.nodes_without_level, 1, "frame {frame}");
+            assert_eq!(
+                plan.counters.excluded_nodes + plan.counters.held_nodes,
+                1,
+                "frame {frame}"
+            );
+            assert_eq!(plan.counters.hold_age_max, waiting, "frame {frame}");
+            held_with_level |= coarse && plan.counters.held_nodes == 1;
+            assert!(!taken, "frame {frame}");
+        }
+    }
+    assert!(waiting > 0 && taken);
+    // With a wanted level finer than the coarsest, the node sits held while it has a level.
+    assert_eq!(held_with_level, target < 8.0);
+}
+
+#[test]
+fn zoom_out_keeps_the_descendants_drawing_until_the_coarse_node_is_resident() {
+    zoom_out(64.0);
+}
+
+#[test]
+fn zoom_out_keeps_the_descendants_until_the_node_has_the_level_they_drew() {
+    zoom_out(4.0);
+}
+
+#[test]
+fn a_pose_jump_to_a_disjoint_cut_retains_only_while_the_first_levels_arrive() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 8, 1);
+    let cam = camera("fit");
+    let a = ids(&region_children(10));
+    rig.run(60, &a, &cam, 4.0);
+    let held = rig.step(&a, &cam, 4.0);
+    let b = ids(&region_children(20));
+    let (mut retained, mut applied_once) = (0, false);
+    for frame in 0..20 {
+        let ready = region_children(20)
+            .into_iter()
+            .any(|c| coarse_resident(&rig, c));
+        let plan = rig.step(&b, &cam, 4.0);
+        if ready {
+            applied_once = true;
+        }
+        if applied_once {
+            assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+            assert_eq!(plan.counters.lost_nodes, 0);
+        } else {
+            // Nothing of the new cut draws yet: the old image stays, and it is not a "loss".
+            assert_eq!(plan.apply, CutApply::RetainedPrevious, "frame {frame}");
+            assert_eq!(plan.entries, held.entries);
+            // The counters describe the retained cut: none of the new nodes is in it.
+            assert_eq!(plan.counters.excluded_nodes, 8, "frame {frame}");
+            assert_eq!(plan.counters.nodes_without_level, 8, "frame {frame}");
+            retained += 1;
+        }
+    }
+    assert!((1..=4).contains(&retained), "{retained}");
+}
+
+#[test]
+fn a_pose_jump_keeps_the_zones_that_stay_in_the_cut() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 8, 1);
+    let cam = camera("fit");
+    rig.run(60, &ids(&region_children(10)), &cam, 4.0);
+    let points = sample_points(nodes[&NodeId::new(10)].bounds);
+    let (held, seen) = observe(&mut rig, &ids(&region_children(10)), &cam, 4.0);
+    let before = snapshot(&held, &nodes, &seen, &points);
+    assert!(before.iter().all(Option::is_some), "setup");
+    let mut cut = vec![NodeId::new(10)];
+    cut.extend(ids(&region_children(20)));
+    let mut b_drawn = false;
+    for frame in 0..20 {
+        let (plan, seen) = observe(&mut rig, &cut, &cam, 4.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_eq!(plan.counters.lost_nodes, 0);
+        assert_kept(
+            &plan,
+            &nodes,
+            &seen,
+            &points,
+            &before,
+            &format!("frame {frame}"),
+        );
+        b_drawn |= has_entry(&plan, 20);
+    }
+    assert!(b_drawn);
+}
+
+#[test]
+fn a_cap_drop_loses_no_sample_and_never_draws_below_the_need() {
+    let nodes = octant_nodes();
+    let mut rig = Rig::new(nodes.clone(), 44, 64, 2);
+    let cam = camera("fit");
+    // The six farthest nodes fit at depth 7; adding the two nearest makes the fit coarsen the
+    // farthest ones, which are drawing.
+    let near = by_distance(&cam, &CHILDREN);
+    let first = ids(&near[2..]);
+    rig.run(30, &first, &cam, 4.0);
+    let (held, seen) = observe(&mut rig, &first, &cam, 4.0);
+    let points: Vec<[f64; 3]> = near[2..]
+        .iter()
+        .flat_map(|id| sample_points(nodes[&NodeId::new(*id)].bounds))
+        .collect();
+    let before = snapshot(&held, &nodes, &seen, &points);
+    assert!(before.iter().all(|d| *d == Some(7)), "setup");
+    let (mut dropped, mut waited) = (false, false);
+    let mut last = None;
+    for frame in 0..60 {
+        let (plan, seen) = observe(&mut rig, &ids(&CHILDREN), &cam, 4.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert_eq!(plan.counters.lost_nodes, 0, "frame {frame}");
+        assert_kept(
+            &plan,
+            &nodes,
+            &seen,
+            &points,
+            &before,
+            &format!("frame {frame}"),
+        );
+        dropped |= snapshot(&plan, &nodes, &seen, &points)
+            .iter()
+            .any(|d| d.is_some_and(|d| d < 7));
+        waited |= plan.counters.excluded_nodes > 0;
+        last = Some(plan);
+    }
+    assert!(dropped && waited);
+    // No node starves under the cap: every child ends with an entry.
+    let last = last.unwrap();
+    for child in CHILDREN {
+        assert!(has_entry(&last, child), "node {child} never entered");
+    }
+}
+
+#[test]
+fn a_zone_nothing_can_cover_retains_the_previous_cut_and_counts_the_loss() {
+    // Node 20 is `MAX_MASK_LEVELS + 1` levels below the root, which is in the cut without a level:
+    // the node cannot stand in for the root and nothing above it draws. Node 22 is unrelated.
+    let mut nodes = chain_nodes();
+    nodes.insert(
+        NodeId::new(22),
+        PoolNode {
+            bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
+            stored: vec![4, 5],
+            points: 2000,
+        },
+    );
+    let mut rig = Rig::new(nodes.clone(), 64, 8, 1);
+    let cam = camera("fit");
+    rig.run(10, &ids(&[20, 22]), &cam, 64.0);
+    let held = rig.step(&ids(&[20, 22]), &cam, 64.0);
+    assert!(has_entry(&held, 20) && has_entry(&held, 22), "setup");
+    let (mut retained, mut taken) = (0, false);
+    for frame in 0..12 {
+        let ready = coarse_resident(&rig, 1);
+        let plan = rig.step(&ids(&[1, 22]), &cam, 64.0);
+        if frame == 0 {
+            assert_eq!(
+                plan.fetch_requests.first(),
+                Some(&rig.pool.key(NodeId::new(1), 3))
+            );
+        }
+        if ready {
+            taken = true;
+            assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+            assert_eq!(plan.counters.lost_nodes, 0);
+            assert!(has_entry(&plan, 1) && !has_entry(&plan, 20));
+        } else {
+            assert_eq!(plan.apply, CutApply::RetainedPrevious, "frame {frame}");
+            assert_eq!(plan.counters.lost_nodes, 1, "frame {frame}");
+            assert_eq!(plan.entries, held.entries);
+            assert_eq!(plan.counters.nodes_without_level, 1);
+            retained += 1;
+        }
+    }
+    assert!(retained > 0 && taken);
+}
+
+#[test]
+fn the_hold_age_grows_while_a_child_is_held_and_resets_after() {
+    let nodes = two_regions();
+    let mut rig = Rig::new(nodes.clone(), 512, 3, 1);
+    let cam = camera("fit");
+    rig.run(60, &ids(&[2, 3]), &cam, 8.0);
+    let mut cut = ids(&region_children(10));
+    cut.push(NodeId::new(3));
+    let (mut streak, mut peak) = (0_u32, 0_u32);
+    for frame in 0..40 {
+        let plan = rig.step(&cut, &cam, 8.0);
+        if plan.counters.held_nodes > 0 {
+            streak += 1;
+            // The oldest hold is at least as old as the run of frames with something held.
+            assert!(plan.counters.hold_age_max >= 1, "frame {frame}");
+            assert!(plan.counters.hold_age_max <= streak, "frame {frame}");
+            peak = peak.max(plan.counters.hold_age_max);
+        } else {
+            assert_eq!(plan.counters.hold_age_max, 0, "frame {frame}");
+            streak = 0;
+        }
+    }
+    assert!(peak >= 2, "{peak}");
+}
+
+#[test]
+fn reset_with_excluded_nodes_and_descendants_converges_back() {
+    let (mut rig, nodes, cam) = zoom_out_rig();
+    let cut = ids(&[2]);
+    let plan = rig.step(&cut, &cam, 64.0);
+    assert_eq!(plan.counters.excluded_nodes, 1);
+    assert_eq!(plan.entries.len(), 8, "setup: the descendants stand in");
+    assert!(!rig.pool.wait_ages.is_empty());
+    let _ = rig.pool.reset();
+    assert!(rig.pool.wait_ages.is_empty() && rig.pool.fallback_memo.is_none());
+    assert!(rig.pool.real_memo.is_none() && rig.pool.applied.is_empty());
+    rig.inflight.clear();
+    rig.gpu = FakeGpu::default();
+    let mut last = None;
+    for _ in 0..40 {
+        let plan = rig.step(&cut, &cam, 64.0);
+        assert_no_holes(&plan, &nodes);
+        last = Some(plan);
+    }
+    let plan = last.unwrap();
+    assert_eq!(plan.apply, CutApply::Applied);
+    assert_eq!(plan.entries.len(), 1);
+    assert_eq!(plan.counters.excluded_nodes, 0);
+    assert_eq!(plan.counters.nodes_without_level, 0);
+    assert_eq!(plan.counters.hold_age_max, 0);
+    rig.assert_gpu_matches_pool();
+}
+
+/// `chain_nodes` plus node 22, unrelated to the chain, and node 30 inside node 20.
+fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
+    let mut nodes = chain_nodes();
+    nodes.insert(
+        NodeId::new(22),
+        PoolNode {
+            bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
+            stored: vec![4, 5],
+            points: 2000,
+        },
+    );
+    nodes.insert(
+        NodeId::new(30),
+        PoolNode {
+            bounds: cube(ORIGIN, SIDE / 32.0),
+            stored: vec![9, 10],
+            points: 2000,
+        },
+    );
+    nodes
+}
+
+#[test]
+fn an_excluded_node_too_fine_for_its_ancestor_waits_without_being_requested() {
+    // Node 20 is `MAX_MASK_LEVELS + 1` levels below the root: both wait outside the cut while
+    // node 22 (applied, an octant of the root) stands in for the root. The root, which is
+    // requested, draws the zone as soon as it arrives; node 20 is not requested (its level would
+    // make the real cut fail with `DescendantTooFine`) and keeps nothing waiting.
+    let mut rig = Rig::new(chain_with_extras(), 64, 8, 1);
+    let cam = camera("fit");
+    rig.run(10, &ids(&[22]), &cam, 64.0);
+    let mut waited = 0;
+    let mut arrived = None;
+    for frame in 0..12 {
+        let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert!(
+            plan.fetch_requests
+                .iter()
+                .all(|k| k.node != NodeId::new(20))
+        );
+        if has_entry(&plan, 1) {
+            arrived = Some(plan);
+            break;
+        }
+        assert!(has_entry(&plan, 22), "frame {frame}: 22 stands in");
+        waited += 1;
+    }
+    let plan = arrived.expect("the root arrives and draws");
+    assert!(waited > 0);
+    assert!(!has_entry(&plan, 22) && !plan.counters.descendant_too_fine);
+    // Node 20 is drawn by the root, coarser: a stage, not a node waiting for a level, so the
+    // counters settle (T11's "target reached" and the driver's `busy` depend on them).
+    assert_eq!(plan.counters.excluded_nodes, 0);
+    assert_eq!(plan.counters.nodes_without_level, 0);
+    assert!(plan.counters.stages >= 8);
+    assert_eq!(plan.counters.hold_age_max, 0);
+    for _ in 0..5 {
+        let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);
+        assert_eq!(plan.apply, CutApply::Applied);
+        assert!(
+            plan.fetch_requests
+                .iter()
+                .all(|k| k.node != NodeId::new(20))
+        );
+        assert_eq!(plan.counters.nodes_without_level, 0);
+    }
+}
+
+#[test]
+fn a_descendant_under_a_node_that_draws_does_not_stand_in_when_the_mask_cannot_hide_it() {
+    // Applied {30}, with the root resident. The cut {root, 20} excludes node 20 (nothing within
+    // `MAX_MASK_LEVELS` draws it); node 30, applied under it, is `MAX_MASK_LEVELS + 2` levels
+    // below the root, which draws: as a stand-in it would make the real cut `DescendantTooFine`.
+    let mut rig = Rig::new(chain_with_extras(), 64, 8, 1);
+    let cam = camera("fit");
+    rig.run(10, &ids(&[1]), &cam, 64.0);
+    let alone = rig.run(15, &ids(&[30]), &cam, 64.0);
+    assert!(has_entry(&alone, 30) && alone.entries.len() == 1, "setup");
+    for frame in 0..6 {
+        let plan = rig.step(&ids(&[1, 20]), &cam, 64.0);
+        assert!(!plan.counters.descendant_too_fine, "frame {frame}");
+        assert_eq!(plan.apply, CutApply::Applied, "frame {frame}");
+        assert!(
+            has_entry(&plan, 1) && !has_entry(&plan, 30),
+            "frame {frame}"
+        );
+    }
+}
+
+/// An entry of `node` drawing the given octants at depth 7.
+fn drawing(node: u64, octants: &[usize]) -> CellCutEntry {
+    CellCutEntry {
+        node: NodeId::new(node),
+        wanted: [Some(7); 8],
+        drawn: std::array::from_fn(|o| octants.contains(&o).then_some(7)),
+        stage: [false; 8],
+        mask: [0; 8],
+    }
+}
+
+#[test]
+fn a_zone_covered_by_one_sub_cell_of_a_descendant_is_lost() {
+    let mut rig = Rig::new(two_regions(), 512, 8, 1);
+    let cam = camera("fit");
+    let applied = rig.run(30, &ids(&[2]), &cam, 4.0);
+    assert!(
+        has_entry(&applied, 2) && applied.entries[0].drawn.iter().all(Option::is_some),
+        "setup"
+    );
+    let nodes: FastMap<NodeId, PoolNode> = rig
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    let cut = ids(&[2]);
+    let lost = |entries: &[CellCutEntry]| rig.pool.lost_zones(entries, &cut, &nodes, &grid());
+    // One octant of one child covers a sub-cell of the zone node 2 drew.
+    assert!(lost(&[drawing(10, &[0])]) > 0);
+    // Every octant of one child still leaves the other seven children's zones.
+    assert!(lost(&[drawing(10, &[0, 1, 2, 3, 4, 5, 6, 7])]) > 0);
+    // The eight children drawing everything cover the zone.
+    let all: Vec<CellCutEntry> = region_children(10)
+        .into_iter()
+        .map(|c| drawing(c, &[0, 1, 2, 3, 4, 5, 6, 7]))
+        .collect();
+    assert_eq!(lost(&all), 0);
 }

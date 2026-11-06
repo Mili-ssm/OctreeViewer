@@ -495,7 +495,9 @@ fn needs_frame_follows_requests_uploads_retention_and_new_nodes() {
         let report = fx.step(&cut, &cam, 4.0);
         let pending = !report.plan.fetch_requests.is_empty()
             || !report.plan.uploads.is_empty()
-            || report.plan.apply == CutApply::RetainedPrevious;
+            || report.plan.apply == CutApply::RetainedPrevious
+            || report.plan.counters.excluded_nodes > 0
+            || report.plan.counters.held_nodes > 0;
         assert_eq!(fx.driver.needs_frame(), pending);
         saw_busy |= pending;
         quiet = if pending { 0 } else { quiet + 1 };
@@ -708,4 +710,27 @@ fn a_refused_offer_does_not_keep_the_node_from_being_forgotten() {
     let report = driver.frame(&mut gpu, &[], &view(&cam), 4.0).unwrap();
     assert_eq!(report.forgotten, vec![id]);
     assert!(gpu.has_pool() || report.plan.uploads.is_empty());
+}
+
+#[test]
+fn needs_frame_stays_true_while_nodes_wait_outside_the_cut_or_held() {
+    // Zoom out from the children of node 2 to node 2 itself at 4 px: node 2 waits (excluded, then
+    // held until its wanted level is resident) while the children keep drawing.
+    let nodes = two_regions();
+    let mut fx = Fixture::new(nodes, config(512, 2, u64::MAX));
+    let cam = camera("fit");
+    fx.run(60, &ids(&region_children(10)), &cam, 4.0);
+    assert!(!fx.driver.needs_frame());
+    let (mut excluded, mut held) = (false, false);
+    for _ in 0..80 {
+        let report = fx.step(&ids(&[2]), &cam, 4.0);
+        let counters = report.plan.counters;
+        excluded |= counters.excluded_nodes > 0;
+        held |= counters.held_nodes > 0;
+        if counters.excluded_nodes > 0 || counters.held_nodes > 0 {
+            assert!(fx.driver.needs_frame());
+        }
+    }
+    assert!(excluded && held, "the scenario must wait both ways");
+    assert!(!fx.driver.needs_frame());
 }

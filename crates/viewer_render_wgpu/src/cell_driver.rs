@@ -399,8 +399,8 @@ impl CellDriver {
         events
     }
 
-    /// Whether another frame has something to do: new nodes, requests, uploads in flight or the
-    /// previous cut retained. The viewer draws while this is true. Under a permanent pool overflow
+    /// Whether another frame has something to do: new nodes, requests, uploads in flight, the
+    /// previous cut retained or nodes waiting outside the cut or held back. The viewer draws while this is true. Under a permanent pool overflow
     /// (the cut does not fit even coarsened) the pool keeps retrying and this stays true; the
     /// caller stops on `counters().pool_overflow > 0`. After a failed frame it stays true until a
     /// frame succeeds, so a caller looping on it must also stop on errors that keep repeating.
@@ -506,7 +506,10 @@ impl CellDriver {
         let plan = &report.plan;
         self.busy = !plan.fetch_requests.is_empty()
             || !plan.uploads.is_empty()
-            || plan.apply == CutApply::RetainedPrevious;
+            || plan.apply == CutApply::RetainedPrevious
+            // Nodes waiting outside the cut or held back (R3-Q20/Q21) enter on a later frame.
+            || plan.counters.excluded_nodes > 0
+            || plan.counters.held_nodes > 0;
         self.dirty = false;
         report.forgotten = self.forget(cut, view);
         Ok(report)

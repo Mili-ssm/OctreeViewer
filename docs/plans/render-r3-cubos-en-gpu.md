@@ -433,10 +433,11 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tar
 - **Hecha (06-11-2026).** Ningún dorado de `cell_cut_digest` cambia (todos con todos los niveles residentes). Límite: un hijo bajo un antepasado a más de 3 niveles de otro nodo residente no se puede retener (la máscara no llega) y dibuja un instante su nivel más grueso, sin huecos. Si la búsqueda de retenidos no se estabiliza en 3 pasadas, se retiene de más y se cuenta (`hold_unsettled`).
 
 **T9c2, precarga (R3-Q20):**
-- [ ] Un nodo sin nivel y sin antepasado que dibuje sale del corte aplicado; su nivel más grueso se pide y sube con prioridad; entra al ser residente. Cuenta en `nodes_without_level`.
-- [ ] Respaldo por descendientes: si ese nodo tiene descendientes en el último corte aplicado (salto ≤ 3) que dibujaban, siguen en el corte real hasta que el nodo es residente.
-- [ ] Se retiene el corte anterior solo si una zona que dibujaba no se puede cubrir así.
-- [ ] Contador de la retención más larga de un hijo (frames seguidos retenido con su nivel umbral pedido o en vuelo), para el criterio de parada de 120 frames. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
+- [x] Un nodo sin nivel y sin antepasado que dibuje sale del corte aplicado; su nivel más grueso se pide y sube con prioridad; entra al ser residente. Cuenta en `nodes_without_level`.
+- [x] Respaldo por descendientes: si ese nodo tiene descendientes en el último corte aplicado (salto ≤ 3) que dibujaban, siguen en el corte real hasta que el nodo es residente.
+- [x] Se retiene el corte anterior solo si una zona que dibujaba no se puede cubrir así.
+- [x] Contador de la retención más larga de un hijo (frames seguidos retenido con su nivel umbral pedido o en vuelo), para el criterio de parada de 120 frames. Un nodo que salió del corte del planificador (fuera de vista) nunca cuenta como perdido.
+- **Hecha la parte del pool (T9c2a, 06-11-2026).** Al alejar, el nodo grueso espera con la misma regla de T9c1 frente a los descendientes que dibujaban. Un nodo excluido que sería demasiado fino para un antepasado del corte no se pide: su antepasado dibuja la zona y cuenta como etapa, no como nodo sin nivel. En el banco de T7d, los contadores son idénticos y la CPU a 4 px sigue por debajo de 2 ms; Majadas a 1 px (carga) pasa de 2,76 a 3,11 ms de mediana en movimiento. Falta T9c2b: el oráculo de zonas perdidas en el banco de `LodDataset` y la medida en Majadas.
 
 **Pasa si** (T9c1 y T9c2):
 - tests sintéticos de alejar, salto de pose y bajada del tope, además de los de T9a1 y T9b2a;
