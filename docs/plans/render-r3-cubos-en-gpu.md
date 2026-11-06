@@ -36,6 +36,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q16 | (05-11-2026) Hi-Z por celda en dos fases (`kpc` de la Tarea 16a), con caja ajustada por página en `PageEntry` ([ADR 0036](../adr/0036-hi-z-por-celda.md)) |
 | R3-Q17 | (06-11-2026) La regla de 2 ms de CPU por frame de T7c/T7d decide con los casos a 4 px; Majadas dentro de una hoja a 1 px queda como prueba de carga y se vuelve a medir en el visor en la Tarea 11 |
 | R3-Q18 | (06-11-2026) Con la cámara en movimiento, el nivel de cada octante se recalcula solo al pasar un umbral, y una celda puede proyectarse hasta ~5 % por encima del objetivo de px; con la cámara quieta, el resultado es exacto. La Tarea 11 lo comprueba en el navegador |
+| R3-Q19 | (06-11-2026) Un corte de celdas se aplica si no deja huecos: cada nodo sin nivel en GPU queda cubierto por un antepasado dibujado, que sigue en el corte hasta que el nodo tiene nivel, y lo que falta en una zona no bloquea las demás. Se carga de grueso a fino: no se pide el nivel de un nodo antes que el de su antepasado. Sustituye la regla de aplicar de T7a («ningún nodo sin nivel»), que se acercaba a la alternativa que el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) recuerda rechazada en 0031; R3-Q10 sigue igual para `DescendantTooFine` |
 
 ## Restricciones globales
 
@@ -369,11 +370,52 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 9 ★: `LodDataset` con celdas
 
-- [ ] Una hoja es un nodo sin `has_children`.
-- [ ] El selector no entrega cortes con pares `DescendantTooFine` (un descendiente más de 3 niveles por debajo de un antepasado del corte): el pool no los pide, los cuenta en `nodes_without_level` y el antepasado dibuja esa zona más gruesa (Tarea 7a).
-- [ ] Los nodos fijados incluyen el corte confirmado por `poolAck`.
-- [ ] v5, `v7.1–3` y Additive devuelven `CellPathUnsupported`.
-- [ ] **Pasa si** expulsar y volver a injertar una página a mitad del corte no deja huecos y la etapa nunca sube.
+Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q19. Une el pool (Tarea 7) con el dataset en Rust nativo. **El visor recibe las celdas por el worker en la Tarea 10** (decisión del propietario del 06-11-2026): construir un nodo interno cuesta 26–39 ms en nativo ([T1](../records/benchmarks/R3_T1_ACCEPT_05-11-2026.md)), demasiado para el hilo principal. Esta tarea no toca los bindings. Dos partes, cada una con su commit.
+
+**Hechos de partida** (comprobados en el código):
+- El plan visible de `LodTransitionPlanner` no es una antichain: mientras cargan los hijos, contiene al padre y a sus hijos directos alineados ya cargados (`resolve_replacement`; test `partial.node_ids() == [1, 2]` en `viewer_core/tests/lod_transition.rs`). El salto es siempre 1, y la máscara de 8³ lo cubre. Por construcción no hay pares `DescendantTooFine`; se comprueba un salto ≤ 3 en cada actualización y se cuentan los `DescendantTooFine` (deben ser 0).
+- `offer` rechaza niveles sin páginas, y `CellPool::frame` rechaza nodos sin niveles (`NoStoredLevels`).
+- `SurfaceRenderer` suelta el pool en `sync_visible_blocks`, `upload_voxel_cut`, `clear_dataset` y al cambiar el modo de color.
+
+**T9a, pool y driver** (`viewer_render_wgpu`):
+- [ ] **R3-Q19 en `CellPool`:**
+  - el corte se aplica si cada nodo sin nivel residente tiene un antepasado en el corte que dibuja; si no, se retiene el anterior (R3-Q10);
+  - un nodo sin nivel mantiene en el corte su antepasado del último corte aplicado, con salto ≤ 3, hasta que el nodo es residente. Es una etapa contada (`stages`). Así la retención es local;
+  - las peticiones y las subidas van de grueso a fino: profundidad absoluta y después distancia;
+  - los tests de T7a que fijan la regla anterior se cambian. Uno nuevo: con un nodo sin nivel en una zona, otra zona sin relación se aplica en ese mismo frame.
+- [ ] **`cell_driver.rs`, `CellDriver`:**
+  - posee el `CellPool` y un `PackedLevel` por (nodo, nivel), compartido con el pool sin copiarlo. Empaqueta al recibir las celdas de un nodo, pasa los tamaños exactos (`set_level_sizes`) y no guarda `NodeCell`. Quita los niveles vacíos de `stored`;
+  - tiene un presupuesto de bytes de CPU: olvida, primero los más lejanos, los nodos que no están en el corte ni tienen niveles residentes o pedidos;
+  - generaliza el `step` de `cell_pool_bench`: eventos, liberaciones, subidas, máscaras, tabla de páginas con su `PageFrame`. El banco pasa a usar el driver;
+  - el renderer va detrás de un trait `CellTarget`, implementado por `SurfaceRenderer` y `CellRenderer`, más el doble de GPU estricto de T7a;
+  - `reset()`: residencia vacía (API nueva del pool) y `Evict` de todo. Se llama al perder el dispositivo y siempre que el renderer ya no tenga pool;
+  - `needs_frame()`: hay peticiones, subidas o retención pendientes. El visor (Tarea 10) dibuja mientras sea cierto y reescribe la tabla de páginas en cada movimiento de cámara;
+  - sin `Instant` (rompe en wasm32).
+- [ ] **Pasa si:**
+  - en GPU real, con el oráculo por píxel de T7b1, el driver dibuja bien con `coordinate_origin` en 10⁶ y `visual_scale` 0,0788;
+  - con el doble estricto, tras `reset()` converge al mismo corte y los mismos contadores, sin huecos en ningún frame;
+  - el banco da los mismos contadores que antes de pasar al driver, en un caso de T7d.
+
+**T9b, `LodDataset`** (★: `lod_dataset.rs`; los bindings no cambian):
+- [ ] En la apertura, `LodDataset` sabe si admite celdas: v7.4 y v7.5 con reemplazo, a partir de `uses_global_frame()` y sin literales de versión. v5, `v7.1–3` y Additive dan `CellPathUnsupported` (R3-Q5).
+- [ ] `update_cells(view, target_px)`:
+  - selección al px objetivo, sin la escalera de px (la progresión la dan el plan y las etapas del pool);
+  - el plan ve los bloques de un nodo como residentes solo cuando sus celdas existen. Lo hace un `ResidentBlockSource` que envuelve la caché, así que el plan cubre con el respaldo los nodos sin construir y el pool nunca recibe un nodo sin niveles;
+  - se construyen como mucho N nodos por actualización, primero los más cercanos;
+  - las celdas se construyen en el marco local de los puntos, y el pool y `PageFrame` usan el del mundo, con el `coordinate_origin` del renderer;
+  - hoja = `is_leaf(id) && !is_unloaded(id)`, contrastado con `has_children` de la página en un test;
+  - un `NodeCellError` es un error de la ruta de celdas.
+- [ ] Los nodos fijados incluyen los nodos que el pool dibuja, también durante `RetainedPrevious` (`poolAck` en la Tarea 10).
+- [ ] **Pasa si:**
+  - expulsar y volver a injertar una página no deja huecos (el oráculo de cobertura de T15 sobre celdas finas), sobre un fixture v7.5 de T0. La cámara se aleja, la página se expulsa y la cámara vuelve. Se vuelve a injertar con los mismos `NodeId`, y el `cell_cut_digest` es el de antes, tras k frames aplicados sin subidas, con un pool holgado;
+  - una página con nodos que el pool dibuja no se expulsa;
+  - mientras llegan los bloques (bloque a bloque), la racha más larga de `RetainedPrevious` es ≤ 60 frames y la etapa del pool no sube en ninguna zona;
+  - salto ≤ 3 y 0 `DescendantTooFine` en todas las actualizaciones del test;
+  - en nativo, en Majadas a 4 px y a 1 px, se miden la memoria de CPU de las celdas y el tiempo de construcción por actualización.
+- [ ] **Parar si:**
+  - hay un salto > 1 en un plan real;
+  - hay un `NoStoredLevels` o un `UnknownNode`;
+  - las celdas pasan de 512 MiB de memoria en Majadas a 4 px → cambiar el almacenamiento antes de la Tarea 10.
 
 ## Tarea 10 ★: protocolo de workers
 
