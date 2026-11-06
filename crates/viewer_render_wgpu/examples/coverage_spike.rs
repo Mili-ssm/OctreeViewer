@@ -3,6 +3,7 @@
 //! out of scope. Throwaway: not part of `scripts/check.sh`.
 //!
 //! Usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]]
+//!        [--export-pool DIR]
 //! (0 = no limit; larger cuts skip the case).
 //!
 //! `--export DIR` writes, for the `octant_tight` variant only and for the poses/targets in
@@ -11,6 +12,21 @@
 //! `--check-cell-pages` (with `--export`) packs every exported W16 level with the library's
 //! `pack_level` and compares it with the spike's own packing (pages, slots, words 0, 2, 3 and z),
 //! and measures the eye-frame pixel error of the decoded cells; it exits non-zero on a mismatch.
+//!
+//! `--export-pool DIR` (R3 Task 7c, read by `cell_pool_bench`) selects the same cases as `--export`
+//! and writes, per case, `DIR/<dataset>-<pose>-<target>px/{pool.json,levels.bin}`: everything
+//! `CellPool::frame` needs with a fake loader. Every `f64` of `pool.json` is stored as its IEEE
+//! bit pattern (`u64`), because serde_json without `float_roundtrip` can lose a ulp.
+//! `pool.json`: `format` ("r3-pool-v1"), `dataset`, `pose`, `target_px_bits`, `viewport` [w, h],
+//! `visual_scale_bits`, `coordinate_origin_bits` (zero: the grid is already local), `grid`
+//! {`root_min_bits`[3], `root_side_bits`}, `camera_bits` (`OrbitCamera::to_f64_array`), `cut`
+//! (node ids in the order handed to `CellPool::frame`) and `nodes`, one per cut node in that
+//! order: {`id`, `bounds_min_bits`[3], `bounds_max_bits`[3], `points`, `levels`: [{`depth`,
+//! `pages`, `offset`}]}; the levels of a node are all its stored levels, ascending.
+//! `levels.bin`, little endian, at `offset` of each level: `pages * 512` instances of 4 `u32`
+//! (`CellInstance`), then `pages` page records of 48 bytes: origin 3 x `u64`, `first_cell` `u64`,
+//! `cells` `u32`, `flags` `u32`, `box_max` 3 x `u16`, 2 bytes of padding. Both come from
+//! `pack_level`, so the bench offers the very pages the viewer would upload.
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     error::Error,
@@ -339,6 +355,15 @@ fn main() -> Result<()> {
         export_dir = Some(PathBuf::from(args.remove(at + 1)));
         args.remove(at);
     }
+    let mut export_pool_dir: Option<PathBuf> = None;
+    if let Some(at) = args.iter().position(|a| a == "--export-pool") {
+        if at + 1 >= args.len() {
+            return Err("--export-pool needs a directory".into());
+        }
+        export_pool_dir = Some(PathBuf::from(args.remove(at + 1)));
+        args.remove(at);
+    }
+    let exporting = export_dir.is_some() || export_pool_dir.is_some();
     let check_cell_pages = args
         .iter()
         .position(|a| a == "--check-cell-pages")
@@ -349,7 +374,7 @@ fn main() -> Result<()> {
     }
     if args.is_empty() || args.len() > 2 {
         return Err(
-            "usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]]"
+            "usage: coverage_spike INPUT.oct [MAX_CUT_NODES=0] [--export DIR [--check-cell-pages]] [--export-pool DIR]"
                 .into(),
         );
     }
@@ -497,7 +522,7 @@ fn main() -> Result<()> {
     ];
     // Transitions and their expected count only cover these; the direction poses are export-only.
     let base_pose_count = poses.len();
-    if export_dir.is_some() {
+    if exporting {
         let d = root_side * visual_scale / 16.0;
         for (name, dir) in DIRECTION_POSES {
             let target: [f64; 3] = std::array::from_fn(|a| leaf_eye[a] + d * dir[a]);
@@ -598,7 +623,7 @@ fn main() -> Result<()> {
                     cut.len(),
                     selection.point_count()
                 );
-                if export_dir.is_some()
+                if exporting
                     && !(EXPORT_POSES.contains(&pose.name) && EXPORT_TARGETS.contains(&target))
                     && pose_index < base_pose_count
                 {
@@ -657,7 +682,8 @@ fn main() -> Result<()> {
                             rel,
                             attrs,
                             octant_offsets: level.octant_offsets,
-                            packed: check_cell_pages.then(|| pack_level(&grid, local, *id, level)),
+                            packed: (check_cell_pages || export_pool_dir.is_some())
+                                .then(|| pack_level(&grid, local, *id, level)),
                         });
                     }
                     if levels.is_empty() || levels.windows(2).any(|w| w[0].depth >= w[1].depth) {
@@ -689,7 +715,7 @@ fn main() -> Result<()> {
 
                 // CPU baseline.
                 let decoded_estimate = selection.point_count() * POINT_BYTES;
-                let cpu = if export_dir.is_some() {
+                let cpu = if exporting {
                     Err("NA(export)".to_string())
                 } else if decoded_estimate > MAX_DECODED_BYTES {
                     Err(format!("NA(decoded>{}GiB)", MAX_DECODED_BYTES >> 30))
@@ -727,7 +753,7 @@ fn main() -> Result<()> {
                 };
 
                 for (vi, variant) in RUN_VARIANTS.iter().copied().enumerate() {
-                    if export_dir.is_some() && variant != Variant::OctantTight {
+                    if exporting && variant != Variant::OctantTight {
                         continue;
                     }
                     let t0 = Instant::now();
@@ -780,6 +806,19 @@ fn main() -> Result<()> {
                         })?;
                         check_mismatches += mismatches;
                         check_groups += groups;
+                    }
+                    if let Some(dir) = &export_pool_dir {
+                        export_pool_case(&PoolCase {
+                            dir: dir.join(format!("{dataset_name}-{}-{target}px", pose.name)),
+                            dataset: &dataset_name,
+                            pose: pose.name,
+                            target,
+                            view: &view,
+                            grid: &grid,
+                            cache: &cache,
+                            cut: &cut,
+                            points: &|id| hierarchy.node(id).map(|n| n.point_count()),
+                        })?;
                     }
                     let (mut total, mut on_screen, mut stages) = (0_u64, 0_u64, 0_usize);
                     let mut draw_ranges = 0_usize;
@@ -1949,5 +1988,91 @@ fn validate_export(dir: &Path, nodes: usize, v10: &VariantOut, v16: &VariantOut)
             }
         }
     }
+    Ok(())
+}
+
+// ---- `--export-pool`: packed levels for `cell_pool_bench` (format in the file header) ----
+
+struct PoolCase<'a> {
+    dir: PathBuf,
+    dataset: &'a str,
+    pose: &'a str,
+    target: f64,
+    view: &'a ViewProjection,
+    grid: &'a CellGrid,
+    cache: &'a HashMap<NodeId, NodeData>,
+    cut: &'a [NodeId],
+    points: &'a dyn Fn(NodeId) -> Option<u64>,
+}
+
+fn export_pool_case(case: &PoolCase) -> Result<()> {
+    fs::create_dir_all(&case.dir)?;
+    let bits3 = |v: [f64; 3]| v.map(f64::to_bits);
+    let mut bin = BufWriter::with_capacity(1 << 20, File::create(case.dir.join("levels.bin"))?);
+    let mut offset = 0_u64;
+    let mut nodes = Vec::new();
+    for id in case.cut {
+        let node = &case.cache[id];
+        let mut levels = Vec::new();
+        for level in &node.levels {
+            let packed = level
+                .packed
+                .as_ref()
+                .ok_or("pool export needs the packed levels")?;
+            levels.push(serde_json::json!({
+                "depth": level.depth, "pages": packed.pages.len(), "offset": offset,
+            }));
+            for instance in &packed.instances {
+                for word in instance.0 {
+                    bin.write_all(&word.to_le_bytes())?;
+                }
+            }
+            for page in &packed.pages {
+                for axis in page.origin {
+                    bin.write_all(&axis.to_le_bytes())?;
+                }
+                bin.write_all(&(page.first_cell as u64).to_le_bytes())?;
+                bin.write_all(&page.cells.to_le_bytes())?;
+                bin.write_all(&page.flags.to_le_bytes())?;
+                for axis in page.box_max {
+                    bin.write_all(&axis.to_le_bytes())?;
+                }
+                bin.write_all(&[0, 0])?;
+            }
+            offset += (packed.instances.len() * 16 + packed.pages.len() * 48) as u64;
+        }
+        nodes.push(serde_json::json!({
+            "id": id.get(),
+            "bounds_min_bits": bits3(node.bounds.min()),
+            "bounds_max_bits": bits3(node.bounds.max()),
+            "points": (case.points)(*id).ok_or("cut node missing")?,
+            "levels": levels,
+        }));
+    }
+    bin.flush()?;
+    let viewport = case.view.viewport();
+    let meta = serde_json::json!({
+        "format": "r3-pool-v1",
+        "dataset": case.dataset,
+        "pose": case.pose,
+        "target_px_bits": case.target.to_bits(),
+        "viewport": viewport,
+        "visual_scale_bits": case.view.visual_scale().to_bits(),
+        "coordinate_origin_bits": bits3([0.0; 3]),
+        "grid": {
+            "root_min_bits": bits3(case.grid.root_min),
+            "root_side_bits": case.grid.root_side.to_bits(),
+        },
+        "camera_bits": case.view.camera().to_f64_array().map(f64::to_bits),
+        "cut": case.cut.iter().map(|id| id.get()).collect::<Vec<_>>(),
+        "nodes": nodes,
+    });
+    fs::write(case.dir.join("pool.json"), serde_json::to_vec(&meta)?)?;
+    eprintln!(
+        "# pool export {}: {} nodes, {} MiB",
+        case.dir.display(),
+        case.cut.len(),
+        offset >> 20
+    );
     Ok(())
 }

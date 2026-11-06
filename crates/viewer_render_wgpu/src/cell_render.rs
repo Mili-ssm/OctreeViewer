@@ -846,10 +846,6 @@ impl CellRenderer {
 
     /// Turns the two-phase occlusion on (`kpc`, the default) or off (`k`: compaction only). Turning
     /// it on again starts from empty visibility bits.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "toggle for tests; the T7c bench will expose it")
-    )]
     pub fn set_occlusion(&mut self, enabled: bool) {
         self.occlusion = enabled;
     }
@@ -879,8 +875,8 @@ impl CellRenderer {
         &self.hiz
     }
 
-    /// Indirect draw arguments; word 1 is the number of cells drawn. Read back by the tests.
-    #[cfg(test)]
+    /// Indirect draw arguments; word 1 is the number of cells drawn. Read back by the tests and
+    /// the T7c bench.
     pub(crate) fn draw_args_buffer(&self) -> &wgpu::Buffer {
         &self.draw_args
     }

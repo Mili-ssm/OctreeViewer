@@ -5,6 +5,8 @@ mod attributes;
 mod block_sync;
 mod budget;
 mod camera;
+#[doc(hidden)]
+pub mod cell_bench;
 mod cell_cull;
 mod cell_cut;
 mod cell_pages;

@@ -302,7 +302,9 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 **T7c, medida nativa** (no decide; referencia para la Tarea 11):
 
-- [ ] `coverage_spike --export-pool DIR` escribe los niveles de los cortes exportados ya empaquetados con `cell_pages`. Un ejemplo nuevo, `cell_pool_bench`, los ofrece al pool, en la 880M y con `timestamp-query`:
+**Hecha (06-11-2026), salta la regla de CPU:** [registro](../records/benchmarks/R3_T7C_NATIVE_06-11-2026.md). En la GPU, `kpc` tarda 3,28 ms en Majadas mirando a +y a 4 px (spike en Chrome: 4,39 ms), y todas las poses quietas convergen en ≤ 15 frames. Pero `CellPool::frame` cuesta hasta 8,75 ms de CPU por frame (Majadas a 1 px), por encima de los 2 ms. Además, la estimación de tamaños, unas 2 veces el tamaño real, recorta 29 nodos sin necesidad con la cámara quieta. Se corrige en T7d.
+
+- [x] `coverage_spike --export-pool DIR` escribe los niveles de los cortes exportados ya empaquetados con `cell_pages`. Un ejemplo nuevo, `cell_pool_bench`, los ofrece al pool, en la 880M y con `timestamp-query`:
   - el corte quieto (los casos de la Tarea 16a);
   - la cámara en movimiento, con expulsiones y subidas;
   - el coste de CPU por frame del corte, el ajuste y la reescritura de la tabla de páginas.
@@ -311,7 +313,18 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
   - el corte, el ajuste y la tabla de páginas pasan de 2 ms de CPU por frame en `release` → actualización incremental o en GPU antes de la Tarea 9;
   - con la pose quieta no converge en 120 frames, o siguen las subidas y expulsiones → más histéresis antes de la Tarea 9.
 
-- **Pasa si** se cumplen los tests de las cuatro partes, `check.sh` y la medida de T7c. El criterio de la Tarea 16b en el visor wasm (≤ 16,7 ms) se comprueba en la Tarea 11, cuando el visor ya cargue celdas.
+**T7d, coste de CPU y tamaños exactos** (antes de la Tarea 9; especificación del 06-11-2026):
+
+- [ ] **Tamaños exactos sin subir:** `CellPool::set_level_sizes(nodo, &[(profundidad, páginas)])`. En el visor, todos los niveles de un nodo se construyen a la vez desde sus puntos, así que sus tamaños se conocen aunque no se suban. El ajuste usa el tamaño exacto en cuanto lo tiene; la estimación solo queda para los nodos cuyos puntos no han llegado. El banco los entrega al cargar cada nodo.
+- [ ] **Coste por frame:** como mucho una llamada a `cell_cut` por frame en régimen estable. El corte deseado y el ajuste solo se recalculan si cambia el corte de nodos, si llegan tamaños o residencia nuevos, o si la cámara se mueve más de un umbral documentado; si no, se reutilizan. Antes de cambiar nada, se perfila `cell_cut` con el corte de Majadas a 1 px y se mide cuánto cuesta cada parte.
+- [ ] **Pasa si:**
+  - `cell_pool_bench` da ≤ 2 ms de CPU por frame (mediana y p95), quieta y en movimiento, en los 22 casos, Majadas a 1 px incluida;
+  - con la cámara quieta, `pool_coarsened` es 0 donde el corte deseado exacto cabe (Majadas +y a 4 px), y mayor que 0 donde no cabe (Majadas a 1 px);
+  - los tests de T7a siguen pasando y se añade uno con tamaños exactos que levanta un recorte falso;
+  - los tiempos de GPU de T7c no empeoran más de un 5 %.
+- **Parar si** con una sola llamada a `cell_cut` por frame sigue pasando de 2 ms en Majadas a 1 px → `cell_cut` incremental, o en GPU, y vuelve al propietario.
+
+- **Pasa si** se cumplen los tests de las cinco partes, `check.sh` y las medidas de T7c y T7d. El criterio de la Tarea 16b en el visor wasm (≤ 16,7 ms) se comprueba en la Tarea 11, cuando el visor ya cargue celdas.
 
 ## Tarea 8: picking sobre el pool
 

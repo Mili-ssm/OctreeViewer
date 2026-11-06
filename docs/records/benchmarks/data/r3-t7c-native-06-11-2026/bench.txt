@@ -1,0 +1,27 @@
+# adapter AMD Radeon 880M Graphics (RADV STRIX1) (Vulkan, IntegratedGpu)
+# timestamp period 10.019036 ns; pool 32768 pages; viewport 1280x720; adapter backend limits ok (Vulkan)
+case                                nodes kpc med kpc p95   k med   k p95  mv med  mv p95 cpu med cpu p95   conv coars  act pgs  ph1 cel  ph2 cel
+belvedere-grazing-1px                   6    0.44    0.46    0.46    0.47    0.48    0.56 0.10/0.19 0.11/0.20 2 0 341 93358 0
+belvedere-grazing-4px                   1    0.16    0.16    0.06    0.06    0.16    0.18 0.02/0.03 0.02/0.04 2 0 29 7195 0
+belvedere-inside-leaf-1px             334    7.99    8.03    8.90    8.95    9.98   11.07 2.03/2.31 2.11/2.85 10 0 16625 2639562 0
+belvedere-inside-leaf-4px              73    1.39    1.42    1.74    1.80    1.80    2.73 0.86/0.89 0.89/1.00 4 0 5778 247677 0
+belvedere-inside-leaf-nx-4px          123    1.85    1.88    1.96    2.05    2.84    3.44 1.42/1.56 1.46/2.10 6 0 8661 437791 0
+belvedere-inside-leaf-ny-4px           89    2.18    2.23    3.18    3.27    1.99    3.13 0.96/1.23 1.10/1.67 5 0 6527 472007 0
+belvedere-inside-leaf-nz-4px          122    0.19    0.20    0.05    0.06    0.18    0.21 1.03/1.05 1.26/1.09 6 0 9513 5646 0
+belvedere-inside-leaf-py-4px          125    2.95    3.01    3.91    4.06    3.80    4.48 1.03/1.60 1.11/2.06 6 0 8209 739111 0
+belvedere-inside-leaf-pz-4px          120    0.13    0.14    0.02    0.03    0.15    0.20 0.88/0.97 1.00/1.19 5 0 7630 0 0
+belvedere-orbit-0-1px                   6    0.33    0.34    0.20    0.21    0.47    0.66 0.06/0.09 0.07/0.12 2 0 175 63242 0
+belvedere-orbit-0-4px                   4    0.16    0.16    0.03    0.04    0.17    0.19 0.04/0.06 0.05/0.08 2 0 29 4115 0
+majadas-grazing-1px                    11    0.24    0.26    0.16    0.17    0.26    0.40 0.07/0.09 0.10/0.11 2 0 118 31165 0
+majadas-grazing-4px                     1    0.15    0.16    0.03    0.03    0.16    0.17 0.01/0.02 0.02/0.02 2 0 25 3053 0
+majadas-inside-leaf-1px               814    9.11   10.05   14.06   14.21   12.69   15.47 5.79/8.75 6.02/10.02 15 139 27329 2904634 0
+majadas-inside-leaf-4px               232    3.32    3.36    5.50    5.62    4.70    5.53 1.70/2.50 1.76/2.98 10 0 16485 706302 0
+majadas-inside-leaf-nx-4px            195    2.62    3.89    4.48    6.93    3.61    4.21 1.45/2.05 1.51/2.67 8 0 13081 606515 0
+majadas-inside-leaf-ny-4px            176    2.39    2.42    3.05    5.04    3.25    3.70 1.02/1.61 1.14/1.99 6 0 9176 646712 0
+majadas-inside-leaf-nz-4px             58    0.26    0.31    0.04    0.05    0.14    0.15 0.70/0.52 0.77/0.75 6 0 8193 1431 0
+majadas-inside-leaf-py-4px            233    3.28    3.35    6.11    6.36    4.79    5.50 2.62/2.76 3.25/3.28 9 29 15523 608583 0
+majadas-inside-leaf-pz-4px            217    1.45    1.49    1.82    1.87    2.90    3.22 1.45/1.55 1.47/1.91 7 0 10872 282257 0
+majadas-orbit-0-1px                    11    0.28    0.29    0.15    0.17    0.30    0.43 0.07/0.09 0.10/0.10 2 0 118 44725 0
+majadas-orbit-0-4px                     4    0.15    0.16    0.03    0.04    0.16    0.18 0.02/0.03 0.03/0.04 2 0 12 3337 0
+# cpu columns: median and p95 ms of cut+fit+page table, still/moving
+# wrote target/r3-t7c/bench.json
