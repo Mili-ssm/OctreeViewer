@@ -172,6 +172,8 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: aplicar un corte de celdas | Sin huecos y con retención local: el antepasado dibuja la zona de un nodo hasta que el nivel del nodo está en GPU, y lo que falta en una zona no bloquea las demás. Carga de grueso a fino. | R3-Q19 |
 | R3: nodos nuevos sin respaldo | Se precarga su nivel más grueso y entran al ser residentes, sin bloquear el resto; al alejar, los descendientes que ya se dibujaban cubren la zona hasta entonces; se retiene el corte anterior solo si la zona no se puede cubrir. | R3-Q20 |
 | R3: la imagen solo se refina | El antepasado dibuja la zona de un hijo hasta que el hijo dibuja ahí un nivel al menos tan fino como el del antepasado o el pedido, el más grueso de los dos, por nodo entero; dentro de un nodo se dibuja el residente más cercano al deseado. | R3-Q21 |
+| R3: padres primero | Antes de construir un nodo se construye su padre; la escalera de px solo arranca al abrir o tras un salto de cámara, no al orbitar. | R3-Q22 |
+| R3: celdas y modos de color | Hasta la Tarea 12, otro modo de color vuelve a la ruta CPU y volver a RGB reactiva las celdas. | R3-Q23 |
 
 ## Preguntas abiertas
 

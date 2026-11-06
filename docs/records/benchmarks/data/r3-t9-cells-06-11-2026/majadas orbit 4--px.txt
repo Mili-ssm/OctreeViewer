@@ -1,0 +1,16 @@
+
+running 1 test
+
+thread 'lod_dataset::cells_stream_tests::bench::cells_bench' (3086495) panicked at crates/viewer_wasm/src/lod_cells_bench.rs:114:51:
+called `Result::unwrap()` on an `Err` value: ParseFloatError { kind: Empty }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test lod_dataset::cells_stream_tests::bench::cells_bench ... FAILED
+
+failures:
+
+failures:
+    lod_dataset::cells_stream_tests::bench::cells_bench
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p viewer_wasm --lib`

@@ -39,6 +39,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q19 | (06-11-2026) Un corte de celdas se aplica si no deja huecos: cada nodo sin nivel en GPU queda cubierto por un antepasado dibujado, que sigue en el corte hasta que el nodo tiene nivel, y lo que falta en una zona no bloquea las demás. Se carga de grueso a fino: no se pide el nivel de un nodo antes que el de su antepasado. Sustituye la regla de aplicar de T7a («ningún nodo sin nivel»), que se acercaba a la alternativa que el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) recuerda rechazada en 0031; R3-Q10 sigue igual para `DescendantTooFine` |
 | R3-Q20 | (06-11-2026) Un nodo del corte sin nivel en GPU y sin antepasado que dibuje no entra en el corte aplicado: su nivel más grueso se precarga con prioridad y entra cuando es residente. No bloquea el resto del corte. Si aplicar el corte dejaría de dibujar una zona que el corte anterior dibujaba, se retiene el anterior. Precisa R3-Q19 (hallazgo de T9b2b: la imagen se congelaba mientras llegaban nodos) Precisión del 06-11-2026: al alejar la cámara, los descendientes que ya se dibujaban siguen dibujando la zona del nodo grueso nuevo hasta que es residente; solo se retiene todo el corte si la zona no se puede cubrir así |
 | R3-Q21 | (06-11-2026) La imagen solo se refina: el antepasado sigue dibujando la zona de un hijo hasta que el hijo tiene ahí un nivel al menos tan fino como el que dibujaba el antepasado. Precisa R3-Q19 (hallazgo de T9b2b: al sustituir un nodo se veía un instante un nivel más grueso) Precisión del 06-11-2026: el umbral es el más grueso entre el nivel que dibujaba el antepasado y el que se pide ahora (deseado y tope del ajuste), y se decide por nodo entero (la máscara no distingue octantes del hijo). Dentro de un nodo, si falta el nivel deseado, se dibuja el residente más cercano a él |
+| R3-Q22 | (06-11-2026) Padres primero por nodo: antes de construir las celdas de un nodo se construyen las de su padre, aunque el padre no esté en el corte. La escalera de px de celdas solo arranca al abrir el dataset o tras un salto de cámara (ningún nodo del corte nuevo tiene celdas ni un antepasado con celdas); al orbitar no se reinicia. Sustituye la nota «reiniciar la escalera en cada movimiento de cámara» (pre-mortem de la Tarea 10: volvía más tosca toda la imagen en cada paso) |
+| R3-Q23 | (06-11-2026) Hasta la Tarea 12, la ruta de celdas solo dibuja RGB: otro modo de color vuelve a la ruta CPU, y al volver a RGB las celdas se reactivan solas (siguen en la memoria del driver; solo se vuelven a subir a la GPU) |
 
 ## Restricciones globales
 
@@ -451,10 +453,76 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 10 ★: protocolo de workers
 
-- [ ] `nodeCells` y `evict` con la clave del pool, sin coalescer. `poolAck` y `poolResync`.
-- [ ] Al mover la cámara, el visor reinicia la escalera de px de celdas (`stage_pixels = None`) y marca la vista sucia; si no, las zonas nuevas cargan sus nodos finos sin los padres (R3-Q19; hallazgo de T9b2). La ruta CPU de hoy solo marca la vista sucia.
-- [ ] El visor dibuja mientras `CellDriver::needs_frame()` sea cierto y reescribe la tabla de páginas en cada movimiento de cámara (T9a).
-- [ ] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`.
+Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El visor dibuja celdas que construye el worker de construcción (decisión del propietario del 06-11-2026; construir un nodo cuesta hasta 69 ms en p95, [T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)). La ruta de celdas es opt-in; la ruta por defecto la decide la Tarea 17. Cinco partes, cada una con su commit.
+
+**Hechos de partida:**
+- El wasm vive en dos workers: el de render (`viewer-worker.js`, con `WasmVoxelViewer`, el `SurfaceRenderer` y el lienzo) y el de construcción (`build-worker.js`, con `WasmSceneBuilder` y el `LodDataset`). El hilo principal no carga wasm. Sin worker de construcción, el de render tiene el dataset. Los dos workers no importan módulos (los incrusta `package-local.py`).
+- Hoy `update_cells_at_stage` llama al `CellDriver` de forma síncrona (`add_node`, `frame`, `has_node`) y fija los nodos que dibuja el pool (`pool_drawn`). No hay códec para `PackedLevel` ni bindings para la ruta de celdas.
+- `CellDriver::reset()` vacía el pool pero conserva los niveles empaquetados; `forget` olvida nodos que no están en el corte actual; `upload_voxel_cut`, `sync_visible_blocks` y el cambio de modo de color sueltan el pool del renderer.
+- Ya hay mecanismos de «gana el último» (vista, escenas por época, `CoalescedCommandQueue`); `nodeCells` y `evict` no pueden usarlos.
+
+**Diseño:**
+- **Tres pasos, separables:**
+  1. el dataset elige, planifica, carga, construye y empaqueta, y da el corte y los nodos nuevos;
+  2. el driver dibuja ese corte en el renderer;
+  3. el dataset recibe el acuse.
+  En proceso, los tres se llaman seguidos; con worker, el 1 y el 3 van en el de construcción y el 2 en el de render.
+- **Mensajes** (todos con la generación del dataset y la sesión del pool):
+  - construcción → render:
+    - `nodeCells`: un nodo con todos sus niveles empaquetados, búferes transferidos, en orden y sin fusionar. Un nodo repetido con el mismo id y la misma generación se ignora;
+    - `cellCut`: el corte de la etapa actual, con su `cutEpoch`. Aquí sí gana el último.
+  - render → construcción:
+    - `poolAck`: el `cutEpoch` aplicado, los nodos del corte aplicado o retenido y `missing` (los nodos que el corte nombraba y el driver no tenía, para reconstruirlos). Gana el último;
+    - `evict`: los nodos que el driver olvidó por el presupuesto de CPU, con la clave del pool, en orden y sin fusionar;
+    - `poolReset`: el pool se vació (se perdió el dispositivo o el renderer soltó el pool), pero el driver conserva los nodos. El dataset solo vacía `pool_drawn`;
+    - `driverReplaced`: el driver es nuevo (cambio de dataset o de worker). El dataset da por perdidos todos los nodos enviados y los vuelve a mandar.
+- **El lado de render filtra el corte** por los nodos que tiene (`has_node`), como hoy en proceso. `forget` no olvida nodos que llegaron después del último corte aplicado.
+- **Fijado con retraso:** el dataset fija la unión del último `poolAck` y de todos los cortes enviados desde entonces (por `cutEpoch`).
+- **Padres primero (R3-Q22):** antes de construir un nodo se construye su padre. La escalera solo arranca al abrir el dataset o tras un salto de cámara.
+- **Dibujo:** el worker de render dibuja mientras `CellDriver::needs_frame()` sea cierto o haya un `cutEpoch` enviado sin aplicar (`cellsBusy`, en las estadísticas de LOD y en `lodStillLoading`). Reescribe la tabla de páginas en cada movimiento de cámara. Se aplica como mucho un tope de bytes de `nodeCells` por frame; el resto espera en cola.
+- **En modo de celdas, el constructor no emite escenas**, y el worker de render comprueba que no recibe ninguna (si no, la escena soltaría el pool).
+- **`cutDigestAtRest`:** el `cell_cut_digest` del corte aplicado cuando el constructor está en reposo en la época E, el render aplicó E, `needs_frame()` es falso y el digest se repite en dos lecturas seguidas. Se publica en las estadísticas de LOD de los dos modos.
+- **Modos de color (R3-Q23):** otro modo vuelve a la ruta CPU; al volver a RGB, las celdas se reactivan.
+- **Memoria:** `cpu_budget_bytes` del driver en wasm, 512 MiB (el criterio de parada de T9b). Se registra `wasmLinearMemoryBytes` en los dos workers.
+
+**T10a1, códec y empaquetado** (`viewer_render_wgpu`):
+- [ ] Códec de `PackedLevel` (cabecera, `PageInfo` de tamaño fijo, instancias `Pod`), con ida y vuelta exacta y errores en datos truncados o mal formados.
+- [ ] `pack_node`: empaqueta las celdas de un nodo fuera del driver (lo que hoy hace `CellDriver::add_node`), para hacerlo en el worker de construcción. `add_packed` ignora el duplicado con la misma generación.
+- [ ] **Pasa si** el códec da exactamente los mismos bytes de GPU que el empaquetado directo, y los datos malformados dan error, nunca pánico.
+
+**T10a2, tres pasos, padres primero y simulación** (`lod_cells.rs`, `lod_driver.rs`, `lod_dataset.rs`):
+- [ ] `update_cells_at_stage` separado en los tres pasos, con un acuse que puede llegar con retraso; el fijado, los olvidados, `missing`, `poolReset` y `driverReplaced` como en el diseño.
+- [ ] Padres primero (R3-Q22) y la escalera que solo arranca al abrir o tras un salto.
+- [ ] **Pasa si**, en un test nativo que simula los workers, el `cutDigestAtRest` es el mismo que en proceso:
+  - intercalado aleatorio con semilla de pasos de construcción y de render, presupuestos de CPU y de páginas pequeños, en órbita y en acercamiento, sobre Belvedere v7.5 (con `R3_REQUIRE_REAL_DATA`) y en sintético;
+  - con un `poolReset` y un `driverReplaced` a mitad de carga;
+  - sin `Duplicate`, `UnknownNode` ni `NoStoredLevels`;
+  - una página expulsada durante el retraso del acuse no deja huecos;
+  - al orbitar, ninguna muestra se vuelve más gruesa que antes y que lo pedido (R3-Q21), y la etapa no pasa más de 1 s por encima del objetivo.
+
+**T10b, bindings** (★ `bindings/lod.rs`, `bindings/builder.rs`, `bindings/render.rs`):
+- [ ] Apertura con celdas opt-in. Si el formato no las admite, `CellPathUnsupported` y se sigue por la ruta CPU.
+- [ ] `WasmSceneBuilder` da los `nodeCells` y el `cellCut`, y recibe `poolAck`, `evict`, `poolReset` y `driverReplaced`. `WasmVoxelViewer` tiene `addCellNode` y `setCellCut`, y en `renderFrame` ejecuta el frame del driver. En modo sin worker usa el camino en proceso.
+- [ ] `cutDigestAtRest`, `cellsBusy`, `cutEpoch`, los contadores del pool y `wasmLinearMemoryBytes` en las estadísticas.
+- [ ] **Pasa si:**
+  - un test nativo de los bindings da el mismo `cutDigestAtRest` con constructor separado y en proceso;
+  - clippy wasm32.
+
+**T10c1, host web** (`examples/web-host`):
+- [ ] Los dos workers manejan los mensajes nuevos: `nodeCells` y `evict` sin fusionar y fuera del filtro de época de las escenas, el tope de bytes por frame y el parámetro `cells=1`. Las ayudas nuevas van dentro de cada worker.
+- [ ] **Pasa si** los tests de Node, con los workers en `vm` y wasm falso, cubren el orden y la no fusión de `nodeCells`/`evict`, el gana el último en `cellCut`/`poolAck`, `poolReset`, `driverReplaced`, `cellsBusy` y que en modo de celdas no llegan escenas.
+
+**T10c2, navegador:**
+- [ ] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`, en Chrome con WebGPU, sobre Belvedere v7.5, servido por http (no `file://`) y con un probe como `probe-orbit-load.mjs`.
+- [ ] Verificación con Playwright: consola sin errores, escritorio y móvil (emulado), órbita, cambio de modo de color y vuelta a RGB, y picking.
+- [ ] Se miden el p95 del frame del worker de render mientras llegan nodos y `wasmLinearMemoryBytes`.
+
+**Parar si:**
+- hay algún `Duplicate`, `UnknownNode` o `NoStoredLevels` en una simulación o en el navegador;
+- la sesión del pool sube sin que se pierda el dispositivo ni cambie el dataset (un bucle de reinicios);
+- los digests de la simulación aleatoria difieren del camino en proceso tras los arreglos (la convergencia depende del camino) → al propietario;
+- el p95 del frame del worker de render pasa de 2 × el de la ruta CPU mientras llegan nodos, o la memoria wasm pasa del presupuesto;
+- al orbitar, la etapa pasa más de 1 s por encima del objetivo.
 
 ## Tarea 11: humo en navegador
 
