@@ -6,8 +6,8 @@ import { resolveSource } from "./http-range-source.mjs";
 // render worker (viewer-worker.js) sends the camera and draws the instance bytes this worker
 // returns. Self-contained on purpose: package-local.py embeds it without module imports.
 //
-// render -> build: init{wasmBytes?}, open{gen,file,attributes,cacheBytes,limits}, colorMode{gen,mode},
-//                  view{gen,epoch,camera,viewport,visualScale,targetPx}, metrics{reset?}
+// render -> build: init{wasmBytes?}, open{gen,file,attributes,cacheBytes,limits,cells?}, colorMode{gen,mode},
+//                  view{gen,epoch,viewEpoch?,camera,viewport,visualScale,targetPx}, metrics{reset?}
 // build -> render: opened{gen,opened}, colorMode{gen,mode,attributeRange} (the mode was accepted;
 //                  a rejected one answers with error{operation:"colorMode"} and changes nothing),
 //                  scene{gen,epoch,viewEpoch,buf,count,blockIds,lod,digest},
@@ -15,6 +15,22 @@ import { resolveSource } from "./http-range-source.mjs";
 //                  metrics{metrics}
 // `epoch` counts this worker's builds (strictly increasing within a gen); `viewEpoch` echoes the
 // render worker's view epoch that the build used.
+//
+// Cells path (R3, opt-in with `open.cells`; plain RGB only, R3-Q23): the builder emits no `scene`.
+// build -> render: nodeCells{gen,generation,buffers} (one per node batch, transferred, in order, never
+//                  coalesced), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
+//                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
+// render -> build: poolAck{gen,cutEpoch,drawn,missing} (latest wins), evict{gen,nodes} (ordered, never
+//                  coalesced), poolReset{gen}, driverReplaced{gen}. They wait in `cellInbox` and are applied
+//                  before the next update in the order the builder requires: driverReplaced, poolReset,
+//                  evict, poolAck: the order of `ViewerCells::take_messages` and of the in-process path. The
+//                  ack of a batch comes from the driver's last frame, after every eviction in the same
+//                  batch, so its `drawn` holds no evicted node: evictions go first (they only clear `built`)
+//                  and the ack then sets `drawn` last, so an evicted node is never marked drawn.
+//                  `view.viewEpoch` is the viewer's epoch of that camera (`setViewEpoch`).
+//                  A throw in one apply does not skip the rest of the batch: every item is applied, then
+//                  one `error{operation:"build:cellInbox"}` goes to the render side.
+// Another colour mode makes the builder send scenes again; RGB brings the cells back.
 
 const MAX_ASYNC_LOD_READS = 4;
 let wasmExports = null;
@@ -26,6 +42,8 @@ let readBudget = null;
 let asyncHasAttributes = false;
 let asyncAttributeIndices = new Map();
 let currentColorMode = "rgb";
+let cellsEnabled = false;
+const cellInbox = { driverReplaced: false, poolReset: false, evict: [], poolAck: null };
 let latestView = null;
 let viewsSinceBuild = 0;
 let retryFailedNext = false;
@@ -42,6 +60,8 @@ const workKinds = new Map();
 const pageTotals = { reads: 0, waves: 0 };
 const asyncBlockTotals = { blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0 };
 const buildTotals = { builds: 0, scenes: 0, reused: 0, buildMs: 0, maxBuildMs: 0, viewsReceived: 0, viewsCoalesced: 0 };
+// Reported (under `build`) only while the cells path is on, so the shape stays the same with it off.
+const cellTotals = { cellUpdates: 0, nodeCellMessages: 0, nodeCellBuffers: 0, nodeCellBytes: 0 };
 
 function recordWork(kind, startedAt, endedAt) {
     let entry = workKinds.get(kind);
@@ -61,7 +81,8 @@ function metricsSnapshot() {
         busyByMessage: Object.fromEntries(workKinds),
         asyncBlocks: { ...asyncBlockTotals },
         pages: { ...pageTotals },
-        build: { ...buildTotals },
+        build: { ...buildTotals, ...(cellsEnabled ? cellTotals : {}) },
+        ...(cellsEnabled ? { cellStats: builder?.cellStats?.() ?? null } : {}),
         wasmLinearMemoryBytes: wasmExports?.memory?.buffer.byteLength ?? null,
     };
 }
@@ -73,6 +94,57 @@ function resetMetrics() {
     });
     Object.assign(buildTotals, {
         builds: 0, scenes: 0, reused: 0, buildMs: 0, maxBuildMs: 0, viewsReceived: 0, viewsCoalesced: 0,
+    });
+    Object.assign(cellTotals, { cellUpdates: 0, nodeCellMessages: 0, nodeCellBuffers: 0, nodeCellBytes: 0 });
+}
+
+function clearCellInbox() {
+    Object.assign(cellInbox, { driverReplaced: false, poolReset: false, evict: [], poolAck: null });
+}
+
+// Applies what the render worker reported since the last update, in the builder's required order.
+function applyCellInbox() {
+    const { driverReplaced, poolReset, evict, poolAck } = cellInbox;
+    clearCellInbox();
+    const failures = [];
+    const apply = (call) => {
+        try {
+            call();
+        } catch (error) {
+            failures.push(String(error));
+        }
+    };
+    if (driverReplaced) apply(() => builder.driverReplaced());
+    if (poolReset) apply(() => builder.poolReset());
+    for (const nodes of evict) apply(() => builder.applyEvict(nodes));
+    if (poolAck) apply(() => builder.applyPoolAck(poolAck));
+    if (failures.length > 0) {
+        self.postMessage({ type: "error", operation: "build:cellInbox", message: failures.join("; ") });
+    }
+}
+
+function postCellUpdate(result, view, buildMs) {
+    cellTotals.cellUpdates += 1;
+    const buffers = result.nodeCells;
+    if (buffers.length > 0) {
+        cellTotals.nodeCellMessages += 1;
+        cellTotals.nodeCellBuffers += buffers.length;
+        for (const buffer of buffers) cellTotals.nodeCellBytes += buffer.byteLength;
+        // The transfer list is the buffers themselves: nothing is copied.
+        self.postMessage({ type: "nodeCells", gen: generation, generation: result.generation, buffers }, buffers);
+    }
+    self.postMessage({
+        type: "cellCut",
+        gen: generation,
+        cutEpoch: result.cutEpoch,
+        viewEpoch: result.viewEpoch,
+        cut: result.cut,
+        support: result.support,
+        idle: result.idle,
+        targetPixels: result.targetPixels,
+    });
+    self.postMessage({
+        type: "cellLod", gen: generation, cutEpoch: result.cutEpoch, viewEpoch: result.viewEpoch, lod: result.lod, buildMs,
     });
 }
 
@@ -102,6 +174,10 @@ function runBuild() {
     const startedAt = performance.now();
     let result;
     try {
+        if (cellsEnabled) {
+            applyCellInbox();
+            if (typeof view.viewEpoch === "number") builder.setViewEpoch(view.viewEpoch);
+        }
         result = builder.update(view.camera, view.viewport[0], view.viewport[1], view.visualScale, view.targetPx);
     } catch (error) {
         recordWork("build", startedAt, performance.now());
@@ -113,7 +189,9 @@ function runBuild() {
     buildTotals.builds += 1;
     buildTotals.buildMs += buildMs;
     buildTotals.maxBuildMs = Math.max(buildTotals.maxBuildMs, buildMs);
-    if (result.sceneBuffer) {
+    if (result.nodeCells) {
+        postCellUpdate(result, view, buildMs);
+    } else if (result.sceneBuffer) {
         buildTotals.scenes += 1;
         self.postMessage({
             type: "scene",
@@ -296,6 +374,8 @@ async function openDataset(data) {
     viewsSinceBuild = 0;
     failedAsyncBlocks.clear();
     generation = data.gen;
+    cellsEnabled = false;
+    clearCellInbox();
     pageBudgetBlockedEpoch = null;
     currentColorMode = "rgb";
     asyncHasAttributes = false;
@@ -316,6 +396,7 @@ async function openDataset(data) {
         return;
     }
     const nextBuilder = new WasmSceneBuilder(maxVoxels, maxEstimatedBytes);
+    if (data.cells) nextBuilder.enableCells(true);
     const descriptor = nextReader.lodDatasetDescriptor(data.cacheBytes);
     const opened = {
         ...(descriptor.paged
@@ -334,6 +415,7 @@ async function openDataset(data) {
     };
     builder = nextBuilder;
     reader = nextReader;
+    cellsEnabled = opened.cellPath === "enabled";
     asyncHasAttributes = descriptor.hasAttributes;
     asyncAttributeIndices = new Map(descriptor.attributeSchema.map(
         (attribute, index) => [attribute.name, index],
@@ -357,6 +439,20 @@ async function handleMessage({ data }) {
                 viewsSinceBuild += 1;
                 retryFailedNext ||= Boolean(data.retryFailed);
                 buildTotals.viewsReceived += 1;
+                requestBuild();
+                break;
+            case "poolAck":
+            case "evict":
+            case "poolReset":
+            case "driverReplaced":
+                if (data.gen !== generation || !builder || !cellsEnabled) break;
+                if (data.type === "poolAck") {
+                    cellInbox.poolAck = { cutEpoch: data.cutEpoch, drawn: data.drawn, missing: data.missing };
+                } else if (data.type === "evict") {
+                    cellInbox.evict.push(data.nodes);
+                } else {
+                    cellInbox[data.type] = true;
+                }
                 requestBuild();
                 break;
             case "colorMode":

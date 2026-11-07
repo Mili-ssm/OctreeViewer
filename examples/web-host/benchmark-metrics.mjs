@@ -103,6 +103,8 @@ export function lodTargetReached(lod) {
 
 // Whether more LOD work is expected: false once the page budget blocks the remaining pages.
 export function lodStillLoading(lod) {
+    // The cells path draws nodes after the plan is done: keep frames going until the driver settles.
+    if (lod?.cellsBusy) return true;
     return Boolean(lod && !lod.lodError && !lod.pageBudgetExhausted
         && (lod.pendingBlockIds?.length || lod.pendingPageAnchors?.length
             || lod.lodStagePixels > lod.targetVoxelPixels));

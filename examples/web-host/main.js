@@ -158,6 +158,14 @@ window.__renderBench = {
     // Runs frames for a moment, as camera input would, so an idle scene keeps refining.
     wake: () => wakeRendering(),
     latestLodCounters: () => lodCounters(latestLodStats),
+    // Cells path: the resting digest of the applied cut (null until at rest) and the latest cell stats.
+    cutDigestAtRest: () => latestLodStats?.cutDigestAtRest ?? null,
+    cellStats: () => latestLodStats && {
+        cellPath: latestLodStats.cellPath ?? null, cellsBusy: latestLodStats.cellsBusy ?? null,
+        viewEpoch: latestLodStats.viewEpoch ?? null, cutEpochSent: latestLodStats.cutEpochSent ?? null,
+        cutEpochApplied: latestLodStats.cutEpochApplied ?? null,
+        wasmLinearMemoryBytes: latestLodStats.wasmLinearMemoryBytes ?? null,
+    },
     openTimings: () => benchmarkRun && {
         firstCoarseFrameMs: benchmarkRun.firstCoarseFrameMs,
         targetLodMs: benchmarkRun.targetLodMs,
@@ -644,6 +652,8 @@ function createWorkerViewer() {
             colorMode: colorMode.value,
             depthShading: depthShading.checked,
             buildWorker: new URLSearchParams(location.search).get("buildWorker") !== "0" ? BUILD_WORKER : undefined,
+            // Opt-in R3 cells path (RGB only until Task 12): ?cells=1.
+            cells: new URLSearchParams(location.search).get("cells") === "1",
         }, [offscreen]);
         reloadButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";

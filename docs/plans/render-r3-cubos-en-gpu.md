@@ -528,8 +528,12 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
   En las pruebas nativas, el pegamento da el mismo digest que el camino en proceso, también en Belvedere v7.5. Los bindings solo se han compilado (wasm32); se ejercitan en T10c.
 
 **T10c1, host web** (`examples/web-host`):
-- [ ] Los dos workers manejan los mensajes nuevos: `nodeCells` y `evict` sin fusionar y fuera del filtro de época de las escenas, el tope de bytes por frame y el parámetro `cells=1`. Las ayudas nuevas van dentro de cada worker.
-- [ ] **Pasa si** los tests de Node, con los workers en `vm` y wasm falso, cubren el orden y la no fusión de `nodeCells`/`evict`, el gana el último en `cellCut`/`poolAck`, `poolReset`, `driverReplaced`, `cellsBusy` y que en modo de celdas no llegan escenas.
+- [x] Los dos workers manejan los mensajes nuevos: `nodeCells` y `evict` sin fusionar y fuera del filtro de época de las escenas, el tope de bytes por frame y el parámetro `cells=1`. Las ayudas nuevas van dentro de cada worker.
+- [x] **Pasa si** los tests de Node, con los workers en `vm` y wasm falso, cubren el orden y la no fusión de `nodeCells`/`evict`, el gana el último en `cellCut`/`poolAck`, `poolReset`, `driverReplaced`, `cellsBusy` y que en modo de celdas no llegan escenas.
+- **Hecha (07-11-2026).** `?cells=1` o `createViewer({ cells: true })`. Mensajes nuevos: `nodeCells`, `cellCut`, `cellLod`, `poolAck`, `evict`, `poolReset` y `driverReplaced`; la vista lleva `viewEpoch`. 148 tests de Node (32 de celdas), con los workers en `vm` y dobles que fallan como la API real.
+  - Con las celdas apagadas, la ruta CPU no envía mensajes de más y las métricas conservan su forma.
+  - Tras 600 frames ocupados sin progreso, el worker de render da `cellsBusy: false` y `cellsStuck: true`.
+  - Para T10c2: `cellsBusy: false` no significa reposo; el probe espera un `cutDigestAtRest` no nulo.
 
 **T10c2, navegador:**
 - [ ] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`, en Chrome con WebGPU, sobre Belvedere v7.5, servido por http (no `file://`) y con un probe como `probe-orbit-load.mjs`.

@@ -52,6 +52,19 @@ let buildOpened = false;
 let pendingOpen = null;
 let appliedEpoch = 0;
 let viewEpoch = 0;
+// Cells path (R3, opt-in with `init.cells`). `cellsRemote`: the build worker's builder produces the
+// cells and the viewer's driver lives here. See build-worker.js for the messages.
+let cellsRequested = false;
+let cellsRemote = false;
+let pendingCellCut = null;
+let appliedCutEpoch = 0;
+let lastOpenRequest = null;
+// Frames in a row with cells busy and no progress after which the driver counts as stuck: the busy
+// flag is then reported false (the host's frame loop ends) and `cellsStuck` is set.
+const CELLS_STUCK_FRAME_LIMIT = 600;
+let cellsStuckKey = null;
+let cellsStuckFrames = 0;
+const cellCounters = { nodeCellMessages: 0, nodeCells: 0, nodeCellBytes: 0, cellCuts: 0, cellCutsSuperseded: 0, strayScenes: 0, messagesSent: 0 };
 let remoteVisualScale = 1;
 let lastSentView = null;
 let currentLod = null;
@@ -139,6 +152,12 @@ function workerMetricsSnapshot(buildMetrics = null) {
         buildWorkerEnabled: buildOptions !== null,
         sceneDigest: currentSceneDigest(),
     };
+    // Absent with cells off, so the shape consumers read does not change.
+    if (cellsRequested) {
+        snapshot.cutDigestAtRest = (buildOptions ? currentLodStats() : viewer?.lodStats?.())?.cutDigestAtRest ?? null;
+        snapshot.cellStats = viewer?.cellStats?.() ?? null;
+        snapshot.cellCounters = { ...cellCounters, cellsStuckFrames };
+    }
     if (buildOptions === null) return snapshot;
     // The build worker owns reads and decoding, so its totals replace this worker's empty ones.
     if (buildMetrics) snapshot.asyncBlocks = { ...buildMetrics.asyncBlocks };
@@ -173,6 +192,7 @@ function resetWorkerMetrics() {
     });
     for (const samples of Object.values(buildSamples)) samples.length = 0;
     Object.assign(buildCounters, { viewsSent: 0, scenesApplied: 0, scenesDropped: 0, spawns: 0 });
+    for (const key of Object.keys(cellCounters)) cellCounters[key] = 0;
     buildWorker?.postMessage({ type: "metrics", reset: true });
 }
 
@@ -277,7 +297,68 @@ function memoryStats() {
 
 // Stats of the last LOD update: the renderer's own, or the build worker's in build-worker mode.
 function currentLodStats() {
-    return buildOptions ? currentLod : viewer.lodStats();
+    return buildOptions ? withRenderCellStats(currentLod) : withStuckGuard(viewer.lodStats());
+}
+
+// Counts frames that left the cells busy without progress (cut applied, queue, upload, cut sent).
+function trackCellsStuck() {
+    const cells = cellsRequested ? viewer.cellStats?.() : null;
+    if (!cells?.cellsBusy) {
+        cellsStuckKey = null;
+        cellsStuckFrames = 0;
+        return;
+    }
+    const key = [cells.cutEpochSent, cells.cutEpochApplied, cells.queuedNodeCells, cells.poolUploadedBytes].join(":");
+    if (key === cellsStuckKey) {
+        cellsStuckFrames += 1;
+    } else {
+        cellsStuckKey = key;
+        cellsStuckFrames = 0;
+    }
+}
+
+// A driver that stays busy without progress must not keep the host's frames running forever.
+function withStuckGuard(lod) {
+    if (!lod || !cellsRequested) return lod;
+    if (lod.cellsBusy && cellsStuckFrames >= CELLS_STUCK_FRAME_LIMIT) {
+        return { ...lod, cellsBusy: false, cellsStuck: true, cellsStuckFrames };
+    }
+    return { ...lod, cellsStuck: false, cellsStuckFrames };
+}
+
+// With a build worker the LOD stats come from the builder, but the driver is here: its busy flag and
+// resting digest replace the builder's, so "still loading" covers the cells not yet drawn.
+function withRenderCellStats(lod) {
+    if (!lod || !cellsRemote) return lod;
+    // Off the cells path (R3-Q23) the builder sends scenes: the driver is inactive and the builder's
+    // last cell stats are stale, so they must not keep the frames running.
+    if (currentColorMode !== "rgb") return { ...lod, cellsBusy: false, cutDigestAtRest: null };
+    const cells = viewer.cellStats();
+    if (!cells) return lod;
+    return withStuckGuard({ ...lod, ...cells, cellsBusy: Boolean(lod.cellsBusy || cells.cellsBusy) });
+}
+
+// Draws a frame and sends the build worker what its driver owes it (acks, evictions, resets).
+function renderViewerFrame() {
+    const status = viewer.renderFrame();
+    forwardCellMessages();
+    return status;
+}
+
+// `takeCellMessages` is in the order the builder needs; the channel keeps it. `evict` and the resets
+// are never merged. Only the ack is a state, and the build worker keeps the last.
+function forwardCellMessages() {
+    if (!cellsRemote || !buildWorker) return;
+    const messages = viewer.takeCellMessages();
+    const gen = datasetGeneration;
+    if (messages.driverReplaced) buildWorker.postMessage({ type: "driverReplaced", gen });
+    if (messages.poolReset) buildWorker.postMessage({ type: "poolReset", gen });
+    if (messages.evict.length > 0) {
+        buildWorker.postMessage({ type: "evict", gen, nodes: messages.evict }, [messages.evict.buffer]);
+    }
+    if (messages.poolAck) buildWorker.postMessage({ type: "poolAck", gen, ...messages.poolAck });
+    cellCounters.messagesSent += Number(Boolean(messages.driverReplaced)) + Number(Boolean(messages.poolReset))
+        + Number(messages.evict.length > 0) + Number(Boolean(messages.poolAck));
 }
 
 // Hex digest of the scene on screen (`null` while nothing is displayed), identical in both modes.
@@ -338,7 +419,8 @@ function postLodProgress(lod, afterRenderFrame = false) {
     const targetReached = lod.coverageComplete
         && lod.pendingBlockIds.length === 0
         && (lod.pendingPageAnchors?.length ?? 0) === 0
-        && lod.lodStagePixels <= lod.targetVoxelPixels;
+        && lod.lodStagePixels <= lod.targetVoxelPixels
+        && !lod.cellsBusy;
     if (afterRenderFrame && targetLodMs === null && targetReached) {
         targetLodMs = now - targetLodStartedAt;
     }
@@ -351,6 +433,9 @@ function postLodProgress(lod, afterRenderFrame = false) {
         lod.lodError,
         firstCoarseMs,
         targetLodMs,
+        lod.cellsBusy ?? "",
+        lod.cellsStuck ?? "",
+        lod.cutDigestAtRest ?? "",
     ].join(":");
     if (key === lastLodProgressKey) return;
     lastLodProgressKey = key;
@@ -571,6 +656,7 @@ function spawnBuildWorker() {
     // The packaged file:// worker has the WASM bytes inline; hand them over instead of embedding twice.
     worker.postMessage({
         type: "init",
+        cells: cellsRequested,
         wasmBytes: typeof __VIEWER_WASM_BYTES__ !== "undefined" ? __VIEWER_WASM_BYTES__ : undefined,
     });
     buildWorker = worker;
@@ -599,6 +685,12 @@ function startBuiltDataset(data, requestId = null) {
     }
     advanceSceneGeneration();
     datasetGeneration += 1;
+    lastOpenRequest = { data, requestId };
+    cellsRemote = false;
+    pendingCellCut = null;
+    appliedCutEpoch = 0;
+    cellsStuckKey = null;
+    cellsStuckFrames = 0;
     targetVoxelPixels = data.targetVoxelPixels;
     datasetOpenedAt = performance.now();
     currentColorMode = "rgb";
@@ -622,6 +714,7 @@ function startBuiltDataset(data, requestId = null) {
         attributes: data.attributes,
         cacheBytes: data.cacheBytes,
         limits: [Math.min(maxVoxels, 0xFFFFFFFF), Math.min(maxEstimatedBytes, 0xFFFFFFFF)],
+        cells: cellsRequested,
     });
 }
 
@@ -638,6 +731,8 @@ function sameValues(left, right) {
 function syncBuildView(force = false, retryFailed = false) {
     if (!buildWorker || !buildOpened) return;
     const camera = viewer.cameraTransport();
+    // Read together with the camera: the viewer's epoch is the one the cells cut is judged against.
+    const cellViewEpoch = cellsRemote ? viewer.viewEpoch() : undefined;
     const viewport = Array.from(viewer.viewportSize());
     if (!force && lastSentView && lastSentView.targetPx === targetVoxelPixels
         && sameValues(lastSentView.viewport, viewport) && sameValues(lastSentView.camera, camera)) return;
@@ -650,6 +745,7 @@ function syncBuildView(force = false, retryFailed = false) {
         type: "view",
         gen: datasetGeneration,
         epoch: viewEpoch,
+        viewEpoch: cellViewEpoch,
         camera,
         viewport,
         visualScale: remoteVisualScale,
@@ -658,7 +754,9 @@ function syncBuildView(force = false, retryFailed = false) {
     });
 }
 
+// Self-contained on purpose (workers import nothing); a test runs this copy.
 function lodStillLoading(lod) {
+    if (lod.cellsBusy) return true;
     return !lod.lodError && !lod.pageBudgetExhausted && (lod.pendingBlockIds.length > 0 || (lod.pendingPageAnchors?.length ?? 0) > 0 || lod.lodStagePixels > lod.targetVoxelPixels);
 }
 
@@ -666,6 +764,7 @@ function applyBuiltLod(lod, source) {
     lod.sceneDigest = appliedSceneDigest;
     lod.attributeRange = buildAttributeRange;
     currentLod = lod;
+    lod = withRenderCellStats(lod);
     if (pendingOpen) {
         const { requestId, name, opened } = pendingOpen;
         pendingOpen = null;
@@ -684,6 +783,7 @@ function applyBuiltLod(lod, source) {
 
 function onBuildMessage(worker, data) {
     if (worker !== buildWorker) return;
+    if (data.type === "cellCut" && data.gen === datasetGeneration) pendingCellCut = data;
     if (data.type === "metrics") {
         const waiting = pendingBuildMetrics;
         pendingBuildMetrics = [];
@@ -695,9 +795,32 @@ function onBuildMessage(worker, data) {
     void (messageQueue = messageQueue.then(task, task));
 }
 
+// The builder emits cells while the device cannot draw them (no support on the render side): reopen
+// the dataset on the CPU path, which both sides then keep until the viewer is recreated.
+function beginCells(opened) {
+    const info = opened.cellsInfo;
+    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide) : "off";
+    if (path === "enabled") {
+        cellsRemote = true;
+        forwardCellMessages();
+        return true;
+    }
+    console.warn(`cells path unavailable in the render worker (${path}); reopening on the CPU path`);
+    cellsRequested = false;
+    viewer.enableCells(false);
+    const { data, requestId } = lastOpenRequest;
+    startBuiltDataset(data, requestId);
+    return false;
+}
+
 function handleBuildMessage(data) {
     if (data.gen !== datasetGeneration) {
         if (data.type === "scene") buildCounters.scenesDropped += 1;
+        return;
+    }
+    if (data.type === "cellCut" && pendingCellCut !== data) {
+        // A later cut is queued behind this one: only the last of a run is applied.
+        cellCounters.cellCutsSuperseded += 1;
         return;
     }
     try {
@@ -710,10 +833,48 @@ function handleBuildMessage(data) {
             const { name, bytes } = pendingOpen;
             pendingOpen.opened = opened;
             currentMetadata = { ...opened, name, bytes, hasAttributes: opened.hasAttributes };
+            if (opened.cellPath === "enabled" && !beginCells(opened)) return;
             buildOpened = true;
             if (pendingOpen.requestId === null) self.postMessage({ type: "datasetOpened", opened, name });
             syncBuildView(true);
+        } else if (data.type === "nodeCells") {
+            // Never dropped by epoch: a node lost here is a hole the builder believes it filled.
+            // A refused node does not stop the rest of the message; the first error is reported.
+            let failure = null;
+            for (const buffer of data.buffers) {
+                try {
+                    viewer.addCellNode(data.generation, new Uint8Array(buffer));
+                    cellCounters.nodeCells += 1;
+                    cellCounters.nodeCellBytes += buffer.byteLength;
+                } catch (error) {
+                    failure ??= error;
+                }
+            }
+            cellCounters.nodeCellMessages += 1;
+            if (failure) throw failure;
+        } else if (data.type === "cellCut") {
+            pendingCellCut = null;
+            cellCounters.cellCuts += 1;
+            viewer.setCellCut(data);
+        } else if (data.type === "cellLod") {
+            // After a colour change the builder sends scenes; a cellLod still in flight is stale.
+            if (currentColorMode !== "rgb" || data.cutEpoch <= appliedCutEpoch) return;
+            appliedCutEpoch = data.cutEpoch;
+            for (const key of viewSentAt.keys()) {
+                if (key <= data.viewEpoch) viewSentAt.delete(key);
+            }
+            applyBuiltLod(data.lod, "cellLod");
+            if (!lodStillLoading(currentLodStats())) {
+                renderViewerFrame();
+                postLodProgress(currentLodStats(), true);
+            }
         } else if (data.type === "scene" || data.type === "lod") {
+            if (data.type === "scene" && cellsRemote && confirmedColorMode === "rgb" && currentColorMode === "rgb") {
+                // The builder sends no scene in cells mode, and one would drop the pool.
+                cellCounters.strayScenes += 1;
+                console.error?.("build worker sent a scene while the cells path is active");
+                return;
+            }
             if (data.epoch <= appliedEpoch) {
                 if (data.type === "scene") buildCounters.scenesDropped += 1;
                 return;
@@ -736,10 +897,14 @@ function handleBuildMessage(data) {
             }
             applyBuiltLod(data.lod, data.type === "scene" ? "scene" : "lod");
             // The host stops requesting frames once the LOD is complete: draw the final scene.
-            if (data.type === "scene" && !lodStillLoading(data.lod)) {
-                viewer.renderFrame();
-                // No host frame follows, so this is where the first-frame and target milestones land.
-                postLodProgress(data.lod, true);
+            if (data.type === "scene") {
+                // The merged stats: the cells driver (if any) may still be busy.
+                const merged = currentLodStats();
+                if (!lodStillLoading(merged)) {
+                    renderViewerFrame();
+                    // No host frame follows, so this is where the first-frame and target milestones land.
+                    postLodProgress(merged, true);
+                }
             }
         } else if (data.type === "colorMode") {
             confirmedColorMode = data.mode;
@@ -762,6 +927,9 @@ function handleBuildMessage(data) {
 }
 
 function startAsyncDataset(data, requestId = null) {
+    cellsRemote = false;
+    cellsStuckKey = null;
+    cellsStuckFrames = 0;
     advanceSceneGeneration();
     cancelAllAsyncReads();
     datasetGeneration += 1;
@@ -847,6 +1015,11 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 const sample = samplePointCloud();
                 viewer.replacePoints(sample.positions, sample.colors);
                 viewer.fitScene();
+                cellsRequested = Boolean(data.cells);
+                if (cellsRequested) {
+                    viewer.enableCells(true);
+                    if (data.cellNodeBytesPerFrame) viewer.setCellNodeBytesPerFrame(data.cellNodeBytesPerFrame);
+                }
                 buildOptions = data.buildWorker ?? null;
                 // Compile the build worker's WASM now so the first dataset does not wait for it.
                 if (buildOptions) spawnBuildWorker();
@@ -868,7 +1041,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = viewer.fitScene();
                         break;
                     case "renderOnce":
-                        value = viewer.renderFrame();
+                        value = renderViewerFrame();
                         postLodProgress(currentLodStats(), true);
                         break;
                     case "getCamera":
@@ -911,7 +1084,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         if (hit && data.recenter) {
                             viewer.setOrbitTarget(hit.voxelCenter);
                             advanceSceneGeneration();
-                            viewer.renderFrame();
+                            renderViewerFrame();
                         }
                         value = { hit, sceneGeneration: pickedGeneration };
                         break;
@@ -1001,9 +1174,10 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 }
                 syncBuildView();
                 const startedAt = performance.now();
-                const frameStatus = viewer.renderFrame();
+                const frameStatus = renderViewerFrame();
                 const renderCallMs = performance.now() - startedAt;
                 recordFrameRenderSample(renderCallMs);
+                trackCellsStuck();
                 postLodProgress(currentLodStats(), true);
                 if (!buildOptions) scheduleAsyncLodRead();
                 renderedFrames += 1;
