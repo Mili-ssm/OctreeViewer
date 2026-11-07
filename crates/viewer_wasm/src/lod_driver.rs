@@ -92,7 +92,6 @@ pub(crate) fn update_lod_view(
 }
 
 /// Inputs of one cells ladder step.
-#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
 pub(crate) struct CellStep<'a> {
     pub view: &'a ViewProjection,
     pub target_pixels: f64,
@@ -102,14 +101,14 @@ pub(crate) struct CellStep<'a> {
 }
 
 /// One cells update and the rung of the ladder it ran at.
-#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
 pub(crate) struct CellStageUpdate {
     pub update: LodCellUpdate,
+    #[cfg_attr(not(test), allow(dead_code))]
+    // only tests read it; `InProcessCells` keeps the rung in its own `stage_pixels`
     pub stage_pixels: f64,
 }
 
 /// Step 1 of the cells ladder and the rung it ran at.
-#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
 pub(crate) struct CellStagePlan {
     pub update: CellUpdate,
     pub stage_pixels: f64,
@@ -128,7 +127,6 @@ pub(crate) struct CellStagePlan {
 ///
 /// This is step 1 only: it needs no driver, so the build worker runs it alone. `dirty` stays
 /// true while builds are deferred by the cap; the driver's own work is the render side's.
-#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
 pub(crate) fn plan_cells_staged(
     dataset: &mut LodDataset,
     step: &CellStep<'_>,
@@ -182,7 +180,6 @@ pub(crate) fn plan_cells_staged(
 /// `dirty` also stays true while the driver has work (`CellDriver::needs_frame`), which includes
 /// a permanent pool overflow and a failed frame: the caller stops on `pool_overflow > 0` or on
 /// errors that repeat.
-#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_cells_staged<T: CellTarget>(
     dataset: &mut LodDataset,

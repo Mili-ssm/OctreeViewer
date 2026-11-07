@@ -973,3 +973,6 @@ fn real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge() {
     };
     real_case("orbit+inject", true, 50, &[5], inject);
 }
+
+#[path = "lod_cells_glue_sim.rs"]
+mod glue;

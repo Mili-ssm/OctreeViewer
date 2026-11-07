@@ -6,6 +6,7 @@ use web_sys::Blob;
 
 use super::{
     AsyncFormatContext, attribute_availability,
+    cells::{PATH_OFF, builder_output_to_js},
     js_stats::{
         accumulate_browser_read_delta, reset_browser_read_stats, snapshot_browser_read_stats,
     },
@@ -18,12 +19,13 @@ use super::{
 use crate::{
     WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
+    cells_glue::BuilderCells,
     lod_driver::resolve_color_selection,
     lod_session::LodSession,
-    scene_builder::{BuilderUpdate, SceneBuilderCore, camera_from_transport},
+    scene_builder::{BuilderStep, BuilderUpdate, SceneBuilderCore, camera_from_transport},
 };
 use viewer_format::FormatReader;
-use viewer_render_wgpu::VoxelBuildLimits;
+use viewer_render_wgpu::{ColorMode, VoxelBuildLimits};
 
 type FormatSession = LodSession<FormatReader<BrowserBlobReader>>;
 
@@ -34,12 +36,17 @@ type FormatSession = LodSession<FormatReader<BrowserBlobReader>>;
 /// render worker uploads and draws them.
 #[wasm_bindgen]
 pub struct WasmSceneBuilder {
-    core: Option<SceneBuilderCore<FormatReader<BrowserBlobReader>>>,
+    pub(super) core: Option<SceneBuilderCore<FormatReader<BrowserBlobReader>>>,
     limits: VoxelBuildLimits,
     async_format_context: Option<AsyncFormatContext>,
     pending_async_blocks: Vec<BlockId>,
     browser_read_stats: Arc<Mutex<BrowserReadStats>>,
     range_read_stats: BrowserReadStats,
+    /// The host opted in to the cells path (`enableCells`).
+    pub(super) cells_requested: bool,
+    pub(super) cells: Option<BuilderCells>,
+    /// `"off"`, `"enabled"` or `"CellPathUnsupported"` for the open dataset.
+    pub(super) cell_path: &'static str,
 }
 
 #[wasm_bindgen]
@@ -63,6 +70,9 @@ impl WasmSceneBuilder {
             pending_async_blocks: Vec::new(),
             browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
             range_read_stats: BrowserReadStats::default(),
+            cells_requested: false,
+            cells: None,
+            cell_path: PATH_OFF,
         })
     }
 
@@ -83,6 +93,7 @@ impl WasmSceneBuilder {
             &"visualScale".into(),
             &JsValue::from_f64(visual_scale),
         )?;
+        self.add_open_fields(&result)?;
         Ok(result.into())
     }
 
@@ -108,6 +119,7 @@ impl WasmSceneBuilder {
             &"visualScale".into(),
             &JsValue::from_f64(visual_scale),
         )?;
+        self.add_open_fields(&result)?;
         Ok(result.into())
     }
 
@@ -117,6 +129,9 @@ impl WasmSceneBuilder {
         let core = self.core_mut()?;
         graft_page(core.session_mut().dataset_mut(), page)?;
         core.block_inserted();
+        if let Some(cells) = self.cells.as_mut() {
+            cells.block_inserted();
+        }
         Ok(())
     }
 
@@ -136,6 +151,7 @@ impl WasmSceneBuilder {
             &JsValue::from_f64(visual_scale),
         )?;
         self.install(session, None, Some(browser_read_stats));
+        self.add_open_fields(&result)?;
         Ok(result)
     }
 
@@ -159,6 +175,9 @@ impl WasmSceneBuilder {
             attribute,
         )?;
         core.block_inserted();
+        if let Some(cells) = self.cells.as_mut() {
+            cells.block_inserted();
+        }
         self.pending_async_blocks.clear();
         Ok(accounted_bytes)
     }
@@ -185,6 +204,11 @@ impl WasmSceneBuilder {
         if core.set_color_selection(selection) {
             reset_browser_read_stats(&self.browser_read_stats);
             self.range_read_stats = BrowserReadStats::default();
+        }
+        // R3-Q23: cells are RGB only; any other mode sends scenes again, RGB brings cells back.
+        if let Some(cells) = self.cells.as_mut() {
+            let rgb = selection.mode == ColorMode::Rgb && selection.attribute.is_none();
+            cells.set_active(core.session_mut().dataset_mut(), rgb);
         }
         Ok(())
     }
@@ -235,7 +259,8 @@ impl WasmSceneBuilder {
         let (selected_attribute, selected_range) = core.selected_attribute();
         let browser_read_stats = Arc::clone(&self.browser_read_stats);
         let mut range_read_stats = self.range_read_stats;
-        let update = core.update(
+        let update = core.update_with_cells(
+            self.cells.as_mut(),
             camera,
             [viewport_width, viewport_height],
             visual_scale,
@@ -257,13 +282,23 @@ impl WasmSceneBuilder {
             read_page_insert,
         );
         self.range_read_stats = range_read_stats;
+        let update = match update.map_err(|message| JsValue::from_str(&message))? {
+            BuilderStep::Cells(output) => {
+                // Cells mode never emits a scene: the render worker would drop its pool.
+                self.pending_async_blocks = output.async_priority_order.clone();
+                let lod = self.cells_lod_stats(&output.stats)?;
+                let needs_refinement = self.cells.as_ref().is_some_and(BuilderCells::is_dirty);
+                return builder_output_to_js(&output, needs_refinement, &lod);
+            }
+            BuilderStep::Scene(update) => update,
+        };
         let BuilderUpdate {
             epoch,
             scene,
             stats,
             async_priority_order,
             needs_refinement,
-        } = update.map_err(|message| JsValue::from_str(&message))?;
+        } = update;
         self.pending_async_blocks = async_priority_order;
 
         let dataset = core.session().dataset();
@@ -331,6 +366,7 @@ impl WasmSceneBuilder {
             host_delivers_blocks,
             self.limits,
         ));
+        self.install_cells();
         self.async_format_context = async_format_context;
         self.pending_async_blocks.clear();
         self.browser_read_stats =

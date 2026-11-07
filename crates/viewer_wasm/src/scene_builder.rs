@@ -11,12 +11,13 @@ use viewer_render_wgpu::{
 
 use crate::{
     LodBuiltScene, LodDataset, LodViewStats, PageInsert,
+    cells_glue::{BuilderCells, BuilderOutput},
     lod_driver::{ColorSelection, LodStep, LodStepResult, SceneSink, update_lod_view_paged},
     lod_session::LodSession,
 };
 
-/// Same bounds as `WasmVoxelViewer::updateLod`.
-const TARGET_PIXELS_RANGE: std::ops::RangeInclusive<f64> = 0.5..=16.0;
+// Same bounds as `WasmVoxelViewer::updateLod`.
+use crate::cells_glue::TARGET_PIXELS_RANGE;
 
 /// Keeps the rebuilt scene for the caller instead of uploading it.
 #[derive(Default)]
@@ -46,6 +47,15 @@ pub(crate) struct BuilderUpdate {
     pub async_priority_order: Vec<BlockId>,
     /// More refinement stages (or newly arrived blocks) call for another update.
     pub needs_refinement: bool,
+}
+
+/// What one builder update produced: the cells path never carries a scene, so the render worker
+/// keeps its pool; the CPU path never carries cells.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#[allow(clippy::large_enum_variant)] // a transient return value, built once per update
+pub(crate) enum BuilderStep {
+    Cells(BuilderOutput),
+    Scene(BuilderUpdate),
 }
 
 pub(crate) struct SceneBuilderCore<R> {
@@ -187,6 +197,57 @@ impl<R> SceneBuilderCore<R> {
             async_priority_order,
             needs_refinement: self.dirty,
         })
+    }
+}
+
+impl<R> SceneBuilderCore<R> {
+    /// [`update`](Self::update) on the CPU path, or step 1 of the cells path while `cells` is
+    /// present and active (R3-Q23: other colour modes deactivate it). Same arguments otherwise.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn update_with_cells(
+        &mut self,
+        cells: Option<&mut BuilderCells>,
+        camera: OrbitCamera,
+        viewport: [u32; 2],
+        visual_scale: f64,
+        target_pixels: f64,
+        mut load_block: impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
+        mut load_page: impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
+    ) -> Result<BuilderStep, String> {
+        let Some(cells) = cells.filter(|cells| cells.is_active()) else {
+            return self
+                .update(
+                    camera,
+                    viewport,
+                    visual_scale,
+                    target_pixels,
+                    load_block,
+                    load_page,
+                )
+                .map(BuilderStep::Scene);
+        };
+        let view = cells.begin_update(
+            self.session.dataset(),
+            camera,
+            viewport,
+            visual_scale,
+            target_pixels,
+            self.limits,
+        )?;
+        let can_load_blocks = self.host_delivers_blocks || self.session.reader().is_some();
+        let (dataset, reader) = self.session.parts_mut();
+        cells
+            .plan(
+                dataset,
+                &view,
+                target_pixels,
+                can_load_blocks,
+                self.host_delivers_blocks,
+                reader,
+                &mut load_block,
+                &mut load_page,
+            )
+            .map(BuilderStep::Cells)
     }
 }
 

@@ -4,6 +4,8 @@
 
 #[cfg(any(target_arch = "wasm32", test))]
 mod block_loading;
+#[cfg(any(target_arch = "wasm32", test))]
+mod cells_glue;
 mod controller;
 mod lod_dataset;
 #[cfg(any(target_arch = "wasm32", test))]

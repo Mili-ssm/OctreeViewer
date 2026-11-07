@@ -46,6 +46,13 @@ impl WasmVoxelViewer {
                     .sync_visible_blocks(&[], dataset.resident_blocks())
                     .map_err(|error| JsValue::from_str(&error.to_string()))?;
                 dataset.clear_loaded_blocks();
+                // R3-Q23: cells are RGB only; RGB again re-enables them with the nodes kept.
+                if let Some(cells) = self.cells_local.as_mut() {
+                    cells.set_active(
+                        dataset,
+                        mode == ColorMode::Rgb && selected_attribute.is_none(),
+                    );
+                }
                 self.last_scene_digest = None;
                 self.reset_range_read_stats();
                 self.lod_stage_pixels = Some(16.0);
@@ -60,6 +67,7 @@ impl WasmVoxelViewer {
     /// render as `rgb`.
     #[wasm_bindgen(js_name = setPresentationColorMode)]
     pub fn set_presentation_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
+        let rgb = mode == "rgb";
         let mode = if mode.starts_with("attribute:") {
             ColorMode::Rgb
         } else {
@@ -71,6 +79,7 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
             .set_color_mode(mode);
+        self.set_remote_cells_rgb(rgb);
         Ok(())
     }
 
@@ -219,6 +228,7 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = renderFrame)]
     pub fn render_frame(&mut self) -> Result<String, JsValue> {
         self.refresh_lod_if_dirty()?;
+        self.run_remote_cells_frame();
         let renderer = self
             .gpu_renderer
             .as_mut()

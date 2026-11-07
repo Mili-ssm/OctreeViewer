@@ -42,9 +42,17 @@ impl WasmVoxelViewer {
                         self.selected_attribute.and(self.selected_attribute_range),
                     ),
                 )?;
+                if let Some(cells) = self.cells_stats() {
+                    super::cells::add_cells_stats(&value, self.cell_path, &cells)?;
+                }
                 Ok(value)
             }
-            None => Ok(JsValue::NULL),
+            None => match self.cells_stats() {
+                // In-process cells report through `updateLod`; a remote render worker has no
+                // `LodViewStats`, only the cells fields.
+                Some(cells) => super::cells::cells_stats_object(self.cell_path, &cells),
+                None => Ok(JsValue::NULL),
+            },
         }
     }
 

@@ -514,12 +514,18 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
   - por debajo del conjunto de trabajo, el olvido y la reconstrucción se repiten en bucle (ver Tarea 11).
 
 **T10b, bindings** (★ `bindings/lod.rs`, `bindings/builder.rs`, `bindings/render.rs`):
-- [ ] Apertura con celdas opt-in. Si el formato no las admite, `CellPathUnsupported` y se sigue por la ruta CPU.
-- [ ] `WasmSceneBuilder` da los `nodeCells` y el `cellCut`, y recibe `poolAck`, `evict`, `poolReset` y `driverReplaced`. `WasmVoxelViewer` tiene `addCellNode` y `setCellCut`, y en `renderFrame` ejecuta el frame del driver. En modo sin worker usa el camino en proceso.
-- [ ] `cutDigestAtRest`, `cellsBusy`, `cutEpoch`, los contadores del pool y `wasmLinearMemoryBytes` en las estadísticas.
-- [ ] **Pasa si:**
+- [x] Apertura con celdas opt-in. Si el formato no las admite, `CellPathUnsupported` y se sigue por la ruta CPU.
+- [x] `WasmSceneBuilder` da los `nodeCells` y el `cellCut`, y recibe `poolAck`, `evict`, `poolReset` y `driverReplaced`. `WasmVoxelViewer` tiene `addCellNode` y `setCellCut`, y en `renderFrame` ejecuta el frame del driver. En modo sin worker usa el camino en proceso.
+- [x] `cutDigestAtRest`, `cellsBusy`, `cutEpoch`, los contadores del pool y `wasmLinearMemoryBytes` en las estadísticas.
+- [x] **Pasa si:**
   - un test nativo de los bindings da el mismo `cutDigestAtRest` con constructor separado y en proceso;
   - clippy wasm32.
+- **Hecha (07-11-2026).** La lógica vive en `cells_glue.rs` (`BuilderCells`, `ViewerCells`, `InProcessCells`), sin tipos de wasm-bindgen, y los bindings (`bindings/cells.rs`) solo convierten tipos. API para el host:
+  - constructor: `enableCells`, `setViewEpoch`, `updateCells`, `applyPoolAck`, `applyEvict`, `poolReset` y `driverReplaced`;
+  - visor: `enableCells`, `beginRemoteCells`, `addCellNode`, `setCellCut` (con `viewEpoch`), `takeCellMessages` y `viewEpoch`;
+  - estadísticas: `cutDigestAtRest`, `cellsBusy`, `viewEpoch` y `wasmLinearMemoryBytes`.
+  El corte lleva el `viewEpoch` de la vista con que se planificó, y el reposo exige que sea el último. Así no se publica un digest de una vista anterior tras mover la cámara.
+  En las pruebas nativas, el pegamento da el mismo digest que el camino en proceso, también en Belvedere v7.5. Los bindings solo se han compilado (wasm32); se ejercitan en T10c.
 
 **T10c1, host web** (`examples/web-host`):
 - [ ] Los dos workers manejan los mensajes nuevos: `nodeCells` y `evict` sin fusionar y fuera del filtro de época de las escenas, el tope de bytes por frame y el parámetro `cells=1`. Las ayudas nuevas van dentro de cada worker.

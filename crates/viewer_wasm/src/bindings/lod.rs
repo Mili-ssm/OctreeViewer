@@ -6,6 +6,7 @@ use web_sys::Blob;
 
 use super::{
     AsyncFormatContext, WasmVoxelViewer,
+    cells::{add_cells_stats, add_plan_stats},
     js_marshal::{
         attribute_column_from_js, attribute_column_payload_bytes, parse_block_id,
         points_from_typed_arrays,
@@ -19,6 +20,7 @@ use crate::{
     DEFAULT_PAGE_BUDGET_BYTES, LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
     PageInsert, WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
+    cells_glue::{InProcessCells, ReadPhase},
     lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view_paged},
     lod_metadata::LodDatasetDescriptor,
     lod_session::LodSession,
@@ -437,6 +439,13 @@ impl WasmVoxelViewer {
     /// Pages the last `updateLod` needed and lacked, highest projected error first.
     #[wasm_bindgen(js_name = pendingPageAnchors)]
     pub fn pending_page_anchors(&self) -> js_sys::Array {
+        if let Some(cells) = self.cells_local.as_ref().filter(|cells| cells.is_active()) {
+            return cells
+                .pending_pages()
+                .iter()
+                .map(|id| JsValue::from_str(&id.get().to_string()))
+                .collect();
+        }
         self.last_lod_stats
             .as_ref()
             .map(|stats| {
@@ -486,6 +495,12 @@ impl WasmVoxelViewer {
             renderer.clear_dataset();
         }
         self.lod_session = Some(LodSession::External(dataset));
+        self.install_local_cells();
+        js_sys::Reflect::set(
+            &result,
+            &"cellPath".into(),
+            &JsValue::from_str(self.cell_path),
+        )?;
         self.async_format_context = async_format_context;
         self.pending_async_block = None;
         self.pending_async_blocks.clear();
@@ -519,6 +534,12 @@ impl WasmVoxelViewer {
             renderer.set_color_mode(ColorMode::Rgb);
         }
         self.lod_session = Some(session);
+        self.install_local_cells();
+        js_sys::Reflect::set(
+            &result,
+            &"cellPath".into(),
+            &JsValue::from_str(self.cell_path),
+        )?;
         self.async_format_context = None;
         self.pending_async_block = None;
         self.pending_async_blocks.clear();
@@ -649,15 +670,29 @@ impl WasmVoxelViewer {
     /// Selects a camera-aware voxel cut using the target projected voxel edge in pixels.
     #[wasm_bindgen(js_name = updateLod)]
     pub fn update_lod(&mut self, target_voxel_pixels: f64) -> Result<JsValue, JsValue> {
-        if !target_voxel_pixels.is_finite() || !(0.5..=16.0).contains(&target_voxel_pixels) {
+        if !target_voxel_pixels.is_finite()
+            || !crate::cells_glue::TARGET_PIXELS_RANGE.contains(&target_voxel_pixels)
+        {
             return Err(JsValue::from_str(
                 "targetVoxelPixels must be finite and between 0.5 and 16",
             ));
         }
         if self.lod_config != Some(target_voxel_pixels) {
             self.lod_stage_pixels = None;
+            if let Some(cells) = &mut self.cells_local {
+                cells.target_changed();
+            }
         }
         self.lod_config = Some(target_voxel_pixels);
+        if self
+            .cells_local
+            .as_ref()
+            .is_some_and(InProcessCells::is_active)
+        {
+            let value = self.update_lod_cells(target_voxel_pixels)?;
+            self.last_lod_error = None;
+            return Ok(value);
+        }
         let stats = self.update_lod_view(target_voxel_pixels)?;
         self.last_lod_error = None;
         lod_update_stats_to_js(
@@ -673,6 +708,30 @@ impl WasmVoxelViewer {
 
 impl WasmVoxelViewer {
     pub(super) fn refresh_lod_if_dirty(&mut self) -> Result<(), JsValue> {
+        if let Some(cells) = self.cells_local.as_mut().filter(|cells| cells.is_active()) {
+            let Some(target_voxel_pixels) = self.lod_config else {
+                return Ok(());
+            };
+            if !(self.lod_dirty || cells.is_dirty()) {
+                return Ok(());
+            }
+            self.lod_dirty = false;
+            cells.mark_dirty();
+            match self.update_lod_cells(target_voxel_pixels) {
+                Ok(_) => self.last_lod_error = None,
+                Err(error) => {
+                    self.last_lod_error = Some(
+                        error
+                            .as_string()
+                            .unwrap_or_else(|| "LOD refinement failed".to_owned()),
+                    );
+                    if let Some(cells) = &mut self.cells_local {
+                        cells.failed();
+                    }
+                }
+            }
+            return Ok(());
+        }
         if !self.lod_dirty {
             return Ok(());
         }
@@ -767,7 +826,68 @@ impl WasmVoxelViewer {
         Ok(stats)
     }
 
+    /// One update of the in-process cells path (R3 Task 10b): the same ladder as `updateLod`, but
+    /// the dataset plans cells and the driver draws them into the renderer's pool. Returns the
+    /// `updateLod` stats object with the cells fields.
+    fn update_lod_cells(&mut self, target_voxel_pixels: f64) -> Result<JsValue, JsValue> {
+        let browser_read_stats = Arc::clone(&self.browser_read_stats);
+        let mut lod_range_read_stats = self.lod_range_read_stats;
+        let has_async_reader = self.async_format_context.is_some();
+        let renderer = self
+            .gpu_renderer
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?;
+        let session = self
+            .lod_session
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
+        let cells = self
+            .cells_local
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("the cells path is not enabled"))?;
+        let (dataset, format_reader) = session.parts_mut();
+        let view = lod_view_projection(renderer, dataset)?;
+        let mut before = BrowserReadStats::default();
+        let mut account_reads = |phase| match phase {
+            ReadPhase::Before => before = snapshot_browser_read_stats(&browser_read_stats),
+            ReadPhase::After => accumulate_browser_read_delta(
+                &mut lod_range_read_stats,
+                before,
+                snapshot_browser_read_stats(&browser_read_stats),
+            ),
+        };
+        let result = cells.update_view(
+            dataset,
+            &view,
+            target_voxel_pixels,
+            renderer,
+            format_reader,
+            has_async_reader,
+            &mut account_reads,
+            &mut read_page_insert,
+        );
+        self.lod_range_read_stats = lod_range_read_stats;
+        self.lod_dirty = false;
+        let update = result.map_err(|message| JsValue::from_str(&message))?;
+        let value: JsValue = js_sys::Object::new().into();
+        add_plan_stats(&value, &update.plan)?;
+        add_cells_stats(&value, self.cell_path, &update.stats)?;
+        add_cache_activity(&value, Some(dataset))?;
+        js_sys::Reflect::set(&value, &"lodError".into(), &JsValue::NULL)?;
+        js_sys::Reflect::set(
+            &value,
+            &"targetVoxelPixels".into(),
+            &JsValue::from_f64(target_voxel_pixels),
+        )?;
+        self.pending_async_blocks = update.async_priority_order;
+        self.pending_async_block = self.pending_async_blocks.first().copied();
+        Ok(value)
+    }
+
     pub(super) fn clear_lod_dataset(&mut self) {
+        self.cells_local = None;
+        self.cells_remote = None;
+        self.cell_path = super::cells::PATH_OFF;
         if self.lod_session.take().is_some()
             && let Some(renderer) = &mut self.gpu_renderer
         {
