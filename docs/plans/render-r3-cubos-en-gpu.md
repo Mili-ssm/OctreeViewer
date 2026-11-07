@@ -41,6 +41,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q21 | (06-11-2026) La imagen solo se refina: el antepasado sigue dibujando la zona de un hijo hasta que el hijo tiene ahí un nivel al menos tan fino como el que dibujaba el antepasado. Precisa R3-Q19 (hallazgo de T9b2b: al sustituir un nodo se veía un instante un nivel más grueso) Precisión del 06-11-2026: el umbral es el más grueso entre el nivel que dibujaba el antepasado y el que se pide ahora (deseado y tope del ajuste), y se decide por nodo entero (la máscara no distingue octantes del hijo). Dentro de un nodo, si falta el nivel deseado, se dibuja el residente más cercano a él |
 | R3-Q22 | (06-11-2026) Padres primero por nodo: antes de construir las celdas de un nodo se construyen las de su padre, aunque el padre no esté en el corte. La escalera de px de celdas solo arranca al abrir el dataset o tras un salto de cámara (ningún nodo del corte nuevo tiene celdas ni un antepasado con celdas); al orbitar no se reinicia. Sustituye la nota «reiniciar la escalera en cada movimiento de cámara» (pre-mortem de la Tarea 10: volvía más tosca toda la imagen en cada paso) |
 | R3-Q23 | (06-11-2026) Hasta la Tarea 12, la ruta de celdas solo dibuja RGB: otro modo de color vuelve a la ruta CPU, y al volver a RGB las celdas se reactivan solas (siguen en la memoria del driver; solo se vuelven a subir a la GPU) |
+| R3-Q24 | (07-11-2026) La ruta de celdas solo funciona con el worker de construcción. Sin él (`buildWorker=0`, `file://` o un navegador sin workers anidados), `cells=1` se ignora, se usa la ruta CPU y las estadísticas dan `cellPath: "needsBuildWorker"`. Motivo: construir las celdas en el worker de render llevó el p95 del frame a 100 ms mientras llegaban nodos, frente a 18 ms con el worker (T10c2). El camino en proceso sigue para los tests nativos |
 
 ## Restricciones globales
 
@@ -453,7 +454,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 10 ★: protocolo de workers
 
-Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El visor dibuja celdas que construye el worker de construcción (decisión del propietario del 06-11-2026; construir un nodo cuesta hasta 69 ms en p95, [T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)). La ruta de celdas es opt-in; la ruta por defecto la decide la Tarea 17. Cinco partes, cada una con su commit.
+**Hecha (07-11-2026).** Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El visor dibuja celdas que construye el worker de construcción (decisión del propietario del 06-11-2026; construir un nodo cuesta hasta 69 ms en p95, [T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)). La ruta de celdas es opt-in; la ruta por defecto la decide la Tarea 17. Cinco partes, cada una con su commit.
 
 **Hechos de partida:**
 - El wasm vive en dos workers: el de render (`viewer-worker.js`, con `WasmVoxelViewer`, el `SurfaceRenderer` y el lienzo) y el de construcción (`build-worker.js`, con `WasmSceneBuilder` y el `LodDataset`). El hilo principal no carga wasm. Sin worker de construcción, el de render tiene el dataset. Los dos workers no importan módulos (los incrusta `package-local.py`).
@@ -536,9 +537,12 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
   - Para T10c2: `cellsBusy: false` no significa reposo; el probe espera un `cutDigestAtRest` no nulo.
 
 **T10c2, navegador:**
-- [ ] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`, en Chrome con WebGPU, sobre Belvedere v7.5, servido por http (no `file://`) y con un probe como `probe-orbit-load.mjs`.
-- [ ] Verificación con Playwright: consola sin errores, escritorio y móvil (emulado), órbita, cambio de modo de color y vuelta a RGB, y picking.
-- [ ] Se miden el p95 del frame del worker de render mientras llegan nodos y `wasmLinearMemoryBytes`.
+- [x] **Pasa si** con el worker activado y desactivado se obtiene el mismo `cutDigestAtRest`, en Chrome con WebGPU, sobre Belvedere v7.5, servido por http (no `file://`) y con un probe como `probe-orbit-load.mjs`.
+- [x] Verificación con Playwright: consola sin errores, escritorio y móvil (emulado), órbita, cambio de modo de color y vuelta a RGB, y picking.
+- [x] Se miden el p95 del frame del worker de render mientras llegan nodos y `wasmLinearMemoryBytes`.
+- **Hecha (07-11-2026)** ([registro](../records/benchmarks/R3_T10_WORKERS_07-11-2026.md)): mismo `cutDigestAtRest` con el worker de construcción y sin él en Chrome con WebGPU, y verificación con Playwright en escritorio y en móvil emulado. Sin worker de construcción, el frame llegaba a un p95 de 100 ms, y de ahí R3-Q24: las celdas solo van con el worker de construcción.
+
+**Tarea 10 hecha (07-11-2026).**
 
 **Parar si:**
 - hay algún `Duplicate`, `UnknownNode` o `NoStoredLevels` en una simulación o en el navegador;

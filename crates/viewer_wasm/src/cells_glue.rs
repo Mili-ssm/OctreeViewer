@@ -311,6 +311,9 @@ impl BuilderCells {
     /// needs: the reset first (it precedes the ack of the frame that reset the pool).
     pub(crate) fn pool_reset(&mut self, dataset: &mut LodDataset) {
         dataset.pool_reset();
+        // The render driver keeps its nodes and re-uploads them, but a reset after a failed frame
+        // may also have lost what that frame was adding: plan once more so `missing` comes back.
+        self.dirty = true;
     }
 
     pub(crate) fn evict(&mut self, dataset: &mut LodDataset, nodes: &[NodeId]) {

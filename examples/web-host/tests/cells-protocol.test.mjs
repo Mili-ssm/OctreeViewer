@@ -73,7 +73,8 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
             if ([...nodes].includes(99n)) throw new Error("bad node 99");
         }
         applyPoolAck(ack) { this.need(); calls.push(["applyPoolAck", ack.cutEpoch]); }
-        cellStats() { return this.cellsOn ? realCellStats() : null; }
+        // `cellsBusy` is the builder's dirty flag: true while more updates are worth running.
+        cellStats() { return this.cellsOn ? realCellStats({ cellsBusy: updates.length <= refine }) : null; }
         update() {
             calls.push(["update"]);
             updates.push(updates.length + 1);
@@ -205,6 +206,23 @@ test("render reports are applied before the next update in the builder's require
     assert.deepEqual(worker.calls.slice(-2), [["setViewEpoch", 7], ["update"]]);
 });
 
+test("a render report on a settled view does not replan: the ack/cut exchange ends", async () => {
+    const worker = await runBuildWorker();
+    worker.view();
+    await worker.sync();
+    const cuts = () => worker.posted.filter(item => item.type === "cellCut").length;
+    assert.equal(cuts(), 1);
+    for (const cutEpoch of [1, 2, 3]) {
+        worker.send("poolAck", { gen: 1, cutEpoch, drawn: new BigUint64Array(0), missing: new BigUint64Array(0) });
+        await worker.sync();
+    }
+    assert.equal(cuts(), 1, "acks alone send no cut");
+    assert.equal(names(worker.calls).filter(name => name === "update").length, 1);
+    worker.view({ epoch: 2 });
+    await worker.sync();
+    assert.equal(cuts(), 2, "a new view still plans");
+});
+
 test("render reports for another gen, or without a cells dataset, are ignored", async () => {
     const worker = await runBuildWorker();
     for (const type of ["poolReset", "driverReplaced"]) worker.send(type, { gen: 9 });
@@ -240,7 +258,7 @@ test("another colour mode sends scenes again and RGB brings the cells back", asy
 // ---- Render worker -------------------------------------------------------------------------
 
 async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" }, cells = true,
-    cellPath = "enabled", cellNodeBytesPerFrame } = {}) {
+    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false } = {}) {
     const messages = [];
     const workers = [];
     const log = [];
@@ -255,6 +273,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     let cellStats = realCellStats({ viewEpoch: 10 });
     let cellsOn = false;
     let rgbActive = true;
+    const cpuLodStats = buildWorker ? null : { cellPath: "off", sceneDigest: "cpu" };
     const viewer = {
         resize() {}, setColorMode() {},
         // Like the real viewer: another mode than RGB deactivates the cells (R3-Q23), RGB reactivates them.
@@ -268,7 +287,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         viewportSize: () => [100, 50],
         beginRemoteDataset() { return true; },
         uploadSceneInstances(bytes) { uploads.push(bytes); return bytes.length; },
-        lodStats: () => null,
+        lodStats: () => cpuLodStats,
         renderFrame() { renderFrames += 1; return "rendered"; },
         gpuStats: () => ({}), stats: () => ({}),
         enableCells(on) { log.push(["enableCells", on]); },
@@ -301,6 +320,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     };
     class FakeWorker {
         constructor(url) {
+            if (failSpawn) throw new Error("nested workers refused");
             this.url = url; this.posted = []; this.transfers = new Map(); this.terminated = false;
             this.listeners = []; this.errorListeners = [];
             workers.push(this);
@@ -385,12 +405,24 @@ test("cells=1 reaches both workers and the render worker starts its driver from 
     assert.equal(off.workers[0].posted[0].cells, false);
 });
 
-test("in-worker mode enables the viewer's cells and sends the build worker nothing", async () => {
+test("cells without a build worker stay off: CPU path, `cellPath` reports needsBuildWorker (R3-Q24)", async () => {
     const render = await runRenderWorker({ buildWorker: null });
-    assert.deepEqual(render.calls("enableCells"), [["enableCells", true]]);
+    assert.equal(render.calls("enableCells").length, 0, "no in-process cells");
     assert.equal(render.workers.length, 0);
     await render.frame();
     assert.equal(render.renders(), 1);
+    await render.send("metrics");
+    const workerMetrics = render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics;
+    assert.equal(workerMetrics.cellPath, "needsBuildWorker");
+    assert.equal(workerMetrics.sceneDigest, "cpu");
+    assert.equal(workerMetrics.cellStats, undefined, "no cells snapshot");
+});
+
+test("a build worker that cannot be created turns the cells off with the same report", async () => {
+    const render = await runRenderWorker({ cells: true, failSpawn: true });
+    assert.deepEqual(render.calls("enableCells"), [["enableCells", true], ["enableCells", false]]);
+    await render.send("metrics");
+    assert.equal(render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics.cellPath, "needsBuildWorker");
 });
 
 test("nodeCells are all applied in order, outside the epoch filter, and never coalesced", async () => {

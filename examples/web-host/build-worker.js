@@ -45,6 +45,10 @@ let currentColorMode = "rgb";
 let cellsEnabled = false;
 const cellInbox = { driverReplaced: false, poolReset: false, evict: [], poolAck: null };
 let latestView = null;
+// The view the last cells update planned. A render report (ack, evict) on that same view that
+// leaves the builder not dirty needs no new cut: replanning would send a cut per ack, the render
+// side would ack each one, and the exchange would never settle.
+let lastCellsView = null;
 let viewsSinceBuild = 0;
 let retryFailedNext = false;
 // View epoch for which a fetched page did not fit the page budget: refetching it before the view
@@ -176,6 +180,7 @@ function runBuild() {
     try {
         if (cellsEnabled) {
             applyCellInbox();
+            if (view === lastCellsView && !builder.cellStats?.()?.cellsBusy) return;
             if (typeof view.viewEpoch === "number") builder.setViewEpoch(view.viewEpoch);
         }
         result = builder.update(view.camera, view.viewport[0], view.viewport[1], view.visualScale, view.targetPx);
@@ -189,6 +194,7 @@ function runBuild() {
     buildTotals.builds += 1;
     buildTotals.buildMs += buildMs;
     buildTotals.maxBuildMs = Math.max(buildTotals.maxBuildMs, buildMs);
+    lastCellsView = result.nodeCells ? view : null;
     if (result.nodeCells) {
         postCellUpdate(result, view, buildMs);
     } else if (result.sceneBuffer) {
@@ -371,6 +377,7 @@ async function openDataset(data) {
     builder = null;
     reader = null;
     latestView = null;
+    lastCellsView = null;
     viewsSinceBuild = 0;
     failedAsyncBlocks.clear();
     generation = data.gen;
@@ -458,6 +465,7 @@ async function handleMessage({ data }) {
             case "colorMode":
                 if (data.gen !== generation || !builder) break;
                 builder.setColorMode(data.mode);
+                lastCellsView = null; // the mode switches the path: the next build always runs
                 if (data.mode !== currentColorMode) cancelAllAsyncReads();
                 currentColorMode = data.mode;
                 self.postMessage({

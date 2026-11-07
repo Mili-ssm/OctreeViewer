@@ -871,6 +871,7 @@ impl WasmVoxelViewer {
         let update = result.map_err(|message| JsValue::from_str(&message))?;
         let value: JsValue = js_sys::Object::new().into();
         add_plan_stats(&value, &update.plan)?;
+        self.last_cells_plan = Some((update.plan.clone(), target_voxel_pixels));
         add_cells_stats(&value, self.cell_path, &update.stats)?;
         add_cache_activity(&value, Some(dataset))?;
         js_sys::Reflect::set(&value, &"lodError".into(), &JsValue::NULL)?;
@@ -887,6 +888,7 @@ impl WasmVoxelViewer {
     pub(super) fn clear_lod_dataset(&mut self) {
         self.cells_local = None;
         self.cells_remote = None;
+        self.last_cells_plan = None;
         self.cell_path = super::cells::PATH_OFF;
         if self.lod_session.take().is_some()
             && let Some(renderer) = &mut self.gpu_renderer

@@ -306,6 +306,12 @@ function resize() {
     }
 }
 
+// The cells path carries no projected-edge range (the planner does not measure it): show "—".
+function formatVoxelEdges(lod) {
+    return Number.isFinite(lod?.minVoxelEdgePixels) && Number.isFinite(lod?.maxVoxelEdgePixels)
+        ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—";
+}
+
 function updateStats(message) {
     const lod = message.lod ?? latestLodStats;
     const points = lod?.visiblePoints ?? message.viewer.point_count;
@@ -320,7 +326,7 @@ function updateStats(message) {
         `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
         `LOD stage: ${lod?.lodStagePixels ?? "—"} px`,
         `rendered voxel limit: ${lod?.voxelBudget ?? "—"}`,
-        `projected voxel edges: ${lod ? `${lod.minVoxelEdgePixels.toFixed(2)}–${lod.maxVoxelEdgePixels.toFixed(2)} px` : "—"}`,
+        `projected voxel edges: ${formatVoxelEdges(lod)}`,
         `voxels above target: ${lod?.oversizedVoxels ?? "—"}`,
         `visible points: ${points}`,
         `visible voxels: ${lod?.renderedVoxels ?? message.gpu.visibleInstances}`,

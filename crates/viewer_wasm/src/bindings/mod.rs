@@ -46,6 +46,9 @@ pub struct WasmVoxelViewer {
     lod_stage_pixels: Option<f64>,
     lod_dirty: bool,
     last_lod_stats: Option<(LodViewStats, BrowserReadStats)>,
+    /// Plan stats and target of the last in-process cells update, for `lodStats` (that path has no
+    /// `LodViewStats`).
+    last_cells_plan: Option<(crate::CellPlanStats, f64)>,
     /// Digest of the last scene uploaded to the renderer, exposed as `lodStats().sceneDigest`.
     last_scene_digest: Option<u64>,
     last_lod_error: Option<String>,
@@ -139,6 +142,7 @@ impl WasmVoxelViewer {
             lod_stage_pixels: None,
             lod_dirty: false,
             last_lod_stats: None,
+            last_cells_plan: None,
             last_scene_digest: None,
             last_lod_error: None,
             remote_dataset_frame: None,

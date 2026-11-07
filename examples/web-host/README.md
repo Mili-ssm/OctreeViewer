@@ -216,7 +216,8 @@ the dataset as GPU cells instead of CPU-built voxel scenes. Off by default. Both
 flag (`init.cells` for the render worker, `open.cells` for the build worker). With a build worker the
 builder sends `nodeCells` (transferred, ordered, never coalesced), `cellCut` and `cellLod`, and the
 render worker answers with `poolAck`, `evict`, `poolReset` and `driverReplaced`; the protocol is
-documented at the top of `build-worker.js`. Without one, the viewer uses its in-process cells path.
+documented at the top of `build-worker.js`. Cells need the build worker (R3-Q24): without one (`buildWorker=0`, or nested workers unavailable,
+e.g. on `file://`), the viewer uses the CPU path and the LOD stats report `cellPath: "needsBuildWorker"`.
 Limits:
 - Plain RGB only until attribute colour modes are supported on the cells path: any other colour mode
   returns to the CPU path (the builder sends scenes again) and RGB brings the cells back.

@@ -56,6 +56,9 @@ let viewEpoch = 0;
 // cells and the viewer's driver lives here. See build-worker.js for the messages.
 let cellsRequested = false;
 let cellsRemote = false;
+// R3-Q24: cells run only with the build worker. Set when they were requested without one; the CPU
+// path then runs and the LOD stats report this as `cellPath`.
+let cellGate = null;
 let pendingCellCut = null;
 let appliedCutEpoch = 0;
 let lastOpenRequest = null;
@@ -158,6 +161,7 @@ function workerMetricsSnapshot(buildMetrics = null) {
         snapshot.cellStats = viewer?.cellStats?.() ?? null;
         snapshot.cellCounters = { ...cellCounters, cellsStuckFrames };
     }
+    if (cellGate) snapshot.cellPath = cellGate;
     if (buildOptions === null) return snapshot;
     // The build worker owns reads and decoding, so its totals replace this worker's empty ones.
     if (buildMetrics) snapshot.asyncBlocks = { ...buildMetrics.asyncBlocks };
@@ -295,9 +299,13 @@ function memoryStats() {
     };
 }
 
+function withCellGate(lod) {
+    return lod && cellGate ? { ...lod, cellPath: cellGate } : lod;
+}
+
 // Stats of the last LOD update: the renderer's own, or the build worker's in build-worker mode.
 function currentLodStats() {
-    return buildOptions ? withRenderCellStats(currentLod) : withStuckGuard(viewer.lodStats());
+    return buildOptions ? withRenderCellStats(currentLod) : withStuckGuard(withCellGate(viewer.lodStats()));
 }
 
 // Counts frames that left the cells busy without progress (cut applied, queue, upload, cut sent).
@@ -474,7 +482,7 @@ function schedulePageReads() {
                     return;
                 }
                 viewer.graftPage(page);
-                const lod = viewer.updateLod(targetVoxelPixels);
+                const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
                 self.postMessage({ type: "lod", lod });
                 recordLodMessage("asyncPage", lod);
                 postLodProgress(lod);
@@ -578,7 +586,7 @@ function scheduleAsyncLodRead(retryFailed = false) {
                     );
                     ticketScheduler.complete(ticket, String(blockId), true);
                     ticketCompleted = true;
-                    const lod = viewer.updateLod(targetVoxelPixels);
+                    const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
                     const insertMs = performance.now() - insertStartedAt;
                     asyncBlockTotals.blocks += 1;
                     asyncBlockTotals.readMs += readMs;
@@ -601,8 +609,9 @@ function scheduleAsyncLodRead(retryFailed = false) {
                 }));
             } catch (error) {
                 await (messageQueue = messageQueue.then(() => {
+                    let outcome = null;
                     if (!ticketCompleted) {
-                        const outcome = ticketScheduler.complete(ticket, String(blockId), false);
+                        outcome = ticketScheduler.complete(ticket, String(blockId), false);
                         ticketCompleted = true;
                         if (outcome === "failed") failedAsyncBlocks.add(String(blockId));
                     }
@@ -625,12 +634,20 @@ function scheduleAsyncLodRead(retryFailed = false) {
 
 // Nested workers are not available everywhere (a Blob worker created from another Blob worker is
 // refused on file:// in Chrome). The option then turns itself off and the in-worker path runs.
+function gateCellsWithoutBuildWorker() {
+    if (!cellsRequested) return;
+    cellsRequested = false;
+    cellGate = "needsBuildWorker";
+    viewer.enableCells(false);
+}
+
 function disableBuildWorker(error) {
     const message = String(error?.message ?? error);
     console.warn(`build worker unavailable, building scenes in the render worker: ${message}`);
     buildWorker?.terminate();
     buildWorker = null;
     buildOptions = null;
+    gateCellsWithoutBuildWorker();
     self.postMessage({ type: "buildWorkerUnavailable", message });
 }
 
@@ -979,7 +996,7 @@ function startAsyncDataset(data, requestId = null) {
                 (attribute, index) => [attribute.name, index],
             ));
             viewer.fitScene();
-            const lod = viewer.updateLod(targetVoxelPixels);
+            const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
             currentMetadata = { ...opened, name, bytes: fileBytes, hasAttributes: descriptor.hasAttributes };
             if (requestId !== null) {
                 self.postMessage({ type: "apiResult", requestId, value: { opened, lod, name } });
@@ -1016,11 +1033,15 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 viewer.replacePoints(sample.positions, sample.colors);
                 viewer.fitScene();
                 cellsRequested = Boolean(data.cells);
-                if (cellsRequested) {
+                cellGate = null;
+                buildOptions = data.buildWorker ?? null;
+                if (cellsRequested && !buildOptions) {
+                    cellsRequested = false;
+                    cellGate = "needsBuildWorker";
+                } else if (cellsRequested) {
                     viewer.enableCells(true);
                     if (data.cellNodeBytesPerFrame) viewer.setCellNodeBytesPerFrame(data.cellNodeBytesPerFrame);
                 }
-                buildOptions = data.buildWorker ?? null;
                 // Compile the build worker's WASM now so the first dataset does not wait for it.
                 if (buildOptions) spawnBuildWorker();
                 self.postMessage({ type: "ready" });
@@ -1118,7 +1139,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 if (buildOptions) {
                     syncBuildView(true, true);
                 } else if (viewer.lodStats()) {
-                    const lod = viewer.updateLod(targetVoxelPixels);
+                    const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
                     self.postMessage({ type: "lod", lod });
                     recordLodMessage("refine", lod);
                     postLodProgress(lod);

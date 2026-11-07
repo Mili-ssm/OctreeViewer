@@ -174,6 +174,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: la imagen solo se refina | El antepasado dibuja la zona de un hijo hasta que el hijo dibuja ahí un nivel al menos tan fino como el del antepasado o el pedido, el más grueso de los dos, por nodo entero; dentro de un nodo se dibuja el residente más cercano al deseado. | R3-Q21 |
 | R3: padres primero | Antes de construir un nodo se construye su padre; la escalera de px solo arranca al abrir o tras un salto de cámara, no al orbitar. | R3-Q22 |
 | R3: celdas y modos de color | Hasta la Tarea 12, otro modo de color vuelve a la ruta CPU y volver a RGB reactiva las celdas. | R3-Q23 |
+| R3: celdas sin worker de construcción | Sin el worker de construcción se usa la ruta CPU y `cellPath` lo indica (`needsBuildWorker`). | R3-Q24 |
 
 ## Preguntas abiertas
 

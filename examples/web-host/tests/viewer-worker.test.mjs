@@ -511,6 +511,38 @@ test("async worker rejects a read plan larger than the configured logical read b
     assert.equal(reads, 0);
 });
 
+test("async worker reports a failed block read instead of throwing in its error path", async () => {
+    class FailingReadAsyncReader {
+        static async open() { return new FailingReadAsyncReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1],
+                nodeCount: 1,
+                maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => { throw new Error("range read failed"); },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingReadAsyncReader);
+    worker.setPendingBlock("7");
+    await worker.send("openFile", {
+        file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
+    });
+    for (let index = 0; index < 4; index++) await new Promise(setImmediate);
+    const failure = worker.messages.find(message => message.operation === "asyncLodRead");
+    assert.match(failure?.message ?? "", /range read failed/);
+});
+
 test("metrics message reports busy time per message type, frame queue wait and the LOD log", async () => {
     const worker = await runWorker();
     await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });

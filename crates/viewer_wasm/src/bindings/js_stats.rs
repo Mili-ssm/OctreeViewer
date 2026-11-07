@@ -48,9 +48,29 @@ impl WasmVoxelViewer {
                 Ok(value)
             }
             None => match self.cells_stats() {
-                // In-process cells report through `updateLod`; a remote render worker has no
-                // `LodViewStats`, only the cells fields.
-                Some(cells) => super::cells::cells_stats_object(self.cell_path, &cells),
+                // In-process cells have no `LodViewStats`: the host reads the plan's fields (pending
+                // ids, uncovered nodes) beside the cells'. A remote render worker has only the
+                // cells fields; its plan arrives from the build worker.
+                Some(cells) => {
+                    let value = super::cells::cells_stats_object(self.cell_path, &cells)?;
+                    if let Some((plan, target_voxel_pixels)) = &self.last_cells_plan {
+                        super::cells::add_plan_stats(&value, plan)?;
+                        js_sys::Reflect::set(
+                            &value,
+                            &"targetVoxelPixels".into(),
+                            &JsValue::from_f64(*target_voxel_pixels),
+                        )?;
+                        js_sys::Reflect::set(
+                            &value,
+                            &"lodError".into(),
+                            &self
+                                .last_lod_error
+                                .as_ref()
+                                .map_or(JsValue::NULL, |message| JsValue::from_str(message)),
+                        )?;
+                    }
+                    Ok(value)
+                }
                 None => Ok(JsValue::NULL),
             },
         }
