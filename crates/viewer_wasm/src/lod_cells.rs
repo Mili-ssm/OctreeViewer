@@ -1,9 +1,21 @@
-//! Cells mode of `LodDataset` (R3 Task 9b): the planner sees a node as resident only once its cells
-//! exist, a few nodes are built per update from their decoded blocks, and the cut goes to a
-//! caller-owned `CellDriver`. The dataset holds no renderer: the caller passes the driver and the
-//! `CellTarget` for the duration of one update.
+//! Cells mode of `LodDataset` (R3 Task 9b, 10a2): the planner sees a node as resident only once
+//! its cells exist, a few nodes are built per update from their decoded blocks, and the cut goes to
+//! a driver the dataset never touches. An update has three steps, so the build and the render
+//! sides can live in different workers:
+//!
+//! 1. [`LodDataset::plan_cell_update`] (dataset): select, plan, load, build and pack; gives the
+//!    cut and the nodes the driver does not have yet ([`CellUpdate`]).
+//! 2. [`add_cell_nodes`] and [`draw_cell_cut`] (render): store the nodes, drop the cut nodes the
+//!    driver lacks, run one frame; gives a [`CellDraw`] with the [`PoolAck`].
+//! 3. [`LodDataset::apply_evicted`], [`LodDataset::pool_reset`], [`LodDataset::apply_ack`] and
+//!    [`LodDataset::driver_replaced`] (dataset): learn what the driver did.
+//!
+//! [`LodDataset::update_cells_at_stage`] runs the three back to back in one thread.
 
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use super::{
     LodDataset, LodDatasetError, LodTransitionPlan, NodeId, PointBlock, WorkClock,
@@ -11,8 +23,8 @@ use super::{
 };
 use viewer_core::{BlockId, LodSelection, ResidentBlockSource, SpatialBounds, SpatialHierarchy};
 use viewer_render_wgpu::{
-    CellDriver, CellDriverError, CellGrid, CellTarget, CutApply, FrameReport, NodeAdded,
-    NodeCellSource, NodeInput, PointNodeCellSource, PoolCounters, ViewProjection,
+    CellDriver, CellDriverError, CellGrid, CellTarget, CutApply, FrameReport, NodeCellSource,
+    NodeInput, PackedNode, PointNodeCellSource, PoolCounters, ViewProjection, pack_node,
     representative_depth,
 };
 
@@ -32,12 +44,32 @@ impl Default for CellUpdateConfig {
     }
 }
 
-/// What one cells update did.
+/// What step 1 of a cells update did.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellPlanStats {
+    /// Nodes whose cells were built, in build order.
+    pub built_nodes: Vec<NodeId>,
+    /// Nodes ready to be built (blocks decoded, parents done) that the cap left for later.
+    pub build_deferred: usize,
+    pub build_capped: bool,
+    pub build_ms: f64,
+    /// Nodes of the cut sent to the driver (plan nodes with cells).
+    pub cut_nodes: usize,
+    /// Largest depth difference between a cut node and its nearest cut ancestor.
+    pub max_gap: u32,
+    /// Cut nodes whose gap is above 1.
+    pub gaps_over_one: usize,
+    pub pending_block_ids: Vec<BlockId>,
+    pub pending_page_anchors: Vec<NodeId>,
+    pub uncovered_nodes: usize,
+}
+
+/// What one cells update did, with the driver's frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellUpdateStats {
     /// Nodes whose cells were built, in build order.
     pub built_nodes: Vec<NodeId>,
-    /// Nodes still waiting for their cells after the cap was reached.
+    /// Nodes ready to be built (blocks decoded, parents done) that the cap left for later.
     pub build_deferred: usize,
     pub build_capped: bool,
     pub build_ms: f64,
@@ -57,32 +89,128 @@ pub struct CellUpdateStats {
     pub uncovered_nodes: usize,
 }
 
+impl CellUpdateStats {
+    fn new(plan: CellPlanStats, report: &FrameReport, cpu_cell_bytes: u64) -> Self {
+        Self {
+            built_nodes: plan.built_nodes,
+            build_deferred: plan.build_deferred,
+            build_capped: plan.build_capped,
+            build_ms: plan.build_ms,
+            cut_nodes: plan.cut_nodes,
+            max_gap: plan.max_gap,
+            gaps_over_one: plan.gaps_over_one,
+            descendant_too_fine: report.counters().descendant_too_fine,
+            apply: report.plan.apply,
+            counters: *report.counters(),
+            cpu_cell_bytes,
+            pending_block_ids: plan.pending_block_ids,
+            pending_page_anchors: plan.pending_page_anchors,
+            uncovered_nodes: plan.uncovered_nodes,
+        }
+    }
+}
+
 pub struct LodCellUpdate {
     pub stats: CellUpdateStats,
     pub report: FrameReport,
 }
 
-#[derive(Default)]
+/// Step 1: what the build side sends to the render side.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellUpdate {
+    /// Identifies the cut; grows with every update.
+    pub cut_epoch: u64,
+    /// The planner's cut restricted to nodes the dataset believes the driver has.
+    pub cut: Vec<NodeId>,
+    /// Nodes with cells that the driver must keep although the cut does not name them: ancestors
+    /// of nodes still waiting for their cells. Forgetting one would make parents-first (R3-Q22)
+    /// build it again before those descendants, over and over under a tight CPU budget.
+    pub support: Vec<NodeId>,
+    /// Nodes built by this update, with the dataset generation, in build order (parents first).
+    pub new_nodes: Vec<(u64, PackedNode)>,
+    pub stats: CellPlanStats,
+}
+
+/// Step 2 to step 3: what the driver drew for a cut.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolAck {
+    /// The `cut_epoch` the frame applied.
+    pub cut_epoch: u64,
+    /// Nodes the pool draws after the frame (applied or retained cut).
+    pub drawn: Vec<NodeId>,
+    /// Nodes the cut named and the driver did not have: to be built and sent again.
+    pub missing: Vec<NodeId>,
+}
+
+/// Step 2: the outcome of one driver frame.
+pub struct CellDraw {
+    pub ack: PoolAck,
+    /// Nodes the driver forgot (CPU budget), in order.
+    pub evicted: Vec<NodeId>,
+    /// The target had lost its pool and the driver reset it before drawing.
+    pub pool_reset: bool,
+    pub report: FrameReport,
+}
+
+/// Next dataset generation: a new dataset gets a new one, so a node of an old build is never
+/// taken for a repeat of the new build's.
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+
 pub(super) struct CellState {
-    /// Nodes whose cells are stored in the driver.
-    built: HashSet<NodeId>,
+    /// Nodes whose cells were sent to the driver, with the epoch of the first cut that follows
+    /// the send: a `missing` report of an earlier cut says nothing about the resend.
+    built: HashMap<NodeId, u64>,
     /// Nodes whose every level came out empty: resident for the plan, never in the cut. That
     /// leaves no hole: a node has no levels only when none of its points is finite (a finite
     /// point always lands in a cell), and such points draw nothing on any path.
     pub(super) empty: HashSet<NodeId>,
-    /// Nodes of the cut the pool draws (applied or retained) after the last update. Replaced on
-    /// every successful frame; cleared when a frame fails (the target may have dropped its
-    /// pool) and by `pool_was_reset`. A gap error comes before the frame and changes nothing.
+    /// Nodes of the cut the pool draws (applied or retained) after the last `poolAck`. Cleared by
+    /// `pool_reset` and by a failed frame.
     pub(super) pool_drawn: Vec<NodeId>,
+    /// Epoch of the last cut sent and of the last one acknowledged.
+    cut_epoch: u64,
+    ack_epoch: u64,
+    /// Cuts sent after the last acknowledged epoch: the pool may draw them any moment.
+    unacked: Vec<(u64, Vec<NodeId>)>,
+    generation: u64,
+    /// The last block read was for an ancestor: the next read goes to the selection, so a block
+    /// of the chain that cannot stay cached cannot starve the blocks in view.
+    read_ancestor_last: bool,
+}
+
+impl Default for CellState {
+    fn default() -> Self {
+        Self {
+            built: HashMap::new(),
+            empty: HashSet::new(),
+            pool_drawn: Vec::new(),
+            cut_epoch: 0,
+            ack_epoch: 0,
+            unacked: Vec::new(),
+            generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
+            read_ancestor_last: false,
+        }
+    }
 }
 
 impl CellState {
+    #[cfg(test)]
     pub(super) fn pool_drawn(&self) -> &[NodeId] {
         &self.pool_drawn
     }
 
+    /// Nodes the pool may be drawing: the last ack's and every cut sent since its epoch.
+    pub(super) fn extend_pins(&self, nodes: &mut Vec<NodeId>) {
+        nodes.extend_from_slice(&self.pool_drawn);
+        for (_, cut) in &self.unacked {
+            nodes.extend_from_slice(cut);
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+    }
+
     pub(super) fn has_cells(&self, node: NodeId) -> bool {
-        self.built.contains(&node) || self.empty.contains(&node)
+        self.built.contains_key(&node) || self.empty.contains(&node)
     }
 }
 
@@ -101,6 +229,93 @@ impl ResidentBlockSource for CellReadySource<'_> {
             None
         }
     }
+}
+
+/// A node waiting for its cells.
+struct BuildCandidate {
+    /// A co-owner of a shared block, not a selected node: takes slots after the selected ones.
+    waiter: bool,
+    /// An ancestor that only waits because a descendant needs it (R3-Q22).
+    ancestor: bool,
+    distance: f64,
+    id: NodeId,
+}
+
+/// Decides when a published digest counts as `cutDigestAtRest`: the build side is idle at epoch
+/// E, the render side applied E, the driver has no work and the last ack is for E, and the digest
+/// is the same in two consecutive polls.
+#[derive(Debug, Default)]
+pub struct CutRestProbe {
+    last: Option<u64>,
+}
+
+impl CutRestProbe {
+    /// `applied_epoch` and `needs_frame` come from the render side; `digest` is
+    /// `cell_cut_digest` of the cut it drew.
+    pub fn poll(
+        &mut self,
+        dataset: &LodDataset,
+        build_idle: bool,
+        applied_epoch: u64,
+        needs_frame: bool,
+        digest: u64,
+    ) -> Option<u64> {
+        let rest = build_idle
+            && !needs_frame
+            && applied_epoch == dataset.cells.cut_epoch
+            && dataset.cells.ack_epoch == applied_epoch;
+        if !rest {
+            self.last = None;
+            return None;
+        }
+        let stable = self.last == Some(digest);
+        self.last = Some(digest);
+        stable.then_some(digest)
+    }
+}
+
+/// Step 2a: stores the nodes of a `nodeCells` batch in order. A repeat of a node with the same
+/// generation is ignored (`AlreadyStored`); any other refusal is an error.
+pub fn add_cell_nodes(
+    driver: &mut CellDriver,
+    nodes: impl IntoIterator<Item = (u64, PackedNode)>,
+) -> Result<(), LodDatasetError> {
+    for (generation, node) in nodes {
+        driver
+            .add_packed_generation(generation, node)
+            .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
+    }
+    Ok(())
+}
+
+/// Step 2b: one driver frame for `cut`, restricted to the nodes the driver has. The cut must have
+/// been latched with `CellDriver::cut_received` when its message arrived.
+pub fn draw_cell_cut<T: CellTarget>(
+    driver: &mut CellDriver,
+    target: &mut T,
+    cut_epoch: u64,
+    cut: &[NodeId],
+    view: &ViewProjection,
+    target_px: f64,
+) -> Result<CellDraw, LodDatasetError> {
+    let (known, missing): (Vec<NodeId>, Vec<NodeId>) =
+        cut.iter().copied().partition(|id| driver.has_node(*id));
+    let report = driver
+        .frame_latched(target, &known, view, target_px, &mut |_| {})
+        .map_err(|error| match error {
+            CellDriverError::Cut(error) => LodDatasetError::CellCut(error),
+            other => LodDatasetError::CellDriver(other.to_string()),
+        })?;
+    Ok(CellDraw {
+        ack: PoolAck {
+            cut_epoch,
+            drawn: report.plan.entries.iter().map(|entry| entry.node).collect(),
+            missing,
+        },
+        evicted: report.forgotten.clone(),
+        pool_reset: report.pool_reset,
+        report,
+    })
 }
 
 impl LodDataset {
@@ -127,12 +342,27 @@ impl LodDataset {
         self.metadata.coordinate_frame().origin()
     }
 
+    /// The generation stamped on the nodes this dataset sends.
+    pub fn cell_generation(&self) -> u64 {
+        self.cells.generation
+    }
+
+    /// Epoch of the last cut sent.
+    pub fn cell_cut_epoch(&self) -> u64 {
+        self.cells.cut_epoch
+    }
+
+    /// Epoch of the last cut the render side acknowledged.
+    pub fn cell_ack_epoch(&self) -> u64 {
+        self.cells.ack_epoch
+    }
+
     /// Blocks whose owners all have cells.
     fn cell_ready_blocks(&self) -> HashSet<BlockId> {
         let hierarchy = self.metadata.hierarchy();
         self.cells
             .built
-            .iter()
+            .keys()
             .chain(&self.cells.empty)
             .filter_map(|id| hierarchy.node(*id))
             .flat_map(|node| node.blocks().iter().copied())
@@ -158,6 +388,47 @@ impl LodDataset {
             .copied()
             .filter(|owner| !self.cells.has_cells(*owner))
             .collect()
+    }
+
+    /// Ancestors of `id` that have blocks and no cells, nearest first (R3-Q22: they are built
+    /// before `id`, in the plan's cut or not).
+    pub(super) fn ancestors_without_cells(&self, id: NodeId) -> Vec<NodeId> {
+        let hierarchy = self.metadata.hierarchy();
+        let mut out = Vec::new();
+        let mut parent = hierarchy.node(id).and_then(|node| node.parent());
+        while let Some(up) = parent {
+            let Some(node) = hierarchy.node(up) else {
+                break;
+            };
+            if !node.blocks().is_empty() && !self.cells.has_cells(up) {
+                out.push(up);
+            }
+            parent = node.parent();
+        }
+        out
+    }
+
+    /// Whether the camera jumped: no node selected at `stage_px` has cells or an ancestor with
+    /// cells. The px ladder restarts then (R3-Q22) and only then, besides the dataset opening.
+    #[cfg(any(target_arch = "wasm32", test))]
+    #[cfg_attr(not(test), allow(dead_code))] // only the ladder in `lod_driver` calls it
+    pub(crate) fn camera_jumped(
+        &mut self,
+        view: &ViewProjection,
+        stage_px: f64,
+    ) -> Result<bool, LodDatasetError> {
+        let (_, selection) = self.select_target(view, stage_px)?;
+        let hierarchy = self.metadata.hierarchy();
+        Ok(!selection.node_ids().iter().any(|id| {
+            let mut node = Some(*id);
+            while let Some(current) = node {
+                if self.cells.has_cells(current) {
+                    return true;
+                }
+                node = hierarchy.node(current).and_then(|n| n.parent());
+            }
+            false
+        }))
     }
 
     pub(super) fn prepare_cell_plan(&mut self, target: &LodSelection) -> LodTransitionPlan {
@@ -189,10 +460,70 @@ impl LodDataset {
         Ok(super::resident_target_plan_is_complete(&selection, &plan))
     }
 
-    /// Tells the dataset the caller reset the driver (`CellDriver::reset`): the pool draws
-    /// nothing until the next update, so no node is pinned for it.
-    pub fn pool_was_reset(&mut self) {
+    /// Step 3, `poolReset`: the pool was emptied (device lost, or the renderer dropped it) but the
+    /// driver keeps its nodes: the pool draws nothing until the next frame, so no node is pinned
+    /// for it. Process it before the ack of the frame that reset the pool.
+    pub fn pool_reset(&mut self) {
         self.cells.pool_drawn.clear();
+    }
+
+    /// Step 3, `evict`: the driver forgot these nodes (CPU budget): they are built again when
+    /// the cut needs them.
+    pub fn apply_evicted(&mut self, nodes: &[NodeId]) {
+        for node in nodes {
+            self.cells.built.remove(node);
+        }
+    }
+
+    /// Step 3, `driverReplaced`: the driver is new (another dataset or worker) and has none of
+    /// the nodes sent so far: they are all sent again.
+    pub fn driver_replaced(&mut self) {
+        self.cells.built.clear();
+        self.cells.pool_drawn.clear();
+    }
+
+    /// Step 3, `poolAck`. The last one wins: an older epoch than the last ack is ignored.
+    /// `missing` nodes are built again, unless they were sent after the acknowledged cut.
+    pub fn apply_ack(&mut self, ack: PoolAck) {
+        if ack.cut_epoch < self.cells.ack_epoch {
+            return;
+        }
+        self.cells.ack_epoch = ack.cut_epoch;
+        self.cells.pool_drawn = ack.drawn;
+        self.cells
+            .unacked
+            .retain(|(epoch, _)| *epoch > ack.cut_epoch);
+        for node in ack.missing {
+            if self
+                .cells
+                .built
+                .get(&node)
+                .is_some_and(|sent| *sent <= ack.cut_epoch)
+            {
+                self.cells.built.remove(&node);
+            }
+        }
+    }
+
+    /// A frame of the in-process path failed: the target may have dropped its pool and the cut
+    /// was not applied.
+    fn cell_frame_failed(&mut self, cut_epoch: u64) {
+        self.pool_reset();
+        self.cells.unacked.retain(|(epoch, _)| *epoch != cut_epoch);
+    }
+
+    /// In-process path: the driver is the truth about stored cells (a caller may swap it). Nodes
+    /// it lacks are sent again. A driver that holds nodes of another dataset generation cannot be
+    /// reconciled (resending would be refused as `Duplicate` every update): the caller must
+    /// replace it, as `driverReplaced` does across workers.
+    pub(crate) fn reconcile_driver(&mut self, driver: &CellDriver) -> Result<(), LodDatasetError> {
+        if let Some(node) = driver.foreign_node(self.cells.generation) {
+            return Err(LodDatasetError::CellDriver(format!(
+                "the driver holds {node:?} from another dataset generation: replace the driver"
+            )));
+        }
+        self.cells.built.retain(|id, _| driver.has_node(*id));
+        Ok(())
     }
 
     /// Distance from the camera to the node, in the camera's scaled local units.
@@ -211,15 +542,15 @@ impl LodDataset {
             .sqrt()
     }
 
-    /// Builds the cells of `id` from its decoded blocks and hands them to the driver.
+    /// Builds and packs the cells of `id` from its decoded blocks. `None` when a block is not
+    /// cached. A node without levels goes to `empty` and gives no message.
     pub(super) fn build_node_cells(
         &mut self,
-        driver: &mut CellDriver,
         id: NodeId,
-    ) -> Result<(), LodDatasetError> {
+    ) -> Result<Option<PackedNode>, LodDatasetError> {
         let hierarchy = self.metadata.hierarchy();
         let Some(node) = hierarchy.node(id) else {
-            return Ok(());
+            return Ok(None);
         };
         let blocks: Option<Vec<PointBlock>> = node
             .blocks()
@@ -227,7 +558,7 @@ impl LodDataset {
             .map(|block| self.cache.peek(*block).cloned())
             .collect();
         let Some(blocks) = blocks else {
-            return Ok(());
+            return Ok(None);
         };
         let origin = self.coordinate_origin();
         let world = self.cell_grid();
@@ -249,35 +580,34 @@ impl LodDataset {
             is_leaf,
             &blocks,
         )?;
-        let added = driver
-            .add_node(NodeInput {
+        let packed = pack_node(
+            &world,
+            origin,
+            NodeInput {
                 id,
                 bounds: node.bounds(),
                 points: node.point_count(),
                 local_grid,
                 cells: &cells,
-            })
-            .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
-        match added {
-            NodeAdded::Stored { .. } => self.cells.built.insert(id),
-            // `add_node` never answers this (only `add_packed_generation` does): nothing to record.
-            NodeAdded::AlreadyStored => {
-                debug_assert!(false, "add_node answered AlreadyStored for {id:?}");
-                false
-            }
-            NodeAdded::NoLevels => {
-                debug_assert!(
-                    blocks.iter().all(|block| block
-                        .points()
-                        .points()
-                        .iter()
-                        .all(|point| point.position.iter().any(|value| !value.is_finite()))),
-                    "node {id:?} has no cell levels but has a finite point"
-                );
-                self.cells.empty.insert(id)
-            }
-        };
-        Ok(())
+            },
+        )
+        .map_err(|error| LodDatasetError::CellDriver(error.to_string()))?;
+        if packed.levels.is_empty() {
+            debug_assert!(
+                blocks.iter().all(|block| block
+                    .points()
+                    .points()
+                    .iter()
+                    .all(|point| point.position.iter().any(|value| !value.is_finite()))),
+                "node {id:?} has no cell levels but has a finite point"
+            );
+            self.cells.empty.insert(id);
+            return Ok(None);
+        }
+        // The epoch of the first cut that can name it.
+        let sent = self.cells.cut_epoch + 1;
+        self.cells.built.insert(id, sent);
+        Ok(Some(packed))
     }
 
     /// Largest and over-one depth gaps between each cut node and its nearest cut ancestor. The
@@ -319,15 +649,261 @@ impl LodDataset {
         Ok((max_gap, over_one))
     }
 
-    /// One update of the cells path: select at `target_px`, read at most one block, build the
-    /// cells of up to `config.max_node_builds` target nodes (nearest first), plan with only
-    /// built nodes resident and run one driver frame on `target`.
+    /// Step 1 of a cells update: select at `stage_px`, read at most one block, build the cells of
+    /// up to `config.max_node_builds` nodes (nearest first, parents before children: R3-Q22)
+    /// and plan with only built nodes resident. The driver choosing cell levels for the target
+    /// px is step 2's business.
     ///
-    /// The driver and the target are the caller's; nodes the driver forgets are built again when
-    /// the cut needs them. On an error the update stops where it failed: blocks read and cells
-    /// built so far stay (cache, driver and `built` are updated as they happen), but the plan is
-    /// not committed, `visible_plan` keeps the previous one and the pool pins change only as
-    /// `pool_drawn` documents.
+    /// On an error the update stops where it failed: blocks read stay in the cache, the nodes
+    /// built by this call are forgotten (their cells were never sent; they are built again),
+    /// the plan is not committed and `visible_plan` keeps the previous one.
+    pub fn plan_cell_update(
+        &mut self,
+        view: &ViewProjection,
+        stage_px: f64,
+        config: CellUpdateConfig,
+        async_priority_order: Option<&mut Vec<BlockId>>,
+        mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+    ) -> Result<CellUpdate, LodDatasetError> {
+        if !self.supports_cells() {
+            return Err(LodDatasetError::CellPathUnsupported);
+        }
+        self.refinement_work.update_calls += 1;
+        let coordinate_origin = self.coordinate_origin();
+        let (frustum, selection) = self.select_target(view, stage_px)?;
+
+        // Nodes without cells that this update works on: the selected ones, the co-owners of a
+        // block shared with a node that has cells (a block turns resident only when all its
+        // owners have cells, so they would wait forever otherwise) and, before any of them, the
+        // ancestors that have no cells yet, in the cut or not (R3-Q22).
+        let waiters = self.shared_block_waiters(selection.node_ids());
+        let selected = selection.node_ids().len();
+        let mut seen = HashSet::new();
+        let mut candidates: Vec<BuildCandidate> = Vec::new();
+        for (index, id) in selection.node_ids().iter().chain(&waiters).enumerate() {
+            if self.cells.has_cells(*id) {
+                continue;
+            }
+            let waiter = index >= selected;
+            let ancestors = self.ancestors_without_cells(*id);
+            let hierarchy = self.metadata.hierarchy();
+            let own = hierarchy
+                .node(*id)
+                .filter(|node| !node.blocks().is_empty())
+                .map(|_| (*id, false));
+            for (node_id, ancestor) in own
+                .into_iter()
+                .chain(ancestors.into_iter().map(|a| (a, true)))
+            {
+                if !seen.insert(node_id) {
+                    continue;
+                }
+                let Some(node) = hierarchy.node(node_id) else {
+                    continue;
+                };
+                candidates.push(BuildCandidate {
+                    waiter,
+                    ancestor,
+                    distance: self.distance_to_eye(view, node.bounds()),
+                    id: node_id,
+                });
+            }
+        }
+        candidates.sort_by(|a, b| {
+            a.waiter
+                .cmp(&b.waiter)
+                .then(a.distance.total_cmp(&b.distance))
+                .then(a.id.cmp(&b.id))
+        });
+        let uncached_blocks = |this: &Self, only_ancestors: bool| -> Vec<BlockId> {
+            let hierarchy = this.metadata.hierarchy();
+            let mut blocks: Vec<BlockId> = candidates
+                .iter()
+                .filter(|c| c.ancestor || !only_ancestors)
+                .filter_map(|c| hierarchy.node(c.id))
+                .flat_map(|node| node.blocks().iter().copied())
+                .filter(|block| !this.cache.contains(*block))
+                .collect();
+            blocks.sort();
+            blocks.dedup();
+            blocks
+        };
+
+        let initial_plan = self.prepare_cell_plan(&selection);
+        // Blocks that are decoded but wait for their cells are not read again. The ancestor whose
+        // own ancestors all have cells waits for its blocks before anything else: its
+        // descendants cannot be built without it, and it is built the moment it is read. Reads
+        // alternate with the selection's, so a chain block that cannot stay cached cannot starve
+        // the blocks in view.
+        let top_blocks: Vec<BlockId> = {
+            let hierarchy = self.metadata.hierarchy();
+            let mut blocks: Vec<BlockId> = candidates
+                .iter()
+                .filter(|c| c.ancestor && self.ancestors_without_cells(c.id).is_empty())
+                .filter_map(|c| hierarchy.node(c.id))
+                .flat_map(|node| node.blocks().iter().copied())
+                .filter(|block| !self.cache.contains(*block))
+                .collect();
+            blocks.sort();
+            blocks.dedup();
+            blocks
+        };
+        let selection_blocks: Vec<BlockId> = initial_plan
+            .pending_blocks()
+            .iter()
+            .copied()
+            .filter(|block| !self.cache.contains(*block))
+            .collect();
+        let read_ancestors = !top_blocks.is_empty()
+            && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
+        let to_read = if read_ancestors {
+            top_blocks
+        } else {
+            selection_blocks
+        };
+        let next_block = self.next_block_to_load(
+            view,
+            &frustum,
+            &to_read,
+            initial_plan.uncovered_nodes(),
+            async_priority_order,
+        );
+        let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
+        self.arrived_blocks = 0;
+        if let Some(requested) = next_block {
+            self.cells.read_ancestor_last = read_ancestors;
+            self.load_block_step(requested, &mut load_block, &mut evicted_blocks)?;
+        }
+
+        // A candidate is ready when its blocks are decoded and every ancestor with blocks has
+        // its cells.
+        let ready = |this: &Self, id: NodeId| {
+            this.metadata
+                .hierarchy()
+                .node(id)
+                .is_some_and(|node| node.blocks().iter().all(|b| this.cache.contains(*b)))
+                && this.ancestors_without_cells(id).is_empty()
+        };
+        let build_started = WorkClock::start();
+        let mut built_nodes: Vec<NodeId> = Vec::new();
+        let mut new_nodes: Vec<(u64, PackedNode)> = Vec::new();
+        let generation = self.cells.generation;
+        while built_nodes.len() < config.max_node_builds {
+            let Some(id) = candidates
+                .iter()
+                .map(|c| c.id)
+                .find(|id| !built_nodes.contains(id) && ready(self, *id))
+            else {
+                break;
+            };
+            match self.build_node_cells(id) {
+                Ok(packed) => {
+                    built_nodes.push(id);
+                    new_nodes.extend(packed.map(|node| (generation, node)));
+                }
+                Err(error) => {
+                    self.forget_unsent(&new_nodes);
+                    return Err(error);
+                }
+            }
+        }
+        let build_ms = build_started.elapsed_ms();
+        let build_deferred = candidates
+            .iter()
+            .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
+            .count();
+        if !built_nodes.is_empty() || next_block.is_some() {
+            self.state_epoch += 1;
+        }
+        let mut waiting_blocks = uncached_blocks(self, true);
+        let support = self.support_nodes(&candidates);
+
+        let plan = self.prepare_cell_plan(&selection);
+        let evicted_pending = evicted_blocks
+            .iter()
+            .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
+            .count() as u64;
+        self.refinement_work.evicted_pending_blocks += evicted_pending;
+        let cut: Vec<NodeId> = plan
+            .node_ids()
+            .iter()
+            .copied()
+            .filter(|id| self.cells.built.contains_key(id))
+            .collect();
+        let (max_gap, gaps_over_one) = match self.cut_gaps(&cut) {
+            Ok(gaps) => gaps,
+            Err(error) => {
+                self.forget_unsent(&new_nodes);
+                return Err(error);
+            }
+        };
+
+        self.state_epoch += 1;
+        self.planner.commit(&plan, &mut self.cache);
+        self.touch_pages(plan.node_ids());
+        self.cells.cut_epoch += 1;
+        let cut_epoch = self.cells.cut_epoch;
+        self.cells.unacked.push((cut_epoch, cut.clone()));
+        let pending_anchors = pending_page_anchors(self.metadata.hierarchy(), &selection, |node| {
+            view.projected_error_pixels(
+                node.bounds(),
+                node.representative_spacing(),
+                coordinate_origin,
+            )
+        });
+        let mut pending_block_ids = plan.pending_blocks().to_vec();
+        pending_block_ids.append(&mut waiting_blocks);
+        pending_block_ids.sort();
+        pending_block_ids.dedup();
+        let stats = CellPlanStats {
+            built_nodes,
+            build_deferred,
+            build_capped: build_deferred > 0,
+            build_ms,
+            cut_nodes: cut.len(),
+            max_gap,
+            gaps_over_one,
+            pending_block_ids,
+            pending_page_anchors: pending_anchors,
+            uncovered_nodes: plan.uncovered_nodes().len(),
+        };
+        self.visible_plan = Some(plan);
+        Ok(CellUpdate {
+            cut_epoch,
+            cut,
+            support,
+            new_nodes,
+            stats,
+        })
+    }
+
+    /// Nodes with cells that are ancestors of candidates still without them.
+    fn support_nodes(&self, candidates: &[BuildCandidate]) -> Vec<NodeId> {
+        let hierarchy = self.metadata.hierarchy();
+        let mut support = HashSet::new();
+        for candidate in candidates.iter().filter(|c| !self.cells.has_cells(c.id)) {
+            let mut parent = hierarchy.node(candidate.id).and_then(|node| node.parent());
+            while let Some(up) = parent {
+                if self.cells.built.contains_key(&up) && !support.insert(up) {
+                    break;
+                }
+                parent = hierarchy.node(up).and_then(|node| node.parent());
+            }
+        }
+        let mut support: Vec<NodeId> = support.into_iter().collect();
+        support.sort_unstable();
+        support
+    }
+
+    /// Takes back nodes whose message was never produced.
+    fn forget_unsent(&mut self, nodes: &[(u64, PackedNode)]) {
+        for (_, node) in nodes {
+            self.cells.built.remove(&node.id);
+        }
+    }
+
+    /// One update of the cells path in one thread: [`plan_cell_update`](Self::plan_cell_update),
+    /// the driver's side on `driver` and `target`, and the dataset's side again, back to back.
     #[allow(clippy::too_many_arguments)]
     pub fn update_cells<T: CellTarget>(
         &mut self,
@@ -356,9 +932,9 @@ impl LodDataset {
     /// `target_px`. Coarser nodes get their cells first and stay as the fallback of the finer
     /// ones (R3-Q19).
     ///
-    /// The caller owns the ladder: when the camera moves it resets `stage_pixels = None` and sets
-    /// `dirty = true`; otherwise the nodes of a new region load at a fine stage without their
-    /// parents' cells as fallback (see `lod_driver::update_cells_staged`).
+    /// The caller owns the ladder (`lod_driver::update_cells_staged` restarts it after a camera
+    /// jump, R3-Q22). On an error the dataset keeps what was built and read so far, and the pool
+    /// pins change only as `pool_drawn` documents.
     #[allow(clippy::too_many_arguments)]
     pub fn update_cells_at_stage<T: CellTarget>(
         &mut self,
@@ -369,133 +945,56 @@ impl LodDataset {
         driver: &mut CellDriver,
         target: &mut T,
         async_priority_order: Option<&mut Vec<BlockId>>,
-        mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+        load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
     ) -> Result<LodCellUpdate, LodDatasetError> {
-        if !self.supports_cells() {
-            return Err(LodDatasetError::CellPathUnsupported);
-        }
-        self.refinement_work.update_calls += 1;
-        // The driver is the truth about stored cells (it forgets, a caller may swap it).
-        self.cells.built.retain(|id| driver.has_node(*id));
-        let coordinate_origin = self.coordinate_origin();
-        let (frustum, selection) = self.select_target(view, stage_px)?;
+        self.reconcile_driver(driver)?;
+        let update =
+            self.plan_cell_update(view, stage_px, config, async_priority_order, load_block)?;
+        self.draw_planned_cells(update, view, target_px, driver, target)
+    }
 
-        let initial_plan = self.prepare_cell_plan(&selection);
-        // Blocks that are decoded but wait for their cells are not read again.
-        let to_read: Vec<BlockId> = initial_plan
-            .pending_blocks()
-            .iter()
-            .copied()
-            .filter(|block| !self.cache.contains(*block))
-            .collect();
-        let next_block = self.next_block_to_load(
-            view,
-            &frustum,
-            &to_read,
-            initial_plan.uncovered_nodes(),
-            async_priority_order,
-        );
-        let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
-        self.arrived_blocks = 0;
-        if let Some(requested) = next_block {
-            self.load_block_step(requested, &mut load_block, &mut evicted_blocks)?;
+    /// Steps 2 and 3 of an update planned by [`plan_cell_update`](Self::plan_cell_update), in
+    /// one thread.
+    pub(crate) fn draw_planned_cells<T: CellTarget>(
+        &mut self,
+        update: CellUpdate,
+        view: &ViewProjection,
+        target_px: f64,
+        driver: &mut CellDriver,
+        target: &mut T,
+    ) -> Result<LodCellUpdate, LodDatasetError> {
+        let CellUpdate {
+            cut_epoch,
+            cut,
+            support,
+            new_nodes,
+            stats,
+        } = update;
+        if let Err(error) = add_cell_nodes(driver, new_nodes) {
+            self.cell_frame_failed(cut_epoch);
+            return Err(error);
         }
-
-        // Nodes with all their blocks decoded and no cells yet, nearest first: the target nodes
-        // and the co-owners of a block shared with a node that already has cells (a block turns
-        // resident only when all its owners have cells, so they would wait forever otherwise).
-        let waiters = self.shared_block_waiters(selection.node_ids());
-        let hierarchy = self.metadata.hierarchy();
-        let mut seen = HashSet::new();
-        // (waiter, distance, id): the selected nodes take the build slots before the waiters.
-        let mut candidates: Vec<(bool, f64, NodeId)> = Vec::new();
-        let selected = selection.node_ids().len();
-        for (index, id) in selection.node_ids().iter().chain(&waiters).enumerate() {
-            if !seen.insert(*id) || self.cells.has_cells(*id) {
-                continue;
+        driver.cut_received();
+        driver.set_support(&support);
+        let draw = match draw_cell_cut(driver, target, cut_epoch, &cut, view, target_px) {
+            Ok(draw) => draw,
+            Err(error) => {
+                self.cell_frame_failed(cut_epoch);
+                return Err(error);
             }
-            if driver.has_node(*id) {
-                self.cells.built.insert(*id);
-                continue;
-            }
-            let Some(node) = hierarchy.node(*id) else {
-                continue;
-            };
-            if !node.blocks().is_empty() && node.blocks().iter().all(|b| self.cache.contains(*b)) {
-                candidates.push((
-                    index >= selected,
-                    self.distance_to_eye(view, node.bounds()),
-                    *id,
-                ));
-            }
-        }
-        candidates.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)));
-        let build_started = WorkClock::start();
-        let take = candidates.len().min(config.max_node_builds);
-        let mut built_nodes = Vec::with_capacity(take);
-        for (_, _, id) in &candidates[..take] {
-            self.build_node_cells(driver, *id)?;
-            built_nodes.push(*id);
-        }
-        let build_ms = build_started.elapsed_ms();
-        let build_deferred = candidates.len() - take;
-        if take > 0 || next_block.is_some() {
-            self.state_epoch += 1;
-        }
-
-        let plan = self.prepare_cell_plan(&selection);
-        let evicted_pending = evicted_blocks
-            .iter()
-            .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
-            .count() as u64;
-        self.refinement_work.evicted_pending_blocks += evicted_pending;
-        let cut: Vec<NodeId> = plan
-            .node_ids()
-            .iter()
-            .copied()
-            .filter(|id| driver.has_node(*id))
-            .collect();
-        let (max_gap, gaps_over_one) = self.cut_gaps(&cut)?;
-        let report = driver
-            .frame(target, &cut, view, target_px)
-            .map_err(|error| {
-                // A failed frame may have emptied the target's pool (or the driver reset it
-                // first): keep no pin for what it drew before.
-                self.cells.pool_drawn.clear();
-                match error {
-                    CellDriverError::Cut(error) => LodDatasetError::CellCut(error),
-                    other => LodDatasetError::CellDriver(other.to_string()),
-                }
-            })?;
-
-        self.state_epoch += 1;
-        self.planner.commit(&plan, &mut self.cache);
-        self.touch_pages(plan.node_ids());
-        self.cells.pool_drawn = report.plan.entries.iter().map(|entry| entry.node).collect();
-        let pending_anchors = pending_page_anchors(self.metadata.hierarchy(), &selection, |node| {
-            view.projected_error_pixels(
-                node.bounds(),
-                node.representative_spacing(),
-                coordinate_origin,
-            )
-        });
-        let stats = CellUpdateStats {
-            built_nodes,
-            build_deferred,
-            build_capped: build_deferred > 0,
-            build_ms,
-            cut_nodes: cut.len(),
-            max_gap,
-            gaps_over_one,
-            descendant_too_fine: report.counters().descendant_too_fine,
-            apply: report.plan.apply,
-            counters: *report.counters(),
-            cpu_cell_bytes: driver.cpu_bytes(),
-            pending_block_ids: plan.pending_blocks().to_vec(),
-            pending_page_anchors: pending_anchors,
-            uncovered_nodes: plan.uncovered_nodes().len(),
         };
-        self.visible_plan = Some(plan);
+        let CellDraw {
+            ack,
+            evicted,
+            pool_reset,
+            report,
+        } = draw;
+        if pool_reset {
+            self.pool_reset();
+        }
+        self.apply_evicted(&evicted);
+        self.apply_ack(ack);
+        let stats = CellUpdateStats::new(stats, &report, driver.cpu_bytes());
         Ok(LodCellUpdate { stats, report })
     }
 }

@@ -416,6 +416,9 @@ struct Totals {
     stages: Vec<f64>,
     /// Digest of the applied (drawn) cut of the last frame.
     drawn_digest: u64,
+    /// Times each node was built, and nodes the driver forgot (CPU budget).
+    builds: HashMap<NodeId, usize>,
+    forgotten: usize,
 }
 
 struct Harness {
@@ -438,6 +441,10 @@ struct Harness {
     zone_coarsenings: usize,
     /// Sample points drawn in the previous cut, still inside the planner's cut, drawn by nothing.
     lost_samples: usize,
+    /// The planner's nodes of the cut being drawn, when the dataset has already planned further
+    /// (the worker sim): the lost-sample oracle must ask the plan of that cut, not the newest one.
+    /// `None` reads `dataset.visible_plan`, which is the drawn cut's plan in one thread.
+    planner_of_drawn_cut: Option<Vec<NodeId>>,
     /// Frames whose cut had holes (only counted, not asserted, when `soft_checks` is set).
     hole_frames: usize,
     /// First failed check, kept when `soft_checks` is set.
@@ -462,13 +469,15 @@ impl Harness {
         let driver = driver_for(&dataset, u64::MAX);
         let root = dataset.metadata.hierarchy().stats().root_bounds;
         // A fixed lattice of probe points over the root: the zone check compares the finest
-        // drawn depth at each of them from frame to frame.
+        // drawn depth at each of them from frame to frame. It spans 0.01..0.99 of the root and
+        // avoids the dyadic planes (node faces): a point exactly on a face belongs to two nodes under closed bounds, and
+        // would count a neighbour's zone as its own.
         let mut sample_points = Vec::new();
         for x in 0..7 {
             for y in 0..7 {
                 for z in 0..7 {
                     sample_points.push(std::array::from_fn(|axis| {
-                        let t = [x, y, z][axis] as f64 / 6.0 * 0.98 + 0.01;
+                        let t = 0.01 + 0.98 * ([x, y, z][axis] as f64 + 0.37) / 6.37;
                         root.min()[axis] + (root.max()[axis] - root.min()[axis]) * t
                     }));
                 }
@@ -491,6 +500,7 @@ impl Harness {
             octant_depths: HashMap::new(),
             zone_coarsenings: 0,
             lost_samples: 0,
+            planner_of_drawn_cut: None,
             hole_frames: 0,
             first_failure: None,
             soft_checks: false,
@@ -505,16 +515,20 @@ impl Harness {
         }
     }
 
-    /// The camera moved: the ladder restarts (the target-stage shortcut applies when the new
-    /// cut is already built) and the zone memory of the old view is dropped.
+    /// The camera moved: the zone memory of the old view is dropped. The ladder restarts by
+    /// itself only after a jump (R3-Q22), so `stage` is left alone.
     fn camera_moved(&mut self) {
-        self.stage = None;
         self.dirty = true;
-        self.sample_depths.iter_mut().for_each(|d| *d = None);
-        self.octant_depths.clear();
+        self.forget_zones();
         self.last_cut_digest = None;
         self.last_stage = None;
         self.retained_run = 0;
+    }
+
+    /// Drops the zone memory only: what was drawn before no longer bounds what is drawn now.
+    fn forget_zones(&mut self) {
+        self.sample_depths.iter_mut().for_each(|d| *d = None);
+        self.octant_depths.clear();
     }
 
     /// A failed check: panics, or is counted when `soft_checks` is set.
@@ -523,30 +537,9 @@ impl Harness {
         self.first_failure.get_or_insert(message);
     }
 
-    fn frame(&mut self, view: &ViewProjection) -> FrameInfo {
-        self.target.eye = view.camera().position();
-        let step = CellStep {
-            view,
-            target_pixels: self.target_px,
-            config: self.config,
-            can_load_blocks: true,
-        };
-        let number = self.totals.frames;
-        let out = update_cells_staged(
-            &mut self.dataset,
-            &step,
-            &mut self.stage,
-            &mut self.dirty,
-            &mut self.driver,
-            &mut self.target,
-            None,
-            &mut self.blocks,
-        )
-        .unwrap_or_else(|error| panic!("frame {number}: {error}"));
-        let stats = &out.update.stats;
-        let plan = &out.update.report.plan;
-        self.target.check_plan(plan);
-        let digest = cell_cut_digest(&plan.entries);
+    /// The oracles on the cut a frame drew (holes, coarsenings, lost samples); runs when the
+    /// drawn cut changed.
+    fn check_drawn_cut(&mut self, number: usize, plan: &FramePlan, digest: u64) {
         if self.last_cut_digest != Some(digest) {
             let cut = CutView::new(&self.dataset, plan);
             let holes = cut.holes();
@@ -592,12 +585,16 @@ impl Harness {
                 // the synthetic ones only print it. A lost sample is a point the previous cut
                 // drew, the planner's cut still covers and the new cut draws with nothing.
                 let hierarchy = self.dataset.metadata.hierarchy();
-                let planner: Vec<SpatialBounds> = self
-                    .dataset
-                    .visible_plan
-                    .as_ref()
-                    .map(|plan| plan.node_ids())
-                    .unwrap_or_default()
+                let planned: &[NodeId] = match &self.planner_of_drawn_cut {
+                    Some(ids) => ids,
+                    None => self
+                        .dataset
+                        .visible_plan
+                        .as_ref()
+                        .map(|plan| plan.node_ids())
+                        .unwrap_or_default(),
+                };
+                let planner: Vec<SpatialBounds> = planned
                     .iter()
                     .filter(|id| self.driver.has_node(**id))
                     .filter_map(|id| hierarchy.node(*id).map(SpatialNode::bounds))
@@ -634,6 +631,33 @@ impl Harness {
             self.last_cut_digest = Some(digest);
             self.last_cut = Some(cut);
         }
+    }
+
+    fn frame(&mut self, view: &ViewProjection) -> FrameInfo {
+        self.target.eye = view.camera().position();
+        let step = CellStep {
+            view,
+            target_pixels: self.target_px,
+            config: self.config,
+            can_load_blocks: true,
+        };
+        let number = self.totals.frames;
+        let out = update_cells_staged(
+            &mut self.dataset,
+            &step,
+            &mut self.stage,
+            &mut self.dirty,
+            &mut self.driver,
+            &mut self.target,
+            None,
+            &mut self.blocks,
+        )
+        .unwrap_or_else(|error| panic!("frame {number}: {error}"));
+        let stats = &out.update.stats;
+        let plan = &out.update.report.plan;
+        self.target.check_plan(plan);
+        let digest = cell_cut_digest(&plan.entries);
+        self.check_drawn_cut(number, plan, digest);
         if let Some(last) = self.last_stage
             && out.stage_pixels > last
         {
@@ -676,6 +700,10 @@ impl Harness {
             }
         }
         let anchors = stats.pending_page_anchors.clone();
+        for id in &stats.built_nodes {
+            *self.totals.builds.entry(*id).or_default() += 1;
+        }
+        self.totals.forgotten += out.update.report.forgotten.len();
         self.totals.frames += 1;
         self.totals.uploads += info.uploaded_pages;
         self.totals.max_gap = self.totals.max_gap.max(stats.max_gap);
@@ -704,8 +732,18 @@ impl Harness {
     fn settle(&mut self, view: &ViewProjection, quiet: usize, max_frames: usize) -> FrameInfo {
         let clock = Instant::now();
         let mut calm = 0;
+        let mut last = String::new();
         for _ in 0..max_frames {
             let info = self.frame(view);
+            last = format!(
+                "apply {:?} built {} deferred {} pending_blocks {} uploaded_pages {} cut_nodes {}",
+                info.apply,
+                info.built,
+                info.deferred,
+                info.pending_blocks,
+                info.uploaded_pages,
+                info.cut_nodes
+            );
             let settled = !self.dirty
                 && self.stage == Some(self.target_px)
                 && info.apply == CutApply::Applied
@@ -724,7 +762,7 @@ impl Harness {
             );
         }
         panic!(
-            "did not settle in {max_frames} frames: stage {:?} dirty {} totals {:?}",
+            "did not settle in {max_frames} frames: stage {:?} dirty {} last frame [{last}] totals {:?}",
             self.stage, self.dirty, self.totals
         );
     }
@@ -800,7 +838,7 @@ struct PagedSynthetic {
     pages: HashMap<NodeId, (u32, Vec<SpatialNode>)>,
 }
 
-fn paged_synthetic(budget: usize) -> PagedSynthetic {
+fn paged_synthetic(budget: usize, cache_bytes: usize) -> PagedSynthetic {
     let all = grown_nodes();
     let full = octree_dataset(all.clone(), HierarchySemantics::Replacement, true);
     let blocks: HashMap<BlockId, PointBlock> = all
@@ -810,7 +848,7 @@ fn paged_synthetic(budget: usize) -> PagedSynthetic {
     let resident: Vec<SpatialNode> = all.iter().filter(|n| n.id().get() <= 9).cloned().collect();
     let total = all.iter().map(SpatialNode::point_count).sum();
     let hierarchy = SpatialHierarchy::new(resident, Vec::new(), Some(total)).unwrap();
-    let dataset = LodDataset::new([0.0; 3], hierarchy, 64 << 20)
+    let dataset = LodDataset::new([0.0; 3], hierarchy, cache_bytes)
         .unwrap()
         .with_global_frame(true)
         .with_pages(&[NodeId::new(2), NodeId::new(9)], Box::new(|_| {}), budget)
@@ -835,11 +873,16 @@ fn paged_synthetic(budget: usize) -> PagedSynthetic {
 }
 
 fn synthetic_harness(budget: usize, target_px: f64) -> Harness {
+    synthetic_harness_with_cache(budget, target_px, 64 << 20)
+}
+
+/// [`synthetic_harness`] with a decoded-block cache of `cache_bytes`.
+fn synthetic_harness_with_cache(budget: usize, target_px: f64, cache_bytes: usize) -> Harness {
     let PagedSynthetic {
         dataset,
         blocks,
         pages,
-    } = paged_synthetic(budget);
+    } = paged_synthetic(budget, cache_bytes);
     Harness::new(
         dataset,
         target_px,
@@ -924,7 +967,8 @@ fn synthetic_build_cap_defers_without_waiting_for_the_camera() {
     let mut capped = free;
     capped.driver = driver_for(&capped.dataset, u64::MAX);
     capped.target = StrictTarget::default();
-    capped.dataset.pool_was_reset();
+    capped.dataset.pool_reset();
+    capped.dataset.driver_replaced();
     capped.camera_moved();
     // The new pool draws nothing yet: the old image is not a baseline for lost samples.
     capped.last_cut = None;
@@ -1099,6 +1143,9 @@ fn real_path(name: &str) -> Option<std::path::PathBuf> {
 
 #[path = "lod_cells_bench.rs"]
 mod bench;
+
+#[path = "lod_cells_sim.rs"]
+mod sim;
 
 fn open_real(name: &str, target_px: f64, page_budget: usize) -> Option<Real> {
     let path = real_path(name)?;

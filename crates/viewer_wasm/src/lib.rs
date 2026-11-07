@@ -22,8 +22,9 @@ pub use controller::{
     RenderInstanceSnapshot, ViewerConfig, ViewerController, ViewerError, ViewerStats,
 };
 pub use lod_dataset::{
-    CellUpdateConfig, CellUpdateStats, LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError,
-    LodViewStats, LodViewUpdate, LodWorkStats,
+    CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
+    LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError, LodViewStats, LodViewUpdate,
+    LodWorkStats, PoolAck, add_cell_nodes, draw_cell_cut,
 };
 pub use lod_pages::{DEFAULT_PAGE_BUDGET_BYTES, PageInsert, PageRelease};
 

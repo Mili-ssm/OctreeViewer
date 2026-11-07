@@ -198,6 +198,13 @@ pub(super) fn driver_for(dataset: &LodDataset, cpu_budget_bytes: u64) -> CellDri
     })
 }
 
+/// Builds the cells of `id` and hands them to the driver, as steps 1 and 2 do.
+fn build_into(dataset: &mut LodDataset, driver: &mut CellDriver, id: NodeId) {
+    let generation = dataset.cell_generation();
+    let packed = dataset.build_node_cells(id).unwrap();
+    crate::add_cell_nodes(driver, packed.map(|node| (generation, node))).unwrap();
+}
+
 /// A target node whose cells exist is in the plan; one whose blocks are only decoded is not.
 fn plan_nodes(dataset: &mut LodDataset, px: f64) -> Vec<NodeId> {
     let (_, selection) = dataset.select_target(&view_at(None), px).unwrap();
@@ -253,15 +260,11 @@ fn a_node_counts_as_resident_for_the_plan_only_once_its_cells_exist() {
     assert!(plan_nodes(&mut dataset, 64.0).is_empty());
 
     // With the root built, it covers the region as the fallback of every unbuilt target.
-    dataset
-        .build_node_cells(&mut driver, NodeId::new(1))
-        .unwrap();
+    build_into(&mut dataset, &mut driver, NodeId::new(1));
     assert_eq!(plan_nodes(&mut dataset, 64.0), [NodeId::new(1)]);
 
     // A target built afterwards joins the plan next to its fallback.
-    dataset
-        .build_node_cells(&mut driver, NodeId::new(3))
-        .unwrap();
+    build_into(&mut dataset, &mut driver, NodeId::new(3));
     assert_eq!(
         plan_nodes(&mut dataset, 64.0),
         [NodeId::new(1), NodeId::new(3)]
@@ -278,24 +281,38 @@ fn at_most_the_configured_nodes_are_built_per_update_nearest_first() {
     let mut target = NullTarget::at(&view);
     let config = CellUpdateConfig { max_node_builds: 2 };
     let mut rounds = Vec::new();
-    for round in 0..4 {
+    for round in 0..5 {
         let update = dataset
             .update_cells(&view, 64.0, config, &mut driver, &mut target, None, |_| {
                 Ok(None)
             })
             .unwrap();
-        assert_eq!(update.stats.built_nodes.len(), 2, "round {round}");
-        assert_eq!(update.stats.build_capped, round < 3);
-        assert_eq!(update.stats.build_deferred, 6 - 2 * round);
+        // Nine nodes wait: the eight targets and the root, which goes first (R3-Q22).
+        assert_eq!(
+            update.stats.built_nodes.len(),
+            if round < 4 { 2 } else { 1 }
+        );
+        assert_eq!(update.stats.build_capped, round < 4);
+        assert_eq!(
+            update.stats.build_deferred,
+            7_usize.saturating_sub(2 * round)
+        );
         rounds.push(update.stats.built_nodes);
     }
-    // Distances to the eye (axis gaps 6/38, 4/36, 2/34 to the high/low half) are all distinct:
-    // node 9, then 5, 7, 8 (one far axis, z first), 3, 4, 6 (two), and node 2. The code breaks
-    // exact ties by ascending `NodeId`.
-    let ids = |list: [u64; 2]| list.map(NodeId::new).to_vec();
+    // The root contains the eye, so it comes first: parents before children (R3-Q22). Distances
+    // to the eye (axis gaps 6/38, 4/36, 2/34 to the high/low half) are all distinct: node 9, then
+    // 5, 7, 8 (one far axis, z first), 3, 4, 6 (two), and node 2. The code breaks exact ties by
+    // ascending `NodeId`.
+    let ids = |list: &[u64]| list.iter().map(|id| NodeId::new(*id)).collect::<Vec<_>>();
     assert_eq!(
         rounds,
-        [ids([9, 5]), ids([7, 8]), ids([3, 4]), ids([6, 2])],
+        [
+            ids(&[1, 9]),
+            ids(&[5, 7]),
+            ids(&[8, 3]),
+            ids(&[4, 6]),
+            ids(&[2])
+        ],
         "nearest first, ties by ascending NodeId"
     );
     let done = dataset
@@ -392,9 +409,72 @@ fn nodes_the_driver_forgot_are_built_again() {
     let mut target = NullTarget::default();
     let history = run_to_completion(&mut dataset, &mut fresh, &mut target, &view, 64.0);
     let rebuilt: usize = history.iter().map(|stats| stats.built_nodes.len()).sum();
-    assert_eq!(rebuilt, 8);
+    // The eight targets and the root, their parent (R3-Q22).
+    assert_eq!(rebuilt, 9);
     assert!(fresh.has_node(NodeId::new(5)));
     assert_eq!(history.last().unwrap().cut_nodes, 8);
+}
+
+#[test]
+fn a_node_forgotten_under_the_cpu_budget_is_evicted_and_built_and_sent_again() {
+    let view = view_at(None);
+    let spare = NodeId::new(12);
+    // Node 12 is built ahead and then sits in the driver outside every cut at 64 px, with no
+    // level in the pool: a budget one byte below the nine targets plus 12 makes it the one to go.
+    let (full, spare_bytes) = {
+        let mut dataset = cell_dataset();
+        let mut driver = driver_for(&dataset, u64::MAX);
+        let mut target = NullTarget::default();
+        run_to_completion(&mut dataset, &mut driver, &mut target, &view, 64.0);
+        let before = driver.cpu_bytes();
+        build_into(&mut dataset, &mut driver, spare);
+        (before, driver.cpu_bytes() - before)
+    };
+    let mut dataset = cell_dataset();
+    let mut driver = driver_for(&dataset, full + spare_bytes - 1);
+    let mut target = NullTarget::at(&view);
+    let blocks: HashMap<BlockId, PointBlock> = (1..=17)
+        .map(|node| (BlockId::new(100 + node), node_block(&dataset, node)))
+        .collect();
+    dataset
+        .insert_block(blocks[&BlockId::new(112)].clone())
+        .unwrap();
+    build_into(&mut dataset, &mut driver, spare);
+    let (forgotten, spare_builds) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+    let mut run = |px: f64, rounds: usize, dataset: &mut LodDataset, driver: &mut CellDriver| {
+        for _ in 0..rounds {
+            let update = dataset
+                .update_cells(
+                    &view,
+                    px,
+                    CellUpdateConfig::default(),
+                    driver,
+                    &mut target,
+                    None,
+                    |id| Ok(blocks.get(&id).cloned()),
+                )
+                .unwrap();
+            let count = |ids: &[NodeId]| ids.iter().filter(|id| **id == spare).count();
+            forgotten.set(forgotten.get() + count(&update.report.forgotten));
+            spare_builds.set(spare_builds.get() + count(&update.stats.built_nodes));
+            // What the driver reports forgotten is built again when needed, never a node the
+            // dataset still believes the driver holds.
+            for id in &update.report.forgotten {
+                assert!(!dataset.cells.has_cells(*id));
+            }
+            if spare_builds.get() > 0 && !driver.needs_frame() {
+                return;
+            }
+        }
+    };
+    run(64.0, 30, &mut dataset, &mut driver);
+    assert_eq!(forgotten.get(), 1, "the idle node was not forgotten");
+    assert!(!driver.has_node(spare) && !dataset.cells.has_cells(spare));
+    // At 8 px node 12 is a target: evicted, so built and sent again (a repeat would be
+    // `Duplicate` or ignored, a missing one `UnknownNode`).
+    run(8.0, 80, &mut dataset, &mut driver);
+    assert_eq!(spare_builds.get(), 1, "node 12 was not built again");
+    assert!(driver.has_node(spare));
 }
 
 /// A chain: node n+1 is the first octant of node n, one level and one depth down.
@@ -521,9 +601,7 @@ fn an_update_whose_cut_has_a_gap_above_the_mask_fails() {
     }
     let mut driver = driver_for(&dataset, u64::MAX);
     for node in [5_u64, 6] {
-        dataset
-            .build_node_cells(&mut driver, NodeId::new(node))
-            .unwrap();
+        build_into(&mut dataset, &mut driver, NodeId::new(node));
     }
     let view = view_at(None);
     let error = dataset
@@ -642,7 +720,7 @@ fn the_nodes_the_pool_draws_stay_pinned_when_nothing_else_names_them() {
     assert_eq!(pinned, drawn);
 
     // A reset driver draws nothing, and a failed frame leaves no pin either.
-    dataset.pool_was_reset();
+    dataset.pool_reset();
     assert!(dataset.pinned_nodes().is_empty());
     let _ = driver.reset();
     dataset.cells.pool_drawn = drawn.clone();

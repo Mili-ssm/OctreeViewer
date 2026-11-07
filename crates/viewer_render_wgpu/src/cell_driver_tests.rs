@@ -734,3 +734,79 @@ fn needs_frame_stays_true_while_nodes_wait_outside_the_cut_or_held() {
     assert!(excluded && held, "the scenario must wait both ways");
     assert!(!fx.driver.needs_frame());
 }
+
+#[test]
+fn nodes_that_arrived_after_the_latched_cut_are_not_forgotten_until_the_next_cut() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, 0));
+    let cam = camera("zoom");
+    fx.gpu.eye = cam.position();
+    let view = fx.view(&cam);
+    // The fixture's nodes arrived after the last latched cut (none): the cut here does not name
+    // them. Zero budget, so every idle node outside the cut would be forgotten.
+    let cut: Vec<NodeId> = Vec::new();
+    fx.driver
+        .frame_latched(&mut fx.gpu, &cut, &view, 4.0, &mut |_| {})
+        .expect("frame");
+    assert!(
+        (2..10).all(|id| fx.driver.has_node(NodeId::new(id))),
+        "arrivals after the latched cut are spared"
+    );
+    // The next cut is latched: the same nodes are fair game.
+    fx.driver.cut_received();
+    let report = fx
+        .driver
+        .frame_latched(&mut fx.gpu, &cut, &view, 4.0, &mut |_| {})
+        .expect("frame");
+    assert_eq!(report.forgotten.len(), 8);
+    assert!(!fx.driver.has_node(NodeId::new(2)));
+}
+
+#[test]
+fn support_nodes_are_not_forgotten_while_the_cut_does_not_name_them() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, 0));
+    let cam = camera("zoom");
+    fx.gpu.eye = cam.position();
+    let view = fx.view(&cam);
+    // Zero budget and a cut that names nothing: only the support set survives.
+    fx.driver.cut_received();
+    fx.driver.set_support(&ids(&[2, 3]));
+    let report = fx
+        .driver
+        .frame_latched(&mut fx.gpu, &[], &view, 4.0, &mut |_| {})
+        .expect("frame");
+    assert_eq!(report.forgotten.len(), 6);
+    assert!(fx.driver.has_node(NodeId::new(2)) && fx.driver.has_node(NodeId::new(3)));
+    // The next cut replaces the set.
+    fx.driver.cut_received();
+    fx.driver.set_support(&[]);
+    let report = fx
+        .driver
+        .frame_latched(&mut fx.gpu, &[], &view, 4.0, &mut |_| {})
+        .expect("frame");
+    assert_eq!(report.forgotten.len(), 2);
+}
+
+#[test]
+fn a_lost_pool_keeps_the_driver_busy_until_the_next_frame_resets_it() {
+    let mut fx = Fixture::new(two_regions(), config(256, 4, u64::MAX));
+    let cam = camera("fit");
+    fx.run(60, &fine_cut(), &cam, 4.0);
+    assert!(!fx.driver.needs_frame_on(&fx.gpu), "at rest with a pool");
+    fx.gpu.lose_pool();
+    assert!(!fx.driver.needs_frame(), "the driver itself knows nothing");
+    assert!(fx.driver.needs_frame_on(&fx.gpu), "the lost pool is work");
+    fx.step(&fine_cut(), &cam, 4.0);
+    assert!(
+        fx.driver.needs_frame_on(&fx.gpu),
+        "the reset left work to do"
+    );
+}
+
+#[test]
+fn a_node_of_another_generation_is_foreign() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    // Stored without a generation: foreign to every dataset.
+    assert_eq!(fx.driver.foreign_node(7), Some(NodeId::new(2)));
+    fx.driver = CellDriver::new(config(128, 8, u64::MAX));
+    assert_eq!(fx.driver.foreign_node(7), None);
+}

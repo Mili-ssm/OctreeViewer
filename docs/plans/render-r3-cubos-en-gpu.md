@@ -470,7 +470,7 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
 - **Mensajes** (todos con la generación del dataset y la sesión del pool):
   - construcción → render:
     - `nodeCells`: un nodo con todos sus niveles empaquetados, búferes transferidos, en orden y sin fusionar. Un nodo repetido con el mismo id y la misma generación se ignora;
-    - `cellCut`: el corte de la etapa actual, con su `cutEpoch`. Aquí sí gana el último.
+    - `cellCut`: el corte de la etapa actual, con su `cutEpoch` y su `support` (los antepasados ya construidos de nodos que aún esperan celdas; el driver no los olvida, para que «padres primero» no los reconstruya una y otra vez). Aquí sí gana el último.
   - render → construcción:
     - `poolAck`: el `cutEpoch` aplicado, los nodos del corte aplicado o retenido y `missing` (los nodos que el corte nombraba y el driver no tenía, para reconstruirlos). Gana el último;
     - `evict`: los nodos que el driver olvidó por el presupuesto de CPU, con la clave del pool, en orden y sin fusionar;
@@ -486,19 +486,32 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
 - **Memoria:** `cpu_budget_bytes` del driver en wasm, 512 MiB (el criterio de parada de T9b). Se registra `wasmLinearMemoryBytes` en los dos workers.
 
 **T10a1, códec y empaquetado** (`viewer_render_wgpu`):
-- [ ] Códec de `PackedLevel` (cabecera, `PageInfo` de tamaño fijo, instancias `Pod`), con ida y vuelta exacta y errores en datos truncados o mal formados.
-- [ ] `pack_node`: empaqueta las celdas de un nodo fuera del driver (lo que hoy hace `CellDriver::add_node`), para hacerlo en el worker de construcción. `add_packed_generation` ignora el duplicado con la misma generación (`AlreadyStored`); con otra generación es `Duplicate` y se resuelve con `driverReplaced`.
-- [ ] **Pasa si** el códec da exactamente los mismos bytes de GPU que el empaquetado directo, y los datos malformados dan error, nunca pánico.
+- [x] Códec de `PackedLevel` (cabecera, `PageInfo` de tamaño fijo, instancias `Pod`), con ida y vuelta exacta y errores en datos truncados o mal formados.
+- [x] `pack_node`: empaqueta las celdas de un nodo fuera del driver (lo que hoy hace `CellDriver::add_node`), para hacerlo en el worker de construcción. `add_packed_generation` ignora el duplicado con la misma generación (`AlreadyStored`); con otra generación es `Duplicate` y se resuelve con `driverReplaced`.
+- [x] **Pasa si** el códec da exactamente los mismos bytes de GPU que el empaquetado directo, y los datos malformados dan error, nunca pánico.
 
 **T10a2, tres pasos, padres primero y simulación** (`lod_cells.rs`, `lod_driver.rs`, `lod_dataset.rs`):
-- [ ] `update_cells_at_stage` separado en los tres pasos, con un acuse que puede llegar con retraso; el fijado, los olvidados, `missing`, `poolReset` y `driverReplaced` como en el diseño.
-- [ ] Padres primero (R3-Q22) y la escalera que solo arranca al abrir o tras un salto.
-- [ ] **Pasa si**, en un test nativo que simula los workers, el `cutDigestAtRest` es el mismo que en proceso:
+- [x] `update_cells_at_stage` separado en los tres pasos, con un acuse que puede llegar con retraso; el fijado, los olvidados, `missing`, `poolReset` y `driverReplaced` como en el diseño.
+- [x] Padres primero (R3-Q22) y la escalera que solo arranca al abrir o tras un salto.
+- [x] **Pasa si**, en un test nativo que simula los workers, el `cutDigestAtRest` es el mismo que en proceso:
   - intercalado aleatorio con semilla de pasos de construcción y de render, presupuestos de CPU y de páginas pequeños, en órbita y en acercamiento, sobre Belvedere v7.5 (con `R3_REQUIRE_REAL_DATA`) y en sintético;
   - con un `poolReset` y un `driverReplaced` a mitad de carga;
   - sin `Duplicate`, `UnknownNode` ni `NoStoredLevels`;
   - una página expulsada durante el retraso del acuse no deja huecos;
   - al orbitar, ninguna muestra se vuelve más gruesa que antes y que lo pedido (R3-Q21), y la etapa no pasa más de 1 s por encima del objetivo.
+- **Hechas T10a1 y T10a2 (07-11-2026).** En la simulación de los dos workers, con intercalado aleatorio, el `cutDigestAtRest` es igual al del camino en proceso:
+  - en sintético, con 4 semillas, en órbita y en acercamiento, con `poolReset` y `driverReplaced`;
+  - en Belvedere v7.5, con las semillas 1 y 7 en órbita, la 3 en acercamiento y la 5 con reinicios;
+  - sin huecos, zonas perdidas, engrosados ni violaciones de «padres primero», y sin ningún `Duplicate`, `UnknownNode` ni `NoStoredLevels`.
+  Las simulaciones reales tardan minutos: son `#[ignore]` y se lanzan con `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --profile perf -- --ignored real_sim`.
+  Dos fallos de la simulación resultaron ser del oráculo y se corrigieron sin aflojarlo:
+  - muestras en caras compartidas por dos nodos;
+  - comparar con un plan que el render aún no había recibido.
+- **Límites conocidos:**
+  - los antepasados de «padres primero» (`support`) no se olvidan y pueden sobrepasar el presupuesto de CPU sin aviso;
+  - leer primero el antepasado más alto e intercalar con la selección es preventivo: ningún test reprodujo la inanición;
+  - un `add_cell_nodes` fallido vacía los nodos fijados del pool;
+  - por debajo del conjunto de trabajo, el olvido y la reconstrucción se repiten en bucle (ver Tarea 11).
 
 **T10b, bindings** (★ `bindings/lod.rs`, `bindings/builder.rs`, `bindings/render.rs`):
 - [ ] Apertura con celdas opt-in. Si el formato no las admite, `CellPathUnsupported` y se sigue por la ruta CPU.
@@ -528,6 +541,7 @@ Spec del 06-11-2026, enmendada tras el pre-mortem y con R3-Q22 y R3-Q23. El viso
 
 - [ ] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
 - [ ] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
+- [ ] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
 - [ ] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright.
 
 ## Tarea 12 ★: modos de color

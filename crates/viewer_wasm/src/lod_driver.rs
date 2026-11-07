@@ -8,8 +8,8 @@ use viewer_core::{AttributeColumn, AttributeDescriptor, BlockId, NodeId, PointBa
 use viewer_render_wgpu::{CellDriver, CellTarget, ColorMode, ViewProjection};
 
 use crate::{
-    CellUpdateConfig, LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError, LodViewStats,
-    PageInsert,
+    CellUpdate, CellUpdateConfig, LodBuiltScene, LodCellUpdate, LodDataset, LodDatasetError,
+    LodViewStats, PageInsert,
     lod_dataset::{WorkClock, next_lod_stage},
 };
 
@@ -108,19 +108,80 @@ pub(crate) struct CellStageUpdate {
     pub stage_pixels: f64,
 }
 
+/// Step 1 of the cells ladder and the rung it ran at.
+#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
+pub(crate) struct CellStagePlan {
+    pub update: CellUpdate,
+    pub stage_pixels: f64,
+}
+
 /// The px ladder of the cells path (R3-Q19), same stage machine as [`update_lod_view`]: coarse
 /// to fine, never loading a node's cells before its parents'. Each rung's cut stays as the
 /// planner's retained fallback for the next, and the rung halves toward `target_pixels` once the
 /// rung's cut has all its cells built. The caller keeps `stage_pixels` and `dirty` between
 /// frames (`dirty`: another update is worth running even if the view does not change).
 ///
-/// When the camera moves the caller resets `stage_pixels = None` and sets `dirty = true`: the
-/// ladder then restarts coarse, so the nodes of the new region get their parents' cells first
-/// (R3-Q19) instead of loading fine nodes without a fallback.
+/// The ladder starts when the dataset opens (`stage_pixels = None`) and after a camera jump (no
+/// node of the cut has cells or an ancestor with cells, R3-Q22); this function detects the jump
+/// itself and restarts. Camera moves that keep part of the cut do not reset it: the new nodes
+/// are built after their parents (`LodDataset::plan_cell_update`).
 ///
-/// `dirty` also stays true while builds are deferred by the cap or the driver has work
-/// (`CellDriver::needs_frame`), which includes a permanent pool overflow and a failed frame:
-/// the caller stops on `pool_overflow > 0` or on errors that repeat.
+/// This is step 1 only: it needs no driver, so the build worker runs it alone. `dirty` stays
+/// true while builds are deferred by the cap; the driver's own work is the render side's.
+#[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
+pub(crate) fn plan_cells_staged(
+    dataset: &mut LodDataset,
+    step: &CellStep<'_>,
+    stage_pixels: &mut Option<f64>,
+    dirty: &mut bool,
+    mut async_priority_order: Option<&mut Vec<BlockId>>,
+    mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+) -> Result<CellStagePlan, LodDatasetError> {
+    if let Some(stage) = *stage_pixels
+        && dataset.camera_jumped(step.view, stage)?
+    {
+        *stage_pixels = None;
+        *dirty = true;
+    }
+    run_stage_ladder(
+        dataset,
+        stage_pixels,
+        step.target_pixels,
+        false,
+        |dataset| dataset.target_cells_are_ready(step.view, step.target_pixels),
+        |dataset, stage, stage_pixels| {
+            let update = dataset.plan_cell_update(
+                step.view,
+                stage,
+                step.config,
+                async_priority_order.as_deref_mut(),
+                &mut load_block,
+            )?;
+            // Nodes deferred by the build cap are pending too: the rung is not left, and the
+            // update repeats, until every selected node has its cells.
+            let stats = &update.stats;
+            let pending = !stats.pending_block_ids.is_empty()
+                || !stats.pending_page_anchors.is_empty()
+                || stats.build_deferred > 0;
+            (*stage_pixels, *dirty) = next_lod_stage(
+                Some(stage),
+                step.target_pixels,
+                pending,
+                step.can_load_blocks,
+            );
+            *dirty |= stats.build_deferred > 0;
+            Ok(CellStagePlan {
+                update,
+                stage_pixels: stage,
+            })
+        },
+    )
+}
+
+/// [`plan_cells_staged`] followed by the driver's frame and the acknowledgement, in one thread.
+/// `dirty` also stays true while the driver has work (`CellDriver::needs_frame`), which includes
+/// a permanent pool overflow and a failed frame: the caller stops on `pool_overflow > 0` or on
+/// errors that repeat.
 #[cfg_attr(not(test), allow(dead_code))] // only the test-only ladder uses it for now
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_cells_staged<T: CellTarget>(
@@ -130,45 +191,32 @@ pub(crate) fn update_cells_staged<T: CellTarget>(
     dirty: &mut bool,
     driver: &mut CellDriver,
     target: &mut T,
-    mut async_priority_order: Option<&mut Vec<BlockId>>,
-    mut load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
+    async_priority_order: Option<&mut Vec<BlockId>>,
+    load_block: impl FnMut(BlockId) -> Result<Option<PointBlock>, String>,
 ) -> Result<CellStageUpdate, LodDatasetError> {
-    run_stage_ladder(
+    dataset.reconcile_driver(driver)?;
+    let planned = plan_cells_staged(
         dataset,
+        step,
         stage_pixels,
+        dirty,
+        async_priority_order,
+        load_block,
+    )?;
+    let update = dataset.draw_planned_cells(
+        planned.update,
+        step.view,
         step.target_pixels,
-        false,
-        |dataset| dataset.target_cells_are_ready(step.view, step.target_pixels),
-        |dataset, stage, stage_pixels| {
-            let update = dataset.update_cells_at_stage(
-                step.view,
-                stage,
-                step.target_pixels,
-                step.config,
-                driver,
-                target,
-                async_priority_order.as_deref_mut(),
-                &mut load_block,
-            )?;
-            // Nodes deferred by the build cap are pending too: the rung is not left, and the
-            // update repeats, until every selected node has its cells.
-            let pending = !update.stats.pending_block_ids.is_empty()
-                || !update.stats.pending_page_anchors.is_empty()
-                || update.stats.build_deferred > 0;
-            (*stage_pixels, *dirty) = next_lod_stage(
-                Some(stage),
-                step.target_pixels,
-                pending,
-                step.can_load_blocks,
-            );
-            // Builds and the driver's own work (uploads, retained cut) need no new input.
-            *dirty |= update.stats.build_deferred > 0 || driver.needs_frame();
-            Ok(CellStageUpdate {
-                update,
-                stage_pixels: stage,
-            })
-        },
-    )
+        driver,
+        target,
+    )?;
+    // Builds and the driver's own work (uploads, retained cut, a target that lost its pool) need
+    // no new input.
+    *dirty |= driver.needs_frame_on(&*target);
+    Ok(CellStageUpdate {
+        update,
+        stage_pixels: planned.stage_pixels,
+    })
 }
 
 /// Most page-fetch rounds one synchronous update runs before it returns what it has.

@@ -196,6 +196,9 @@ pub struct FrameReport {
     pub active_pages: usize,
     /// Nodes dropped to stay within the CPU budget; send their cells again to use them.
     pub forgotten: Vec<NodeId>,
+    /// The target had lost its pool and the driver reset it before planning (the pool draws
+    /// only what this frame uploads).
+    pub pool_reset: bool,
 }
 
 impl FrameReport {
@@ -230,6 +233,12 @@ pub struct CellDriver {
     /// Nodes were added or the pool was reset since the last frame.
     dirty: bool,
     busy: bool,
+    /// Nodes added since the last cut was latched ([`CellDriver::cut_received`]): the cut being
+    /// drawn was sent before they arrived, so `forget` spares them until the next cut.
+    arrived_since_cut: HashSet<NodeId>,
+    /// Nodes the sender needs stored although no cut names them (ancestors of cut nodes still
+    /// being built, R3-Q22): `forget` spares them. Replaced by every cut ([`CellDriver::set_support`]).
+    support: HashSet<NodeId>,
 }
 
 /// Bytes of a packed level on the CPU.
@@ -350,6 +359,8 @@ impl CellDriver {
             failed: false,
             dirty: false,
             busy: false,
+            arrived_since_cut: HashSet::new(),
+            support: HashSet::new(),
         }
     }
 
@@ -468,6 +479,7 @@ impl CellDriver {
             },
         );
         self.dirty = true;
+        self.arrived_since_cut.insert(id);
         Ok(NodeAdded::Stored { levels: count })
     }
 
@@ -497,6 +509,40 @@ impl CellDriver {
         self.dirty || self.busy || self.failed
     }
 
+    /// A new cut was received (a `cellCut` message): nodes added before it were sent before it
+    /// and are subject to `forget`; nodes added after it are spared until the next cut. `frame`
+    /// and `frame_marked` latch the cut themselves (their cut comes with the call), so only a
+    /// caller of [`CellDriver::frame_latched`] needs this.
+    pub fn cut_received(&mut self) {
+        self.arrived_since_cut.clear();
+    }
+
+    /// The nodes the sender wants kept besides the cut: ancestors that parents-first (R3-Q22)
+    /// built ahead of the cut, whose descendants are still being built. Forgetting one would
+    /// make the sender build it again before those descendants, so `forget` spares them. The
+    /// last cut's set replaces the earlier one (it travels with the `cellCut` message).
+    pub fn set_support(&mut self, nodes: &[NodeId]) {
+        self.support.clear();
+        self.support.extend(nodes.iter().copied());
+    }
+
+    /// A node stored with another generation than `generation` (or with none): the driver was
+    /// filled by another dataset, so the caller must replace it (`driverReplaced`).
+    pub fn foreign_node(&self, generation: u64) -> Option<NodeId> {
+        self.nodes
+            .iter()
+            .filter(|(_, node)| node.generation != Some(generation))
+            .map(|(id, _)| *id)
+            .min()
+    }
+
+    /// [`needs_frame`](Self::needs_frame) also true while `target` has lost the pool the driver
+    /// wrote to: the next frame resets it, and until then the drawn image is gone. A caller that
+    /// decides whether the view is at rest must use this one.
+    pub fn needs_frame_on<T: CellTarget>(&self, target: &T) -> bool {
+        self.needs_frame() || (self.armed && !target.has_pool())
+    }
+
     /// One frame of the viewer loop, without drawing. See the module doc for the order.
     pub fn frame<T: CellTarget>(
         &mut self,
@@ -511,6 +557,21 @@ impl CellDriver {
     /// [`CellDriver::frame`] calling `mark` as each [`FramePhase`] ends, so the caller can time
     /// the phases with its own clock.
     pub fn frame_marked<T: CellTarget>(
+        &mut self,
+        target: &mut T,
+        cut: &[NodeId],
+        view: &ViewProjection,
+        target_px: f64,
+        mark: &mut dyn FnMut(FramePhase),
+    ) -> Result<FrameReport, CellDriverError<T::Error>> {
+        self.cut_received();
+        self.frame_latched(target, cut, view, target_px, mark)
+    }
+
+    /// [`CellDriver::frame_marked`] for a cut latched earlier with [`CellDriver::cut_received`]:
+    /// nodes that arrived after that call are not forgotten, so a node is not dropped before the
+    /// first cut that names it.
+    pub fn frame_latched<T: CellTarget>(
         &mut self,
         target: &mut T,
         cut: &[NodeId],
@@ -534,6 +595,7 @@ impl CellDriver {
             .map_err(CellDriverError::Cut)?;
         mark(FramePhase::Planned);
         let mut report = FrameReport {
+            pool_reset: lost,
             reset_events,
             uploaded_pages: 0,
             uploaded_levels: 0,
@@ -707,7 +769,7 @@ impl CellDriver {
     }
 
     /// Forgets, farthest first, nodes outside the cut with no level in the pool, until the CPU
-    /// budget holds.
+    /// budget holds. Nodes that arrived after the cut and the cut's support set are spared.
     fn forget(&mut self, cut: &[NodeId], view: &ViewProjection) -> Vec<NodeId> {
         if self.cpu_bytes <= self.config.cpu_budget_bytes {
             return Vec::new();
@@ -720,7 +782,12 @@ impl CellDriver {
         let mut candidates: Vec<(f64, NodeId)> = self
             .nodes
             .iter()
-            .filter(|(id, node)| node.live == 0 && !in_cut.contains(id))
+            .filter(|(id, node)| {
+                node.live == 0
+                    && !in_cut.contains(id)
+                    && !self.arrived_since_cut.contains(id)
+                    && !self.support.contains(id)
+            })
             .map(|(id, node)| (distance_to(eye, node.pool.bounds), *id))
             .collect();
         candidates.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -731,6 +798,7 @@ impl CellDriver {
             }
             if let Some(node) = self.nodes.remove(&id) {
                 self.cpu_bytes -= node.bytes;
+                self.arrived_since_cut.remove(&id);
                 forgotten.push(id);
             }
         }

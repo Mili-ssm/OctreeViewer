@@ -181,7 +181,7 @@ fn cells_bench() {
             && info.pending_blocks == 0
             && info.built == 0
             && info.deferred == 0
-            && !h.driver.needs_frame();
+            && !h.driver.needs_frame_on(&h.target);
         calm = if settled { calm + 1 } else { 0 };
         if calm == 1 {
             settled_at = Some(h.totals.frames);

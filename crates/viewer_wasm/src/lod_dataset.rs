@@ -17,7 +17,10 @@ use viewer_render_wgpu::{
 
 #[path = "lod_cells.rs"]
 mod cells;
-pub use cells::{CellUpdateConfig, CellUpdateStats, LodCellUpdate};
+pub use cells::{
+    CellDraw, CellPlanStats, CellUpdate, CellUpdateConfig, CellUpdateStats, CutRestProbe,
+    LodCellUpdate, PoolAck, add_cell_nodes, draw_cell_cut,
+};
 
 /// Decoded blocks and resident spatial metadata for one open dataset.
 pub struct LodDataset {
@@ -380,7 +383,7 @@ impl LodDataset {
             nodes.extend_from_slice(memo.selection.node_ids());
         }
         // The pool keeps drawing these, also while it retains the previous cut.
-        nodes.extend_from_slice(self.cells.pool_drawn());
+        self.cells.extend_pins(&mut nodes);
         nodes
     }
 
