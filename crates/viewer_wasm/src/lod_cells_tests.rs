@@ -271,6 +271,64 @@ fn a_node_counts_as_resident_for_the_plan_only_once_its_cells_exist() {
     );
 }
 
+/// ADR 0038: on the cells path a node with cells stays resident when its blocks leave the cache
+/// and is not built again; the CPU path still drops a node whose block is gone.
+#[test]
+fn a_node_with_cells_stays_in_the_cut_after_its_blocks_leave_the_cache() {
+    let mut dataset = cell_dataset();
+    load_all(&mut dataset);
+    let mut driver = driver_for(&dataset, u64::MAX);
+    build_into(&mut dataset, &mut driver, NodeId::new(1));
+    build_into(&mut dataset, &mut driver, NodeId::new(3));
+    let evicted = [BlockId::new(101), BlockId::new(103)];
+    for block in evicted {
+        dataset.cache.remove(block);
+    }
+
+    // CPU path: the same cache loses the node from the plain plan.
+    let (_, selection) = dataset.select_target(&view_at(None), 64.0).unwrap();
+    assert!(
+        !dataset
+            .prepare_plan(&selection)
+            .node_ids()
+            .contains(&NodeId::new(3))
+    );
+
+    // Cells path: both stay in the plan and in the cut, and neither is built again.
+    assert_eq!(
+        plan_nodes(&mut dataset, 64.0),
+        [NodeId::new(1), NodeId::new(3)]
+    );
+    let update = dataset
+        .update_cells(
+            &view_at(None),
+            64.0,
+            CellUpdateConfig::default(),
+            &mut driver,
+            &mut NullTarget::default(),
+            None,
+            |_| Ok(None),
+        )
+        .unwrap();
+    assert!(
+        update
+            .stats
+            .pending_block_ids
+            .iter()
+            .all(|b| !evicted.contains(b))
+    );
+    assert!(
+        update
+            .stats
+            .built_nodes
+            .iter()
+            .all(|id| id.get() != 1 && id.get() != 3)
+    );
+    let plan = dataset.visible_plan.as_ref().unwrap();
+    assert!(plan.node_ids().contains(&NodeId::new(3)));
+    assert!(evicted.iter().all(|b| !dataset.cache.contains(*b)));
+}
+
 #[test]
 fn at_most_the_configured_nodes_are_built_per_update_nearest_first() {
     let mut dataset = cell_dataset();

@@ -295,8 +295,10 @@ impl CellState {
     }
 }
 
-/// The block cache as the planner sees it in cells mode: a block is resident only when every node
-/// owning it has its cells, so the planner covers unbuilt nodes with their ancestors.
+/// Residency as the planner sees it in cells mode (ADR 0038): a block is resident when every node
+/// owning it has its cells, whether or not the decoded block is still cached, so the planner
+/// covers unbuilt nodes with their ancestors. The point budget does not apply: the cell bytes
+/// budget (ADR 0037) bounds the cut.
 struct CellReadySource<'a> {
     cache: &'a viewer_core::DecodedBlockCache,
     ready_blocks: &'a HashSet<BlockId>,
@@ -309,6 +311,14 @@ impl ResidentBlockSource for CellReadySource<'_> {
         } else {
             None
         }
+    }
+
+    fn contains(&self, id: BlockId) -> bool {
+        self.ready_blocks.contains(&id)
+    }
+
+    fn budget_points(&self, id: BlockId) -> Option<u64> {
+        self.ready_blocks.contains(&id).then_some(0)
     }
 }
 
@@ -1046,7 +1056,7 @@ impl LodDataset {
         };
 
         self.state_epoch += 1;
-        self.planner.commit(&plan, &mut self.cache);
+        self.planner.commit_unprotected(&plan, &mut self.cache);
         self.touch_pages(plan.node_ids());
         self.cells.cut_epoch += 1;
         let cut_epoch = self.cells.cut_epoch;

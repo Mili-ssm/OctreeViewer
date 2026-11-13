@@ -335,6 +335,13 @@ pub trait ResidentBlockSource {
     fn contains(&self, id: BlockId) -> bool {
         self.peek(id).is_some()
     }
+
+    /// Points the planner charges to its budget for a resident block. A source whose residency
+    /// does not mean decoded points (cells mode, ADR 0038) may charge less and has its own budget.
+    fn budget_points(&self, id: BlockId) -> Option<u64> {
+        self.peek(id)
+            .map(|block| u64::try_from(block.points().len()).unwrap_or(u64::MAX))
+    }
 }
 
 /// Platform-independent contract for reading selected blocks from a dataset.

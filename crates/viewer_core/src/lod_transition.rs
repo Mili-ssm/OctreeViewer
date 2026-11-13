@@ -153,10 +153,10 @@ impl LodTransitionPlanner {
                 })
                 .collect::<Vec<_>>();
             let added_points = new_blocks.iter().fold(0_u64, |sum, block_id| {
-                let block = cache
-                    .peek(*block_id)
+                let points = cache
+                    .budget_points(*block_id)
                     .expect("resolved cut blocks are resident");
-                sum.saturating_add(u64::try_from(block.points().len()).unwrap_or(u64::MAX))
+                sum.saturating_add(points)
             });
             let Some(candidate_count) = point_count.checked_add(added_points) else {
                 budget_omitted_nodes.push(node_id);
@@ -254,6 +254,13 @@ impl LodTransitionPlanner {
             self.retained_nodes.clone_from(&plan.node_ids);
         }
         cache.set_protected_blocks(plan.protected_block_ids.iter().copied());
+    }
+
+    /// Activates a prepared cut whose nodes are resident without their decoded blocks (cells
+    /// mode, ADR 0038): the cache protects nothing, because blocks are only needed to build cells.
+    pub fn commit_unprotected(&mut self, plan: &LodTransitionPlan, cache: &mut DecodedBlockCache) {
+        self.commit(plan, cache);
+        cache.set_protected_blocks([]);
     }
 
     /// Resolves and immediately activates a cut. Prefer [`Self::prepare`] and
