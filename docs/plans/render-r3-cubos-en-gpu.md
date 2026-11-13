@@ -42,6 +42,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q22 | (06-11-2026) Padres primero por nodo: antes de construir las celdas de un nodo se construyen las de su padre, aunque el padre no esté en el corte. La escalera de px de celdas solo arranca al abrir el dataset o tras un salto de cámara (ningún nodo del corte nuevo tiene celdas ni un antepasado con celdas); al orbitar no se reinicia. Sustituye la nota «reiniciar la escalera en cada movimiento de cámara» (pre-mortem de la Tarea 10: volvía más tosca toda la imagen en cada paso) |
 | R3-Q23 | (06-11-2026) Hasta la Tarea 12, la ruta de celdas solo dibuja RGB: otro modo de color vuelve a la ruta CPU, y al volver a RGB las celdas se reactivan solas (siguen en la memoria del driver; solo se vuelven a subir a la GPU) |
 | R3-Q24 | (07-11-2026) La ruta de celdas solo funciona con el worker de construcción. Sin él (`buildWorker=0`, `file://` o un navegador sin workers anidados), `cells=1` se ignora, se usa la ruta CPU y las estadísticas dan `cellPath: "needsBuildWorker"`. Motivo: construir las celdas en el worker de render llevó el p95 del frame a 100 ms mientras llegaban nodos, frente a 18 ms con el worker (T10c2). El camino en proceso sigue para los tests nativos |
+| R3-Q25 | (13-11-2026) Tarea 12: en los modos de intensidad y elevación, el color final de la ruta de celdas puede diferir en ≤ 1 nivel de 8 bits (1 LSB) por canal de la ruta CPU; RGB y el resto de modos siguen bit a bit. Motivo: la instancia de 16 B (ADR 0035) guarda la intensidad como media `u16` redondeada y la elevación sin `center.z` absoluto ([consecuencia en la Tarea 6](#tarea-6-instancia-y-tabla-de-páginas)) |
+| R3-Q26 | (13-11-2026) Pérdida de dispositivo WebGPU (TW6 de la [revisión](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#carga-web-y-api)): salvo `destroy()`, el visor pide adaptador y dispositivo nuevos, recrea los recursos y vuelve a subir la escena desde el worker de construcción, sin recargar el dataset y conservando la cámara. Se prueba con la caída del proceso GPU de Chrome |
 
 ## Restricciones globales
 
@@ -561,7 +563,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 ## Tarea 12 ★: modos de color
 
 - [ ] **Pasa si:**
-  - el color por atributo coincide bit a bit con la ruta CPU;
+  - el color por atributo coincide bit a bit con la ruta CPU, salvo intensidad y elevación, con ≤ 1 LSB (R3-Q25);
   - los modos de shader no reconstruyen celdas;
   - las generaciones de color viejas se descartan.
 

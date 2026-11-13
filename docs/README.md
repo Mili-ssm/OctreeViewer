@@ -27,6 +27,7 @@ trabajo nuevo va en un plan nuevo.
 | --- | --- | --- |
 | [Plan V7](plans/format-v7-plan.md) | Contrato, recursos acotados, async/paralelismo, candidatos de formato y retirada de V5/V6. | activo |
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
+| [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | en curso |
 | [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | en curso (ADR 0031 y 0032) |
 | [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
 | [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
@@ -108,6 +109,7 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | [Tamaño de página de la jerarquía paginada (R5-P0)](records/benchmarks/R5_P0_PAGES_02-11-2026.md) | k = 5 vale en aéreo (p95 16–27 KB), no con ramificación 8; índice −50 %. | fechado |
 | [Bytes de la cadena de hoja (exploración)](records/benchmarks/EXPLORE_LEAF_CHAIN_BYTES_02-11-2026.md) | Poda de niveles casi duplicados: 0 hojas > 4 ×, cadena ≈ 1 × puntos. | fechado |
 | [CPU por nivel del conversor (exploración)](records/benchmarks/EXPLORE_CONVERT_CPU_02-11-2026.md) | Copia de registros y muestreo por ranura: −12–15 %, salida idéntica; v7.5/V5 sigue ~2×. | fechado |
+| [Revisión de técnicas 13-11-2026](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md) | Contraste del conversor, la carga web, el render, el formato y la arquitectura con técnicas publicadas: propuestas `TC`, `TW`, `TR`, `TF` y `TA` con su medida de aceptación; sin implementar ni medir. | fechado |
 | [Apertura remota por HTTP Range (R5-P4)](records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md) | RED-REF: primer frame 370–390 ms y 4 px ≤ 1,3 s con v7.5-pre; RQ-04 pasa; v7.4 como base. | fechado |
 | [Worker de construcción (R2)](records/benchmarks/RENDER_BUILD_WORKER_2026-10-30.md) | Escenas construidas fuera del hilo de render, activado y no: respuestas de frame y tiempo a objetivo en Majadas y Belvedere. | fechado |
 | [Digest del worker de construcción](records/benchmarks/RENDER_BUILD_WORKER_DIGEST_2026-10-30.md) | Digest en reposo distinto entre ambas rutas: la causa es la cámara de la sonda, no el worker. | fechado |

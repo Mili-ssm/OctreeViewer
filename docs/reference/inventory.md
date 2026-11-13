@@ -114,6 +114,7 @@ necesidad concreta y evidencia suficiente; se favorecen cambios locales y contra
 | Transporte remoto: prefetch y unión con huecos | HTTP Range existe para `v7.5-pre` (solo rangos contiguos). Contar solicitudes, latencia, bytes extra y datos en vuelo; definir cancelación y fallos. No introducir async o concurrencia solo por extrapolación desde NVMe. |
 | Interoperabilidad y herramientas | Priorizar con requisitos de producto: CRS/flags/Extra Bytes, COPC espacial, EPT remoto, filtros, medición, recorte y exportación. El soporte parcial actual no las convierte en features completas. |
 | CI de GPU/navegador | La CI (`.github/workflows/ci.yml`) ejecuta `scripts/check.sh`, sin GPU ni navegador; esos checks requieren su propio entorno. Extraer módulos solo cuando reduzcan acoplamiento real; evitar un segundo roadmap. |
+| Propuestas de la revisión de técnicas (13-11-2026) | Conversor, carga web, render, formato y arquitectura, cada propuesta con la medida que la decide: [registro](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md). Estado de cada una en el [plan de mejoras](../plans/mejoras-pendientes-13-11-2026.md). |
 
 ## Validación y mantenimiento documental
 
