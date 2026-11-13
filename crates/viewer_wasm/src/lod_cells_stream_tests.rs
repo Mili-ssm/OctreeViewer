@@ -1155,6 +1155,16 @@ mod bench;
 mod sim;
 
 fn open_real(name: &str, target_px: f64, page_budget: usize) -> Option<Real> {
+    open_real_with_cache(name, target_px, page_budget, 2 << 30)
+}
+
+/// [`open_real`] with a decoded-block cache of `cache_bytes` (the browser uses 256 MiB).
+fn open_real_with_cache(
+    name: &str,
+    target_px: f64,
+    page_budget: usize,
+    cache_bytes: usize,
+) -> Option<Real> {
     let path = real_path(name)?;
     let file = std::fs::File::open(path).unwrap();
     let reader: RealReader =
@@ -1166,7 +1176,7 @@ fn open_real(name: &str, target_px: f64, page_budget: usize) -> Option<Real> {
     let dataset = LodDataset::from_shared_metadata_and_visual_scale(
         reader.format_metadata().viewer_dataset().unwrap(),
         scale,
-        2 << 30,
+        cache_bytes,
     )
     .with_global_frame(true)
     .with_pages(

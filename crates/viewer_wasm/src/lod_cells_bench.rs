@@ -362,7 +362,8 @@ fn forget_loop_diagnosis() {
     let path = real_path(&file).unwrap_or_else(|| panic!("{file} is missing"));
     let frame = spike_frame(&path);
     println!("DIAG leaf_eye {:?} step {}", frame.leaf_eye, frame.step);
-    let mut real = open_real(&file, px, 256 << 20).unwrap();
+    let cache_mb: usize = env_or("BENCH_CACHE_MB", "2048").parse().unwrap();
+    let mut real = open_real_with_cache(&file, px, 256 << 20, cache_mb << 20).unwrap();
     real.viewport = VIEWPORT;
     let mut camera = frame.fitted;
     let dir: [f64; 3] = match pose.as_str() {
@@ -482,7 +483,7 @@ fn forget_loop_diagnosis() {
                 .collect();
             let waiters_b = bytes(&mut waiters_built.iter().copied());
             println!(
-                "DIAG frame {n} stage {} built {} forgotten_total {forget_total} cut {} ({cut_b} B) support {} ({sup_b} B) needed {needed_b} B driver {} B waiters_built {} ({waiters_b} B) cand {} cpu_coarsened {}",
+                "DIAG frame {n} stage {} built {} forgotten_total {forget_total} cut {} ({cut_b} B) support {} ({sup_b} B) needed {needed_b} B driver {} B waiters_built {} ({waiters_b} B) cand {} cpu_coarsened {} pending_blocks {} deferred {} rebuilt {} block_evictions {}",
                 info.stage,
                 info.built,
                 cut.len(),
@@ -491,6 +492,10 @@ fn forget_loop_diagnosis() {
                 waiters_built.len(),
                 candidates.len(),
                 info.cpu_coarsened,
+                info.pending_blocks,
+                info.deferred,
+                h.dataset.cells.diag.rebuilt_total,
+                h.dataset.cells.diag.block_evictions,
             );
         }
         let settled = !h.dirty
@@ -544,4 +549,103 @@ fn forget_loop_diagnosis() {
         );
     }
     h.report(&format!("{dataset} {pose} {px}px budget {budget}"));
+}
+
+/// Outcome of [`leaf_run`].
+#[derive(Debug)]
+struct LeafRun {
+    /// Frames until the cut was at rest (`None`: it never was within the frames given).
+    settled_after: Option<usize>,
+    stage: Option<f64>,
+    forgotten: usize,
+    rebuilt: u64,
+    cpu_coarsened: usize,
+    pending_blocks: usize,
+    block_evictions: u64,
+}
+
+/// The camera inside the densest leaf of `dataset` looking along +y at `px`, with the browser's
+/// 256 MiB decoded-block cache by default, a CPU budget of `budget_mb` on both sides and at most
+/// `frames` frames. Stops once settled (3 quiet frames) and then checks 100 more frames of
+/// nothing built or forgotten.
+fn leaf_run(dataset: &str, px: f64, cache_mb: usize, budget_mb: u64, frames: usize) -> LeafRun {
+    let file = format!("{dataset}-v75.oct");
+    let path = real_path(&file).unwrap_or_else(|| panic!("{file} is missing"));
+    let frame = spike_frame(&path);
+    let mut real = open_real_with_cache(&file, px, 256 << 20, cache_mb << 20).unwrap();
+    real.viewport = VIEWPORT;
+    let mut camera = frame.fitted;
+    let target = [
+        frame.leaf_eye[0],
+        frame.leaf_eye[1] + frame.step,
+        frame.leaf_eye[2],
+    ];
+    assert!(camera.set_pose(frame.leaf_eye, target));
+    let view = ViewProjection::new(camera, VIEWPORT, real.scale, VoxelBuildLimits::default());
+    let h = &mut real.harness;
+    h.soft_checks = true;
+    h.count_octant_coarsenings = true;
+    let budget = budget_mb << 20;
+    h.driver = driver_for(&h.dataset, budget);
+    h.config.cpu_budget_bytes = Some(budget);
+    let mut calm = 0;
+    let mut settled_after = None;
+    let mut last = None;
+    for n in 0..frames {
+        let info = h.frame(&view);
+        last = Some(info);
+        let at_rest = !h.dirty
+            && h.stage == Some(px)
+            && info.apply == CutApply::Applied
+            && info.uploaded_pages == 0
+            && info.pending_blocks == 0
+            && info.built == 0
+            && info.deferred == 0
+            && !h.driver.needs_frame();
+        calm = if at_rest { calm + 1 } else { 0 };
+        if calm >= 3 {
+            settled_after = Some(n + 1);
+            break;
+        }
+    }
+    if settled_after.is_some() {
+        let forgotten = h.totals.forgotten;
+        for _ in 0..100 {
+            h.dirty = true;
+            let info = h.frame(&view);
+            assert_eq!(info.built, 0, "a node was built after settling");
+            last = Some(info);
+        }
+        assert_eq!(h.totals.forgotten, forgotten, "forgetting went on at rest");
+    }
+    let last = last.expect("at least one frame");
+    let diag = h.dataset.cells.diag;
+    LeafRun {
+        settled_after,
+        stage: h.stage,
+        forgotten: h.totals.forgotten,
+        rebuilt: diag.rebuilt_total,
+        cpu_coarsened: last.cpu_coarsened,
+        pending_blocks: last.pending_blocks,
+        block_evictions: diag.block_evictions,
+    }
+}
+
+/// B1c.4. The browser's block cache (256 MiB) cannot hold the blocks of the nodes the plan
+/// waits for: built children of incomplete sibling groups lose their blocks again and the
+/// ladder never leaves its rung. Majadas at 1 px inside a leaf.
+#[test]
+#[ignore = "real data: needs target/render-data/majadas-v75.oct"]
+fn majadas_at_1px_settles_with_the_browser_block_cache() {
+    let run = leaf_run("majadas", 1.0, 256, 512, 6_000);
+    println!("{run:?}");
+    assert!(
+        run.settled_after.is_some(),
+        "never settled: stage {:?}, {} pending blocks, {} block evictions, {} forgotten, {} rebuilt",
+        run.stage,
+        run.pending_blocks,
+        run.block_evictions,
+        run.forgotten,
+        run.rebuilt
+    );
 }
