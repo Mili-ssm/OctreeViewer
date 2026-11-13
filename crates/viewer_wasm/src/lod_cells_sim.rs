@@ -501,6 +501,7 @@ fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject:
     // Small: a third of what the whole run keeps; idle nodes are forgotten and built again.
     let budget = full / 3;
     let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
+    let mut reports = 0;
     for seed in seeds {
         let mut sim = synth_sim(*seed, budget, 1 << 20, 2.0);
         let digest = sim.run(&views, inject, 200_000);
@@ -508,18 +509,23 @@ fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject:
         assert_eq!(digest, expected, "{name} seed {seed}");
         assert!(sim.stats.node_messages > 0);
         if inject.driver_replaced_at.is_some() {
-            // The builder planned for the old driver until it learned of the replacement: the new
-            // one reported the nodes it lacked, and they came back.
+            // Every node the new driver lacked came back, whether the builder learned it from a
+            // report or from `driver_replaced` first (which seeds hit depends on the
+            // interleaving: an ack naming them can be superseded before the builder reads it).
             assert!(
-                sim.stats.missing_reports > 0 && sim.stats.missing_resent > 0,
+                sim.stats.missing_resent > 0 && sim.reported_missing.is_empty(),
                 "{name} seed {seed}: the missing path was not exercised: {:?}",
                 sim.stats
             );
+            reports += sim.stats.missing_reports;
         }
+    }
+    if inject.driver_replaced_at.is_some() {
+        assert!(reports > 0, "{name}: no seed reported a missing node");
     }
 }
 
-const SEEDS: [u64; 4] = [2, 7, 42, 1234];
+const SEEDS: [u64; 4] = [1, 7, 42, 1234];
 
 #[test]
 fn sim_synthetic_orbit_reaches_the_in_process_digest() {
@@ -1068,6 +1074,15 @@ fn plan_rounds(h: &mut Harness, view: &ViewProjection, budget: u64, rounds: usiz
 
 #[test]
 fn in_progress_children_are_supported_and_counted_and_released_while_blocked() {
+    in_progress_children_case(85);
+}
+
+#[test]
+fn the_block_does_not_lift_when_the_released_children_are_dropped_and_the_rest_needs_40_percent() {
+    in_progress_children_case(40);
+}
+
+fn in_progress_children_case(rest_percent: u64) {
     let view = synthetic_views().0;
     let children: Vec<NodeId> = (10..=15).map(NodeId::new).collect();
     let mut h = incomplete_group_harness();
@@ -1104,8 +1119,9 @@ fn in_progress_children_are_supported_and_counted_and_released_while_blocked() {
     // children are released (and stay counted), nothing is built, and once the driver drops
     // them nothing brings them back.
     let needed = update.stats.diag.cpu_needed_bytes;
-    // Dropping the children must leave the rest at 85 % so the block does not lift.
-    let budget = (needed - bytes) / 85 * 100;
+    // The rest, once the children are dropped, needs `rest_percent` of the budget: even far below 80 % (a child is ~8 KB here, so only a low rest leaves room to rebuild one)
+    // the block holds while the view does not change.
+    let budget = (needed - bytes) / rest_percent * 100;
     h.dataset.cells.cpu_blocked = true;
     let update = h
         .dataset

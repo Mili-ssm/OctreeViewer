@@ -232,6 +232,11 @@ pub(super) struct CellState {
     /// A node overflowed the CPU budget and the bytes the cut needs have not dropped below
     /// [`CPU_RELEASE_PERCENT`] since: no node is built (see `plan_cell_update`).
     pub(super) cpu_blocked: bool,
+    /// While blocked: the selection the in-progress children were released for and the most
+    /// bytes they held. The driver drops them, and counting them until the view changes keeps
+    /// the block from lifting just because they are gone (they would be rebuilt and released
+    /// again).
+    released: Option<(u64, u64)>,
     /// Nodes whose every level came out empty: resident for the plan, never in the cut. That
     /// leaves no hole: a node has no levels only when none of its points is finite (a finite
     /// point always lands in a cell), and such points draw nothing on any path.
@@ -257,6 +262,7 @@ impl Default for CellState {
             ever_built: HashSet::new(),
             diag: CellDiag::default(),
             cpu_blocked: false,
+            released: None,
             empty: HashSet::new(),
             pool_drawn: Vec::new(),
             cut_epoch: 0,
@@ -860,6 +866,7 @@ impl LodDataset {
         // needs fall below `CPU_RELEASE_PERCENT` (the camera moved to a cut that is cheaper).
         // Blocked candidates stay candidates without cells: their built ancestors remain support
         // and keep drawing their zone, and they are not deferred work, so the px ladder ends.
+        let in_progress = self.in_progress_children(&selection, initial_plan.node_ids());
         let mut cpu_needed = 0;
         if let Some(budget) = config.cpu_budget_bytes {
             // In-progress children count while blocked too: the driver keeps them until it is
@@ -869,15 +876,35 @@ impl LodDataset {
                 .iter()
                 .copied()
                 .chain(self.support_nodes(&candidates, &shared_owners))
-                .chain(self.in_progress_children(&selection, initial_plan.node_ids()))
+                .chain(in_progress.iter().copied())
                 .collect();
             cpu_needed = needed
                 .iter()
                 .filter_map(|id| self.cells.built.get(id))
                 .map(|built| built.bytes)
                 .sum();
-            if cpu_needed < budget / 100 * CPU_RELEASE_PERCENT {
+            let in_progress_bytes: u64 = in_progress
+                .iter()
+                .filter_map(|id| self.cells.built.get(id))
+                .map(|built| built.bytes)
+                .sum();
+            let mut effective = cpu_needed;
+            if self.cells.cpu_blocked {
+                let mut hasher = std::hash::DefaultHasher::new();
+                std::hash::Hash::hash(selection.node_ids(), &mut hasher);
+                let key = std::hash::Hasher::finish(&hasher);
+                let held = match self.cells.released {
+                    Some((k, held)) if k == key => held.max(in_progress_bytes),
+                    _ => in_progress_bytes,
+                };
+                self.cells.released = Some((key, held));
+                effective += held - in_progress_bytes;
+            }
+            if effective < budget / 100 * CPU_RELEASE_PERCENT {
                 self.cells.cpu_blocked = false;
+            }
+            if !self.cells.cpu_blocked {
+                self.cells.released = None;
             }
         }
         // Blocks that are decoded but wait for their cells are not read again. The ancestor whose
@@ -1015,7 +1042,11 @@ impl LodDataset {
             // Protected so the driver does not drop them before their group completes. While
             // blocked the group may never complete: they are released, the cut stays at the
             // parent (counted in `cpu_coarsened`) and they are not built again.
-            support.extend(self.in_progress_children(&selection, plan.node_ids()));
+            if built_nodes.is_empty() {
+                support.extend(in_progress);
+            } else {
+                support.extend(self.in_progress_children(&selection, plan.node_ids()));
+            }
             support.sort_unstable();
             support.dedup();
         }
