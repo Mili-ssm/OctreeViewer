@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 13-11-2026 (fase A cerrada; B1c en curso en `explore/b1c-cpu-fit`)
+Estado: en curso · 14-11-2026 (fase A cerrada; B1c en curso en `explore/b1c-cpu-fit`)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -30,25 +30,26 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 - [x] B1. Tarea 11 medida: estadísticas `cutApply` y `cellsForgottenTotal`, probe
   `probe-cells-smoke.mjs` y [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md) (`97c52f8`,
   `80a44bd`). Se asienta a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido (R3-Q27).
-- [ ] B1c. Bucle de olvido de Majadas a 1 px ([ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md)).
+- [ ] B1c. Bucle de olvido de Majadas a 1 px ([ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md), enmendado por el [ADR 0038](../adr/0038-residencia-por-celdas.md)).
   Check final: el probe asienta las 4 poses de Majadas a 1 px sin olvidos en reposo, sin regresión a 4 px.
   - [x] B1c.1. Admisión por presupuesto del ADR 0037 (90/80, `cpuCoarsened`) (`721cac9`). No basta:
     `cpuCoarsened` sigue a 0 porque el corte solo pide 343 MB.
   - [x] B1c.2. Co-propietarios de bloques protegidos y contados (`721cac9`). No era la causa: 0 olvidados.
   - [x] B1c.3. Contadores de diagnóstico en el navegador (`84238ec`). A 120 s: solo se olvidan nodos
     seleccionados (6.498); 1.100 seleccionados, corte fijo en 32 y ~300 hijos construidos fuera del
-    corte (solo 2–4 con bloques fuera de caché); caché de bloques llena (256 MiB) con 15.000 expulsiones.
-    Causa probable: un hijo sustituye a su padre solo cuando están listos todos sus hermanos, y la
-    construcción de nodo en nodo deja grupos incompletos sin proteger.
-  - [ ] B1c.4. Test rojo en nativo: simulación con caché de bloques pequeña y carga en otro orden que
-    acumule hijos de grupos incompletos y los olvide. Check: el test falla en `84238ec`.
-  - [ ] B1c.5. Construir por grupo de hermanos: se completa el grupo más cercano antes del siguiente,
-    con los padres primero (R3-Q22). Check: B1c.4 en verde y el resto de tests de celdas.
-  - [ ] B1c.6. Proteger y contar los hijos en curso: los seleccionados construidos de un grupo
-    incompleto van al soporte y a los bytes necesarios; el ADR 0037 admite o bloquea grupos enteros.
-    Check: con un presupuesto menor que el conjunto de trabajo se asienta con `cpuCoarsened` > 0.
-  - [ ] B1c.7. Caché de bloques: medir `blockEvictions` tras B1c.5–6; si sigue la saturación, propuesta
-    aparte con su medida. Check: contador en el probe.
+    corte; caché de bloques llena (256 MiB) con 15.000 expulsiones.
+  - [x] B1c.4. Test rojo en nativo `majadas_at_1px_settles_with_the_browser_block_cache` (`#[ignore]`,
+    datos reales, caché de bloques de 256 MiB como el navegador): no se asienta en 6.000 frames; con
+    2 GiB se asienta en 568. La causa es la residencia por bloques (`lod_transition.rs:157`): el corte
+    a 1 px necesita ~518 MB de bloques (R3-Q28). Construir por grupo de hermanos quita las expulsiones
+    pero choca con la caché llena de bloques protegidos: descartado.
+  - [ ] B1c.5. Residencia por celdas (ADR 0038): en la ruta de celdas, un nodo con celdas es residente
+    para el plan sin sus bloques, la caché no protege esos bloques y el corte se acota por bytes de
+    celdas. Check: B1c.4 en verde y el resto de tests de celdas y de la ruta CPU.
+  - [ ] B1c.6. Si el navegador sigue olvidando hijos de grupos incompletos tras B1c.5: protegerlos y
+    contarlos en los bytes necesarios. Check: con un presupuesto menor que el conjunto de trabajo se
+    asienta con `cpuCoarsened` > 0.
+  - [ ] B1c.7. Caché de bloques: `blockEvictions` en el probe tras B1c.5; sin propuesta nueva si ya no satura.
   - [ ] B1c.8. Navegador: probe a 4 px y a 1 px (todas las poses), registro nuevo fechado y nota en la
     Tarea 11 del plan de R3.
   - [ ] B1c.9. Limpieza e integración: quitar los tests de diagnóstico `forget_loop_diagnosis` y

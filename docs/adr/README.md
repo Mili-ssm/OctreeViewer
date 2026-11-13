@@ -40,4 +40,5 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0034](0034-nivel-por-octante-con-arista-real.md) | Nivel por octante con la arista proyectada real y tolerancia de RQ-09 dentro del dataset (enmienda a 0031) | Aceptada |
 | [0035](0035-instancia-de-16-b-con-w-16.md) | Instancia de 16 B con W = 16 y compactación con Hi-Z antes de la Tarea 6 (enmienda a 0032) | Aceptada (oclusión enmendada por 0036) |
 | [0036](0036-hi-z-por-celda.md) | Hi-Z por celda en dos fases sobre el pool (enmienda a 0035) | Aceptada |
-| [0037](0037-corte-ajustado-al-presupuesto-de-cpu.md) | Corte de celdas ajustado al presupuesto de CPU (extiende 0033) | Aceptada |
+| [0037](0037-corte-ajustado-al-presupuesto-de-cpu.md) | Corte de celdas ajustado al presupuesto de CPU (extiende 0033) | Aceptada (enmendada por 0038) |
+| [0038](0038-residencia-por-celdas.md) | Residencia por celdas en la ruta de celdas (enmienda a 0037) | Aceptada |
