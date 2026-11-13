@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! CPU scene construction, camera projection and budgeted WebGPU presentation.
 //! `RenderScene` and `VoxelSceneBuilder` prepare geometry; `SurfaceRenderer` owns GPU state.
 

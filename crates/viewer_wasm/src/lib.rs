@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Viewer orchestration and browser bindings for point import, conversion and presentation.
 //! `ViewerController` manages in-memory scenes and `LodDataset` manages streamed blocks;
 //! browser bindings adapt these contracts to workers, typed arrays and WebGPU surfaces.

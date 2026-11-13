@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Platform-independent point data, spatial selection and bounded block state.
 //! `DatasetSource` supplies blocks; scheduling and LOD do not perform I/O or render.
 

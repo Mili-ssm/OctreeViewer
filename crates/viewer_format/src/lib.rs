@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Versioned `.oct` storage over `Read + Seek` and `Write + Seek` streams.
 //! Use `FormatReader` for selective reads and `FormatWriter` for incremental output;
 //! both share the binary layout and metadata validation without depending on each other.

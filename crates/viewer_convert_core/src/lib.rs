@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Conversion core shared by the native converter and the web host: options, errors, source
 //! inspection, the spatial planner and the block preparation helpers. It has no filesystem,
 //! thread or wall-clock access (clippy denies those APIs here); hosts supply them through the
