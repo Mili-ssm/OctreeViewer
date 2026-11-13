@@ -33,9 +33,17 @@ consulta al propietario.
 - [ ] B1. Tarea 11, humo en navegador: criterios de «alcanzado», congelación por `DescendantTooFine`
   y medida del olvido bajo presupuesto. El tope de GPU/GTT se mide como incremento sobre el reposo
   (iGPU con memoria compartida). Check: Playwright en Chrome con WebGPU; registro fechado.
+  - [x] B1.1. Estadísticas de celdas en JS: estado del último corte (`Applied`/`RetainedPrevious`) y
+    contador acumulado de nodos olvidados. Check: test Rust de los bindings.
+  - [x] B1.2. Probe `probe-cells-smoke.mjs`: poses de Belvedere y Majadas (incluido Majadas dentro de
+    una hoja a 4 px con límites de producción), saltos de pose, criterios de «alcanzado», rachas de
+    `RetainedPrevious`, olvidos en reposo, p50/p95 de frame y GTT sobre el reposo. Check: corre en Chrome con WebGPU.
+  - [x] B1.3. Ejecutar el probe y registrar `R3_T11_SMOKE_<fecha>` con los criterios de la Tarea 11.
 - [ ] B1b. Casillas abiertas de la Tarea 16b: cota del margen de profundidad del Hi-Z, escala de la
   pirámide de `hzb.rs` (test rojo primero) y ≤ 16,7 ms en wasm con límites de producción, que se mide en B1.
-- [ ] B1c. Si B1 confirma el olvido en cada frame, histéresis en el olvido. Check: el caso de B1 se asienta.
+- [ ] B1c. Corte ajustado al presupuesto de CPU (R3-Q27, [ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md)): el driver no olvida nodos del
+  corte vigente y el corte se engrosa en lo lejano hasta caber. Check: test rojo → verde con un
+  presupuesto menor que el conjunto de trabajo, y Majadas a 1 px dentro de una hoja se asienta en el probe.
 - [ ] B2. Tarea 12, modos de color, con ≤ 1 LSB en intensidad y elevación (R3-Q25).
 - [ ] B3. Tarea 13, continuidad entre nubes con paginación.
 - [ ] B4. Tarea 14, modos de px.

@@ -1,0 +1,10 @@
+base 97c52f8 on feat/r3-v75 (probe-cells-smoke.mjs and the cutApply/cellsForgottenTotal stats)
+majadas-1px.json/.txt: probe before the review fixes of 97c52f8 (no lastStats for unreached poses); the other files: probe at 97c52f8
+rustc 1.101.0-nightly (41089d07a 2026-10-27)
+wasm-bindgen 0.2.129
+Google Chrome 157.0.8103.78
+model name	: AMD Ryzen AI 9 365 w/ Radeon 880M (iGPU, shared memory; GTT from /sys/class/drm/card1/device/mem_info_gtt_used)
+101464e9152145270f525f3be6818e702aca5c8bd9456e133641d339c26ed148  target/render-data/belvedere-v75.oct
+a0d4d915b949273522512aa7e1e03b05e5debb49ec67f21fc259dd0cb6f07e1e  target/render-data/belvedere-v75.octattrs
+269d5df1e6da8485a0fd5ded3798a0f79bdde61ff298f624e5497dba6b29f1b1  target/render-data/majadas-v75.oct
+cc253c28ff90b1d5361f5cdb781217f5d1d78b809b1736298066f16c7149b3fd  target/render-data/majadas-v75.octattrs

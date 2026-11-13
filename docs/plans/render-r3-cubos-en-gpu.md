@@ -44,6 +44,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q24 | (07-11-2026) La ruta de celdas solo funciona con el worker de construcción. Sin él (`buildWorker=0`, `file://` o un navegador sin workers anidados), `cells=1` se ignora, se usa la ruta CPU y las estadísticas dan `cellPath: "needsBuildWorker"`. Motivo: construir las celdas en el worker de render llevó el p95 del frame a 100 ms mientras llegaban nodos, frente a 18 ms con el worker (T10c2). El camino en proceso sigue para los tests nativos |
 | R3-Q25 | (13-11-2026) Tarea 12: en los modos de intensidad y elevación, el color final de la ruta de celdas puede diferir en ≤ 1 nivel de 8 bits (1 LSB) por canal de la ruta CPU; RGB y el resto de modos siguen bit a bit. Motivo: la instancia de 16 B (ADR 0035) guarda la intensidad como media `u16` redondeada y la elevación sin `center.z` absoluto ([consecuencia en la Tarea 6](#tarea-6-instancia-y-tabla-de-páginas)) |
 | R3-Q26 | (13-11-2026) Pérdida de dispositivo WebGPU (TW6 de la [revisión](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#carga-web-y-api)): salvo `destroy()`, el visor pide adaptador y dispositivo nuevos, recrea los recursos y vuelve a subir la escena desde el worker de construcción, sin recargar el dataset y conservando la cámara. Se prueba con la caída del proceso GPU de Chrome |
+| R3-Q27 | (13-11-2026) Olvido en bucle hallado en la Tarea 11 (Majadas a 1 px dentro de una hoja: las celdas llenan los 512 MiB del presupuesto de CPU en wasm; en nativo, la hoja +x a 1 px ocupa 824 MiB según T9): el corte deseado se ajusta al presupuesto de CPU engrosando los nodos lejanos, como hace el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) con el pool de GPU, y el driver nunca olvida nodos del corte vigente. La histéresis sola no basta porque el conjunto de trabajo no cabe. Se recoge en el [ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md) |
 
 ## Restricciones globales
 
@@ -555,9 +556,11 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 11: humo en navegador
 
-- [ ] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
-- [ ] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
-- [ ] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
+**Medida (13-11-2026), salta un criterio:** [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Lo resuelve R3-Q27 (corte ajustado al presupuesto de CPU); después se repite el probe.
+
+- [x] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
+- [x] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
+- [x] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
 - [ ] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright.
 
 ## Tarea 12 ★: modos de color
