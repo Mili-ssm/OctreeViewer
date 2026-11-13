@@ -467,16 +467,20 @@ function postLodProgress(lod, afterRenderFrame = false) {
 
 // Hierarchy pages of a paged format load like blocks: the LOD names the anchors it lacks.
 const pageReads = new Set();
-function schedulePageReads() {
+// Like failed blocks, a failed page waits for an explicit refinement or a new dataset; otherwise the
+// `finally` below would request it again at once, in a loop.
+const failedPageAnchors = new Set();
+function schedulePageReads(retryFailed = false) {
+    if (retryFailed) failedPageAnchors.clear();
     if (!asyncFormatReader || !viewer || typeof viewer.pendingPageAnchors !== "function") return;
     const reader = asyncFormatReader;
     const generation = datasetGeneration;
     for (const anchor of viewer.pendingPageAnchors()) {
         if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
-        if (pageReads.has(anchor)) continue;
+        if (pageReads.has(anchor) || failedPageAnchors.has(anchor)) continue;
         pageReads.add(anchor);
         void reader.loadPage(anchor).then((page) => {
-            messageQueue = messageQueue.then(() => {
+            const graft = messageQueue.then(() => {
                 if (generation !== datasetGeneration || reader !== asyncFormatReader) {
                     page.free();
                     return;
@@ -487,9 +491,12 @@ function schedulePageReads() {
                 recordLodMessage("asyncPage", lod);
                 postLodProgress(lod);
             });
-            return messageQueue;
+            // A failed graft is reported below; it must not reject the queue and skip later tasks.
+            messageQueue = graft.catch(() => {});
+            return graft;
         }).catch((error) => {
             if (generation === datasetGeneration) {
+                failedPageAnchors.add(anchor);
                 self.postMessage({ type: "error", operation: "asyncPageRead", message: String(error) });
             }
         }).finally(() => {
@@ -500,7 +507,7 @@ function schedulePageReads() {
 }
 
 function scheduleAsyncLodRead(retryFailed = false) {
-    schedulePageReads();
+    schedulePageReads(retryFailed);
     if (!asyncFormatReader || !viewer || !asyncLodScheduler) return;
     const pending = typeof viewer.pendingAsyncLodBlocks === "function"
         ? viewer.pendingAsyncLodBlocks()
@@ -959,10 +966,16 @@ function startAsyncDataset(data, requestId = null) {
     asyncHasAttributes = false;
     asyncAttributeIndices = new Map();
     failedAsyncBlocks.clear();
+    failedPageAnchors.clear();
     beginRefinement("dataset", data.refinementId ?? 0, "rgb", datasetOpenedAt);
     const name = data.name ?? data.file.name;
     self.postMessage({ type: "status", message: `Opening ${name}…` });
-    asyncReadBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
+    // One budget per worker, shared by successive readers; a different cacheBytes replaces it.
+    if (asyncReadBudget === null || asyncReadBudget.limitBytes() !== String(data.cacheBytes)) {
+        const previous = asyncReadBudget;
+        asyncReadBudget = new WasmAsyncReadBudget(data.cacheBytes);
+        previous?.free();
+    }
     // A remote file is `{ url }`: each worker opens its own range source (it cannot be cloned).
     let fileBytes = data.file.size ?? null;
     void Promise.all([resolveSource(data.file), resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 })]).then(([file, attributes]) => {

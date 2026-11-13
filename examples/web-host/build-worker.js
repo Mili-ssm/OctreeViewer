@@ -217,6 +217,7 @@ function runBuild() {
             type: "lod", gen: generation, epoch: result.epoch, viewEpoch: view.epoch, lod: result.lod,
         });
     }
+    if (retryFailedNext) failedPageAnchors.clear();
     if (pageBudgetBlockedEpoch !== view.epoch) schedulePageReads(result.lod.pendingPageAnchors);
     refreshAsyncReads(retryFailedNext);
     retryFailedNext = false;
@@ -225,13 +226,16 @@ function runBuild() {
 
 // Hierarchy pages of a paged format load like blocks: the LOD names the anchors it lacks.
 const pageReads = new Set();
+// A page that failed to load waits for a view with `retryFailed` or a new dataset, like failed blocks;
+// a page the budget cannot hold waits for the next view instead (`pageBudgetBlockedEpoch`).
+const failedPageAnchors = new Set();
 function schedulePageReads(anchors) {
     if (!reader || !builder || !anchors?.length) return;
     const taskReader = reader;
     const taskGeneration = generation;
     for (const anchor of anchors) {
         if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
-        if (pageReads.has(anchor)) continue;
+        if (pageReads.has(anchor) || failedPageAnchors.has(anchor)) continue;
         if (pageReads.size === 0) pageTotals.waves += 1;
         pageTotals.reads += 1;
         pageReads.add(anchor);
@@ -249,6 +253,8 @@ function schedulePageReads(anchors) {
                 // Rebuild once so the stats carry `pageBudgetExhausted`.
                 pageBudgetBlockedEpoch = latestView?.epoch ?? null;
                 requestBuild();
+            } else {
+                failedPageAnchors.add(anchor);
             }
         }).finally(() => {
             pageReads.delete(anchor);
@@ -380,6 +386,7 @@ async function openDataset(data) {
     lastCellsView = null;
     viewsSinceBuild = 0;
     failedAsyncBlocks.clear();
+    failedPageAnchors.clear();
     generation = data.gen;
     cellsEnabled = false;
     clearCellInbox();
@@ -391,7 +398,12 @@ async function openDataset(data) {
     const [maxVoxels, maxEstimatedBytes] = data.limits;
     const nextScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
     scheduler = nextScheduler;
-    readBudget ??= new WasmAsyncReadBudget(data.cacheBytes);
+    // One budget per worker, shared by successive readers; a different cacheBytes replaces it.
+    if (readBudget === null || readBudget.limitBytes() !== String(data.cacheBytes)) {
+        const previous = readBudget;
+        readBudget = new WasmAsyncReadBudget(data.cacheBytes);
+        previous?.free();
+    }
     // A remote file is `{ url }`: this worker opens its own range source (it cannot be cloned).
     const [file, attributes] = await Promise.all([
         resolveSource(data.file),

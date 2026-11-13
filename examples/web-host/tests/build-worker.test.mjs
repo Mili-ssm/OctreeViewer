@@ -23,11 +23,13 @@ const opened = () => ({
 
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
-async function runBuildWorker({ updates = [], graftFails = false } = {}) {
+async function runBuildWorker({ updates = [], graftFails = false, pageLoadFails = false } = {}) {
     const posted = [];
     const grafted = [];
+    const pageLoads = [];
     const updateCalls = [];
     const builders = [];
+    const budgets = [];
     let receive;
     class WasmSceneBuilder {
         constructor(maxVoxels, maxBytes) { this.limits = [maxVoxels, maxBytes]; builders.push(this); }
@@ -56,7 +58,11 @@ async function runBuildWorker({ updates = [], graftFails = false } = {}) {
     }
     class Reader {
         static async open() { return new Reader(); }
-        async loadPage(anchor) { return { anchor, free() {} }; }
+        async loadPage(anchor) {
+            pageLoads.push(anchor);
+            if (pageLoadFails) throw new Error("network error");
+            return { anchor, free() {} };
+        }
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
@@ -68,7 +74,12 @@ async function runBuildWorker({ updates = [], graftFails = false } = {}) {
         }
         free() {}
     }
-    class Budget { clone() { return this; } }
+    class Budget {
+        constructor(limit) { this.limit = limit; budgets.push(this); }
+        clone() { return this; }
+        limitBytes() { return String(this.limit); }
+        free() {}
+    }
     class Scheduler {
         updateBlocks() { return []; }
         pendingBlocks() { return []; }
@@ -90,7 +101,7 @@ async function runBuildWorker({ updates = [], graftFails = false } = {}) {
     send("init", {});
     send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200] });
     await settle();
-    return { posted, updateCalls, builders, grafted, send, settle };
+    return { posted, updateCalls, builders, grafted, budgets, pageLoads, send, settle };
 }
 
 test("build worker opens the dataset and reports its metadata", async () => {
@@ -101,6 +112,16 @@ test("build worker opens the dataset and reports its metadata", async () => {
     assert.equal(message.opened.visualScale, 2);
     assert.equal(message.opened.nodeCount, 1);
     assert.deepEqual([...message.opened.boundsMax], [0.5, 0.5, 0.5]); // tight data extent, not the root node
+});
+
+test("build worker recreates the read budget when a later open brings another cacheBytes", async () => {
+    const worker = await runBuildWorker();
+    worker.send("open", { gen: 2, file: {}, cacheBytes: 1024, limits: [100, 200] });
+    await worker.settle();
+    assert.deepEqual(worker.budgets.map(budget => budget.limit), [1024]);
+    worker.send("open", { gen: 3, file: {}, cacheBytes: 4096, limits: [100, 200] });
+    await worker.settle();
+    assert.deepEqual(worker.budgets.map(budget => budget.limit), [1024, 4096]);
 });
 
 test("build worker coalesces views queued during a build: latest wins", async () => {
@@ -138,6 +159,25 @@ test("build worker repeats the build while the planner asks for refinement and r
     assert.equal(worker.updateCalls.length, 2);
     assert.deepEqual(worker.posted.filter(item => item.type === "scene" || item.type === "lod")
         .map(item => [item.type, item.epoch, item.viewEpoch]), [["scene", 1, 1], ["lod", 2, 1]]);
+});
+
+test("build worker does not request a page that failed to load again until a view asks to retry", async () => {
+    const pending = { ...lod(), pendingPageAnchors: ["5"] };
+    const worker = await runBuildWorker({ pageLoadFails: true, updates: new Array(6).fill({ lod: pending }) });
+    const view = (epoch, retryFailed = false) => worker.send("view", {
+        gen: 1, epoch, camera: [epoch], viewport: [4, 4], visualScale: 2, targetPx: 4, retryFailed,
+    });
+    view(1);
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    view(2);
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.pageLoads, ["5"], "a new view alone does not refetch the failed page");
+    view(3, true);
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(worker.pageLoads, ["5", "5"]);
 });
 
 test("build worker stops refetching a page the budget cannot hold until the view changes", async () => {

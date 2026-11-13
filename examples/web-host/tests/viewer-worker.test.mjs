@@ -15,6 +15,9 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     let targetVoxelPixels = 4;
     let pendingBlockIds = [];
     const insertedBlocks = [];
+    let pendingPageAnchors = [];
+    const graftedPages = [];
+    const budgets = [];
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
     const viewer = {
@@ -39,6 +42,12 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         },
         nextAsyncLodBlock: () => pendingBlockIds[0] ?? null,
         pendingAsyncLodBlocks: () => [...pendingBlockIds],
+        pendingPageAnchors: () => [...pendingPageAnchors],
+        graftPage(page) {
+            if (page.failGraft) throw new Error(`graft of ${page.anchor} failed`);
+            graftedPages.push(page.anchor);
+            pendingPageAnchors = pendingPageAnchors.filter(anchor => anchor !== page.anchor);
+        },
         insertAsyncLodBlock(blockId) {
             insertedBlocks.push(blockId);
             pendingBlockIds = pendingBlockIds.filter(id => id !== String(blockId));
@@ -87,8 +96,14 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         free() {}
     }
     class DefaultAsyncReadBudget {
-        constructor(limitBytes) { this.limitBytes = limitBytes; }
-        clone() { return new DefaultAsyncReadBudget(this.limitBytes); }
+        constructor(limit) { this.limit = limit; budgets.push(this); }
+        clone() {
+            const copy = new DefaultAsyncReadBudget(this.limit);
+            copy.cloned = true;
+            return copy;
+        }
+        limitBytes() { return String(this.limit); }
+        free() {}
     }
     class DefaultBlockRequestScheduler {
         constructor(limit) {
@@ -202,7 +217,10 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         setNow(value) { now = value; },
         setPendingBlock(value) { pendingBlockIds = value === null ? [] : [String(value)]; },
         setPendingBlocks(values) { pendingBlockIds = values.map(String); },
+        setPendingPageAnchors(values) { pendingPageAnchors = [...values]; },
         insertedBlocks,
+        graftedPages,
+        budgetLimits: () => budgets.filter(budget => !budget.cloned).map(budget => budget.limit),
     };
 }
 
@@ -566,4 +584,81 @@ test("metrics message reports busy time per message type, frame queue wait and t
     const reset = worker.messages.filter(message => message.type === "metrics").at(-1).workerMetrics;
     assert.equal(Object.keys(reset.busyByMessage).length, 0);
     assert.equal(reset.lodLog.length, 0);
+});
+
+const pagedOpen = { file: { name: "paged.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 };
+
+// Minimal paged reader: one root node; subclasses define `loadPage`.
+class PagedReader {
+    static async open() { return new this(); }
+    lodDatasetDescriptor() {
+        return {
+            coordinateOrigin: [0, 0, 0], semantics: "replacement",
+            dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+            nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+            hasAttributes: false, attributeSchema: [],
+        };
+    }
+    free() {}
+}
+
+test("a page that fails to load is not requested again until an explicit refinement", async () => {
+    const loads = [];
+    class FailingPageReader extends PagedReader {
+        async loadPage(anchor) {
+            loads.push(anchor);
+            await new Promise(setImmediate);
+            throw new Error("network error");
+        }
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingPageReader);
+    worker.setPendingPageAnchors(["a"]);
+    await worker.send("openFile", pagedOpen);
+    for (let i = 0; i < 5; i += 1) await worker.send("frame", { camera: {} });
+    assert.deepEqual(loads, ["a"]);
+    await worker.send("refine", { trigger: "retry", colorMode: "rgb", targetVoxelPixels: 4 });
+    for (let i = 0; i < 3; i += 1) await worker.send("frame", { camera: {} });
+    assert.deepEqual(loads, ["a", "a"]);
+});
+
+test("a page whose graft throws does not stop the next queued page from grafting", async () => {
+    class GraftReader extends PagedReader {
+        async loadPage(anchor) {
+            await new Promise(setImmediate);
+            return { anchor, failGraft: anchor === "a", free() {} };
+        }
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), GraftReader);
+    worker.setPendingPageAnchors(["a", "b"]);
+    await worker.send("openFile", pagedOpen);
+    for (let i = 0; i < 3; i += 1) await new Promise(setImmediate);
+    assert.deepEqual(worker.graftedPages, ["b"]);
+    assert.ok(worker.messages.some(message => message.type === "error" && message.operation === "asyncPageRead"));
+});
+
+test("a later dataset with another cacheBytes gets its own read budget", async () => {
+    const worker = await runWorker();
+    await worker.send("openFile", { ...pagedOpen, cacheBytes: 1024 });
+    await worker.send("openFile", { ...pagedOpen, cacheBytes: 1024 });
+    assert.deepEqual(worker.budgetLimits(), [1024]);
+    await worker.send("openFile", { ...pagedOpen, cacheBytes: 4096 });
+    assert.deepEqual(worker.budgetLimits(), [1024, 4096]);
+});
+
+test("a page that failed in one dataset is requested again after opening a new one", async () => {
+    const loads = [];
+    class FailingPageReader extends PagedReader {
+        async loadPage(anchor) {
+            loads.push(anchor);
+            await new Promise(setImmediate);
+            throw new Error("network error");
+        }
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingPageReader);
+    worker.setPendingPageAnchors(["a"]);
+    await worker.send("openFile", pagedOpen);
+    await worker.send("frame", { camera: {} });
+    await worker.send("openFile", pagedOpen);
+    await worker.send("frame", { camera: {} });
+    assert.deepEqual(loads, ["a", "a"]);
 });
