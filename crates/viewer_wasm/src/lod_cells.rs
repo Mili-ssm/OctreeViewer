@@ -51,6 +51,39 @@ impl Default for CellUpdateConfig {
     }
 }
 
+/// Why the build side built a node, kept to tell which kind the driver forgets (diagnosis only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BuildRole {
+    /// In the selection at the stage px (also the role of a node built outside a plan).
+    #[default]
+    Selected,
+    /// Co-owner without cells of a block shared with a selected node.
+    Waiter,
+    /// Parents-first build of an ancestor that is not selected.
+    Ancestor,
+}
+
+/// Diagnosis counters of the build/forget loop. They read state and change nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct CellDiag {
+    /// Cumulative forgets by the driver, by the role the node was built with.
+    pub forgotten_selected: u64,
+    pub forgotten_waiter: u64,
+    pub forgotten_ancestor: u64,
+    /// Cumulative builds of a node built before in this dataset.
+    pub rebuilt_total: u64,
+    pub selection_nodes: usize,
+    /// Built selected nodes absent from the cut, and of those, with a block not in the cache.
+    pub selected_built_not_in_cut: usize,
+    pub selected_built_blocks_missing: usize,
+    /// The bytes the ADR 0037 admission counted (0 without a CPU budget).
+    pub cpu_needed_bytes: u64,
+    pub block_cache_bytes: u64,
+    pub block_cache_limit_bytes: u64,
+    /// Cumulative blocks the cache evicted (as seen by cells updates).
+    pub block_evictions: u64,
+}
+
 /// What step 1 of a cells update did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellPlanStats {
@@ -72,6 +105,7 @@ pub struct CellPlanStats {
     /// Candidates the CPU budget keeps from being built (ADR 0037): their zone is drawn with the
     /// ancestor that has cells.
     pub cpu_coarsened: usize,
+    pub diag: CellDiag,
 }
 
 /// What one cells update did, with the driver's frame.
@@ -99,6 +133,7 @@ pub struct CellUpdateStats {
     pub uncovered_nodes: usize,
     /// As [`CellPlanStats::cpu_coarsened`].
     pub cpu_coarsened: usize,
+    pub diag: CellDiag,
 }
 
 impl CellUpdateStats {
@@ -119,6 +154,7 @@ impl CellUpdateStats {
             pending_page_anchors: plan.pending_page_anchors,
             uncovered_nodes: plan.uncovered_nodes,
             cpu_coarsened: plan.cpu_coarsened,
+            diag: plan.diag,
         }
     }
 }
@@ -177,6 +213,9 @@ struct BuiltNode {
     sent: u64,
     /// Packed bytes the driver keeps for it (`packed_node_bytes`), for the CPU budget fit.
     bytes: u64,
+    role: BuildRole,
+    /// The node had been built before in this dataset.
+    rebuild: bool,
 }
 
 /// The CPU budget fit (ADR 0037) blocks admission above this share of the budget...
@@ -187,6 +226,9 @@ const CPU_RELEASE_PERCENT: u64 = 80;
 pub(super) struct CellState {
     /// Nodes whose cells were sent to the driver.
     built: HashMap<NodeId, BuiltNode>,
+    /// Nodes built at least once, and the diagnosis counters (`CellDiag`).
+    ever_built: HashSet<NodeId>,
+    pub(super) diag: CellDiag,
     /// A node overflowed the CPU budget and the bytes the cut needs have not dropped below
     /// [`CPU_RELEASE_PERCENT`] since: no node is built (see `plan_cell_update`).
     pub(super) cpu_blocked: bool,
@@ -212,6 +254,8 @@ impl Default for CellState {
     fn default() -> Self {
         Self {
             built: HashMap::new(),
+            ever_built: HashSet::new(),
+            diag: CellDiag::default(),
             cpu_blocked: false,
             empty: HashSet::new(),
             pool_drawn: Vec::new(),
@@ -519,7 +563,14 @@ impl LodDataset {
     /// the cut needs them.
     pub fn apply_evicted(&mut self, nodes: &[NodeId]) {
         for node in nodes {
-            self.cells.built.remove(node);
+            if let Some(built) = self.cells.built.remove(node) {
+                let diag = &mut self.cells.diag;
+                match built.role {
+                    BuildRole::Selected => diag.forgotten_selected += 1,
+                    BuildRole::Waiter => diag.forgotten_waiter += 1,
+                    BuildRole::Ancestor => diag.forgotten_ancestor += 1,
+                }
+            }
         }
     }
 
@@ -655,7 +706,17 @@ impl LodDataset {
         // The epoch of the first cut that can name it.
         let sent = self.cells.cut_epoch + 1;
         let bytes = packed_node_bytes(&packed);
-        self.cells.built.insert(id, BuiltNode { sent, bytes });
+        let rebuild = !self.cells.ever_built.insert(id);
+        let role = BuildRole::default();
+        self.cells.built.insert(
+            id,
+            BuiltNode {
+                sent,
+                bytes,
+                role,
+                rebuild,
+            },
+        );
         Ok(Some(packed))
     }
 
@@ -852,6 +913,7 @@ impl LodDataset {
             self.cells.read_ancestor_last = read_ancestors;
             self.load_block_step(requested, &mut load_block, &mut evicted_blocks)?;
         }
+        self.cells.diag.block_evictions += evicted_blocks.len() as u64;
 
         // A candidate is ready when its blocks are decoded and every ancestor with blocks has
         // its cells.
@@ -880,9 +942,26 @@ impl LodDataset {
                     if let Some(budget) = config.cpu_budget_bytes
                         && cpu_needed + bytes > budget / 100 * CPU_ADMIT_PERCENT
                     {
-                        self.cells.built.remove(&id);
+                        if let Some(taken) = self.cells.built.remove(&id)
+                            && !taken.rebuild
+                        {
+                            self.cells.ever_built.remove(&id);
+                        }
                         self.cells.cpu_blocked = true;
                         break;
+                    }
+                    if let Some(built) = self.cells.built.get_mut(&id) {
+                        built.role = candidates.iter().find(|c| c.id == id).map_or(
+                            BuildRole::Selected,
+                            |c| match (c.ancestor, c.waiter) {
+                                (true, _) => BuildRole::Ancestor,
+                                (false, true) => BuildRole::Waiter,
+                                (false, false) => BuildRole::Selected,
+                            },
+                        );
+                        if built.rebuild {
+                            self.cells.diag.rebuilt_total += 1;
+                        }
                     }
                     cpu_needed += bytes;
                     built_nodes.push(id);
@@ -931,6 +1010,33 @@ impl LodDataset {
             .copied()
             .filter(|id| self.cells.built.contains_key(id))
             .collect();
+        let diag = {
+            let in_cut: HashSet<NodeId> = cut.iter().copied().collect();
+            let hierarchy = self.metadata.hierarchy();
+            let mut not_in_cut = 0;
+            let mut blocks_missing = 0;
+            for id in selection.node_ids() {
+                if !self.cells.built.contains_key(id) || in_cut.contains(id) {
+                    continue;
+                }
+                not_in_cut += 1;
+                if hierarchy
+                    .node(*id)
+                    .is_some_and(|node| node.blocks().iter().any(|b| !self.cache.contains(*b)))
+                {
+                    blocks_missing += 1;
+                }
+            }
+            CellDiag {
+                selection_nodes: selection.node_ids().len(),
+                selected_built_not_in_cut: not_in_cut,
+                selected_built_blocks_missing: blocks_missing,
+                cpu_needed_bytes: cpu_needed,
+                block_cache_bytes: self.cache.used_bytes() as u64,
+                block_cache_limit_bytes: self.cache.max_bytes() as u64,
+                ..self.cells.diag
+            }
+        };
         let (max_gap, gaps_over_one) = match self.cut_gaps(&cut) {
             Ok(gaps) => gaps,
             Err(error) => {
@@ -979,6 +1085,7 @@ impl LodDataset {
             pending_page_anchors: pending_anchors,
             uncovered_nodes: plan.uncovered_nodes().len(),
             cpu_coarsened,
+            diag,
         };
         self.visible_plan = Some(plan);
         Ok(CellUpdate {

@@ -478,6 +478,18 @@ fn a_node_forgotten_under_the_cpu_budget_is_evicted_and_built_and_sent_again() {
     run(8.0, 80, &mut dataset, &mut driver);
     assert_eq!(spare_builds.get(), 1, "node 12 was not built again");
     assert!(driver.has_node(spare));
+    // The one forget was of a node built outside a plan (role `Selected`), and its second build
+    // was counted as a rebuild.
+    let diag = dataset.cells.diag;
+    assert_eq!(
+        (
+            diag.forgotten_selected,
+            diag.forgotten_waiter,
+            diag.forgotten_ancestor
+        ),
+        (1, 0, 0)
+    );
+    assert_eq!(diag.rebuilt_total, 1);
 }
 
 /// A chain: node n+1 is the first octant of node n, one level and one depth down.

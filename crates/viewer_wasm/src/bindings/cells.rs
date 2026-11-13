@@ -180,6 +180,26 @@ pub(super) fn add_plan_stats(value: &JsValue, plan: &CellPlanStats) -> Result<()
         ("gapsOverOne", plan.gaps_over_one as f64),
         ("uncoveredNodes", plan.uncovered_nodes as f64),
         ("cpuCoarsened", plan.cpu_coarsened as f64),
+        ("forgottenSelected", plan.diag.forgotten_selected as f64),
+        ("forgottenWaiter", plan.diag.forgotten_waiter as f64),
+        ("forgottenAncestor", plan.diag.forgotten_ancestor as f64),
+        ("rebuiltTotal", plan.diag.rebuilt_total as f64),
+        ("selectionNodes", plan.diag.selection_nodes as f64),
+        (
+            "selectedBuiltNotInCut",
+            plan.diag.selected_built_not_in_cut as f64,
+        ),
+        (
+            "selectedBuiltBlocksMissing",
+            plan.diag.selected_built_blocks_missing as f64,
+        ),
+        ("cpuNeededBytes", plan.diag.cpu_needed_bytes as f64),
+        ("blockCacheBytes", plan.diag.block_cache_bytes as f64),
+        (
+            "blockCacheLimitBytes",
+            plan.diag.block_cache_limit_bytes as f64,
+        ),
+        ("blockEvictions", plan.diag.block_evictions as f64),
     ] {
         set(object, name, &JsValue::from_f64(number))?;
     }
