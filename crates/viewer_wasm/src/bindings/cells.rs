@@ -19,7 +19,7 @@
 
 use js_sys::{Array, BigUint64Array, Object, Reflect, Uint8Array};
 use viewer_core::NodeId;
-use viewer_render_wgpu::CellGrid;
+use viewer_render_wgpu::{CellGrid, CutApply};
 use wasm_bindgen::prelude::*;
 
 use super::{WasmVoxelViewer, builder::WasmSceneBuilder};
@@ -105,6 +105,16 @@ pub(super) fn add_cells_stats(
             JsValue::from_str(&format!("{digest:016x}"))
         }),
     )?;
+    set(
+        object,
+        "cutApply",
+        &stats.cut_apply.map_or(JsValue::NULL, |apply| {
+            JsValue::from_str(match apply {
+                CutApply::Applied => "applied",
+                CutApply::RetainedPrevious => "retained",
+            })
+        }),
+    )?;
     let counters = &stats.counters;
     for (name, number) in [
         ("viewEpoch", stats.view_epoch as f64),
@@ -112,6 +122,7 @@ pub(super) fn add_cells_stats(
         ("cutEpochApplied", stats.cut_epoch_applied as f64),
         ("queuedNodeCells", stats.queued_nodes as f64),
         ("queuedNodeBytes", stats.queued_bytes as f64),
+        ("cellsForgottenTotal", stats.forgotten_total as f64),
         ("cellCpuBytes", stats.cpu_cell_bytes as f64),
         ("poolStages", f64::from(counters.stages)),
         (

@@ -330,6 +330,39 @@ fn glue_synthetic_pool_reset_and_driver_replaced_mid_load_converge() {
 }
 
 #[test]
+fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_budget() {
+    use viewer_render_wgpu::CutApply;
+    let views = synth_orbit();
+    let budget = synthetic_cpu_bytes(&views) / 3;
+    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
+    let before = sim.viewer.stats(&sim.h.target);
+    assert_eq!((before.cut_apply, before.forgotten_total), (None, 0));
+    sim.run(&views, Inject::default(), 200_000);
+    let after = sim.viewer.stats(&sim.h.target);
+    assert_eq!(after.cut_apply, Some(CutApply::Applied));
+    assert!(
+        after.forgotten_total > 0,
+        "a third of the working set forgot nothing"
+    );
+    // Retained: a pool too small for the cut keeps the previous one (overflow).
+    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 7, 256 << 10);
+    let mut config = driver_config(
+        sim.h.dataset.cell_grid(),
+        sim.h.dataset.coordinate_origin(),
+        budget,
+    );
+    config.pool.capacity_pages = 2;
+    sim.viewer = ViewerCells::new(config, 256 << 10);
+    sim.viewer.camera_changed(sim.view_gen);
+    let mut retained = false;
+    for _ in 0..200 {
+        sim.step(&views[0]);
+        retained |= sim.viewer.stats(&sim.h.target).cut_apply == Some(CutApply::RetainedPrevious);
+    }
+    assert!(retained, "a two-page pool never retained the previous cut");
+}
+
+#[test]
 fn a_burst_of_node_cells_is_applied_over_several_frames_in_order() {
     let mut h = synthetic_harness(1 << 20, 2.0);
     h.config = CellUpdateConfig { max_node_builds: 8 };

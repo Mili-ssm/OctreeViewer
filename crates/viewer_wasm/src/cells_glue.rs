@@ -27,7 +27,7 @@ use std::{
 use viewer_core::{BlockId, NodeId, PointBlock};
 use viewer_format::OctreeReader;
 use viewer_render_wgpu::{
-    CellDriver, CellGrid, CellTarget, DriverConfig, FrameReport, OrbitCamera, PoolConfig,
+    CellDriver, CellGrid, CellTarget, CutApply, DriverConfig, FrameReport, OrbitCamera, PoolConfig,
     PoolCounters, ViewProjection, VoxelBuildLimits, cell_cut_digest, decode_node_levels,
     encode_node_levels,
 };
@@ -101,6 +101,11 @@ pub(crate) struct CellsStats {
     pub queued_bytes: usize,
     pub cut_digest_at_rest: Option<u64>,
     pub counters: PoolCounters,
+    /// How the last frame on the driver's side treated its cut; `None` before the first frame
+    /// and on the in-process path.
+    pub cut_apply: Option<CutApply>,
+    /// Nodes the driver dropped for the CPU budget since it was created (render side only).
+    pub forgotten_total: u64,
     pub cpu_cell_bytes: u64,
     pub wasm_linear_memory_bytes: u64,
 }
@@ -405,6 +410,8 @@ pub(crate) struct ViewerCells {
     digest: Option<u64>,
     last_missing: usize,
     counters: PoolCounters,
+    cut_apply: Option<CutApply>,
+    forgotten_total: u64,
     out: CellMessages,
     probe_last: Cell<Option<u64>>,
 }
@@ -428,6 +435,8 @@ impl ViewerCells {
             digest: None,
             last_missing: 0,
             counters: PoolCounters::default(),
+            cut_apply: None,
+            forgotten_total: 0,
             out: CellMessages {
                 driver_replaced: true,
                 ..CellMessages::default()
@@ -588,6 +597,8 @@ impl ViewerCells {
         self.digest = Some(cell_cut_digest(&draw.report.plan.entries));
         self.last_missing = draw.ack.missing.len();
         self.counters = *draw.report.counters();
+        self.cut_apply = Some(draw.report.plan.apply);
+        self.forgotten_total += draw.report.forgotten.len() as u64;
         self.out.evict.extend(draw.evicted);
         self.out.pool_reset |= draw.pool_reset;
         self.out.ack = Some(draw.ack);
@@ -636,6 +647,8 @@ impl ViewerCells {
             queued_bytes: self.queued_bytes,
             cut_digest_at_rest: self.cut_digest_at_rest(target),
             counters: self.counters,
+            cut_apply: self.cut_apply,
+            forgotten_total: self.forgotten_total,
             cpu_cell_bytes: self.driver.cpu_bytes(),
             wasm_linear_memory_bytes: wasm_linear_memory_bytes(),
         }
