@@ -641,11 +641,12 @@ fn majadas_at_1px_settles_with_the_browser_block_cache() {
     println!("{run:?}");
     assert!(
         run.settled_after.is_some(),
-        "never settled: stage {:?}, {} pending blocks, {} block evictions, {} forgotten, {} rebuilt",
+        "never settled: stage {:?}, {} pending blocks, {} block evictions, {} forgotten, {} rebuilt, {} coarsened",
         run.stage,
         run.pending_blocks,
         run.block_evictions,
         run.forgotten,
-        run.rebuilt
+        run.rebuilt,
+        run.cpu_coarsened
     );
 }
