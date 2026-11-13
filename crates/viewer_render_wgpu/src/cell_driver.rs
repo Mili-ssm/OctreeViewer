@@ -247,6 +247,16 @@ fn level_bytes(level: &PackedLevel) -> u64 {
         + level.pages.len() * size_of::<PageInfo>()) as u64
 }
 
+/// Bytes the driver keeps on the CPU for `node`: what `cpu_bytes` grows by when it stores it. The
+/// build side measures nodes with it, so its CPU budget and the driver's agree.
+pub fn packed_node_bytes(node: &PackedNode) -> u64 {
+    node.levels
+        .iter()
+        .filter(|level| !level.pages.is_empty())
+        .map(level_bytes)
+        .sum()
+}
+
 fn shift(grid: &CellGrid, origin: [f64; 3]) -> CellGrid {
     CellGrid {
         root_min: std::array::from_fn(|axis| grid.root_min[axis] - origin[axis]),

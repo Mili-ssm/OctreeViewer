@@ -8,7 +8,11 @@
 // keeps the previous one, R3-Q10); `leaf` (Majadas only: the T16 case majadas-inside-leaf-py-4px, the
 // eye inside a leaf looking along +y). Default: fitted,orbit,jump plus leaf when the file name has "majadas".
 // Per pose: "reached" is the plan's definition (R3-Q3): cutApply "applied", poolNodesWithoutLevel 0,
-// poolCoarsened 0, poolStages 0 and a repeated non-null cutDigestAtRest. Also records time to reached,
+// poolCoarsened 0, cpuCoarsened 0 (ADR 0037), poolStages 0 and a repeated non-null cutDigestAtRest.
+// "settled" is weaker: camera at the pose, cutApply "applied", a repeated non-null cutDigestAtRest and
+// no node forgotten during the rest window, so a pose whose far nodes the CPU budget keeps coarse
+// (cpuCoarsened > 0) can settle without being reached. Exit code 1 only if a pose does neither.
+// Also records time to reached,
 // RetainedPrevious streaks (samples every ~100 ms), forgotten nodes over a rest window (the camera
 // is redrawn every sample, so a forget/rebuild loop would show), frame interval/render-call percentiles
 // during arrival and the rest window, GTT delta over the idle baseline, console and page errors.
@@ -77,12 +81,18 @@ function leafPose(metadata) {
 }
 
 const samePose = (pose, current) => ["position", "target"].every(key => pose[key].every((v, axis) => Math.abs(v - current[key][axis]) < 1e-6 * Math.max(1, Math.abs(v))));
-const reachedNow = (lod, poseApplied = true) => poseApplied
-    && lod.cutApply === "applied" && lod.poolNodesWithoutLevel === 0
-    && lod.poolCoarsened === 0 && lod.poolStages === 0 && lod.cutDigestAtRest != null;
+const settledNow = (lod, poseApplied = true) => poseApplied
+    && lod.cutApply === "applied" && lod.cutDigestAtRest != null;
+const reachedNow = (lod, poseApplied = true) => settledNow(lod, poseApplied)
+    && lod.poolNodesWithoutLevel === 0 && lod.poolCoarsened === 0 && lod.cpuCoarsened === 0 && lod.poolStages === 0;
 const statsOf = lod => Object.fromEntries(["cutApply", "cutDigestAtRest", "cellsBusy", "viewEpoch", "cutEpochSent", "cutEpochApplied",
-    "poolStages", "poolNodesWithoutLevel", "poolCoarsened", "poolOverflow", "poolDescendantTooFine", "poolResidentPages",
+    "poolStages", "poolNodesWithoutLevel", "poolCoarsened", "cpuCoarsened", "poolOverflow", "poolDescendantTooFine", "poolResidentPages",
     "cellsForgottenTotal", "cellCpuBytes", "wasmLinearMemoryBytes", "cellPath"].map(key => [key, lod?.[key] ?? null]));
+
+// The whole LOD object for diagnosis, with arrays reduced to their length.
+const rawOf = lod => Object.fromEntries(Object.entries(lod ?? {}).map(([key, value]) =>
+    [key, Array.isArray(value) || ArrayBuffer.isView(value) ? { length: value.length }
+        : value !== null && typeof value === "object" ? "[object]" : value]));
 
 const { chromium } = createRequire(PLAYWRIGHT_CORE)("playwright-core");
 const gttBaseline = readGtt();
@@ -147,9 +157,10 @@ try {
         if (name !== "fitted") await api("setCamera", { position: pose.position, target: pose.target });
         const poseStarted = name === "fitted" ? loadStarted : started;
         entry.poseApplied = true;
-        let previous = null, reached = false, streak = null, last = null;
+        let previous = null, previousSettled = null, reached = false, settledStreak = false, streak = null, last = null;
         const streaks = [];
-        let samples = 0, retainedSamples = 0;
+        let samples = 0, retainedSamples = 0, lastTrace = 0;
+        entry.trace = [];
         while (Date.now() - poseStarted < timeoutMs) {
             await evaluate("window.__renderBench.wake(); true");
             const now = Date.now();
@@ -159,6 +170,8 @@ try {
             last = await lodStats();
             gttNow();
             samples++;
+            // A coarse time series of the raw stats, to see what keeps a pose from settling.
+            if (now - lastTrace >= 5000) { entry.trace.push({ t: now - poseStarted, ...rawOf(last) }); lastTrace = now; }
             if (last.cutApply === "retained") {
                 retainedSamples++;
                 if (streak) { streak.samples++; streak.end = now; } else streak = { start: now, end: now, samples: 1 };
@@ -166,11 +179,16 @@ try {
             const ok = reachedNow(last, applied);
             if (ok && previous === last.cutDigestAtRest) { reached = true; break; }
             previous = ok ? last.cutDigestAtRest : null;
+            // A pose the CPU budget keeps coarse is final: waiting longer would not reach it.
+            const settledOk = settledNow(last, applied);
+            if (settledOk && previousSettled === last.cutDigestAtRest && last.cpuCoarsened > 0) { settledStreak = true; break; }
+            previousSettled = settledOk ? last.cutDigestAtRest : null;
             await sleep(SAMPLE_MS);
         }
         if (streak) streaks.push(streak);
         const reachedAt = Date.now();
         entry.reached = reached;
+        entry.settled = false;
         entry.timeToReachedMs = reached ? reachedAt - poseStarted : null;
         entry.arrivalFrames = await evalJson(`window.__renderBench.summarize(${poseStarted}, ${reachedAt})`);
         entry.retained = {
@@ -179,7 +197,7 @@ try {
         };
         entry.statsAtReached = statsOf(last);
         entry.gttAtReachedDeltaBytes = delta(gttNow());
-        if (reached) {
+        if (reached || settledStreak) {
             // The rest window keeps waking the render loop on purpose: forgetting only shows when frames run.
             const forgottenBefore = last.cellsForgottenTotal ?? 0;
             const restStarted = Date.now();
@@ -193,14 +211,15 @@ try {
             entry.rest = {
                 windowMs: Date.now() - restStarted,
                 forgottenDelta: (restLod.cellsForgottenTotal ?? 0) - forgottenBefore,
-                stillAtRest: reachedNow(restLod),
+                stillAtRest: (reached ? reachedNow : settledNow)(restLod, samePose(pose, await api("getCamera"))),
                 frames: await evalJson(`window.__renderBench.summarize(${restStarted}, ${Date.now()})`),
                 gttDeltaBytes: delta(gttNow()),
             };
             entry.statsAtRestEnd = statsOf(restLod);
+            entry.settled = entry.rest.stillAtRest && entry.rest.forgottenDelta === 0;
         }
         entry.endedInRetainedStreak = last?.cutApply === "retained";
-        if (!reached) entry.lastStats = statsOf(last);
+        if (!reached) { entry.lastStats = statsOf(last); entry.lastRaw = rawOf(last); }
         report.poses.push(entry);
     }
     report.finalLod = statsOf(await lodStats());
@@ -211,14 +230,14 @@ try {
     await instance.close().catch(() => {});
 }
 report.gttPeakDeltaBytes = delta(gttPeak);
-if (report.error || report.poses.length < poseNames.length || report.poses.some(p => !p.reached)) process.exitCode = 1;
+if (report.error || report.poses.length < poseNames.length || report.poses.some(p => !p.reached && !p.settled)) process.exitCode = 1;
 fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
 fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
 
 const mib = bytes => (bytes === null || bytes === undefined ? "n/a" : `${(bytes / 1048576).toFixed(0)} MiB`);
 console.log(`dataset ${path.basename(input)} px ${targetPixels}${report.error ? ` ERROR ${report.error.split("\n")[0]}` : ""}`);
 for (const p of report.poses) {
-    console.log(`${p.label}: reached ${p.reached}${p.timeToReachedMs !== null ? ` in ${p.timeToReachedMs} ms` : ""}, retained ${p.retained.streaks} streaks `
+    console.log(`${p.label}: reached ${p.reached}, settled ${p.settled}${p.timeToReachedMs !== null ? ` in ${p.timeToReachedMs} ms` : ""}, retained ${p.retained.streaks} streaks `
         + `(${p.retained.totalMs} ms, longest ${Math.max(0, ...p.retained.durationsMs)} ms), forgotten at rest ${p.rest?.forgottenDelta ?? "n/a"}, `
         + `frame p95 arrival ${p.arrivalFrames?.intervalMs?.p95 ?? "n/a"} / rest ${p.rest?.frames?.intervalMs?.p95 ?? "n/a"} ms, `
         + `render-call p95 ${p.arrivalFrames?.renderCallMs?.p95 ?? "n/a"} / ${p.rest?.frames?.renderCallMs?.p95 ?? "n/a"} ms, GTT +${mib(p.rest?.gttDeltaBytes ?? p.gttAtReachedDeltaBytes)}`);

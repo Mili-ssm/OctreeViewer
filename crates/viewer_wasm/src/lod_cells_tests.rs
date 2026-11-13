@@ -279,7 +279,10 @@ fn at_most_the_configured_nodes_are_built_per_update_nearest_first() {
     // The eye hangs right beside node 9, the octant at the far corner.
     let view = view_at(Some([70.0, 68.0, 66.0]));
     let mut target = NullTarget::at(&view);
-    let config = CellUpdateConfig { max_node_builds: 2 };
+    let config = CellUpdateConfig {
+        max_node_builds: 2,
+        ..CellUpdateConfig::default()
+    };
     let mut rounds = Vec::new();
     for round in 0..5 {
         let update = dataset
@@ -802,6 +805,120 @@ fn a_block_shared_by_two_nodes_does_not_starve_the_node_that_is_in_the_cut() {
     assert_eq!(last.uncovered_nodes, 0);
     assert!(dataset.cells.has_cells(NodeId::new(10)));
     assert!(dataset.cells.pool_drawn().contains(&NodeId::new(2)));
+}
+
+/// Each of the eight octants (2..=9) has a child that reads the block of its parent (as a shared
+/// block of a real file does): node 10 for octant 2 and nodes 20..=26 for octants 3..=9. At 64 px
+/// the cut is the eight octants, and the eight children are co-owners of the block of a selected
+/// node, so they are built as waiters although the cut never names them.
+fn waiters_dataset() -> LodDataset {
+    let mut nodes = octree_nodes();
+    let corner = |nodes: &[SpatialNode], octant: u64| {
+        let parent = nodes.iter().find(|n| n.id().get() == octant).unwrap();
+        let min = parent.bounds().min();
+        SpatialBounds::new(min, min.map(|v| v + SIDE / 4.0)).unwrap()
+    };
+    let waiter = |id: u64, parent: u64, bounds| {
+        SpatialNode::new(
+            NodeId::new(id),
+            Some(NodeId::new(parent)),
+            2,
+            bounds,
+            200,
+            0.0,
+            vec![BlockId::new(100 + parent)],
+        )
+        .unwrap()
+    };
+    let at = nodes.iter().position(|n| n.id().get() == 10).unwrap();
+    nodes[at] = waiter(10, 2, corner(&nodes, 2));
+    for octant in 3..=9 {
+        let child = waiter(20 + octant - 3, octant, corner(&nodes, octant));
+        nodes.push(child);
+    }
+    let mut dataset = octree_dataset(nodes, HierarchySemantics::Replacement, true);
+    let mut waiters = vec![(2, 10)];
+    waiters.extend((3..=9).map(|octant| (octant, 20 + octant - 3)));
+    for (octant, child) in waiters {
+        // The shared block holds points inside the child, which lies inside the octant.
+        let inner = node_block(&dataset, child);
+        let block = PointBlock::new(
+            BlockId::new(100 + octant),
+            inner.points().clone(),
+            Vec::new(),
+        );
+        dataset.insert_block(block).unwrap();
+    }
+    for node in std::iter::once(1).chain(11..=17) {
+        let block = node_block(&dataset, node);
+        dataset.insert_block(block).unwrap();
+    }
+    dataset
+}
+
+/// Updates at 64 px until nothing is built, deferred or pending in the driver (at most `limit`).
+/// Returns the stats of the last update and the nodes the driver forgot along the way.
+fn run_waiters(
+    dataset: &mut LodDataset,
+    driver: &mut CellDriver,
+    config: CellUpdateConfig,
+    limit: usize,
+) -> (CellUpdateStats, usize, bool) {
+    let view = view_at(None);
+    let mut target = NullTarget::at(&view);
+    let (mut last, mut forgotten, mut settled) = (None, 0, false);
+    for _ in 0..limit {
+        let update = dataset
+            .update_cells(&view, 64.0, config, driver, &mut target, None, |_| Ok(None))
+            .unwrap();
+        forgotten += update.report.forgotten.len();
+        settled = update.stats.built_nodes.is_empty()
+            && update.stats.build_deferred == 0
+            && !driver.needs_frame();
+        last = Some(update.stats);
+        if settled {
+            break;
+        }
+    }
+    (last.unwrap(), forgotten, settled)
+}
+
+#[test]
+fn built_waiters_are_kept_and_counted_so_a_budget_below_cut_plus_waiters_settles() {
+    // Unbounded run: the bytes of the cut (the octants) and of the waiters (the children).
+    let mut free = waiters_dataset();
+    let mut driver = driver_for(&free, u64::MAX);
+    let (last, forgotten, settled) =
+        run_waiters(&mut free, &mut driver, CellUpdateConfig::default(), 60);
+    assert!(settled && forgotten == 0 && last.cut_nodes == 8);
+    let bytes = |ids: std::ops::RangeInclusive<u64>| -> u64 {
+        ids.map(|id| free.cells.built_bytes(NodeId::new(id)).expect("built"))
+            .sum()
+    };
+    let waiter_bytes = bytes(10..=10) + bytes(20..=26);
+    let cut_bytes = bytes(1..=9);
+    assert!(waiter_bytes > 0 && cut_bytes > 0);
+    // A node of the cut is drawn only once its co-owners have cells, so the cut needs cut and
+    // waiters together: the budget holds a part of them.
+    let budget = (cut_bytes + waiter_bytes) * 7 / 10;
+    let mut dataset = waiters_dataset();
+    let mut driver = driver_for(&dataset, budget);
+    let config = CellUpdateConfig {
+        cpu_budget_bytes: Some(budget),
+        ..CellUpdateConfig::default()
+    };
+    let (last, forgotten, settled) = run_waiters(&mut dataset, &mut driver, config, 200);
+    assert!(
+        settled,
+        "never settled; forgotten {forgotten}, last {last:?}"
+    );
+    assert!(last.cpu_coarsened > 0, "the waiters were not blocked");
+    assert!((1..8).contains(&last.cut_nodes) && last.uncovered_nodes == 0);
+    assert!(driver.cpu_bytes() <= budget);
+    // Settled for good: nothing is forgotten or built in further updates.
+    let (_, later, _) = run_waiters(&mut dataset, &mut driver, config, 50);
+    assert_eq!(later, 0, "forgetting went on after settling");
+    assert_eq!(forgotten, 0, "a waiter was built and forgotten");
 }
 
 #[test]

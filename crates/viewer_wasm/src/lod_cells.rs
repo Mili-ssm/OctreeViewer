@@ -25,7 +25,7 @@ use viewer_core::{BlockId, LodSelection, ResidentBlockSource, SpatialBounds, Spa
 use viewer_render_wgpu::{
     CellDriver, CellDriverError, CellGrid, CellTarget, CutApply, FrameReport, NodeCellSource,
     NodeInput, PackedNode, PointNodeCellSource, PoolCounters, ViewProjection, pack_node,
-    representative_depth,
+    packed_node_bytes, representative_depth,
 };
 
 /// Deepest ancestor-descendant gap, in geometric cell depths (`representative_depth`), a node
@@ -36,11 +36,18 @@ pub const MAX_CELL_CUT_GAP: u32 = 3;
 pub struct CellUpdateConfig {
     /// Nodes whose cells are built per update, nearest to the eye first.
     pub max_node_builds: usize,
+    /// The driver's CPU budget (`DriverConfig::cpu_budget_bytes`), when the build side must fit
+    /// the cut to it (ADR 0037). `None`: unbounded, as native callers and tests that give the
+    /// driver no budget.
+    pub cpu_budget_bytes: Option<u64>,
 }
 
 impl Default for CellUpdateConfig {
     fn default() -> Self {
-        Self { max_node_builds: 2 }
+        Self {
+            max_node_builds: 2,
+            cpu_budget_bytes: None,
+        }
     }
 }
 
@@ -62,6 +69,9 @@ pub struct CellPlanStats {
     pub pending_block_ids: Vec<BlockId>,
     pub pending_page_anchors: Vec<NodeId>,
     pub uncovered_nodes: usize,
+    /// Candidates the CPU budget keeps from being built (ADR 0037): their zone is drawn with the
+    /// ancestor that has cells.
+    pub cpu_coarsened: usize,
 }
 
 /// What one cells update did, with the driver's frame.
@@ -87,6 +97,8 @@ pub struct CellUpdateStats {
     pub pending_block_ids: Vec<BlockId>,
     pub pending_page_anchors: Vec<NodeId>,
     pub uncovered_nodes: usize,
+    /// As [`CellPlanStats::cpu_coarsened`].
+    pub cpu_coarsened: usize,
 }
 
 impl CellUpdateStats {
@@ -106,6 +118,7 @@ impl CellUpdateStats {
             pending_block_ids: plan.pending_block_ids,
             pending_page_anchors: plan.pending_page_anchors,
             uncovered_nodes: plan.uncovered_nodes,
+            cpu_coarsened: plan.cpu_coarsened,
         }
     }
 }
@@ -156,10 +169,27 @@ pub struct CellDraw {
 /// taken for a repeat of the new build's.
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
+/// A node whose cells were sent to the driver.
+#[derive(Debug, Clone, Copy)]
+struct BuiltNode {
+    /// Epoch of the first cut that follows the send: a `missing` report of an earlier cut says
+    /// nothing about the resend.
+    sent: u64,
+    /// Packed bytes the driver keeps for it (`packed_node_bytes`), for the CPU budget fit.
+    bytes: u64,
+}
+
+/// The CPU budget fit (ADR 0037) blocks admission above this share of the budget...
+const CPU_ADMIT_PERCENT: u64 = 90;
+/// ...and lifts the block once the bytes the cut needs fall below this one.
+const CPU_RELEASE_PERCENT: u64 = 80;
+
 pub(super) struct CellState {
-    /// Nodes whose cells were sent to the driver, with the epoch of the first cut that follows
-    /// the send: a `missing` report of an earlier cut says nothing about the resend.
-    built: HashMap<NodeId, u64>,
+    /// Nodes whose cells were sent to the driver.
+    built: HashMap<NodeId, BuiltNode>,
+    /// A node overflowed the CPU budget and the bytes the cut needs have not dropped below
+    /// [`CPU_RELEASE_PERCENT`] since: no node is built (see `plan_cell_update`).
+    pub(super) cpu_blocked: bool,
     /// Nodes whose every level came out empty: resident for the plan, never in the cut. That
     /// leaves no hole: a node has no levels only when none of its points is finite (a finite
     /// point always lands in a cell), and such points draw nothing on any path.
@@ -182,6 +212,7 @@ impl Default for CellState {
     fn default() -> Self {
         Self {
             built: HashMap::new(),
+            cpu_blocked: false,
             empty: HashSet::new(),
             pool_drawn: Vec::new(),
             cut_epoch: 0,
@@ -211,6 +242,12 @@ impl CellState {
 
     pub(super) fn has_cells(&self, node: NodeId) -> bool {
         self.built.contains_key(&node) || self.empty.contains(&node)
+    }
+
+    /// Packed bytes of a built node (diagnosis test `forget_loop_diagnosis`).
+    #[cfg(test)]
+    pub(super) fn built_bytes(&self, node: NodeId) -> Option<u64> {
+        self.built.get(&node).map(|built| built.bytes)
     }
 }
 
@@ -374,20 +411,31 @@ impl LodDataset {
             .collect()
     }
 
-    /// Owners without cells of the blocks of selected nodes that have them. Limited to the
-    /// selection so the closure cannot spread across the hierarchy away from the view.
-    fn shared_block_waiters(&self, selection: &[NodeId]) -> Vec<NodeId> {
+    /// Other owners of the blocks of selected nodes that have cells, whether they have cells or
+    /// not. Limited to the selection so the closure cannot spread across the hierarchy away from
+    /// the view.
+    fn shared_block_owners(&self, selection: &[NodeId]) -> Vec<NodeId> {
         let hierarchy = self.metadata.hierarchy();
         selection
             .iter()
             .filter(|id| self.cells.has_cells(**id))
-            .filter_map(|id| hierarchy.node(*id))
-            .flat_map(|node| node.blocks())
-            .filter_map(|block| self.block_owners.get(block))
-            .flatten()
-            .copied()
-            .filter(|owner| !self.cells.has_cells(*owner))
+            .filter_map(|id| hierarchy.node(*id).map(|node| (*id, node)))
+            .flat_map(|(id, node)| {
+                node.blocks()
+                    .iter()
+                    .filter_map(|block| self.block_owners.get(block))
+                    .flatten()
+                    .copied()
+                    .filter(move |owner| *owner != id)
+            })
             .collect()
+    }
+
+    /// Owners without cells of the blocks of selected nodes that have them.
+    fn shared_block_waiters(&self, selection: &[NodeId]) -> Vec<NodeId> {
+        let mut owners = self.shared_block_owners(selection);
+        owners.retain(|owner| !self.cells.has_cells(*owner));
+        owners
     }
 
     /// Ancestors of `id` that have blocks and no cells, nearest first (R3-Q22: they are built
@@ -498,7 +546,7 @@ impl LodDataset {
                 .cells
                 .built
                 .get(&node)
-                .is_some_and(|sent| *sent <= ack.cut_epoch)
+                .is_some_and(|built| built.sent <= ack.cut_epoch)
             {
                 self.cells.built.remove(&node);
             }
@@ -606,7 +654,8 @@ impl LodDataset {
         }
         // The epoch of the first cut that can name it.
         let sent = self.cells.cut_epoch + 1;
-        self.cells.built.insert(id, sent);
+        let bytes = packed_node_bytes(&packed);
+        self.cells.built.insert(id, BuiltNode { sent, bytes });
         Ok(Some(packed))
     }
 
@@ -677,6 +726,7 @@ impl LodDataset {
         // owners have cells, so they would wait forever otherwise) and, before any of them, the
         // ancestors that have no cells yet, in the cut or not (R3-Q22).
         let waiters = self.shared_block_waiters(selection.node_ids());
+        let shared_owners = self.shared_block_owners(selection.node_ids());
         let selected = selection.node_ids().len();
         let mut seen = HashSet::new();
         let mut candidates: Vec<BuildCandidate> = Vec::new();
@@ -730,6 +780,32 @@ impl LodDataset {
         };
 
         let initial_plan = self.prepare_cell_plan(&selection);
+        // CPU budget fit (ADR 0037). `cpu_needed` is what the driver cannot forget for this
+        // update: the packed bytes of the built nodes in the cut or in the support set; every
+        // node admitted below adds its own. A candidate is admitted only while that stays within
+        // `CPU_ADMIT_PERCENT` of the budget. The first one that does not fit is built (its size
+        // is known only then) and taken back, and `cpu_blocked` is set: while it holds no
+        // candidate is admitted, so nothing is read or built for them, until the bytes the cut
+        // needs fall below `CPU_RELEASE_PERCENT` (the camera moved to a cut that is cheaper).
+        // Blocked candidates stay candidates without cells: their built ancestors remain support
+        // and keep drawing their zone, and they are not deferred work, so the px ladder ends.
+        let mut cpu_needed = 0;
+        if let Some(budget) = config.cpu_budget_bytes {
+            let needed: HashSet<NodeId> = initial_plan
+                .node_ids()
+                .iter()
+                .copied()
+                .chain(self.support_nodes(&candidates, &shared_owners))
+                .collect();
+            cpu_needed = needed
+                .iter()
+                .filter_map(|id| self.cells.built.get(id))
+                .map(|built| built.bytes)
+                .sum();
+            if cpu_needed < budget / 100 * CPU_RELEASE_PERCENT {
+                self.cells.cpu_blocked = false;
+            }
+        }
         // Blocks that are decoded but wait for their cells are not read again. The ancestor whose
         // own ancestors all have cells waits for its blocks before anything else: its
         // descendants cannot be built without it, and it is built the moment it is read. Reads
@@ -756,7 +832,9 @@ impl LodDataset {
             .collect();
         let read_ancestors = !top_blocks.is_empty()
             && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
-        let to_read = if read_ancestors {
+        let to_read = if self.cells.cpu_blocked {
+            Vec::new()
+        } else if read_ancestors {
             top_blocks
         } else {
             selection_blocks
@@ -788,7 +866,7 @@ impl LodDataset {
         let mut built_nodes: Vec<NodeId> = Vec::new();
         let mut new_nodes: Vec<(u64, PackedNode)> = Vec::new();
         let generation = self.cells.generation;
-        while built_nodes.len() < config.max_node_builds {
+        while built_nodes.len() < config.max_node_builds && !self.cells.cpu_blocked {
             let Some(id) = candidates
                 .iter()
                 .map(|c| c.id)
@@ -798,6 +876,15 @@ impl LodDataset {
             };
             match self.build_node_cells(id) {
                 Ok(packed) => {
+                    let bytes = self.cells.built.get(&id).map_or(0, |built| built.bytes);
+                    if let Some(budget) = config.cpu_budget_bytes
+                        && cpu_needed + bytes > budget / 100 * CPU_ADMIT_PERCENT
+                    {
+                        self.cells.built.remove(&id);
+                        self.cells.cpu_blocked = true;
+                        break;
+                    }
+                    cpu_needed += bytes;
                     built_nodes.push(id);
                     new_nodes.extend(packed.map(|node| (generation, node)));
                 }
@@ -808,15 +895,29 @@ impl LodDataset {
             }
         }
         let build_ms = build_started.elapsed_ms();
-        let build_deferred = candidates
-            .iter()
-            .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
-            .count();
+        let cpu_blocked = self.cells.cpu_blocked;
+        let build_deferred = if cpu_blocked {
+            0
+        } else {
+            candidates
+                .iter()
+                .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
+                .count()
+        };
+        let cpu_coarsened = if cpu_blocked {
+            candidates
+                .iter()
+                .filter(|c| !built_nodes.contains(&c.id))
+                .count()
+        } else {
+            0
+        };
         if !built_nodes.is_empty() || next_block.is_some() {
             self.state_epoch += 1;
         }
         let mut waiting_blocks = uncached_blocks(self, true);
-        let support = self.support_nodes(&candidates);
+        let support =
+            self.support_nodes(&candidates, &self.shared_block_owners(selection.node_ids()));
 
         let plan = self.prepare_cell_plan(&selection);
         let evicted_pending = evicted_blocks
@@ -853,6 +954,17 @@ impl LodDataset {
         });
         let mut pending_block_ids = plan.pending_blocks().to_vec();
         pending_block_ids.append(&mut waiting_blocks);
+        if cpu_blocked {
+            // The blocks of candidates the budget keeps from being built are not asked for.
+            let hierarchy = self.metadata.hierarchy();
+            let unwanted: HashSet<BlockId> = candidates
+                .iter()
+                .filter(|c| !built_nodes.contains(&c.id))
+                .filter_map(|c| hierarchy.node(c.id))
+                .flat_map(|node| node.blocks().iter().copied())
+                .collect();
+            pending_block_ids.retain(|id| !unwanted.contains(id));
+        }
         pending_block_ids.sort();
         pending_block_ids.dedup();
         let stats = CellPlanStats {
@@ -866,6 +978,7 @@ impl LodDataset {
             pending_block_ids,
             pending_page_anchors: pending_anchors,
             uncovered_nodes: plan.uncovered_nodes().len(),
+            cpu_coarsened,
         };
         self.visible_plan = Some(plan);
         Ok(CellUpdate {
@@ -877,19 +990,34 @@ impl LodDataset {
         })
     }
 
-    /// Nodes with cells that are ancestors of candidates still without them.
-    fn support_nodes(&self, candidates: &[BuildCandidate]) -> Vec<NodeId> {
+    /// Nodes with cells the driver must keep although the cut does not name them: ancestors of
+    /// candidates still without cells, and the built co-owners of blocks of selected nodes with
+    /// cells (`shared_owners`). A block is resident for the planner only when all its
+    /// owners have cells, so forgetting one of them would make it a waiter again, to be built and
+    /// forgotten over and over at the CPU budget. `shared_owners` also count in the CPU fit.
+    fn support_nodes(
+        &self,
+        candidates: &[BuildCandidate],
+        shared_owners: &[NodeId],
+    ) -> Vec<NodeId> {
         let hierarchy = self.metadata.hierarchy();
-        let mut support = HashSet::new();
+        let mut ancestors = HashSet::new();
         for candidate in candidates.iter().filter(|c| !self.cells.has_cells(c.id)) {
             let mut parent = hierarchy.node(candidate.id).and_then(|node| node.parent());
             while let Some(up) = parent {
-                if self.cells.built.contains_key(&up) && !support.insert(up) {
+                if self.cells.built.contains_key(&up) && !ancestors.insert(up) {
                     break;
                 }
                 parent = hierarchy.node(up).and_then(|node| node.parent());
             }
         }
+        let mut support = ancestors;
+        support.extend(
+            shared_owners
+                .iter()
+                .copied()
+                .filter(|id| self.cells.built.contains_key(id)),
+        );
         let mut support: Vec<NodeId> = support.into_iter().collect();
         support.sort_unstable();
         support

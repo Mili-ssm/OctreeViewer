@@ -147,6 +147,15 @@ pub(super) fn add_cells_stats(
     )
 }
 
+/// The update config of the viewer: the build side fits the cut to the same CPU budget the driver
+/// has (ADR 0037).
+fn wasm_update_config() -> CellUpdateConfig {
+    CellUpdateConfig {
+        cpu_budget_bytes: Some(WASM_CPU_BUDGET_BYTES),
+        ..CellUpdateConfig::default()
+    }
+}
+
 /// The planner's side of a cells update, under the names `lod` stats use.
 pub(super) fn add_plan_stats(value: &JsValue, plan: &CellPlanStats) -> Result<(), JsValue> {
     let object: &Object = value.unchecked_ref();
@@ -170,6 +179,7 @@ pub(super) fn add_plan_stats(value: &JsValue, plan: &CellPlanStats) -> Result<()
         ("maxGap", f64::from(plan.max_gap)),
         ("gapsOverOne", plan.gaps_over_one as f64),
         ("uncoveredNodes", plan.uncovered_nodes as f64),
+        ("cpuCoarsened", plan.cpu_coarsened as f64),
     ] {
         set(object, name, &JsValue::from_f64(number))?;
     }
@@ -274,7 +284,7 @@ impl WasmSceneBuilder {
             .as_ref()
             .is_some_and(|core| core.session().dataset().supports_cells());
         if supported {
-            self.cells = Some(BuilderCells::new(CellUpdateConfig::default()));
+            self.cells = Some(BuilderCells::new(wasm_update_config()));
             self.cell_path = PATH_ENABLED;
         } else {
             self.cell_path = PATH_UNSUPPORTED;
@@ -459,7 +469,7 @@ impl WasmVoxelViewer {
             Some(dataset) if dataset.supports_cells() && device_ok => {
                 self.cells_local = Some(crate::cells_glue::InProcessCells::new(
                     dataset,
-                    CellUpdateConfig::default(),
+                    wasm_update_config(),
                 ));
                 self.cell_path = PATH_ENABLED;
             }

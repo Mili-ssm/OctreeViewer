@@ -390,6 +390,7 @@ struct FrameInfo {
     fallback_pages: u32,
     held_nodes: u32,
     excluded_nodes: u32,
+    cpu_coarsened: usize,
 }
 
 #[derive(Default, Debug)]
@@ -419,6 +420,9 @@ struct Totals {
     /// Times each node was built, and nodes the driver forgot (CPU budget).
     builds: HashMap<NodeId, usize>,
     forgotten: usize,
+    /// Nodes built and forgotten by the last frame (diagnosis only).
+    last_built: Vec<NodeId>,
+    last_forgotten: Vec<NodeId>,
 }
 
 struct Harness {
@@ -684,6 +688,7 @@ impl Harness {
             fallback_pages: stats.counters.fallback_pages,
             held_nodes: stats.counters.held_nodes,
             excluded_nodes: stats.counters.excluded_nodes,
+            cpu_coarsened: stats.cpu_coarsened,
         };
         {
             let c = &stats.counters;
@@ -704,6 +709,8 @@ impl Harness {
             *self.totals.builds.entry(*id).or_default() += 1;
         }
         self.totals.forgotten += out.update.report.forgotten.len();
+        self.totals.last_built = stats.built_nodes.clone();
+        self.totals.last_forgotten = out.update.report.forgotten.clone();
         self.totals.frames += 1;
         self.totals.uploads += info.uploaded_pages;
         self.totals.max_gap = self.totals.max_gap.max(stats.max_gap);

@@ -802,6 +802,7 @@ impl InProcessCells {
                 pending_block_ids: stats.pending_block_ids,
                 pending_page_anchors: stats.pending_page_anchors,
                 uncovered_nodes: stats.uncovered_nodes,
+                cpu_coarsened: stats.cpu_coarsened,
             };
             let Some(reader) = reader
                 .as_deref_mut()

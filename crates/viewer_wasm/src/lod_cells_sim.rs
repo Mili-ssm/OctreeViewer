@@ -838,7 +838,10 @@ fn blocks_in_view_are_read_while_the_cache_barely_holds_the_cut_and_the_chain() 
 fn a_node_is_never_built_before_its_parent() {
     let mut h = synthetic_harness(1 << 20, 2.0);
     let view = synthetic_views().0;
-    let config = CellUpdateConfig { max_node_builds: 1 };
+    let config = CellUpdateConfig {
+        max_node_builds: 1,
+        ..CellUpdateConfig::default()
+    };
     // Straight at the target rung (no ladder): the selected leaves wait for their ancestors.
     let mut order: Vec<NodeId> = Vec::new();
     for _ in 0..300 {
@@ -896,6 +899,163 @@ fn orbiting_inside_a_loaded_region_keeps_the_ladder_and_a_jump_restarts_it() {
         Some(&16.0),
         "a jump must restart the ladder at the coarse rung"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// CPU budget fit (ADR 0037)
+// ---------------------------------------------------------------------------------------------
+
+/// A harness whose driver and build side share `budget` as the CPU budget.
+fn budgeted_harness(budget: u64) -> Harness {
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    h.driver = driver_for(&h.dataset, budget);
+    h.config.cpu_budget_bytes = Some(budget);
+    h
+}
+
+/// Bytes a settled, unbounded run at `view` keeps.
+fn working_set_at(view: &ViewProjection) -> u64 {
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    h.settle(view, 3, 2_000);
+    h.driver.cpu_bytes()
+}
+
+#[test]
+fn a_budget_below_the_working_set_settles_with_the_far_nodes_coarsened() {
+    // The eye is outside every node, so distances tell nodes apart.
+    let view = synth_dolly().remove(8);
+    let budget = working_set_at(&view) / 2;
+    let mut h = budgeted_harness(budget);
+    let last = h.settle(&view, 3, 600);
+    assert!(last.cpu_coarsened > 0, "nothing was coarsened");
+    // Settled for good: nothing is forgotten or built any more.
+    let (forgotten, frames) = (h.totals.forgotten, h.totals.frames);
+    let builds = h.totals.builds.clone();
+    for _ in 0..100 {
+        h.dirty = true;
+        let info = h.frame(&view);
+        assert_eq!(info.built, 0, "a node was built after settling");
+        assert!(info.cpu_coarsened > 0);
+    }
+    assert_eq!(
+        h.totals.forgotten, forgotten,
+        "frames {frames}: forgetting went on"
+    );
+    assert_eq!(
+        h.totals.builds, builds,
+        "a node was built again after settling"
+    );
+    // The bytes the driver keeps stay within its budget.
+    assert!(
+        h.driver.cpu_bytes() <= budget,
+        "{} > {budget}",
+        h.driver.cpu_bytes()
+    );
+}
+
+#[test]
+fn the_nodes_a_budget_keeps_from_being_built_are_the_farthest_ones() {
+    let view = synth_dolly().remove(8);
+    let budget = working_set_at(&view) / 2;
+    let mut h = budgeted_harness(budget);
+    let config = CellUpdateConfig {
+        max_node_builds: 1,
+        cpu_budget_bytes: Some(budget),
+    };
+    // Every block is decoded already, so readiness does not reorder the builds: they follow the
+    // candidates' distance. Straight at the target rung, no ladder and no driver: every selected
+    // node is a candidate.
+    let blocks: Vec<BlockId> = {
+        let hierarchy = h.dataset.metadata.hierarchy();
+        let root = hierarchy.node(hierarchy.root_id()).unwrap().bounds();
+        let mut ids: Vec<BlockId> = hierarchy
+            .query(root)
+            .flat_map(|node| node.blocks().iter().copied())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+    for id in blocks {
+        let block = (h.blocks)(id).unwrap().expect("a block");
+        h.dataset.insert_block(block).unwrap();
+    }
+    let mut coarsened = 0;
+    for _ in 0..300 {
+        let update = h
+            .dataset
+            .plan_cell_update(&view, 2.0, config, None, &mut h.blocks)
+            .unwrap();
+        coarsened = update.stats.cpu_coarsened;
+        for anchor in update.stats.pending_page_anchors.clone() {
+            let page = (h.pages)(anchor).unwrap();
+            let _ = h.dataset.graft_page(page);
+        }
+        if coarsened > 0 && update.stats.built_nodes.is_empty() {
+            break;
+        }
+    }
+    assert!(coarsened > 0, "the budget never blocked a node");
+    let (_, selection) = h.dataset.select_target(&view, 2.0).unwrap();
+    let dist = |id: &NodeId| {
+        let node = h.dataset.metadata.hierarchy().node(*id).unwrap();
+        h.dataset.distance_to_eye(&view, node.bounds())
+    };
+    let (built, unbuilt): (Vec<NodeId>, Vec<NodeId>) = selection
+        .node_ids()
+        .iter()
+        .partition(|id| h.dataset.cells.has_cells(**id));
+    assert!(!built.is_empty() && !unbuilt.is_empty());
+    let nearest_unbuilt = unbuilt.iter().map(dist).fold(f64::MAX, f64::min);
+    let farthest_built = built.iter().map(dist).fold(0.0, f64::max);
+    assert!(
+        farthest_built <= nearest_unbuilt,
+        "built up to {farthest_built}, unbuilt from {nearest_unbuilt}"
+    );
+}
+
+#[test]
+fn the_cpu_block_lifts_when_the_cut_needs_less_than_80_percent_of_the_budget() {
+    let near = synth_dolly().remove(8);
+    let c = SIDE / 2.0;
+    let far = synth_view([c + 30.0 * SIDE, c, c], [c; 3]);
+    let budget = working_set_at(&near) / 2;
+    let mut h = budgeted_harness(budget);
+    assert!(h.settle(&near, 3, 600).cpu_coarsened > 0);
+    assert!(h.dataset.cells.cpu_blocked);
+    // Zoomed out: the cut needs far less than the budget, so the block lifts and the coarsened
+    // nodes of the new view are built.
+    h.camera_moved();
+    let last = h.settle(&far, 3, 1_200);
+    assert_eq!(last.cpu_coarsened, 0);
+    assert!(!h.dataset.cells.cpu_blocked);
+}
+
+#[test]
+fn the_two_workers_settle_and_stop_forgetting_under_a_budget_below_the_working_set() {
+    let views = synth_orbit();
+    let budget = synthetic_cpu_bytes(&views) / 3;
+    for seed in SEEDS {
+        let mut h = synthetic_harness(1 << 20, 2.0);
+        h.config.cpu_budget_bytes = Some(budget);
+        let mut sim = Sim::new(h, budget, seed);
+        sim.run(&views, Inject::default(), 200_000);
+        let view = views.last().unwrap();
+        let evicted = sim.stats.evicted;
+        let sent = sim.stats.node_messages;
+        for _ in 0..2_000 {
+            sim.build_step(view);
+            sim.render_step(view, 3);
+        }
+        assert_eq!(
+            sim.stats.evicted, evicted,
+            "seed {seed}: forgetting went on"
+        );
+        assert_eq!(
+            sim.stats.node_messages, sent,
+            "seed {seed}: nodes kept being sent"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -972,6 +1132,203 @@ fn real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge() {
         ..Inject::default()
     };
     real_case("orbit+inject", true, 50, &[5], inject);
+}
+
+/// Diagnosis of the forget/rebuild loop with the build and render sides split as in the browser
+/// (seeded interleaving), on a real dataset and pose. Records the role of every node built and
+/// the place of every node the driver forgets (cut and support of the cut it drew with).
+///
+/// `BENCH_DATASET=majadas BENCH_POSE=py BENCH_PX=1 BENCH_BUDGET_MB=512 BENCH_ITERATIONS=200000
+/// BENCH_SEED=1 cargo test --profile perf -p viewer_wasm --offline --lib split_forget_loop_diagnosis
+/// -- --ignored --nocapture`
+#[test]
+#[ignore = "diagnosis; needs target/render-data/*-v75.oct"]
+fn split_forget_loop_diagnosis() {
+    use super::bench::{Pre, VIEWPORT, analyse_pre, env_or, spike_frame};
+    let dataset = env_or("BENCH_DATASET", "majadas");
+    let pose = env_or("BENCH_POSE", "py");
+    let px: f64 = env_or("BENCH_PX", "1").parse().unwrap();
+    let iterations: usize = env_or("BENCH_ITERATIONS", "200000").parse().unwrap();
+    let seed: u64 = env_or("BENCH_SEED", "1").parse().unwrap();
+    let budget: u64 = env_or("BENCH_BUDGET_MB", "512").parse::<u64>().unwrap() << 20;
+    let file = format!("{dataset}-v75.oct");
+    let path = real_path(&file).unwrap_or_else(|| panic!("{file} is missing"));
+    let frame = spike_frame(&path);
+    let mut real = open_real(&file, px, 256 << 20).unwrap();
+    real.viewport = VIEWPORT;
+    let dir: [f64; 3] = match pose.as_str() {
+        "px" => [1.0, 0.0, 0.0],
+        "py" => [0.0, 1.0, 0.0],
+        "pz" => [0.0, 0.0, 1.0],
+        other => panic!("unknown pose {other}"),
+    };
+    let mut camera = frame.fitted;
+    let target = std::array::from_fn(|a| frame.leaf_eye[a] + frame.step * dir[a]);
+    assert!(camera.set_pose(frame.leaf_eye, target));
+    let view = ViewProjection::new(camera, VIEWPORT, real.scale, VoxelBuildLimits::default());
+    let mut harness = real.harness;
+    harness.config.cpu_budget_bytes = Some(budget);
+    let mut sim = Sim::new(harness, budget, seed);
+
+    #[derive(Default)]
+    struct Rec {
+        builds: usize,
+        build_roles: Vec<&'static str>,
+        forget_places: Vec<&'static str>,
+    }
+    let mut recs: HashMap<NodeId, Rec> = HashMap::new();
+    // Cut and support of every cut sent, by epoch, to classify what the driver forgets.
+    let mut sent: HashMap<u64, (HashSet<NodeId>, HashSet<NodeId>)> = HashMap::new();
+    let mut last_pre = Pre::default();
+    let (mut forget_events, mut quiet) = (0usize, 0usize);
+    let mut last_print = 0usize;
+    for iteration in 0..iterations {
+        if iteration == 0 {
+            sim.view_gen += 1;
+            sim.h.dirty = true;
+        }
+        if sim.rng.below(2) == 0 {
+            let pre = if sim.h.stage == Some(px) {
+                analyse_pre(&mut sim.h.dataset, &view, px)
+            } else {
+                Pre::default()
+            };
+            let queued = sim.to_render.len();
+            sim.build_step(&view);
+            let role = |id: &NodeId| -> &'static str {
+                if pre.selected.contains(id) {
+                    "selected"
+                } else if pre.waiters.contains(id) {
+                    "waiter"
+                } else {
+                    "ancestor"
+                }
+            };
+            for msg in sim.to_render.iter().skip(queued) {
+                match msg {
+                    Msg::Node(_, node) => {
+                        let r = recs.entry(node.id).or_default();
+                        r.builds += 1;
+                        if sim.h.stage == Some(px) {
+                            r.build_roles.push(role(&node.id));
+                        }
+                    }
+                    Msg::Cut(epoch, cut, support) => {
+                        let bytes = |ids: &[NodeId]| -> u64 {
+                            ids.iter()
+                                .filter_map(|id| sim.h.dataset.cells.built_bytes(*id))
+                                .sum()
+                        };
+                        let needed: HashSet<NodeId> = cut.iter().chain(support).copied().collect();
+                        let needed_b: u64 = needed
+                            .iter()
+                            .filter_map(|id| sim.h.dataset.cells.built_bytes(*id))
+                            .sum();
+                        if iteration >= last_print + 2000 {
+                            last_print = iteration;
+                            println!(
+                                "DIAG it {iteration} epoch {epoch} stage {:?} cut {} ({} B) support {} ({} B) needed {needed_b} B driver {} B forgotten {forget_events} blocked {}",
+                                sim.h.stage,
+                                cut.len(),
+                                bytes(cut),
+                                support.len(),
+                                bytes(support),
+                                sim.h.driver.cpu_bytes(),
+                                sim.h.dataset.cells.cpu_blocked,
+                            );
+                        }
+                        sent.insert(
+                            *epoch,
+                            (
+                                cut.iter().copied().collect(),
+                                support.iter().copied().collect(),
+                            ),
+                        );
+                    }
+                }
+            }
+            last_pre = pre;
+        } else {
+            let available = sim.to_render.len();
+            let take = sim.rng.below(available + 1).min(3);
+            let evicted_before = sim.evict.len();
+            sim.render_step(&view, take);
+            let epoch = sim.cut.as_ref().map(|(e, _)| *e);
+            let (cut, support) = epoch
+                .and_then(|e| sent.get(&e))
+                .map(|(c, s)| (c.clone(), s.clone()))
+                .unwrap_or_default();
+            for id in sim.evict[evicted_before..].iter() {
+                forget_events += 1;
+                let place = if cut.contains(id) {
+                    "cut"
+                } else if support.contains(id) {
+                    "support"
+                } else if last_pre.selected.contains(id) {
+                    "selected-now"
+                } else if last_pre.waiters.contains(id) {
+                    "waiter-now"
+                } else if last_pre.candidates.contains(id) {
+                    "candidate-now"
+                } else {
+                    "none"
+                };
+                recs.entry(*id).or_default().forget_places.push(place);
+            }
+            sim.plans.retain(|e, _| *e + 64 >= sim.applied);
+            sent.retain(|e, _| *e + 64 >= sim.applied);
+        }
+        let idle = sim.settled() && sim.build_idle();
+        quiet = if idle { quiet + 1 } else { 0 };
+        if quiet >= 50 {
+            println!("DIAG settled at iteration {iteration}");
+            break;
+        }
+    }
+    let mut by_role: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut events: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut rebuilt = 0;
+    for r in recs.values().filter(|r| !r.forget_places.is_empty()) {
+        let build = r.build_roles.last().copied().unwrap_or("pre-target-stage");
+        let place = r.forget_places.last().copied().unwrap_or("");
+        *by_role
+            .entry(format!("built-as {build:<16} last-forgotten-while {place}"))
+            .or_default() += 1;
+        rebuilt += usize::from(r.builds > 1);
+    }
+    for r in recs.values() {
+        for p in &r.forget_places {
+            *events.entry(*p).or_default() += 1;
+        }
+    }
+    println!(
+        "DIAG summary settled {} updates {} forget_events {forget_events} distinct_forgotten {} rebuilt {rebuilt} driver {} B stats {:?}",
+        quiet >= 50,
+        sim.stats.updates,
+        recs.values()
+            .filter(|r| !r.forget_places.is_empty())
+            .count(),
+        sim.h.driver.cpu_bytes(),
+        sim.stats,
+    );
+    for (k, v) in &by_role {
+        println!("DIAG role {k}: {v} nodes");
+    }
+    println!("DIAG forget events by place: {events:?}");
+    let mut worst: Vec<_> = recs
+        .iter()
+        .filter(|(_, r)| !r.forget_places.is_empty())
+        .collect();
+    worst.sort_by_key(|(id, r)| (std::cmp::Reverse(r.forget_places.len()), **id));
+    for (id, r) in worst.iter().take(10) {
+        println!(
+            "DIAG node {id:?}: builds {} forgets {} roles {:?} places {:?}",
+            r.builds,
+            r.forget_places.len(),
+            r.build_roles,
+            r.forget_places
+        );
+    }
 }
 
 #[path = "lod_cells_glue_sim.rs"]

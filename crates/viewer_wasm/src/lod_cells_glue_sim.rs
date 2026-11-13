@@ -365,7 +365,10 @@ fn the_viewer_stats_report_the_cut_apply_and_the_nodes_forgotten_for_the_cpu_bud
 #[test]
 fn a_burst_of_node_cells_is_applied_over_several_frames_in_order() {
     let mut h = synthetic_harness(1 << 20, 2.0);
-    h.config = CellUpdateConfig { max_node_builds: 8 };
+    h.config = CellUpdateConfig {
+        max_node_builds: 8,
+        ..CellUpdateConfig::default()
+    };
     let view = synth_orbit().remove(0);
     let mut builder = BuilderCells::new(h.config);
     let (mut nodes, mut last) = (Vec::new(), None);
