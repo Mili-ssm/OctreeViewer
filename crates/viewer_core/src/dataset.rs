@@ -327,7 +327,11 @@ impl PointBlock {
 ///
 /// Queries must not change residency, recency or activity counters. A returned block
 /// must have the requested ID. Presence and payload must remain consistent throughout
-/// a consumer operation; `contains` overrides must agree with `peek`.
+/// a consumer operation. `contains` is the residency predicate; by default it means `peek` returns
+/// a block. A source for the planner in cells mode (ADR 0038) overrides it to mean "resident for
+/// planning", which may hold while `peek` is `None`: only the planner (`contains` and
+/// `budget_points`) may be given such a source, and any consumer that needs the payload must
+/// handle a `None` from `peek`.
 /// No thread-safety bounds are imposed on implementations.
 pub trait ResidentBlockSource {
     fn peek(&self, id: BlockId) -> Option<&PointBlock>;

@@ -449,7 +449,7 @@ impl LodDataset {
     }
 
     /// Blocks whose owners all have cells.
-    fn cell_ready_blocks(&self) -> HashSet<BlockId> {
+    pub(super) fn cell_ready_blocks(&self) -> HashSet<BlockId> {
         let hierarchy = self.metadata.hierarchy();
         self.cells
             .built
@@ -862,11 +862,14 @@ impl LodDataset {
         // and keep drawing their zone, and they are not deferred work, so the px ladder ends.
         let mut cpu_needed = 0;
         if let Some(budget) = config.cpu_budget_bytes {
+            // In-progress children count while blocked too: the driver keeps them until it is
+            // over budget, and counting them keeps the block from flapping.
             let needed: HashSet<NodeId> = initial_plan
                 .node_ids()
                 .iter()
                 .copied()
                 .chain(self.support_nodes(&candidates, &shared_owners))
+                .chain(self.in_progress_children(&selection, initial_plan.node_ids()))
                 .collect();
             cpu_needed = needed
                 .iter()
@@ -1005,10 +1008,17 @@ impl LodDataset {
             self.state_epoch += 1;
         }
         let mut waiting_blocks = uncached_blocks(self, true);
-        let support =
-            self.support_nodes(&candidates, &self.shared_block_owners(selection.node_ids()));
-
         let plan = self.prepare_cell_plan(&selection);
+        let mut support =
+            self.support_nodes(&candidates, &self.shared_block_owners(selection.node_ids()));
+        if !cpu_blocked {
+            // Protected so the driver does not drop them before their group completes. While
+            // blocked the group may never complete: they are released, the cut stays at the
+            // parent (counted in `cpu_coarsened`) and they are not built again.
+            support.extend(self.in_progress_children(&selection, plan.node_ids()));
+            support.sort_unstable();
+            support.dedup();
+        }
         let evicted_pending = evicted_blocks
             .iter()
             .filter(|id| plan.pending_blocks().binary_search(id).is_ok())
@@ -1138,6 +1148,18 @@ impl LodDataset {
         let mut support: Vec<NodeId> = support.into_iter().collect();
         support.sort_unstable();
         support
+    }
+
+    /// Built selected nodes the cut does not name: children of sibling groups that are not
+    /// complete yet, so `resolve_replacement` keeps their parent in the cut (B1c.6).
+    fn in_progress_children(&self, selection: &LodSelection, cut: &[NodeId]) -> Vec<NodeId> {
+        let in_cut: HashSet<NodeId> = cut.iter().copied().collect();
+        selection
+            .node_ids()
+            .iter()
+            .copied()
+            .filter(|id| self.cells.built.contains_key(id) && !in_cut.contains(id))
+            .collect()
     }
 
     /// Takes back nodes whose message was never produced.

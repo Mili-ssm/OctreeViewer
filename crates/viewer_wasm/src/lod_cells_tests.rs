@@ -877,6 +877,54 @@ fn a_block_shared_by_two_nodes_does_not_starve_the_node_that_is_in_the_cut() {
     assert!(dataset.cells.pool_drawn().contains(&NodeId::new(2)));
 }
 
+#[test]
+fn a_shared_block_is_resident_only_when_every_owner_has_cells_and_leaves_no_hole() {
+    // Node 10 reads the block of node 2 (see the test above).
+    let mut nodes = octree_nodes();
+    let shared = nodes
+        .iter()
+        .position(|n| n.id() == NodeId::new(10))
+        .unwrap();
+    let old = &nodes[shared];
+    nodes[shared] = SpatialNode::new(
+        old.id(),
+        old.parent(),
+        old.level(),
+        old.bounds(),
+        200,
+        0.0,
+        vec![BlockId::new(102)],
+    )
+    .unwrap();
+    let mut dataset = octree_dataset(nodes, HierarchySemantics::Replacement, true);
+    let inner = node_block(&dataset, 10);
+    for node in (1..=17).filter(|node| *node != 10) {
+        let block = if node == 2 {
+            PointBlock::new(BlockId::new(102), inner.points().clone(), Vec::new())
+        } else {
+            node_block(&dataset, node)
+        };
+        dataset.insert_block(block).unwrap();
+    }
+    let shared_block = BlockId::new(102);
+    dataset.build_node_cells(NodeId::new(1)).unwrap();
+    dataset.build_node_cells(NodeId::new(2)).unwrap();
+    // Only one of the two owners has cells: the block is not resident for the planner, and the
+    // cut falls back on the root instead of leaving a hole.
+    assert!(dataset.cells.has_cells(NodeId::new(2)));
+    assert!(!dataset.cell_ready_blocks().contains(&shared_block));
+    let view = view_at(None);
+    let (_, selection) = dataset.select_target(&view, 64.0).unwrap();
+    let plan = dataset.prepare_cell_plan(&selection);
+    assert!(!plan.node_ids().contains(&NodeId::new(2)));
+    assert_eq!(plan.node_ids(), [NodeId::new(1)]);
+    // The second owner gets its cells: the block turns resident and node 2 is drawable.
+    dataset.build_node_cells(NodeId::new(10)).unwrap();
+    assert!(dataset.cell_ready_blocks().contains(&shared_block));
+    let plan = dataset.prepare_cell_plan(&selection);
+    assert!(plan.node_ids().contains(&NodeId::new(2)));
+}
+
 /// Each of the eight octants (2..=9) has a child that reads the block of its parent (as a shared
 /// block of a real file does): node 10 for octant 2 and nodes 20..=26 for octants 3..=9. At 64 px
 /// the cut is the eight octants, and the eight children are co-owners of the block of a selected

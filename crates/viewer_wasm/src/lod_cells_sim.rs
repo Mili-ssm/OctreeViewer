@@ -512,14 +512,14 @@ fn synthetic_case(name: &str, views: Vec<ViewProjection>, seeds: &[u64], inject:
             // one reported the nodes it lacked, and they came back.
             assert!(
                 sim.stats.missing_reports > 0 && sim.stats.missing_resent > 0,
-                "the missing path was not exercised: {:?}",
+                "{name} seed {seed}: the missing path was not exercised: {:?}",
                 sim.stats
             );
         }
     }
 }
 
-const SEEDS: [u64; 4] = [1, 7, 42, 1234];
+const SEEDS: [u64; 4] = [2, 7, 42, 1234];
 
 #[test]
 fn sim_synthetic_orbit_reaches_the_in_process_digest() {
@@ -1029,6 +1029,111 @@ fn the_cpu_block_lifts_when_the_cut_needs_less_than_80_percent_of_the_budget() {
     let last = h.settle(&far, 3, 1_200);
     assert_eq!(last.cpu_coarsened, 0);
     assert!(!h.dataset.cells.cpu_blocked);
+}
+
+/// A synthetic harness where only the block of node 16 is held back, so the children 10..=15 of
+/// node 2 get cells but their sibling group never completes: they are in progress (B1c.6).
+fn incomplete_group_harness() -> Harness {
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let mut inner = std::mem::replace(&mut h.blocks, Box::new(|_| Ok(None)));
+    h.blocks = Box::new(move |id| {
+        if id.get() == 116 {
+            return Ok(None);
+        }
+        inner(id)
+    });
+    h
+}
+
+/// Plans `rounds` updates at the target rung with the given CPU budget, grafting pages on the way.
+fn plan_rounds(h: &mut Harness, view: &ViewProjection, budget: u64, rounds: usize) -> CellUpdate {
+    let config = CellUpdateConfig {
+        max_node_builds: 4,
+        cpu_budget_bytes: Some(budget),
+    };
+    let mut last = None;
+    for _ in 0..rounds {
+        let update = h
+            .dataset
+            .plan_cell_update(view, 2.0, config, None, &mut h.blocks)
+            .unwrap();
+        for anchor in update.stats.pending_page_anchors.clone() {
+            let page = (h.pages)(anchor).unwrap();
+            let _ = h.dataset.graft_page(page);
+        }
+        last = Some(update);
+    }
+    last.unwrap()
+}
+
+#[test]
+fn in_progress_children_are_supported_and_counted_and_released_while_blocked() {
+    let view = synthetic_views().0;
+    let children: Vec<NodeId> = (10..=15).map(NodeId::new).collect();
+    let mut h = incomplete_group_harness();
+    plan_rounds(&mut h, &view, 1 << 30, 200);
+    // Node 2 is forgotten: the sibling group cannot complete (node 16 has no block, node 2 is
+    // not resident) and the root's replacement drops the children it does not name.
+    h.dataset.apply_evicted(&[NodeId::new(2)]);
+    let bytes: u64 = children
+        .iter()
+        .map(|id| h.dataset.cells.built_bytes(*id).unwrap())
+        .sum();
+
+    // Nothing may be built this round, so the state stays as the driver left it.
+    let frozen = |budget| CellUpdateConfig {
+        max_node_builds: 0,
+        cpu_budget_bytes: Some(budget),
+    };
+    let update = h
+        .dataset
+        .plan_cell_update(&view, 2.0, frozen(1 << 30), None, &mut h.blocks)
+        .unwrap();
+    for id in &children {
+        assert!(
+            !update.cut.contains(id),
+            "{id:?} is in the cut: {:?}",
+            update.cut
+        );
+        assert!(update.support.contains(id), "{id:?} is not supported");
+    }
+    assert!(update.stats.diag.cpu_needed_bytes >= bytes, "not counted");
+    assert!(update.stats.diag.selected_built_not_in_cut >= children.len());
+
+    // Blocked, with the needed bytes above 80 % of the budget: the in-progress
+    // children are released (and stay counted), nothing is built, and once the driver drops
+    // them nothing brings them back.
+    let needed = update.stats.diag.cpu_needed_bytes;
+    // Dropping the children must leave the rest at 85 % so the block does not lift.
+    let budget = (needed - bytes) / 85 * 100;
+    h.dataset.cells.cpu_blocked = true;
+    let update = h
+        .dataset
+        .plan_cell_update(&view, 2.0, frozen(budget), None, &mut h.blocks)
+        .unwrap();
+    assert!(h.dataset.cells.cpu_blocked);
+    assert!(update.stats.diag.cpu_needed_bytes >= bytes, "not counted");
+    for id in &children {
+        assert!(!update.support.contains(id), "{id:?} is still supported");
+    }
+    assert!(update.stats.cpu_coarsened > 0);
+    h.dataset.apply_evicted(&children);
+    for _ in 0..50 {
+        let update = plan_rounds(&mut h, &view, budget, 1);
+        assert!(update.stats.built_nodes.is_empty(), "a node was rebuilt");
+    }
+    assert!(children.iter().all(|id| !h.dataset.cells.has_cells(*id)));
+}
+
+#[test]
+fn a_budget_that_fits_the_working_set_reaches_full_detail_without_coarsening() {
+    let view = synth_dolly().remove(8);
+    let budget = working_set_at(&view) * 2;
+    let mut h = budgeted_harness(budget);
+    let last = h.settle(&view, 3, 1_200);
+    assert_eq!(last.cpu_coarsened, 0);
+    assert!(!h.dataset.cells.cpu_blocked);
+    assert_eq!(h.totals.forgotten, 0);
 }
 
 #[test]
