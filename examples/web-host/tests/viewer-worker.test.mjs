@@ -232,6 +232,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         },
         performance,
         resolveSource: async (spec) => spec,
+        sumRangeStats: () => null,
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
         Worker: FakeBuildWorker,

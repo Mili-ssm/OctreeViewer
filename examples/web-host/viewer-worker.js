@@ -1,5 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
-import { resolveSource } from "./http-range-source.mjs";
+import { resolveSource, sumRangeStats } from "./http-range-source.mjs";
 import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";
 
 let viewer = null;
@@ -171,12 +171,16 @@ function recordBuildSample(name, value) {
     if (samples.length < BUILD_SAMPLE_CAPACITY) samples.push(value);
 }
 
+// Range sources of the open dataset (empty for local Blobs): their stats are the `remote` metrics.
+let remoteSources = [];
+
 function workerMetricsSnapshot(buildMetrics = null) {
     const snapshot = {
         timeOrigin: performance.timeOrigin ?? null,
         busyByMessage: Object.fromEntries(workKinds),
         frameQueueWaitMs: summarizeSamples(frameQueueWaits),
         asyncBlocks: { ...asyncBlockTotals },
+        remote: sumRangeStats(remoteSources),
         lodLog: [...lodLog],
         lodLogDropped,
         buildWorkerEnabled: buildOptions !== null,
@@ -215,6 +219,7 @@ function workerMetricsSnapshot(buildMetrics = null) {
 
 function resetWorkerMetrics() {
     workKinds.clear();
+    for (const source of remoteSources) source?.resetStats?.();
     frameQueueWaits.length = 0;
     lodLog.length = 0;
     lodLogDropped = 0;
@@ -1129,6 +1134,7 @@ function startAsyncDataset(data, requestId = null) {
     let fileBytes = data.file.size ?? null;
     void Promise.all([resolveSource(data.file), resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 })]).then(([file, attributes]) => {
         fileBytes = file.size;
+        remoteSources = [file, attributes];
         return WasmAsyncFormatReader.open(file, attributes, asyncReadBudget.clone());
     }).then((reader) => {
         messageQueue = messageQueue.then(timed("asyncOpen", () => {

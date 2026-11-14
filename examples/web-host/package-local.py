@@ -64,7 +64,7 @@ def main() -> None:
     converter_ui_js = (HOST / "converter-ui.mjs").read_text(encoding="utf-8")
     range_source_js = (HOST / "http-range-source.mjs").read_text(encoding="utf-8")
     inline_range_source_js = re.sub(r"^export ", "", range_source_js, flags=re.MULTILINE)
-    range_source_import = 'import { resolveSource } from "./http-range-source.mjs";\n'
+    range_source_import = 'import { resolveSource, sumRangeStats } from "./http-range-source.mjs";\n'
     worker_js = require_replace(worker_js, range_source_import, "", "range source import")
     build_worker_js = require_replace(build_worker_js, range_source_import, "", "build worker range source import")
     # The dynamic px controller is a small pure module: inline it in place of its import.

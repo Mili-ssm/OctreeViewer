@@ -1,5 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmSceneBuilder } from "../../pkg/viewer_wasm.js";
-import { resolveSource } from "./http-range-source.mjs";
+import { resolveSource, sumRangeStats } from "./http-range-source.mjs";
 
 // Build worker (render plan R2): owns the dataset hierarchy, the block reader and scheduler, the
 // decoded block cache, the LOD planner and the voxel builder (`WasmSceneBuilder`, no GPU). The
@@ -78,12 +78,16 @@ function recordWork(kind, startedAt, endedAt) {
     entry.maxBusyMs = Math.max(entry.maxBusyMs, busy);
 }
 
+// Range sources of the open dataset (empty for local Blobs): their stats are the `remote` metrics.
+let remoteSources = [];
+
 function metricsSnapshot() {
     return {
         timeOrigin: performance.timeOrigin ?? null,
         busyByMessage: Object.fromEntries(workKinds),
         asyncBlocks: { ...asyncBlockTotals },
         pages: { ...pageTotals },
+        remote: sumRangeStats(remoteSources),
         build: { ...buildTotals, ...(cellsEnabled ? cellTotals : {}) },
         ...(cellsEnabled ? { cellStats: builder?.cellStats?.() ?? null } : {}),
         wasmLinearMemoryBytes: wasmExports?.memory?.buffer.byteLength ?? null,
@@ -92,6 +96,7 @@ function metricsSnapshot() {
 
 function resetMetrics() {
     workKinds.clear();
+    for (const source of remoteSources) source?.resetStats?.();
     Object.assign(asyncBlockTotals, {
         blocks: 0, readMs: 0, decodeMs: 0, maxDecodeMs: 0, insertMs: 0, maxInsertMs: 0,
     });
@@ -427,6 +432,7 @@ async function openDataset(data) {
         resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 }),
     ]);
     const nextReader = await WasmAsyncFormatReader.open(file, attributes, readBudget.clone());
+    remoteSources = [file, attributes];
     if (requestGeneration !== generation) {
         nextReader.free();
         return;

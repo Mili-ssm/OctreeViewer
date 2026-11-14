@@ -79,6 +79,13 @@ muestra y comprobar la consola; comprobar también el arranque desde localhost.
 `http-range-source.mjs`: one suffix request opens a `v7.5-pre` file, later reads are single ranges
 pinned by `If-Range`, and a server that ignores `Range` (answers `200`) is an error.
 
+Failures are handled per request: network errors, `429` and `5xx` are retried three times with
+exponential backoff and jitter (about 200 ms, 800 ms and 2.4 s; `Retry-After` is honoured up to 10 s),
+and every attempt has a 15 s timeout (`timeoutMs`) that counts as a retryable failure. Other `4xx`,
+a changed file (ETag or `200` for a Range request) and aborts are never retried. The counters
+`requests`, `retries`, `timeouts`, `aborted` and `abortedBytes` appear as `remote` in the worker
+metrics (`workerMetrics.remote`, and `remote` in the build worker's metrics).
+
 To measure with the RED-REF network (100 Mbit/s, 50 ms RTT), serve the repository root (for example
 `python3 -m http.server 8767`) and run `node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;
 `red-ref-server.mjs` can also be started alone (`--ignore-range` simulates a server without Range).
