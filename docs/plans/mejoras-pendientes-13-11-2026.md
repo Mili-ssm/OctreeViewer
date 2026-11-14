@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1–B4 cerradas; siguiente: B5, pérdida de dispositivo)
+Estado: en curso · 14-11-2026 (fase A y B1–B5 cerradas; siguiente: B6, que necesita el equipo de referencia, o la fase C)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -58,13 +58,9 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 - [x] B4. Tarea 14, modos de px ([registro](../records/benchmarks/R3_B4_PX_MODES_14-11-2026.md)): fijo
   progresivo por defecto (con test) y dinámico con escalera 1, 2, 4, 8 px guiado por el tiempo de GPU;
   en el navegador refina y engrosa según la carga.
-- [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
-  - [ ] B5.1. El worker de render detecta la pérdida (callback de `wgpu`) y la expone en las estadísticas y en la API.
-  - [ ] B5.2. Recrear adaptador, dispositivo, superficie y recursos; el pool usa `poolReset` y el
-    worker de construcción reenvía las celdas; la cámara se conserva.
-  - [ ] B5.3. Ruta CPU: volver a subir la escena.
-  - [ ] B5.4. Playwright: caída del proceso GPU de Chrome (no `device.destroy()`, cuyo motivo
-    `destroyed` no se recupera); la vista vuelve con el mismo digest y sin errores en consola.
+- [x] B5. TW6, pérdida de dispositivo ([registro](../records/benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md)):
+  recuperación sin recargar en 0,61 s con la misma pose y el mismo corte (R3-Q26), y canvas sustituido
+  por la API (R3-Q34). Probado con una caída del proceso GPU vía CDP.
 - [ ] B6. Tarea 17, medida y ruta por defecto: matriz de R0 más RED-REF en el equipo de referencia
   (≥ 4 GB de GPU); al cerrarla, actualizar el estado del ADR 0027.
 
@@ -92,7 +88,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
-- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs`, `explore/b3-continuity` y `explore/b4-px-modes`: integradas en `feat/r3-v75` y borradas.
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs`, `explore/b3-continuity`, `explore/b4-px-modes` y `explore/b5-device-lost`: integradas en `feat/r3-v75` y borradas.
 - [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
   `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
   bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).
