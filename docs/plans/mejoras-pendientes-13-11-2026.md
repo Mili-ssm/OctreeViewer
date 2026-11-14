@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A, B1 y B2 cerradas; siguiente: B3, Tarea 13)
+Estado: en curso · 14-11-2026 (fase A, B1 y B2 cerradas; en curso: B3, Tarea 13)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -51,7 +51,14 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   que corrige el de B2): el worker de construcción lee intensidad y clase con la geometría siempre que
   hay celdas (`6f37e29`, test rojo → verde); en el navegador, intensidad y clasificación coinciden en
   tipo de color con la ruta CPU. Las columnas valen 0 en origen: los rangos `[0, 0]` son correctos.
-- [ ] B3. Tarea 13: un mismo espaciado de referencia por nube (T0b) no cambia al injertar páginas.
+- [ ] B3. Tarea 13, continuidad por nube (RF-05, ADR 0019). El espaciado de referencia ya existe y no
+  cambia al injertar páginas (T0b); falta el modo. Tamaño mínimo de cubo por defecto: 1 × el espaciado
+  de referencia (las celdas ocupadas vecinas se tocan); el ADR solo dice «derivado de su densidad
+  global», así que el factor queda configurable. Rama `explore/b3-continuity`.
+  - [ ] B3.1. Ruta de celdas: con la continuidad activa, el nivel de cada nodo se limita al más fino
+    cuyo lado de celda no baja del mínimo; activable por nube desde la API y la demo. Check: tests de
+    nivel limitado, sin huecos y espaciado estable tras injertar páginas.
+  - [ ] B3.2. Navegador: Belvedere y Majadas con continuidad, captura y estadísticas; registro.
 - [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
   - [ ] B5.1. El worker de render detecta la pérdida (callback de `wgpu`) y la expone en las estadísticas y en la API.
