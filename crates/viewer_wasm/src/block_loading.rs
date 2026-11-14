@@ -49,6 +49,40 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
     Ok(PointBlock::new(id, geometry, attributes))
 }
 
+/// Loads a block for the cells path: positions and RGB plus the intensity and classification
+/// columns in every colour mode (R3-Q32), so the cells carry them and a mode change never
+/// rebuilds them. The CPU path keeps loading only what its mode needs ([`load_render_block`]).
+pub(crate) fn load_cell_block<E: std::fmt::Display>(
+    reader: &mut dyn OctreeReader<Error = E>,
+    id: BlockId,
+) -> Result<PointBlock, String> {
+    let geometry = reader
+        .read_geometry(id)
+        .map_err(|error| error.to_string())?;
+    let mut attributes = Vec::new();
+    if reader.has_attributes() {
+        for name in ["intensity", "classification"] {
+            let Some(index) = reader
+                .metadata()
+                .hierarchy()
+                .attributes()
+                .iter()
+                .position(|descriptor| descriptor.name() == name)
+            else {
+                continue;
+            };
+            let index =
+                u32::try_from(index).map_err(|_| "attribute schema is too large".to_owned())?;
+            attributes.push(
+                reader
+                    .read_attribute(id, index)
+                    .map_err(|e| e.to_string())?,
+            );
+        }
+    }
+    Ok(PointBlock::new(id, geometry, attributes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +310,87 @@ mod tests {
             );
             assert_eq!(reader.calls, ["xyz"]);
         }
+    }
+
+    #[test]
+    fn cell_blocks_read_intensity_and_class_for_three_decoded_bytes_per_point() {
+        let mut reader = MemoryReader::new();
+        let block = load_cell_block(&mut reader, BlockId::new(7)).unwrap();
+        assert_eq!(reader.calls, ["xyz", "rgb", "intensity", "classification"]);
+        let names: Vec<_> = block
+            .attributes()
+            .iter()
+            .map(|column| column.descriptor().name())
+            .collect();
+        assert_eq!(names, ["intensity", "classification"]);
+        assert_eq!(block.points().points()[0].color, ColorRgb::new(10, 20, 30));
+        // Extra decoded bytes per point over the RGB read: the two columns' payload.
+        let extra: usize = block
+            .attributes()
+            .iter()
+            .map(|column| match column.values() {
+                AttributeValues::U16(values) => values.len() * 2,
+                AttributeValues::U8(values) => values.len(),
+                _ => unreachable!("fixture schema"),
+            })
+            .sum();
+        assert_eq!(extra, block.points().points().len() * 3);
+        // Without a companion file the cells keep RGB and have no columns.
+        let mut reader = MemoryReader::new();
+        reader.attributes_available = false;
+        let block = load_cell_block(&mut reader, BlockId::new(7)).unwrap();
+        assert!(block.attributes().is_empty());
+    }
+
+    #[test]
+    fn cells_built_in_rgb_mode_carry_intensity_and_class_words() {
+        use viewer_core::SpatialBounds;
+        use viewer_render_wgpu::{
+            CellGrid, NodeCellSource, NodeInput, PointNodeCellSource, pack_node,
+        };
+        let packed = |block: PointBlock| {
+            let grid = CellGrid {
+                root_min: [0.0; 3],
+                root_side: 1.0,
+            };
+            let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
+            let id = NodeId::new(0);
+            let cells = PointNodeCellSource::default()
+                .node_cells(&grid, id, bounds, None, true, &[block])
+                .unwrap();
+            let node = pack_node(
+                &grid,
+                [0.0; 3],
+                NodeInput {
+                    id,
+                    bounds,
+                    points: 2,
+                    local_grid: grid,
+                    cells: &cells,
+                },
+            )
+            .unwrap();
+            node.levels
+                .iter()
+                .flat_map(|level| level.instances.iter())
+                .filter(|cell| !cell.is_empty())
+                .map(|cell| (cell.intensity(), cell.class()))
+                .collect::<Vec<_>>()
+        };
+        let mut reader = MemoryReader::new();
+        let with_columns = packed(load_cell_block(&mut reader, BlockId::new(7)).unwrap());
+        assert!(!with_columns.is_empty());
+        assert!(with_columns.iter().all(|word| *word == (150, 2)));
+        // What the CPU path's RGB read gave the cells before: no intensity, no class.
+        let mut reader = MemoryReader::new();
+        let rgb = load_render_block(
+            &mut reader,
+            BlockId::new(7),
+            Some(ColorMode::Rgb),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(packed(rgb).iter().all(|word| *word == (u16::MAX, -1)));
     }
 }

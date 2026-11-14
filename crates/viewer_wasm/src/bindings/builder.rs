@@ -259,6 +259,7 @@ impl WasmSceneBuilder {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("no LOD dataset is open"))?;
         let mode = core.color_mode();
+        let cells_active = self.cells.as_ref().is_some_and(BuilderCells::is_active);
         let (selected_attribute, selected_range) = core.selected_attribute();
         let browser_read_stats = Arc::clone(&self.browser_read_stats);
         let mut range_read_stats = self.range_read_stats;
@@ -270,13 +271,18 @@ impl WasmSceneBuilder {
             target_voxel_pixels,
             |reader: &mut FormatReader<BrowserBlobReader>, block_id| {
                 let before = snapshot_browser_read_stats(&browser_read_stats);
-                let loaded = crate::block_loading::load_render_block(
-                    reader,
-                    block_id,
-                    Some(mode),
-                    selected_attribute,
-                    selected_range,
-                )
+                // Cells carry every column; the scenes of the CPU path read what their mode needs.
+                let loaded = if cells_active {
+                    crate::block_loading::load_cell_block(reader, block_id)
+                } else {
+                    crate::block_loading::load_render_block(
+                        reader,
+                        block_id,
+                        Some(mode),
+                        selected_attribute,
+                        selected_range,
+                    )
+                }
                 .map(Some);
                 let after = snapshot_browser_read_stats(&browser_read_stats);
                 accumulate_browser_read_delta(&mut range_read_stats, before, after);

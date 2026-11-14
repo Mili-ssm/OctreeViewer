@@ -850,14 +850,7 @@ impl InProcessCells {
         let can_load_blocks = reader.is_some() || has_async_reader;
         let mut load_block = |reader: &mut R, block_id| {
             read_hook(ReadPhase::Before);
-            let loaded = crate::block_loading::load_render_block(
-                reader,
-                block_id,
-                Some(viewer_render_wgpu::ColorMode::Rgb),
-                None,
-                None,
-            )
-            .map(Some);
+            let loaded = crate::block_loading::load_cell_block(reader, block_id).map(Some);
             read_hook(ReadPhase::After);
             loaded
         };
