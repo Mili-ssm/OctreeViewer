@@ -43,8 +43,8 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 - [ ] B1b. Casillas abiertas de la Tarea 16b.
   - [x] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): el fallo era real (la búsqueda escalaba
     1,6 × 1,42 a 1280×720 y ocultaba lo visible); test rojo → verde y búsqueda 1:1 (`ace9d84`).
-  - [ ] B1b.2. Cota del margen de profundidad del Hi-Z (hoy 4 ulp empíricos): derivarla del error
-    entre la caja proyectada y el rasterizador, y fijarla en un test en el límite.
+  - [x] B1b.2. Cota del margen de profundidad del Hi-Z: `u·(25ρ + 24)` derivada, con el error de
+    rasterizado supuesto (4 u); test en 6 poses extremas (`3bb1d1b`). Su coste en datos reales se mide en B1b.3.
   - [ ] B1b.3. ≤ 16,7 ms en wasm medido como tiempo de GPU del frame (R3-Q31): el renderer pide
     `timestamp-query` si el adaptador la ofrece, mide cada frame sin bloquear (lectura asíncrona) y
     expone p50/p95 en las estadísticas; el probe lanza Chrome con la feature habilitada y registra el
