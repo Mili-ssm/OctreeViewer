@@ -391,7 +391,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         receive({ data: { type, ...fields } });
         await settle();
     };
-    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker });
+    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker, cells: false });
     const open = () => send("openFile", {
         file: { name: "a.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4,
     });

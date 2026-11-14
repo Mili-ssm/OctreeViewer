@@ -224,16 +224,14 @@ unavailable (a Blob worker inside a Blob worker on `file://` in Chrome), the opt
 the worker posts `buildWorkerUnavailable` and scenes are built in the render worker. Color modes by
 attribute are not covered in this mode yet.
 
-**`cells` (render plan R3, opt-in).** `?cells=1` in the demo, or `createViewer({ cells: true })`, draws
-the dataset as GPU cells instead of CPU-built voxel scenes. Off by default. Both workers receive the
-flag (`init.cells` for the render worker, `open.cells` for the build worker). With a build worker the
+**`cells` (render plan R3, default).** The dataset is drawn as GPU cells instead of CPU-built voxel
+scenes (R3-Q35). To use the CPU path instead, pass `?cells=0` in the demo or `createViewer({ cells: false })`.
+Both workers receive the flag (`init.cells` for the render worker, `open.cells` for the build worker). With a build worker the
 builder sends `nodeCells` (transferred, ordered, never coalesced), `cellCut` and `cellLod`, and the
 render worker answers with `poolAck`, `evict`, `poolReset` and `driverReplaced`; the protocol is
 documented at the top of `build-worker.js`. Cells need the build worker (R3-Q24): without one (`buildWorker=0`, or nested workers unavailable,
 e.g. on `file://`), the viewer uses the CPU path and the LOD stats report `cellPath: "needsBuildWorker"`.
 Limits:
-- Plain RGB only until attribute colour modes are supported on the cells path: any other colour mode
-  returns to the CPU path (the builder sends scenes again) and RGB brings the cells back.
 - Needs a format with a global frame and replacement semantics, and a device that supports cells;
   otherwise the dataset opens on the CPU path (`cellPath: "CellPathUnsupported"`).
 - Frames keep running while `cellsBusy` is true, for at most 600 frames in a row without progress

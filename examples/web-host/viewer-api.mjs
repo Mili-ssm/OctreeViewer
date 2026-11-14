@@ -181,7 +181,7 @@ export function createViewer(hostCanvas, options = {}) {
         worker.postMessage({
             type: "init", canvas: offscreen, width, height,
             colorMode: options.colorMode ?? "rgb", depthShading: options.depthShading ?? true,
-            cells: options.cells === true,
+            cells: options.cells !== false,
             canvasReplacement: true,
             cellNodeBytesPerFrame: options.cellNodeBytesPerFrame,
             buildWorker: options.buildWorker !== false ? {

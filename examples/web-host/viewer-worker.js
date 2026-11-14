@@ -79,7 +79,7 @@ let deviceUnrecoverable = false;
 let pendingOpen = null;
 let appliedEpoch = 0;
 let viewEpoch = 0;
-// Cells path (R3, opt-in with `init.cells`). `cellsRemote`: the build worker's builder produces the
+// Cells path (R3, default; `init.cells === false` opts out, R3-Q35). `cellsRemote`: the build worker's builder produces the
 // cells and the viewer's driver lives here. See build-worker.js for the messages.
 let cellsRequested = false;
 let cellsRemote = false;
@@ -1347,7 +1347,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 const sample = samplePointCloud();
                 viewer.replacePoints(sample.positions, sample.colors);
                 viewer.fitScene();
-                cellsRequested = Boolean(data.cells);
+                cellsRequested = data.cells !== false;
                 cellGate = null;
                 buildOptions = data.buildWorker ?? null;
                 if (cellsRequested && !buildOptions) {

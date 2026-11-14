@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const [input, output, url = "http://127.0.0.1:8767/examples/web-host/index.html", targetArg = "4"]
+const [input, output, url = "http://127.0.0.1:8767/examples/web-host/index.html?cells=0", targetArg = "4"]
     = process.argv.slice(2);
 const targetPixels = Number(targetArg);
 if (!input || !output || !Number.isFinite(targetPixels)

@@ -468,3 +468,34 @@ test("the clone takes the focus the old element had", async () => {
         DomCanvas.prototype.cloneNode = original;
     }
 });
+
+test("init asks for the cells path unless the option is false (R3-Q35)", async () => {
+    const previous = {
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        Worker: globalThis.Worker,
+        ResizeObserver: globalThis.ResizeObserver,
+        window: globalThis.window,
+        requestAnimationFrame: globalThis.requestAnimationFrame,
+        cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    };
+    globalThis.HTMLCanvasElement = FakeCanvas;
+    globalThis.Worker = FakeWorker;
+    globalThis.ResizeObserver = FakeResizeObserver;
+    globalThis.window = { Worker: FakeWorker, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+    globalThis.requestAnimationFrame = () => 1;
+    globalThis.cancelAnimationFrame = () => {};
+    try {
+        const initCells = async (options) => {
+            const viewer = createViewer(new FakeCanvas(), options);
+            await viewer.ready;
+            const cells = FakeWorker.instance.messages.find((message) => message.type === "init").cells;
+            viewer.dispose();
+            return cells;
+        };
+        assert.equal(await initCells(undefined), true);
+        assert.equal(await initCells({ cells: false }), false);
+        assert.equal(await initCells({ cells: true }), true);
+    } finally {
+        Object.assign(globalThis, previous);
+    }
+});

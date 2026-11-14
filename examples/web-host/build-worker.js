@@ -16,7 +16,7 @@ import { resolveSource } from "./http-range-source.mjs";
 // `epoch` counts this worker's builds (strictly increasing within a gen); `viewEpoch` echoes the
 // render worker's view epoch that the build used.
 //
-// Cells path (R3, opt-in with `open.cells`; every colour mode, R3-Q32/Q33): the builder emits no `scene`.
+// Cells path (R3, requested with `open.cells`, which the render worker sets by default; every colour mode, R3-Q32/Q33): the builder emits no `scene`.
 // build -> render: nodeCells{gen,generation,buffers} (one per node batch, transferred, in order, never
 //                  coalesced), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
 //                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
@@ -30,7 +30,6 @@ import { resolveSource } from "./http-range-source.mjs";
 //                  `view.viewEpoch` is the viewer's epoch of that camera (`setViewEpoch`).
 //                  A throw in one apply does not skip the rest of the batch: every item is applied, then
 //                  one `error{operation:"build:cellInbox"}` goes to the render side.
-// Another colour mode makes the builder send scenes again; RGB brings the cells back.
 
 const MAX_ASYNC_LOD_READS = 4;
 let wasmExports = null;

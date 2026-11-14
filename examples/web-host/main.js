@@ -679,8 +679,8 @@ function createWorkerViewer() {
             colorMode: colorMode.value,
             depthShading: depthShading.checked,
             buildWorker: new URLSearchParams(location.search).get("buildWorker") !== "0" ? BUILD_WORKER : undefined,
-            // Opt-in R3 cells path (RGB only until Task 12): ?cells=1.
-            cells: new URLSearchParams(location.search).get("cells") === "1",
+            // R3 cells path by default (R3-Q35); ?cells=0 keeps the CPU path.
+            cells: new URLSearchParams(location.search).get("cells") !== "0",
             canvasReplacement: true,
         }, [offscreen]);
         reloadButton.disabled = false;

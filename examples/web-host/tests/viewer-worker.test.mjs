@@ -8,8 +8,35 @@ import { WINDOW_MS, createPxController } from "../px-controller.mjs";
 const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
     .replace(/^import .*\n/gm, "");
 
-async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false } = {}) {
+const BUILD_WORKER = { url: "build-worker.js", type: "module" };
+
+test("init enables the cells path by default when the build worker is available (R3-Q35)", async () => {
+    const worker = await runWorker(undefined, null, { initFields: { buildWorker: BUILD_WORKER } });
+    assert.deepEqual(worker.enableCellsCalls, [true]);
+});
+
+test("init with cells false keeps the CPU path even with a build worker", async () => {
+    const worker = await runWorker(undefined, null, { initFields: { buildWorker: BUILD_WORKER, cells: false } });
+    assert.deepEqual(worker.enableCellsCalls, []);
+    await worker.send("api", { operation: "getStats", requestId: 1 });
+    assert.equal(worker.messages.at(-1).value.lod?.cellPath, undefined);
+});
+
+test("default cells without a build worker run the CPU path and report needsBuildWorker (R3-Q24)", async () => {
+    const worker = await runWorker();
+    assert.deepEqual(worker.enableCellsCalls, []);
+    await worker.send("api", { operation: "getStats", requestId: 1 });
+    assert.equal(worker.messages.at(-1).value.lod.cellPath, "needsBuildWorker");
+});
+
+async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false, initFields = {} } = {}) {
     const messages = [];
+    const enableCellsCalls = [];
+    class FakeBuildWorker {
+        addEventListener() {}
+        postMessage() {}
+        terminate() {}
+    }
     let receive;
     let now = 0;
     let colorMode = "rgb";
@@ -27,6 +54,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
     const viewer = {
+        enableCells(on) { enableCellsCalls.push(on); },
         resize() {},
         setColorMode(mode) {
             if (mode === "broken") {
@@ -206,6 +234,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         resolveSource: async (spec) => spec,
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
+        Worker: FakeBuildWorker,
         WasmAsyncReadBudget: DefaultAsyncReadBudget,
         WasmBlockRequestScheduler: DefaultBlockRequestScheduler,
         WasmAsyncFormatReader: AsyncFormatReader ?? DefaultAsyncFormatReader,
@@ -222,11 +251,12 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     }
     if (!skipInit) {
         await send("init", {
-            canvas: {}, width: 1, height: 1, colorMode: "rgb", depthShading: false,
+            canvas: {}, width: 1, height: 1, colorMode: "rgb", depthShading: false, ...initFields,
         });
     }
     return {
         messages,
+        enableCellsCalls,
         send,
         setNow(value) { now = value; },
         holdStage(stage) { holdStage = stage; lod = makeLod(stage ?? targetVoxelPixels, targetVoxelPixels); },
