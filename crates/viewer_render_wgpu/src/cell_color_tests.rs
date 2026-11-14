@@ -157,6 +157,24 @@ fn shader_modes_match_the_cpu_path_on_every_adapter() {
             &|c: &mut Case| c.intensity = Some(2000.51),
             1,
         ),
+        (
+            // One u16 unit is one 8-bit step of the ramp here, so a cell intensity off by 2 of
+            // them (or truncated instead of rounded, 0.5 more on average) shows up.
+            "narrow range, rounds down",
+            &|c: &mut Case| {
+                c.intensity = Some(100.49);
+                c.ranges.intensity = Some([0.0, 255.0]);
+            },
+            1,
+        ),
+        (
+            "narrow range, rounds up",
+            &|c: &mut Case| {
+                c.intensity = Some(100.51);
+                c.ranges.intensity = Some([0.0, 255.0]);
+            },
+            1,
+        ),
         ("missing", &|c: &mut Case| c.intensity = None, 1),
         (
             "span 0",
@@ -200,6 +218,10 @@ fn shader_modes_match_the_cpu_path_on_every_adapter() {
     }
     for_each_adapter(CellLimitMode::Auto, |h| {
         if !h.runs_test_pool {
+            println!(
+                "# adapter {}: skipped (its limits do not admit the test pool)",
+                h.label
+            );
             return false;
         }
         let mut pool = new_pool(h);

@@ -163,6 +163,20 @@ pub(crate) struct BuilderCells {
 /// An attribute `(schema index, component)` and its range, painted into the cells' blocks.
 pub(crate) type CellPaint = ((u32, u32), Option<[f64; 2]>);
 
+/// Whether a colour change with live cells only rewrites the shader uniform (no node is built,
+/// the pool is kept): the cells are drawn in both the old and the new selection, neither paints
+/// an attribute, and the mode is one the shader draws. Any attribute change starts a new colour
+/// generation instead (R3-Q33).
+pub(crate) fn shader_mode_only(
+    cells_active: bool,
+    had_attribute: bool,
+    attribute: bool,
+    shader_modes: bool,
+    mode: viewer_render_wgpu::ColorMode,
+) -> bool {
+    cells_active && !had_attribute && !attribute && cells_draw_mode(shader_modes, mode, false)
+}
+
 pub(crate) fn cells_draw_mode(
     shader_modes: bool,
     mode: viewer_render_wgpu::ColorMode,

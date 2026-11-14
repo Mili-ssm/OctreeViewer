@@ -992,3 +992,29 @@ fn gpu_decode_is_bit_identical_to_rust_on_every_adapter() {
         );
     }
 }
+
+#[test]
+fn the_packed_intensity_word_rounds_half_away_from_zero_and_marks_missing() {
+    // R3-Q25: the mean is rounded, not truncated; a missing or non-finite mean is the sentinel.
+    use crate::{MAX_INTENSITY, MISSING_INTENSITY};
+    let word = |sum: f64, count: u32| {
+        let mut c = cell([1, 1, 1]);
+        c.intensity_sum = sum;
+        c.intensity_count = count;
+        let packed = pack(&level(3, vec![c]));
+        packed.instances[slot_of(&packed, 0)].intensity()
+    };
+    assert_eq!(word(2000.49, 1), 2000);
+    assert_eq!(word(2000.51, 1), 2001);
+    assert_eq!(word(2000.5, 1), 2001, "half goes away from zero");
+    assert_eq!(word(4001.0, 2), 2001, "mean 2000.5 of two points");
+    assert_eq!(word(0.4, 1), 0);
+    assert_eq!(word(0.0, 0), MISSING_INTENSITY);
+    assert_eq!(MISSING_INTENSITY, 65535);
+    assert_eq!(word(f64::NAN, 1), MISSING_INTENSITY);
+    assert_eq!(
+        word(1.0e9, 1),
+        MAX_INTENSITY,
+        "above the u16 range saturates"
+    );
+}

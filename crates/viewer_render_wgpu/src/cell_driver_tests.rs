@@ -861,14 +861,24 @@ fn the_frame_hands_the_target_the_ranges_of_the_drawn_nodes_only() {
     let drawn: HashSet<NodeId> = report.plan.active.iter().map(|a| a.key.node).collect();
     assert!(!drawn.is_empty());
     let mut expected = CellColorRanges::default();
+    let drawn_levels: HashSet<(NodeId, u8)> = report
+        .plan
+        .active
+        .iter()
+        .map(|a| (a.key.node, a.key.depth))
+        .collect();
     for (i, (id, node)) in fx.driver.nodes.iter_mut().enumerate() {
-        let k = i as f64 * 10.0;
-        node.colors = CellColorRanges {
-            intensity: Some([k as f32, k as f32 + 5.0]),
-            z: Some([k, k + 1.0]),
-        };
-        if drawn.contains(id) {
-            expected = expected.merge(node.colors);
+        for (depth, colors) in &mut node.colors {
+            let k = i as f64 * 10.0 + f64::from(*depth) * 1000.0;
+            *colors = CellColorRanges {
+                intensity: Some([k as f32, k as f32 + 5.0]),
+                z: Some([k, k + 1.0]),
+            };
+            // Only the levels drawn merge: a deeper level that is stored but not drawn would
+            // widen the range the CPU path does not see (R3-Q32).
+            if drawn_levels.contains(&(*id, *depth)) {
+                expected = expected.merge(*colors);
+            }
         }
     }
     fx.step(&ids(&CHILDREN), &cam, 4.0);

@@ -7,6 +7,7 @@
 use super::*;
 use crate::cells_glue::{BuilderCells, CellMessages, InProcessCells, ViewerCells, driver_config};
 use crate::scene_builder::{BuilderStep, SceneBuilderCore};
+use std::rc::Rc;
 use viewer_render_wgpu::decode_node_levels;
 
 /// Build to render. `nodeCells` is never merged; `cellCut` is latest-wins at the viewer.
@@ -573,7 +574,10 @@ struct Pair {
 
 impl Pair {
     fn new() -> Self {
-        let h = synthetic_harness(1 << 20, 2.0);
+        Self::with_harness(synthetic_harness(1 << 20, 2.0))
+    }
+
+    fn with_harness(h: Harness) -> Self {
         let view = synth_orbit().remove(0);
         let config = driver_config(
             h.dataset.cell_grid(),
@@ -641,6 +645,56 @@ impl Pair {
             }
         }
         panic!("the builder never went idle");
+    }
+
+    /// [`Pair::send`] with a viewer frame after every plan round and the strict target's and
+    /// the hole oracle's checks on every frame: the builder keeps planning while the viewer draws.
+    fn send_checked(&mut self, view_epoch: u64) -> Vec<(u64, Vec<u8>)> {
+        self.builder.set_view_epoch(view_epoch);
+        self.builder.mark_dirty();
+        let mut nodes = Vec::new();
+        for _ in 0..500 {
+            let out = self.plan();
+            for node in &out.nodes {
+                nodes.push((out.generation, node.bytes.clone()));
+                self.viewer
+                    .push_node(out.generation, node.bytes.clone())
+                    .unwrap();
+            }
+            let idle = out.idle;
+            self.viewer.push_cut(
+                out.cut_epoch,
+                out.view_epoch,
+                out.cut,
+                out.support,
+                idle,
+                2.0,
+            );
+            self.checked_frame();
+            if idle {
+                for _ in 0..500 {
+                    self.checked_frame();
+                    if !self.viewer.cells_busy(&self.target) {
+                        return nodes;
+                    }
+                }
+                panic!("the viewer never went quiet");
+            }
+        }
+        panic!("the builder never went idle");
+    }
+
+    fn checked_frame(&mut self) {
+        let report = self.viewer.frame(&mut self.target, &self.view).unwrap();
+        if let Some(report) = report {
+            self.target.check_plan(&report.plan);
+            let holes = CutView::new(&self.h.dataset, &report.plan).holes();
+            assert!(
+                holes.is_empty(),
+                "holes: {:?}",
+                &holes[..holes.len().min(3)]
+            );
+        }
     }
 
     fn pump(&mut self) {
@@ -774,16 +828,39 @@ fn shader_colour_modes_keep_the_cells_and_the_pool() {
     assert!(!cells_draw_mode(false, ColorMode::Intensity, false));
     assert!(!cells_draw_mode(false, ColorMode::Rgb, true));
     assert!(cells_draw_mode(true, ColorMode::Rgb, true));
+    // The renderer's colour mode: what the uniform holds. The bindings' `setColorMode` takes the
+    // same decision (`shader_mode_only`) and, when it is true, only sets this.
+    let generation = pair.h.dataset.cell_generation();
     for mode in [
         ColorMode::Intensity,
         ColorMode::Elevation,
         ColorMode::Classification,
         ColorMode::Rgb,
     ] {
-        let draws = cells_draw_mode(true, mode, false);
-        assert!(draws);
-        pair.builder.set_active(&mut pair.h.dataset, draws);
-        pair.viewer.set_active(draws);
+        // With the opt-in off the same change is not a uniform write: the CPU path takes over.
+        if mode != ColorMode::Rgb {
+            assert!(!crate::cells_glue::shader_mode_only(
+                true, false, false, false, mode
+            ));
+        }
+        // An attribute on either side is a rebuild (new colour generation), never a uniform write.
+        assert!(!crate::cells_glue::shader_mode_only(
+            true, true, false, true, mode
+        ));
+        assert!(!crate::cells_glue::shader_mode_only(
+            true, false, true, true, mode
+        ));
+        assert!(crate::cells_glue::shader_mode_only(
+            true, false, false, true, mode
+        ));
+        assert!(!crate::cells_glue::shader_mode_only(
+            false, false, false, true, mode
+        ));
+        let uniform_mode = if crate::cells_glue::shader_mode_only(true, false, false, true, mode) {
+            mode
+        } else {
+            ColorMode::Rgb
+        };
         let built = pair.send(0, true);
         assert!(built.is_empty(), "{mode:?} rebuilt {} nodes", built.len());
         for _ in 0..5 {
@@ -794,6 +871,8 @@ fn shader_colour_modes_keep_the_cells_and_the_pool() {
             );
         }
         assert_eq!(pair.rest(), Some(digest));
+        assert_eq!(uniform_mode, mode);
+        assert_eq!(pair.h.dataset.cell_generation(), generation, "no recolour");
     }
 }
 
@@ -859,4 +938,55 @@ fn real_glue_belvedere_pool_reset_and_driver_replaced_mid_load_converge() {
         ..Inject::default()
     };
     glue_real_case("orbit+inject", true, 50, &[5], inject);
+}
+
+#[test]
+fn recolouring_across_the_build_render_split_leaves_no_hole_and_drops_late_old_nodes() {
+    let paint = Rc::new(std::cell::Cell::new(false));
+    let mut pair = Pair::with_harness(painting_harness(Rc::clone(&paint)));
+    let rgb_nodes = pair.send_checked(0);
+    let rgb_digest = pair.rest().expect("rgb at rest");
+    let rgb_colors = pair.target.color_digest();
+    let rgb_generation = rgb_nodes[0].0;
+    assert!(!rgb_nodes.is_empty());
+
+    let mut epoch = 0;
+    for round in 0..2 {
+        // rgb -> attribute: the builder and the viewer both keep going while it rebuilds.
+        paint.set(true);
+        assert!(pair.h.dataset.set_cell_paint(Some((0, 0))));
+        pair.builder.recolored();
+        let painted = pair.send_checked(epoch);
+        assert!(!painted.is_empty(), "round {round}: nothing was rebuilt");
+        assert!(
+            painted
+                .iter()
+                .all(|(generation, _)| *generation > rgb_generation)
+        );
+        pair.pump();
+        let painted_digest = pair.rest().expect("the attribute image at rest");
+        let painted_colors = pair.target.color_digest();
+        assert_ne!(painted_colors, rgb_colors, "round {round}");
+        assert_eq!(painted_digest, rgb_digest, "same cut, other colours");
+
+        // A late message of the previous generation (a slow worker) is dropped: the image does
+        // not go back.
+        let bytes = pair.viewer.stats(&pair.target).queued_bytes;
+        assert_eq!(bytes, 0);
+        for (generation, node) in &rgb_nodes {
+            pair.viewer.push_node(*generation, node.clone()).unwrap();
+        }
+        epoch += 1;
+        pair.viewer.camera_changed(epoch);
+        pair.pump();
+        assert_eq!(pair.target.color_digest(), painted_colors, "round {round}");
+
+        // attribute -> rgb: the rgb image comes back exactly.
+        paint.set(false);
+        assert!(pair.h.dataset.set_cell_paint(None));
+        pair.builder.recolored();
+        pair.send_checked(epoch);
+        assert_eq!(pair.target.color_digest(), rgb_colors, "round {round}");
+        assert_eq!(pair.rest(), Some(rgb_digest));
+    }
 }

@@ -34,13 +34,15 @@ impl WasmVoxelViewer {
             attribute_range: selected_range,
         } = selection;
         // Shader modes on live cells only change the uniform: no cells rebuilt, no pool reset.
-        let uniform_only = self
-            .cells_local
-            .as_ref()
-            .is_some_and(|cells| cells.is_active())
-            && self.selected_attribute.is_none()
-            && selected_attribute.is_none()
-            && crate::cells_glue::cells_draw_mode(self.cells_shader_modes, mode, false);
+        let uniform_only = crate::cells_glue::shader_mode_only(
+            self.cells_local
+                .as_ref()
+                .is_some_and(|cells| cells.is_active()),
+            self.selected_attribute.is_some(),
+            selected_attribute.is_some(),
+            self.cells_shader_modes,
+            mode,
+        );
         let renderer = self
             .gpu_renderer
             .as_mut()

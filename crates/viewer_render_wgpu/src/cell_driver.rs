@@ -144,6 +144,18 @@ impl CellColorRanges {
     }
 }
 
+fn level_ranges(grid: &CellGrid, levels: &[PackedLevel]) -> Vec<(u8, CellColorRanges)> {
+    levels
+        .iter()
+        .map(|level| {
+            (
+                level.depth,
+                CellColorRanges::of_levels(grid, std::slice::from_ref(level)),
+            )
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DriverConfig {
     pub pool: PoolConfig,
@@ -303,8 +315,9 @@ fn color_of(generation: u64) -> u64 {
 
 struct StoredNode {
     pool: PoolNode,
-    /// Ranges of all its levels, read once when it is stored.
-    colors: CellColorRanges,
+    /// Ranges of each level by depth, read once when it is stored: a frame merges only the
+    /// levels it draws (R3-Q32: the CPU path ranges over the voxels it draws).
+    colors: Vec<(u8, CellColorRanges)>,
     /// One per depth of `pool.stored`.
     levels: Vec<Arc<PackedLevel>>,
     bytes: u64,
@@ -603,7 +616,7 @@ impl CellDriver {
         let bytes = levels.iter().map(level_bytes).sum::<u64>();
         let count = levels.len();
         self.cpu_bytes += bytes;
-        let colors = CellColorRanges::of_levels(&self.config.grid, &levels);
+        let colors = level_ranges(&self.config.grid, &levels);
         self.nodes.insert(
             id,
             StoredNode {
@@ -644,7 +657,7 @@ impl CellDriver {
         }
         let bytes = levels.iter().map(level_bytes).sum::<u64>();
         let count = levels.len();
-        let colors = CellColorRanges::of_levels(&self.config.grid, &levels);
+        let colors = level_ranges(&self.config.grid, &levels);
         let levels: Vec<Arc<PackedLevel>> = levels.into_iter().map(Arc::new).collect();
         for level in &levels {
             let refreshed = self
@@ -923,10 +936,14 @@ impl CellDriver {
         let colors = plan
             .active
             .iter()
-            .filter_map(|active| self.nodes.get(&active.key.node))
-            .fold(CellColorRanges::default(), |merged, node| {
-                merged.merge(node.colors)
-            });
+            .filter_map(|active| {
+                let node = self.nodes.get(&active.key.node)?;
+                node.colors
+                    .iter()
+                    .find(|(depth, _)| *depth == active.key.depth)
+                    .map(|(_, ranges)| *ranges)
+            })
+            .fold(CellColorRanges::default(), CellColorRanges::merge);
         mark(FramePhase::TableBuilt);
         // Nothing resident and no pool yet: there is no page table to write.
         if !table.is_empty() || target.has_pool() {

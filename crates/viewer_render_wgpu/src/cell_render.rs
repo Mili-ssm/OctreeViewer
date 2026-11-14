@@ -336,7 +336,7 @@ impl Default for CellColor {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct FrameUniform {
+pub(crate) struct FrameUniform {
     view_projection: [[f32; 4]; 4],
     num_pages: u32,
     shading: u32,
