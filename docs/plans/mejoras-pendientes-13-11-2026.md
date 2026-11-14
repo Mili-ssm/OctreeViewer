@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1–B5 cerradas; siguiente: B6, que necesita el equipo de referencia, o la fase C)
+Estado: en curso · 14-11-2026 (fase A y B1–B5 cerradas; B6 medida, pendiente del propietario; siguiente: fase C)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -61,8 +61,11 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 - [x] B5. TW6, pérdida de dispositivo ([registro](../records/benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md)):
   recuperación sin recargar en 0,61 s con la misma pose y el mismo corte (R3-Q26), y canvas sustituido
   por la API (R3-Q34). Probado con una caída del proceso GPU vía CDP.
-- [ ] B6. Tarea 17, medida y ruta por defecto: matriz de R0 más RED-REF en el equipo de referencia
-  (≥ 4 GB de GPU); al cerrarla, actualizar el estado del ADR 0027.
+- [ ] B6. Tarea 17, medida y ruta por defecto ([registro](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md)):
+  medida en este equipo (no EQ-REF estricto, decisión del propietario). RQ-01 y RQ-05 pasan con
+  celdas; RQ-02 pasa salvo +2,7 pp de píxeles vacíos en Majadas frente a la ruta CPU. **Pendiente del
+  propietario:** aceptar ese aumento y hacer `cells` la ruta predeterminada; al cerrarla, actualizar el
+  estado del ADR 0027.
 
 ## Fase C: velocidad de conversión, RQ-07 (rama `explore/convert-speed`)
 
@@ -88,16 +91,17 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
-- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs`, `explore/b3-continuity`, `explore/b4-px-modes` y `explore/b5-device-lost`: integradas en `feat/r3-v75` y borradas.
-- [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
-  `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
-  bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs`, `explore/b3-continuity`, `explore/b4-px-modes`, `explore/b5-device-lost` y `explore/b6-measure`: integradas en `feat/r3-v75` y borradas.
+- [x] L4. Salidas de tareas R3 anteriores en `target/r3-*` (fuera de git): 45 directorios (~21 GB) borrados
+  con el visto bueno del propietario el 14-11-2026; se conservan los que usan probes, tests y benches
+  (`r3-t16-cases`, `r3-t7c-pool`, `r3-fixtures`, `r3-t5-synthetic`, `r3-t7c`).
 
 ## Decisiones del propietario pendientes
 
 | Tema | Bloquea |
 | --- | --- |
 | Factor de continuidad (RF-05): con 1 × el espaciado de referencia el efecto es mínimo en Belvedere y Majadas | Nada; ajuste visual |
+| Ruta predeterminada `cells` (Tarea 17) y +2,7 pp de píxeles vacíos en Majadas | B6, ADR 0027 |
 | OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |

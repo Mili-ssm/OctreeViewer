@@ -694,6 +694,8 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
 
 ## Tarea 17: medida y ruta por defecto
 
+**Medida (14-11-2026):** [registro](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md). RQ-01 y RQ-05 pasan con celdas; RQ-02 pasa salvo +2,7 pp de píxeles vacíos en Majadas. El cambio de ruta predeterminada espera al propietario.
+
 - [ ] Matriz de R0 más RED-REF/HTTP Range. «Alcanzado» se define como en T11. Registrar GPU y GTT.
 - [ ] **Pasa si** se cumplen RQ-01, RQ-02 y RQ-05. Entonces `renderPath: "cells"` pasa a ser la ruta por defecto, y se confirman las cifras de ADR 0027 y 0031.
 
