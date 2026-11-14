@@ -84,6 +84,8 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
   queda en 0. De paso se corrigió el orden de lectura asíncrono de las celdas (Belvedere remoto no
   llegaba al objetivo).
 - [ ] D3. Congelar V7 final (ADR 0022), tras decidir OQ-09 (orden de filas, TF1).
+  OQ-09 medido ([registro](../records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)): orden híbrido
+  −35 % en el `.oct`; falta la decisión del propietario.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
 
 ## Limpieza

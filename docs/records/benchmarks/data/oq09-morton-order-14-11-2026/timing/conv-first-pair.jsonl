@@ -1,0 +1,8 @@
+{"mode": "morton", "total": 51.18, "stages": {"InspectingInput": 0.01, "PlanningMetadata": 0.06, "PlanningSpatialIndex": 10.1, "BuildingSpatialHierarchy": 21.46, "ReadingAndWritingBlocks": 16.03, "ValidatingOutput": 3.51, "PublishingOutput": 0.01, "Complete": 0.01}, "rc": 0}
+{"mode": "source", "total": 49.19, "stages": {"InspectingInput": 0.01, "PlanningMetadata": 0.07, "PlanningSpatialIndex": 11.99, "BuildingSpatialHierarchy": 21.76, "ReadingAndWritingBlocks": 10.55, "ValidatingOutput": 4.8, "PublishingOutput": 0.0, "Complete": 0.01}, "rc": 0}
+{"mode": "morton", "total": 0.0, "stages": {}, "rc": 1}
+{"mode": "source", "total": 0.0, "stages": {}, "rc": 1}
+{"mode": "morton", "total": 0.0, "stages": {}, "rc": 1}
+{"mode": "source", "total": 0.0, "stages": {}, "rc": 1}
+{"mode": "morton", "total": 0.0, "stages": {}, "rc": 1}
+{"mode": "source", "total": 0.0, "stages": {}, "rc": 1}

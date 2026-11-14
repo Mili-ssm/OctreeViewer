@@ -1,0 +1,20 @@
+== mor 1
+run 1: geometry+colors 4567 ms, attributes 5432 ms, points 132822553
+run 2: geometry+colors 4522 ms, attributes 5376 ms, points 132822553
+run 3: geometry+colors 4504 ms, attributes 5381 ms, points 132822553
+median geometry+colors 4522 ms, attributes 5381 ms
+== src 1
+run 1: geometry+colors 3769 ms, attributes 5300 ms, points 132822553
+run 2: geometry+colors 3732 ms, attributes 5298 ms, points 132822553
+run 3: geometry+colors 3727 ms, attributes 5254 ms, points 132822553
+median geometry+colors 3732 ms, attributes 5298 ms
+== mor 2
+run 1: geometry+colors 4460 ms, attributes 5284 ms, points 132822553
+run 2: geometry+colors 4450 ms, attributes 5313 ms, points 132822553
+run 3: geometry+colors 4463 ms, attributes 5264 ms, points 132822553
+median geometry+colors 4460 ms, attributes 5284 ms
+== src 2
+run 1: geometry+colors 3763 ms, attributes 5262 ms, points 132822553
+run 2: geometry+colors 3722 ms, attributes 5208 ms, points 132822553
+run 3: geometry+colors 3756 ms, attributes 5247 ms, points 132822553
+median geometry+colors 3756 ms, attributes 5247 ms
