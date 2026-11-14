@@ -173,10 +173,10 @@ test("a merged request is aborted only when all the reads it serves are aborted"
   await tick();
   assert.deepEqual(fetchImpl.calls.slice(1), ["bytes=100-299"]);
   a.abort();
-  await readA;
+  await Promise.all([readA, tick()]);
   assert.equal(fetchImpl.signals[0].aborted, false);
   b.abort();
-  await readB;
+  await Promise.all([readB, tick()]);
   assert.equal(fetchImpl.signals[0].aborted, true);
   assert.equal(source.stats.retries, 0);
   assert.equal(source.stats.aborted, 1);
@@ -223,4 +223,44 @@ test("a signal view reads from the cache like the source and reports its size", 
   assert.equal(view.size, SIZE);
   assert.deepEqual(new Uint8Array(await view.slice(SIZE - 10, SIZE).arrayBuffer()), content.slice(SIZE - 10));
   assert.equal(fetchImpl.calls.length, 1);
+});
+
+test("a read aborted before the flush sends nothing and is not counted as a request", async () => {
+  const fetchImpl = gatedFetch();
+  const source = await open(fetchImpl);
+  const requestsAfterOpen = source.stats.requests;
+  const a = new AbortController();
+  const b = new AbortController();
+  const readA = assert.rejects(source.withSignal(a.signal).slice(100, 200).arrayBuffer(), (e) => e.name === "AbortError");
+  const readB = assert.rejects(source.withSignal(b.signal).slice(200, 300).arrayBuffer(), (e) => e.name === "AbortError");
+  a.abort();
+  b.abort(); // both before the microtask flush
+  await Promise.all([readA, readB, tick()]);
+  assert.equal(fetchImpl.calls.length, 1, "only the opening request was sent");
+  assert.equal(source.stats.requests, requestsAfterOpen);
+  assert.equal(source.stats.aborted, 0);
+
+  // One survivor: the request shrinks to the live read's range.
+  const c = new AbortController();
+  const readC = assert.rejects(source.withSignal(c.signal).slice(400, 500).arrayBuffer(), (e) => e.name === "AbortError");
+  const readD = source.withSignal(new AbortController().signal).slice(500, 600).arrayBuffer();
+  c.abort();
+  await readC;
+  fetchImpl.release();
+  assert.deepEqual(new Uint8Array(await readD), content.slice(500, 600));
+  assert.equal(fetchImpl.calls[1], "bytes=500-599");
+});
+
+test("an abort during backoff is counted as an abort and the retry only when its attempt starts", async () => {
+  const fetchImpl = fakeFetch([undefined, 503, 503]);
+  const source = await open(fetchImpl, { retryDelays: [5, 60_000, 60_000], timeoutMs: 0 });
+  const controller = new AbortController();
+  const read = assert.rejects(source.withSignal(controller.signal).slice(100, 200).arrayBuffer(), (e) => e.name === "AbortError");
+  await new Promise((resolve) => setTimeout(resolve, 40)); // first retry done, second backoff pending
+  assert.equal(source.stats.retries, 1);
+  controller.abort();
+  await read;
+  assert.equal(source.stats.retries, 1);
+  assert.equal(source.stats.aborted, 1);
+  assert.equal(source.stats.abortedBytes, 100);
 });

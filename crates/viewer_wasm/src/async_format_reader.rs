@@ -197,7 +197,7 @@ impl WasmAsyncLodReadRequest {
         let mut rest = Vec::with_capacity(plans.len());
         for plan in plans {
             if self.cancelled.get() {
-                return Err(err("LOD read request was cancelled"));
+                return Err(cancelled_error());
             }
             let (result, read, decode) =
                 read_plan(&self.shared, plan, &self.cancelled, &self.sources).await?;
@@ -677,12 +677,12 @@ async fn read_plan(
     let read_clock = WorkClock::start();
     for range in plan.ranges() {
         if cancelled.get() {
-            return Err(err("LOD read request was cancelled"));
+            return Err(cancelled_error());
         }
         buffers.push(read_range_for(shared, range, cancelled, sources).await?);
     }
     if cancelled.get() {
-        return Err(err("LOD read request was cancelled"));
+        return Err(cancelled_error());
     }
     let read_ms = read_clock.elapsed_ms();
     let decode_clock = WorkClock::start();
@@ -700,7 +700,7 @@ async fn read_range_for(
     sources: &SourceOverride,
 ) -> Result<Vec<u8>, JsValue> {
     if cancelled.get() {
-        return Err(err("LOD read request was cancelled"));
+        return Err(cancelled_error());
     }
     let blob = match range.source() {
         ReadSource::Primary => sources.primary.as_ref().unwrap_or(&shared.primary),
@@ -721,7 +721,7 @@ async fn read_range_for(
     let promise: Promise = slice.array_buffer();
     let value = JsFuture::from(promise).await?;
     if cancelled.get() {
-        return Err(err("LOD read request was cancelled"));
+        return Err(cancelled_error());
     }
     let buffer: ArrayBuffer = value
         .dyn_into()
@@ -921,6 +921,13 @@ fn number_array(values: &[f64]) -> JsValue {
         array.push(&JsValue::from_f64(*value));
     }
     array.into()
+}
+/// A cancelled request rejects with an `AbortError`, the same name an aborted range read carries,
+/// so workers classify both as cancellations.
+fn cancelled_error() -> JsValue {
+    let error = js_sys::Error::new("LOD read request was cancelled");
+    error.set_name("AbortError");
+    error.into()
 }
 fn err(message: &str) -> JsValue {
     JsValue::from_str(message)

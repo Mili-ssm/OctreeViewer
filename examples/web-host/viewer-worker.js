@@ -1,5 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
-import { resolveSource, sumRangeStats } from "./http-range-source.mjs";
+import { isAbortError, resolveSource, sumRangeStats } from "./http-range-source.mjs";
 import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";
 
 let viewer = null;
@@ -185,7 +185,6 @@ function bindTicketAbort(request) {
     return { cancel() { token.cancel(); controller.abort(); } };
 }
 
-const isAbort = (error) => error?.name === "AbortError";
 
 function workerMetricsSnapshot(buildMetrics = null) {
     const snapshot = {
@@ -776,10 +775,10 @@ function scheduleAsyncLodRead(retryFailed = false) {
                     if (!ticketCompleted) {
                         outcome = ticketScheduler.complete(ticket, String(blockId), false);
                         ticketCompleted = true;
-                        if (outcome === "failed" && !isAbort(error)) failedAsyncBlocks.add(String(blockId));
+                        if (outcome === "failed" && !isAbortError(error)) failedAsyncBlocks.add(String(blockId));
                     }
                     // An abort is a cancellation (the ticket left the plan), never a failure to report or retry.
-                    if (generation === datasetGeneration && outcome !== "discarded" && !isAbort(error)) {
+                    if (generation === datasetGeneration && outcome !== "discarded" && !isAbortError(error)) {
                         self.postMessage({ type: "error", operation: "asyncLodRead", message: String(error) });
                     }
                 }));
@@ -1146,9 +1145,10 @@ function startAsyncDataset(data, requestId = null) {
     }
     // A remote file is `{ url }`: each worker opens its own range source (it cannot be cloned).
     let fileBytes = data.file.size ?? null;
+    let openedSources = [];
     void Promise.all([resolveSource(data.file), resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 })]).then(([file, attributes]) => {
         fileBytes = file.size;
-        remoteSources = [file, attributes];
+        openedSources = [file, attributes];
         return WasmAsyncFormatReader.open(file, attributes, asyncReadBudget.clone());
     }).then((reader) => {
         messageQueue = messageQueue.then(timed("asyncOpen", () => {
@@ -1156,6 +1156,7 @@ function startAsyncDataset(data, requestId = null) {
                 reader.free();
                 return;
             }
+            remoteSources = openedSources; // only for the current open: a superseded one must not replace them
             const descriptor = reader.lodDatasetDescriptor(data.cacheBytes);
             const opened = {
                 ...(descriptor.paged

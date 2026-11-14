@@ -1,5 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmSceneBuilder } from "../../pkg/viewer_wasm.js";
-import { resolveSource, sumRangeStats } from "./http-range-source.mjs";
+import { isAbortError, resolveSource, sumRangeStats } from "./http-range-source.mjs";
 
 // Build worker (render plan R2): owns the dataset hierarchy, the block reader and scheduler, the
 // decoded block cache, the LOD planner and the voxel builder (`WasmSceneBuilder`, no GPU). The
@@ -92,7 +92,6 @@ function bindTicketAbort(request) {
     return { cancel() { token.cancel(); controller.abort(); } };
 }
 
-const isAbort = (error) => error?.name === "AbortError";
 
 function metricsSnapshot() {
     return {
@@ -396,10 +395,10 @@ async function readBlock(taskReader, taskGeneration, ticketScheduler, blockId, t
                 outcome = ticketScheduler.complete(ticket, String(blockId), false);
             } catch { /* ticket already settled */ }
             ticketCompleted = true;
-            if (outcome === "failed" && !isAbort(error)) failedAsyncBlocks.add(String(blockId));
+            if (outcome === "failed" && !isAbortError(error)) failedAsyncBlocks.add(String(blockId));
         }
         // An abort is a cancellation (the ticket left the plan), never a failure to report or retry.
-        if (!stale() && outcome !== "discarded" && !isAbort(error)) postError("asyncLodRead", error, taskGeneration);
+        if (!stale() && outcome !== "discarded" && !isAbortError(error)) postError("asyncLodRead", error, taskGeneration);
     } finally {
         result?.release?.();
         result?.free?.();
@@ -446,11 +445,11 @@ async function openDataset(data) {
         resolveSource(data.attributes, { tailBytes: 40, headBytes: 24 }),
     ]);
     const nextReader = await WasmAsyncFormatReader.open(file, attributes, readBudget.clone());
-    remoteSources = [file, attributes];
     if (requestGeneration !== generation) {
         nextReader.free();
         return;
     }
+    remoteSources = [file, attributes]; // only for the current open: a superseded one must not replace them
     const nextBuilder = new WasmSceneBuilder(maxVoxels, maxEstimatedBytes);
     if (data.cells) {
         nextBuilder.enableCells(true);

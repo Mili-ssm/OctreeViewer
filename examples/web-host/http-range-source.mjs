@@ -126,7 +126,14 @@ export class HttpRangeSource {
   }
 
   #flush() {
-    const batch = this.#pending.sort((a, b) => a.start - b.start || a.end - b.end);
+    // A read aborted since it was queued is rejected here and takes no part in any request.
+    const batch = this.#pending
+      .filter((read) => {
+        if (!read.signal?.aborted) return true;
+        read.reject(abortError(read.signal));
+        return false;
+      })
+      .sort((a, b) => a.start - b.start || a.end - b.end);
     this.#pending = [];
     this.#scheduled = false;
     for (let index = 0; index < batch.length; ) {
@@ -148,8 +155,7 @@ export class HttpRangeSource {
           read.reject(abortError(read.signal));
           settle();
         };
-        if (read.signal.aborted) onAbort();
-        else read.signal.addEventListener("abort", onAbort, { once: true });
+        read.signal.addEventListener("abort", onAbort, { once: true });
         read.release = () => read.signal.removeEventListener("abort", onAbort);
       }
       this.#fetchRange(start, end, owner.signal).finally(() => {
@@ -183,12 +189,22 @@ export class HttpRangeSource {
       } catch (error) {
         if (signal?.aborted) throw abortError(signal);
         if (!error.retryable || attempt >= this.#retryDelays.length) throw error;
-        this.stats.retries += 1;
         const hinted = Math.min(error.retryAfterMs ?? 0, MAX_RETRY_AFTER_MS);
         const backoff = this.#retryDelays[attempt] * (0.75 + 0.5 * this.#random());
-        await this.#wait(Math.max(backoff, hinted), signal);
+        try {
+          await this.#wait(Math.max(backoff, hinted), signal);
+        } catch (aborted) {
+          this.#countAbort(bytesHint);
+          throw aborted;
+        }
+        this.stats.retries += 1; // counted when the repeated attempt starts
       }
     }
+  }
+
+  #countAbort(bytesHint) {
+    this.stats.aborted += 1;
+    this.stats.abortedBytes += bytesHint;
   }
 
   #wait(ms, signal) {
@@ -206,10 +222,13 @@ export class HttpRangeSource {
   }
 
   async #attempt(range, expected, bytesHint, signal) {
+    if (signal?.aborted) {
+      this.#countAbort(bytesHint); // nothing was sent
+      throw abortError(signal);
+    }
     const controller = new AbortController();
     const forward = () => controller.abort(signal.reason);
     signal?.addEventListener("abort", forward, { once: true });
-    if (signal?.aborted) forward();
     let timedOut = false;
     const timer = this.#timeoutMs > 0
       ? setTimeout(() => {
@@ -273,8 +292,7 @@ export class HttpRangeSource {
       return { bytes, range: contentRange, etag };
     } catch (error) {
       if (signal?.aborted) {
-        this.stats.aborted += 1;
-        this.stats.abortedBytes += bytesHint;
+        this.#countAbort(bytesHint);
       } else if (timedOut) {
         this.stats.timeouts += 1;
         const timeout = new HttpRangeError(`${this.#url}: timeout after ${this.#timeoutMs} ms for ${range}`);
@@ -290,6 +308,9 @@ export class HttpRangeSource {
     }
   }
 }
+
+/** True for the rejection of an aborted read or request: a cancellation, not a failure. */
+export const isAbortError = (error) => error?.name === "AbortError";
 
 const MAX_RETRY_AFTER_MS = 10_000;
 

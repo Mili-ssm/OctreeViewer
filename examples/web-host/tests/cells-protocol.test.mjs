@@ -122,6 +122,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
         performance: { now: () => Date.now() },
         resolveSource: async spec => spec,
         sumRangeStats: () => null,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmSceneBuilder, WasmAsyncFormatReader: Reader, WasmAsyncReadBudget: class { clone() { return this; } },
         WasmBlockRequestScheduler: Scheduler, Float64Array, setTimeout, clearTimeout,
@@ -378,6 +379,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         performance: { now: () => 0 },
         resolveSource: async spec => spec,
         sumRangeStats: () => null,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: {
             createOffscreen: async (canvas) => {

@@ -234,6 +234,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         resolveSource,
         AbortController,
         sumRangeStats: () => null,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
         Worker: FakeBuildWorker,
@@ -486,6 +487,45 @@ test("a cancelled ticket aborts its range reads; the abort is a cancellation, no
     await new Promise(setImmediate);
     assert.equal(signal.aborted, true);
     assert.deepEqual(worker.messages.filter((message) => message.type === "error"), []);
+});
+
+test("a superseded open that resolves late does not replace the current dataset's range sources", async () => {
+    const tags = [];
+    class TaggedReader {
+        static async open() { return new TaggedReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                setSource: (view) => tags.push(view.tag),
+                read: async () => new Promise(() => {}),
+                free() {},
+            };
+        }
+        free() {}
+    }
+    let releaseA;
+    const sources = {
+        A: new Promise((resolve) => { releaseA = () => resolve({ size: 8, withSignal: () => ({ tag: "A" }) }); }),
+        B: Promise.resolve({ size: 8, withSignal: () => ({ tag: "B" }) }),
+    };
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), TaggedReader, {
+        resolveSource: async (spec) => (spec ? sources[spec.id] : spec),
+    });
+    worker.setPendingBlock("7");
+    const opening = worker.send("openFile", { file: { id: "A", url: "a" }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    await worker.send("openFile", { file: { id: "B", url: "b" }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    releaseA();
+    await opening;
+    await new Promise(setImmediate);
+    assert.deepEqual(tags, ["B"]);
 });
 
 test("a genuine read failure is still reported", async () => {

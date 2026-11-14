@@ -6,7 +6,10 @@
 //   node examples/web-host/probe-orbit-load.mjs INPUT.oct OUTPUT.json [--url=URL] [--px=4]
 //        [--max-load-s=120] [--orbit-s=10] [--pixels] [--force-timing] [--browser=chrome|firefox]
 //        [--build-worker | --no-build-worker] [--cells=0|1] [--remote [--rtt-ms=50] [--mbps=100]] [--attrs]
-//        [--pixels=final] [--pss-out=FILE.jsonl]
+//        [--pixels=final] [--pss-out=FILE.jsonl] [--jump-after-ms=N]
+// --jump-after-ms=N: N ms after the load starts (blocks still loading, use --px=1) the camera jumps to the
+// fitted pose seen from 10x farther, so reads in flight become stale. With --remote the client counters
+// (`remoteClient`: requests, bytes, aborted, abortedBytes per worker) sit next to the server's getRequests/bodyBytes.
 // R3 B6 additions: --cells=N adds ?cells=N; --remote serves the dataset directory through the RED-REF
 // server (red-ref-server.mjs, HTTP Range) and opens it with ?url= (sidecar off unless --attrs);
 // --attrs also gives the local sidecar. Records Chrome process-tree PSS (sample-process-memory.py),
@@ -44,6 +47,7 @@ const remote = args.includes("--remote");
 const withAttrs = args.includes("--attrs");
 const pixelsMode = args.includes("--pixels") ? "orbit" : (option("pixels", null) === "final" ? "final" : null);
 const restFirst = args.includes("--rest-first");
+const jumpAfterMs = args.some(arg => arg.startsWith("--jump-after-ms=")) ? Number(option("jump-after-ms", "0")) : null;
 const psssOut = option("pss-out", null); const buildWorker = !args.includes("--no-build-worker");
 const url = (() => {
     const base = new URL(option("url", "http://127.0.0.1:8767/examples/web-host/index.html"));
@@ -437,6 +441,13 @@ try {
     const initialPose = await evalJson("window.__renderBench.apiCall('getCamera')");
     result.sceneInputsAtStart = await evalJson("window.__renderBench.apiCall('sceneInputs')");
     result.firstLodMs = Date.now() - loadStartedMs;
+    if (jumpAfterMs !== null) {
+        await sleep(Math.max(0, jumpAfterMs - (Date.now() - loadStartedMs)));
+        const [position, target] = [initialPose.position, initialPose.target];
+        const far = position.map((value, axis) => target[axis] + (value - target[axis]) * 10);
+        await evalJson(`window.__renderBench.apiCall('setCamera', ${JSON.stringify({ position: far, target })})`);
+        result.jump = { afterMs: Date.now() - loadStartedMs, from: position, to: far, target };
+    }
     // --rest-first: no orbit during loading; the time to "reached" at the fitted pose is measured instead.
     if (!restFirst) phases.push(await orbit("during-load", orbitMs));
     result.vulkanDuringRender = vulkanEvidence();
@@ -513,6 +524,7 @@ try {
         build: metrics.buildWorker?.build ?? null,
         asyncBlocks: metrics.asyncBlocks, wasmLinearMemoryBytes: metrics.wasmLinearMemoryBytes,
     } : null;
+    result.remoteClient = { viewerWorker: metrics.remote ?? null, buildWorker: metrics.buildWorker?.remote ?? null };
     result.counters = await evalJson("window.__renderBench.latestLodCounters()");
     const finalStats = await evalJson("window.__renderBench.apiCall('getStats')");
     result.lodFinal = finalStats?.lod ? {

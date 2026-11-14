@@ -24,7 +24,7 @@ const opened = () => ({
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
 async function runBuildWorker({
-    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null,
+    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null, abortable = null,
 } = {}) {
     const posted = [];
     const grafted = [];
@@ -76,9 +76,14 @@ async function runBuildWorker({
         }
         planLodRead(...args) {
             planCalls.push(args);
+            let view = null;
             return {
                 cancelToken: () => ({ cancel() {} }),
-                read: async () => ({
+                setSource: (primary) => { view = primary; },
+                read: abortable ? () => new Promise((_, reject) => {
+                    abortable.signals.push(view.signal);
+                    view.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+                }) : async () => ({
                     value: { positions: new Float32Array(3), colors: new Uint8Array(3), attributes: ["column"] },
                     release() {}, free() {},
                 }),
@@ -105,7 +110,7 @@ async function runBuildWorker({
         free() {}
     }
     class Scheduler {
-        updateBlocks() { return []; }
+        updateBlocks() { return abortable?.cancel ? ["1"] : []; }
         pendingBlocks() { return asyncBlocks && !inserts.length ? ["7"] : []; }
         inFlightCount() { return 0; }
         takeNextAdmitted() { return { ticket: 1 }; }
@@ -119,8 +124,10 @@ async function runBuildWorker({
             postMessage(message) { posted.push(message); },
         },
         performance: { now: () => Date.now() },
-        resolveSource: async (spec) => spec,
+        resolveSource: async (spec) => (abortable ? { size: 8, withSignal: (signal) => ({ signal }) } : spec),
+        AbortController,
         sumRangeStats: () => null,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 2 }) }),
         WasmSceneBuilder, WasmAsyncFormatReader: Reader, WasmAsyncReadBudget: Budget,
         WasmBlockRequestScheduler: Scheduler,
@@ -276,6 +283,17 @@ const sendView = async (worker, epoch = 1) => {
     await new Promise(resolve => setTimeout(resolve, 20));
 };
 
+test("a ticket the scheduler drops aborts its range reads: a cancellation, not an error", async () => {
+    const abortable = { signals: [], cancel: false };
+    const worker = await runBuildWorker({ asyncBlocks: { cells: false, schema: [] }, abortable });
+    await sendView(worker);
+    assert.equal(abortable.signals[0].aborted, false);
+    abortable.cancel = true;
+    await sendView(worker, 2);
+    assert.equal(abortable.signals[0].aborted, true);
+    assert.deepEqual(worker.posted.filter(message => message.type === "error"), []);
+});
+
 test("with cells the build worker reads intensity and class with the geometry in every colour mode", async () => {
     const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
     await sendView(worker);
@@ -384,6 +402,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         performance: { now: () => now },
         resolveSource: async (spec) => spec,
         sumRangeStats: () => null,
+        isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: { createOffscreen: async () => viewer },
         WasmAsyncReadBudget: class {}, WasmBlockRequestScheduler: class {}, WasmAsyncFormatReader: class {},
