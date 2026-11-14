@@ -467,7 +467,7 @@ function startBenchmark() {
 // `?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file over HTTP Range; the attributes default to
 // the `.octattrs` next to it. The server must answer Range and send CORS headers.
 // `&maxGap=BYTES` merges range reads separated by up to that many bytes (default 0: touching only);
-// `&remoteReads=N` sets the concurrent LOD reads for this remote source (default 4).
+// `&remoteReads=N` sets the concurrent LOD reads for this remote source (default 8).
 let urlOpened = false;
 function openUrlFromQuery() {
     const params = new URLSearchParams(location.search);

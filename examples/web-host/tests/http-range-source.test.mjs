@@ -154,12 +154,12 @@ test("overlapping reads add no gapBytes and the default maxGap never over-reads"
   assert.equal(plain.stats.gapBytes, 0);
 });
 
-test("readConcurrency: local sources keep 4, remote ones take remoteReads", () => {
+test("readConcurrency: local sources keep 4, remote ones default to 8 or take remoteReads", () => {
   assert.equal(readConcurrency(new Blob([content])), 4);
-  assert.equal(readConcurrency({ url: "http://x/a.oct" }), 4);
+  assert.equal(readConcurrency({ url: "http://x/a.oct" }), 8);
   assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 16 }), 16);
-  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 0 }), 4);
-  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: "abc" }), 4);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 0 }), 8);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: "abc" }), 8);
   assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 9999 }), 64);
   assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 8, slice() {} }), 4);
 });

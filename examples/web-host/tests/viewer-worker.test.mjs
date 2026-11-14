@@ -556,7 +556,7 @@ test("a genuine read failure is still reported", async () => {
     assert.ok(worker.messages.some((message) => message.type === "error" && /HTTP 404/.test(message.message)));
 });
 
-test("remote sources take remoteReads concurrent block reads, local ones keep 4", async () => {
+test("remote sources take remoteReads (default 8) concurrent block reads, local ones keep 4", async () => {
     const run = async (file) => {
         const started = [];
         class WideReader {
@@ -587,8 +587,8 @@ test("remote sources take remoteReads concurrent block reads, local ones keep 4"
         return started.length;
     };
     assert.equal(await run({ name: "a.oct", size: 8 }), 4);
-    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8, remoteReads: 8 }), 8);
-    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8 }), 4);
+    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8, remoteReads: 12 }), 12);
+    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8 }), 8);
 });
 
 test("async worker overlaps reads and retries budget-deferred blocks after a result frees quota", async () => {

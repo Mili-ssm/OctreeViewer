@@ -12,7 +12,7 @@
 // (`remoteClient`: requests, bytes, aborted, abortedBytes per worker) sit next to the server's getRequests/bodyBytes.
 // R3 B6 additions: --cells=N adds ?cells=N; --remote serves the dataset directory through the RED-REF
 // server (red-ref-server.mjs, HTTP Range) and opens it with ?url= (sidecar off unless --attrs);
-// --attrs also gives the local sidecar. Records Chrome process-tree PSS (sample-process-memory.py),
+// --attrs also gives the local sidecar. --max-gap=BYTES and --remote-reads=N add ?maxGap= / ?remoteReads= (D2). Records Chrome process-tree PSS (sample-process-memory.py),
 // GTT over idle, GPU frame time (timestamp queries), the T11 "reached" definition on the cells path
 // and per-orbit LOD-stage / uncovered-node series from the worker LOD log (RQ-02).
 // It loads the dataset, orbits the camera for a fixed time while loading and (if the target LOD
@@ -372,6 +372,9 @@ try {
         target.searchParams.set("url", `http://127.0.0.1:${remoteServer.port}/${path.basename(datasetPath)}`);
         target.searchParams.set("px", String(targetPixels));
         if (!withAttrs) target.searchParams.set("attrs", "none");
+        for (const [flag, param] of [["max-gap", "maxGap"], ["remote-reads", "remoteReads"]]) {
+            if (option(flag, null) !== null) target.searchParams.set(param, option(flag, null));
+        }
         navigateUrl = target.href;
         result.remote = { rttMs: Number(option("rtt-ms", "50")), mbps: Number(option("mbps", "100")), attrs: withAttrs, url: navigateUrl };
     }
