@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { HttpRangeError, HttpRangeSource, resolveSource } from "../http-range-source.mjs";
+import { HttpRangeError, HttpRangeSource, readConcurrency, resolveSource } from "../http-range-source.mjs";
 import { parseRange, startServer } from "../red-ref-server.mjs";
 
 const SIZE = 3000;
@@ -125,4 +125,49 @@ test("resolveSource passes Blob-likes through and opens URL descriptors", async 
   assert.equal(await resolveSource(undefined), undefined);
   const source = await resolveSource({ url, tailBytes: 64 });
   assert.equal(source.size, SIZE);
+});
+
+test("maxGap merges reads across a gap and counts the over-read as gapBytes", async () => {
+  const source = await HttpRangeSource.open(url, { tailBytes: 100, maxGap: 300 });
+  server.reset();
+  const [a, b, far] = await Promise.all([
+    bytesOf(source, 100, 200),
+    bytesOf(source, 400, 500), // 200 B gap after `a`: merged
+    bytesOf(source, 1000, 1100), // 500 B gap: separate
+  ]);
+  assert.deepEqual(a, content.slice(100, 200));
+  assert.deepEqual(b, content.slice(400, 500));
+  assert.deepEqual(far, content.slice(1000, 1100));
+  assert.deepEqual(server.log.map((e) => e.range), ["bytes=100-499", "bytes=1000-1099"]);
+  assert.equal(source.stats.gapBytes, 200);
+  source.resetStats();
+  assert.equal(source.stats.gapBytes, 0);
+});
+
+test("overlapping reads add no gapBytes and the default maxGap never over-reads", async () => {
+  const merged = await HttpRangeSource.open(url, { tailBytes: 100, maxGap: 50 });
+  await Promise.all([bytesOf(merged, 100, 200), bytesOf(merged, 150, 300), bytesOf(merged, 320, 330)]);
+  assert.equal(merged.stats.gapBytes, 20);
+  const plain = await HttpRangeSource.open(url, { tailBytes: 100 });
+  await Promise.all([bytesOf(plain, 100, 200), bytesOf(plain, 201, 210)]);
+  assert.equal(plain.stats.requests, 3); // open + two separate reads
+  assert.equal(plain.stats.gapBytes, 0);
+});
+
+test("readConcurrency: local sources keep 4, remote ones take remoteReads", () => {
+  assert.equal(readConcurrency(new Blob([content])), 4);
+  assert.equal(readConcurrency({ url: "http://x/a.oct" }), 4);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 16 }), 16);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 0 }), 4);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: "abc" }), 4);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 9999 }), 64);
+  assert.equal(readConcurrency({ url: "http://x/a.oct", remoteReads: 8, slice() {} }), 4);
+});
+
+test("resolveSource forwards maxGap from the descriptor", async () => {
+  const source = await resolveSource({ url, tailBytes: 64, maxGap: 300 });
+  server.reset();
+  await Promise.all([bytesOf(source, 100, 200), bytesOf(source, 400, 500)]);
+  assert.equal(server.log.length, 1);
+  assert.equal(source.stats.gapBytes, 200);
 });

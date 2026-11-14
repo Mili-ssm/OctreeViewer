@@ -42,9 +42,10 @@ export class HttpRangeSource {
   /**
    * `requests` counts HTTP attempts sent; `bytes` the body bytes received; `retries` the attempts
    * repeated after a retryable failure; `timeouts` the attempts cut by `timeoutMs`; `aborted` the
-   * attempts cancelled through the signal, `abortedBytes` the bytes they had asked for.
+   * attempts cancelled through the signal, `abortedBytes` the bytes they had asked for;
+   * `gapBytes` the bytes of completed merged requests that no read asked for (the over-read of `maxGap`).
    */
-  stats = { requests: 0, bytes: 0, cachedReads: 0, retries: 0, timeouts: 0, aborted: 0, abortedBytes: 0 };
+  stats = { requests: 0, bytes: 0, cachedReads: 0, retries: 0, timeouts: 0, aborted: 0, abortedBytes: 0, gapBytes: 0 };
 
   constructor(url, {
     fetchImpl = globalThis.fetch.bind(globalThis),
@@ -158,10 +159,12 @@ export class HttpRangeSource {
         read.signal.addEventListener("abort", onAbort, { once: true });
         read.release = () => read.signal.removeEventListener("abort", onAbort);
       }
+      const gapBytes = end - start - coveredBytes(group);
       this.#fetchRange(start, end, owner.signal).finally(() => {
         for (const read of group) read.release?.();
       }).then(
         (bytes) => {
+          this.stats.gapBytes += gapBytes;
           for (const read of group) {
             read.resolve(bytes.slice(read.start - start, read.end - start).buffer);
           }
@@ -309,6 +312,17 @@ export class HttpRangeSource {
   }
 }
 
+// Bytes of `group` (sorted by start) covered by at least one read.
+const coveredBytes = (group) => {
+  let covered = 0;
+  let reach = group[0].start;
+  for (const { start, end } of group) {
+    if (end > reach) covered += end - Math.max(start, reach);
+    reach = Math.max(reach, end);
+  }
+  return covered;
+};
+
 /** True for the rejection of an aborted read or request: a cancellation, not a failure. */
 export const isAbortError = (error) => error?.name === "AbortError";
 
@@ -329,6 +343,20 @@ const parseRetryAfter = (header) => {
 export async function resolveSource(spec, options = {}) {
   if (typeof spec?.url !== "string" || typeof spec.slice === "function") return spec;
   return HttpRangeSource.open(spec.url, { ...options, ...spec });
+}
+
+export const DEFAULT_LOCAL_READS = 4;
+export const DEFAULT_REMOTE_READS = 4;
+const MAX_READS = 64;
+
+/**
+ * Concurrent LOD reads for a source spec: a remote `{ url, remoteReads? }` takes `remoteReads`
+ * (default `DEFAULT_REMOTE_READS`, clamped to 1..64); anything else (a local `Blob`) keeps `DEFAULT_LOCAL_READS`.
+ */
+export function readConcurrency(spec) {
+  if (typeof spec?.url !== "string" || typeof spec.slice === "function") return DEFAULT_LOCAL_READS;
+  const wanted = Math.trunc(Number(spec.remoteReads));
+  return Number.isFinite(wanted) && wanted >= 1 ? Math.min(wanted, MAX_READS) : DEFAULT_REMOTE_READS;
 }
 
 /** Sums the `stats` of the range sources among `sources` (Blobs are skipped); null when there is none. */

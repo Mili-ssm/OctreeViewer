@@ -1,3 +1,4 @@
+import { readConcurrency } from "../http-range-source.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -122,6 +123,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
         performance: { now: () => Date.now() },
         resolveSource: async spec => spec,
         sumRangeStats: () => null,
+        readConcurrency,
         isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmSceneBuilder, WasmAsyncFormatReader: Reader, WasmAsyncReadBudget: class { clone() { return this; } },
@@ -379,6 +381,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         performance: { now: () => 0 },
         resolveSource: async spec => spec,
         sumRangeStats: () => null,
+        readConcurrency,
         isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: {

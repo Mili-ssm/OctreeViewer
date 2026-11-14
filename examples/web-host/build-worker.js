@@ -1,5 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmSceneBuilder } from "../../pkg/viewer_wasm.js";
-import { isAbortError, resolveSource, sumRangeStats } from "./http-range-source.mjs";
+import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./http-range-source.mjs";
 
 // Build worker (render plan R2): owns the dataset hierarchy, the block reader and scheduler, the
 // decoded block cache, the LOD planner and the voxel builder (`WasmSceneBuilder`, no GPU). The
@@ -31,7 +31,8 @@ import { isAbortError, resolveSource, sumRangeStats } from "./http-range-source.
 //                  A throw in one apply does not skip the rest of the batch: every item is applied, then
 //                  one `error{operation:"build:cellInbox"}` goes to the render side.
 
-const MAX_ASYNC_LOD_READS = 4;
+// Per dataset: remote sources may take more reads in flight than local ones (`readConcurrency`).
+let maxAsyncLodReads = 4;
 let wasmExports = null;
 let generation = 0;
 let builder = null;
@@ -250,7 +251,7 @@ function schedulePageReads(anchors) {
     const taskReader = reader;
     const taskGeneration = generation;
     for (const anchor of anchors) {
-        if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
+        if (pageReads.size >= maxAsyncLodReads) break;
         if (pageReads.has(anchor) || failedPageAnchors.has(anchor)) continue;
         if (pageReads.size === 0) pageTotals.waves += 1;
         pageTotals.reads += 1;
@@ -300,7 +301,7 @@ function fillAsyncReads() {
     const taskGeneration = generation;
     const ticketScheduler = scheduler;
     for (const blockId of ticketScheduler.pendingBlocks()) {
-        if (ticketScheduler.inFlightCount() >= MAX_ASYNC_LOD_READS) break;
+        if (ticketScheduler.inFlightCount() >= maxAsyncLodReads) break;
         if (asyncReadTasks.has(String(blockId))) continue;
 
         const colorMode = currentColorMode;
@@ -431,7 +432,8 @@ async function openDataset(data) {
     asyncAttributeIndices = new Map();
     const requestGeneration = generation;
     const [maxVoxels, maxEstimatedBytes] = data.limits;
-    const nextScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
+    maxAsyncLodReads = readConcurrency(data.file);
+    const nextScheduler = new WasmBlockRequestScheduler(maxAsyncLodReads);
     scheduler = nextScheduler;
     // One budget per worker, shared by successive readers; a different cacheBytes replaces it.
     if (readBudget === null || readBudget.limitBytes() !== String(data.cacheBytes)) {

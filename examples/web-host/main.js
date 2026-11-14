@@ -466,6 +466,8 @@ function startBenchmark() {
 
 // `?url=FILE.oct[&attrs=FILE.octattrs|none][&px=4]` opens a file over HTTP Range; the attributes default to
 // the `.octattrs` next to it. The server must answer Range and send CORS headers.
+// `&maxGap=BYTES` merges range reads separated by up to that many bytes (default 0: touching only);
+// `&remoteReads=N` sets the concurrent LOD reads for this remote source (default 4).
 let urlOpened = false;
 function openUrlFromQuery() {
     const params = new URLSearchParams(location.search);
@@ -476,8 +478,13 @@ function openUrlFromQuery() {
     const absolute = (value) => new URL(value, location.href).href;
     const url = absolute(target);
     const attrs = params.get("attrs");
-    const attributes = attrs === "none" ? undefined : { url: attrs ? absolute(attrs) : `${url}attrs` };
-    openProjectFile({ url }, decodeURIComponent(new URL(url).pathname.split("/").pop()), attributes);
+    const readOptions = {};
+    for (const name of ["maxGap", "remoteReads"]) {
+        const value = Number(params.get(name));
+        if (params.get(name) !== null && Number.isFinite(value) && value >= 0) readOptions[name] = Math.trunc(value);
+    }
+    const attributes = attrs === "none" ? undefined : { url: attrs ? absolute(attrs) : `${url}attrs`, ...readOptions };
+    openProjectFile({ url, ...readOptions }, decodeURIComponent(new URL(url).pathname.split("/").pop()), attributes);
 }
 
 function handleWorkerMessage(event) {

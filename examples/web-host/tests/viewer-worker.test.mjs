@@ -1,3 +1,4 @@
+import { readConcurrency } from "../http-range-source.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -234,6 +235,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         resolveSource,
         AbortController,
         sumRangeStats: () => null,
+        readConcurrency,
         isAbortError: (error) => error?.name === "AbortError",
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
@@ -552,6 +554,41 @@ test("a genuine read failure is still reported", async () => {
     worker.setPendingBlock("7");
     await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
     assert.ok(worker.messages.some((message) => message.type === "error" && /HTTP 404/.test(message.message)));
+});
+
+test("remote sources take remoteReads concurrent block reads, local ones keep 4", async () => {
+    const run = async (file) => {
+        const started = [];
+        class WideReader {
+            static async open() { return new WideReader(); }
+            lodDatasetDescriptor() {
+                return {
+                    coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                    dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                    nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                    hasAttributes: false, attributeSchema: [],
+                };
+            }
+            planLodRead(blockId) {
+                return {
+                    cancelToken: () => ({ cancel() {} }),
+                    read: async () => {
+                        started.push(String(blockId));
+                        await new Promise(() => {});
+                    },
+                    free() {},
+                };
+            }
+            free() {}
+        }
+        const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), WideReader);
+        worker.setPendingBlocks(Array.from({ length: 20 }, (_, index) => String(index)));
+        await worker.send("openFile", { file, cacheBytes: 1024, targetVoxelPixels: 4 });
+        return started.length;
+    };
+    assert.equal(await run({ name: "a.oct", size: 8 }), 4);
+    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8, remoteReads: 8 }), 8);
+    assert.equal(await run({ url: "http://host/a.oct", name: "a.oct", size: 8 }), 4);
 });
 
 test("async worker overlaps reads and retries budget-deferred blocks after a result frees quota", async () => {

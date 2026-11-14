@@ -1,5 +1,5 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
-import { isAbortError, resolveSource, sumRangeStats } from "./http-range-source.mjs";
+import { isAbortError, readConcurrency, resolveSource, sumRangeStats } from "./http-range-source.mjs";
 import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";
 
 let viewer = null;
@@ -16,7 +16,8 @@ let currentMetadata = null;
 let sceneGeneration = 0;
 let datasetGeneration = 0;
 let asyncFormatReader = null;
-const MAX_ASYNC_LOD_READS = 4;
+// Per dataset: remote sources may take more reads in flight than local ones (`readConcurrency`).
+let maxAsyncLodReads = 4;
 const asyncReadTasks = new Map();
 const failedAsyncBlocks = new Set();
 let asyncLodScheduler = null;
@@ -631,7 +632,7 @@ function schedulePageReads(retryFailed = false) {
     const reader = asyncFormatReader;
     const generation = datasetGeneration;
     for (const anchor of viewer.pendingPageAnchors()) {
-        if (pageReads.size >= MAX_ASYNC_LOD_READS) break;
+        if (pageReads.size >= maxAsyncLodReads) break;
         if (pageReads.has(anchor) || failedPageAnchors.has(anchor)) continue;
         pageReads.add(anchor);
         void reader.loadPage(anchor).then((page) => {
@@ -684,7 +685,7 @@ function scheduleAsyncLodRead(retryFailed = false) {
     const generation = datasetGeneration;
     const ticketScheduler = asyncLodScheduler;
     for (const blockId of ticketScheduler.pendingBlocks()) {
-        if (ticketScheduler.inFlightCount() >= MAX_ASYNC_LOD_READS) break;
+        if (ticketScheduler.inFlightCount() >= maxAsyncLodReads) break;
         if (asyncReadTasks.has(String(blockId))) continue;
 
         const colorMode = currentColorMode;
@@ -1123,7 +1124,8 @@ function startAsyncDataset(data, requestId = null) {
     cancelAllAsyncReads();
     datasetGeneration += 1;
     const generation = datasetGeneration;
-    asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
+    maxAsyncLodReads = readConcurrency(data.file);
+    asyncLodScheduler = new WasmBlockRequestScheduler(maxAsyncLodReads);
     targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
     restartPxController(datasetOpenedAt);
@@ -1329,7 +1331,7 @@ async function recreateViewer(pose) {
         viewer.fitScene();
         if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
         cancelAllAsyncReads();
-        asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
+        asyncLodScheduler = new WasmBlockRequestScheduler(maxAsyncLodReads);
         const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
         self.postMessage({ type: "lod", lod });
         scheduleAsyncLodRead(true);
