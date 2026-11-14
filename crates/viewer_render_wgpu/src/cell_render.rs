@@ -129,20 +129,44 @@ pub(crate) fn pool_pages_for_limits(limits: &wgpu::Limits) -> Option<u32> {
     (pages >= MIN_POOL_PAGES).then_some(pages)
 }
 
-/// The pool the device runs, in pages: its limits (see [`pool_pages_for_limits`]) plus compute,
-/// indirect execution, storage buffers in the vertex stage, `r32float` storage textures and a
-/// sampleable depth texture (the Hi-Z of Task 7b2). `None`: the CPU path.
+/// Default budget of the pool's own resources (instances, page table, masks, page list, visible
+/// indices, visibility bits): 660 MiB, above the 646 MiB the largest pool needs (ADR 0040). It is
+/// separate from `GpuBudget`, which drives the CPU path.
+pub const DEFAULT_CELL_POOL_BUDGET_BYTES: u64 = 660 << 20;
+
+/// Pages of the pool for `limits` and a `budget_bytes` for its resources: the largest the limits
+/// admit ([`pool_pages_for_limits`]) whose [`pool_resource_bytes`] fit the budget; `None` when
+/// that is below [`MIN_POOL_PAGES`].
+pub(crate) fn pool_pages_within_budget(limits: &wgpu::Limits, budget_bytes: u64) -> Option<u32> {
+    let (mut low, mut high) = (0, pool_pages_for_limits(limits)?);
+    // `pool_resource_bytes` grows with the pages: the largest that fits.
+    while low < high {
+        let mid = low + (high - low).div_ceil(2);
+        if pool_resource_bytes(mid) <= budget_bytes {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    (low >= MIN_POOL_PAGES).then_some(low)
+}
+
+/// The pool the device runs, in pages: its limits and `budget_bytes` (see
+/// [`pool_pages_within_budget`]) plus compute, indirect execution, storage buffers in the vertex
+/// stage, `r32float` storage textures and a sampleable depth texture (the Hi-Z of Task 7b2).
+/// `None`: the CPU path.
 pub(crate) fn cell_pool_pages(
     adapter: &wgpu::Adapter,
     device_limits: &wgpu::Limits,
+    budget_bytes: u64,
 ) -> Option<u32> {
-    let pages = pool_pages_for_limits(device_limits)?;
+    let pages = pool_pages_within_budget(device_limits, budget_bytes)?;
     cells_supported_for(adapter, device_limits, u64::from(pages) * PAGE_BYTES).then_some(pages)
 }
 
-/// Whether the device can run the cells path (`cell_pool_pages` found a pool).
+/// Whether the device can run the cells path with the default pool budget.
 pub(crate) fn cells_supported(adapter: &wgpu::Adapter, device_limits: &wgpu::Limits) -> bool {
-    cell_pool_pages(adapter, device_limits).is_some()
+    cell_pool_pages(adapter, device_limits, DEFAULT_CELL_POOL_BUDGET_BYTES).is_some()
 }
 
 /// [`cells_supported`] for a pool of `pool_bytes`; tests use small pools on adapters whose own

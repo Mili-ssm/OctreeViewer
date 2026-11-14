@@ -91,8 +91,8 @@ pub const DEFAULT_POOL_PAGES: u32 = 65_536;
 pub const DEFAULT_UPLOAD_BUDGET_BYTES: u64 = 16 << 20;
 
 /// The fit starts coarsening above this share of the usable capacity and relaxes below `LOW`.
-const HIGH_PERCENT: u64 = 90;
-const LOW_PERCENT: u64 = 80;
+pub const HIGH_PERCENT: u64 = 90;
+pub const LOW_PERCENT: u64 = 80;
 /// Unused levels are evicted while the allocated pages exceed this share of the usable capacity.
 const SOFT_PERCENT: u64 = 80;
 /// Frames between the last draw of a level and the reuse of its pages.
@@ -109,6 +109,12 @@ const ROTATION_SHARE: f64 = 0.05;
 /// of the cut per frame at most (at least 8), the closest to the limit first.
 const EARLY_SHARE: f64 = 0.5;
 const EARLY_FRACTION: usize = 8;
+
+/// Pages of a pool of `capacity_pages` the fit may use; above them even the coarsest levels
+/// overflow. The build side's fit to the pool (ADR 0040) uses the same measure.
+pub fn usable_pages(capacity_pages: u32) -> u64 {
+    u64::from(capacity_pages - capacity_pages / 8)
+}
 
 /// Identity of a resident level (R3 global constraints).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -999,7 +1005,7 @@ impl CellPool {
     }
 
     fn usable(&self) -> u64 {
-        u64::from(self.config.capacity_pages - self.config.capacity_pages / 8)
+        usable_pages(self.config.capacity_pages)
     }
 
     fn pages_of(&self, key: LevelKey, node: &PoolNode, grid: &CellGrid) -> usize {

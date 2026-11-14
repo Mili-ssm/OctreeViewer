@@ -41,7 +41,7 @@ use viewer_render_wgpu::{
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const POOL_PAGES: u32 = 32_768;
+const POOL_PAGES: u32 = viewer_render_wgpu::DEFAULT_POOL_PAGES;
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const ROUNDS: usize = 3;
 const FRAMES_PER_ROUND: usize = 30;

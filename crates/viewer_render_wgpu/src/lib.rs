@@ -56,8 +56,8 @@ pub use cell_pages::{
 };
 pub use cell_pool::{
     ActiveLevel, CellPool, CellPoolEvent, CutApply, DEFAULT_POOL_PAGES,
-    DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, LevelKey, MaskUpdate, POOL_PAGE_BYTES, PageUpload,
-    PoolConfig, PoolCounters, PoolNode,
+    DEFAULT_UPLOAD_BUDGET_BYTES, FramePlan, HIGH_PERCENT, LOW_PERCENT, LevelKey, MaskUpdate,
+    POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, usable_pages,
 };
 pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
@@ -83,6 +83,9 @@ pub struct RendererConfig {
     pub voxel_build_limits: VoxelBuildLimits,
     /// Device limits for the cell pool; `DownlevelOnly` is for tests of the CPU-only fallback.
     pub cell_limits: CellLimitMode,
+    /// Budget of the cell pool's own resources, which also bounds its size (ADR 0040); the pool is
+    /// the largest that fits it and the device limits, else the CPU path draws.
+    pub cell_pool_budget_bytes: u64,
 }
 
 impl Default for RendererConfig {
@@ -97,6 +100,7 @@ impl Default for RendererConfig {
             gpu_budget: GpuBudget::default(),
             voxel_build_limits: VoxelBuildLimits::default(),
             cell_limits: CellLimitMode::default(),
+            cell_pool_budget_bytes: cell_render::DEFAULT_CELL_POOL_BUDGET_BYTES,
         }
     }
 }

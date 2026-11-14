@@ -86,7 +86,7 @@ const settledNow = (lod, poseApplied = true) => poseApplied
 const reachedNow = (lod, poseApplied = true) => settledNow(lod, poseApplied)
     && lod.poolNodesWithoutLevel === 0 && lod.poolCoarsened === 0 && lod.cpuCoarsened === 0 && lod.gpuCoarsened === 0 && lod.poolStages === 0;
 const statsOf = lod => Object.fromEntries(["cutApply", "cutDigestAtRest", "cellsBusy", "viewEpoch", "cutEpochSent", "cutEpochApplied",
-    "poolStages", "poolNodesWithoutLevel", "poolCoarsened", "cpuCoarsened", "gpuCoarsened", "poolCapacityPages", "poolOverflow", "poolDescendantTooFine", "poolResidentPages",
+    "poolStages", "poolNodesWithoutLevel", "poolCoarsened", "cpuCoarsened", "gpuCoarsened", "gpuPoolPages", "poolCapacityPages", "poolOverflow", "poolDescendantTooFine", "poolResidentPages",
     "cellsForgottenTotal", "cellCpuBytes", "wasmLinearMemoryBytes", "cellPath"].map(key => [key, lod?.[key] ?? null]));
 
 // The whole LOD object for diagnosis, with arrays reduced to their length.
@@ -186,6 +186,10 @@ try {
             await sleep(SAMPLE_MS);
         }
         if (streak) streaks.push(streak);
+        // The build side must know the pool it fits the cut to (ADR 0040), and the render side must run one.
+        if (last?.cellPath === "enabled" && (!(last.gpuPoolPages > 0) || !(last.poolCapacityPages > 0))) {
+            throw new Error(`pose ${entry.label}: cells enabled without a pool size (gpuPoolPages ${last.gpuPoolPages}, poolCapacityPages ${last.poolCapacityPages})`);
+        }
         const reachedAt = Date.now();
         entry.reached = reached;
         entry.settled = false;

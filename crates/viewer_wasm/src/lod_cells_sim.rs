@@ -1310,3 +1310,22 @@ fn a_pool_that_holds_the_cut_reaches_full_detail_without_gpu_coarsening() {
     let mut open = synthetic_harness(1 << 20, 2.0);
     assert_eq!(open.settle(&view, 3, 1_200).digest, last.digest);
 }
+
+#[test]
+fn a_node_too_big_for_a_budget_is_built_once_until_the_selection_changes() {
+    let view = synth_dolly().remove(8);
+    // Far below the size of any node: the first one built is taken back, and without its size in
+    // the retained block the block would lift (nothing else needs bytes) and build it again.
+    let mut h = budgeted_harness(1_000);
+    // The ladder's rungs change the selection, each one tries the node once.
+    for _ in 0..20 {
+        h.frame(&view);
+    }
+    let tried = h.dataset.cells.diag.rejected_builds;
+    assert!(tried >= 1);
+    for _ in 0..50 {
+        h.dirty = true;
+        assert_eq!(h.frame(&view).built, 0);
+    }
+    assert_eq!(h.dataset.cells.diag.rejected_builds, tried);
+}

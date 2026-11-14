@@ -262,7 +262,7 @@ test("another colour mode sends scenes again and RGB brings the cells back", asy
 // ---- Render worker -------------------------------------------------------------------------
 
 async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" }, cells = true,
-    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false } = {}) {
+    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false, poolPages = 65536 } = {}) {
     const messages = [];
     const workers = [];
     const log = [];
@@ -296,7 +296,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         gpuStats: () => ({}), stats: () => ({}),
         enableCells(on) { log.push(["enableCells", on]); },
         setCellNodeBytesPerFrame(bytes) { log.push(["setCellNodeBytesPerFrame", bytes]); },
-        cellPoolPages() { return 65536; },
+        cellPoolPages() { return poolPages; },
         beginRemoteCells(origin, rootMin, rootSide) {
             log.push(["beginRemoteCells", rootSide]);
             cellsOn = cellPath === "enabled";
@@ -408,6 +408,20 @@ test("cells=1 reaches both workers and the render worker starts its driver from 
     const off = await runRenderWorker({ cells: false });
     assert.equal(off.calls("enableCells").length, 0);
     assert.equal(off.workers[0].posted[0].cells, false);
+});
+
+test("every open sends the build worker the render side's pool pages, also on a respawned worker", async () => {
+    const render = await runRenderWorker({ poolPages: 49152 });
+    const first = await render.openCells();
+    assert.equal(first.posted.find(item => item.type === "open").cellPoolPages, 49152);
+    // A second open replaces the used worker with a fresh one that is told again.
+    const second = await render.openCells();
+    assert.notEqual(second, first);
+    assert.equal(second.posted.find(item => item.type === "open").cellPoolPages, 49152);
+    // Cells off: nothing to size.
+    const off = await runRenderWorker({ cells: false });
+    await off.open();
+    assert.equal(off.workers.at(-1).posted.find(item => item.type === "open").cellPoolPages, 0);
 });
 
 test("cells without a build worker stay off: CPU path, `cellPath` reports needsBuildWorker (R3-Q24)", async () => {

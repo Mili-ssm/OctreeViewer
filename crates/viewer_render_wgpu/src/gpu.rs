@@ -332,6 +332,7 @@ pub struct SurfaceRenderer<'window> {
     cpu_limits: wgpu::Limits,
     /// Pages of the pool this device runs (ADR 0040); `None`: the CPU path only.
     cell_pool_pages: Option<u32>,
+    cell_pool_budget_bytes: u64,
     cell_pool: Option<CellRenderer>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -397,7 +398,8 @@ impl<'window> SurfaceRenderer<'window> {
             .await
             .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
 
-        let cell_pool_pages = cell_pool_pages(&adapter, &device.limits());
+        let cell_pool_pages =
+            cell_pool_pages(&adapter, &device.limits(), config.cell_pool_budget_bytes);
         let device_limits = limits.cpu_limits;
         let [width, height] =
             bounded_framebuffer_size(width, height, device_limits.max_texture_dimension_2d);
@@ -472,6 +474,7 @@ impl<'window> SurfaceRenderer<'window> {
             hzb_count_receiver: None,
             cpu_limits: device_limits,
             cell_pool_pages,
+            cell_pool_budget_bytes: config.cell_pool_budget_bytes,
             cell_pool: None,
             vertex_buffer,
             index_buffer,
@@ -742,13 +745,10 @@ impl<'window> SurfaceRenderer<'window> {
             return Err(GpuRendererError::CellPool(CellPoolError::Unsupported));
         };
         if self.cell_pool.is_none() {
-            // The pool and the CPU scene are exclusive and ADR 0040 sizes the pool, so the
-            // budget only bounds it when a caller raises it above the pool.
+            // The pages were chosen to fit this budget; the check guards the invariant.
             check_pool_creation_budget(
                 pool_resource_bytes(pool_pages),
-                self.gpu_budget
-                    .max_bytes
-                    .max(pool_resource_bytes(pool_pages)),
+                self.cell_pool_budget_bytes,
             )?;
         }
         let device = &self.device;

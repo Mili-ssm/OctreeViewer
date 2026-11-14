@@ -183,6 +183,7 @@ pub(super) fn add_plan_stats(value: &JsValue, plan: &CellPlanStats) -> Result<()
         ("uncoveredNodes", plan.uncovered_nodes as f64),
         ("cpuCoarsened", plan.cpu_coarsened as f64),
         ("gpuCoarsened", plan.gpu_coarsened as f64),
+        ("gpuPoolPages", f64::from(plan.gpu_pool_pages)),
         ("forgottenSelected", plan.diag.forgotten_selected as f64),
         ("forgottenWaiter", plan.diag.forgotten_waiter as f64),
         ("forgottenAncestor", plan.diag.forgotten_ancestor as f64),

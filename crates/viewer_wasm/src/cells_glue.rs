@@ -812,6 +812,7 @@ impl InProcessCells {
                 uncovered_nodes: stats.uncovered_nodes,
                 cpu_coarsened: stats.cpu_coarsened,
                 gpu_coarsened: stats.gpu_coarsened,
+                gpu_pool_pages: stats.gpu_pool_pages,
                 diag: stats.diag,
             };
             let Some(reader) = reader

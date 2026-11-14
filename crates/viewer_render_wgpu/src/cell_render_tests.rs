@@ -12,8 +12,9 @@ use wgpu::util::DeviceExt;
 
 use crate::cell_pages::{CellInstance, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table};
 use crate::cell_render::{
-    CellFrame, CellLimitMode, CellRenderer, DeviceLimits, MASK_WORDS, MIN_POOL_PAGES, PAGE_BYTES,
-    POOL_BYTES, cells_supported, cells_supported_for, plan_device_limits, pool_pages_for_limits,
+    CellFrame, CellLimitMode, CellRenderer, DEFAULT_CELL_POOL_BUDGET_BYTES, DeviceLimits,
+    MASK_WORDS, MIN_POOL_PAGES, PAGE_BYTES, POOL_BYTES, cells_supported, cells_supported_for,
+    plan_device_limits, pool_pages_for_limits, pool_pages_within_budget, pool_resource_bytes,
     shader_sources,
 };
 use crate::gpu::{CUBE_INDICES, ViewProjection, create_pipeline_resources};
@@ -1026,6 +1027,29 @@ fn limits_with(binding: u64, buffer: u64, workgroups: u32) -> wgpu::Limits {
         max_compute_workgroups_per_dimension: workgroups,
         ..wgpu::Limits::downlevel_defaults()
     }
+}
+
+#[test]
+fn pool_size_follows_the_pool_budget_as_well_as_the_limits() {
+    let mib = 1u64 << 20;
+    let roomy = limits_with(2048 * mib, 2048 * mib, 65_535);
+    // The default budget holds the largest pool the limits allow.
+    assert!(pool_resource_bytes(65_535) <= DEFAULT_CELL_POOL_BUDGET_BYTES);
+    assert_eq!(
+        pool_pages_within_budget(&roomy, DEFAULT_CELL_POOL_BUDGET_BYTES),
+        Some(65_535)
+    );
+    // A smaller budget gives the largest pool that fits it, not more.
+    let budget = 400 * mib;
+    let pages = pool_pages_within_budget(&roomy, budget).unwrap();
+    assert!(pool_resource_bytes(pages) <= budget && pool_resource_bytes(pages + 1) > budget);
+    // The floor's resources are the least: below them the CPU path draws.
+    let floor = pool_resource_bytes(MIN_POOL_PAGES);
+    assert_eq!(
+        pool_pages_within_budget(&roomy, floor),
+        Some(MIN_POOL_PAGES)
+    );
+    assert_eq!(pool_pages_within_budget(&roomy, floor - 1), None);
 }
 
 #[test]
