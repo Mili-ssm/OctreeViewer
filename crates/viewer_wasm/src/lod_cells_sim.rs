@@ -967,6 +967,7 @@ fn the_nodes_a_budget_keeps_from_being_built_are_the_farthest_ones() {
     let config = CellUpdateConfig {
         max_node_builds: 1,
         cpu_budget_bytes: Some(budget),
+        ..CellUpdateConfig::default()
     };
     // Every block is decoded already, so readiness does not reorder the builds: they follow the
     // candidates' distance. Straight at the target rung, no ladder and no driver: every selected
@@ -1056,6 +1057,7 @@ fn plan_rounds(h: &mut Harness, view: &ViewProjection, budget: u64, rounds: usiz
     let config = CellUpdateConfig {
         max_node_builds: 4,
         cpu_budget_bytes: Some(budget),
+        ..CellUpdateConfig::default()
     };
     let mut last = None;
     for _ in 0..rounds {
@@ -1099,6 +1101,7 @@ fn in_progress_children_case(rest_percent: u64) {
     let frozen = |budget| CellUpdateConfig {
         max_node_builds: 0,
         cpu_budget_bytes: Some(budget),
+        ..CellUpdateConfig::default()
     };
     let update = h
         .dataset

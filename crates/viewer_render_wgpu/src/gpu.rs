@@ -15,8 +15,8 @@ use crate::{
     cell_pages::{PackedLevel, PageEntry, PageFrame},
     cell_pick::{PoolPick, prepare_pool_pick},
     cell_render::{
-        CellFrame, CellRenderer, MASK_WORDS, POOL_PAGES, PageFrameStamp, cells_supported,
-        plan_device_limits, pool_resource_bytes,
+        CellFrame, CellRenderer, MASK_WORDS, PageFrameStamp, cell_pool_pages, plan_device_limits,
+        pool_resource_bytes,
     },
     instance_buffer_layout,
 };
@@ -330,7 +330,8 @@ pub struct SurfaceRenderer<'window> {
     /// Limits of the CPU path: `downlevel_defaults` with the adapter's resolution. Every CPU size
     /// and HZB decision uses these, not the (possibly raised) limits of the device.
     cpu_limits: wgpu::Limits,
-    cells_supported: bool,
+    /// Pages of the pool this device runs (ADR 0040); `None`: the CPU path only.
+    cell_pool_pages: Option<u32>,
     cell_pool: Option<CellRenderer>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -396,7 +397,7 @@ impl<'window> SurfaceRenderer<'window> {
             .await
             .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
 
-        let cells_supported = cells_supported(&adapter, &device.limits());
+        let cell_pool_pages = cell_pool_pages(&adapter, &device.limits());
         let device_limits = limits.cpu_limits;
         let [width, height] =
             bounded_framebuffer_size(width, height, device_limits.max_texture_dimension_2d);
@@ -470,7 +471,7 @@ impl<'window> SurfaceRenderer<'window> {
             hzb_count_readback,
             hzb_count_receiver: None,
             cpu_limits: device_limits,
-            cells_supported,
+            cell_pool_pages,
             cell_pool: None,
             vertex_buffer,
             index_buffer,
@@ -706,7 +707,14 @@ impl<'window> SurfaceRenderer<'window> {
     /// Whether the device meets the limits and features of the cell pool (R3-Q5). When false, only
     /// the CPU path is available and the cell methods return `CellPoolError::Unsupported`.
     pub fn cells_supported(&self) -> bool {
-        self.cells_supported
+        self.cell_pool_pages.is_some()
+    }
+
+    /// Pages of the cell pool this device runs: 65,536 (512 MiB) or what its limits admit, at
+    /// least 32,768 (ADR 0040). `None` when only the CPU path is available. The driver's
+    /// `PoolConfig::capacity_pages` must be this value.
+    pub fn cell_pool_pages(&self) -> Option<u32> {
+        self.cell_pool_pages
     }
 
     /// Whether the cell pool exists, which is when `render` draws cells instead of the CPU scene.
@@ -730,18 +738,25 @@ impl<'window> SurfaceRenderer<'window> {
         level: &PackedLevel,
         page_slots: &[u32],
     ) -> Result<(), GpuRendererError> {
-        if !self.cells_supported {
+        let Some(pool_pages) = self.cell_pool_pages else {
             return Err(GpuRendererError::CellPool(CellPoolError::Unsupported));
-        }
+        };
         if self.cell_pool.is_none() {
-            check_pool_creation_budget(pool_resource_bytes(POOL_PAGES), self.gpu_budget.max_bytes)?;
+            // The pool and the CPU scene are exclusive and ADR 0040 sizes the pool, so the
+            // budget only bounds it when a caller raises it above the pool.
+            check_pool_creation_budget(
+                pool_resource_bytes(pool_pages),
+                self.gpu_budget
+                    .max_bytes
+                    .max(pool_resource_bytes(pool_pages)),
+            )?;
         }
         let device = &self.device;
         let queue = &self.queue;
         let format = self.surface_config.format;
         let created = upload_creating_pool(
             &mut self.cell_pool,
-            || CellRenderer::new(device, queue, format, POOL_PAGES),
+            || CellRenderer::new(device, queue, format, pool_pages),
             |pool| pool.upload_level(level, page_slots),
         )
         .map_err(GpuRendererError::CellPool)?;

@@ -12,8 +12,9 @@ use wgpu::util::DeviceExt;
 
 use crate::cell_pages::{CellInstance, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table};
 use crate::cell_render::{
-    CellFrame, CellLimitMode, CellRenderer, DeviceLimits, MASK_WORDS, PAGE_BYTES, POOL_BYTES,
-    cells_supported, cells_supported_for, plan_device_limits, shader_sources,
+    CellFrame, CellLimitMode, CellRenderer, DeviceLimits, MASK_WORDS, MIN_POOL_PAGES, PAGE_BYTES,
+    POOL_BYTES, cells_supported, cells_supported_for, plan_device_limits, pool_pages_for_limits,
+    shader_sources,
 };
 use crate::gpu::{CUBE_INDICES, ViewProjection, create_pipeline_resources};
 use crate::{
@@ -1010,7 +1011,66 @@ fn cell_shaders_validate_with_naga() {
 #[test]
 fn pool_constants_follow_the_adr() {
     assert_eq!(PAGE_BYTES, 8192);
-    assert_eq!(POOL_BYTES, 256 << 20);
+    assert_eq!(POOL_BYTES, 512 << 20);
+    assert_eq!(u64::from(MIN_POOL_PAGES) * PAGE_BYTES, 256 << 20);
+    assert_eq!(
+        u64::from(crate::DEFAULT_POOL_PAGES),
+        POOL_BYTES / PAGE_BYTES
+    );
+}
+
+fn limits_with(binding: u64, buffer: u64, workgroups: u32) -> wgpu::Limits {
+    wgpu::Limits {
+        max_storage_buffer_binding_size: binding,
+        max_buffer_size: buffer,
+        max_compute_workgroups_per_dimension: workgroups,
+        ..wgpu::Limits::downlevel_defaults()
+    }
+}
+
+#[test]
+fn pool_size_is_the_largest_the_limits_admit_with_a_floor() {
+    let mib = 1u64 << 20;
+    // 512 MiB admitted (and more): the full pool.
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(2048 * mib, 2048 * mib, 1 << 20)),
+        Some(65_536)
+    );
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(512 * mib, 512 * mib, 65_536)),
+        Some(65_536)
+    );
+    // Only 300 MiB of binding, or of buffer: the pages that fit.
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(300 * mib, 2048 * mib, 65_535)),
+        Some((300 * mib / PAGE_BYTES) as u32)
+    );
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(2048 * mib, 300 * mib, 65_535)),
+        Some((300 * mib / PAGE_BYTES) as u32)
+    );
+    // One workgroup per page: the usual dispatch limit of 65,535 costs one page.
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(2048 * mib, 2048 * mib, 65_535)),
+        Some(65_535)
+    );
+    // The floor is 256 MiB; below it (or a dispatch limit that cannot reach it): CPU path.
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(256 * mib, 256 * mib, 65_535)),
+        Some(MIN_POOL_PAGES)
+    );
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(256 * mib - PAGE_BYTES, 2048 * mib, 65_535)),
+        None
+    );
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(128 * mib, 2048 * mib, 65_535)),
+        None
+    );
+    assert_eq!(
+        pool_pages_for_limits(&limits_with(2048 * mib, 2048 * mib, MIN_POOL_PAGES - 1)),
+        None
+    );
 }
 
 #[test]

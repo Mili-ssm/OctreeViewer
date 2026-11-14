@@ -124,6 +124,7 @@ pub(super) fn add_cells_stats(
         ("queuedNodeBytes", stats.queued_bytes as f64),
         ("cellsForgottenTotal", stats.forgotten_total as f64),
         ("cellCpuBytes", stats.cpu_cell_bytes as f64),
+        ("poolCapacityPages", f64::from(stats.pool_capacity_pages)),
         ("poolStages", f64::from(counters.stages)),
         (
             "poolNodesWithoutLevel",
@@ -148,10 +149,11 @@ pub(super) fn add_cells_stats(
 }
 
 /// The update config of the viewer: the build side fits the cut to the same CPU budget the driver
-/// has (ADR 0037).
-fn wasm_update_config() -> CellUpdateConfig {
+/// has (ADR 0037) and to the pages of the GPU pool the render side runs (ADR 0040).
+fn wasm_update_config(gpu_pool_pages: Option<u32>) -> CellUpdateConfig {
     CellUpdateConfig {
         cpu_budget_bytes: Some(WASM_CPU_BUDGET_BYTES),
+        gpu_pool_pages,
         ..CellUpdateConfig::default()
     }
 }
@@ -304,7 +306,7 @@ impl WasmSceneBuilder {
             .as_ref()
             .is_some_and(|core| core.session().dataset().supports_cells());
         if supported {
-            self.cells = Some(BuilderCells::new(wasm_update_config()));
+            self.cells = Some(BuilderCells::new(wasm_update_config(self.cell_pool_pages)));
             self.cell_path = PATH_ENABLED;
         } else {
             self.cell_path = PATH_UNSUPPORTED;
@@ -366,6 +368,13 @@ impl WasmSceneBuilder {
     #[wasm_bindgen(js_name = enableCells)]
     pub fn enable_cells(&mut self, enabled: bool) {
         self.cells_requested = enabled;
+    }
+
+    /// The pages of the render worker's GPU pool (`cellPoolPages` of the viewer); call before
+    /// opening a dataset. Without it the cut is not fitted to the pool.
+    #[wasm_bindgen(js_name = setCellPoolPages)]
+    pub fn set_cell_pool_pages(&mut self, pages: u32) {
+        self.cell_pool_pages = (pages > 0).then_some(pages);
     }
 
     /// `"off"`, `"enabled"` or `"CellPathUnsupported"` for the open dataset.
@@ -485,11 +494,15 @@ impl WasmVoxelViewer {
             .gpu_renderer
             .as_ref()
             .is_none_or(viewer_render_wgpu::SurfaceRenderer::cells_supported);
+        let pool_pages = self
+            .gpu_renderer
+            .as_ref()
+            .and_then(viewer_render_wgpu::SurfaceRenderer::cell_pool_pages);
         match dataset {
             Some(dataset) if dataset.supports_cells() && device_ok => {
                 self.cells_local = Some(crate::cells_glue::InProcessCells::new(
                     dataset,
-                    wasm_update_config(),
+                    wasm_update_config(pool_pages),
                 ));
                 self.cell_path = PATH_ENABLED;
             }
@@ -540,6 +553,16 @@ impl WasmVoxelViewer {
         self.cells_requested = enabled;
     }
 
+    /// Pages of the GPU cell pool this device runs (65,536 for 512 MiB, fewer when its limits
+    /// admit less, never below 32,768); 0 when only the CPU path is available.
+    #[wasm_bindgen(js_name = cellPoolPages)]
+    pub fn cell_pool_pages(&self) -> u32 {
+        self.gpu_renderer
+            .as_ref()
+            .and_then(viewer_render_wgpu::SurfaceRenderer::cell_pool_pages)
+            .unwrap_or(0)
+    }
+
     /// `"off"`, `"enabled"` or `"CellPathUnsupported"`.
     #[wasm_bindgen(js_name = cellPath)]
     pub fn cell_path(&self) -> String {
@@ -585,7 +608,7 @@ impl WasmVoxelViewer {
         let (mut origin_values, mut root_min_values) = ([0.0; 3], [0.0; 3]);
         origin.copy_to(&mut origin_values);
         root_min.copy_to(&mut root_min_values);
-        let config = driver_config(
+        let mut config = driver_config(
             CellGrid {
                 root_min: root_min_values,
                 root_side,
@@ -593,6 +616,13 @@ impl WasmVoxelViewer {
             origin_values,
             WASM_CPU_BUDGET_BYTES,
         );
+        if let Some(pages) = self
+            .gpu_renderer
+            .as_ref()
+            .and_then(viewer_render_wgpu::SurfaceRenderer::cell_pool_pages)
+        {
+            config.pool.capacity_pages = pages;
+        }
         let mut cells = ViewerCells::new(config, self.cell_node_cap);
         cells.camera_changed(self.view_epoch);
         self.cells_remote = Some(cells);

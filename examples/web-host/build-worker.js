@@ -415,7 +415,10 @@ async function openDataset(data) {
         return;
     }
     const nextBuilder = new WasmSceneBuilder(maxVoxels, maxEstimatedBytes);
-    if (data.cells) nextBuilder.enableCells(true);
+    if (data.cells) {
+        nextBuilder.enableCells(true);
+        if (data.cellPoolPages > 0) nextBuilder.setCellPoolPages(data.cellPoolPages);
+    }
     const descriptor = nextReader.lodDatasetDescriptor(data.cacheBytes);
     const opened = {
         ...(descriptor.paged

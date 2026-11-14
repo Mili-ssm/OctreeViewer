@@ -40,6 +40,9 @@ pub struct CellUpdateConfig {
     /// the cut to it (ADR 0037). `None`: unbounded, as native callers and tests that give the
     /// driver no budget.
     pub cpu_budget_bytes: Option<u64>,
+    /// Pages of the GPU pool the render side runs (`SurfaceRenderer::cell_pool_pages`), when the
+    /// build side knows them. `None`: the driver's default pool and no fit to it.
+    pub gpu_pool_pages: Option<u32>,
 }
 
 impl Default for CellUpdateConfig {
@@ -47,6 +50,7 @@ impl Default for CellUpdateConfig {
         Self {
             max_node_builds: 2,
             cpu_budget_bytes: None,
+            gpu_pool_pages: None,
         }
     }
 }

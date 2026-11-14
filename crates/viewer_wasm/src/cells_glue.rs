@@ -107,6 +107,8 @@ pub(crate) struct CellsStats {
     /// Nodes the driver dropped for the CPU budget since it was created (render side only).
     pub forgotten_total: u64,
     pub cpu_cell_bytes: u64,
+    /// Pages of the GPU pool the cut is fitted to (0 on a build side that was not told).
+    pub pool_capacity_pages: u32,
     pub wasm_linear_memory_bytes: u64,
 }
 
@@ -343,6 +345,7 @@ impl BuilderCells {
             view_epoch: self.view_epoch,
             cut_epoch_sent: dataset.cell_cut_epoch(),
             cut_epoch_applied: dataset.cell_ack_epoch(),
+            pool_capacity_pages: self.config.gpu_pool_pages.unwrap_or(0),
             wasm_linear_memory_bytes: wasm_linear_memory_bytes(),
             ..CellsStats::default()
         }
@@ -650,6 +653,7 @@ impl ViewerCells {
             cut_apply: self.cut_apply,
             forgotten_total: self.forgotten_total,
             cpu_cell_bytes: self.driver.cpu_bytes(),
+            pool_capacity_pages: self.driver.pool_capacity_pages(),
             wasm_linear_memory_bytes: wasm_linear_memory_bytes(),
         }
     }
@@ -689,12 +693,16 @@ pub(crate) struct InProcessUpdate {
 
 impl InProcessCells {
     pub(crate) fn new(dataset: &LodDataset, config: CellUpdateConfig) -> Self {
+        let mut driver = driver_config(
+            dataset.cell_grid(),
+            dataset.coordinate_origin(),
+            WASM_CPU_BUDGET_BYTES,
+        );
+        if let Some(pages) = config.gpu_pool_pages {
+            driver.pool.capacity_pages = pages;
+        }
         Self {
-            driver: CellDriver::new(driver_config(
-                dataset.cell_grid(),
-                dataset.coordinate_origin(),
-                WASM_CPU_BUDGET_BYTES,
-            )),
+            driver: CellDriver::new(driver),
             active: true,
             stage_pixels: None,
             dirty: false,
@@ -888,6 +896,7 @@ impl InProcessCells {
             cut_digest_at_rest: rest,
             counters: self.counters,
             cpu_cell_bytes: self.driver.cpu_bytes(),
+            pool_capacity_pages: self.driver.pool_capacity_pages(),
             wasm_linear_memory_bytes: wasm_linear_memory_bytes(),
             ..CellsStats::default()
         }

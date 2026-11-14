@@ -739,6 +739,8 @@ function startBuiltDataset(data, requestId = null) {
         cacheBytes: data.cacheBytes,
         limits: [Math.min(maxVoxels, 0xFFFFFFFF), Math.min(maxEstimatedBytes, 0xFFFFFFFF)],
         cells: cellsRequested,
+        // The build side fits the cut to the pool this device runs (ADR 0040).
+        cellPoolPages: cellsRequested ? viewer.cellPoolPages() : 0,
     });
 }
 

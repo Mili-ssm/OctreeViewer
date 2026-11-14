@@ -378,6 +378,11 @@ impl CellDriver {
         &self.pool
     }
 
+    /// Pages of the pool this driver fits cuts to (`PoolConfig::capacity_pages`).
+    pub fn pool_capacity_pages(&self) -> u32 {
+        self.config.pool.capacity_pages
+    }
+
     /// Bytes of packed levels kept.
     pub fn cpu_bytes(&self) -> u64 {
         self.cpu_bytes

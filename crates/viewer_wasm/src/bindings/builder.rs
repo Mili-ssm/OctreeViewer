@@ -44,6 +44,8 @@ pub struct WasmSceneBuilder {
     range_read_stats: BrowserReadStats,
     /// The host opted in to the cells path (`enableCells`).
     pub(super) cells_requested: bool,
+    /// Pages of the render worker's GPU pool (`setCellPoolPages`), for the cut fit of ADR 0040.
+    pub(super) cell_pool_pages: Option<u32>,
     pub(super) cells: Option<BuilderCells>,
     /// `"off"`, `"enabled"` or `"CellPathUnsupported"` for the open dataset.
     pub(super) cell_path: &'static str,
@@ -71,6 +73,7 @@ impl WasmSceneBuilder {
             browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
             range_read_stats: BrowserReadStats::default(),
             cells_requested: false,
+            cell_pool_pages: None,
             cells: None,
             cell_path: PATH_OFF,
         })

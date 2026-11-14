@@ -49,10 +49,12 @@ pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
 
 /// Bytes of one page of instances.
 pub const PAGE_BYTES: u64 = (PAGE_SLOTS * 16) as u64;
-/// Pages of the production pool: 256 MiB (ADR 0033).
-pub const POOL_PAGES: u32 = 32_768;
-/// Bytes of the production instance buffer; the device must allow a storage binding this large.
+/// Pages of the largest pool: 512 MiB (ADR 0040).
+pub const POOL_PAGES: u32 = 65_536;
+/// Bytes of the largest instance buffer; the device is asked for a storage binding this large.
 pub const POOL_BYTES: u64 = POOL_PAGES as u64 * PAGE_BYTES;
+/// Pages of the smallest pool the cells path runs with: 256 MiB. Below it the CPU path draws.
+pub const MIN_POOL_PAGES: u32 = 32_768;
 /// Storage buffers per shader stage that the passes need. The compute group binds seven
 /// (instances, pages, masks, page list, visible, draw arguments, visibility bits) and the finalize
 /// pipeline adds the dispatch arguments in its own group: 8, the WebGPU minimum, with no headroom.
@@ -113,11 +115,34 @@ pub(crate) fn plan_device_limits(adapter: &wgpu::Adapter, mode: CellLimitMode) -
     }
 }
 
-/// Whether the device can run the production pool: the raised limits, compute, indirect
-/// execution, storage buffers in the vertex stage, `r32float` storage textures and a sampleable
-/// depth texture (the Hi-Z of Task 7b2).
+/// Pages of the pool the limits admit (ADR 0040): [`POOL_PAGES`] or what a storage binding, a
+/// buffer and a dispatch of one workgroup per page allow, whichever is smaller. `None` below
+/// [`MIN_POOL_PAGES`].
+pub(crate) fn pool_pages_for_limits(limits: &wgpu::Limits) -> Option<u32> {
+    let bytes = limits
+        .max_storage_buffer_binding_size
+        .min(limits.max_buffer_size)
+        .min(POOL_BYTES);
+    let pages = (bytes / PAGE_BYTES)
+        .min(u64::from(limits.max_compute_workgroups_per_dimension))
+        .min(u64::from(POOL_PAGES)) as u32;
+    (pages >= MIN_POOL_PAGES).then_some(pages)
+}
+
+/// The pool the device runs, in pages: its limits (see [`pool_pages_for_limits`]) plus compute,
+/// indirect execution, storage buffers in the vertex stage, `r32float` storage textures and a
+/// sampleable depth texture (the Hi-Z of Task 7b2). `None`: the CPU path.
+pub(crate) fn cell_pool_pages(
+    adapter: &wgpu::Adapter,
+    device_limits: &wgpu::Limits,
+) -> Option<u32> {
+    let pages = pool_pages_for_limits(device_limits)?;
+    cells_supported_for(adapter, device_limits, u64::from(pages) * PAGE_BYTES).then_some(pages)
+}
+
+/// Whether the device can run the cells path (`cell_pool_pages` found a pool).
 pub(crate) fn cells_supported(adapter: &wgpu::Adapter, device_limits: &wgpu::Limits) -> bool {
-    cells_supported_for(adapter, device_limits, POOL_BYTES)
+    cell_pool_pages(adapter, device_limits).is_some()
 }
 
 /// [`cells_supported`] for a pool of `pool_bytes`; tests use small pools on adapters whose own
@@ -148,7 +173,7 @@ pub(crate) fn cells_supported_for(
         && device_limits.max_buffer_size >= pool_bytes
         && device_limits.max_compute_invocations_per_workgroup >= SLOT_PASS_GROUP
         && device_limits.max_compute_workgroup_size_x >= SLOT_PASS_GROUP
-        && device_limits.max_compute_workgroups_per_dimension >= POOL_PAGES
+        && u64::from(device_limits.max_compute_workgroups_per_dimension) >= pool_bytes / PAGE_BYTES
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

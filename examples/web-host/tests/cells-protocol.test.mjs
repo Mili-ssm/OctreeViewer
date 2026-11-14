@@ -33,12 +33,12 @@ const opened = (cellPath = "enabled") => ({
 // The key set of `add_cells_stats` (crates/viewer_wasm/src/bindings/cells.rs), with its value types.
 const REAL_CELL_STATS_KEYS = [
     "cellPath", "cellsBusy", "cellsNeedFrame", "cutDigestAtRest", "viewEpoch", "cutEpochSent", "cutEpochApplied",
-    "queuedNodeCells", "queuedNodeBytes", "cellCpuBytes", "poolStages", "poolNodesWithoutLevel", "poolCoarsened",
+    "queuedNodeCells", "queuedNodeBytes", "cellCpuBytes", "poolCapacityPages", "poolStages", "poolNodesWithoutLevel", "poolCoarsened",
     "poolOverflow", "poolResidentPages", "poolUploadedBytes", "wasmLinearMemoryBytes", "poolDescendantTooFine",
 ];
 const realCellStats = (overrides = {}) => ({
     cellPath: "enabled", cellsBusy: false, cellsNeedFrame: false, cutDigestAtRest: null, viewEpoch: 0,
-    cutEpochSent: 0, cutEpochApplied: 0, queuedNodeCells: 0, queuedNodeBytes: 0, cellCpuBytes: 0, poolStages: 0,
+    cutEpochSent: 0, cutEpochApplied: 0, queuedNodeCells: 0, queuedNodeBytes: 0, cellCpuBytes: 0, poolCapacityPages: 65536, poolStages: 0,
     poolNodesWithoutLevel: 0, poolCoarsened: 0, poolOverflow: 0, poolResidentPages: 0, poolUploadedBytes: 0,
     wasmLinearMemoryBytes: 65536, poolDescendantTooFine: false, ...overrides,
 });
@@ -47,7 +47,7 @@ const NOT_ENABLED = "the cells path is not enabled";
 // ---- Build worker --------------------------------------------------------------------------
 
 async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuffer(4), new ArrayBuffer(6)],
-    refine = 0 } = {}) {
+    refine = 0, cellPoolPages = 0 } = {}) {
     const posted = [];
     const transfers = new Map();
     const calls = [];
@@ -55,6 +55,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
     let receive;
     class WasmSceneBuilder {
         enableCells(on) { calls.push(["enableCells", on]); this.cellsOn = on; }
+        setCellPoolPages(pages) { calls.push(["setCellPoolPages", pages]); }
         openLodDataset() {
             calls.push(["open"]);
             return { status: "metadata_ready", visualScale: 2, ...(this.cellsOn ? { cellPath: "enabled", cellsInfo: cellsInfo() } : { cellPath: "off" }) };
@@ -118,7 +119,7 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
     });
     const send = (type, fields = {}) => receive({ data: { type, ...fields } });
     send("init", {});
-    send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200], cells });
+    send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200], cells, cellPoolPages });
     await settle();
     const view = (fields = {}) => send("view", {
         gen: 1, epoch: 1, viewEpoch: 7, camera: [1], viewport: [64, 64], visualScale: 2, targetPx: 4, ...fields,
@@ -133,6 +134,9 @@ test("build worker enables cells before opening only when asked and reports the 
     const on = await runBuildWorker();
     assert.deepEqual(names(on.calls).slice(0, 2), ["enableCells", "open"]);
     assert.equal(on.posted.find(item => item.type === "opened").opened.cellPath, "enabled");
+    assert.equal(names(on.calls).includes("setCellPoolPages"), false, "no pool size, no call");
+    const sized = await runBuildWorker({ cellPoolPages: 49152 });
+    assert.deepEqual(sized.calls.slice(0, 3), [["enableCells", true], ["setCellPoolPages", 49152], ["open"]]);
     const off = await runBuildWorker({ cells: false });
     assert.equal(names(off.calls).includes("enableCells"), false);
     off.view();
@@ -292,6 +296,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         gpuStats: () => ({}), stats: () => ({}),
         enableCells(on) { log.push(["enableCells", on]); },
         setCellNodeBytesPerFrame(bytes) { log.push(["setCellNodeBytesPerFrame", bytes]); },
+        cellPoolPages() { return 65536; },
         beginRemoteCells(origin, rootMin, rootSide) {
             log.push(["beginRemoteCells", rootSide]);
             cellsOn = cellPath === "enabled";

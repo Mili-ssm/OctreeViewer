@@ -85,8 +85,8 @@ use crate::{
 
 /// Bytes of one pool page.
 pub const POOL_PAGE_BYTES: u64 = (PAGE_SLOTS * 16) as u64;
-/// 256 MiB (ADR 0033).
-pub const DEFAULT_POOL_PAGES: u32 = 32_768;
+/// 512 MiB (ADR 0040).
+pub const DEFAULT_POOL_PAGES: u32 = 65_536;
 /// Default upload budget per frame.
 pub const DEFAULT_UPLOAD_BUDGET_BYTES: u64 = 16 << 20;
 
