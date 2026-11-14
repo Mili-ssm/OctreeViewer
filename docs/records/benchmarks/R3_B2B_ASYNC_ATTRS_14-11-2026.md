@@ -46,5 +46,9 @@ entrada de consola es el 404 sin URL de siempre.
 ## Identidad y reproducción
 
 - Código: rama `explore/b2b-async-attrs`, revisión `6f37e29`, integrada después en `feat/r3-v75`.
+  La revisión añadió `92b05af` y `a933a12`: un modo `attribute:N:M` sobre la columna de intensidad o de
+  clase ya no la lee dos veces y la conserva en el bloque, solo en la ruta de celdas. Con ellas, el
+  probe de Majadas repite los mismos resultados (0 nodos al cambiar entre modos de shader, 13 al
+  recolorear, mismo `cutDigestAtRest`).
   Entorno: el de [T11](data/r3-t11-smoke-13-11-2026/identity.txt).
 - Datos en [data/r3-b2b-async-attrs-14-11-2026](data/r3-b2b-async-attrs-14-11-2026/).
