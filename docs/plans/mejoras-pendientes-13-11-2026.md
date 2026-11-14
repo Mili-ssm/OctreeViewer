@@ -88,11 +88,22 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
   - [x] D3a. Causa de la construcción más rápida con ficheros Morton ([registro](../records/benchmarks/D3A_CELL_SORT_ORDER_14-11-2026.md)):
     el constructor ordenaba con pdqsort; con un radix estable, construir las celdas cuesta un 13–46 %
     menos con cualquier orden de fichero.
-  - [ ] D3b. Escritor híbrido de producción con una regla de elección más barata que codificar dos veces;
-    contrato de `OctreeReader` y pruebas de paridad por conjunto de filas. Comprobación: `check.sh` verde,
+  - [ ] D3b. Escritor híbrido detrás de una opción del escritor, sin identidad propia
+    ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)). Comprobación: `check.sh` verde,
     `.oct` de Belvedere ≤ 530 MB, y tiempo total y RSS de conversión medidos frente a RQ-07.
-  - [ ] D3c. Congelar: revisión final, regeneración de datasets y referencias. Comprobación: `check.sh`
-    verde con la identidad final y referencias R1 regeneradas.
+    - [ ] D3b1. Opción `row_order` (fuente por defecto, híbrido) en el escritor de `viewer_format`. Regla:
+      codificar como hoy; si gana la ocupación compacta, ordenar en Morton, codificar por diferencias y quedarse
+      con lo más pequeño, permutando colores y atributos (+0,5 % sobre el óptimo en Belvedere, estimado con los
+      tamaños por bloque de OQ-09). La opción entra en la configuración del checkpoint. Tests de ida y vuelta
+      por conjunto de filas. Comprobación: tests de `viewer_format` y `viewer_convert_core` verdes.
+    - [ ] D3b2. Textos que prometen el orden de la fuente (`occupied_point_block.rs:33,77`,
+      `quantized_occupancy.rs:99,105`) y el comentario de la prueba que lo fija. Comprobación: `grep` sin
+      promesas de orden de la fuente fuera de las especificaciones de revisiones anteriores.
+    - [ ] D3b3. Medir con Belvedere: tamaño, tiempo total y RSS de conversión (≥ 3 ejecuciones intercaladas por
+      opción) y carga remota en el navegador. Comprobación: registro con las cifras.
+  - [ ] D3c. Congelar tras C4 (RQ-07): identidad final de V7 con el escritor híbrido por defecto (unos 30
+    puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
+    referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
 
 ## Limpieza

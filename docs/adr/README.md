@@ -45,3 +45,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0039](0039-hijos-en-curso-y-bloqueo-retenido.md) | Hijos en curso y bloqueo retenido en el ajuste por presupuesto de CPU (enmienda a 0037) | Aceptada |
 | [0040](0040-pool-de-512-mib-y-corte-ajustado-al-pool.md) | Pool de celdas de 512 MiB y corte de nodos ajustado al pool (enmienda a 0033) | Aceptada |
 | [0041](0041-orden-de-filas-libre-por-bloque.md) | Orden de filas libre por bloque en V7 y escritor híbrido (precisa 0022) | Aceptada |
+| [0042](0042-escritor-hibrido-en-la-identidad-final-de-v7.md) | El escritor híbrido entra en la identidad final de V7, sin revisión `-pre` propia (enmienda a 0005) | Aceptada |
