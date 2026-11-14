@@ -736,11 +736,8 @@ function recreateViewer() {
     latestLodStats = null;
     datasetName = "Synthetic sample";
     cameraDelta = emptyCameraDelta();
-    const replacement = canvas.cloneNode(false);
-    replacement.width = canvas.width;
-    replacement.height = canvas.height;
-    canvas.replaceWith(replacement);
-    canvas = replacement;
+    const replaced = replaceCanvasElement(canvas, { transfer: false });
+    if (replaced) canvas = replaced.canvas;
     canvasTransferred = false;
     viewportSize = null;
     bindCanvasInteractions();

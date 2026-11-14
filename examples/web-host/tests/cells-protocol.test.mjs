@@ -293,6 +293,8 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     let cellStats = realCellStats({ viewEpoch: 10 });
     let cellsOn = false;
     let loss = null;
+    let lossPolls = 0;
+    let samples = 0;
     let creates = 0;
     const canvasesUsed = [];
     let failuresLeft = failCreates;
@@ -301,7 +303,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     const viewer = {
         resize() {}, setColorMode() {},
         setPresentationColorMode(mode) { log.push(["setPresentationColorMode", mode]); },
-        setDepthShading() {}, replacePoints() {},
+        setDepthShading() {},
         fitScene() {}, pan() {}, zoom() {}, moveCamera() {},
         orbit() { viewEpoch += 1; camera = camera.map((value, index) => (index === 4 ? value + 0.1 : value)); },
         voxelBuildLimits: () => [500, 600],
@@ -342,7 +344,8 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             return taken;
         },
         cellStats: () => cellStats,
-        deviceLost: () => loss,
+        deviceLost: () => { lossPolls += 1; return loss; },
+        replacePoints() { samples += 1; },
         cameraPose: () => pose,
         setCameraPose(position, target) { log.push(["setCameraPose", [...position], [...target]]); },
         setGpuFrameTiming() {},
@@ -422,6 +425,8 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         setPending(value) { pendingMessages = value; },
         loseDevice(reason = "unknown", message = "gpu process crashed") { loss = { reason, message }; },
         creates: () => creates,
+        lossPolls: () => lossPolls,
+        samples: () => samples,
         canvasesUsed,
         setCellStats(value) { cellStats = { ...cellStats, ...value }; },
         renders: () => renderFrames,
@@ -1003,4 +1008,63 @@ test("without canvas replacement offered the worker does not wait", async () => 
     await render.frame();
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.deepEqual(render.canvasesUsed, ["old", "old"]);
+});
+
+test("a loss while the dataset is still opening recovers into the opening dataset, never the demo sample", async () => {
+    const render = await runRenderWorker();
+    await render.open(); // the build worker has not answered `opened` yet
+    const samplesBefore = render.samples();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(render.creates(), 2);
+    assert.equal(render.samples(), samplesBefore, "no sample was loaded");
+    // The build worker's answer lands on the new viewer and starts its driver.
+    render.workers.at(-1).emit({ type: "opened", gen: 1, opened: opened("enabled") });
+    await settle();
+    assert.equal(render.calls("beginRemoteCells").length, 1);
+});
+
+test("a canvas that arrives after the timeout triggers one more recreation on it", async () => {
+    const render = await runRenderWorker({ canvasReplacement: true });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 2200));
+    assert.deepEqual(render.canvasesUsed, ["old", "old"]);
+    await render.send("replaceCanvas", { canvas: { id: "late" } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.deepEqual(render.canvasesUsed, ["old", "old", "late"]);
+    await render.send("replaceCanvas", { canvas: { id: "later" } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(render.canvasesUsed.length, 3, "only a late arrival after a timeout recreates");
+});
+
+test("after a destroyed loss nothing polls the device any more", async () => {
+    const render = await runRenderWorker();
+    await render.openCells();
+    render.loseDevice("destroyed", "destroy() was called");
+    await render.frame();
+    const polls = render.lossPolls();
+    await render.frame();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 600));
+    assert.equal(render.lossPolls(), polls);
+});
+
+test("a failed recovery sends the error and no deviceRecovered frame", async () => {
+    const render = await runRenderWorker({ failCreates: 3 });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(render.messages.some(m => m.frameStatus === "deviceRecovered"), false);
+    assert.equal(render.messages.filter(m => m.type === "error").length, 1);
+    // The success path still acknowledges the frame.
+    const ok = await runRenderWorker();
+    await ok.openCells();
+    ok.loseDevice();
+    await ok.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(ok.messages.some(m => m.frameStatus === "deviceRecovered"), true);
 });

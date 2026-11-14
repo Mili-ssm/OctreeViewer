@@ -441,3 +441,30 @@ test("a canvas outside the DOM is not replaced: the worker is told to recover on
         assert.equal(events[0].canvasReplaced, false);
     });
 });
+
+test("the clone takes the focus the old element had", async () => {
+    const canvas = new DomCanvas();
+    const focused = [];
+    canvas.ownerDocument = { activeElement: canvas };
+    const original = DomCanvas.prototype.cloneNode;
+    DomCanvas.prototype.cloneNode = function () {
+        const clone = original.call(this);
+        clone.focus = (options) => focused.push(options);
+        return clone;
+    };
+    try {
+        await withDeviceLossViewer(canvas, async (_viewer, worker) => {
+            worker.send({ type: "deviceLost", reason: "unknown", message: "x" });
+        });
+        assert.deepEqual(focused, [{ preventScroll: true }]);
+        const plain = new DomCanvas();
+        plain.ownerDocument = { activeElement: {} };
+        const before = focused.length;
+        await withDeviceLossViewer(plain, async (_viewer, worker) => {
+            worker.send({ type: "deviceLost", reason: "unknown", message: "x" });
+        });
+        assert.equal(focused.length, before, "no focus change when the old element had none");
+    } finally {
+        DomCanvas.prototype.cloneNode = original;
+    }
+});

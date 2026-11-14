@@ -69,6 +69,12 @@ const CANVAS_WAIT_MS = 2000;
 let canvasReplacementOffered = false;
 let canvasArrival = null;
 let resolveCanvasArrival = null;
+let canvasWaitTimer = 0;
+let canvasWaitTimedOut = false;
+let canvasRecreatedOn = null;
+// A dataset was asked for (opening or open): recovery must not replace it with the demo sample.
+let datasetRequested = false;
+let deviceDestroyed = false;
 let deviceUnrecoverable = false;
 let pendingOpen = null;
 let appliedEpoch = 0;
@@ -834,6 +840,7 @@ function startBuiltDataset(data, requestId = null) {
         startAsyncDataset(data, requestId);
         return;
     }
+    datasetRequested = true;
     advanceSceneGeneration();
     datasetGeneration += 1;
     lastOpenRequest = { data, requestId };
@@ -1085,6 +1092,7 @@ function handleBuildMessage(data) {
 }
 
 function startAsyncDataset(data, requestId = null) {
+    datasetRequested = true;
     cellsRemote = false;
     cellsStuckKey = null;
     cellsStuckFrames = 0;
@@ -1173,22 +1181,29 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Reports a loss once and, unless the device was destroyed on purpose, recovers from it. Resolves
 // true when a recovery ran, whatever its outcome (the host is told either way).
 async function pollDeviceLoss() {
-    if (!viewer || deviceUnrecoverable || typeof viewer.deviceLost !== "function") return false;
+    if (!viewer || deviceUnrecoverable || deviceDestroyed || typeof viewer.deviceLost !== "function") return false;
     const loss = viewer.deviceLost();
     if (!loss) return false;
     if (lossReportedFor !== viewer) {
         lossReportedFor = viewer;
         if (canvasReplacementOffered && loss.reason !== "destroyed") {
+            canvasWaitTimedOut = false;
             canvasArrival = new Promise((resolve) => {
                 resolveCanvasArrival = resolve;
-                setTimeout(resolve, CANVAS_WAIT_MS);
+                canvasWaitTimer = setTimeout(() => {
+                    canvasWaitTimedOut = true;
+                    resolve();
+                }, CANVAS_WAIT_MS);
             });
         }
         self.postMessage({ type: "deviceLost", reason: loss.reason, message: loss.message });
     }
-    if (loss.reason === "destroyed") return false;
-    await recoverFromDeviceLoss(loss);
-    return true;
+    if (loss.reason === "destroyed") {
+        // R3-Q26: not recovered, and nothing left to watch.
+        deviceDestroyed = true;
+        return false;
+    }
+    return (await recoverFromDeviceLoss(loss)) ? true : "failed";
 }
 
 // The loss callback runs after the failing call, so give it a moment before blaming the error.
@@ -1196,8 +1211,9 @@ async function deviceLostAfter() {
     if (typeof viewer?.deviceLost !== "function") return false;
     for (let waited = 0; waited <= 400; waited += 50) {
         if (waited > 0) await sleep(50);
-        if (await pollDeviceLoss()) return true;
-        if (deviceUnrecoverable) return true;
+        const outcome = await pollDeviceLoss();
+        if (outcome) return outcome;
+        if (deviceUnrecoverable) return "failed";
     }
     return false;
 }
@@ -1206,7 +1222,7 @@ async function deviceLostAfter() {
 function scheduleDeviceLossWatch() {
     const timer = setTimeout(() => {
         messageQueue = messageQueue.then(pollDeviceLoss).catch(() => {}).then(() => {
-            if (!deviceUnrecoverable) scheduleDeviceLossWatch();
+            if (!deviceUnrecoverable && !deviceDestroyed) scheduleDeviceLossWatch();
         });
     }, DEVICE_LOSS_POLL_MS);
     timer.unref?.();
@@ -1226,7 +1242,7 @@ async function recoverFromDeviceLoss(loss) {
         try {
             await recreateViewer(pose);
             self.postMessage({ type: "deviceRecovery", state: "recovered", attempt, reason: loss.reason });
-            return;
+            return true;
         } catch (error) {
             failure = error;
         }
@@ -1238,6 +1254,7 @@ async function recoverFromDeviceLoss(loss) {
         message: `GPU device lost (${loss.reason}: ${loss.message}); recovery failed after `
             + `${deviceRecoveryBackoff.length} attempts: ${failure}`,
     });
+    return false;
 }
 
 // New adapter, device and surface on the same canvas, then the open dataset again without reading
@@ -1252,6 +1269,7 @@ async function recreateViewer(pose) {
         await canvasArrival;
         canvasArrival = null;
     }
+    canvasRecreatedOn = renderCanvas;
     viewer = await WasmVoxelViewer.createOffscreen(renderCanvas, 0.6);
     viewer.resize(framebufferSize[0], framebufferSize[1]);
     viewer.setDepthShading(depthShadingOn);
@@ -1289,6 +1307,9 @@ async function recreateViewer(pose) {
         const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
         self.postMessage({ type: "lod", lod });
         scheduleAsyncLodRead(true);
+    } else if (datasetRequested) {
+        // The dataset is still opening: its `opened` (or the async open) lands on this viewer.
+        viewer.setColorMode(currentColorMode);
     } else {
         viewer.setColorMode(currentColorMode);
         const sample = samplePointCloud();
@@ -1502,8 +1523,10 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 syncBuildView();
                 const startedAt = performance.now();
                 const frameStatus = renderViewerFrame();
-                if (await pollDeviceLoss()) {
-                    self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
+                const lossOutcome = await pollDeviceLoss();
+                if (lossOutcome) {
+                    // After a failed recovery only the error goes out.
+                    if (lossOutcome === true) self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
                     break;
                 }
                 const renderCallMs = performance.now() - startedAt;
@@ -1526,8 +1549,9 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
         syncBuildView();
     } catch (error) {
         // A frame that fails because the GPU went away is not an error for the host: recover instead.
-        if (data.type === "frame" && await deviceLostAfter()) {
-            self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
+        const lossOutcome = data.type === "frame" ? await deviceLostAfter() : false;
+        if (lossOutcome) {
+            if (lossOutcome === true) self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
         } else {
             self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
         }
@@ -1549,7 +1573,15 @@ self.addEventListener("message", (event) => {
     if (event.data.type === "replaceCanvas") {
         // `canvas: null`: the host could not replace its element; recover on the current one.
         if (event.data.canvas) renderCanvas = event.data.canvas;
+        clearTimeout(canvasWaitTimer);
         resolveCanvasArrival?.();
+        resolveCanvasArrival = null;
+        if (event.data.canvas && canvasWaitTimedOut && canvasRecreatedOn !== renderCanvas) {
+            // Too late for the recovery that ran: recreate once more on the canvas that now presents.
+            canvasWaitTimedOut = false;
+            const late = { reason: "unknown", message: "the host's canvas arrived after the wait" };
+            messageQueue = messageQueue.then(() => recoverFromDeviceLoss(late)).catch(() => {});
+        }
         return;
     }
     const queuedAt = performance.now();

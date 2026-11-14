@@ -190,14 +190,27 @@ the file does not provide one. The canvas is transferred to a worker and cannot 
 `dispose()`; create a replacement canvas before creating another viewer in its place.
 Fatal frame errors, worker errors and message decoding failures reject outstanding API requests and
 terminate the worker immediately so the browser can release its dataset and GPU resources. To retry,
-replace the transferred canvas and create a new viewer; automatic device recreation is not available.
+replace the transferred canvas and create a new viewer.
+
+GPU device loss is recovered automatically (R3-Q26, R3-Q34), except after an explicit `destroy()`
+(reason `destroyed`). The worker emits `deviceLost` (`{ reason, message, canvasReplaced }`), then
+`deviceRecovery` (`{ state: "started" | "recovered", attempt }`, up to 3 attempts with backoff). It
+recreates the renderer on a new adapter and device, keeps the camera and settings, and reattaches
+the open dataset without reading the file again. After the last failed attempt one `error` event with
+`operation: "deviceLost"` follows. `getStats().gpu.deviceLost` reports the loss (`null` when healthy).
+After a GPU-process crash the old canvas stays blank, so the API **replaces the canvas element** with a
+clone (same id, classes, attributes, inline style and size) and dispatches `voxelviewer:canvasReplaced`
+on the new element (`detail.canvas`). A host holding the old element must switch to `event.detail.canvas`;
+listeners the host added with `addEventListener` are not cloned and must be re-bound in that event.
+Focus moves to the clone if the old element had it. A canvas outside the document is not replaced
+(`canvasReplaced: false`): recovery then runs on the old one and may stay blank after a GPU crash.
+Verified with `probe-device-loss.mjs` (Chrome `Browser.crashGpuProcess`).
 The small direct-WASM pick/recenter path passes in Chrome and Firefox via the presentation
-diagnostic above. Browser pick latency, CSS/API interaction and the host device-loss path still
-need validation.
-Chrome 155 is now available and the small software-WebGPU flows pass, but pick/device loss remain
+diagnostic above. Browser pick latency and CSS/API interaction still need validation.
+Chrome 155 is now available and the small software-WebGPU flows pass, but pick remains
 unverified. Firefox 157.0.1 headless can present with WebGPU enabled
 in a temporary profile outside the command sandbox; the first small-file benchmark is recorded
-in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick or device loss.
+in [web performance](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md). This does not validate pick.
 
 **`buildWorker` (render plan R2).** On by default (`createViewer` passes `buildWorker: { url, type }` in
 the worker `init` message unless called with `buildWorker: false`; `buildWorkerUrl` overrides the URL).
@@ -334,7 +347,7 @@ Rust and avoids materializing the full file in JS.
 Run the host-side tests with `node --test examples/web-host/tests/*.test.mjs` and
 `python3 -m unittest discover -s examples/web-host/tests -p 'test_*.py'`. They cover request/resource
 caps, worker failure cleanup, benchmark-window metrics and filtering/aggregation of exported runs.
-Browser interaction, real GPU timing, device loss and cancellation during a local file read still need
+Browser interaction, real GPU timing and cancellation during a local file read still need
 a real browser check; no native or mocked timing should be reported as browser FPS.
 
 Benchmark exports retain initial RGB open times under `load` (including its initial detail), and
