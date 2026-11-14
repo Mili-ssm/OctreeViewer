@@ -1296,6 +1296,13 @@ fn end_phase<C: Clock>(
     }
 }
 
+fn batch_bytes() -> usize {
+    std::env::var("CONVERT_BATCH_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SPOOL_IO_BUFFER_BYTES)
+}
+
 #[cfg(test)]
 mod spacing_tests {
     use super::*;
@@ -1357,11 +1364,4 @@ mod spacing_tests {
         assert!(general <= MORTON_SPACING_MAX_DEPTH);
         assert_eq!(morton_spacing_depth(&cells, 40, 32), Some(general));
     }
-}
-
-fn batch_bytes() -> usize {
-    std::env::var("CONVERT_BATCH_BYTES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(SPOOL_IO_BUFFER_BYTES)
 }
