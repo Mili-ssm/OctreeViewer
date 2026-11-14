@@ -585,7 +585,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 14: modos de px (antes R1-T1b)
 
-- [ ] Como en el plan anterior (antes R1-T1b).
+- [x] Como en el plan anterior (antes R1-T1b). **Hecha (14-11-2026):** [registro](../records/benchmarks/R3_B4_PX_MODES_14-11-2026.md); fijo progresivo por defecto y dinámico con escalera 1–8 px hacia 16,7 ms.
 
 ## Tarea 15: nivel por octante (obligatoria desde el 05-11-2026)
 

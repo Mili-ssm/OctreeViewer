@@ -1,0 +1,452 @@
+{
+ "poses": {
+  "leaf": [
+   {
+    "t": 2,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 4,
+     "signalMs": null,
+     "signalSource": null
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 1007,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 4,
+     "signalMs": 0.662473,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 2011,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 1.031005,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 3015,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 1.031005,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 0.924304,
+    "n": 59
+   },
+   {
+    "t": 4018,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 0.920327,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 0.934584,
+    "n": 58
+   },
+   {
+    "t": 5025,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 0.961354,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 6030,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 0.961354,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 0.949832,
+    "n": 59
+   },
+   {
+    "t": 7037,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 0.758853,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 8041,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 3.560641,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 9045,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 4.943806,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 10048,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 4.943806,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 5.924116,
+    "n": 59
+   },
+   {
+    "t": 11051,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 5.838475,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 7.812018,
+    "n": 58
+   },
+   {
+    "t": 12055,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 9.114823,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 13058,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 9.803996,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 14061,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 10.006657,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 15064,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 13.102184,
+     "signalSource": "gpu"
+    },
+    "gpuP95": null,
+    "n": null
+   },
+   {
+    "t": 16067,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 13.102184,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 14.732604,
+    "n": 59
+   },
+   {
+    "t": 17072,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 14.675576,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 16.128903,
+    "n": 59
+   },
+   {
+    "t": 18075,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 15.914381,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 17.092352,
+    "n": 58
+   },
+   {
+    "t": 19078,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 17.092352,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 18.017367,
+    "n": 58
+   }
+  ],
+  "fitted": [
+   {
+    "t": 1,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 16.996211,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 15.522406,
+    "n": 57
+   },
+   {
+    "t": 1005,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 15.522406,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.425255,
+    "n": 57
+   },
+   {
+    "t": 2008,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 2,
+     "signalMs": 1.421948,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.676286,
+    "n": 56
+   },
+   {
+    "t": 3012,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.676286,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.875088,
+    "n": 56
+   },
+   {
+    "t": 4016,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.733573,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.87101,
+    "n": 55
+   },
+   {
+    "t": 5021,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.87101,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.888653,
+    "n": 56
+   },
+   {
+    "t": 6024,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.841446,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.978272,
+    "n": 55
+   },
+   {
+    "t": 7027,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.973984,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.858658,
+    "n": 54
+   },
+   {
+    "t": 8032,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.858658,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 2.03598,
+    "n": 54
+   },
+   {
+    "t": 9036,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 2.03598,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 2.012857,
+    "n": 54
+   },
+   {
+    "t": 10039,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 2.012857,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.904744,
+    "n": 55
+   },
+   {
+    "t": 11044,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.687847,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.822129,
+    "n": 54
+   },
+   {
+    "t": 12047,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.822129,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.824414,
+    "n": 54
+   },
+   {
+    "t": 13051,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.825175,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.824082,
+    "n": 53
+   },
+   {
+    "t": 14055,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.743441,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.856373,
+    "n": 53
+   },
+   {
+    "t": 15058,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.729485,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.690061,
+    "n": 52
+   },
+   {
+    "t": 16062,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.98241,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.970176,
+    "n": 51
+   },
+   {
+    "t": 17065,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.947565,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.762747,
+    "n": 50
+   },
+   {
+    "t": 18068,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.762747,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.762367,
+    "n": 50
+   },
+   {
+    "t": 19071,
+    "px": {
+     "mode": "dynamic",
+     "targetPx": 1,
+     "signalMs": 1.743151,
+     "signalSource": "gpu"
+    },
+    "gpuP95": 1.857345,
+    "n": 50
+   }
+  ]
+ },
+ "console": [
+  "Failed to load resource: the server responded with a status of 404 (File not found)"
+ ],
+ "statsLine": "finest voxel detail target: 4 px · dynamic (gpu p95 1.9 ms)"
+}
