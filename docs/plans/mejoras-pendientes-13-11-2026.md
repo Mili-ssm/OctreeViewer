@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1c cerradas; en curso: B1d)
+Estado: en curso · 14-11-2026 (fase A, B1c y B1d cerradas; siguiente: B1b)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -35,19 +35,10 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   del [ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md) y bloqueo sin oscilación
   ([registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)). Majadas a 1 px dentro de una hoja
   se asienta engrosado; 4 px sin regresión.
-- [ ] B1d. Belvedere a 1 px tras un salto desborda el pool de GPU ni con los niveles más gruesos
-  ([registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md#belvedere-a-1-px-tras-el-salto)).
-  Decisión R3-Q29 ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)): pool de 512 MiB y
-  corte de nodos ajustado al pool. Rama `explore/b1d-gpu-pool`. Check final: el probe asienta
-  Belvedere y Majadas a 1 px en todas las poses, sin regresión a 4 px.
-  - [ ] B1d.1. Pool de 512 MiB: comprobar los límites que pide el pool (tamaño de buffer y de binding)
-    frente a los del adaptador en Chrome; caer al máximo admitido (≥ 256 MiB) y exponerlo en las
-    estadísticas. Check: test de configuración y el pool efectivo en el probe.
-  - [ ] B1d.2. Corte de nodos ajustado al pool: el planificador cuenta las páginas del nivel más grueso
-    de cada nodo del corte y bloquea como el ajuste de CPU (90/80, ADR 0039); contador propio. Check:
-    test rojo con un pool menor que los niveles más gruesos del corte, verde después.
-  - [ ] B1d.3. Navegador: probe a 1 px y a 4 px en Belvedere y Majadas, registro nuevo fechado.
-  - [ ] B1d.4. Integración: `check.sh`, revisión, avance rápido de `feat/r3-v75` y borrar la rama.
+- [x] B1d. Pool de celdas de 512 MiB (65.535 páginas en la Radeon 880M) con presupuesto propio y corte
+  de nodos ajustado al pool ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md);
+  [registro](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)). Se asientan las 14 poses a 1 px y
+  a 4 px; GTT pico ~+750 MiB.
 - [ ] B1b. Casillas abiertas de la Tarea 16b.
   - [ ] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): test rojo con un viewport que no es
     potencia de dos (1280×720), corrección y profundidad idéntica con y sin oclusión.
@@ -98,8 +89,8 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
-- [x] L2. Salidas temporales de los probes en `target/r3-t11/` (fuera de git): borradas al registrar B1c.
-- [x] L3. Rama `explore/b1c-cpu-fit`: integrada en `feat/r3-v75` y borrada.
+- [x] L2. Salidas temporales de los probes en `target/r3-t11/` y `target/r3-b1d/` (fuera de git): borradas al registrar B1c y B1d.
+- [x] L3. Ramas `explore/b1c-cpu-fit` y `explore/b1d-gpu-pool`: integradas en `feat/r3-v75` y borradas.
 
 ## Decisiones del propietario pendientes
 

@@ -559,12 +559,12 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 11: humo en navegador
 
-**Medida (13-11-2026), salta un criterio:** [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Corregido el 14-11-2026 (R3-Q27, R3-Q28; [registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)): Majadas a 1 px dentro de una hoja se asienta engrosado. Queda Belvedere a 1 px tras un salto, que desborda el pool de GPU.
+**Medida (13-11-2026), salta un criterio:** [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Corregido el 14-11-2026 (R3-Q27, R3-Q28; [registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)): Majadas a 1 px dentro de una hoja se asienta engrosado. Belvedere a 1 px tras un salto, que desbordaba el pool de GPU, se asienta con el pool de 512 MiB (R3-Q29; [registro](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)): no salta ningún criterio de la Tarea 11.
 
 - [x] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
 - [x] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
 - [x] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
-- [ ] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright.
+- [x] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright (probe en Chrome; [B1d](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)).
 
 ## Tarea 12 ★: modos de color
 
