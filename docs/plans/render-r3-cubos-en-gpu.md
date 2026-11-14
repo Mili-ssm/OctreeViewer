@@ -557,7 +557,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 11: humo en navegador
 
-**Medida (13-11-2026), salta un criterio:** [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Lo resuelve R3-Q27 (corte ajustado al presupuesto de CPU); después se repite el probe.
+**Medida (13-11-2026), salta un criterio:** [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md). Se asienta en todas las poses a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido con el presupuesto de CPU de wasm lleno. Corregido el 14-11-2026 (R3-Q27, R3-Q28; [registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)): Majadas a 1 px dentro de una hoja se asienta engrosado. Queda Belvedere a 1 px tras un salto, que desborda el pool de GPU.
 
 - [x] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
 - [x] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.

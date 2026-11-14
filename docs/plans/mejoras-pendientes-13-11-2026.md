@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A cerrada; B1c en curso en `explore/b1c-cpu-fit`)
+Estado: en curso · 14-11-2026 (fase A y B1c cerradas; siguiente: B1d, pendiente del propietario, y B1b)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -30,31 +30,15 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 - [x] B1. Tarea 11 medida: estadísticas `cutApply` y `cellsForgottenTotal`, probe
   `probe-cells-smoke.mjs` y [registro](../records/benchmarks/R3_T11_SMOKE_13-11-2026.md) (`97c52f8`,
   `80a44bd`). Se asienta a 4 px; Majadas a 1 px dentro de una hoja entra en bucle de olvido (R3-Q27).
-- [ ] B1c. Bucle de olvido de Majadas a 1 px ([ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md), enmendado por el [ADR 0038](../adr/0038-residencia-por-celdas.md)).
-  Check final: el probe asienta las 4 poses de Majadas a 1 px sin olvidos en reposo, sin regresión a 4 px.
-  - [x] B1c.1. Admisión por presupuesto del ADR 0037 (90/80, `cpuCoarsened`) (`721cac9`). No basta:
-    `cpuCoarsened` sigue a 0 porque el corte solo pide 343 MB.
-  - [x] B1c.2. Co-propietarios de bloques protegidos y contados (`721cac9`). No era la causa: 0 olvidados.
-  - [x] B1c.3. Contadores de diagnóstico en el navegador (`84238ec`). A 120 s: solo se olvidan nodos
-    seleccionados (6.498); 1.100 seleccionados, corte fijo en 32 y ~300 hijos construidos fuera del
-    corte; caché de bloques llena (256 MiB) con 15.000 expulsiones.
-  - [x] B1c.4. Test rojo en nativo `majadas_at_1px_settles_with_the_browser_block_cache` (`#[ignore]`,
-    datos reales, caché de bloques de 256 MiB como el navegador): no se asienta en 6.000 frames; con
-    2 GiB se asienta en 568. La causa es la residencia por bloques (`lod_transition.rs:157`): el corte
-    a 1 px necesita ~518 MB de bloques (R3-Q28). Construir por grupo de hermanos quita las expulsiones
-    pero choca con la caché llena de bloques protegidos: descartado.
-  - [ ] B1c.5. Residencia por celdas (ADR 0038): en la ruta de celdas, un nodo con celdas es residente
-    para el plan sin sus bloques, la caché no protege esos bloques y el corte se acota por bytes de
-    celdas. Check: B1c.4 en verde y el resto de tests de celdas y de la ruta CPU.
-  - [ ] B1c.6. Si el navegador sigue olvidando hijos de grupos incompletos tras B1c.5: protegerlos y
-    contarlos en los bytes necesarios. Check: con un presupuesto menor que el conjunto de trabajo se
-    asienta con `cpuCoarsened` > 0.
-  - [ ] B1c.7. Caché de bloques: `blockEvictions` en el probe tras B1c.5; sin propuesta nueva si ya no satura.
-  - [ ] B1c.8. Navegador: probe a 4 px y a 1 px (todas las poses), registro nuevo fechado y nota en la
-    Tarea 11 del plan de R3.
-  - [ ] B1c.9. Limpieza e integración: quitar los tests de diagnóstico `forget_loop_diagnosis` y
-    `split_forget_loop_diagnosis` si ya no aportan, conservar los contadores baratos y la traza del
-    probe, avance rápido de `feat/r3-v75`, `check.sh` y README.
+- [x] B1c. Bucle de olvido de Majadas a 1 px: corregido en tres capas, residencia por celdas
+  ([ADR 0038](../adr/0038-residencia-por-celdas.md)), hijos en curso protegidos y contados en el ajuste
+  del [ADR 0037](../adr/0037-corte-ajustado-al-presupuesto-de-cpu.md) y bloqueo sin oscilación
+  ([registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)). Majadas a 1 px dentro de una hoja
+  se asienta engrosado; 4 px sin regresión.
+- [ ] B1d. Belvedere a 1 px tras un salto desborda el pool de GPU ni con los niveles más gruesos
+  (`poolOverflow` en cada frame, corte retenido durante 282 s; [registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md#belvedere-a-1-px-tras-el-salto)).
+  El ADR 0033 no tiene regla para ese caso: **decisión del propietario** (abajo).
+  Check: el probe asienta Belvedere a 1 px en las tres poses.
 - [ ] B1b. Casillas abiertas de la Tarea 16b.
   - [ ] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): test rojo con un viewport que no es
     potencia de dos (1280×720), corrección y profundidad idéntica con y sin oclusión.
@@ -80,7 +64,7 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   - [ ] B5.4. Playwright: caída del proceso GPU de Chrome (no `device.destroy()`, cuyo motivo
     `destroyed` no se recupera); la vista vuelve con el mismo digest y sin errores en consola.
 - [ ] B6. Tarea 17, medida y ruta por defecto: matriz de R0 más RED-REF en el equipo de referencia
-  (≥ 4 GB de GPU). Depende de B1c y B2; al cerrarla, actualizar el estado del ADR 0027.
+  (≥ 4 GB de GPU). Depende de B1d y B2; al cerrarla, actualizar el estado del ADR 0027.
 
 ## Fase C: velocidad de conversión, RQ-07 (rama `explore/convert-speed`)
 
@@ -105,13 +89,14 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
-- [ ] L2. Salidas temporales de los probes en `target/r3-t11/` (fuera de git): borrarlas al registrar B1c.8.
-- [ ] L3. Rama `explore/b1c-cpu-fit`: borrarla tras integrarla en B1c.9.
+- [x] L2. Salidas temporales de los probes en `target/r3-t11/` (fuera de git): borradas al registrar B1c.
+- [x] L3. Rama `explore/b1c-cpu-fit`: integrada en `feat/r3-v75` y borrada.
 
 ## Decisiones del propietario pendientes
 
 | Tema | Bloquea |
 | --- | --- |
+| Corte que no cabe en el pool de GPU ni con los niveles más gruesos (B1d) | B1d, B6 |
 | OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |
