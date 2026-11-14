@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fases A y B cerradas; siguiente: fase C)
+Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, pendiente del propietario; siguiente: fase D)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -65,17 +65,15 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   con celdas en este equipo; el propietario aceptó los +2,7 pp de píxeles vacíos de Majadas y la ruta de
   celdas es la predeterminada (R3-Q35, `8aa40fa`; ADR 0027 aceptado). Con esto se cierra la fase B.
 
-## Fase C: velocidad de conversión, RQ-07 (rama `explore/convert-speed`)
+## Fase C: velocidad de conversión, RQ-07 (parada)
 
-Cada variante: mediana de 3 en Belvedere, SHA-256 de salida idéntico y V5 medido de nuevo en la
-misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
+[Registro](../records/benchmarks/EXPLORE_CONVERT_SPEED_14-11-2026.md). Línea base Belvedere: V5 20,9 s,
+v7.5 40,2 s (razón 1,92). La diferencia está en construir la jerarquía (+12,4 s, muestreo). TC3, TC1 y
+TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada. Nada se integra; las ramas
+`explore/convert-speed` y `explore/convert-batch` se conservan como evidencia.
 
-- [ ] C0. Línea base de la sesión: V5 y v7.5 en Belvedere, mediana de 3, con tiempos por fase.
-- [ ] C1. TC3: `i128` fuera del bucle por punto en conversor y lector. Check adicional: paridad del lector y `decodeMs` en nativo y wasm.
-- [ ] C2. TC2: acumulador de muestreo con datos calientes separados o agregación por lotes; `perf stat` de fallos de caché y TLB.
-- [ ] C3. TC7: cola sin barrera por lote y `par_iter` efectivo. Check: curva 1–8 workers con RSS y orden de salida igual.
-- Parada (umbral propuesto en este plan, no medido): si tras C1 y C2 Belvedere sigue en v7.5/V5 ≥ 1,7,
-  se replantea RQ-07 alrededor de TC5.
+- [ ] C4. **Decisión del propietario:** TC5 (rediseño del pipeline con plan propio), revisar RQ-07 o
+  probar la copia diferida del más cercano.
 
 ## Fase D: fuente remota y V7 final
 
@@ -99,6 +97,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 | Tema | Bloquea |
 | --- | --- |
 | Factor de continuidad (RF-05): con 1 × el espaciado de referencia el efecto es mínimo en Belvedere y Majadas | Nada; ajuste visual |
+| RQ-07 tras la fase C: TC5, revisar el objetivo o copia diferida | C4, promover V7 |
 | OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |
