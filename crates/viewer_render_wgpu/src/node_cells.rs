@@ -373,29 +373,33 @@ fn build_level_keyed<K: Ord + Copy>(
     // Entries are pushed in (block, index) order, so a stable sort by key alone equals sorting by
     // (key, block, index). pdqsort is ~8x slower on shuffled keys than on sorted ones; the radix
     // sort keeps the build time independent of the point order.
-    let pairs: Option<Vec<(u64, u32)>> = if keyed.len() < u32::MAX as usize {
-        keyed
-            .iter()
-            .enumerate()
-            .map(|(position, entry)| as_u64(entry.0).map(|key| (key, position as u32)))
-            .collect()
-    } else {
-        None
-    };
-    let keyed = match pairs {
-        Some(pairs) if pairs.windows(2).all(|pair| pair[0].0 <= pair[1].0) => keyed,
-        Some(pairs) => radix_sort_stable(pairs)
-            .into_iter()
-            .map(|(_, position)| keyed[position as usize])
-            .collect(),
-        None => {
-            keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
-            keyed
+    // `order` lists the positions of `keyed` in sorted order; `None` means `keyed` is already
+    // sorted. Iterating positions avoids copying the 48-byte entries into a second vector.
+    let mut order: Option<Vec<(u64, u32)>> = None;
+    let mut pairs = Vec::new();
+    let all_u64 = keyed.len() < u32::MAX as usize
+        && pairs.try_reserve_exact(keyed.len()).is_ok()
+        && keyed.iter().enumerate().all(|(position, entry)| {
+            as_u64(entry.0).is_some_and(|key| {
+                pairs.push((key, position as u32));
+                true
+            })
+        });
+    if all_u64 {
+        if pairs.windows(2).any(|pair| pair[0].0 > pair[1].0) {
+            order = Some(radix_sort_stable(pairs));
         }
+    } else {
+        keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
+    }
+    let positions: Box<dyn Iterator<Item = usize> + '_> = match &order {
+        Some(order) => Box::new(order.iter().map(|(_, position)| *position as usize)),
+        None => Box::new(0..keyed.len()),
     };
     let mut cells: Vec<NodeCell> = Vec::new();
     let mut current = None;
-    for (key, block_index, index, coord) in keyed {
+    for position in positions {
+        let (key, block_index, index, coord) = keyed[position];
         let points = &points[block_index];
         let point = &points.block.points().points()[index];
         if current != Some(key) {
@@ -551,11 +555,7 @@ mod layout_tests {
             .collect();
         let mut expected = pairs.clone();
         expected.sort_by_key(|(key, _)| *key);
-        assert_eq!(radix_sort_stable(pairs.clone()), expected);
-        // The old order: (key, block, index) with positions standing for the input order.
-        let mut old = pairs;
-        old.sort_unstable_by_key(|(key, position)| (*key, *position));
-        assert_eq!(expected, old);
+        assert_eq!(radix_sort_stable(pairs), expected);
     }
 
     #[test]

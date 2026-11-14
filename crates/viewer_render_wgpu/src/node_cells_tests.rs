@@ -153,6 +153,31 @@ fn node_cells_do_not_depend_on_camera() {
 }
 
 #[test]
+fn node_cells_do_not_depend_on_point_order() {
+    // Without classification or intensity, a cell's content does not depend on which point comes
+    // first, so shuffled (radix sort), reversed and Morton-sorted input (keys already sorted, no
+    // sort) must give the same cells.
+    let bounds = cube([0.0; 3], 32.0);
+    let points = random_points(&mut Lcg(11), [0.0; 3], 32.0, 3000);
+    let digest = |points: Vec<Point>| {
+        node_cells_digest(&cells_of(&grid(), bounds, true, &plain_block(points)))
+    };
+    let reference = digest(points.clone());
+    let mut reversed = points.clone();
+    reversed.reverse();
+    assert_eq!(digest(reversed), reference);
+    let mut sorted = points;
+    sorted.sort_by_key(|point| {
+        morton(
+            point
+                .position
+                .map(|value| (f64::from(value) / SIDE * f64::from(1 << 21)) as u64),
+        )
+    });
+    assert_eq!(digest(sorted), reference);
+}
+
+#[test]
 fn cell_sums_match_accumulate_block() {
     let bounds = cube([16.0; 3], 16.0);
     let mut rng = Lcg(77);
