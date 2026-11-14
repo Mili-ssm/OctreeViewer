@@ -346,7 +346,7 @@ export async function resolveSource(spec, options = {}) {
 }
 
 export const DEFAULT_LOCAL_READS = 4;
-export const DEFAULT_REMOTE_READS = 8; // D2: -14..25 % time to reached vs 4 on RED-REF; 16 adds bytes, no gain
+export const DEFAULT_REMOTE_READS = 8; // measured in D2 (see README)
 const MAX_READS = 64;
 
 /**

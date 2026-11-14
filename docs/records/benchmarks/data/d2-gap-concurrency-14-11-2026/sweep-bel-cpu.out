@@ -1,0 +1,25 @@
+18:42:37 rest-belvederecpu-4px-g0-r4-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:42:53 rest-belvederecpu-4px-g0-r8-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:43:10 rest-belvederecpu-4px-g0-r16-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:43:27 rest-belvederecpu-4px-g16384-r4-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:43:45 rest-belvederecpu-4px-g16384-r8-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:44:01 rest-belvederecpu-4px-g16384-r16-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:44:19 rest-belvederecpu-4px-g65536-r4-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:44:35 rest-belvederecpu-4px-g65536-r8-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:44:50 rest-belvederecpu-4px-g65536-r16-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:45:08 rest-belvederecpu-4px-g262144-r4-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:45:25 rest-belvederecpu-4px-g262144-r8-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:45:41 rest-belvederecpu-4px-g262144-r16-n1 {"mode":"timing","reasons":[],"targetReached":true,"error":null}
+18:46:05 rest-belvederecpu-1px-g0-r4-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:46:27 rest-belvederecpu-1px-g0-r8-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:46:43 rest-belvederecpu-1px-g0-r16-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:47:05 rest-belvederecpu-1px-g16384-r4-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:47:28 rest-belvederecpu-1px-g16384-r8-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:47:52 rest-belvederecpu-1px-g16384-r16-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:48:12 rest-belvederecpu-1px-g65536-r4-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:48:32 rest-belvederecpu-1px-g65536-r8-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:48:48 rest-belvederecpu-1px-g65536-r16-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:49:12 rest-belvederecpu-1px-g262144-r4-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:49:38 rest-belvederecpu-1px-g262144-r8-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+18:49:54 rest-belvederecpu-1px-g262144-r16-n1 {"mode":"timing","reasons":[],"targetReached":false,"error":null}
+SWEEP_DONE
