@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1c cerradas; siguiente: B1d, pendiente del propietario, y B1b)
+Estado: en curso · 14-11-2026 (fase A y B1c cerradas; en curso: B1d)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -36,9 +36,18 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   ([registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md)). Majadas a 1 px dentro de una hoja
   se asienta engrosado; 4 px sin regresión.
 - [ ] B1d. Belvedere a 1 px tras un salto desborda el pool de GPU ni con los niveles más gruesos
-  (`poolOverflow` en cada frame, corte retenido durante 282 s; [registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md#belvedere-a-1-px-tras-el-salto)).
-  El ADR 0033 no tiene regla para ese caso: **decisión del propietario** (abajo).
-  Check: el probe asienta Belvedere a 1 px en las tres poses.
+  ([registro](../records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md#belvedere-a-1-px-tras-el-salto)).
+  Decisión R3-Q29 ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)): pool de 512 MiB y
+  corte de nodos ajustado al pool. Rama `explore/b1d-gpu-pool`. Check final: el probe asienta
+  Belvedere y Majadas a 1 px en todas las poses, sin regresión a 4 px.
+  - [ ] B1d.1. Pool de 512 MiB: comprobar los límites que pide el pool (tamaño de buffer y de binding)
+    frente a los del adaptador en Chrome; caer al máximo admitido (≥ 256 MiB) y exponerlo en las
+    estadísticas. Check: test de configuración y el pool efectivo en el probe.
+  - [ ] B1d.2. Corte de nodos ajustado al pool: el planificador cuenta las páginas del nivel más grueso
+    de cada nodo del corte y bloquea como el ajuste de CPU (90/80, ADR 0039); contador propio. Check:
+    test rojo con un pool menor que los niveles más gruesos del corte, verde después.
+  - [ ] B1d.3. Navegador: probe a 1 px y a 4 px en Belvedere y Majadas, registro nuevo fechado.
+  - [ ] B1d.4. Integración: `check.sh`, revisión, avance rápido de `feat/r3-v75` y borrar la rama.
 - [ ] B1b. Casillas abiertas de la Tarea 16b.
   - [ ] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): test rojo con un viewport que no es
     potencia de dos (1280×720), corrección y profundidad idéntica con y sin oclusión.
@@ -96,8 +105,6 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 
 | Tema | Bloquea |
 | --- | --- |
-| Corte que no cabe en el pool de GPU ni con los niveles más gruesos (B1d) | B1d, B6 |
-| Confirmar en una enmienda al ADR 0037 lo implementado en B1c que el ADR no detalla: los hijos en curso se protegen y cuentan, con el presupuesto lleno se bloquean todos los candidatos sin construir (no solo los más lejanos) y el bloqueo se mantiene mientras no cambie la selección | Nada; documental |
 | OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |

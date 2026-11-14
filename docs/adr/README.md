@@ -36,9 +36,11 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0030](0030-jerarquia-paginada-por-anclas.md) | Jerarquía paginada por niveles desde anclas de prefijo (R5) | Aceptada |
 | [0031](0031-celdas-por-nodo-en-v7-5.md) | Celdas por nodo en v7.5: pirámide por nodo, coordenadas por página del pool, claves de 64 bits (sustituye en parte a 0027) | Aceptada (enmendada por 0032) |
 | [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) | Hojas hasta separar posiciones, clave regional más allá de 21 bits e instancia de 12 B (enmienda a 0031) | Aceptada (instancia enmendada por 0035) |
-| [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) | GPU mínima de 4 GB y corte ajustado al pool (sustituye P2) | Aceptada |
+| [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) | GPU mínima de 4 GB y corte ajustado al pool (sustituye P2) | Aceptada (enmendada por 0040) |
 | [0034](0034-nivel-por-octante-con-arista-real.md) | Nivel por octante con la arista proyectada real y tolerancia de RQ-09 dentro del dataset (enmienda a 0031) | Aceptada |
 | [0035](0035-instancia-de-16-b-con-w-16.md) | Instancia de 16 B con W = 16 y compactación con Hi-Z antes de la Tarea 6 (enmienda a 0032) | Aceptada (oclusión enmendada por 0036) |
 | [0036](0036-hi-z-por-celda.md) | Hi-Z por celda en dos fases sobre el pool (enmienda a 0035) | Aceptada |
-| [0037](0037-corte-ajustado-al-presupuesto-de-cpu.md) | Corte de celdas ajustado al presupuesto de CPU (extiende 0033) | Aceptada (enmendada por 0038) |
+| [0037](0037-corte-ajustado-al-presupuesto-de-cpu.md) | Corte de celdas ajustado al presupuesto de CPU (extiende 0033) | Aceptada (enmendada por 0038 y 0039) |
 | [0038](0038-residencia-por-celdas.md) | Residencia por celdas en la ruta de celdas (enmienda a 0037) | Aceptada |
+| [0039](0039-hijos-en-curso-y-bloqueo-retenido.md) | Hijos en curso y bloqueo retenido en el ajuste por presupuesto de CPU (enmienda a 0037) | Aceptada |
+| [0040](0040-pool-de-512-mib-y-corte-ajustado-al-pool.md) | Pool de celdas de 512 MiB y corte de nodos ajustado al pool (enmienda a 0033) | Aceptada |
