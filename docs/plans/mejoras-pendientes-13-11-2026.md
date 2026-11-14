@@ -90,8 +90,9 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     o descartado. Va antes de C4 (propietario, 14-11-2026).
   - [ ] D3b. Escritor híbrido de producción con una regla de elección más barata que codificar dos veces;
     contrato de `OctreeReader` y pruebas de paridad por conjunto de filas. Comprobación: `check.sh` verde,
-    `.oct` de Belvedere ≤ 530 MB y etapa de bloques medida frente a RQ-07.
-  - [ ] D3c. Congelar: revisión final, regeneración de datasets y referencias.
+    `.oct` de Belvedere ≤ 530 MB, y tiempo total y RSS de conversión medidos frente a RQ-07.
+  - [ ] D3c. Congelar: revisión final, regeneración de datasets y referencias. Comprobación: `check.sh`
+    verde con la identidad final y referencias R1 regeneradas.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
 
 ## Limpieza

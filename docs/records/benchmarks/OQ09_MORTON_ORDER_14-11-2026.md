@@ -1,6 +1,6 @@
 # OQ-09: orden Morton de los puntos dentro de cada bloque — 14-11-2026
 
-**Estado: medido; el propietario adopta el orden híbrido ([ADR 0041](../../adr/0041-orden-de-filas-libre-por-bloque.md)).** En Belvedere v7.5, escribir los puntos de cada
+**Estado: medido; la decisión está en el [ADR 0041](../../adr/0041-orden-de-filas-libre-por-bloque.md).** En Belvedere v7.5, escribir los puntos de cada
 bloque en orden Morton cuando eso reduce su geometría (orden **híbrido**) deja el `.oct` un **35 %**
 más pequeño (815 → 528 MB) y descarga los mismos bytes por vista o menos. Leer en remoto tarda lo mismo
 a 4 px y un ~6 % más a 1 px (dentro de la variación entre rondas); la etapa de bloques de la conversión
