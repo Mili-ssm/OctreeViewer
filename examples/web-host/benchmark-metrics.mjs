@@ -95,7 +95,19 @@ export function lodCounters(lod) {
 // Hierarchy pages of a paged format count like blocks: an anchor whose page is still pending keeps
 // the target unreached. `pageBudgetExhausted` marks pending pages that can no longer be grafted
 // because the page budget is pinned by the cut; nothing more will load until the view changes.
+// The cells path (R3-Q3, ADR 0037/0040) has no `coverageComplete`: "reached" is the T11 definition,
+// the applied cut at rest with nothing missing, coarsened or staged.
+export function cellsTargetReached(lod) {
+    return Boolean(lod && lod.cellPath === "enabled" && !lod.lodError
+        && lod.cutApply === "applied" && lod.cutDigestAtRest != null
+        && lod.poolNodesWithoutLevel === 0 && lod.poolCoarsened === 0 && lod.poolStages === 0
+        && lod.cpuCoarsened === 0 && lod.gpuCoarsened === 0
+        && !lod.pendingBlockIds?.length && !lod.pendingPageAnchors?.length
+        && !(lod.lodStagePixels > lod.targetVoxelPixels));
+}
+
 export function lodTargetReached(lod) {
+    if (lod?.cellPath === "enabled") return cellsTargetReached(lod);
     return Boolean(lod && !lod.lodError && lod.coverageComplete
         && !lod.pendingBlockIds?.length && !lod.pendingPageAnchors?.length
         && lod.lodStagePixels <= lod.targetVoxelPixels);

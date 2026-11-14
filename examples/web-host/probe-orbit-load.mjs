@@ -102,8 +102,10 @@ const gpuTimer = setInterval(() => {
     }
 }, 250);
 
-const GTT_FILE = process.env.GTT_FILE ?? "/sys/class/drm/card1/device/mem_info_gtt_used";
-const readGtt = () => { try { const t = fs.readFileSync(GTT_FILE, "utf8").trim(); return /^\d+$/.test(t) ? Number(t) : null; } catch { return null; } };
+// GTT_FILE overrides; otherwise the first DRM card that exposes mem_info_gtt_used (amdgpu).
+const GTT_FILE = process.env.GTT_FILE ?? fs.readdirSync("/sys/class/drm").filter(name => /^card\d+$/.test(name)).sort()
+    .map(name => `/sys/class/drm/${name}/device/mem_info_gtt_used`).find(file => fs.existsSync(file)) ?? null;
+const readGtt = () => { if (!GTT_FILE) return null; try { const t = fs.readFileSync(GTT_FILE, "utf8").trim(); return /^\d+$/.test(t) ? Number(t) : null; } catch { return null; } };
 const gttBaseline = readGtt();
 let gttPeak = gttBaseline;
 const gttTimer = setInterval(() => { const v = readGtt(); if (v !== null && (gttPeak === null || v > gttPeak)) gttPeak = v; }, 100);
@@ -199,6 +201,16 @@ async function chromeBackend() {
     };
 }
 const backend = await (browser === "chrome" ? chromeBackend() : firefoxBackend());
+// Stop only what this probe started (its browser tree, sampler and RED-REF server) on a signal.
+let remoteServer = null;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, async () => {
+        pssSampler?.kill("SIGTERM");
+        await remoteServer?.close?.().catch?.(() => {});
+        await backend.close();
+        process.exit(130);
+    });
+}
 const evaluate = expression => backend.evaluate(expression);
 
 // Chrome process-tree PSS (R3 B6, RQ-05): the root is the chrome process whose parent is not chrome.
@@ -316,7 +328,6 @@ async function sceneDigestAtRest(pose, timeoutMs = 120_000) {
     return null;
 }
 
-let remoteServer = null;
 let boundsCache = null;
 async function captureEmptyPixels() {
     boundsCache ??= await evalJson("window.__renderBench.apiCall('getMetadata')");

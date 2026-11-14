@@ -11,8 +11,8 @@ for path in sorted(glob.glob(os.path.join(d, "*.json"))):
         continue
     name = os.path.basename(path)[:-5]
     ph = {p["label"]: p for p in r.get("phases", [])}
-    iv = lambda l: (ph[l]["summary"]["intervalMs"] if l in ph else {})
-    ll = lambda l, k: ph[l]["lodLog"][k] if l in ph else None
+    iv = lambda l: ((ph[l].get("summary") or {}).get("intervalMs") or {} if l in ph else {})
+    ll = lambda l, k: (ph[l].get("lodLog") or {}).get(k) if l in ph else None
     gpu = lambda l: (ph[l].get("gpuFrameMs") or {}).get("p95") if l in ph else None
     px = r.get("finalEmptyPixels") or {}
     pss = r.get("pss") or {}

@@ -557,7 +557,12 @@ function postLodProgress(lod, afterRenderFrame = false) {
     if (afterRenderFrame && firstCoarseMs === null && hasVisiblePoints) {
         firstCoarseMs = now - targetLodStartedAt;
     }
-    const targetReached = lod.coverageComplete
+    // Cells path: the T11 definition replaces coverageComplete (self-contained copy of cellsTargetReached).
+    const covered = lod.cellPath === "enabled"
+        ? lod.cutApply === "applied" && lod.cutDigestAtRest != null && lod.poolNodesWithoutLevel === 0
+            && lod.poolCoarsened === 0 && lod.poolStages === 0 && lod.cpuCoarsened === 0 && lod.gpuCoarsened === 0
+        : lod.coverageComplete;
+    const targetReached = covered
         && lod.pendingBlockIds.length === 0
         && (lod.pendingPageAnchors?.length ?? 0) === 0
         && lod.lodStagePixels <= lod.targetVoxelPixels

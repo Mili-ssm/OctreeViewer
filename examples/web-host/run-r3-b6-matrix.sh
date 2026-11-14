@@ -10,18 +10,32 @@ OUT=${OUT:-target/r3-b6}
 DATA=target/render-data
 mkdir -p "$OUT"
 PORT=8767
+# Only processes started here are stopped: the probe's browser (Playwright, its own temporary profile)
+# and RED-REF server die with the probe, and the static server by its PID. The owner's Chrome is never touched.
+STATIC_PID=
+PROBE_PID=
+cleanup() {
+  [ -n "$PROBE_PID" ] && kill "$PROBE_PID" 2>/dev/null
+  [ -n "$STATIC_PID" ] && kill "$STATIC_PID" 2>/dev/null
+  return 0
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT TERM
 if ! curl -sf -o /dev/null "http://127.0.0.1:$PORT/pkg/viewer_wasm_bg.wasm"; then
   python3 -m http.server "$PORT" --bind 127.0.0.1 >"$OUT/static.log" 2>&1 &
-  echo $! >"$OUT/static.pid"
+  STATIC_PID=$!
+  echo "$STATIC_PID" >"$OUT/static.pid"
   sleep 1
 fi
 run() { # name outer-timeout-s probe-args...
   local name=$1 limit=$2; shift 2
   echo "== $(date +%T) $name"
-  for _ in $(seq 15); do pgrep -x chrome >/dev/null || break; sleep 2; done
-  pkill -x chrome 2>/dev/null || true
-  timeout "$limit" node examples/web-host/probe-orbit-load.mjs "$@" "$OUT/$name.json" 2>&1 | tail -2
-  pkill -x chrome 2>/dev/null || true
+  # The probe marks the run "functional" when a foreign Chrome is running; it does not kill it.
+  timeout "$limit" node examples/web-host/probe-orbit-load.mjs "$@" "$OUT/$name.json" >"$OUT/$name.log" 2>&1 &
+  PROBE_PID=$!
+  wait "$PROBE_PID"
+  PROBE_PID=
+  tail -2 "$OUT/$name.log"
 }
 arm() { [ "$1" = cpu ] && echo 0 || echo 1; }
 for kind in ${KINDS:-timing pixels rest}; do
