@@ -246,7 +246,6 @@ function samplePointCloud() {
 // (px-controller.mjs) pick it from GPU frame time (or frame intervals) in 1 s windows. Fixed mode
 // has no controller, so tickPxController returns at once and nothing changes.
 const PX_MIN_SAMPLES = 5;
-const PX_IDLE_GAP_MS = 500; // a longer gap between frames is an idle scene, not a slow frame
 let pxMode = "fixed";
 let pxController = null;
 let fixedTargetPx = 4;
@@ -314,7 +313,8 @@ function tickPxController(now) {
     // target's cost, and neither do samples from before an idle gap: start the window over.
     const lod = currentLodStats();
     const settled = !lod || !(lod.lodStagePixels > targetVoxelPixels);
-    const idle = lastFrameMs !== null && now - lastFrameMs > PX_IDLE_GAP_MS;
+    // Longer than two windows is an idle scene; a slow frame under overload stays below it.
+    const idle = lastFrameMs !== null && now - lastFrameMs > 2 * PX_WINDOW_MS;
     if (!settled || idle) {
         pxWindow = { startMs: now, lastFrameMs: now, intervals: [], dirty: true };
         return;

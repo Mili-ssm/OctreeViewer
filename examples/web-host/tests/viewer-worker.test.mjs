@@ -799,3 +799,11 @@ test("a new dataset keeps the mode and restarts the window and dwell", async () 
     assert.equal(px.mode, "dynamic");
     assert.equal(px.signalSource, null, "the last window's signal is gone");
 });
+
+test("frames slower than 500 ms under GPU overload still coarsen after the dwell", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(30);
+    await drawFrames(worker, 0, 12, 700);
+    assert.equal(worker.updateLodCalls.at(-1), 8);
+});
