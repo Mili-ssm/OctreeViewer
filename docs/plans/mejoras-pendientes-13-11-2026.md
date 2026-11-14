@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1 cerradas; B2 reabierta por B2b, en curso)
+Estado: en curso · 14-11-2026 (fase A, B1 y B2 cerradas; siguiente: B3, Tarea 13)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -44,21 +44,13 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   escala de `hzb.rs` corregido con test; margen del Hi-Z derivado (`u·(25ρ + 24)`, ≈ +3 % de GPU);
   tiempo de GPU por frame con timestamps (R3-Q31), p95 7,38 ms en Majadas dentro de una hoja a 4 px.
   Con esto pasan la Tarea 11 y la 16b.
-- [x] B2. Tarea 12, modos de color (reabierta por B2b) ([registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md)): todos los
+- [x] B2. Tarea 12, modos de color (reabierta y cerrada con B2b) ([registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md)): todos los
   modos con celdas, función WGSL común (paridad con diferencia 0), modos de shader sin reconstruir y
   modos de atributo con generación de color; sin vuelta a la ruta CPU.
-- [ ] B2b. Intensidad y clase en la ruta asíncrona. Las columnas de intensidad y clase de Belvedere y
-  Majadas son constantes a 0 en origen (rangos `[0, 0]` correctos: es el dato). Pero en el navegador
-  el worker de construcción lee en modo RGB solo la geometría (`build-worker.js:290-301`,
-  `insertAsyncLodBlock` con un solo atributo): las celdas quedan sin intensidad ni clase y los modos de
-  shader muestran luminancia y RGB, donde la ruta CPU muestra gris plano y rojo. B2.2 solo cubrió la
-  ruta síncrona. Reabre la Tarea 12. Rama `explore/b2b-async-attrs`.
-  - [ ] B2b.1. Test rojo: las celdas construidas por la ruta asíncrona en modo RGB llevan las palabras
-    de intensidad y clase.
-  - [ ] B2b.2. La ruta asíncrona de celdas lee siempre intensidad y clase junto a la geometría (y el
-    atributo del modo `attribute:N:M`). Check: B2b.1 en verde.
-  - [ ] B2b.3. Navegador: en Majadas, intensidad y clasificación con celdas iguales a la ruta CPU (gris
-    plano y rojo); registro nuevo fechado que corrige el de B2.
+- [x] B2b. Intensidad y clase en la ruta asíncrona ([registro](../records/benchmarks/R3_B2B_ASYNC_ATTRS_14-11-2026.md),
+  que corrige el de B2): el worker de construcción lee intensidad y clase con la geometría siempre que
+  hay celdas (`6f37e29`, test rojo → verde); en el navegador, intensidad y clasificación coinciden en
+  tipo de color con la ruta CPU. Las columnas valen 0 en origen: los rangos `[0, 0]` son correctos.
 - [ ] B3. Tarea 13: un mismo espaciado de referencia por nube (T0b) no cambia al injertar páginas.
 - [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
@@ -95,7 +87,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
-- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb` y `explore/b2-color`: integradas en `feat/r3-v75` y borradas.
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color` y `explore/b2b-async-attrs`: integradas en `feat/r3-v75` y borradas.
 - [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
   `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
   bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).
