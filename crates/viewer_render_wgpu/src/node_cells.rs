@@ -197,6 +197,7 @@ impl NodeCellSource for PointNodeCellSource {
         }
         let node_depth = representative_depth(grid, bounds).saturating_sub(3);
         let points: Vec<_> = blocks.iter().map(Points::new).collect();
+        let t_set = std::time::Instant::now();
         let distinct_positions: HashSet<_> = blocks
             .iter()
             .flat_map(|block| block.points().points())
@@ -207,6 +208,7 @@ impl NodeCellSource for PointNodeCellSource {
                     .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
             })
             .collect();
+        ph(3, t_set);
         let mut levels = Vec::new();
         for depth in first..=last {
             let cells = build_level(grid, bounds, &points, depth)?;
@@ -338,10 +340,15 @@ fn build_level(
     let range: [(u64, u64); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
     let single_region = range.iter().all(|(lo, hi)| hi - lo < (1 << 21));
     if single_region {
-        build_level_keyed(grid, points, count, range, morton)
+        build_level_keyed(grid, points, count, range, morton, Some)
     } else {
-        build_level_keyed(grid, points, count, range, region_morton)
+        build_level_keyed(grid, points, count, range, region_morton, |_| None)
     }
+}
+
+pub static PH: [std::sync::atomic::AtomicU64; 5] = [const { std::sync::atomic::AtomicU64::new(0) }; 5];
+fn ph(i: usize, t: std::time::Instant) {
+    PH[i].fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn build_level_keyed<K: Ord + Copy>(
@@ -350,7 +357,9 @@ fn build_level_keyed<K: Ord + Copy>(
     count: f64,
     range: [(u64, u64); 3],
     key_for: impl Fn([u64; 3]) -> K,
+    as_u64: impl Fn(K) -> Option<u64>,
 ) -> Result<Vec<NodeCell>, NodeCellError> {
+    let t0 = std::time::Instant::now();
     let mut keyed: Vec<(K, usize, usize, [u64; 3])> = Vec::new();
     for (block_index, block) in points.iter().enumerate() {
         for (index, point) in block.block.points().points().iter().enumerate() {
@@ -369,7 +378,26 @@ fn build_level_keyed<K: Ord + Copy>(
             keyed.push((key, block_index, index, coord));
         }
     }
-    keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
+    ph(0, t0);
+    let t1 = std::time::Instant::now();
+    let radix: Option<Vec<(u64, u32)>> = if std::env::var_os("OQ09_NO_RADIX").is_some() {
+        None
+    } else {
+        keyed
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| as_u64(entry.0).map(|key| (key, position as u32)))
+            .collect()
+    };
+    let keyed = if let Some(pairs) = radix.filter(|_| keyed.len() < u32::MAX as usize) {
+        let order = radix_sort_stable(pairs);
+        order.into_iter().map(|(_, position)| keyed[position as usize]).collect()
+    } else {
+        keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
+        keyed
+    };
+    ph(1, t1);
+    let t2 = std::time::Instant::now();
     let mut cells: Vec<NodeCell> = Vec::new();
     let mut current = None;
     for (key, block_index, index, coord) in keyed {
@@ -403,7 +431,36 @@ fn build_level_keyed<K: Ord + Copy>(
         cell.z_min = cell.z_min.min(point.position[2]);
         cell.z_max = cell.z_max.max(point.position[2]);
     }
+    ph(2, t2);
     Ok(cells)
+}
+
+/// LSD radix sort on the key; stable, so equal keys keep their input order (block, index).
+fn radix_sort_stable(mut pairs: Vec<(u64, u32)>) -> Vec<(u64, u32)> {
+    const BITS: u32 = 11;
+    let top = pairs.iter().fold(0_u64, |acc, (key, _)| acc | key);
+    let mut scratch = vec![(0_u64, 0_u32); pairs.len()];
+    let mut shift = 0;
+    while shift < 64 && (top >> shift) != 0 {
+        let mut counts = [0_usize; 1 << BITS];
+        for (key, _) in &pairs {
+            counts[((key >> shift) & ((1 << BITS) - 1)) as usize] += 1;
+        }
+        let mut start = 0;
+        for count in &mut counts {
+            let n = *count;
+            *count = start;
+            start += n;
+        }
+        for pair in &pairs {
+            let digit = ((pair.0 >> shift) & ((1 << BITS) - 1)) as usize;
+            scratch[counts[digit]] = *pair;
+            counts[digit] += 1;
+        }
+        std::mem::swap(&mut pairs, &mut scratch);
+        shift += BITS;
+    }
+    pairs
 }
 
 fn region_morton(coord: [u64; 3]) -> (u128, u64) {
