@@ -83,6 +83,21 @@ impl Continuity {
         }
     }
 
+    /// [`min_side`](Self::min_side), or an error when the factor and the spacing give a side that
+    /// is not finite and positive (an overflowing product would silently turn the mode off).
+    pub(crate) fn checked_min_side(
+        &self,
+        reference_spacing: Option<f64>,
+    ) -> Result<Option<f64>, String> {
+        let side = self.min_side(reference_spacing);
+        match side {
+            Some(side) if !(side.is_finite() && side > 0.0) => Err(format!(
+                "the continuity minimum side {side} is not finite and positive"
+            )),
+            _ => Ok(side),
+        }
+    }
+
     /// The effective minimum cell side: `None` in literal mode and for a cloud whose reference
     /// spacing is unknown (such a cloud stays literal).
     pub(crate) fn min_side(&self, reference_spacing: Option<f64>) -> Option<f64> {
@@ -506,12 +521,13 @@ impl ViewerCells {
 
     /// Turns the continuity of the cloud on or off. Nothing is rebuilt or sent again: the next
     /// frame only picks other levels of the cells the driver holds.
-    pub(crate) fn set_continuity(&mut self, continuity: Continuity) {
+    pub(crate) fn set_continuity(&mut self, continuity: Continuity) -> Result<(), String> {
+        let side = continuity.checked_min_side(self.reference_spacing)?;
         self.continuity = continuity;
-        self.driver
-            .set_min_side(continuity.min_side(self.reference_spacing));
+        self.driver.set_min_side(side);
         self.view_dirty = true;
         self.probe_last.set(None);
+        Ok(())
     }
 
     #[cfg(test)]
@@ -770,9 +786,15 @@ impl InProcessCells {
 
     /// Turns the continuity of the cloud on or off; the next update applies it to the driver
     /// without building or sending any node again.
-    pub(crate) fn set_continuity(&mut self, continuity: Continuity) {
+    pub(crate) fn set_continuity(
+        &mut self,
+        continuity: Continuity,
+        reference_spacing: Option<f64>,
+    ) -> Result<(), String> {
+        continuity.checked_min_side(reference_spacing)?;
         self.continuity = continuity;
         self.dirty = true;
+        Ok(())
     }
 
     pub(crate) fn pending_pages(&self) -> &[NodeId] {

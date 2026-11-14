@@ -916,7 +916,7 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
     pair.pump();
     let literal_digest = pair.rest().expect("literal view at rest");
     // A frame at rest draws nothing; setting the literal mode again asks for one.
-    pair.viewer.set_continuity(Continuity::default());
+    pair.viewer.set_continuity(Continuity::default()).unwrap();
     let literal = settle_report(&mut pair);
     let finest_literal = depths_of(&literal).iter().map(|d| d.0).max().unwrap_or(0);
     assert!(
@@ -927,12 +927,14 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
 
     let received = pair.viewer.stats(&pair.target).nodes_received_total;
     pair.viewer
-        .set_continuity(Continuity::new(true, None).unwrap());
+        .set_continuity(Continuity::new(true, None).unwrap())
+        .unwrap();
     // Toggling sends and builds nothing: the same cut, the same cells.
     let built = pair.send_checked(0);
     assert!(built.is_empty(), "toggling rebuilt {} nodes", built.len());
     pair.viewer
-        .set_continuity(Continuity::new(true, None).unwrap());
+        .set_continuity(Continuity::new(true, None).unwrap())
+        .unwrap();
     let limited = settle_report(&mut pair);
     let stats = pair.viewer.stats(&pair.target);
     assert!(stats.continuity);
@@ -961,8 +963,16 @@ fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_ho
     );
     assert_eq!(pair.h.dataset.reference_spacing(), spacing_before);
 
+    // A factor that overflows the minimum is refused and the mode stays as it was.
+    let huge = Continuity::new(true, Some(f64::MAX)).unwrap();
+    assert!(pair.viewer.set_continuity(huge).is_err());
+    assert_eq!(
+        pair.viewer.stats(&pair.target).continuity_min_side,
+        Some(spacing)
+    );
+
     // Off again: literal mode, the digest of the first pass.
-    pair.viewer.set_continuity(Continuity::default());
+    pair.viewer.set_continuity(Continuity::default()).unwrap();
     assert_eq!(pair.viewer.stats(&pair.target).continuity_min_side, None);
     pair.pump();
     assert_eq!(pair.rest(), Some(literal_digest));
@@ -984,4 +994,13 @@ fn the_continuity_minimum_is_the_factor_times_the_reference_spacing_and_off_by_d
     for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
         assert!(Continuity::new(true, Some(bad)).is_err());
     }
+    // A finite factor whose product overflows is an error, not a silent literal mode.
+    let huge = Continuity::new(true, Some(f64::MAX)).unwrap();
+    assert!(huge.checked_min_side(Some(4.0)).is_err());
+    assert_eq!(huge.checked_min_side(None), Ok(None));
+    assert_eq!(on.checked_min_side(Some(0.25)), Ok(Some(0.25)));
+    assert_eq!(
+        Continuity::default().checked_min_side(Some(f64::MAX)),
+        Ok(None)
+    );
 }

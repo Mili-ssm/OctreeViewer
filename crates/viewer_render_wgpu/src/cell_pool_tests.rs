@@ -64,6 +64,10 @@ impl Rig {
     }
 
     fn step(&mut self, cut: &[NodeId], camera: &OrbitCamera, target: f64) -> FramePlan {
+        self.step_view(cut, &view(camera), target)
+    }
+
+    fn step_view(&mut self, cut: &[NodeId], view: &ViewProjection, target: f64) -> FramePlan {
         self.frame += 1;
         let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.inflight)
             .into_iter()
@@ -83,7 +87,7 @@ impl Rig {
             .frame(
                 cut,
                 &|id| nodes.get(&id).cloned(),
-                &view(camera),
+                view,
                 &grid(),
                 ORIGIN,
                 target,
@@ -2935,4 +2939,61 @@ fn toggling_continuity_requests_only_levels_of_the_pyramid_and_leaves_no_hole() 
             );
         }
     }
+}
+
+#[test]
+fn the_minimum_side_is_in_dataset_units_whatever_the_visual_scale() {
+    // The pool works in dataset units (the eye is divided by the visual scale), like the grid and
+    // the reference spacing, so a scaled view must pick the same levels as an unscaled one.
+    let scale = 2.0;
+    let mut camera = OrbitCamera::default();
+    let bounds = crate::SceneBounds {
+        min: [0.0; 3],
+        max: [SIDE * scale; 3],
+    };
+    assert!(camera.fit(bounds, crate::scene_digest_tests::VIEWPORT));
+    let scaled = ViewProjection::new(
+        camera,
+        crate::scene_digest_tests::VIEWPORT,
+        scale,
+        crate::VoxelBuildLimits::default(),
+    );
+    let cut = ids(&[1]);
+    let min = SIDE / 16.0;
+    let mut literal = Rig::new(root_node(), 64, 16, 1);
+    let mut rig = Rig::new(root_node(), 64, 16, 1);
+    rig.pool.set_min_side(Some(min));
+    let (mut lit, mut cont) = (None, None);
+    for _ in 0..12 {
+        lit = Some(literal.step_view(&cut, &scaled, 1.0));
+        cont = Some(rig.step_view(&cut, &scaled, 1.0));
+    }
+    assert_eq!(drawn_depth(&lit.unwrap()), 5);
+    let depth = drawn_depth(&cont.unwrap());
+    assert_eq!(depth, 4);
+    assert!(SIDE / f64::from(1_u32 << depth) >= min);
+}
+
+#[test]
+fn a_tight_pool_still_reports_its_coarsening_with_continuity_on_and_off() {
+    // Two sibling-level fixtures: the pool fit coarsens the far octant nodes; continuity at
+    // depth 6 (above every stored level but the finest) must neither hide nor add to it.
+    let cut = ids(&CHILDREN);
+    let cam = camera("zoom");
+    let mut counts = Vec::new();
+    for min in [None, Some(SIDE / 64.0), Some(SIDE / 16.0)] {
+        let mut rig = Rig::new(octant_nodes(), 44, 4, 2);
+        rig.pool.set_min_side(min);
+        let plan = rig.run(240, &cut, &cam, 4.0);
+        assert_eq!(plan.apply, CutApply::Applied, "{min:?}");
+        counts.push((plan.counters.pool_coarsened, plan.counters.stages));
+    }
+    // The literal run is the pool-pressure baseline of `a_still_pose_converges_...`: 2 nodes.
+    assert_eq!(counts[0], (2, 0));
+    // A minimum finer than the wanted depth caps nothing: the same coarsening, no stages.
+    assert_eq!(counts[1], counts[0]);
+    // A cap that lowers the wanted depth may relieve the pool but never shows up as a stage, and
+    // what is still coarsened is the pool's doing.
+    assert_eq!(counts[2].1, 0);
+    assert!(counts[2].0 <= counts[0].0, "{counts:?}");
 }

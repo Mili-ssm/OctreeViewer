@@ -525,7 +525,12 @@ impl WasmVoxelViewer {
             Some(dataset) if dataset.supports_cells() && device_ok => {
                 let mut cells =
                     crate::cells_glue::InProcessCells::new(dataset, wasm_update_config(pool_pages));
-                cells.set_continuity(self.continuity);
+                // A factor that does not fit this cloud leaves it literal (`setContinuity` and
+                // `cellStats` report the mode actually applied).
+                let spacing = dataset.reference_spacing();
+                if cells.set_continuity(self.continuity, spacing).is_err() {
+                    self.continuity = Continuity::default();
+                }
                 self.cells_local = Some(cells);
                 self.cell_path = PATH_ENABLED;
             }
@@ -641,7 +646,9 @@ impl WasmVoxelViewer {
         }
         let mut cells =
             ViewerCells::new(config, self.cell_node_cap).with_reference_spacing(reference_spacing);
-        cells.set_continuity(self.continuity);
+        cells
+            .set_continuity(self.continuity)
+            .map_err(|message| JsValue::from_str(&message))?;
         cells.camera_changed(self.view_epoch);
         self.cells_remote = Some(cells);
         self.cell_path = PATH_ENABLED;
@@ -654,14 +661,20 @@ impl WasmVoxelViewer {
     /// next frame and rebuilds nothing: the cells hold every level.
     #[wasm_bindgen(js_name = setContinuity)]
     pub fn set_continuity(&mut self, enabled: bool, factor: Option<f64>) -> Result<(), JsValue> {
-        let continuity = Continuity::new(enabled, factor).map_err(|e| JsValue::from_str(&e))?;
-        self.continuity = continuity;
+        let error = |message: String| JsValue::from_str(&message);
+        let continuity = Continuity::new(enabled, factor).map_err(error)?;
+        // Every side is checked before any changes, so an error leaves the mode as it was.
+        let spacing = self
+            .lod_session
+            .as_ref()
+            .and_then(|session| session.dataset().reference_spacing());
         if let Some(cells) = &mut self.cells_remote {
-            cells.set_continuity(continuity);
+            cells.set_continuity(continuity).map_err(error)?;
         }
         if let Some(cells) = &mut self.cells_local {
-            cells.set_continuity(continuity);
+            cells.set_continuity(continuity, spacing).map_err(error)?;
         }
+        self.continuity = continuity;
         if self.lod_session.is_some() {
             self.lod_dirty = self.lod_config.is_some();
         }
