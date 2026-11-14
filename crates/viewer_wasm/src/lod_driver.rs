@@ -414,3 +414,47 @@ pub(crate) fn assemble_async_block(
     }
     Ok(block)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs frames of the ladder the way the drivers do (`next_lod_stage` after each rung, no
+    /// pending blocks) and returns the rungs in the order they were drawn.
+    fn drawn_rungs(target: f64, target_ready: bool) -> Vec<f64> {
+        let mut stage = None;
+        let mut drawn = Vec::new();
+        for _ in 0..8 {
+            let _ = run_stage_ladder::<(), (), ()>(
+                &mut (),
+                &mut stage,
+                target,
+                true,
+                |_| Ok(target_ready),
+                |_, rung, stage_pixels| {
+                    drawn.push(rung);
+                    *stage_pixels = next_lod_stage(Some(rung), target, false, true).0;
+                    Ok(())
+                },
+            );
+            if drawn.last() == Some(&target) {
+                break;
+            }
+        }
+        drawn
+    }
+
+    /// RF-06: fixed mode draws what is resident at a coarser rung first and refines frame by
+    /// frame, instead of waiting for the target's cut.
+    #[test]
+    fn fixed_mode_draws_a_coarse_rung_before_the_target() {
+        assert_eq!(drawn_rungs(2.0, false), [16.0, 8.0, 4.0, 2.0]);
+        assert_eq!(drawn_rungs(0.5, false), [16.0, 8.0, 4.0, 2.0, 1.0, 0.5]);
+    }
+
+    /// A target whose cut is already built is drawn straight away (nothing coarser to show).
+    #[test]
+    fn a_resident_target_cut_is_drawn_first() {
+        assert_eq!(drawn_rungs(2.0, true), [2.0]);
+    }
+}
