@@ -431,7 +431,7 @@ mod tests {
             BlockId::new(7),
             geometry,
             None,
-            carried,
+            Some(carried),
             &schema,
             None,
             None,
@@ -455,7 +455,7 @@ mod tests {
             BlockId::new(7),
             geometry,
             Some(painted),
-            carried,
+            Some(carried),
             &schema,
             Some((0, 0)),
             Some([0.0, 255.0]),
@@ -465,5 +465,25 @@ mod tests {
         let words = packed(block);
         assert!(!words.is_empty());
         assert!(words.iter().all(|word| *word == (150, 2)), "{words:?}");
+    }
+
+    #[test]
+    fn cpu_path_blocks_painted_with_an_attribute_keep_no_extra_column() {
+        let mut reader = MemoryReader::new();
+        let geometry = reader.read_geometry(BlockId::new(7)).unwrap();
+        let schema = reader.metadata().hierarchy().attributes().to_vec();
+        let painted = reader.read_attribute(BlockId::new(7), 0).unwrap();
+        let block = crate::lod_driver::assemble_async_block(
+            BlockId::new(7),
+            geometry,
+            Some(painted),
+            None,
+            &schema,
+            Some((0, 0)),
+            Some([0.0, 255.0]),
+            usize::MAX,
+        )
+        .unwrap();
+        assert!(block.attributes().is_empty());
     }
 }

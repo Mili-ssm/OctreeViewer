@@ -379,12 +379,16 @@ pub(super) fn insert_async_block(
         .map(|value| attribute_column_from_js(schema, value, point_count))
         .transpose()?;
     let carried = carried
-        .iter()
-        .flat_map(|array| array.iter())
-        .map(|value| attribute_column_from_js(schema, &value, point_count))
-        .collect::<Result<Vec<_>, _>>()?;
+        .as_ref()
+        .map(|array| {
+            array
+                .iter()
+                .map(|value| attribute_column_from_js(schema, &value, point_count))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?;
     let mut attribute_bytes = 0_usize;
-    for column in column.iter().chain(&carried) {
+    for column in column.iter().chain(carried.iter().flatten()) {
         attribute_bytes = attribute_bytes
             .checked_add(attribute_column_payload_bytes(column)?)
             .ok_or_else(|| JsValue::from_str("block size exceeds the cache budget"))?;
