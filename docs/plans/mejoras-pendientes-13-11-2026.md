@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, pendiente del propietario; siguiente: fase D)
+Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -72,8 +72,8 @@ v7.5 40,2 s (razón 1,92). La diferencia está en construir la jerarquía (+12,4
 TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada. Nada se integra; las ramas
 `explore/convert-speed` y `explore/convert-batch` se conservan como evidencia.
 
-- [ ] C4. **Decisión del propietario:** TC5 (rediseño del pipeline con plan propio), revisar RQ-07 o
-  probar la copia diferida del más cercano.
+- [ ] C4. **Decisión del propietario, aplazada el 14-11-2026 a después de la fase D:** TC5 (rediseño del
+  pipeline con plan propio), revisar RQ-07 o probar la copia diferida del más cercano.
 
 ## Fase D: fuente remota y V7 final
 
