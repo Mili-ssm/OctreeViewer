@@ -49,6 +49,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     options: FormatWriterOptions,
     collect_codec_diagnostics: bool,
 ) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
+    crate::occupancy_codec::EXPERIMENT.with(|e| e.borrow_mut().clear());
     let layout = StorageLayout::from_version(version)?;
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
@@ -339,6 +340,35 @@ pub(crate) fn prepare_point_block_for_version_impl(
         }
         diagnostics.candidates = candidates;
     }
+    let oq09 = std::env::var_os("OQ09_STATS").is_some();
+    let mut oq09_perm: Option<Vec<u32>> = None;
+    let mut oq09_line = String::new();
+    if oq09 {
+        let actual = encoded_geometry.bytes().len();
+        crate::occupancy_codec::EXPERIMENT.with(|e| {
+            let e = e.borrow();
+            let win = e.iter().find(|x| x.raw_len == geometry_raw_length);
+            let best = e.iter().min_by_key(|x| x.variant_comp);
+            let (idx, cnt, res, vraw) = win.map_or((0, 0, 0, 0), |x| {
+                (x.index_bytes, x.counts_bytes, x.residual_bytes, x.variant_raw)
+            });
+            let occ = u8::from(win.is_some() && matches!(geometry_encoding, GeometryEncoding::Occupied | GeometryEncoding::CompactOccupied));
+            let (m_geom, vc_win) = match best {
+                Some(b) if b.variant_comp < actual => (b.variant_comp, b.variant_comp),
+                _ => (actual, actual),
+            };
+            let _ = vc_win;
+            let winvc = win.map_or(actual, |x| x.variant_comp);
+            if let Some(b) = best.filter(|b| b.variant_comp < actual) {
+                oq09_perm = Some(b.perm.clone());
+            } else if occ == 1 {
+                oq09_perm = win.map(|x| x.perm.clone());
+            }
+            oq09_line = format!(
+                "{point_count} {occ} {actual} {geometry_raw_length} {idx} {cnt} {res} {vraw} {winvc} {m_geom}"
+            );
+        });
+    }
     // The u32 coordinates have been encoded; retain only their scalar transform/error
     // while compressing payloads, rather than another 12 bytes per point.
     drop(quantized);
@@ -359,6 +389,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
         raw.extend_from_slice(&[color.r, color.g, color.b]);
     }
     append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
+    let attributes_for_oq09 = attributes.clone();
     for column in attributes {
         let length = attribute_payload_size(point_count as u64, column.descriptor())?;
         let length = usize::try_from(length).map_err(|_| FormatError::SizeOutOfRange(length))?;
@@ -368,6 +399,42 @@ pub(crate) fn prepare_point_block_for_version_impl(
         encode_values(column.values(), &mut raw);
         let width = crate::layout::attribute_tuple_width(column.descriptor())?;
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
+    }
+    if oq09 {
+        let stored = |p: &[PayloadDirectoryEntry]| p[1..].iter().map(|x| x.stored_length).sum::<u64>();
+        let actual_attr = stored(&payloads);
+        let mut perm_attr = actual_attr;
+        if let Some(perm) = &oq09_perm {
+            let mut scratch_bytes = Vec::new();
+            let mut scratch_payloads = Vec::new();
+            let mut raws: Vec<(Vec<u8>, usize)> = Vec::new();
+            let mut colors = Vec::new();
+            for color in block.colors() {
+                colors.extend_from_slice(&[color.r, color.g, color.b]);
+            }
+            raws.push((colors, 3));
+            for column in attributes_for_oq09.iter() {
+                let mut r = Vec::new();
+                encode_values(column.values(), &mut r);
+                let width = crate::layout::attribute_tuple_width(column.descriptor())?;
+                raws.push((r, width));
+            }
+            for (raw, width) in raws {
+                let elem = raw.len() / point_count.max(1);
+                let mut permuted = Vec::with_capacity(raw.len());
+                for &r in perm {
+                    permuted.extend_from_slice(&raw[r as usize * elem..(r as usize + 1) * elem]);
+                }
+                append_payload(&permuted, &mut scratch_bytes, &mut scratch_payloads, layout, width)?;
+            }
+            perm_attr = scratch_payloads.iter().map(|x| x.stored_length).sum();
+        }
+        use std::io::Write;
+        if let Some(path) = std::env::var_os("OQ09_STATS") {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                let _ = f.write_all(format!("{oq09_line} {actual_attr} {perm_attr}\n").as_bytes());
+            }
+        }
     }
     Ok((
         PreparedPointBlock {
