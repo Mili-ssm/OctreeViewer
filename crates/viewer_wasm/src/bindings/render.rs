@@ -35,13 +35,9 @@ impl WasmVoxelViewer {
         } = selection;
         // Shader modes on live cells only change the uniform: no cells rebuilt, no pool reset.
         let uniform_only = crate::cells_glue::shader_mode_only(
-            self.cells_local
-                .as_ref()
-                .is_some_and(|cells| cells.is_active()),
+            self.cells_local.is_some(),
             self.selected_attribute.is_some(),
             selected_attribute.is_some(),
-            self.cells_shader_modes,
-            mode,
         );
         let renderer = self
             .gpu_renderer
@@ -60,20 +56,11 @@ impl WasmVoxelViewer {
                     .sync_visible_blocks(&[], dataset.resident_blocks())
                     .map_err(|error| JsValue::from_str(&error.to_string()))?;
                 dataset.clear_loaded_blocks();
-                // R3-Q23: cells are RGB only; RGB again re-enables them with the nodes kept.
                 if let Some(cells) = self.cells_local.as_mut() {
                     // R3-Q33: a new attribute starts a new colour generation of the cells.
                     if dataset.set_cell_paint(selected_attribute) {
                         cells.mark_dirty();
                     }
-                    cells.set_active(
-                        dataset,
-                        crate::cells_glue::cells_draw_mode(
-                            self.cells_shader_modes,
-                            mode,
-                            selected_attribute.is_some(),
-                        ),
-                    );
                 }
                 self.last_scene_digest = None;
                 self.reset_range_read_stats();
@@ -89,7 +76,6 @@ impl WasmVoxelViewer {
     /// render as `rgb`.
     #[wasm_bindgen(js_name = setPresentationColorMode)]
     pub fn set_presentation_color_mode(&mut self, mode: String) -> Result<(), JsValue> {
-        let attribute = mode.starts_with("attribute:");
         let mode = if mode.starts_with("attribute:") {
             ColorMode::Rgb
         } else {
@@ -101,8 +87,6 @@ impl WasmVoxelViewer {
             .as_mut()
             .ok_or_else(|| JsValue::from_str("GPU renderer has not been initialized"))?
             .set_color_mode(mode);
-        let draws = crate::cells_glue::cells_draw_mode(self.cells_shader_modes, mode, attribute);
-        self.set_remote_cells_rgb(draws);
         Ok(())
     }
 

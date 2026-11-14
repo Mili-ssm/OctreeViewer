@@ -202,7 +202,7 @@ impl<R> SceneBuilderCore<R> {
 
 impl<R> SceneBuilderCore<R> {
     /// [`update`](Self::update) on the CPU path, or step 1 of the cells path while `cells` is
-    /// present and active (R3-Q23: other colour modes deactivate it). Same arguments otherwise.
+    /// present. Same arguments otherwise.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_with_cells(
         &mut self,
@@ -214,7 +214,7 @@ impl<R> SceneBuilderCore<R> {
         mut load_block: impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
         mut load_page: impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
     ) -> Result<BuilderStep, String> {
-        let Some(cells) = cells.filter(|cells| cells.is_active()) else {
+        let Some(cells) = cells else {
             return self
                 .update(
                     camera,

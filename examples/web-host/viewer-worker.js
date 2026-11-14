@@ -338,9 +338,6 @@ function withStuckGuard(lod) {
 // resting digest replace the builder's, so "still loading" covers the cells not yet drawn.
 function withRenderCellStats(lod) {
     if (!lod || !cellsRemote) return lod;
-    // Off the cells path (R3-Q23) the builder sends scenes: the driver is inactive and the builder's
-    // last cell stats are stale, so they must not keep the frames running.
-    if (currentColorMode !== "rgb") return { ...lod, cellsBusy: false, cutDigestAtRest: null };
     const cells = viewer.cellStats();
     if (!cells) return lod;
     return withStuckGuard({ ...lod, ...cells, cellsBusy: Boolean(lod.cellsBusy || cells.cellsBusy) });
@@ -883,8 +880,7 @@ function handleBuildMessage(data) {
             cellCounters.cellCuts += 1;
             viewer.setCellCut(data);
         } else if (data.type === "cellLod") {
-            // After a colour change the builder sends scenes; a cellLod still in flight is stale.
-            if (currentColorMode !== "rgb" || data.cutEpoch <= appliedCutEpoch) return;
+            if (data.cutEpoch <= appliedCutEpoch) return;
             appliedCutEpoch = data.cutEpoch;
             for (const key of viewSentAt.keys()) {
                 if (key <= data.viewEpoch) viewSentAt.delete(key);
@@ -895,7 +891,7 @@ function handleBuildMessage(data) {
                 postLodProgress(currentLodStats(), true);
             }
         } else if (data.type === "scene" || data.type === "lod") {
-            if (data.type === "scene" && cellsRemote && confirmedColorMode === "rgb" && currentColorMode === "rgb") {
+            if (data.type === "scene" && cellsRemote) {
                 // The builder sends no scene in cells mode, and one would drop the pool.
                 cellCounters.strayScenes += 1;
                 console.error?.("build worker sent a scene while the cells path is active");

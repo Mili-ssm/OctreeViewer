@@ -10,9 +10,9 @@
 //!   per frame, the latest `cellCut`, the driver frame and the messages it sends back.
 //! * [`InProcessCells`]: the viewer holding the dataset itself; the three steps run back to back.
 //!
-//! Colour modes (R3-Q23): cells are RGB only until Task 12. Any other mode switches the side off
-//! (`set_active(false)`), the CPU path takes over, and back to RGB `set_active(true)` re-enables
-//! the cells: the nodes are kept, only the pool is rebuilt.
+//! Colour modes (R3-Q32, R3-Q33): every mode is drawn by the cells. A shader mode (intensity,
+//! elevation, classification) only rewrites the uniform; an attribute mode starts a new colour
+//! generation and the nodes are built again from painted blocks.
 //!
 //! View epochs: the render side counts its views (`camera_changed(epoch)`, the `viewEpoch` of the
 //! JS API); the host hands the epoch of the camera it sends to the build side, which echoes it in
@@ -144,7 +144,6 @@ pub(crate) struct BuilderOutput {
 
 /// The build worker's side of the cells path.
 pub(crate) struct BuilderCells {
-    active: bool,
     stage_pixels: Option<f64>,
     dirty: bool,
     target_pixels: Option<f64>,
@@ -155,40 +154,19 @@ pub(crate) struct BuilderCells {
     config: CellUpdateConfig,
 }
 
-/// Whether the cells path draws a colour selection (R3-Q23, R3-Q32). Plain RGB always; the shader
-/// modes (intensity, elevation, classification) and `attribute:N:M` once the host opted in: the
-/// cells carry their columns, so a shader mode only rewrites the uniform, and an attribute mode
-/// builds the cells again from painted blocks under a new colour generation (R3-Q33). Until the
-/// opt-in, any other mode takes the CPU path.
 /// An attribute `(schema index, component)` and its range, painted into the cells' blocks.
 pub(crate) type CellPaint = ((u32, u32), Option<[f64; 2]>);
 
 /// Whether a colour change with live cells only rewrites the shader uniform (no node is built,
-/// the pool is kept): the cells are drawn in both the old and the new selection, neither paints
-/// an attribute, and the mode is one the shader draws. Any attribute change starts a new colour
-/// generation instead (R3-Q33).
-pub(crate) fn shader_mode_only(
-    cells_active: bool,
-    had_attribute: bool,
-    attribute: bool,
-    shader_modes: bool,
-    mode: viewer_render_wgpu::ColorMode,
-) -> bool {
-    cells_active && !had_attribute && !attribute && cells_draw_mode(shader_modes, mode, false)
-}
-
-pub(crate) fn cells_draw_mode(
-    shader_modes: bool,
-    mode: viewer_render_wgpu::ColorMode,
-    attribute: bool,
-) -> bool {
-    shader_modes || (!attribute && mode == viewer_render_wgpu::ColorMode::Rgb)
+/// the pool is kept): neither the old nor the new selection paints an attribute. Any attribute
+/// change starts a new colour generation instead (R3-Q33).
+pub(crate) fn shader_mode_only(cells_live: bool, had_attribute: bool, attribute: bool) -> bool {
+    cells_live && !had_attribute && !attribute
 }
 
 impl BuilderCells {
     pub(crate) fn new(config: CellUpdateConfig) -> Self {
         Self {
-            active: true,
             stage_pixels: None,
             dirty: false,
             target_pixels: None,
@@ -204,27 +182,9 @@ impl BuilderCells {
         self.view_epoch = epoch;
     }
 
-    pub(crate) fn is_active(&self) -> bool {
-        self.active
-    }
-
     /// Whether more updates are worth running without a new view.
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty
-    }
-
-    /// R3-Q23: any colour mode other than plain RGB sends the dataset down the CPU path; back to
-    /// RGB re-enables the cells. The pool was dropped by the CPU scene, so nothing is drawn.
-    pub(crate) fn set_active(&mut self, dataset: &mut LodDataset, active: bool) {
-        if self.active == active {
-            return;
-        }
-        self.active = active;
-        if active {
-            dataset.pool_reset();
-            self.stage_pixels = None;
-            self.dirty = true;
-        }
     }
 
     /// The cells' colour generation changed: plan again so the nodes are built anew.
@@ -376,7 +336,7 @@ impl BuilderCells {
 
     pub(crate) fn stats(&self, dataset: &LodDataset) -> CellsStats {
         CellsStats {
-            cells_busy: self.active && self.dirty,
+            cells_busy: self.dirty,
             view_epoch: self.view_epoch,
             cut_epoch_sent: dataset.cell_cut_epoch(),
             cut_epoch_applied: dataset.cell_ack_epoch(),
@@ -444,7 +404,6 @@ pub(crate) struct ViewerCells {
     /// Latest view epoch (`camera_changed`); a cut at rest must carry it.
     view_epoch: u64,
     view_dirty: bool,
-    active: bool,
     digest: Option<u64>,
     last_missing: usize,
     counters: PoolCounters,
@@ -469,7 +428,6 @@ impl ViewerCells {
             applied_epoch: 0,
             view_epoch: 0,
             view_dirty: false,
-            active: true,
             digest: None,
             last_missing: 0,
             counters: PoolCounters::default(),
@@ -486,15 +444,6 @@ impl ViewerCells {
     #[cfg(test)]
     pub(crate) fn driver(&self) -> &CellDriver {
         &self.driver
-    }
-
-    /// R3-Q23: see [`BuilderCells::set_active`]. Back to RGB the held cut is drawn again.
-    pub(crate) fn set_active(&mut self, active: bool) {
-        if self.active != active {
-            self.active = active;
-            self.view_dirty = true;
-            self.probe_last.set(None);
-        }
     }
 
     /// The view changed (camera move or resize) and `epoch` is its number: the page table is
@@ -546,18 +495,16 @@ impl ViewerCells {
 
     /// Whether the worker must keep drawing.
     pub(crate) fn needs_frame<T: CellTarget>(&self, target: &T) -> bool {
-        self.active
-            && (!self.queue.is_empty()
-                || (self.cut.is_some() && self.view_dirty)
-                || self.driver.needs_frame_on(target))
+        !self.queue.is_empty()
+            || (self.cut.is_some() && self.view_dirty)
+            || self.driver.needs_frame_on(target)
     }
 
     /// A cut sent and not applied, queued nodes, or driver work.
     pub(crate) fn cells_busy<T: CellTarget>(&self, target: &T) -> bool {
-        self.active
-            && (!self.queue.is_empty()
-                || self.received_epoch > self.applied_epoch
-                || self.driver.needs_frame_on(target))
+        !self.queue.is_empty()
+            || self.received_epoch > self.applied_epoch
+            || self.driver.needs_frame_on(target)
     }
 
     /// Applies queued messages up to the byte cap, then draws the held cut when anything
@@ -567,11 +514,6 @@ impl ViewerCells {
         target: &mut T,
         view: &ViewProjection,
     ) -> Result<Option<FrameReport>, String> {
-        // R3-Q23: with the cells off the CPU scene owns the pool; the queue waits for the RGB mode
-        // (nodes and cut stay queued, the driver keeps what it has).
-        if !self.active {
-            return Ok(None);
-        }
         let mut got = false;
         let mut applied_bytes = 0usize;
         while let Some(front) = self.queue.front() {
@@ -655,11 +597,9 @@ impl ViewerCells {
     /// the same digest came out of two consecutive reads.
     pub(crate) fn cut_digest_at_rest<T: CellTarget>(&self, target: &T) -> Option<u64> {
         let held = self.cut.as_ref();
-        let rest = self.active
-            && held.is_some_and(|cut| {
-                cut.idle && cut.epoch == self.applied_epoch && cut.view_epoch == self.view_epoch
-            })
-            && !self.view_dirty
+        let rest = held.is_some_and(|cut| {
+            cut.idle && cut.epoch == self.applied_epoch && cut.view_epoch == self.view_epoch
+        }) && !self.view_dirty
             && self.received_epoch == self.applied_epoch
             && self.queue.is_empty()
             && !self.driver.needs_frame_on(target)
@@ -701,7 +641,6 @@ impl ViewerCells {
 /// The viewer holding the dataset: the three steps back to back.
 pub(crate) struct InProcessCells {
     driver: CellDriver,
-    active: bool,
     stage_pixels: Option<f64>,
     dirty: bool,
     config: CellUpdateConfig,
@@ -738,7 +677,6 @@ impl InProcessCells {
         }
         Self {
             driver: CellDriver::new(driver),
-            active: true,
             stage_pixels: None,
             dirty: false,
             config,
@@ -752,23 +690,6 @@ impl InProcessCells {
 
     pub(crate) fn pending_pages(&self) -> &[NodeId] {
         &self.pending_pages
-    }
-
-    pub(crate) fn is_active(&self) -> bool {
-        self.active
-    }
-
-    /// R3-Q23, as [`BuilderCells::set_active`].
-    pub(crate) fn set_active(&mut self, dataset: &mut LodDataset, active: bool) {
-        if self.active == active {
-            return;
-        }
-        self.active = active;
-        if active {
-            dataset.pool_reset();
-            self.stage_pixels = None;
-            self.dirty = true;
-        }
     }
 
     /// The camera moved or the viewport changed: another update is worth running, and until it
@@ -863,7 +784,7 @@ impl InProcessCells {
         }
     }
 
-    /// [`update`](Self::update) on the unpainted blocks the cells use (R3-Q23: RGB only), with
+    /// [`update`](Self::update) on the blocks the cells use (`paint` is the attribute of the colour generation, R3-Q33), with
     /// the pending pages kept and the stats read after it. `read_hook` brackets every block read.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_view<R, E, T>(
@@ -920,8 +841,8 @@ impl InProcessCells {
             self.digest,
         );
         CellsStats {
-            cells_busy: self.active && (self.dirty || needs),
-            needs_frame: self.active && (self.dirty || needs),
+            cells_busy: self.dirty || needs,
+            needs_frame: self.dirty || needs,
             cut_epoch_sent: dataset.cell_cut_epoch(),
             cut_epoch_applied: self.applied_epoch,
             cut_digest_at_rest: rest,

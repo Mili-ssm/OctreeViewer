@@ -20,7 +20,7 @@ use crate::{
     DEFAULT_PAGE_BUDGET_BYTES, LodBuiltScene, LodDataset, LodDatasetError, LodViewStats,
     PageInsert, WasmAsyncFormatReader, WasmPageGraft,
     browser_io::{BrowserBlobReader, BrowserReadStats},
-    cells_glue::{InProcessCells, ReadPhase},
+    cells_glue::ReadPhase,
     lod_driver::{LodStep, LodStepResult, SceneSink, assemble_async_block, update_lod_view_paged},
     lod_metadata::LodDatasetDescriptor,
     lod_session::LodSession,
@@ -439,7 +439,7 @@ impl WasmVoxelViewer {
     /// Pages the last `updateLod` needed and lacked, highest projected error first.
     #[wasm_bindgen(js_name = pendingPageAnchors)]
     pub fn pending_page_anchors(&self) -> js_sys::Array {
-        if let Some(cells) = self.cells_local.as_ref().filter(|cells| cells.is_active()) {
+        if let Some(cells) = self.cells_local.as_ref() {
             return cells
                 .pending_pages()
                 .iter()
@@ -684,11 +684,7 @@ impl WasmVoxelViewer {
             }
         }
         self.lod_config = Some(target_voxel_pixels);
-        if self
-            .cells_local
-            .as_ref()
-            .is_some_and(InProcessCells::is_active)
-        {
+        if self.cells_local.is_some() {
             let value = self.update_lod_cells(target_voxel_pixels)?;
             self.last_lod_error = None;
             return Ok(value);
@@ -708,7 +704,7 @@ impl WasmVoxelViewer {
 
 impl WasmVoxelViewer {
     pub(super) fn refresh_lod_if_dirty(&mut self) -> Result<(), JsValue> {
-        if let Some(cells) = self.cells_local.as_mut().filter(|cells| cells.is_active()) {
+        if let Some(cells) = self.cells_local.as_mut() {
             let Some(target_voxel_pixels) = self.lod_config else {
                 return Ok(());
             };

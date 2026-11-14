@@ -61,7 +61,13 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
             return { status: "metadata_ready", visualScale: 2, ...(this.cellsOn ? { cellPath: "enabled", cellsInfo: cellsInfo() } : { cellPath: "off" }) };
         }
         pendingAsyncLodBlocks() { return []; }
-        setColorMode(mode) { this.mode = mode; }
+        // Like the real builder: an attribute mode starts a new colour generation (the nodes are
+        // built again), a shader mode builds nothing.
+        setColorMode(mode) {
+            calls.push(["setColorMode", mode]);
+            this.mode = mode;
+            this.recolor = mode.startsWith("attribute:");
+        }
         attributeRange() { return null; }
         // Like the real builder: every cells method throws while the cells path is off.
         need() { if (!this.cellsOn) throw new Error(NOT_ENABLED); }
@@ -75,16 +81,18 @@ async function runBuildWorker({ cells = true, nodeBuffers = () => [new ArrayBuff
         }
         applyPoolAck(ack) { this.need(); calls.push(["applyPoolAck", ack.cutEpoch]); }
         // `cellsBusy` is the builder's dirty flag: true while more updates are worth running.
-        cellStats() { return this.cellsOn ? realCellStats({ cellsBusy: updates.length <= refine }) : null; }
+        cellStats() { return this.cellsOn ? realCellStats({ cellsBusy: updates.length <= refine || Boolean(this.recolor) }) : null; }
         update() {
             calls.push(["update"]);
             updates.push(updates.length + 1);
             const n = updates.length;
-            if (this.cellsOn && (this.mode ?? "rgb") === "rgb") {
+            if (this.cellsOn) {
+                const rebuilt = this.recolor || this.mode === undefined || this.mode === "rgb";
+                this.recolor = false;
                 return {
                     epoch: n, generation: 3, cutEpoch: n, viewEpoch: this.viewEpoch, cut: new BigUint64Array([5n]),
                     support: new BigUint64Array(0), idle: false, stagePixels: 8, targetPixels: 4,
-                    nodeCells: nodeBuffers(n), needsRefinement: n <= refine, sceneBuffer: null, instanceCount: 0,
+                    nodeCells: rebuilt ? nodeBuffers(n) : [], needsRefinement: n <= refine, sceneBuffer: null, instanceCount: 0,
                     blockIds: [], digest: null, lod: lod({ cellsBusy: true }),
                 };
             }
@@ -243,20 +251,28 @@ test("render reports for another gen, or without a cells dataset, are ignored", 
     assert.deepEqual(names(plain.calls).filter(name => name === "poolReset" || name === "driverReplaced"), []);
 });
 
-test("another colour mode sends scenes again and RGB brings the cells back", async () => {
+test("every colour mode stays on the cells path; only an attribute mode builds nodes again", async () => {
     const worker = await runBuildWorker();
     worker.view();
     await worker.sync();
-    assert.equal(worker.posted.filter(item => item.type === "cellCut").length, 1);
+    const cuts = () => worker.posted.filter(item => item.type === "cellCut").length;
+    const nodeMessages = () => worker.posted.filter(item => item.type === "nodeCells").length;
+    assert.equal(cuts(), 1);
+    const base = nodeMessages();
+    // Shader mode: the cut is sent again (the view is replanned), no node is built.
     worker.send("colorMode", { gen: 1, mode: "intensity" });
     await worker.sync();
-    assert.equal(worker.posted.filter(item => item.type === "scene").length, 1, "the CPU path sends a scene");
+    assert.equal(nodeMessages(), base, "a shader mode builds no node");
+    assert.equal(cuts(), 2);
+    // Attribute mode: new colour generation, the nodes are built again.
+    worker.send("colorMode", { gen: 1, mode: "attribute:0:1" });
+    await worker.sync();
+    assert.equal(nodeMessages(), base + 1, "an attribute mode builds the nodes anew");
     worker.send("colorMode", { gen: 1, mode: "rgb" });
     await worker.sync();
-    assert.equal(worker.posted.filter(item => item.type === "scene").length, 1);
-    assert.equal(worker.posted.filter(item => item.type === "cellCut").length, 2, "cells again");
-    const order = worker.posted.map(item => item.type).filter(type => type === "scene" || type === "cellCut" || type === "colorMode");
-    assert.deepEqual(order, ["cellCut", "colorMode", "scene", "colorMode", "cellCut"]);
+    assert.equal(worker.posted.filter(item => item.type === "scene").length, 0, "no CPU scene in any mode");
+    const order = worker.posted.map(item => item.type).filter(type => type === "scene" || type === "colorMode");
+    assert.deepEqual(order, ["colorMode", "colorMode", "colorMode"]);
 });
 
 // ---- Render worker -------------------------------------------------------------------------
@@ -276,12 +292,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     let pendingMessages = null;
     let cellStats = realCellStats({ viewEpoch: 10 });
     let cellsOn = false;
-    let rgbActive = true;
     const cpuLodStats = buildWorker ? null : { cellPath: "off", sceneDigest: "cpu" };
     const viewer = {
         resize() {}, setColorMode() {},
-        // Like the real viewer: another mode than RGB deactivates the cells (R3-Q23), RGB reactivates them.
-        setPresentationColorMode(mode) { log.push(["setPresentationColorMode", mode]); rgbActive = mode === "rgb"; },
+        setPresentationColorMode(mode) { log.push(["setPresentationColorMode", mode]); },
         setDepthShading() {}, replacePoints() {},
         fitScene() {}, pan() {}, zoom() {}, moveCamera() {},
         orbit() { viewEpoch += 1; camera = camera.map((value, index) => (index === 4 ? value + 0.1 : value)); },
@@ -320,8 +334,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             pendingMessages = null;
             return taken;
         },
-        // Inactive cells are never busy (`ViewerCells::cells_busy` starts with `self.active`).
-        cellStats: () => ({ ...cellStats, cellsBusy: rgbActive && cellStats.cellsBusy }),
+        cellStats: () => cellStats,
     };
     class FakeWorker {
         constructor(url) {
@@ -382,7 +395,6 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         messages, workers, log, errors, warnings, uploads, send, open, openCells, frame, metrics,
         setPending(value) { pendingMessages = value; },
         setCellStats(value) { cellStats = { ...cellStats, ...value }; },
-        rgbActive: () => rgbActive,
         renders: () => renderFrames,
         calls: name => log.filter(entry => entry[0] === name),
         sent: (worker, ...types) => worker.posted.filter(item => types.includes(item.type)),
@@ -546,7 +558,7 @@ test("the view carries the viewer's epoch read with the camera", async () => {
     assert.equal(plain.sent(other, "view")[0].viewEpoch, undefined);
 });
 
-test("a scene in cells mode is reported and not applied; scenes are fine in another colour mode", async () => {
+test("a scene in cells mode is reported and not applied, in any colour mode", async () => {
     const render = await runRenderWorker();
     const worker = await render.openCells();
     const scene = (epoch) => ({
@@ -557,24 +569,13 @@ test("a scene in cells mode is reported and not applied; scenes are fine in anot
     assert.equal(render.uploads.length, 0);
     assert.equal(render.errors.length, 1);
     assert.equal((await render.metrics()).cellCounters.strayScenes, 1);
-    // The CPU path after a colour change: the builder confirms the mode, then scenes follow.
     await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
     worker.emit({ type: "colorMode", gen: 1, mode: "intensity", attributeRange: null });
     worker.emit(scene(2));
     await settle();
-    assert.equal(render.uploads.length, 1);
-    assert.equal(render.errors.length, 1);
-    // Back to RGB: scenes built before the confirmation are still legitimate, later ones are not.
-    await render.send("refine", { trigger: "color", colorMode: "rgb", targetVoxelPixels: 4, refinementId: 2 });
-    worker.emit(scene(3));
-    await settle();
-    assert.equal(render.uploads.length, 2);
-    worker.emit({ type: "colorMode", gen: 1, mode: "rgb", attributeRange: null });
-    worker.emit(scene(4));
-    await settle();
-    assert.equal(render.uploads.length, 2);
+    assert.equal(render.uploads.length, 0);
     assert.equal(render.errors.length, 2);
-    assert.equal(worker.posted.filter(item => item.type === "colorMode").map(item => item.mode).join(), "intensity,rgb");
+    assert.equal((await render.metrics()).cellCounters.strayScenes, 2);
 });
 
 test("cellsBusy keeps frames going: the final draw waits for the driver and the stats carry the flag", async () => {
@@ -644,7 +645,7 @@ const statsOf = async (render, requestId) => {
     return render.messages.find(item => item.type === "apiResult" && item.requestId === requestId).value.lod;
 };
 
-test("a colour change leaves the cells path in the render worker and RGB brings it back", async () => {
+test("a colour change keeps the cells path in the render worker: no scene, the driver's busy flag still counts", async () => {
     const render = await runRenderWorker();
     const worker = await render.openCells();
     render.setCellStats({ cellsBusy: true });
@@ -652,61 +653,39 @@ test("a colour change leaves the cells path in the render worker and RGB brings 
     await settle();
     assert.equal(lastProgress(render).lod.cellsBusy, true);
     await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
-    assert.deepEqual(render.calls("setPresentationColorMode").at(-1), ["setPresentationColorMode", "intensity"],
-        "the viewer's cells are deactivated");
-    assert.equal(render.rgbActive(), false);
-    assert.equal((await statsOf(render, 1)).cellsBusy, false, "the builder's stale busy flag cannot keep frames running");
-    // A cellLod still in flight is stale: not applied.
+    assert.deepEqual(render.calls("setPresentationColorMode").at(-1), ["setPresentationColorMode", "intensity"]);
+    assert.equal((await statsOf(render, 1)).cellsBusy, true, "the cells are still drawn: their busy flag counts");
+    // The cut of the new mode is applied, not stale.
     const lodMessages = render.messages.filter(item => item.type === "lod").length;
+    worker.emit({ type: "colorMode", gen: 1, mode: "intensity", attributeRange: null });
     worker.emit(cellLodMessage(2));
     await settle();
-    assert.equal(render.messages.filter(item => item.type === "lod").length, lodMessages);
-    // The builder confirms the mode and sends a scene: applied, not stray.
-    worker.emit({ type: "colorMode", gen: 1, mode: "intensity", attributeRange: null });
+    assert.ok(render.messages.filter(item => item.type === "lod").length > lodMessages);
+    // A scene is stray in every mode.
     worker.emit({
         type: "scene", gen: 1, epoch: 1, viewEpoch: 1, buf: new Uint8Array(4).buffer, count: 1, blockIds: ["1"], lod: lod(), digest: "aa",
     });
     await settle();
-    assert.equal(render.uploads.length, 1);
-    assert.equal(errorsOf(render.messages).length + render.errors.length, 0);
-    assert.equal(render.renders(), 1, "the final scene is drawn although the driver flag was stale");
-    // RGB again: the cells come back and their busy flag counts again.
-    await render.send("refine", { trigger: "color", colorMode: "rgb", targetVoxelPixels: 4, refinementId: 2 });
-    assert.equal(render.rgbActive(), true);
-    worker.emit({ type: "colorMode", gen: 1, mode: "rgb", attributeRange: null });
+    assert.equal(render.uploads.length, 0);
+    assert.equal(render.errors.length, 1);
+    // An attribute mode is the same: the builder paints it, the render side draws rgb.
+    await render.send("refine", { trigger: "color", colorMode: "attribute:0:0", targetVoxelPixels: 4, refinementId: 2 });
+    worker.emit({ type: "colorMode", gen: 1, mode: "attribute:0:0", attributeRange: [0, 1] });
     worker.emit(cellLodMessage(3));
     await settle();
     assert.equal((await statsOf(render, 2)).cellsBusy, true);
+    assert.equal(errorsOf(render.messages).length + render.errors.length, 1);
 });
 
-test("a scene whose lod is merged with a busy driver does not trigger the final draw", async () => {
+test("a rejected colour mode on the cells path is undone in the render worker", async () => {
     const render = await runRenderWorker();
     const worker = await render.openCells();
     await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
     worker.emit({ type: "colorMode", gen: 1, mode: "intensity", attributeRange: null });
-    render.setCellStats({ cellsBusy: true });
-    // Non-rgb: the driver is inactive, so the (fake) busy flag is masked and the scene is final.
-    worker.emit({
-        type: "scene", gen: 1, epoch: 1, viewEpoch: 1, buf: new Uint8Array(4).buffer, count: 1, blockIds: ["1"], lod: lod(), digest: "aa",
-    });
+    await render.send("refine", { trigger: "color", colorMode: "attribute:9:0", targetVoxelPixels: 4, refinementId: 2 });
+    worker.emit({ type: "error", gen: 1, operation: "colorMode", message: "invalid attribute index" });
     await settle();
-    assert.equal(render.renders(), 1);
-});
-
-test("the scene branch uses the merged stats: a busy driver defers the final draw", async () => {
-    const render = await runRenderWorker();
-    const worker = await render.openCells();
-    // Confirmed non-rgb on the builder while the viewer is back to rgb (a scene built before the flip back).
-    await render.send("refine", { trigger: "color", colorMode: "intensity", targetVoxelPixels: 4, refinementId: 1 });
-    worker.emit({ type: "colorMode", gen: 1, mode: "intensity", attributeRange: null });
-    await render.send("refine", { trigger: "color", colorMode: "rgb", targetVoxelPixels: 4, refinementId: 2 });
-    render.setCellStats({ cellsBusy: true });
-    worker.emit({
-        type: "scene", gen: 1, epoch: 1, viewEpoch: 1, buf: new Uint8Array(4).buffer, count: 1, blockIds: ["1"], lod: lod(), digest: "aa",
-    });
-    await settle();
-    assert.equal(render.uploads.length, 1);
-    assert.equal(render.renders(), 0, "the builder's lod says complete, the driver is busy: no final draw yet");
+    assert.deepEqual(render.calls("setPresentationColorMode").map(call => call[1]), ["intensity", "attribute:9:0", "intensity"]);
 });
 
 test("the worker's own lodStillLoading counts cellsBusy (the copy that runs in the worker)", () => {

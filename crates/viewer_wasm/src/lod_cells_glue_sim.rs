@@ -113,9 +113,6 @@ impl GlueSim {
                 self.builder.pool_ack(ds, ack);
             }
         }
-        if !self.builder.is_active() {
-            return;
-        }
         if self.build_seen != self.view_gen {
             self.builder.mark_dirty();
         } else if !self.builder.is_dirty() {
@@ -266,15 +263,6 @@ impl GlueSim {
             }
         }
         self.settle(views.last().unwrap(), max_iterations)
-    }
-
-    /// R3-Q23: a colour mode other than RGB, then back. The CPU scene upload frees the pool.
-    fn set_cells_active(&mut self, active: bool) {
-        self.builder.set_active(&mut self.h.dataset, active);
-        self.viewer.set_active(active);
-        if !active {
-            self.h.target.drop_pool_for_test();
-        }
     }
 }
 
@@ -439,56 +427,7 @@ fn a_burst_of_node_cells_is_applied_over_several_frames_in_order() {
 }
 
 #[test]
-fn colour_mode_off_and_back_resumes_cells_without_a_reset_loop() {
-    let views = synth_orbit();
-    let budget = synthetic_cpu_bytes(&views);
-    let expected = in_process_digest(synthetic_harness(1 << 20, 2.0), budget, &views);
-    let mut sim = GlueSim::new(synthetic_harness(1 << 20, 2.0), budget, 3, 1 << 20);
-    let last = views.last().unwrap();
-    assert_eq!(sim.run(&views, Inject::default(), 200_000), expected);
-    let epoch = sim.h.dataset.cell_cut_epoch();
-
-    sim.set_cells_active(false);
-    for _ in 0..200 {
-        sim.step(last);
-    }
-    assert_eq!(
-        sim.h.dataset.cell_cut_epoch(),
-        epoch,
-        "cells ran in CPU mode"
-    );
-    assert!(!sim.viewer.cells_busy(&sim.h.target));
-    assert_eq!(sim.viewer.cut_digest_at_rest(&sim.h.target), None);
-
-    sim.set_cells_active(true);
-    let resets_before = sim.stats.pool_resets_seen;
-    assert_eq!(
-        sim.settle(last, 200_000),
-        expected,
-        "digest after the switch"
-    );
-    assert!(
-        sim.stats.pool_resets_seen <= resets_before + 1,
-        "reset loop: {:?}",
-        sim.stats
-    );
-    let (epoch, resets) = (sim.h.dataset.cell_cut_epoch(), sim.stats.pool_resets_seen);
-    for _ in 0..300 {
-        sim.step(last);
-    }
-    assert_eq!(
-        sim.h.dataset.cell_cut_epoch(),
-        epoch,
-        "the builder kept planning"
-    );
-    assert_eq!(
-        sim.stats.pool_resets_seen, resets,
-        "the pool kept resetting"
-    );
-}
-
-#[test]
-fn the_builder_emits_no_scene_in_cells_mode_and_scenes_again_in_cpu_mode() {
+fn the_builder_emits_no_scene_while_cells_are_present() {
     let h = synthetic_harness(1 << 20, 2.0);
     let view = synth_orbit().remove(0);
     let camera = view.camera();
@@ -499,23 +438,20 @@ fn the_builder_emits_no_scene_in_cells_mode_and_scenes_again_in_cpu_mode() {
         true,
         VoxelBuildLimits::default(),
     );
-    let step = |core: &mut SceneBuilderCore<()>, cells: &mut BuilderCells| {
-        core.update_with_cells(
-            Some(cells),
-            camera,
-            [800, 600],
-            scale,
-            2.0,
-            |_: &mut (), _| Ok(None),
-            |_: &mut (), _| Err("no pages".to_owned()),
-        )
-        .unwrap()
-    };
-    assert!(matches!(step(&mut core, &mut cells), BuilderStep::Cells(_)));
-    cells.set_active(core.session_mut().dataset_mut(), false);
-    assert!(matches!(step(&mut core, &mut cells), BuilderStep::Scene(_)));
-    cells.set_active(core.session_mut().dataset_mut(), true);
-    assert!(matches!(step(&mut core, &mut cells), BuilderStep::Cells(_)));
+    for _ in 0..2 {
+        let step = core
+            .update_with_cells(
+                Some(&mut cells),
+                camera,
+                [800, 600],
+                scale,
+                2.0,
+                |_: &mut (), _| Ok(None),
+                |_: &mut (), _| Err("no pages".to_owned()),
+            )
+            .unwrap();
+        assert!(matches!(step, BuilderStep::Cells(_)));
+    }
 }
 
 #[test]
@@ -769,65 +705,13 @@ fn a_new_view_epoch_makes_the_builder_plan_again_even_with_the_same_camera() {
 }
 
 #[test]
-fn queued_nodes_wait_while_the_cells_are_off_and_one_pool_reset_follows_the_switch_back() {
-    let mut pair = Pair::new();
-    let nodes = pair.send(0, true);
-    pair.pump();
-    let digest = pair.rest().expect("at rest before the switch");
-    let _ = pair.viewer.take_messages();
-
-    // The same nodes (a repeat is ignored by the driver) and a new cut wait in the queue.
-    for (generation, bytes) in &nodes {
-        pair.viewer.push_node(*generation, bytes.clone()).unwrap();
-    }
-    pair.send(0, true);
-    let queued = pair.viewer.stats(&pair.target).queued_nodes;
-    assert!(queued > 0);
-
-    // Colour mode off: the CPU scene frees the pool; the driver gets nothing while it is off.
-    pair.viewer.set_active(false);
-    pair.target.drop_pool_for_test();
-    for _ in 0..5 {
-        assert!(
-            pair.viewer
-                .frame(&mut pair.target, &pair.view)
-                .unwrap()
-                .is_none()
-        );
-    }
-    assert_eq!(pair.viewer.stats(&pair.target).queued_nodes, queued);
-    assert!(
-        pair.viewer.take_messages().is_empty(),
-        "an inactive viewer reported to the builder"
-    );
-
-    // Back to RGB: the queue drains, the pool is rebuilt once and the cut is the same.
-    pair.viewer.set_active(true);
-    let mut resets = 0;
-    for _ in 0..50 {
-        pair.viewer.frame(&mut pair.target, &pair.view).unwrap();
-        resets += usize::from(pair.viewer.take_messages().pool_reset);
-    }
-    assert_eq!(
-        resets, 1,
-        "the switch back must reset the pool exactly once"
-    );
-    assert_eq!(pair.viewer.stats(&pair.target).queued_nodes, 0);
-    assert_eq!(pair.rest(), Some(digest));
-}
-
-#[test]
 fn shader_colour_modes_keep_the_cells_and_the_pool() {
-    use crate::cells_glue::cells_draw_mode;
     use viewer_render_wgpu::ColorMode;
     let mut pair = Pair::new();
     pair.send(0, true);
     pair.pump();
     let digest = pair.rest().expect("at rest");
     let _ = pair.viewer.take_messages();
-    assert!(!cells_draw_mode(false, ColorMode::Intensity, false));
-    assert!(!cells_draw_mode(false, ColorMode::Rgb, true));
-    assert!(cells_draw_mode(true, ColorMode::Rgb, true));
     // The renderer's colour mode: what the uniform holds. The bindings' `setColorMode` takes the
     // same decision (`shader_mode_only`) and, when it is true, only sets this.
     let generation = pair.h.dataset.cell_generation();
@@ -837,30 +721,11 @@ fn shader_colour_modes_keep_the_cells_and_the_pool() {
         ColorMode::Classification,
         ColorMode::Rgb,
     ] {
-        // With the opt-in off the same change is not a uniform write: the CPU path takes over.
-        if mode != ColorMode::Rgb {
-            assert!(!crate::cells_glue::shader_mode_only(
-                true, false, false, false, mode
-            ));
-        }
         // An attribute on either side is a rebuild (new colour generation), never a uniform write.
-        assert!(!crate::cells_glue::shader_mode_only(
-            true, true, false, true, mode
-        ));
-        assert!(!crate::cells_glue::shader_mode_only(
-            true, false, true, true, mode
-        ));
-        assert!(crate::cells_glue::shader_mode_only(
-            true, false, false, true, mode
-        ));
-        assert!(!crate::cells_glue::shader_mode_only(
-            false, false, false, true, mode
-        ));
-        let uniform_mode = if crate::cells_glue::shader_mode_only(true, false, false, true, mode) {
-            mode
-        } else {
-            ColorMode::Rgb
-        };
+        assert!(!crate::cells_glue::shader_mode_only(true, true, false));
+        assert!(!crate::cells_glue::shader_mode_only(true, false, true));
+        assert!(crate::cells_glue::shader_mode_only(true, false, false));
+        assert!(!crate::cells_glue::shader_mode_only(false, false, false));
         let built = pair.send(0, true);
         assert!(built.is_empty(), "{mode:?} rebuilt {} nodes", built.len());
         for _ in 0..5 {
@@ -871,7 +736,6 @@ fn shader_colour_modes_keep_the_cells_and_the_pool() {
             );
         }
         assert_eq!(pair.rest(), Some(digest));
-        assert_eq!(uniform_mode, mode);
         assert_eq!(pair.h.dataset.cell_generation(), generation, "no recolour");
     }
 }

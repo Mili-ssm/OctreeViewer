@@ -372,13 +372,6 @@ impl WasmSceneBuilder {
         self.cells_requested = enabled;
     }
 
-    /// Keeps intensity, elevation and classification on the cells path (shader modes, R3-Q32)
-    /// instead of the CPU path of R3-Q23. Off by default until the CPU fallback goes.
-    #[wasm_bindgen(js_name = enableCellShaderModes)]
-    pub fn enable_cell_shader_modes(&mut self, enabled: bool) {
-        self.cells_shader_modes = enabled;
-    }
-
     /// The pages of the render worker's GPU pool (`cellPoolPages` of the viewer); call before
     /// opening a dataset. Without it the cut is not fitted to the pool.
     #[wasm_bindgen(js_name = setCellPoolPages)]
@@ -402,7 +395,7 @@ impl WasmSceneBuilder {
         visual_scale: f64,
         target_voxel_pixels: f64,
     ) -> Result<JsValue, JsValue> {
-        if !self.cells.as_ref().is_some_and(BuilderCells::is_active) {
+        if self.cells.is_none() {
             return Err(JsValue::from_str("the cells path is not active"));
         }
         self.update(
@@ -544,14 +537,6 @@ impl WasmVoxelViewer {
             Err(message) => self.last_lod_error = Some(message),
         }
     }
-
-    /// R3-Q23: only plain RGB runs on cells; any other mode takes the CPU path and RGB brings
-    /// the cells back (nodes kept).
-    pub(super) fn set_remote_cells_rgb(&mut self, rgb: bool) {
-        if let Some(cells) = self.cells_remote.as_mut() {
-            cells.set_active(rgb);
-        }
-    }
 }
 
 #[wasm_bindgen]
@@ -560,13 +545,6 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = enableCells)]
     pub fn enable_cells(&mut self, enabled: bool) {
         self.cells_requested = enabled;
-    }
-
-    /// Keeps intensity, elevation and classification on the cells path (shader modes, R3-Q32)
-    /// instead of the CPU path of R3-Q23. Off by default until the CPU fallback goes.
-    #[wasm_bindgen(js_name = enableCellShaderModes)]
-    pub fn enable_cell_shader_modes(&mut self, enabled: bool) {
-        self.cells_shader_modes = enabled;
     }
 
     /// Pages of the GPU cell pool this device runs (65,536 for 512 MiB, fewer when its limits

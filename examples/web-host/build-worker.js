@@ -16,7 +16,7 @@ import { resolveSource } from "./http-range-source.mjs";
 // `epoch` counts this worker's builds (strictly increasing within a gen); `viewEpoch` echoes the
 // render worker's view epoch that the build used.
 //
-// Cells path (R3, opt-in with `open.cells`; plain RGB only, R3-Q23): the builder emits no `scene`.
+// Cells path (R3, opt-in with `open.cells`; every colour mode, R3-Q32/Q33): the builder emits no `scene`.
 // build -> render: nodeCells{gen,generation,buffers} (one per node batch, transferred, in order, never
 //                  coalesced), cellCut{gen,cutEpoch,viewEpoch,cut,support,idle,targetPixels} (latest wins),
 //                  cellLod{gen,cutEpoch,viewEpoch,lod} (stats for the LOD panel).
@@ -480,7 +480,7 @@ async function handleMessage({ data }) {
             case "colorMode":
                 if (data.gen !== generation || !builder) break;
                 builder.setColorMode(data.mode);
-                lastCellsView = null; // the mode switches the path: the next build always runs
+                lastCellsView = null; // the next build always runs: an attribute mode builds the nodes anew
                 if (data.mode !== currentColorMode) cancelAllAsyncReads();
                 currentColorMode = data.mode;
                 self.postMessage({
