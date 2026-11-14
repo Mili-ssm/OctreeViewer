@@ -5,7 +5,8 @@ orden Morton construían las celdas un 35–50 % más rápido
 ([OQ-09](OQ09_MORTON_ORDER_14-11-2026.md)) porque el constructor ordena los puntos por celda con
 pdqsort (`sort_unstable_by_key`), que es ~8 veces más rápido con claves casi ordenadas que con claves
 desordenadas. Un ordenamiento radix estable lo vuelve independiente del orden de los puntos. En el
-navegador, construir las celdas de Belvedere en remoto cuesta un 25–45 % menos con cualquier fichero.
+navegador, construir las celdas de Belvedere en remoto cuesta un 13–46 % menos (según caso y ronda) con
+cualquier fichero.
 
 ## Causa
 
@@ -28,10 +29,10 @@ no ayudaba porque usaba otra clave: la entrada no llegaba ordenada para el const
   recorre las posiciones en ese orden, sin copiar las entradas. Es estable: los empates conservan el
   orden (bloque, índice), así que las celdas son las mismas que antes.
 - Si las claves ya llegan ordenadas, no ordena.
-- Las claves de 128 bits (nodos que exceden 2²¹ celdas por eje) y las listas de más de 2³² entradas
-  siguen con el ordenamiento anterior.
+- Las claves de 128 bits (nodos que exceden 2²¹ celdas por eje), las listas de 2³²−1 entradas o más y
+  el caso en que no se puede reservar memoria siguen con el ordenamiento anterior.
 - Tests: el radix frente a un ordenamiento estable en casos aleatorios y extremos, y las mismas celdas
-  con puntos barajados, invertidos u ordenados en Morton (una mutación del atajo «ya ordenado» lo hace
+  con puntos barajados, invertidos u ordenados en Morton (una mutación manual del atajo «ya ordenado» lo hizo
   fallar). `scripts/check.sh` pasa los 24 pasos.
 
 ## Medidas
@@ -46,12 +47,13 @@ RTT, Belvedere v7.5; antes = wasm de `3775a6f`, después = `2379c6d`; 2 rondas a
 | Fuente, 1 px | 3.895–4.880 → 3.613–3.857 | 5.686–7.424 → 4.215–4.928 | 180–201 → 128–131 |
 | Híbrido, 1 px | 4.129–5.432 → 3.871–3.882 | 5.943–7.779 → 4.463–5.243 | 177–288 → 131–137 |
 
-Los bytes descargados no cambian. No hay nodos sin cubrir y el único error de consola es el 404 de
+Los bytes descargados varían entre rondas (hasta ~8 % a 1 px) sin tendencia ligada al cambio. No hay
+nodos sin cubrir y el único error de consola es el 404 de
 `favicon.ico`.
 
 **Benchmark nativo** (`cells_bench`, pose `py`, 1 px, p95 de construcción, 2 rondas intercaladas con la
 versión `9234996`): fuente 31,5–39,7 ms, híbrido 37,2–37,6 ms y todo Morton 32,3–33,0 ms, frente a
-41–57 ms de la fuente antes del cambio. El p95 varía hasta ~12 ms entre ejecuciones de una misma
+41–57 ms de la fuente antes del cambio. El p95 varía hasta ~8 ms entre ejecuciones de una misma
 variante.
 
 ## Alternativa descartada

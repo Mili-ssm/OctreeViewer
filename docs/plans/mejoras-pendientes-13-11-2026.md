@@ -86,7 +86,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 - [ ] D3. Congelar V7 final (ADR 0022) con el orden de filas libre por bloque ([ADR 0041](../adr/0041-orden-de-filas-libre-por-bloque.md),
   [registro de OQ-09](../records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)).
   - [x] D3a. Causa de la construcción más rápida con ficheros Morton ([registro](../records/benchmarks/D3A_CELL_SORT_ORDER_14-11-2026.md)):
-    el constructor ordenaba con pdqsort; con un radix estable, construir las celdas cuesta un 25–45 %
+    el constructor ordenaba con pdqsort; con un radix estable, construir las celdas cuesta un 13–46 %
     menos con cualquier orden de fichero.
   - [ ] D3b. Escritor híbrido de producción con una regla de elección más barata que codificar dos veces;
     contrato de `OctreeReader` y pruebas de paridad por conjunto de filas. Comprobación: `check.sh` verde,
