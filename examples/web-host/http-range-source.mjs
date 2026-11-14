@@ -350,8 +350,9 @@ export const DEFAULT_REMOTE_READS = 8; // D2: -14..25 % time to reached vs 4 on 
 const MAX_READS = 64;
 
 /**
- * Concurrent LOD reads for a source spec: a remote `{ url, remoteReads? }` takes `remoteReads`
- * (default `DEFAULT_REMOTE_READS`, clamped to 1..64); anything else (a local `Blob`) keeps `DEFAULT_LOCAL_READS`.
+ * Concurrent LOD reads for a source spec (block reads and page reads are each limited to it): a remote
+ * `{ url, remoteReads? }` takes `remoteReads`, capped at 64, or `DEFAULT_REMOTE_READS` when it is below 1
+ * or not numeric; anything else (a local `Blob`) keeps `DEFAULT_LOCAL_READS`.
  */
 export function readConcurrency(spec) {
   if (typeof spec?.url !== "string" || typeof spec.slice === "function") return DEFAULT_LOCAL_READS;
