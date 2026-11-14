@@ -97,6 +97,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 | Tema | Bloquea |
 | --- | --- |
 | Corte que no cabe en el pool de GPU ni con los niveles más gruesos (B1d) | B1d, B6 |
+| Confirmar en una enmienda al ADR 0037 lo implementado en B1c que el ADR no detalla: los hijos en curso se protegen y cuentan, con el presupuesto lleno se bloquean todos los candidatos sin construir (no solo los más lejanos) y el bloqueo se mantiene mientras no cambie la selección | Nada; documental |
 | OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |
