@@ -77,7 +77,8 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 
 ## Fase D: fuente remota y V7 final
 
-- [ ] D1. TW3 cancelación real con `AbortController` y TW5 reintentos con tiempo límite.
+- [x] D1. TW3 cancelación real y TW5 reintentos con tiempo límite ([registro](../records/benchmarks/D1_REMOTE_CANCEL_RETRY_14-11-2026.md)):
+  implementados y con tests; sin efecto medible en Majadas por RED-REF (no quedan lecturas obsoletas).
 - [ ] D2. TW4 unión con huecos y TW10 concurrencia por fuente, medidas en RED-REF.
 - [ ] D3. Congelar V7 final (ADR 0022), tras decidir OQ-09 (orden de filas, TF1).
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
@@ -87,7 +88,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
-- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs`, `explore/b3-continuity`, `explore/b4-px-modes`, `explore/b5-device-lost`, `explore/b6-measure` y `explore/b6-default-cells`: integradas en `feat/r3-v75` y borradas.
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs`, `explore/b3-continuity`, `explore/b4-px-modes`, `explore/b5-device-lost`, `explore/b6-measure`, `explore/b6-default-cells` y `explore/d1-remote`: integradas en `feat/r3-v75` y borradas.
 - [x] L4. Salidas de tareas R3 anteriores en `target/r3-*` (fuera de git): 45 directorios (~21 GB) borrados
   con el visto bueno del propietario el 14-11-2026; se conservan los que usan probes, tests y benches
   (`r3-t16-cases`, `r3-t7c-pool`, `r3-fixtures`, `r3-t5-synthetic`, `r3-t7c`).
