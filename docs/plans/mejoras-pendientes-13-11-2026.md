@@ -89,18 +89,25 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     el constructor ordenaba con pdqsort; con un radix estable, construir las celdas cuesta un 13–46 %
     menos con cualquier orden de fichero.
   - [ ] D3b. Escritor híbrido detrás de una opción del escritor, sin identidad propia
-    ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)). Comprobación: `check.sh` verde,
-    `.oct` de Belvedere ≤ 530 MB, y tiempo total y RSS de conversión medidos frente a RQ-07.
+    ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)); enmiendas del pre-mortem del
+    14-11-2026 incluidas.
     - [ ] D3b1. Opción `row_order` (fuente por defecto, híbrido) en el escritor de `viewer_format`. Regla:
-      codificar como hoy; si gana la ocupación compacta, ordenar en Morton, codificar por diferencias y quedarse
-      con lo más pequeño, permutando colores y atributos (+0,5 % sobre el óptimo en Belvedere, estimado con los
-      tamaños por bloque de OQ-09). La opción entra en la configuración del checkpoint. Tests de ida y vuelta
-      por conjunto de filas. Comprobación: tests de `viewer_format` y `viewer_convert_core` verdes.
-    - [ ] D3b2. Textos que prometen el orden de la fuente (`occupied_point_block.rs:33,77`,
-      `quantized_occupancy.rs:99,105`) y el comentario de la prueba que lo fija. Comprobación: `grep` sin
-      promesas de orden de la fuente fuera de las especificaciones de revisiones anteriores.
-    - [ ] D3b3. Medir con Belvedere: tamaño, tiempo total y RSS de conversión (≥ 3 ejecuciones intercaladas por
-      opción) y carga remota en el navegador. Comprobación: registro con las cifras.
+      codificar como hoy; si gana la ocupación compacta, ordenar por (clave Morton de 96 bits, fila), codificar
+      por diferencias y quedarse con lo más pequeño, permutando colores y atributos. Comprobación: tests de ida
+      y vuelta con un fixture que pasa por la ruta Morton, comparando filas completas como multiconjunto (con
+      posiciones duplicadas de distinto color), y una mutación que deja un atributo sin permutar los pone rojos.
+    - [ ] D3b2. Cablear la opción en el CLI, `ConvertOptions`, la conversión wasm (`rowOrder`), el manifiesto de
+      checkpoint (línea `row_order=`, nueva versión del manifiesto) y la paridad nativo/wasm. Comprobación: casos
+      híbridos en la paridad con SHA nativo = wasm y distinto del orden de la fuente; reanudar con la otra opción
+      da `Mismatch`.
+    - [ ] D3b3. Textos que prometen el orden de la fuente (`occupied_point_block.rs:33,77`,
+      `quantized_occupancy.rs:99,105`). Comprobación: `grep` sin promesas fuera de las especificaciones de
+      revisiones anteriores.
+    - [ ] D3b4. Medir con Belvedere y Majadas, híbrido frente a fuente en la misma revisión, ≥ 3 ejecuciones
+      intercaladas. Comprobación (registro): Belvedere cambia 2.770 bloques y su `.oct` ≤ 531,5 MB; contenido
+      igual al de la fuente; etapa de bloques ≤ +25 %, tiempo total ≤ +5 % y RSS pico ≤ +5 %; un caso con 1 M
+      de puntos por bloque para la memoria. Parar si el tiempo total pasa de +10 % o el RSS de +5 %, o si
+      Majadas queda más de un 2 % por encima de su óptimo.
   - [ ] D3c. Congelar tras C4 (RQ-07): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
