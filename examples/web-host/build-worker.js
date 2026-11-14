@@ -81,6 +81,19 @@ function recordWork(kind, startedAt, endedAt) {
 // Range sources of the open dataset (empty for local Blobs): their stats are the `remote` metrics.
 let remoteSources = [];
 
+// Real cancellation of a ticket: besides the logical flag, aborting the controller cancels the HTTP
+// request(s) that only this ticket needs (`HttpRangeSource.withSignal`). Local Blobs keep the flag only.
+function bindTicketAbort(request) {
+    const token = request.cancelToken();
+    const [file, attributes] = remoteSources;
+    if (typeof file?.withSignal !== "function" || typeof request.setSource !== "function") return token;
+    const controller = new AbortController();
+    request.setSource(file.withSignal(controller.signal), attributes?.withSignal?.(controller.signal));
+    return { cancel() { token.cancel(); controller.abort(); } };
+}
+
+const isAbort = (error) => error?.name === "AbortError";
+
 function metricsSnapshot() {
     return {
         timeOrigin: performance.timeOrigin ?? null,
@@ -338,7 +351,7 @@ function fillAsyncReads() {
             break;
         }
         const ticket = String(scheduled.ticket);
-        const cancelToken = request.cancelToken();
+        const cancelToken = bindTicketAbort(request);
         asyncReadCancelTokens.add(cancelToken);
         asyncReadTasks.set(String(blockId), { request, cancelToken, ticket });
         void readBlock(taskReader, taskGeneration, ticketScheduler, blockId, ticket, request, cancelToken);
@@ -383,9 +396,10 @@ async function readBlock(taskReader, taskGeneration, ticketScheduler, blockId, t
                 outcome = ticketScheduler.complete(ticket, String(blockId), false);
             } catch { /* ticket already settled */ }
             ticketCompleted = true;
-            if (outcome === "failed") failedAsyncBlocks.add(String(blockId));
+            if (outcome === "failed" && !isAbort(error)) failedAsyncBlocks.add(String(blockId));
         }
-        if (!stale() && outcome !== "discarded") postError("asyncLodRead", error, taskGeneration);
+        // An abort is a cancellation (the ticket left the plan), never a failure to report or retry.
+        if (!stale() && outcome !== "discarded" && !isAbort(error)) postError("asyncLodRead", error, taskGeneration);
     } finally {
         result?.release?.();
         result?.free?.();

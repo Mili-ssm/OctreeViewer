@@ -24,8 +24,10 @@ const rangeResponse = (range) => {
 
 const fakeFetch = (script = []) => {
   const calls = [];
+  const signals = [];
   const fn = async (url, { headers, signal }) => {
     calls.push(headers.Range);
+    signals.push(signal);
     const step = script[calls.length - 1];
     if (step instanceof Error) throw step;
     if (step === "hang") {
@@ -38,6 +40,7 @@ const fakeFetch = (script = []) => {
     return rangeResponse(headers.Range);
   };
   fn.calls = calls;
+  fn.signals = signals;
   return fn;
 };
 
@@ -135,4 +138,89 @@ test("an abort through the signal is an AbortError, counted, never retried", asy
   assert.equal(source.stats.retries, 0);
   assert.equal(source.stats.aborted, 1);
   assert.equal(source.stats.abortedBytes, 300);
+});
+
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+// A fetch that answers the Nth call only when `release()` is called, so reads stay in flight.
+const gatedFetch = () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const inner = fakeFetch();
+  const fn = async (url, init) => {
+    if (inner.calls.length === 0) return inner(url, init); // the opening request
+    inner.calls.push(init.headers.Range);
+    fn.signals.push(init.signal);
+    await Promise.race([
+      gate,
+      new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason))),
+    ]);
+    return rangeResponse(init.headers.Range);
+  };
+  fn.calls = inner.calls;
+  fn.signals = [];
+  fn.release = release;
+  return fn;
+};
+
+test("a merged request is aborted only when all the reads it serves are aborted", async () => {
+  const fetchImpl = gatedFetch();
+  const source = await open(fetchImpl, { maxGap: 0 });
+  const a = new AbortController();
+  const b = new AbortController();
+  const readA = assert.rejects(source.withSignal(a.signal).slice(100, 200).arrayBuffer(), (e) => e.name === "AbortError");
+  const readB = assert.rejects(source.withSignal(b.signal).slice(200, 300).arrayBuffer(), (e) => e.name === "AbortError");
+  await tick();
+  assert.deepEqual(fetchImpl.calls.slice(1), ["bytes=100-299"]);
+  a.abort();
+  await readA;
+  assert.equal(fetchImpl.signals[0].aborted, false);
+  b.abort();
+  await readB;
+  assert.equal(fetchImpl.signals[0].aborted, true);
+  assert.equal(source.stats.retries, 0);
+  assert.equal(source.stats.aborted, 1);
+  assert.equal(source.stats.abortedBytes, 200);
+});
+
+test("a partial abort keeps the request and the surviving read gets its bytes", async () => {
+  const fetchImpl = gatedFetch();
+  const source = await open(fetchImpl);
+  const a = new AbortController();
+  const b = new AbortController();
+  const readA = assert.rejects(source.withSignal(a.signal).slice(100, 200).arrayBuffer(), (e) => e.name === "AbortError");
+  const readB = source.withSignal(b.signal).slice(200, 300).arrayBuffer();
+  await tick();
+  a.abort();
+  await readA;
+  fetchImpl.release();
+  assert.deepEqual(new Uint8Array(await readB), content.slice(200, 300));
+  assert.equal(fetchImpl.signals[0].aborted, false);
+  assert.equal(source.stats.aborted, 0);
+});
+
+test("a read without an owner keeps a merged request alive; an already aborted signal never fetches", async () => {
+  const fetchImpl = gatedFetch();
+  const source = await open(fetchImpl);
+  const a = new AbortController();
+  const readA = assert.rejects(source.withSignal(a.signal).slice(100, 200).arrayBuffer(), (e) => e.name === "AbortError");
+  const plain = source.slice(200, 300).arrayBuffer();
+  await tick();
+  a.abort();
+  await readA;
+  fetchImpl.release();
+  assert.deepEqual(new Uint8Array(await plain), content.slice(200, 300));
+  const done = new AbortController();
+  done.abort();
+  await assert.rejects(source.withSignal(done.signal).slice(500, 600).arrayBuffer(), (e) => e.name === "AbortError");
+  assert.equal(fetchImpl.calls.length, 2);
+});
+
+test("a signal view reads from the cache like the source and reports its size", async () => {
+  const fetchImpl = fakeFetch();
+  const source = await open(fetchImpl);
+  const view = source.withSignal(new AbortController().signal);
+  assert.equal(view.size, SIZE);
+  assert.deepEqual(new Uint8Array(await view.slice(SIZE - 10, SIZE).arrayBuffer()), content.slice(SIZE - 10));
+  assert.equal(fetchImpl.calls.length, 1);
 });

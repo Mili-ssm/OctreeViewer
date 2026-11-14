@@ -62,6 +62,14 @@ pub struct WasmAsyncLodReadRequest {
     carried: usize,
     reservation: Option<ReadReservation>,
     cancelled: Rc<Cell<bool>>,
+    /// Per-request Blob-likes (a signal-scoped view of the range source) replacing the shared ones.
+    sources: SourceOverride,
+}
+
+#[derive(Default)]
+struct SourceOverride {
+    primary: Option<Blob>,
+    attributes: Option<Blob>,
 }
 
 /// Cancellation is logical: an active Blob promise resolves before its reservation is released.
@@ -167,6 +175,16 @@ impl WasmAsyncLodReadRequest {
         }
     }
 
+    /// Replaces the shared Blobs for this request only (the default stays when not called). The
+    /// replacements must expose the same bytes; they let a source scope its reads to this request.
+    #[wasm_bindgen(js_name = setSource)]
+    pub fn set_source(&mut self, primary: Blob, attributes: Option<Blob>) {
+        self.sources = SourceOverride {
+            primary: Some(primary),
+            attributes,
+        };
+    }
+
     #[wasm_bindgen(js_name = read)]
     pub async fn read(&mut self) -> Result<WasmAsyncLodReadResult, JsValue> {
         let mut plans = std::mem::take(&mut self.plans).into_iter();
@@ -175,13 +193,14 @@ impl WasmAsyncLodReadRequest {
             .ok_or_else(|| err("LOD read request is empty"))?;
         let first_selection = first.selection();
         let (first_result, mut read_ms, mut decode_ms) =
-            read_plan(&self.shared, first, &self.cancelled).await?;
+            read_plan(&self.shared, first, &self.cancelled, &self.sources).await?;
         let mut rest = Vec::with_capacity(plans.len());
         for plan in plans {
             if self.cancelled.get() {
                 return Err(err("LOD read request was cancelled"));
             }
-            let (result, read, decode) = read_plan(&self.shared, plan, &self.cancelled).await?;
+            let (result, read, decode) =
+                read_plan(&self.shared, plan, &self.cancelled, &self.sources).await?;
             read_ms += read;
             decode_ms += decode;
             rest.push(result);
@@ -537,6 +556,7 @@ impl WasmAsyncFormatReader {
             carried,
             reservation: Some(reservation),
             cancelled: Rc::new(Cell::new(false)),
+            sources: SourceOverride::default(),
         }))
     }
 
@@ -601,7 +621,15 @@ impl WasmAsyncFormatReader {
         let mut buffers = Vec::with_capacity(plan.ranges().len());
         let not_cancelled = Cell::new(false);
         for range in plan.ranges() {
-            buffers.push(read_range_for(&self.shared, range, &not_cancelled).await?);
+            buffers.push(
+                read_range_for(
+                    &self.shared,
+                    range,
+                    &not_cancelled,
+                    &SourceOverride::default(),
+                )
+                .await?,
+            );
         }
         let selected = self
             .shared
@@ -643,6 +671,7 @@ async fn read_plan(
     shared: &AsyncReaderShared,
     plan: viewer_format::ReadPlan,
     cancelled: &Cell<bool>,
+    sources: &SourceOverride,
 ) -> Result<(SelectedRead, f64, f64), JsValue> {
     let mut buffers = Vec::with_capacity(plan.ranges().len());
     let read_clock = WorkClock::start();
@@ -650,7 +679,7 @@ async fn read_plan(
         if cancelled.get() {
             return Err(err("LOD read request was cancelled"));
         }
-        buffers.push(read_range_for(shared, range, cancelled).await?);
+        buffers.push(read_range_for(shared, range, cancelled, sources).await?);
     }
     if cancelled.get() {
         return Err(err("LOD read request was cancelled"));
@@ -668,15 +697,17 @@ async fn read_range_for(
     shared: &AsyncReaderShared,
     range: &PayloadReadRange,
     cancelled: &Cell<bool>,
+    sources: &SourceOverride,
 ) -> Result<Vec<u8>, JsValue> {
     if cancelled.get() {
         return Err(err("LOD read request was cancelled"));
     }
     let blob = match range.source() {
-        ReadSource::Primary => &shared.primary,
-        ReadSource::Attributes => shared
+        ReadSource::Primary => sources.primary.as_ref().unwrap_or(&shared.primary),
+        ReadSource::Attributes => sources
             .attributes
             .as_ref()
+            .or(shared.attributes.as_ref())
             .ok_or_else(|| err("attribute Blob required by this selection"))?,
     };
     let end = range

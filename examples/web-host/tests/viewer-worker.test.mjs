@@ -29,7 +29,7 @@ test("default cells without a build worker run the CPU path and report needsBuil
     assert.equal(worker.messages.at(-1).value.lod.cellPath, "needsBuildWorker");
 });
 
-async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false, initFields = {} } = {}) {
+async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false, initFields = {}, resolveSource = async (spec) => spec } = {}) {
     const messages = [];
     const enableCellsCalls = [];
     class FakeBuildWorker {
@@ -231,7 +231,8 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
             postMessage(message) { messages.push(message); },
         },
         performance,
-        resolveSource: async (spec) => spec,
+        resolveSource,
+        AbortController,
         sumRangeStats: () => null,
         init: async () => ({ memory: wasmMemory }),
         WasmVoxelViewer,
@@ -435,6 +436,82 @@ test("async Blob reads leave the message queue responsive and discard stale gene
     await new Promise(setImmediate);
     await new Promise(setImmediate);
     assert.deepEqual(worker.insertedBlocks, []);
+});
+
+test("a cancelled ticket aborts its range reads; the abort is a cancellation, not a failed block", async () => {
+    let signal = null;
+    let sourceArgs = null;
+    class AbortableReader {
+        static async open() { return new AbortableReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            let view = null;
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                setSource: (...args) => { sourceArgs = args; view = args[0]; },
+                read: async () => {
+                    signal = view.signal;
+                    await new Promise((_, reject) => view.signal.addEventListener("abort", () => {
+                        reject(new DOMException("aborted", "AbortError"));
+                    }));
+                },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const range = {
+        size: 8,
+        withSignal: (signal) => ({ size: 8, signal }),
+    };
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), AbortableReader, {
+        resolveSource: async (spec) => (spec ? range : spec),
+    });
+    worker.setPendingBlock("7");
+    await worker.send("openFile", { file: { url: "http://x/a.oct" }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    assert.equal(signal.aborted, false);
+    assert.equal(sourceArgs[1], undefined, "no attributes source: the shared one stays");
+
+    worker.setPendingBlock(null);
+    await worker.send("frame", {
+        camera: { orbitX: 1, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 },
+    });
+    await new Promise(setImmediate);
+    assert.equal(signal.aborted, true);
+    assert.deepEqual(worker.messages.filter((message) => message.type === "error"), []);
+});
+
+test("a genuine read failure is still reported", async () => {
+    class FailingReader {
+        static async open() { return new FailingReader(); }
+        lodDatasetDescriptor() {
+            return {
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                dataMin: [0, 0, 0], dataMax: [1, 1, 1], nodeCount: 1, maxLevel: 0,
+                nodes: [{ parent: null, level: 0, min: [0, 0, 0], max: [1, 1, 1] }],
+                hasAttributes: false, attributeSchema: [],
+            };
+        }
+        planLodRead() {
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => { throw new Error("HTTP 404"); },
+                free() {},
+            };
+        }
+        free() {}
+    }
+    const worker = await runWorker(new WebAssembly.Memory({ initial: 1 }), FailingReader);
+    worker.setPendingBlock("7");
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    assert.ok(worker.messages.some((message) => message.type === "error" && /HTTP 404/.test(message.message)));
 });
 
 test("async worker overlaps reads and retries budget-deferred blocks after a result frees quota", async () => {

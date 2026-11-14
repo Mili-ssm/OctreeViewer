@@ -86,6 +86,12 @@ a changed file (ETag or `200` for a Range request) and aborts are never retried.
 `requests`, `retries`, `timeouts`, `aborted` and `abortedBytes` appear as `remote` in the worker
 metrics (`workerMetrics.remote`, and `remote` in the build worker's metrics).
 
+A ticket the scheduler drops is cancelled for real: each LOD read request gets a view of the source
+(`HttpRangeSource.withSignal`, installed with `WasmAsyncLodReadRequest.setSource`) tied to an
+`AbortController`. Aborting rejects that ticket's reads with an `AbortError` (a cancellation: not
+reported, not retried, not a failed block) and cancels an HTTP request only when every read merged into
+it is aborted, so a block still wanted by another ticket keeps its download.
+
 To measure with the RED-REF network (100 Mbit/s, 50 ms RTT), serve the repository root (for example
 `python3 -m http.server 8767`) and run `node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;
 `red-ref-server.mjs` can also be started alone (`--ignore-range` simulates a server without Range).

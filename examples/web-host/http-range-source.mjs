@@ -85,11 +85,31 @@ export class HttpRangeSource {
   slice(start, end) {
     const from = Math.max(0, Math.min(start ?? 0, this.size));
     const to = Math.max(from, Math.min(end ?? this.size, this.size));
-    return { arrayBuffer: () => this.#read(from, to) };
+    return { arrayBuffer: () => this.#read(from, to, null) };
   }
 
-  async #read(start, end) {
+  /**
+   * A Blob-like view whose reads belong to `signal` (one LOD ticket): aborting it rejects those
+   * reads with an AbortError at once, and a merged request is cancelled only when every read it
+   * serves is aborted. Cache, batching and counters are shared with this source.
+   */
+  withSignal(signal) {
+    const source = this;
+    return {
+      get size() {
+        return source.size;
+      },
+      slice(start, end) {
+        const from = Math.max(0, Math.min(start ?? 0, source.size));
+        const to = Math.max(from, Math.min(end ?? source.size, source.size));
+        return { arrayBuffer: () => source.#read(from, to, signal) };
+      },
+    };
+  }
+
+  async #read(start, end, signal) {
     if (end === start) return new ArrayBuffer(0);
+    if (signal?.aborted) throw abortError(signal);
     for (const { start: base, bytes } of this.#cached) {
       if (start >= base && end <= base + bytes.length) {
         this.stats.cachedReads += 1;
@@ -97,7 +117,7 @@ export class HttpRangeSource {
       }
     }
     return new Promise((resolve, reject) => {
-      this.#pending.push({ start, end, resolve, reject });
+      this.#pending.push({ start, end, resolve, reject, signal });
       if (!this.#scheduled) {
         this.#scheduled = true;
         queueMicrotask(() => this.#flush());
@@ -117,7 +137,24 @@ export class HttpRangeSource {
         end = Math.max(end, batch[index].end);
       }
       const start = group[0].start;
-      this.#fetchRange(start, end).then(
+      const owner = new AbortController();
+      let live = group.length;
+      const settle = () => {
+        if (--live === 0) owner.abort();
+      };
+      for (const read of group) {
+        if (!read.signal) continue; // an unowned read keeps the request alive
+        const onAbort = () => {
+          read.reject(abortError(read.signal));
+          settle();
+        };
+        if (read.signal.aborted) onAbort();
+        else read.signal.addEventListener("abort", onAbort, { once: true });
+        read.release = () => read.signal.removeEventListener("abort", onAbort);
+      }
+      this.#fetchRange(start, end, owner.signal).finally(() => {
+        for (const read of group) read.release?.();
+      }).then(
         (bytes) => {
           for (const read of group) {
             read.resolve(bytes.slice(read.start - start, read.end - start).buffer);
@@ -130,32 +167,32 @@ export class HttpRangeSource {
     }
   }
 
-  async #fetchRange(start, end) {
-    const { bytes } = await this.#request(`bytes=${start}-${end - 1}`, { start, end });
+  async #fetchRange(start, end, signal) {
+    const { bytes } = await this.#request(`bytes=${start}-${end - 1}`, { start, end }, signal);
     return bytes;
   }
 
   // `expected` is null for the opening suffix request, whose range is not known beforehand.
   // Network errors, 429, 5xx and per-attempt timeouts are retried with backoff; the rest is final.
-  async #request(range, expected) {
+  async #request(range, expected, owner = null) {
+    const signal = owner && this.#signal ? AbortSignal.any([this.#signal, owner]) : owner ?? this.#signal;
     const bytesHint = expected?.end !== undefined ? expected.end - expected.start : 0;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.#attempt(range, expected, bytesHint);
+        return await this.#attempt(range, expected, bytesHint, signal);
       } catch (error) {
-        if (this.#signal?.aborted) throw abortError(this.#signal);
+        if (signal?.aborted) throw abortError(signal);
         if (!error.retryable || attempt >= this.#retryDelays.length) throw error;
         this.stats.retries += 1;
         const hinted = Math.min(error.retryAfterMs ?? 0, MAX_RETRY_AFTER_MS);
         const backoff = this.#retryDelays[attempt] * (0.75 + 0.5 * this.#random());
-        await this.#wait(Math.max(backoff, hinted));
+        await this.#wait(Math.max(backoff, hinted), signal);
       }
     }
   }
 
-  #wait(ms) {
+  #wait(ms, signal) {
     return new Promise((resolve, reject) => {
-      const signal = this.#signal;
       const onAbort = () => {
         clearTimeout(timer);
         reject(abortError(signal));
@@ -168,11 +205,11 @@ export class HttpRangeSource {
     });
   }
 
-  async #attempt(range, expected, bytesHint) {
+  async #attempt(range, expected, bytesHint, signal) {
     const controller = new AbortController();
-    const forward = () => controller.abort(this.#signal.reason);
-    this.#signal?.addEventListener("abort", forward, { once: true });
-    if (this.#signal?.aborted) forward();
+    const forward = () => controller.abort(signal.reason);
+    signal?.addEventListener("abort", forward, { once: true });
+    if (signal?.aborted) forward();
     let timedOut = false;
     const timer = this.#timeoutMs > 0
       ? setTimeout(() => {
@@ -235,7 +272,7 @@ export class HttpRangeSource {
       this.stats.bytes += bytes.length;
       return { bytes, range: contentRange, etag };
     } catch (error) {
-      if (this.#signal?.aborted) {
+      if (signal?.aborted) {
         this.stats.aborted += 1;
         this.stats.abortedBytes += bytesHint;
       } else if (timedOut) {
@@ -249,7 +286,7 @@ export class HttpRangeSource {
       throw error;
     } finally {
       clearTimeout(timer);
-      this.#signal?.removeEventListener("abort", forward);
+      signal?.removeEventListener("abort", forward);
     }
   }
 }
