@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1 cerradas; siguiente: B2, Tarea 12)
+Estado: en curso · 14-11-2026 (fase A y B1 cerradas; en curso: B2, Tarea 12)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -44,13 +44,21 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   escala de `hzb.rs` corregido con test; margen del Hi-Z derivado (`u·(25ρ + 24)`, ≈ +3 % de GPU);
   tiempo de GPU por frame con timestamps (R3-Q31), p95 7,38 ms en Majadas dentro de una hoja a 4 px.
   Con esto pasan la Tarea 11 y la 16b.
-- [ ] B2. Tarea 12, modos de color, con ≤ 1 LSB en intensidad y elevación (R3-Q25).
-  - [ ] B2.1. Mapear los modos de la ruta CPU y la vuelta a ella de R3-Q23 (qué lee cada modo y dónde).
-  - [ ] B2.2. Color por atributo en la ruta de celdas: tests de paridad con la CPU, bit a bit en RGB y
-    clasificación, ≤ 1 LSB en intensidad y elevación.
-  - [ ] B2.3. Los modos de shader no reconstruyen celdas (test que cuenta construcciones).
-  - [ ] B2.4. Las generaciones de color viejas se descartan (test).
-  - [ ] B2.5. Quitar la vuelta a la ruta CPU de R3-Q23 y comprobarlo en el navegador.
+- [ ] B2. Tarea 12, modos de color (R3-Q25, R3-Q32, R3-Q33). Rama `explore/b2-color`.
+  - [x] B2.1. Mapa: los modos de shader (intensidad, elevación, clasificación) se calculan en el shader
+    de la ruta CPU con rangos de los bloques visibles; la instancia de celdas ya guarda intensidad
+    (`u16`) y clase, pero en modo RGB los bloques se leen sin esas columnas; `attribute:N:M` pinta el
+    RGB en CPU; `color_gen` existe en el pool pero nunca cambia.
+  - [ ] B2.2. Las celdas llevan siempre intensidad y clase: la ruta de celdas lee esas columnas en
+    cualquier modo. Check: celdas construidas en modo RGB con intensidad (test) y coste en bytes leídos.
+  - [ ] B2.3. Modos de shader en celdas: modo y rangos en el uniforme del shader de celdas (intensidad
+    y z fusionados desde los nodos del corte; elevación con el desplazamiento `ojo − zmin` en `f64`);
+    función de color WGSL común a las dos rutas. Check: test de GPU de paridad (R3-Q32) y cambiar de
+    modo de shader no reconstruye celdas (contador de construcciones).
+  - [ ] B2.4. Modos `attribute:N:M` (R3-Q33): reconstrucción con `color_gen`, generaciones viejas
+    descartadas y sin huecos. Check: tests de descarte y de cobertura.
+  - [ ] B2.5. Quitar la vuelta a la ruta CPU de R3-Q23 y comprobar en el navegador todos los modos
+    (sin ruta CPU, sin errores, colores por modo). Check: probe y registro.
 - [ ] B3. Tarea 13: un mismo espaciado de referencia por nube (T0b) no cambia al injertar páginas.
 - [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).

@@ -49,6 +49,8 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q29 | (14-11-2026) Corte que no cabe en el pool de GPU ni con los niveles más gruesos (Belvedere a 1 px tras un salto): pool de 512 MiB y corte de nodos ajustado también al pool ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)) |
 | R3-Q30 | (14-11-2026) Se confirman las reglas de B1c que el ADR 0037 no detallaba: hijos en curso protegidos y contados, bloqueo de todos los candidatos y bloqueo retenido mientras no cambie la selección ([ADR 0039](../adr/0039-hijos-en-curso-y-bloqueo-retenido.md)) |
 | R3-Q31 | (14-11-2026) El criterio de ≤ 16,7 ms de la Tarea 16b en el visor wasm se mide con el tiempo de GPU del frame (consultas de timestamp de WebGPU), p95 ≤ 16,7 ms; el intervalo entre frames está atado al vsync y no sirve para ese criterio |
+| R3-Q32 | (14-11-2026) Paridad de color de la Tarea 12: con las mismas entradas por celda o vóxel (RGB, intensidad, clase, z) y los mismos rangos, el shader de celdas da el mismo color que el de la ruta CPU, bit a bit en RGB y clasificación y con ≤ 1 LSB en intensidad y elevación (R3-Q25). No se exige la misma imagen: las dos rutas no voxelizan con la misma rejilla |
+| R3-Q33 | (14-11-2026) Los modos `attribute:N:M` no caben en la instancia de 16 B: al elegirlos, las celdas se reconstruyen con el RGB pintado por el atributo, cada cambio sube `color_gen` y las celdas de generaciones anteriores se descartan; mientras llegan se dibuja de grueso a fino sin huecos. Sustituye para estos modos la vuelta a la ruta CPU de R3-Q23 |
 
 ## Restricciones globales
 
