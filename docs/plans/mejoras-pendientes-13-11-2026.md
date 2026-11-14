@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D)
+Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D, D3a)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -83,9 +83,15 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
   8 lecturas remotas por defecto (−15 a −30 % hasta alcanzar el objetivo en la ruta CPU); `maxGap`
   queda en 0. De paso se corrigió el orden de lectura asíncrono de las celdas (Belvedere remoto no
   llegaba al objetivo).
-- [ ] D3. Congelar V7 final (ADR 0022), tras decidir OQ-09 (orden de filas, TF1).
-  OQ-09 medido ([registro](../records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)): orden híbrido
-  −35 % en el `.oct`; falta la decisión del propietario.
+- [ ] D3. Congelar V7 final (ADR 0022) con el orden de filas libre por bloque ([ADR 0041](../adr/0041-orden-de-filas-libre-por-bloque.md),
+  [registro de OQ-09](../records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)).
+  - [ ] D3a. Investigar por qué los ficheros todo Morton construyen las celdas un 35–50 % más rápido
+    (rama `explore/oq09-build-cause`); comprobación: la fase que difiere, con cifras, y un arreglo medido
+    o descartado. Va antes de C4 (propietario, 14-11-2026).
+  - [ ] D3b. Escritor híbrido de producción con una regla de elección más barata que codificar dos veces;
+    contrato de `OctreeReader` y pruebas de paridad por conjunto de filas. Comprobación: `check.sh` verde,
+    `.oct` de Belvedere ≤ 530 MB y etapa de bloques medida frente a RQ-07.
+  - [ ] D3c. Congelar: revisión final, regeneración de datasets y referencias.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
 
 ## Limpieza
@@ -104,7 +110,6 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 | --- | --- |
 | Factor de continuidad (RF-05): con 1 × el espaciado de referencia el efecto es mínimo en Belvedere y Majadas | Nada; ajuste visual |
 | RQ-07 tras la fase C: TC5, revisar el objetivo o copia diferida | C4, promover V7 |
-| OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |
 | ADR 0008 (`release` optimiza tamaño; usa `opt-level = 3` desde el 02-11-2026) y ADR 0025 (aceptado; el codificador propio no existe) | Nada; requieren ADR nuevo o decisión |

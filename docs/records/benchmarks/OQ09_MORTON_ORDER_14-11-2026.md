@@ -1,12 +1,12 @@
 # OQ-09: orden Morton de los puntos dentro de cada bloque — 14-11-2026
 
-**Estado: medido; decisión del propietario pendiente.** En Belvedere v7.5, escribir los puntos de cada
+**Estado: medido; el propietario adopta el orden híbrido ([ADR 0041](../../adr/0041-orden-de-filas-libre-por-bloque.md)).** En Belvedere v7.5, escribir los puntos de cada
 bloque en orden Morton cuando eso reduce su geometría (orden **híbrido**) deja el `.oct` un **35 %**
 más pequeño (815 → 528 MB) y descarga los mismos bytes por vista o menos. Leer en remoto tarda lo mismo
-que con el orden de la fuente, y la etapa de bloques de la conversión tarda el doble (una ejecución).
-Ordenar **todos** los bloques en Morton acelera la carga remota un 14–27 % porque las celdas se
-construyen antes, pero descarga un 25–48 % más por vista. La causa de esa construcción más rápida no
-se ha encontrado. La estimación anterior de un 0,63 % solo contaba quitar el índice de filas; el
+a 4 px y un ~6 % más a 1 px (dentro de la variación entre rondas); la etapa de bloques de la conversión
+tarda el doble (una ejecución). Ordenar **todos** los bloques en Morton acelera la carga remota un
+16–24 % porque las celdas se construyen antes, pero descarga un 34–49 % más por vista. La causa de esa construcción más rápida no
+se ha encontrado. La estimación anterior de un 0,63 % ([requisitos](../../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026)) solo contaba quitar el índice de filas; el
 ahorro real viene de que la codificación por diferencias comprime mejor los puntos ordenados.
 
 ## Variantes
@@ -28,11 +28,11 @@ El códec de ocupación sin índice de filas (bandera 0x80) no gana en ningún b
 | --- | --- | --- | --- |
 | Fuente | 815.312.074 B | 896,3 MB | 26,5 MB |
 | Todo Morton | 574.558.611 B (−29,5 %) | 889,1 MB | 36,7 MB (+39 %) |
-| Híbrida | **528.373.180 B (−35,2 %)** | 889,6 MB | **23,2 MB (−12,6 %)** |
+| Híbrida | **528.373.180 B (−35,2 %)** | 889,6 MB | **23,2 MB (−12,5 %)** |
 
-Con todo Morton, los bloques gruesos y dispersos (los que eran de diferencias en el orden de la fuente)
-crecen un 52 %, y los densos de las hojas (los que eran de ocupación) bajan un 39 %. Los bloques gruesos
-son los primeros que se leen en una vista.
+Con todo Morton, los bloques que eran de diferencias en el orden de la fuente (más dispersos; todos los de
+los niveles 0–5 salvo ~38) crecen un 52 %, y los que eran de ocupación (densos, casi todos del nivel 6 o
+más) bajan un 39 %. Los niveles 0–5 son los primeros que se leen en una vista.
 
 ## Velocidad
 
@@ -52,10 +52,12 @@ muestra la mediana.
 - **Decodificación en wasm:** igual a 4 px (~150–170 ms) y un ~25 % mayor con todo Morton a 1 px
   (994 frente a 790 ms).
 - **Benchmark nativo** (`cells_bench`, pose `py`, 1 px, 562 nodos, 2 ejecuciones): p95 de construcción
-  ~28 ms con todo Morton, ~47–57 ms con la fuente y ~41–51 ms con la híbrida.
+  ~28 ms con todo Morton, ~47–57 ms con la fuente y ~41–51 ms con la híbrida. En `bench/` solo queda la
+  última ejecución de cada variante; la de la fuente es una con el orden en el visor activado (40,9 ms).
 
 **Ordenar en el visor no lo reproduce.** Ordenar por Morton cada bloque al guardarlo en la caché del
-visor, con el fichero en orden de la fuente (`explore/oq09-viewer-sort`, 3 ejecuciones):
+visor, con el fichero en orden de la fuente (`explore/oq09-viewer-sort`, 3 ejecuciones; cifras del
+informe del experimento, sin JSON guardado):
 
 | Caso | Mediana | p95 | Coste del orden |
 | --- | --- | --- | --- |
@@ -70,10 +72,10 @@ intercaladas:
 | --- | --- | --- | --- |
 | Fuente | 10,7 s (10,6–11,8) | 47,5 s | 5 |
 | Todo Morton | 14,2 s (13,4–16,0) | 49,8 s | 5 |
-| Híbrida | 20,1 s | — | 1 (prepara cada bloque dos veces y escribe una línea por bloque) |
+| Híbrida | 20,1 s | — | 1, del informe del experimento (el log no guarda tiempos); prepara cada bloque dos veces y escribe una línea por bloque |
 
 **Decodificación nativa** de todos los bloques, mediana de 3 por invocación y 2 invocaciones: geometría
-y color 3,73–3,76 s con la fuente y 4,46–4,52 s con todo Morton (+19 %); atributos iguales (~5,3 s).
+y color 3,73–3,76 s con la fuente y 4,46–4,52 s con todo Morton (+19–21 %); atributos iguales (~5,3 s).
 
 ## Límites
 
@@ -84,6 +86,7 @@ y color 3,73–3,76 s con la fuente y 4,46–4,52 s con todo Morton (+19 %); atr
   se ha descartado que esa diferencia importe.
 - La escritura híbrida se midió una sola vez y con instrumentación por bloque.
 - Las cifras de las primeras medidas de esta pregunta, tomadas con la máquina ocupada, se descartaron.
+- `remote-2way/` (primera comparación) usó otro wasm que `remote/`; las cifras del texto son de `remote/`.
 
 ## Identidad y reproducción
 
