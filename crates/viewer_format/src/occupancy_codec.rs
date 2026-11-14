@@ -125,6 +125,7 @@ fn encode_impl(
             }
         }
     }
+    let experiment_index_start = bytes.len();
     for leaf in 0..index.leaf_count() {
         let rows = index.rows_for_leaf(leaf).expect("occupied leaf");
         write_var(rows.len() as u32, &mut bytes);
@@ -134,8 +135,12 @@ fn encode_impl(
             previous = row as u32;
         }
     }
+    let experiment_index_end = bytes.len();
     bytes.extend_from_slice(candidate.residual_bytes());
     debug_assert_eq!(bytes.len(), length);
+    if std::env::var_os("OQ09_STATS").is_some() {
+        experiment_oq09(candidate, &bytes, experiment_index_start, experiment_index_end);
+    }
     Ok(Some(bytes))
 }
 
@@ -539,4 +544,77 @@ mod tests {
         assert!(encode(&empty, false, 1024).unwrap().is_none());
         assert!(decode(&[], 0).is_err());
     }
+}
+
+/// OQ-09 experiment: Morton-order variant (no per-point row deltas, residuals in leaf order).
+fn experiment_oq09(c: &QuantizedOccupancy, bytes: &[u8], start: usize, end: usize) {
+    let index = c.index();
+    let mut variant = bytes[..start].to_vec();
+    let mut perm = Vec::with_capacity(index.row_count());
+    let mut counts = 0;
+    for leaf in 0..index.leaf_count() {
+        let rows = index.rows_for_leaf(leaf).expect("leaf");
+        let before = variant.len();
+        write_var(rows.len() as u32, &mut variant);
+        counts += variant.len() - before;
+        let bits = usize::from(c.residual_bits());
+        let mut keyed: Vec<(u128, u32)> = rows
+            .iter()
+            .map(|&r| {
+                let mut key = 0_u128;
+                for bit in (0..bits).rev() {
+                    for axis in 0..3 {
+                        key = (key << 1) | u128::from((c.residual(r, axis) >> bit) & 1);
+                    }
+                }
+                (key, r as u32)
+            })
+            .collect();
+        keyed.sort_unstable();
+        perm.extend(keyed.iter().map(|&(_, r)| r));
+    }
+    let bits = usize::from(c.residual_bits());
+    let (mut pending, mut buffer) = (0_usize, 0_u64);
+    for &row in &perm {
+        for axis in 0..3 {
+            buffer |= c.residual(row as usize, axis) << pending;
+            pending += bits;
+            while pending >= 8 {
+                variant.push(buffer as u8);
+                buffer >>= 8;
+                pending -= 8;
+            }
+        }
+    }
+    if pending != 0 {
+        variant.push(buffer as u8);
+    }
+    let variant_comp = crate::compress_block(&variant).bytes().len();
+    let nodes = start - 1 - index.topology().levels().len() * 4;
+    let _ = nodes;
+    EXPERIMENT.with(|e| {
+        e.borrow_mut().push(Oq09Entry {
+            raw_len: bytes.len(),
+            index_bytes: end - start,
+            counts_bytes: counts,
+            residual_bytes: c.residual_bytes().len(),
+            variant_raw: variant.len(),
+            variant_comp,
+            perm,
+        })
+    });
+}
+
+pub(crate) struct Oq09Entry {
+    pub raw_len: usize,
+    pub index_bytes: usize,
+    pub counts_bytes: usize,
+    pub residual_bytes: usize,
+    pub variant_raw: usize,
+    pub variant_comp: usize,
+    pub perm: Vec<u32>,
+}
+
+thread_local! {
+    pub(crate) static EXPERIMENT: std::cell::RefCell<Vec<Oq09Entry>> = const { std::cell::RefCell::new(Vec::new()) };
 }

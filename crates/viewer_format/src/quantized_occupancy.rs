@@ -127,7 +127,7 @@ impl QuantizedOccupancy {
             .saturating_add(self.residual_bytes.capacity())
     }
 
-    fn residual(&self, row: usize, axis: usize) -> u64 {
+    pub(crate) fn residual(&self, row: usize, axis: usize) -> u64 {
         if self.residual_bits == 0 {
             return 0;
         }
