@@ -8,10 +8,10 @@
 // keeps the previous one, R3-Q10); `leaf` (Majadas only: the T16 case majadas-inside-leaf-py-4px, the
 // eye inside a leaf looking along +y). Default: fitted,orbit,jump plus leaf when the file name has "majadas".
 // Per pose: "reached" is the plan's definition (R3-Q3): cutApply "applied", poolNodesWithoutLevel 0,
-// poolCoarsened 0, cpuCoarsened 0 (ADR 0037), poolStages 0 and a repeated non-null cutDigestAtRest.
+// poolCoarsened 0, cpuCoarsened 0 (ADR 0037), gpuCoarsened 0 (ADR 0040), poolStages 0 and a repeated non-null cutDigestAtRest.
 // "settled" is weaker: camera at the pose, cutApply "applied", a repeated non-null cutDigestAtRest and
 // no node forgotten during the rest window, so a pose whose far nodes the CPU budget keeps coarse
-// (cpuCoarsened > 0) can settle without being reached. Exit code 1 only if a pose does neither.
+// (cpuCoarsened > 0) or the GPU pool (gpuCoarsened > 0) can settle without being reached. Exit code 1 only if a pose does neither.
 // Also records time to reached,
 // RetainedPrevious streaks (samples every ~100 ms), forgotten nodes over a rest window (the camera
 // is redrawn every sample, so a forget/rebuild loop would show), frame interval/render-call percentiles
@@ -84,9 +84,9 @@ const samePose = (pose, current) => ["position", "target"].every(key => pose[key
 const settledNow = (lod, poseApplied = true) => poseApplied
     && lod.cutApply === "applied" && lod.cutDigestAtRest != null;
 const reachedNow = (lod, poseApplied = true) => settledNow(lod, poseApplied)
-    && lod.poolNodesWithoutLevel === 0 && lod.poolCoarsened === 0 && lod.cpuCoarsened === 0 && lod.poolStages === 0;
+    && lod.poolNodesWithoutLevel === 0 && lod.poolCoarsened === 0 && lod.cpuCoarsened === 0 && lod.gpuCoarsened === 0 && lod.poolStages === 0;
 const statsOf = lod => Object.fromEntries(["cutApply", "cutDigestAtRest", "cellsBusy", "viewEpoch", "cutEpochSent", "cutEpochApplied",
-    "poolStages", "poolNodesWithoutLevel", "poolCoarsened", "cpuCoarsened", "poolOverflow", "poolDescendantTooFine", "poolResidentPages",
+    "poolStages", "poolNodesWithoutLevel", "poolCoarsened", "cpuCoarsened", "gpuCoarsened", "poolCapacityPages", "poolOverflow", "poolDescendantTooFine", "poolResidentPages",
     "cellsForgottenTotal", "cellCpuBytes", "wasmLinearMemoryBytes", "cellPath"].map(key => [key, lod?.[key] ?? null]));
 
 // The whole LOD object for diagnosis, with arrays reduced to their length.
@@ -179,9 +179,9 @@ try {
             const ok = reachedNow(last, applied);
             if (ok && previous === last.cutDigestAtRest) { reached = true; break; }
             previous = ok ? last.cutDigestAtRest : null;
-            // A pose the CPU budget keeps coarse is final: waiting longer would not reach it.
+            // A pose the CPU budget keeps coarse is final (CPU budget or GPU pool): waiting longer would not reach it.
             const settledOk = settledNow(last, applied);
-            if (settledOk && previousSettled === last.cutDigestAtRest && last.cpuCoarsened > 0) { settledStreak = true; break; }
+            if (settledOk && previousSettled === last.cutDigestAtRest && (last.cpuCoarsened > 0 || last.gpuCoarsened > 0)) { settledStreak = true; break; }
             previousSettled = settledOk ? last.cutDigestAtRest : null;
             await sleep(SAMPLE_MS);
         }

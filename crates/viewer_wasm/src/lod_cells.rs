@@ -109,6 +109,9 @@ pub struct CellPlanStats {
     /// Candidates the CPU budget keeps from being built (ADR 0037): their zone is drawn with the
     /// ancestor that has cells.
     pub cpu_coarsened: usize,
+    /// Candidates the GPU pool keeps from being built (ADR 0040), same meaning as `cpu_coarsened`
+    /// for the pages of the coarsest level of each node.
+    pub gpu_coarsened: usize,
     pub diag: CellDiag,
 }
 
@@ -137,6 +140,8 @@ pub struct CellUpdateStats {
     pub uncovered_nodes: usize,
     /// As [`CellPlanStats::cpu_coarsened`].
     pub cpu_coarsened: usize,
+    /// As [`CellPlanStats::gpu_coarsened`].
+    pub gpu_coarsened: usize,
     pub diag: CellDiag,
 }
 
@@ -158,6 +163,7 @@ impl CellUpdateStats {
             pending_page_anchors: plan.pending_page_anchors,
             uncovered_nodes: plan.uncovered_nodes,
             cpu_coarsened: plan.cpu_coarsened,
+            gpu_coarsened: plan.gpu_coarsened,
             diag: plan.diag,
         }
     }
@@ -217,6 +223,8 @@ struct BuiltNode {
     sent: u64,
     /// Packed bytes the driver keeps for it (`packed_node_bytes`), for the CPU budget fit.
     bytes: u64,
+    /// Pool pages of its coarsest stored level: the least the GPU pool needs for it (ADR 0040).
+    coarsest_pages: u64,
     role: BuildRole,
     /// The node had been built before in this dataset.
     rebuild: bool,
@@ -226,6 +234,58 @@ struct BuiltNode {
 const CPU_ADMIT_PERCENT: u64 = 90;
 /// ...and lifts the block once the bytes the cut needs fall below this one.
 const CPU_RELEASE_PERCENT: u64 = 80;
+/// The GPU pool fit (ADR 0040) uses the same shares, of the pool's usable pages.
+const GPU_ADMIT_PERCENT: u64 = CPU_ADMIT_PERCENT;
+const GPU_RELEASE_PERCENT: u64 = CPU_RELEASE_PERCENT;
+
+/// `percent` of `budget`, without overflowing on an unbounded budget.
+fn share(budget: u64, percent: u64) -> u64 {
+    (u128::from(budget) * u128::from(percent) / 100) as u64
+}
+
+/// Pages the pool can use of `capacity_pages` (`CellPool::usable`): the fit overflows above them.
+fn usable_pool_pages(capacity_pages: u32) -> u64 {
+    u64::from(capacity_pages - capacity_pages / 8)
+}
+
+/// Pages of the coarsest non-empty level of a packed node, the least the pool needs to draw it.
+fn coarsest_level_pages(node: &PackedNode) -> u64 {
+    node.levels
+        .iter()
+        .filter(|level| !level.pages.is_empty())
+        .min_by_key(|level| level.depth)
+        .map_or(0, |level| level.pages.len() as u64)
+}
+
+/// The release rule of one budget's block (ADR 0037, 0039, 0040): the block set when a candidate
+/// did not fit lifts once what the cut needs (`needed`, in-progress children included, `in_progress`
+/// of it) falls below the `release` share of `budget`. `released` is the selection `key` the
+/// in-progress children were released for and the most they held; the driver drops them, and
+/// counting them until the view changes keeps the block from lifting just because they are gone
+/// (they would be rebuilt and released again).
+fn update_block(
+    blocked: &mut bool,
+    released: &mut Option<(u64, u64)>,
+    key: u64,
+    (needed, in_progress): (u64, u64),
+    (budget, release): (u64, u64),
+) {
+    let mut effective = needed;
+    if *blocked {
+        let held = match *released {
+            Some((k, held)) if k == key => held.max(in_progress),
+            _ => in_progress,
+        };
+        *released = Some((key, held));
+        effective += held - in_progress;
+    }
+    if effective < share(budget, release) {
+        *blocked = false;
+    }
+    if !*blocked {
+        *released = None;
+    }
+}
 
 pub(super) struct CellState {
     /// Nodes whose cells were sent to the driver.
@@ -241,6 +301,10 @@ pub(super) struct CellState {
     /// the block from lifting just because they are gone (they would be rebuilt and released
     /// again).
     released: Option<(u64, u64)>,
+    /// The same for the GPU pool (ADR 0040): a node's coarsest level did not fit in the pages
+    /// the pool can use, until the cut needs less than [`GPU_RELEASE_PERCENT`] of them.
+    pub(super) gpu_blocked: bool,
+    gpu_released: Option<(u64, u64)>,
     /// Nodes whose every level came out empty: resident for the plan, never in the cut. That
     /// leaves no hole: a node has no levels only when none of its points is finite (a finite
     /// point always lands in a cell), and such points draw nothing on any path.
@@ -267,6 +331,8 @@ impl Default for CellState {
             diag: CellDiag::default(),
             cpu_blocked: false,
             released: None,
+            gpu_blocked: false,
+            gpu_released: None,
             empty: HashSet::new(),
             pool_drawn: Vec::new(),
             cut_epoch: 0,
@@ -292,6 +358,18 @@ impl CellState {
         }
         nodes.sort_unstable();
         nodes.dedup();
+    }
+
+    /// `measure` summed over the built nodes among `ids`.
+    fn sum_over<'a>(
+        &self,
+        ids: impl IntoIterator<Item = &'a NodeId>,
+        measure: fn(&BuiltNode) -> u64,
+    ) -> u64 {
+        ids.into_iter()
+            .filter_map(|id| self.built.get(id))
+            .map(measure)
+            .sum()
     }
 
     pub(super) fn has_cells(&self, node: NodeId) -> bool {
@@ -726,6 +804,7 @@ impl LodDataset {
         // The epoch of the first cut that can name it.
         let sent = self.cells.cut_epoch + 1;
         let bytes = packed_node_bytes(&packed);
+        let coarsest_pages = coarsest_level_pages(&packed);
         let rebuild = !self.cells.ever_built.insert(id);
         let role = BuildRole::default();
         self.cells.built.insert(
@@ -733,6 +812,7 @@ impl LodDataset {
             BuiltNode {
                 sent,
                 bytes,
+                coarsest_pages,
                 role,
                 rebuild,
             },
@@ -870,9 +950,15 @@ impl LodDataset {
         // needs fall below `CPU_RELEASE_PERCENT` (the camera moved to a cut that is cheaper).
         // Blocked candidates stay candidates without cells: their built ancestors remain support
         // and keep drawing their zone, and they are not deferred work, so the px ladder ends.
+        //
+        // The GPU pool fit (ADR 0040) is the same with another measure: `gpu_needed` adds the
+        // pages of the coarsest stored level of each of those nodes (the least the pool needs to
+        // draw them, since it coarsens levels within nodes first, ADR 0033), against the pages
+        // the pool can use; it blocks, releases and counts apart (`gpu_blocked`).
         let in_progress = self.in_progress_children(&selection, initial_plan.node_ids());
-        let mut cpu_needed = 0;
-        if let Some(budget) = config.cpu_budget_bytes {
+        let (mut cpu_needed, mut gpu_needed) = (0, 0);
+        let gpu_budget = config.gpu_pool_pages.map(usable_pool_pages);
+        if config.cpu_budget_bytes.is_some() || gpu_budget.is_some() {
             // In-progress children count while blocked too: the driver keeps them until it is
             // over budget, and counting them keeps the block from flapping.
             let needed: HashSet<NodeId> = initial_plan
@@ -882,33 +968,34 @@ impl LodDataset {
                 .chain(self.support_nodes(&candidates, &shared_owners))
                 .chain(in_progress.iter().copied())
                 .collect();
-            cpu_needed = needed
-                .iter()
-                .filter_map(|id| self.cells.built.get(id))
-                .map(|built| built.bytes)
-                .sum();
-            let in_progress_bytes: u64 = in_progress
-                .iter()
-                .filter_map(|id| self.cells.built.get(id))
-                .map(|built| built.bytes)
-                .sum();
-            let mut effective = cpu_needed;
-            if self.cells.cpu_blocked {
+            let bytes = |built: &BuiltNode| built.bytes;
+            let pages = |built: &BuiltNode| built.coarsest_pages;
+            cpu_needed = self.cells.sum_over(&needed, bytes);
+            gpu_needed = self.cells.sum_over(&needed, pages);
+            let in_progress_cpu = self.cells.sum_over(&in_progress, bytes);
+            let in_progress_gpu = self.cells.sum_over(&in_progress, pages);
+            let key = {
                 let mut hasher = std::hash::DefaultHasher::new();
                 std::hash::Hash::hash(selection.node_ids(), &mut hasher);
-                let key = std::hash::Hasher::finish(&hasher);
-                let held = match self.cells.released {
-                    Some((k, held)) if k == key => held.max(in_progress_bytes),
-                    _ => in_progress_bytes,
-                };
-                self.cells.released = Some((key, held));
-                effective += held - in_progress_bytes;
+                std::hash::Hasher::finish(&hasher)
+            };
+            if let Some(budget) = config.cpu_budget_bytes {
+                update_block(
+                    &mut self.cells.cpu_blocked,
+                    &mut self.cells.released,
+                    key,
+                    (cpu_needed, in_progress_cpu),
+                    (budget, CPU_RELEASE_PERCENT),
+                );
             }
-            if effective < budget / 100 * CPU_RELEASE_PERCENT {
-                self.cells.cpu_blocked = false;
-            }
-            if !self.cells.cpu_blocked {
-                self.cells.released = None;
+            if let Some(budget) = gpu_budget {
+                update_block(
+                    &mut self.cells.gpu_blocked,
+                    &mut self.cells.gpu_released,
+                    key,
+                    (gpu_needed, in_progress_gpu),
+                    (budget, GPU_RELEASE_PERCENT),
+                );
             }
         }
         // Blocks that are decoded but wait for their cells are not read again. The ancestor whose
@@ -937,7 +1024,7 @@ impl LodDataset {
             .collect();
         let read_ancestors = !top_blocks.is_empty()
             && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
-        let to_read = if self.cells.cpu_blocked {
+        let to_read = if self.cells.cpu_blocked || self.cells.gpu_blocked {
             Vec::new()
         } else if read_ancestors {
             top_blocks
@@ -972,7 +1059,9 @@ impl LodDataset {
         let mut built_nodes: Vec<NodeId> = Vec::new();
         let mut new_nodes: Vec<(u64, PackedNode)> = Vec::new();
         let generation = self.cells.generation;
-        while built_nodes.len() < config.max_node_builds && !self.cells.cpu_blocked {
+        while built_nodes.len() < config.max_node_builds
+            && !(self.cells.cpu_blocked || self.cells.gpu_blocked)
+        {
             let Some(id) = candidates
                 .iter()
                 .map(|c| c.id)
@@ -983,15 +1072,24 @@ impl LodDataset {
             match self.build_node_cells(id) {
                 Ok(packed) => {
                     let bytes = self.cells.built.get(&id).map_or(0, |built| built.bytes);
-                    if let Some(budget) = config.cpu_budget_bytes
-                        && cpu_needed + bytes > budget / 100 * CPU_ADMIT_PERCENT
-                    {
+                    let pages = self
+                        .cells
+                        .built
+                        .get(&id)
+                        .map_or(0, |built| built.coarsest_pages);
+                    let cpu_over = config
+                        .cpu_budget_bytes
+                        .is_some_and(|b| cpu_needed + bytes > share(b, CPU_ADMIT_PERCENT));
+                    let gpu_over = gpu_budget
+                        .is_some_and(|b| gpu_needed + pages > share(b, GPU_ADMIT_PERCENT));
+                    if cpu_over || gpu_over {
                         if let Some(taken) = self.cells.built.remove(&id)
                             && !taken.rebuild
                         {
                             self.cells.ever_built.remove(&id);
                         }
-                        self.cells.cpu_blocked = true;
+                        self.cells.cpu_blocked |= cpu_over;
+                        self.cells.gpu_blocked |= gpu_over;
                         break;
                     }
                     if let Some(built) = self.cells.built.get_mut(&id) {
@@ -1008,6 +1106,7 @@ impl LodDataset {
                         }
                     }
                     cpu_needed += bytes;
+                    gpu_needed += pages;
                     built_nodes.push(id);
                     new_nodes.extend(packed.map(|node| (generation, node)));
                 }
@@ -1018,8 +1117,9 @@ impl LodDataset {
             }
         }
         let build_ms = build_started.elapsed_ms();
-        let cpu_blocked = self.cells.cpu_blocked;
-        let build_deferred = if cpu_blocked {
+        let (cpu_blocked, gpu_blocked) = (self.cells.cpu_blocked, self.cells.gpu_blocked);
+        let any_blocked = cpu_blocked || gpu_blocked;
+        let build_deferred = if any_blocked {
             0
         } else {
             candidates
@@ -1027,14 +1127,12 @@ impl LodDataset {
                 .filter(|c| !built_nodes.contains(&c.id) && ready(self, c.id))
                 .count()
         };
-        let cpu_coarsened = if cpu_blocked {
-            candidates
-                .iter()
-                .filter(|c| !built_nodes.contains(&c.id))
-                .count()
-        } else {
-            0
-        };
+        let unbuilt = candidates
+            .iter()
+            .filter(|c| !built_nodes.contains(&c.id))
+            .count();
+        let cpu_coarsened = if cpu_blocked { unbuilt } else { 0 };
+        let gpu_coarsened = if gpu_blocked { unbuilt } else { 0 };
         if !built_nodes.is_empty() || next_block.is_some() {
             self.state_epoch += 1;
         }
@@ -1042,7 +1140,7 @@ impl LodDataset {
         let plan = self.prepare_cell_plan(&selection);
         let mut support =
             self.support_nodes(&candidates, &self.shared_block_owners(selection.node_ids()));
-        if !cpu_blocked {
+        if !any_blocked {
             // Protected so the driver does not drop them before their group completes. While
             // blocked the group may never complete: they are released, the cut stays at the
             // parent (counted in `cpu_coarsened`) and they are not built again.
@@ -1115,7 +1213,7 @@ impl LodDataset {
         });
         let mut pending_block_ids = plan.pending_blocks().to_vec();
         pending_block_ids.append(&mut waiting_blocks);
-        if cpu_blocked {
+        if any_blocked {
             // The blocks of candidates the budget keeps from being built are not asked for.
             let hierarchy = self.metadata.hierarchy();
             let unwanted: HashSet<BlockId> = candidates
@@ -1140,6 +1238,7 @@ impl LodDataset {
             pending_page_anchors: pending_anchors,
             uncovered_nodes: plan.uncovered_nodes().len(),
             cpu_coarsened,
+            gpu_coarsened,
             diag,
         };
         self.visible_plan = Some(plan);

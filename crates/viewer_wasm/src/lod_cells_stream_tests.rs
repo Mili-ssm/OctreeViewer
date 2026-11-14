@@ -391,6 +391,8 @@ struct FrameInfo {
     held_nodes: u32,
     excluded_nodes: u32,
     cpu_coarsened: usize,
+    gpu_coarsened: usize,
+    pool_overflow: u32,
 }
 
 #[derive(Default, Debug)]
@@ -686,6 +688,8 @@ impl Harness {
             held_nodes: stats.counters.held_nodes,
             excluded_nodes: stats.counters.excluded_nodes,
             cpu_coarsened: stats.cpu_coarsened,
+            gpu_coarsened: stats.gpu_coarsened,
+            pool_overflow: stats.counters.pool_overflow,
         };
         {
             let c = &stats.counters;

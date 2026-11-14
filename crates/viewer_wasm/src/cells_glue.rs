@@ -811,6 +811,7 @@ impl InProcessCells {
                 pending_page_anchors: stats.pending_page_anchors,
                 uncovered_nodes: stats.uncovered_nodes,
                 cpu_coarsened: stats.cpu_coarsened,
+                gpu_coarsened: stats.gpu_coarsened,
                 diag: stats.diag,
             };
             let Some(reader) = reader

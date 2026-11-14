@@ -1260,3 +1260,53 @@ fn real_sim_belvedere_pool_reset_and_driver_replaced_mid_load_converge() {
 
 #[path = "lod_cells_glue_sim.rs"]
 mod glue;
+
+// ---------------------------------------------------------------------------------------------
+// GPU pool fit (ADR 0040)
+// ---------------------------------------------------------------------------------------------
+
+/// A harness whose driver pool has `pages` pages; `fitted` also tells the build side.
+fn pooled_harness(pages: u32, fitted: bool) -> Harness {
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    h.driver = CellDriver::new(viewer_render_wgpu::DriverConfig {
+        pool: viewer_render_wgpu::PoolConfig {
+            capacity_pages: pages,
+            ..viewer_render_wgpu::PoolConfig::default()
+        },
+        grid: h.dataset.cell_grid(),
+        coordinate_origin: h.dataset.coordinate_origin(),
+        cpu_budget_bytes: u64::MAX,
+    });
+    h.config.gpu_pool_pages = fitted.then_some(pages);
+    h
+}
+
+/// The coarsest levels of the cut do not fit this pool.
+const SMALL_POOL_PAGES: u32 = 16;
+
+#[test]
+fn a_pool_smaller_than_the_coarsest_levels_of_the_cut_settles_with_nodes_coarsened() {
+    let view = synth_dolly().remove(8);
+    let mut h = pooled_harness(SMALL_POOL_PAGES, true);
+    let last = h.settle(&view, 3, 1_200);
+    assert_eq!(last.apply, CutApply::Applied);
+    assert!(last.gpu_coarsened > 0, "the pool blocked nothing");
+    let overflow = last.pool_overflow;
+    for _ in 0..50 {
+        h.dirty = true;
+        let info = h.frame(&view);
+        assert_eq!(info.apply, CutApply::Applied);
+        assert_eq!(info.pool_overflow, overflow, "the pool overflowed again");
+    }
+}
+
+#[test]
+fn a_pool_that_holds_the_cut_reaches_full_detail_without_gpu_coarsening() {
+    let view = synth_dolly().remove(8);
+    let mut h = pooled_harness(65_536, true);
+    let last = h.settle(&view, 3, 1_200);
+    assert_eq!(last.gpu_coarsened, 0);
+    assert_eq!(last.pool_overflow, 0);
+    let mut open = synthetic_harness(1 << 20, 2.0);
+    assert_eq!(open.settle(&view, 3, 1_200).digest, last.digest);
+}
