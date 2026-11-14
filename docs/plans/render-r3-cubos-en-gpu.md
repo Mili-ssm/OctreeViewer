@@ -48,6 +48,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
 | R3-Q28 | (14-11-2026) La causa del bucle de R3-Q27 es la caché de bloques (256 MiB en el navegador): el plan exige los bloques decodificados de cada nodo del corte. En la ruta de celdas, un nodo con celdas cuenta como residente aunque sus bloques salgan de la caché ([ADR 0038](../adr/0038-residencia-por-celdas.md)) |
 | R3-Q29 | (14-11-2026) Corte que no cabe en el pool de GPU ni con los niveles más gruesos (Belvedere a 1 px tras un salto): pool de 512 MiB y corte de nodos ajustado también al pool ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md)) |
 | R3-Q30 | (14-11-2026) Se confirman las reglas de B1c que el ADR 0037 no detallaba: hijos en curso protegidos y contados, bloqueo de todos los candidatos y bloqueo retenido mientras no cambie la selección ([ADR 0039](../adr/0039-hijos-en-curso-y-bloqueo-retenido.md)) |
+| R3-Q31 | (14-11-2026) El criterio de ≤ 16,7 ms de la Tarea 16b en el visor wasm se mide con el tiempo de GPU del frame (consultas de timestamp de WebGPU), p95 ≤ 16,7 ms; el intervalo entre frames está atado al vsync y no sirve para ese criterio |
 
 ## Restricciones globales
 
@@ -673,7 +674,7 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
 **T16b, producción:** los pases van a un módulo nuevo, `cell_cull.rs` (Tarea 7b2), dentro de la Tarea 7, sobre la instancia y la tabla de páginas de la Tarea 6. El orden respeta el ADR 0035: la Tarea 16a decide antes de la 6 qué campos tiene la página, y el código de producción solo puede ir con el pool, que llega en la 7.
 
 - [ ] El margen de profundidad del Hi-Z sale de una cota del error entre la caja proyectada y el rasterizador; en el spike, 4 ulp solo están validados empíricamente.
-- [ ] La pirámide de `hzb.rs` se crea con tamaño potencia de dos, pero `copy_depth` copia 1:1 y la búsqueda escala por `pyramid_size / viewport`, de modo que a 1280×720 lee texeles de otra zona (pre-mortem del 05-11-2026; *inferido* leyendo el código, sin reproducir). El pase nuevo usa la convención del spike: cada texel guarda el máximo de todos sus píxeles.
+- [x] (Corregido el 14-11-2026, `ace9d84`, con test a 1280×720.) La pirámide de `hzb.rs` se crea con tamaño potencia de dos, pero `copy_depth` copia 1:1 y la búsqueda escala por `pyramid_size / viewport`, de modo que a 1280×720 lee texeles de otra zona (pre-mortem del 05-11-2026; *inferido* leyendo el código, sin reproducir). El pase nuevo usa la convención del spike: cada texel guarda el máximo de todos sus píxeles.
 - [x] **Bindings frente a los límites de producción** (05-11-2026). `gpu.rs:326` pide `downlevel_defaults`: 4 búferes de almacenamiento por etapa, 128 MiB por binding y 256 MiB por búfer. Búferes de almacenamiento de `kpc` en el spike:
 
   | Pase | Búferes | Con la caja en `PageEntry` |

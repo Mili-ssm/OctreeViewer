@@ -41,13 +41,15 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   a 4 px; GTT pico ~+750 MiB. El ajuste al pool no actuó en el navegador (basta el pool mayor); lo
   cubre un test en simulación. La Tarea 11 queda abierta solo por el criterio de ≤ 16,7 ms (B1b.3).
 - [ ] B1b. Casillas abiertas de la Tarea 16b.
-  - [ ] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): test rojo con un viewport que no es
-    potencia de dos (1280×720), corrección y profundidad idéntica con y sin oclusión.
+  - [x] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): el fallo era real (la búsqueda escalaba
+    1,6 × 1,42 a 1280×720 y ocultaba lo visible); test rojo → verde y búsqueda 1:1 (`ace9d84`).
   - [ ] B1b.2. Cota del margen de profundidad del Hi-Z (hoy 4 ulp empíricos): derivarla del error
     entre la caja proyectada y el rasterizador, y fijarla en un test en el límite.
-  - [ ] B1b.3. ≤ 16,7 ms en wasm: el intervalo entre frames está atado al vsync (p95 17,1–17,9 ms sin
-    frames perdidos). Medir el tiempo de GPU con `timestamp-query` en Chrome, o pedir al propietario
-    que fije el criterio con el intervalo.
+  - [ ] B1b.3. ≤ 16,7 ms en wasm medido como tiempo de GPU del frame (R3-Q31): el renderer pide
+    `timestamp-query` si el adaptador la ofrece, mide cada frame sin bloquear (lectura asíncrona) y
+    expone p50/p95 en las estadísticas; el probe lanza Chrome con la feature habilitada y registra el
+    p95 en Majadas dentro de una hoja a 4 px. Check: p95 ≤ 16,7 ms en el probe; sin la feature, la
+    estadística queda vacía y no rompe nada.
 - [ ] B2. Tarea 12, modos de color, con ≤ 1 LSB en intensidad y elevación (R3-Q25).
   - [ ] B2.1. Mapear los modos de la ruta CPU y la vuelta a ella de R3-Q23 (qué lee cada modo y dónde).
   - [ ] B2.2. Color por atributo en la ruta de celdas: tests de paridad con la CPU, bit a bit en RGB y
