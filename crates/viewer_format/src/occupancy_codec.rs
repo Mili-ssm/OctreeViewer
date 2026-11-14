@@ -4,12 +4,26 @@ use crate::{FormatError, QuantizedOccupancy};
 const NODE_BYTES: usize = 6;
 const OWN_OCTANT: u8 = 0x40;
 
-/// OQ-09 experiment: `OQ09_MORTON=1` writes blocks sorted by Morton code with no row index.
-pub(crate) fn morton() -> bool {
+/// OQ-09 experiment: `OQ09_MORTON=1` writes every block sorted by Morton code with no row index;
+/// `OQ09_MORTON=best` tries both orders per block and keeps the smaller geometry.
+pub(crate) fn morton_best() -> bool {
     static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FLAG.get_or_init(|| std::env::var_os("OQ09_MORTON").is_some())
+    *FLAG.get_or_init(|| std::env::var("OQ09_MORTON").is_ok_and(|v| v == "best"))
 }
-const MORTON_FLAG: u8 = 0x80;
+
+thread_local! {
+    /// Per-thread order override used by `best` mode while a block is prepared.
+    pub(crate) static MORTON_OVERRIDE: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+pub(crate) fn morton() -> bool {
+    if let Some(v) = MORTON_OVERRIDE.with(|c| c.get()) {
+        return v;
+    }
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var("OQ09_MORTON").is_ok_and(|v| v != "best"))
+}
+pub(crate) const MORTON_FLAG: u8 = 0x80;
 
 fn malformed() -> FormatError {
     FormatError::MalformedBlock("invalid occupied geometry")
@@ -160,7 +174,12 @@ fn encode_impl(
     bytes.extend_from_slice(candidate.residual_bytes());
     debug_assert_eq!(bytes.len(), length);
     if std::env::var_os("OQ09_STATS").is_some() {
-        experiment_oq09(candidate, &bytes, experiment_index_start, experiment_index_end);
+        experiment_oq09(
+            candidate,
+            &bytes,
+            experiment_index_start,
+            experiment_index_end,
+        );
     }
     Ok(Some(bytes))
 }

@@ -218,7 +218,7 @@ impl NodeAttributeRange {
 }
 
 /// One source block supplied to the format writer before coordinate quantization.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SourcePointBlock {
     id: viewer_core::BlockId,
     positions_local: Vec<[f64; 3]>,

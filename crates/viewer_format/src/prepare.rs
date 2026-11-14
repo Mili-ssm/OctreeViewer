@@ -49,6 +49,50 @@ pub(crate) fn prepare_point_block_for_version_impl(
     options: FormatWriterOptions,
     collect_codec_diagnostics: bool,
 ) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
+    use crate::occupancy_codec::{MORTON_OVERRIDE, morton_best};
+    if !morton_best() {
+        return prepare_point_block_ordered(
+            version,
+            block,
+            metadata,
+            options,
+            collect_codec_diagnostics,
+        );
+    }
+    // OQ-09 `best` experiment: prepare in both orders, keep the smaller compressed geometry
+    // (ties: source order).
+    let run = |morton: bool, block: SourcePointBlock| {
+        MORTON_OVERRIDE.with(|c| c.set(Some(morton)));
+        let result = prepare_point_block_ordered(
+            version,
+            block,
+            metadata,
+            options,
+            collect_codec_diagnostics,
+        );
+        MORTON_OVERRIDE.with(|c| c.set(None));
+        result
+    };
+    let source = run(false, block.clone())?;
+    let morton = run(true, block)?;
+    let geometry_len = |b: &PreparedPointBlock| b.payloads.first().map_or(0, |p| p.stored_length);
+    let morton_wins = geometry_len(&morton.0) < geometry_len(&source.0);
+    let winner = if morton_wins { morton } else { source };
+    eprintln!(
+        "OQ09BLK {} {:?}",
+        if morton_wins { "morton" } else { "source" },
+        winner.0.geometry_encoding
+    );
+    Ok(winner)
+}
+
+fn prepare_point_block_ordered(
+    version: FormatVersion,
+    block: SourcePointBlock,
+    metadata: &FormatMetadata,
+    options: FormatWriterOptions,
+    collect_codec_diagnostics: bool,
+) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
     crate::occupancy_codec::EXPERIMENT.with(|e| e.borrow_mut().clear());
     let layout = StorageLayout::from_version(version)?;
     let point_count = block.positions_local().len();
@@ -94,16 +138,14 @@ pub(crate) fn prepare_point_block_for_version_impl(
         (quantized, [0; 3], world_bounds)
     };
     let mut oq09_morton_perm: Option<Vec<u32>> = None;
-    let quantized = if layout.supports_occupancy()
-        && point_count != 0
-        && crate::occupancy_codec::morton()
-    {
-        let (sorted, perm) = oq09_morton_sort(&quantized);
-        oq09_morton_perm = Some(perm);
-        sorted
-    } else {
-        quantized
-    };
+    let quantized =
+        if layout.supports_occupancy() && point_count != 0 && crate::occupancy_codec::morton() {
+            let (sorted, perm) = oq09_morton_sort(&quantized);
+            oq09_morton_perm = Some(perm);
+            sorted
+        } else {
+            quantized
+        };
     let transform = quantized.transform();
     let quantization_error = quantized.max_error();
     let geometry_length = usize::try_from(
@@ -418,7 +460,8 @@ pub(crate) fn prepare_point_block_for_version_impl(
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
     if oq09 {
-        let stored = |p: &[PayloadDirectoryEntry]| p[1..].iter().map(|x| x.stored_length).sum::<u64>();
+        let stored =
+            |p: &[PayloadDirectoryEntry]| p[1..].iter().map(|x| x.stored_length).sum::<u64>();
         let actual_attr = stored(&payloads);
         let mut perm_attr = actual_attr;
         if let Some(perm) = &oq09_perm {
@@ -442,13 +485,23 @@ pub(crate) fn prepare_point_block_for_version_impl(
                 for &r in perm {
                     permuted.extend_from_slice(&raw[r as usize * elem..(r as usize + 1) * elem]);
                 }
-                append_payload(&permuted, &mut scratch_bytes, &mut scratch_payloads, layout, width)?;
+                append_payload(
+                    &permuted,
+                    &mut scratch_bytes,
+                    &mut scratch_payloads,
+                    layout,
+                    width,
+                )?;
             }
             perm_attr = scratch_payloads.iter().map(|x| x.stored_length).sum();
         }
         use std::io::Write;
         if let Some(path) = std::env::var_os("OQ09_STATS") {
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
                 let _ = f.write_all(format!("{oq09_line} {actual_attr} {perm_attr}\n").as_bytes());
             }
         }
@@ -872,7 +925,11 @@ fn oq09_morton_sort(
         .collect();
     let perm = keyed.into_iter().map(|(_, row)| row).collect();
     (
-        crate::QuantizedCoordinates::from_parts(source.transform(), coordinates, source.max_error()),
+        crate::QuantizedCoordinates::from_parts(
+            source.transform(),
+            coordinates,
+            source.max_error(),
+        ),
         perm,
     )
 }
