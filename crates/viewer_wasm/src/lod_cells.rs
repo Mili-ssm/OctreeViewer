@@ -1108,7 +1108,13 @@ impl LodDataset {
             selection_blocks.sort();
             selection_blocks.dedup();
         }
+        let mut async_priority_order = async_priority_order;
         let async_order_wanted = async_priority_order.is_some();
+        let chain_blocks: HashSet<BlockId> = if async_order_wanted {
+            top_blocks.iter().copied().collect()
+        } else {
+            HashSet::new()
+        };
         let read_ancestors = !top_blocks.is_empty()
             && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
         let to_read = if self.cells.cpu_blocked || self.cells.gpu_blocked {
@@ -1127,13 +1133,24 @@ impl LodDataset {
         } else {
             selection_blocks
         };
-        let next_block = self.next_block_to_load(
+        let mut next_block = self.next_block_to_load(
             view,
             &frustum,
             &to_read,
             initial_plan.uncovered_nodes(),
-            async_priority_order,
+            async_priority_order.as_deref_mut(),
         );
+        if let Some(order) = async_priority_order {
+            // Parents first (R3-Q22): the chain's blocks lead the order, each part keeping its
+            // priority order, so the selection cannot take the read slots ahead of its ancestors.
+            let (mut ordered, selection): (Vec<_>, Vec<_>) = order
+                .iter()
+                .copied()
+                .partition(|block| chain_blocks.contains(block));
+            ordered.extend(selection);
+            *order = ordered;
+            next_block = order.first().copied();
+        }
         let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
         self.arrived_blocks = 0;
         if let Some(requested) = next_block {

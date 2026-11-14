@@ -1312,7 +1312,23 @@ fn the_async_read_order_is_stable_while_nothing_arrives() {
             .unwrap();
         orders.push(order);
     }
-    assert!(orders[0].len() > 1, "{:?}", orders[0]);
+    // Both the root chain and the selection are in flight, the root's blocks first (R3-Q22).
+    let root_blocks = dataset
+        .metadata
+        .hierarchy()
+        .node(NodeId::new(1))
+        .unwrap()
+        .blocks()
+        .to_vec();
+    assert!(!root_blocks.is_empty());
+    assert!(orders[0].len() > root_blocks.len(), "{:?}", orders[0]);
+    assert!(
+        orders[0][..root_blocks.len()]
+            .iter()
+            .all(|block| root_blocks.contains(block)),
+        "{:?}",
+        orders[0]
+    );
     for order in &orders {
         assert_eq!(order, &orders[0]);
     }
