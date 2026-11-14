@@ -1,5 +1,9 @@
 use std::num::NonZeroU64;
-use std::{collections::HashMap, mem::size_of, sync::mpsc};
+use std::{
+    collections::HashMap,
+    mem::size_of,
+    sync::{Arc, Mutex, mpsc},
+};
 
 use bytemuck::{Pod, Zeroable};
 use viewer_core::{BlockId, ResidentBlockSource};
@@ -312,8 +316,26 @@ fn upload_creating_pool<P, E>(
     Ok(created)
 }
 
+/// How the device was lost: `destroyed` (an explicit `destroy()`, never recovered, R3-Q26) or
+/// `unknown` (driver or GPU-process loss), and the message the driver gave.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceLoss {
+    pub reason: &'static str,
+    pub message: String,
+}
+
+fn device_loss(reason: wgpu::DeviceLostReason, message: String) -> DeviceLoss {
+    let reason = match reason {
+        wgpu::DeviceLostReason::Destroyed => "destroyed",
+        _ => "unknown",
+    };
+    DeviceLoss { reason, message }
+}
+
 /// GPU renderer for a surface owned by the calling application.
 pub struct SurfaceRenderer<'window> {
+    /// Filled by the device-lost callback; the host reads it through `device_loss()`.
+    device_loss: Arc<Mutex<Option<DeviceLoss>>>,
     adapter_info: wgpu::AdapterInfo,
     surface: wgpu::Surface<'window>,
     device: wgpu::Device,
@@ -402,6 +424,15 @@ impl<'window> SurfaceRenderer<'window> {
             .await
             .map_err(|error| GpuRendererError::DeviceRequest(error.to_string()))?;
 
+        let device_loss_slot = Arc::new(Mutex::new(None));
+        {
+            let slot = Arc::clone(&device_loss_slot);
+            device.set_device_lost_callback(move |reason, message| {
+                if let Ok(mut slot) = slot.lock() {
+                    slot.get_or_insert_with(|| device_loss(reason, message));
+                }
+            });
+        }
         let cell_pool_pages =
             cell_pool_pages(&adapter, &device.limits(), config.cell_pool_budget_bytes);
         let device_limits = limits.cpu_limits;
@@ -464,6 +495,7 @@ impl<'window> SurfaceRenderer<'window> {
         let frame_timer = crate::frame_timer::FrameTimer::new(&device, &queue);
 
         Ok(Self {
+            device_loss: device_loss_slot,
             adapter_info: adapter.get_info(),
             surface,
             device,
@@ -510,6 +542,11 @@ impl<'window> SurfaceRenderer<'window> {
 
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.surface_config.format
+    }
+
+    /// The device loss reported by the driver, if any (the first one is kept).
+    pub fn device_loss(&self) -> Option<DeviceLoss> {
+        self.device_loss.lock().ok().and_then(|slot| slot.clone())
     }
 
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
@@ -2143,6 +2180,17 @@ impl CellTarget for SurfaceRenderer<'_> {
 #[cfg(test)]
 mod pick_tests {
     use super::*;
+
+    #[test]
+    fn device_loss_reason_separates_destroy_from_driver_loss() {
+        let destroyed = device_loss(wgpu::DeviceLostReason::Destroyed, "bye".into());
+        assert_eq!(
+            (destroyed.reason, destroyed.message.as_str()),
+            ("destroyed", "bye")
+        );
+        let lost = device_loss(wgpu::DeviceLostReason::Unknown, "gpu crash".into());
+        assert_eq!(lost.reason, "unknown");
+    }
 
     #[test]
     fn failed_first_upload_drops_the_new_pool_and_keeps_an_existing_one() {

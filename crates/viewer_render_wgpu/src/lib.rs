@@ -63,7 +63,9 @@ pub use cell_pool::{
 };
 pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
 pub use frame_timer::GpuFrameStats;
-pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
+pub use gpu::{
+    BlockUploadStats, DeviceLoss, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer,
+};
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
     NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cells_digest,

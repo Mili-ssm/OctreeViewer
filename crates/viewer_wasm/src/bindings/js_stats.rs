@@ -116,6 +116,20 @@ impl WasmVoxelViewer {
             &JsValue::from_str(&adapter_info.driver_info),
         )?;
         js_sys::Reflect::set(&stats, &"adapter".into(), &adapter)?;
+        let device_lost = match renderer.device_loss() {
+            Some(loss) => {
+                let object = js_sys::Object::new();
+                js_sys::Reflect::set(&object, &"reason".into(), &JsValue::from_str(loss.reason))?;
+                js_sys::Reflect::set(
+                    &object,
+                    &"message".into(),
+                    &JsValue::from_str(&loss.message),
+                )?;
+                object.into()
+            }
+            None => JsValue::NULL,
+        };
+        js_sys::Reflect::set(&stats, &"deviceLost".into(), &device_lost)?;
         js_sys::Reflect::set(
             &stats,
             &"uploadedBytes".into(),
