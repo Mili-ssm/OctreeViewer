@@ -1,5 +1,6 @@
 import init, { WasmAsyncFormatReader, WasmAsyncReadBudget, WasmBlockRequestScheduler, WasmVoxelViewer } from "../../pkg/viewer_wasm.js";
 import { resolveSource } from "./http-range-source.mjs";
+import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";
 
 let viewer = null;
 let wasmExports = null;
@@ -241,6 +242,80 @@ function samplePointCloud() {
     };
 }
 
+// RF-06/RF-07 px modes. "fixed" (default) uses the host's target; "dynamic" lets the controller
+// (px-controller.mjs) pick it from GPU frame time (or frame intervals) in 1 s windows. Not a
+// Fixed mode has no controller, so tickPxController returns at once and nothing changes.
+const PX_MIN_SAMPLES = 5;
+const PX_IDLE_GAP_MS = 500; // a longer gap between frames is an idle scene, not a slow frame
+let pxMode = "fixed";
+let pxController = null;
+let fixedTargetPx = 4;
+let pxTimerEnabledByMode = false;
+let pxWindow = { startMs: 0, lastFrameMs: null, intervals: [] };
+
+function pxStats() {
+    return {
+        mode: pxMode,
+        targetPx: targetVoxelPixels,
+        signalMs: pxController?.last.signalMs ?? null,
+        signalSource: pxController?.last.source ?? null,
+    };
+}
+
+function setPxMode(mode, now = performance.now()) {
+    if (mode !== "fixed" && mode !== "dynamic") throw new TypeError("pxMode must be 'fixed' or 'dynamic'");
+    if (mode === pxMode) return;
+    pxMode = mode;
+    if (mode === "dynamic") {
+        fixedTargetPx = targetVoxelPixels;
+        pxController = createPxController({ initialPx: targetVoxelPixels, startMs: now });
+        viewer.setGpuFrameTiming(true);
+        pxTimerEnabledByMode = true;
+        viewer.resetGpuFrameStats();
+        pxWindow = { startMs: now, lastFrameMs: null, intervals: [] };
+        targetVoxelPixels = pxController.targetPx;
+    } else {
+        pxController = null;
+        if (pxTimerEnabledByMode) viewer.setGpuFrameTiming(false);
+        pxTimerEnabledByMode = false;
+        targetVoxelPixels = fixedTargetPx;
+    }
+    advanceSceneGeneration();
+    requestLodUpdate();
+}
+
+// The target a load or refine asks for, unless the dynamic controller owns it.
+function requestedTargetPixels(requested) {
+    fixedTargetPx = requested;
+    return pxController ? pxController.targetPx : requested;
+}
+
+function percentile95(values) {
+    const ordered = [...values].sort((left, right) => left - right);
+    return ordered[Math.ceil(ordered.length * 0.95) - 1];
+}
+
+// Called once per drawn frame; closes a window every PX_WINDOW_MS and applies the controller's step.
+function tickPxController(now) {
+    if (!pxController) return;
+    const { lastFrameMs, intervals } = pxWindow;
+    if (lastFrameMs !== null && now - lastFrameMs <= PX_IDLE_GAP_MS) intervals.push(now - lastFrameMs);
+    pxWindow.lastFrameMs = now;
+    if (now - pxWindow.startMs < PX_WINDOW_MS) return;
+    const gpu = viewer.gpuStats()?.gpuFrameMs;
+    const next = pxController.update(now, {
+        gpuP95Ms: gpu && gpu.samples >= PX_MIN_SAMPLES && Number.isFinite(gpu.p95) ? gpu.p95 : null,
+        intervalP95Ms: intervals.length >= PX_MIN_SAMPLES ? percentile95(intervals) : null,
+    });
+    viewer.resetGpuFrameStats();
+    pxWindow = { startMs: now, lastFrameMs: now, intervals: [] };
+    if (next !== null) {
+        targetVoxelPixels = next;
+        advanceSceneGeneration();
+        requestLodUpdate();
+    }
+}
+
 function resetFrameRenderSamples() {
     frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
     frameRenderSampleCount = 0;
@@ -401,10 +476,24 @@ function postStats(frameStatus = null) {
         frameStatus,
         frameRenderMs: frameRenderPercentiles(),
         gpu: viewer.gpuStats(),
+        px: pxStats(),
         lod: currentLodStats(),
         viewer: viewer.stats(),
         memory: memoryStats(),
     });
+}
+
+// Re-runs the LOD update for the current `targetVoxelPixels` (a refine or a dynamic step).
+function requestLodUpdate() {
+    if (buildOptions) {
+        syncBuildView(true, true);
+    } else if (viewer.lodStats()) {
+        const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
+        self.postMessage({ type: "lod", lod });
+        recordLodMessage("refine", lod);
+        postLodProgress(lod);
+        scheduleAsyncLodRead(true);
+    }
 }
 
 function pickFramebufferCoordinates(cssX, cssY, cssWidth, cssHeight) {
@@ -712,7 +801,7 @@ function startBuiltDataset(data, requestId = null) {
     appliedCutEpoch = 0;
     cellsStuckKey = null;
     cellsStuckFrames = 0;
-    targetVoxelPixels = data.targetVoxelPixels;
+    targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
     currentColorMode = "rgb";
     confirmedColorMode = "rgb";
@@ -957,7 +1046,7 @@ function startAsyncDataset(data, requestId = null) {
     datasetGeneration += 1;
     const generation = datasetGeneration;
     asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
-    targetVoxelPixels = data.targetVoxelPixels;
+    targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
     currentColorMode = "rgb";
     asyncFormatReader = null;
@@ -1096,7 +1185,11 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = sceneInputs();
                         break;
                     case "getStats":
-                        value = { lod: currentLodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
+                        value = { lod: currentLodStats(), gpu: viewer.gpuStats(), px: pxStats(), viewer: viewer.stats(), memory: memoryStats() };
+                        break;
+                    case "setPxMode":
+                        setPxMode(data.mode);
+                        value = pxStats();
                         break;
                     case "setGpuFrameTiming":
                         viewer.setGpuFrameTiming(Boolean(data.enabled));
@@ -1153,19 +1246,14 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     }
                 }
                 currentColorMode = data.colorMode;
-                targetVoxelPixels = data.targetVoxelPixels;
+                targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
                 beginRefinement(data.trigger, data.refinementId ?? 0, data.colorMode, startedAt);
-                if (buildOptions) {
-                    syncBuildView(true, true);
-                } else if (viewer.lodStats()) {
-                    const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
-                    self.postMessage({ type: "lod", lod });
-                    recordLodMessage("refine", lod);
-                    postLodProgress(lod);
-                    scheduleAsyncLodRead(true);
-                }
+                requestLodUpdate();
                 break;
             }
+            case "pxMode":
+                setPxMode(data.mode);
+                break;
             case "depthShading":
                 viewer.setDepthShading(data.value);
                 break;
@@ -1222,6 +1310,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 const frameStatus = renderViewerFrame();
                 const renderCallMs = performance.now() - startedAt;
                 recordFrameRenderSample(renderCallMs);
+                tickPxController(startedAt + renderCallMs);
                 trackCellsStuck();
                 postLodProgress(currentLodStats(), true);
                 if (!buildOptions) scheduleAsyncLodRead();

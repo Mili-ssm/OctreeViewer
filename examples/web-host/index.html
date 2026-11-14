@@ -276,6 +276,12 @@
             <input id="voxel-pixels" type="range" min="0.5" max="16" step="0.5" value="4"
                 aria-describedby="voxel-pixels-help" disabled />
             <small id="voxel-pixels-help">Sets the finest projected voxel edge to try. The scene starts with coarse voxels and refines toward this value; if a finer step exceeds the render budget, the last complete scene stays visible. Cells share an aligned grid; gaps remain where the scan has no samples.</small>
+            <label for="px-mode">Detail mode</label>
+            <select id="px-mode" aria-describedby="px-mode-help">
+                <option value="fixed">Fixed · target above</option>
+                <option value="dynamic">Dynamic · follows frame time</option>
+            </select>
+            <small id="px-mode-help">Dynamic picks 1, 2, 4 or 8 px from the GPU frame time (frame interval when the GPU cannot time frames) and ignores the slider until you go back to Fixed.</small>
             <label for="color-mode">Color</label>
             <select id="color-mode">
                 <option value="rgb">RGB</option>

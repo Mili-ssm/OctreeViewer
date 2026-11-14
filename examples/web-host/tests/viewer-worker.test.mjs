@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { test } from "node:test";
 
+import { WINDOW_MS, createPxController } from "../px-controller.mjs";
+
 const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
     .replace(/^import .*\n/gm, "");
 
@@ -18,6 +20,9 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     let pendingPageAnchors = [];
     const graftedPages = [];
     const budgets = [];
+    const timing = [];
+    const updateLodCalls = [];
+    let gpuFrameMs = null;
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
     const viewer = {
@@ -56,7 +61,10 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         pan() {},
         zoom() {},
         moveCamera() {},
+        setGpuFrameTiming(enabled) { timing.push(enabled); },
+        resetGpuFrameStats() { timing.push("reset"); },
         updateLod(pixels) {
+            updateLodCalls.push(pixels);
             targetVoxelPixels = pixels;
             if (colorMode !== "intensity") lod = makeLod(pixels, pixels);
             return lod;
@@ -72,6 +80,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         gpuStats: () => ({
             visibleInstances: Number(lod.visiblePoints),
             requestedResources: { totalBytes: String(lod.lodStagePixels) },
+            gpuFrameMs,
         }),
         stats: () => ({ point_count: Number(lod.visiblePoints) }),
         viewportSize: () => [1, 1],
@@ -201,6 +210,8 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         WasmAsyncFormatReader: AsyncFormatReader ?? DefaultAsyncFormatReader,
         Float64Array,
         setTimeout,
+        createPxController,
+        PX_WINDOW_MS: WINDOW_MS,
     });
 
     async function send(type, fields = {}) {
@@ -215,6 +226,9 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         messages,
         send,
         setNow(value) { now = value; },
+        setGpuFrameMs(p95, samples = 60) { gpuFrameMs = p95 === null ? null : { p95, samples }; },
+        timing,
+        updateLodCalls,
         setPendingBlock(value) { pendingBlockIds = value === null ? [] : [String(value)]; },
         setPendingBlocks(values) { pendingBlockIds = values.map(String); },
         setPendingPageAnchors(values) { pendingPageAnchors = [...values]; },
@@ -661,4 +675,76 @@ test("a page that failed in one dataset is requested again after opening a new o
     await worker.send("openFile", pagedOpen);
     await worker.send("frame", { camera: {} });
     assert.deepEqual(loads, ["a", "a"]);
+});
+
+const idleCamera = { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0 };
+
+// Draws `count` frames `stepMs` apart, starting after the current time `from`.
+async function drawFrames(worker, from, count, stepMs) {
+    for (let i = 1; i <= count; i++) {
+        worker.setNow(from + i * stepMs);
+        await worker.send("frame", { camera: idleCamera });
+    }
+    return from + count * stepMs;
+}
+
+async function openedDynamicWorker() {
+    const worker = await runWorker();
+    await worker.send("openFile", { file: { name: "sample.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    return worker;
+}
+
+test("pxMode is fixed by default: no timer, no controller, the host's target rules", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("refine", { trigger: "detail", colorMode: "rgb", targetVoxelPixels: 2 });
+    await drawFrames(worker, 0, 100, 50);
+    assert.deepEqual(worker.timing, []);
+    assert.equal(worker.updateLodCalls.at(-1), 2);
+    const px = worker.messages.filter(message => message.type === "stats").at(-1).px;
+    assert.deepEqual({ ...px }, { mode: "fixed", targetPx: 2, signalMs: null, signalSource: null });
+});
+
+test("dynamic mode enables the GPU timer, coarsens on overload and refines on headroom", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("api", { operation: "setPxMode", mode: "dynamic", requestId: 1 });
+    assert.deepEqual(worker.timing, [true, "reset"]);
+    assert.equal(worker.messages.find(message => message.requestId === 1).value.mode, "dynamic");
+    // 4 px at the start; a 25 ms GPU p95 coarsens to 8 px within the first window.
+    worker.setGpuFrameMs(25);
+    let t = await drawFrames(worker, 0, 25, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 8);
+    // Headroom for two windows refines back, after the dwell.
+    worker.setGpuFrameMs(6);
+    t = await drawFrames(worker, t, 70, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 4);
+    const px = (await (async () => {
+        await worker.send("api", { operation: "getStats", requestId: 2 });
+        return worker.messages.find(message => message.requestId === 2).value.px;
+    })());
+    assert.deepEqual({ ...px }, { mode: "dynamic", targetPx: 4, signalMs: 6, signalSource: "gpu" });
+    // The host's slider does not override the controller while dynamic.
+    await worker.send("refine", { trigger: "detail", colorMode: "rgb", targetVoxelPixels: 1 });
+    assert.equal(worker.updateLodCalls.at(-1), 4);
+    // Going back to fixed restores the host's last target and turns the timer off.
+    await worker.send("pxMode", { mode: "fixed" });
+    assert.equal(worker.updateLodCalls.at(-1), 1);
+    assert.equal(worker.timing.at(-1), false);
+});
+
+test("dynamic mode falls back to the frame interval when the GPU cannot time frames", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(null);
+    // 30 ms between frames (p95 over 20 ms) coarsens; the signal source is reported.
+    await drawFrames(worker, 0, 40, 30);
+    assert.equal(worker.updateLodCalls.at(-1), 8);
+    await worker.send("api", { operation: "getStats", requestId: 3 });
+    const px = worker.messages.find(message => message.requestId === 3).value.px;
+    assert.equal(px.signalSource, "interval");
+});
+
+test("an invalid pxMode is rejected", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "auto" });
+    assert.match(worker.messages.at(-1).message, /pxMode must be/);
 });

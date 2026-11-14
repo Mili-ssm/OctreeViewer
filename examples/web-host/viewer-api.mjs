@@ -333,6 +333,14 @@ export function createViewer(canvas, options = {}) {
         },
         getMetadata: () => request("getMetadata"),
         getStats: () => request("getStats"),
+        // RF-06/RF-07: "fixed" keeps the load's voxelPixels, "dynamic" lets the worker pick 1, 2, 4 or 8 px
+        // from frame cost. Resolves with the px stats ({ mode, targetPx, signalMs, signalSource }).
+        setPxMode(pxMode) {
+            if (pxMode !== "fixed" && pxMode !== "dynamic") {
+                return Promise.reject(new TypeError("pxMode must be 'fixed' or 'dynamic'"));
+            }
+            return request("setPxMode", { mode: pxMode });
+        },
         pick(cssX, cssY) {
             if (!Number.isFinite(cssX) || !Number.isFinite(cssY)) {
                 return Promise.reject(new TypeError("pick coordinates must be finite CSS pixels"));

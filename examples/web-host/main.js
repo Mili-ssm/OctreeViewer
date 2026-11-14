@@ -41,6 +41,8 @@ const statusRoot = document.getElementById("renderer-status");
 const startBenchmarkButton = document.getElementById("start-benchmark");
 const downloadBenchmarkButton = document.getElementById("download-benchmark");
 const colorMode = document.getElementById("color-mode");
+const pxMode = document.getElementById("px-mode");
+let latestPxStats = null;
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
@@ -325,7 +327,10 @@ function updateStats(message) {
         : "—";
     statsRoot.textContent = [
         `dataset: ${datasetName}`,
-        `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`,
+        `finest voxel detail target: ${lod?.targetVoxelPixels ?? voxelPixels.value} px`
+            + (latestPxStats?.mode === "dynamic"
+                ? ` · dynamic (${latestPxStats.signalSource ?? "no signal"}${latestPxStats.signalMs === null ? "" : ` p95 ${latestPxStats.signalMs.toFixed(1)} ms`})`
+                : ""),
         `LOD stage: ${lod?.lodStagePixels ?? "—"} px`,
         `rendered voxel limit: ${lod?.voxelBudget ?? "—"}`,
         `projected voxel edges: ${formatVoxelEdges(lod)}`,
@@ -561,6 +566,7 @@ function handleWorkerMessage(event) {
                 : `target reached ${data.targetLodMs.toFixed(0)} ms`;
         statusRoot.textContent = `${firstView} · ${targetView} · stage ${data.lod.lodStagePixels} px`;
     } else if (data.type === "stats") {
+        latestPxStats = data.px ?? null;
         acknowledgeFrame();
         renderCallMs = data.frameStatus?.renderCallMs ?? renderCallMs;
         recordFrameReply(renderCallMs);
@@ -769,6 +775,10 @@ function updateLodControls() {
 }
 
 voxelPixels.addEventListener("input", updateLodControls);
+pxMode.addEventListener("change", () => {
+    if (benchmarkRun) benchmarkRun.settingsChanged = true;
+    worker.postMessage({ type: "pxMode", mode: pxMode.value });
+});
 depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
