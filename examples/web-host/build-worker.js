@@ -302,11 +302,11 @@ function fillAsyncReads() {
             // The cells keep intensity and class in every colour mode (R3-Q32), so a shader-mode
             // change never rebuilds them. Only an `attribute:N:M` mode paints its column (R3-Q33).
             selection = "geometryAttributes";
-            attributeColumn = selectedAttribute;
+            attributeColumn = asyncHasAttributes ? selectedAttribute : null;
             carriedColumns = asyncHasAttributes
                 ? ["intensity", "classification"]
                     .map((name) => asyncAttributeIndices.get(name))
-                    .filter((index) => index !== undefined)
+                    .filter((index) => index !== undefined && index !== attributeColumn)
                 : [];
         } else {
             const geometrySelection = colorMode === "rgb" && selectedAttribute === null

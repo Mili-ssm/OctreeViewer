@@ -404,6 +404,21 @@ mod tests {
         assert!(packed(rgb).iter().all(|word| *word == (u16::MAX, -1)));
     }
 
+    fn carried_columns(
+        reader: &mut MemoryReader,
+        schema: &[AttributeDescriptor],
+    ) -> Vec<AttributeColumn> {
+        ["intensity", "classification"]
+            .iter()
+            .map(|name| {
+                let index = schema.iter().position(|d| d.name() == *name).unwrap();
+                reader
+                    .read_attribute(BlockId::new(7), index as u32)
+                    .unwrap()
+            })
+            .collect()
+    }
+
     #[test]
     fn async_cell_blocks_carry_intensity_and_class_in_rgb_mode() {
         // The block the build worker's async path delivers in RGB mode: geometry plus the
@@ -411,9 +426,7 @@ mod tests {
         let mut reader = MemoryReader::new();
         let geometry = reader.read_geometry(BlockId::new(7)).unwrap();
         let schema = reader.metadata().hierarchy().attributes().to_vec();
-        let carried = [0, 1]
-            .map(|index| reader.read_attribute(BlockId::new(7), index).unwrap())
-            .to_vec();
+        let carried = carried_columns(&mut reader, &schema);
         let block = crate::lod_driver::assemble_async_block(
             BlockId::new(7),
             geometry,
@@ -422,6 +435,30 @@ mod tests {
             &schema,
             None,
             None,
+            usize::MAX,
+        )
+        .unwrap();
+        let words = packed(block);
+        assert!(!words.is_empty());
+        assert!(words.iter().all(|word| *word == (150, 2)), "{words:?}");
+    }
+
+    #[test]
+    fn async_cell_blocks_painted_with_intensity_still_carry_its_words() {
+        let mut reader = MemoryReader::new();
+        let geometry = reader.read_geometry(BlockId::new(7)).unwrap();
+        let schema = reader.metadata().hierarchy().attributes().to_vec();
+        let painted = reader.read_attribute(BlockId::new(7), 0).unwrap();
+        // Carried holds only the columns other than the painted one (the worker drops it).
+        let carried = vec![reader.read_attribute(BlockId::new(7), 1).unwrap()];
+        let block = crate::lod_driver::assemble_async_block(
+            BlockId::new(7),
+            geometry,
+            Some(painted),
+            carried,
+            &schema,
+            Some((0, 0)),
+            Some([0.0, 255.0]),
             usize::MAX,
         )
         .unwrap();

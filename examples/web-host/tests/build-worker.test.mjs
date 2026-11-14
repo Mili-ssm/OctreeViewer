@@ -88,7 +88,7 @@ async function runBuildWorker({
         lodDatasetDescriptor() {
             return {
                 coordinateOrigin: [0, 0, 0], semantics: "replacement",
-                hasAttributes: Boolean(asyncBlocks),
+                hasAttributes: asyncBlocks ? asyncBlocks.hasAttributes !== false : false,
                 attributeSchema: asyncBlocks?.schema ?? [],
                 dataMin: [0, 0, 0], dataMax: [0.5, 0.5, 0.5],
                 nodeCount: 1,
@@ -287,6 +287,24 @@ test("with cells an attribute colour mode adds its column to the geometry read",
     worker.send("colorMode", { gen: 1, mode: "attribute:2:1" });
     await sendView(worker);
     assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", 2, [0, 1]]);
+});
+
+test("with cells an attribute mode on intensity reads it once and intensity mode reads no painted column", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    worker.send("colorMode", { gen: 1, mode: "attribute:0:0" });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", 0, [1]]);
+    const other = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    other.send("colorMode", { gen: 1, mode: "intensity" });
+    await sendView(other);
+    assert.deepEqual(plan(other.planCalls[0]), ["7n", "geometryAttributes", null, [0, 1]]);
+});
+
+test("with cells and no attribute file no column is read", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS, hasAttributes: false } });
+    worker.send("colorMode", { gen: 1, mode: "attribute:0:0" });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", null, []]);
 });
 
 test("without cells the build worker keeps the per-mode reads", async () => {

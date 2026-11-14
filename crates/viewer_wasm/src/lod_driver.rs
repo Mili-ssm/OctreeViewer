@@ -367,7 +367,7 @@ pub(crate) fn resolve_color_selection(
 
 /// Turns one asynchronously delivered block into a cacheable `PointBlock`. With an attribute
 /// selected the column is painted into the colours; otherwise it travels with the block.
-/// `carried` columns always travel with the block (the cells path, R3-Q32).
+/// `carried` columns always travel with the block (the cells path, R3-Q32), and so does a painted one.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble_async_block(
     block_id: BlockId,
@@ -397,9 +397,10 @@ pub(crate) fn assemble_async_block(
                 selected_range,
             )
             .map_err(str::to_owned)?;
-        } else {
-            columns.push(column);
         }
+        // The painted column stays with the block: the cells keep intensity and class words
+        // even when that column is the one painted into the colours (R3-Q32).
+        columns.push(column);
     } else if selected_attribute.is_some() {
         return Err("selected attribute payload is required".to_owned());
     }
