@@ -4,6 +4,13 @@ use crate::{FormatError, QuantizedOccupancy};
 const NODE_BYTES: usize = 6;
 const OWN_OCTANT: u8 = 0x40;
 
+/// OQ-09 experiment: `OQ09_MORTON=1` writes blocks sorted by Morton code with no row index.
+pub(crate) fn morton() -> bool {
+    static FLAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| std::env::var_os("OQ09_MORTON").is_some())
+}
+const MORTON_FLAG: u8 = 0x80;
+
 fn malformed() -> FormatError {
     FormatError::MalformedBlock("invalid occupied geometry")
 }
@@ -79,6 +86,9 @@ fn encode_impl(
             .checked_add(var_len(rows.len() as u32))
             .ok_or(FormatError::BlockSizeOverflow)?;
         let mut previous = 0;
+        if morton() {
+            continue;
+        }
         for &row in rows {
             length = length
                 .checked_add(var_len(row as u32 - previous))
@@ -96,7 +106,11 @@ fn encode_impl(
     bytes
         .try_reserve_exact(length)
         .map_err(|_| FormatError::AllocationFailed(length))?;
-    bytes.push(candidate.residual_bits() | if own_octant { OWN_OCTANT } else { 0 });
+    bytes.push(
+        candidate.residual_bits()
+            | if own_octant { OWN_OCTANT } else { 0 }
+            | if morton() { MORTON_FLAG } else { 0 },
+    );
     for level in levels {
         bytes.extend_from_slice(&(level.len() as u32).to_le_bytes());
     }
@@ -130,6 +144,13 @@ fn encode_impl(
         let rows = index.rows_for_leaf(leaf).expect("occupied leaf");
         write_var(rows.len() as u32, &mut bytes);
         let mut previous = 0;
+        if morton() {
+            assert!(
+                rows.windows(2).all(|w| w[1] == w[0] + 1),
+                "OQ09_MORTON needs contiguous rows per leaf"
+            );
+            continue;
+        }
         for &row in rows {
             write_var(row as u32 - previous, &mut bytes);
             previous = row as u32;
@@ -211,7 +232,8 @@ fn decode_impl(bytes: &[u8], points: usize, compact: bool) -> Result<Vec<[u32; 3
     let config = cursor.byte()?;
     let bits = config & 63;
     let own_octant = config & OWN_OCTANT != 0;
-    if config & 128 != 0 || bits > 32 || (compact && own_octant) {
+    let morton_order = config & MORTON_FLAG != 0;
+    if bits > 32 || (compact && own_octant) {
         return Err(malformed());
     }
     let depth = usize::from(32 - bits);
@@ -310,11 +332,11 @@ fn decode_impl(bytes: &[u8], points: usize, compact: bool) -> Result<Vec<[u32; 3
         return Err(malformed());
     }
     let rows_bytes = &bytes[cursor.offset..residual_start];
-    if rows_bytes.len()
-        < points
-            .checked_add(levels[depth].count)
-            .ok_or_else(malformed)?
-    {
+    let min_rows = levels[depth]
+        .count
+        .checked_add(if morton_order { 0 } else { points })
+        .ok_or_else(malformed)?;
+    if rows_bytes.len() < min_rows {
         return Err(malformed());
     }
     let mut rows = Cursor {
@@ -344,12 +366,16 @@ fn decode_impl(bytes: &[u8], points: usize, compact: bool) -> Result<Vec<[u32; 3
             }
             let mut row = 0_u32;
             for j in 0..count {
-                let delta = rows.var()?;
-                if j != 0 && delta == 0 {
-                    return Err(malformed());
-                }
-                row = row.checked_add(delta).ok_or_else(malformed)?;
-                let row = row as usize;
+                let row = if morton_order {
+                    assigned + j
+                } else {
+                    let delta = rows.var()?;
+                    if j != 0 && delta == 0 {
+                        return Err(malformed());
+                    }
+                    row = row.checked_add(delta).ok_or_else(malformed)?;
+                    row as usize
+                };
                 if row >= points || seen[row / 8] & (1 << (row % 8)) != 0 {
                     return Err(malformed());
                 }

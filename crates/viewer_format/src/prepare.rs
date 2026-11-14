@@ -93,6 +93,17 @@ pub(crate) fn prepare_point_block_for_version_impl(
             block_world_bounds(block.positions_local(), &quantized, metadata.dataset())?;
         (quantized, [0; 3], world_bounds)
     };
+    let mut oq09_morton_perm: Option<Vec<u32>> = None;
+    let quantized = if layout.supports_occupancy()
+        && point_count != 0
+        && crate::occupancy_codec::morton()
+    {
+        let (sorted, perm) = oq09_morton_sort(&quantized);
+        oq09_morton_perm = Some(perm);
+        sorted
+    } else {
+        quantized
+    };
     let transform = quantized.transform();
     let quantization_error = quantized.max_error();
     let geometry_length = usize::try_from(
@@ -388,6 +399,9 @@ pub(crate) fn prepare_point_block_for_version_impl(
     for color in block.colors() {
         raw.extend_from_slice(&[color.r, color.g, color.b]);
     }
+    if let Some(perm) = &oq09_morton_perm {
+        raw = oq09_permute(&raw, perm, point_count);
+    }
     append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
     let attributes_for_oq09 = attributes.clone();
     for column in attributes {
@@ -397,6 +411,9 @@ pub(crate) fn prepare_point_block_for_version_impl(
         raw.try_reserve_exact(length)
             .map_err(|_| FormatError::AllocationFailed(length))?;
         encode_values(column.values(), &mut raw);
+        if let Some(perm) = &oq09_morton_perm {
+            raw = oq09_permute(&raw, perm, point_count);
+        }
         let width = crate::layout::attribute_tuple_width(column.descriptor())?;
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
@@ -820,4 +837,51 @@ impl PreparedPointBlock {
     pub fn encoded_payload_capacity_bytes(&self) -> usize {
         self.bytes.capacity()
     }
+}
+
+/// OQ-09 experiment: stable Morton order of the quantized u32 coordinates (x is the most
+/// significant axis of each bit triple, matching the occupied octree key).
+fn oq09_morton_sort(
+    source: &crate::QuantizedCoordinates,
+) -> (crate::QuantizedCoordinates, Vec<u32>) {
+    let mut table = [0_u32; 256];
+    for (byte, slot) in table.iter_mut().enumerate() {
+        for bit in 0..8 {
+            *slot |= (((byte >> bit) & 1) as u32) << (3 * bit);
+        }
+    }
+    let key = |c: &[u32; 3]| -> u128 {
+        let mut key = 0_u128;
+        for k in 0..4 {
+            let part = |v: u32| table[((v >> (8 * k)) & 255) as usize];
+            let chunk = (part(c[0]) << 2) | (part(c[1]) << 1) | part(c[2]);
+            key |= u128::from(chunk) << (24 * k);
+        }
+        key
+    };
+    let mut keyed: Vec<(u128, u32)> = source
+        .coordinates()
+        .iter()
+        .enumerate()
+        .map(|(row, c)| (key(c), row as u32))
+        .collect();
+    keyed.sort_unstable();
+    let coordinates = keyed
+        .iter()
+        .map(|&(_, row)| source.coordinates()[row as usize])
+        .collect();
+    let perm = keyed.into_iter().map(|(_, row)| row).collect();
+    (
+        crate::QuantizedCoordinates::from_parts(source.transform(), coordinates, source.max_error()),
+        perm,
+    )
+}
+
+fn oq09_permute(raw: &[u8], perm: &[u32], count: usize) -> Vec<u8> {
+    let elem = raw.len() / count;
+    let mut out = Vec::with_capacity(raw.len());
+    for &row in perm {
+        out.extend_from_slice(&raw[row as usize * elem..(row as usize + 1) * elem]);
+    }
+    out
 }
