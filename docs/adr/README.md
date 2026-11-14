@@ -30,7 +30,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0024](0024-hilos-wasm-opcionales-con-coop-coep.md) | Hilos wasm opcionales cuando la página está aislada (COOP/COEP) | Aceptada |
 | [0025](0025-codificador-lz4-propio.md) | Codificador LZ4 propio en `viewer_format` | Aceptada |
 | [0026](0026-api-publica-licencia-y-version-1.md) | API pública primero, licencia MIT OR Apache-2.0 y publicación solo en la 1.0 | Aceptada |
-| [0027](0027-celdas-por-nodo-en-pool-paginado.md) | R3: celdas por nodo en un pool de GPU paginado con máscaras de cobertura | Propuesta |
+| [0027](0027-celdas-por-nodo-en-pool-paginado.md) | R3: celdas por nodo en un pool de GPU paginado con máscaras de cobertura | Aceptada (14-11-2026) |
 | [0028](0028-r4-antes-que-r3.md) | R4 (pirámide densa) antes que R3 | Aceptada |
 | [0029](0029-octree-global-por-bits-de-enteros.md) | Octree global sobre coordenadas enteras con cuanto binario (precisa 0021) | Aceptada |
 | [0030](0030-jerarquia-paginada-por-anclas.md) | Jerarquía paginada por niveles desde anclas de prefijo (R5) | Aceptada |
