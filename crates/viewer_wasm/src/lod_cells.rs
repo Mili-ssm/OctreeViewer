@@ -294,7 +294,7 @@ impl CellState {
         self.built.contains_key(&node) || self.empty.contains(&node)
     }
 
-    /// Packed bytes of a built node (diagnosis test `forget_loop_diagnosis`).
+    /// Packed bytes of a built node (tests and simulations).
     #[cfg(test)]
     pub(super) fn built_bytes(&self, node: NodeId) -> Option<u64> {
         self.built.get(&node).map(|built| built.bytes)
