@@ -930,11 +930,24 @@ fn synthetic_harness(budget: usize, target_px: f64) -> Harness {
 
 /// [`synthetic_harness`] with a decoded-block cache of `cache_bytes`.
 fn synthetic_harness_with_cache(budget: usize, target_px: f64, cache_bytes: usize) -> Harness {
+    synthetic_harness_spaced(budget, target_px, cache_bytes, None)
+}
+
+/// [`synthetic_harness_with_cache`] whose dataset carries a stored reference spacing.
+fn synthetic_harness_spaced(
+    budget: usize,
+    target_px: f64,
+    cache_bytes: usize,
+    reference_spacing: Option<f64>,
+) -> Harness {
     let PagedSynthetic {
-        dataset,
+        mut dataset,
         blocks,
         pages,
     } = paged_synthetic(budget, cache_bytes);
+    if let Some(spacing) = reference_spacing {
+        dataset = dataset.with_reference_spacing(spacing);
+    }
     Harness::new(
         dataset,
         target_px,

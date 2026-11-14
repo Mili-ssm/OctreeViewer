@@ -72,7 +72,7 @@ use std::{cell::Cell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 use viewer_core::{NodeId, SpatialBounds};
 
 use crate::camera::VERTICAL_FOV;
-use crate::node_cells::node_range;
+use crate::node_cells::{node_range, representative_depth_for_spacing};
 
 use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
@@ -281,6 +281,7 @@ struct ViewKey {
     visual_scale: f64,
     grid: CellGrid,
     origin: [f64; 3],
+    min_side: Option<f64>,
 }
 
 /// Result of the wanted cut and the fit, valid while its inputs are.
@@ -690,6 +691,9 @@ pub struct CellPool {
     /// `RealMemo::hold_ancestors` of the applied cut.
     applied_cover: FastSet<NodeId>,
     carry: Carry,
+    /// RF-05 continuity: no octant draws cells smaller than this side (dataset frame units);
+    /// `None` is the literal mode.
+    min_side: Option<f64>,
     /// Last frame that counted an overflow (a frame can plan more than once).
     overflow_frame: u64,
     /// `RealMemo::covered_octants` of the applied cut.
@@ -796,6 +800,7 @@ impl CellPool {
             hold_passes: HOLD_PASSES,
             old_released: FastMap::default(),
             carry: Carry::default(),
+            min_side: None,
             overflow_frame: 0,
             applied_covered: 0,
             applied_levels: FastSet::default(),
@@ -806,6 +811,20 @@ impl CellPool {
             next_mask: 0,
             events: Vec::new(),
         }
+    }
+
+    /// Continuity (RF-05, ADR 0019): from now on each octant wants at most the finest stored
+    /// level whose cell side is not below `min_side` (the coarsest stored level when every one is
+    /// finer). The cap is part of the wanted depth, so a level coarser than the target only
+    /// because of it is not a stage (R3-Q3) and the fit never counts it as coarsened. Cells are
+    /// not rebuilt: the next frame only selects other levels. `None` or a non-positive or
+    /// non-finite side restores the literal mode.
+    pub fn set_min_side(&mut self, min_side: Option<f64>) {
+        self.min_side = min_side.filter(|side| side.is_finite() && *side > 0.0);
+    }
+
+    pub fn min_side(&self) -> Option<f64> {
+        self.min_side
     }
 
     pub fn key(&self, node: NodeId, depth: u8) -> LevelKey {
@@ -1773,6 +1792,7 @@ impl CellPool {
             visual_scale: view.visual_scale(),
             grid: *grid,
             origin,
+            min_side: self.min_side,
         };
         if self.depth_key != Some(key) {
             self.depth_key = Some(key);
@@ -1783,6 +1803,9 @@ impl CellPool {
         let aspect = f64::from(view.viewport()[0]) / f64::from(view.viewport()[1].max(1));
         let tan_corner = (VERTICAL_FOV * 0.5).tan() * (1.0 + aspect * aspect).sqrt();
         let rotation_limit = ROTATION_SHARE / tan_corner;
+        let finest_allowed = self
+            .min_side
+            .map(|side| representative_depth_for_spacing(grid, side));
         let extra_set: FastSet<NodeId> = extra.iter().copied().collect();
         let mut due: Vec<NodeId> = Vec::new();
         let mut early: Vec<(f64, NodeId)> = Vec::new();
@@ -1853,6 +1876,10 @@ impl CellPool {
                     target_px,
                 ),
             });
+            let depths = match finest_allowed {
+                Some(limit) => depths.map(|depth| continuity_depth(&data.stored, depth, limit)),
+                None => depths,
+            };
             let differs = was.is_none_or(|cached| cached.depths != depths);
             if extra_set.contains(&id) {
                 extra_changed |= differs;
@@ -2788,6 +2815,18 @@ fn uncovered_levels(
         }
     }
     (uncovered, octants)
+}
+
+/// `wanted` limited to the finest stored depth at or below `limit` (cells of that depth or
+/// coarser have a side of at least the continuity minimum); the coarsest stored depth when all
+/// are finer.
+fn continuity_depth(stored: &[u8], wanted: u8, limit: u8) -> u8 {
+    let allowed = stored
+        .iter()
+        .copied()
+        .rfind(|depth| *depth <= limit)
+        .unwrap_or(stored[0]);
+    wanted.min(allowed)
 }
 
 /// `stored` truncated to depths at or below the cap.

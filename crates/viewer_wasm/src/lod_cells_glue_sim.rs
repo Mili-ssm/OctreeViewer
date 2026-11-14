@@ -854,3 +854,134 @@ fn recolouring_across_the_build_render_split_leaves_no_hole_and_drops_late_old_n
         assert_eq!(pair.rest(), Some(rgb_digest));
     }
 }
+
+/// Every `(drawn depth, wanted depth)` of the frame, over all octants.
+fn depths_of(report: &viewer_render_wgpu::FrameReport) -> Vec<(u8, u8)> {
+    report
+        .plan
+        .entries
+        .iter()
+        .flat_map(|entry| (0..8).filter_map(|o| Some((entry.drawn[o]?, entry.wanted[o]?))))
+        .collect()
+}
+
+/// Frames until the viewer is quiet; the last report that drew, checked like every frame.
+fn settle_report(pair: &mut Pair) -> viewer_render_wgpu::FrameReport {
+    let mut last = None;
+    for _ in 0..500 {
+        if let Some(report) = pair.viewer.frame(&mut pair.target, &pair.view).unwrap() {
+            pair.target.check_plan(&report.plan);
+            last = Some(report);
+        }
+        if !pair.viewer.cells_busy(&pair.target) {
+            break;
+        }
+    }
+    last.expect("a frame drew")
+}
+
+#[test]
+fn continuity_limits_the_drawn_level_across_the_workers_without_rebuilding_or_holes() {
+    use crate::cells_glue::Continuity;
+    let probe = synthetic_harness(1 << 20, 2.0);
+    let root_side = probe.dataset.cell_grid().root_side;
+    // Cells of the minimum side are those of depth 3 (the synthetic pyramids reach deeper).
+    let spacing = root_side / 8.0;
+    let mut pair = Pair::with_harness(synthetic_harness_spaced(
+        1 << 20,
+        2.0,
+        64 << 20,
+        Some(spacing),
+    ));
+    pair.viewer = ViewerCells::new(
+        driver_config(
+            pair.h.dataset.cell_grid(),
+            pair.h.dataset.coordinate_origin(),
+            u64::MAX,
+        ),
+        1 << 20,
+    )
+    .with_reference_spacing(pair.h.dataset.reference_spacing());
+    let sent = pair.send_checked(0);
+    let stored: std::collections::HashMap<NodeId, Vec<u8>> = sent
+        .iter()
+        .map(|(_, bytes)| {
+            let node = decode_node_levels(bytes).unwrap();
+            (
+                node.id,
+                node.levels.iter().map(|level| level.depth).collect(),
+            )
+        })
+        .collect();
+    pair.pump();
+    let literal_digest = pair.rest().expect("literal view at rest");
+    // A frame at rest draws nothing; setting the literal mode again asks for one.
+    pair.viewer.set_continuity(Continuity::default());
+    let literal = settle_report(&mut pair);
+    let finest_literal = depths_of(&literal).iter().map(|d| d.0).max().unwrap_or(0);
+    assert!(
+        finest_literal > 3,
+        "the fixture must draw finer than the minimum"
+    );
+    let spacing_before = pair.h.dataset.reference_spacing();
+
+    let received = pair.viewer.stats(&pair.target).nodes_received_total;
+    pair.viewer
+        .set_continuity(Continuity::new(true, None).unwrap());
+    // Toggling sends and builds nothing: the same cut, the same cells.
+    let built = pair.send_checked(0);
+    assert!(built.is_empty(), "toggling rebuilt {} nodes", built.len());
+    pair.viewer
+        .set_continuity(Continuity::new(true, None).unwrap());
+    let limited = settle_report(&mut pair);
+    let stats = pair.viewer.stats(&pair.target);
+    assert!(stats.continuity);
+    assert_eq!(stats.continuity_min_side, Some(spacing));
+    // No cell below the minimum side (depth 3), except in a node whose coarsest level is finer.
+    let mut capped = 0;
+    for entry in &limited.plan.entries {
+        let allowed = stored[&entry.node]
+            .iter()
+            .copied()
+            .rfind(|depth| *depth <= 3)
+            .unwrap_or(stored[&entry.node][0]);
+        for o in 0..8 {
+            let (Some(drawn), Some(wanted)) = (entry.drawn[o], entry.wanted[o]) else {
+                continue;
+            };
+            assert!(drawn <= allowed, "node {:?} drew depth {drawn}", entry.node);
+            assert!(wanted <= allowed, "the cap is the wanted look");
+            capped += 1;
+        }
+    }
+    assert!(capped > 0);
+    assert_eq!(
+        pair.viewer.stats(&pair.target).nodes_received_total,
+        received
+    );
+    assert_eq!(pair.h.dataset.reference_spacing(), spacing_before);
+
+    // Off again: literal mode, the digest of the first pass.
+    pair.viewer.set_continuity(Continuity::default());
+    assert_eq!(pair.viewer.stats(&pair.target).continuity_min_side, None);
+    pair.pump();
+    assert_eq!(pair.rest(), Some(literal_digest));
+}
+
+#[test]
+fn the_continuity_minimum_is_the_factor_times_the_reference_spacing_and_off_by_default() {
+    use crate::cells_glue::Continuity;
+    assert_eq!(Continuity::default().min_side(Some(0.25)), None);
+    let on = Continuity::new(true, None).unwrap();
+    assert_eq!(on.min_side(Some(0.25)), Some(0.25));
+    assert_eq!(
+        on.min_side(None),
+        None,
+        "a cloud without spacing stays literal"
+    );
+    let wide = Continuity::new(true, Some(2.0)).unwrap();
+    assert_eq!(wide.min_side(Some(0.25)), Some(0.5));
+    for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(Continuity::new(true, Some(bad)).is_err());
+    }
+}

@@ -50,6 +50,48 @@ const MAX_PAGE_ROUNDS: usize = 32;
 /// Same bounds as `WasmVoxelViewer::updateLod`.
 pub(crate) const TARGET_PIXELS_RANGE: std::ops::RangeInclusive<f64> = 0.5..=16.0;
 
+/// Continuity factor when the host does not give one: the minimum cube side is the reference
+/// spacing of the cloud (RF-05), so occupied neighbouring cells touch.
+pub(crate) const DEFAULT_CONTINUITY_FACTOR: f64 = 1.0;
+
+/// RF-05 continuity of one cloud: off is the literal mode (the default). On, the pool never
+/// draws cells smaller than `factor` x the reference spacing, which is stored in the dataset
+/// metadata and does not change while pages are grafted (ADR 0019).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Continuity {
+    pub enabled: bool,
+    pub factor: f64,
+}
+
+impl Default for Continuity {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            factor: DEFAULT_CONTINUITY_FACTOR,
+        }
+    }
+}
+
+impl Continuity {
+    /// `factor` must be finite and positive; a missing one is the default.
+    pub(crate) fn new(enabled: bool, factor: Option<f64>) -> Result<Self, String> {
+        let factor = factor.unwrap_or(DEFAULT_CONTINUITY_FACTOR);
+        if factor.is_finite() && factor > 0.0 {
+            Ok(Self { enabled, factor })
+        } else {
+            Err("the continuity factor must be finite and positive".to_owned())
+        }
+    }
+
+    /// The effective minimum cell side: `None` in literal mode and for a cloud whose reference
+    /// spacing is unknown (such a cloud stays literal).
+    pub(crate) fn min_side(&self, reference_spacing: Option<f64>) -> Option<f64> {
+        reference_spacing
+            .filter(|spacing| self.enabled && spacing.is_finite() && *spacing > 0.0)
+            .map(|spacing| spacing * self.factor)
+    }
+}
+
 /// Bytes of the wasm linear memory (0 outside wasm32).
 pub(crate) fn wasm_linear_memory_bytes() -> u64 {
     #[cfg(target_arch = "wasm32")]
@@ -106,10 +148,18 @@ pub(crate) struct CellsStats {
     pub cut_apply: Option<CutApply>,
     /// Nodes the driver dropped for the CPU budget since it was created (render side only).
     pub forgotten_total: u64,
+    /// `nodeCells` entries received since the driver was created (render side only): a toggle
+    /// that rebuilt nothing leaves it unchanged.
+    pub nodes_received_total: u64,
     pub cpu_cell_bytes: u64,
     /// Pages of the GPU pool the cut is fitted to (0 on a build side that was not told).
     pub pool_capacity_pages: u32,
     pub wasm_linear_memory_bytes: u64,
+    /// Continuity requested for the cloud (render side and in-process path).
+    pub continuity: bool,
+    pub continuity_factor: f64,
+    /// Effective minimum cell side the driver applies; `None` in literal mode.
+    pub continuity_min_side: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -409,8 +459,12 @@ pub(crate) struct ViewerCells {
     counters: PoolCounters,
     cut_apply: Option<CutApply>,
     forgotten_total: u64,
+    nodes_received_total: u64,
     out: CellMessages,
     probe_last: Cell<Option<u64>>,
+    continuity: Continuity,
+    /// Reference spacing of the open cloud (`cellsInfo`), for the continuity minimum.
+    reference_spacing: Option<f64>,
 }
 
 impl ViewerCells {
@@ -433,12 +487,31 @@ impl ViewerCells {
             counters: PoolCounters::default(),
             cut_apply: None,
             forgotten_total: 0,
+            nodes_received_total: 0,
             out: CellMessages {
                 driver_replaced: true,
                 ..CellMessages::default()
             },
             probe_last: Cell::new(None),
+            continuity: Continuity::default(),
+            reference_spacing: None,
         }
+    }
+
+    /// The reference spacing of the cloud this driver draws, as `cellsInfo` gives it.
+    pub(crate) fn with_reference_spacing(mut self, spacing: Option<f64>) -> Self {
+        self.reference_spacing = spacing;
+        self
+    }
+
+    /// Turns the continuity of the cloud on or off. Nothing is rebuilt or sent again: the next
+    /// frame only picks other levels of the cells the driver holds.
+    pub(crate) fn set_continuity(&mut self, continuity: Continuity) {
+        self.continuity = continuity;
+        self.driver
+            .set_min_side(continuity.min_side(self.reference_spacing));
+        self.view_dirty = true;
+        self.probe_last.set(None);
     }
 
     #[cfg(test)]
@@ -461,6 +534,7 @@ impl ViewerCells {
         decode_node_levels(&bytes)
             .map_err(|error| format!("malformed nodeCells entry: {error}"))?;
         self.queued_nodes += 1;
+        self.nodes_received_total += 1;
         self.queued_bytes += bytes.len();
         self.queue.push_back(Item::Node { generation, bytes });
         Ok(())
@@ -627,9 +701,13 @@ impl ViewerCells {
             counters: self.counters,
             cut_apply: self.cut_apply,
             forgotten_total: self.forgotten_total,
+            nodes_received_total: self.nodes_received_total,
             cpu_cell_bytes: self.driver.cpu_bytes(),
             pool_capacity_pages: self.driver.pool_capacity_pages(),
             wasm_linear_memory_bytes: wasm_linear_memory_bytes(),
+            continuity: self.continuity.enabled,
+            continuity_factor: self.continuity.factor,
+            continuity_min_side: self.driver.pool().min_side(),
         }
     }
 }
@@ -650,6 +728,7 @@ pub(crate) struct InProcessCells {
     probe: RefCell<CutRestProbe>,
     /// Pages the last update needed and lacked (`pendingPageAnchors`).
     pending_pages: Vec<NodeId>,
+    continuity: Continuity,
 }
 
 /// Where a block read starts and ends, so the caller can account the browser reads it caused.
@@ -685,7 +764,15 @@ impl InProcessCells {
             counters: PoolCounters::default(),
             probe: RefCell::new(CutRestProbe::default()),
             pending_pages: Vec::new(),
+            continuity: Continuity::default(),
         }
+    }
+
+    /// Turns the continuity of the cloud on or off; the next update applies it to the driver
+    /// without building or sending any node again.
+    pub(crate) fn set_continuity(&mut self, continuity: Continuity) {
+        self.continuity = continuity;
+        self.dirty = true;
     }
 
     pub(crate) fn pending_pages(&self) -> &[NodeId] {
@@ -725,6 +812,8 @@ impl InProcessCells {
         load_block: &mut impl FnMut(&mut R, BlockId) -> Result<Option<PointBlock>, String>,
         load_page: &mut impl FnMut(&mut R, NodeId) -> Result<PageInsert, String>,
     ) -> Result<(CellPlanStats, Vec<BlockId>), String> {
+        self.driver
+            .set_min_side(self.continuity.min_side(dataset.reference_spacing()));
         let mut rounds = 0;
         loop {
             let mut order = Vec::new();
@@ -850,6 +939,9 @@ impl InProcessCells {
             cpu_cell_bytes: self.driver.cpu_bytes(),
             pool_capacity_pages: self.driver.pool_capacity_pages(),
             wasm_linear_memory_bytes: wasm_linear_memory_bytes(),
+            continuity: self.continuity.enabled,
+            continuity_factor: self.continuity.factor,
+            continuity_min_side: self.driver.pool().min_side(),
             ..CellsStats::default()
         }
     }

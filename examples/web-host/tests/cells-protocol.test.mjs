@@ -21,7 +21,7 @@ const lod = (extra = {}) => ({
     lodStagePixels: 4, targetVoxelPixels: 4, visibleBlocks: 1, lodError: null, ...extra,
 });
 const cellsInfo = () => ({
-    generation: 3, origin: new Float64Array(3), rootMin: new Float64Array([0, 0, 0]), rootSide: 8,
+    generation: 3, origin: new Float64Array(3), rootMin: new Float64Array([0, 0, 0]), rootSide: 8, referenceSpacing: 0.25,
 });
 const opened = (cellPath = "enabled") => ({
     status: "metadata_ready", visualScale: 1, nodeCount: 1, maxLevel: 0,
@@ -311,8 +311,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         enableCells(on) { log.push(["enableCells", on]); },
         setCellNodeBytesPerFrame(bytes) { log.push(["setCellNodeBytesPerFrame", bytes]); },
         cellPoolPages() { return poolPages; },
-        beginRemoteCells(origin, rootMin, rootSide) {
+        setContinuity(enabled, factor) { log.push(["setContinuity", enabled, factor]); },
+        beginRemoteCells(origin, rootMin, rootSide, referenceSpacing) {
             log.push(["beginRemoteCells", rootSide]);
+            log.push(["referenceSpacing", referenceSpacing]);
             cellsOn = cellPath === "enabled";
             return cellPath;
         },
@@ -420,6 +422,17 @@ test("cells=1 reaches both workers and the render worker starts its driver from 
     const off = await runRenderWorker({ cells: false });
     assert.equal(off.calls("enableCells").length, 0);
     assert.equal(off.workers[0].posted[0].cells, false);
+});
+
+test("the continuity command reaches the viewer, and the driver starts with the cloud's reference spacing", async () => {
+    const render = await runRenderWorker();
+    const worker = await render.openCells();
+    assert.deepEqual(render.calls("referenceSpacing"), [["referenceSpacing", 0.25]]);
+    await render.send("continuity", { enabled: true });
+    await render.send("continuity", { enabled: false, factor: 2 });
+    assert.deepEqual(render.calls("setContinuity"), [["setContinuity", true, undefined], ["setContinuity", false, 2]]);
+    assert.equal(render.sent(worker, "nodeCells", "open").length, render.sent(worker, "open").length, "no dataset work");
+    assert.deepEqual(render.errors, []);
 });
 
 test("every open sends the build worker the render side's pool pages, also on a respawned worker", async () => {

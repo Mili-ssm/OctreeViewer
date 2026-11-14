@@ -7,7 +7,7 @@ use web_sys::HtmlCanvasElement;
 use crate::{
     LodViewStats, ViewerConfig, ViewerController,
     browser_io::{BrowserBlobReader, BrowserReadStats},
-    cells_glue::{DEFAULT_NODE_BYTES_PER_FRAME, InProcessCells, ViewerCells},
+    cells_glue::{Continuity, DEFAULT_NODE_BYTES_PER_FRAME, InProcessCells, ViewerCells},
     lod_driver::AttributeAvailability,
     lod_session::LodSession,
 };
@@ -65,6 +65,8 @@ pub struct WasmVoxelViewer {
     /// `setCellCut`.
     cells_remote: Option<ViewerCells>,
     cell_node_cap: usize,
+    /// RF-05 continuity of the open cloud (off by default); `setContinuity`.
+    continuity: Continuity,
     /// Counts camera moves and resizes (`viewEpoch`): the builder echoes the epoch of the view it
     /// planned for, so the cut at rest is the one of the latest view.
     view_epoch: u64,
@@ -151,6 +153,7 @@ impl WasmVoxelViewer {
             cells_local: None,
             cells_remote: None,
             cell_node_cap: DEFAULT_NODE_BYTES_PER_FRAME,
+            continuity: Continuity::default(),
             view_epoch: 0,
         })
     }

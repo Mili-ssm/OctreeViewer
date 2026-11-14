@@ -496,6 +496,15 @@ impl CellDriver {
         self.config.pool.capacity_pages
     }
 
+    /// Continuity (RF-05): the smallest cell side the pool draws, or `None` for the literal mode.
+    /// Takes effect on the next frame; no node is rebuilt or re-sent ([`CellPool::set_min_side`]).
+    pub fn set_min_side(&mut self, min_side: Option<f64>) {
+        if self.pool.min_side() != min_side {
+            self.pool.set_min_side(min_side);
+            self.dirty = true;
+        }
+    }
+
     /// Bytes of packed levels kept.
     pub fn cpu_bytes(&self) -> u64 {
         self.cpu_bytes

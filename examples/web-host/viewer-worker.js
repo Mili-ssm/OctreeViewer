@@ -28,7 +28,7 @@ const FRAME_SAMPLE_CAPACITY = 4096;
 let frameRenderSamples = new Float64Array(FRAME_SAMPLE_CAPACITY);
 let frameRenderSampleCount = 0;
 let nextFrameRenderSample = 0;
-const coalescedCommands = new Set(["resize", "refine", "depthShading", "fit", "birdView"]);
+const coalescedCommands = new Set(["resize", "refine", "depthShading", "continuity", "fit", "birdView"]);
 
 // Benchmark instrumentation (render plan R0, E2/E3/E5). Aggregates only; read with the "metrics"
 // message. Self-contained on purpose: package-local.py embeds this worker without module imports.
@@ -822,7 +822,7 @@ function onBuildMessage(worker, data) {
 // the dataset on the CPU path, which both sides then keep until the viewer is recreated.
 function beginCells(opened) {
     const info = opened.cellsInfo;
-    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide) : "off";
+    const path = info ? viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing) : "off";
     if (path === "enabled") {
         cellsRemote = true;
         forwardCellMessages();
@@ -1168,6 +1168,11 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
             }
             case "depthShading":
                 viewer.setDepthShading(data.value);
+                break;
+            case "continuity":
+                // RF-05: only changes which cell level each octant draws; nothing is rebuilt.
+                viewer.setContinuity(Boolean(data.enabled), data.factor ?? undefined);
+                advanceSceneGeneration();
                 break;
             case "metrics":
                 if (data.reset) resetWorkerMetrics();

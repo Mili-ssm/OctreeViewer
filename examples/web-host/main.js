@@ -44,6 +44,7 @@ const colorMode = document.getElementById("color-mode");
 const voxelPixels = document.getElementById("voxel-pixels");
 const voxelPixelsValue = document.getElementById("voxel-pixels-value");
 const depthShading = document.getElementById("depth-shading");
+const continuity = document.getElementById("continuity");
 const cameraMode = document.getElementById("camera-mode");
 const cameraModeHelp = document.getElementById("camera-mode-help");
 
@@ -164,6 +165,7 @@ window.__renderBench = {
         cellPath: latestLodStats.cellPath ?? null, cellsBusy: latestLodStats.cellsBusy ?? null,
         viewEpoch: latestLodStats.viewEpoch ?? null, cutEpochSent: latestLodStats.cutEpochSent ?? null,
         cutEpochApplied: latestLodStats.cutEpochApplied ?? null,
+        continuity: latestLodStats.continuity ?? null, continuityMinSide: latestLodStats.continuityMinSide ?? null,
         wasmLinearMemoryBytes: latestLodStats.wasmLinearMemoryBytes ?? null,
     },
     openTimings: () => benchmarkRun && {
@@ -770,6 +772,10 @@ voxelPixels.addEventListener("input", updateLodControls);
 depthShading.addEventListener("change", () => {
     if (benchmarkRun) benchmarkRun.settingsChanged = true;
     queueWorkerCommand("depthShading", { value: depthShading.checked });
+});
+continuity.addEventListener("change", () => {
+    resetBenchmarkWindow();
+    queueWorkerCommand("continuity", { enabled: continuity.checked });
 });
 for (const version of FORMAT_VERSIONS) {
     optionFields.formatVersion.append(new Option(version, version, false, version === "v5"));

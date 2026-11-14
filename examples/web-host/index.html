@@ -284,6 +284,8 @@
                 <option value="classification">Classification</option>
             </select>
             <label><input id="depth-shading" type="checkbox" checked /> Depth shading</label>
+            <label><input id="continuity" type="checkbox" aria-describedby="continuity-help" /> Continuity</label>
+            <small id="continuity-help">Cells path only. Draws no cell smaller than the cloud's reference spacing, so occupied neighbouring cells touch; off keeps the literal look (gaps where the scan has no samples).</small>
             <small id="render-options-help">Missing intensity falls back to grayscale RGB; missing classification keeps RGB.</small>
         </section>
         <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>

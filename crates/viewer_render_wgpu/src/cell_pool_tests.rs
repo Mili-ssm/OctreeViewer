@@ -2852,3 +2852,87 @@ fn a_cap_drop_in_a_tight_pool_releases_the_old_level_and_completes() {
         frames.iter().map(|(_, c)| *c).collect::<Vec<_>>()
     );
 }
+
+/// Depth `plan` draws in every octant of node 1, which must be one.
+fn drawn_depth(plan: &FramePlan) -> u8 {
+    let drawn = depth_of(plan, 1);
+    let first = drawn[0].expect("drawn");
+    assert!(drawn.iter().all(|d| *d == Some(first)), "{drawn:?}");
+    first
+}
+
+#[test]
+fn continuity_caps_the_drawn_level_without_a_stage_and_literal_mode_is_unchanged() {
+    let cut = ids(&[1]);
+    let cam = camera("fit");
+    let mut literal = Rig::new(root_node(), 64, 16, 1);
+    let plan = literal.run(12, &cut, &cam, 1.0);
+    assert_eq!(drawn_depth(&plan), 5);
+    let literal_entries = plan.entries.clone();
+
+    // Cells of depth 4 have side SIDE / 16: the minimum admits depths 3 and 4 only.
+    let mut rig = Rig::new(root_node(), 64, 16, 1);
+    rig.pool.set_min_side(Some(SIDE / 16.0));
+    let plan = rig.run(12, &cut, &cam, 1.0);
+    assert_eq!(drawn_depth(&plan), 4);
+    assert_eq!(plan.counters.stages, 0, "the cap is the wanted look");
+    assert_eq!(plan.counters.pool_coarsened, 0);
+    assert_eq!(plan.counters.nodes_without_level, 0);
+    assert_eq!(plan.entries[0].wanted, [Some(4); 8]);
+    assert_covers_once(&plan.entries[0]);
+    assert!(!rig.pool.is_resident(rig.pool.key(NodeId::new(1), 5)));
+
+    // Off again: the literal cut comes back, the same one a pool that never had it draws.
+    rig.pool.set_min_side(None);
+    let plan = rig.run(12, &cut, &cam, 1.0);
+    assert_eq!(plan.entries, literal_entries);
+}
+
+#[test]
+fn the_continuity_cap_snaps_to_a_stored_level_and_falls_back_to_the_coarsest() {
+    let cut = ids(&[1]);
+    let cam = camera("fit");
+    // A minimum between two depths rounds up the side: depth 4 is SIDE / 16, 3 is SIDE / 8.
+    for (min, expect) in [
+        (SIDE / 16.0, 4),
+        (SIDE / 12.0, 3),
+        (SIDE / 8.0, 3),
+        (SIDE, 3),
+        (SIDE * 4.0, 3),
+        (SIDE / 32.0, 5),
+        (SIDE / 1024.0, 5),
+    ] {
+        let mut rig = Rig::new(root_node(), 64, 16, 1);
+        rig.pool.set_min_side(Some(min));
+        let plan = rig.run(12, &cut, &cam, 1.0);
+        assert_eq!(drawn_depth(&plan), expect, "min {min}");
+    }
+    // Every stored level is finer than the minimum: the coarsest one draws.
+    let mut fine = root_node();
+    fine.get_mut(&NodeId::new(1)).unwrap().stored = vec![6, 7];
+    let mut rig = Rig::new(fine, 64, 16, 1);
+    rig.pool.set_min_side(Some(SIDE / 4.0));
+    let plan = rig.run(12, &cut, &cam, 1.0);
+    assert_eq!(drawn_depth(&plan), 6);
+}
+
+#[test]
+fn toggling_continuity_requests_only_levels_of_the_pyramid_and_leaves_no_hole() {
+    let cut = ids(&[1]);
+    let cam = camera("fit");
+    let mut rig = Rig::new(root_node(), 64, 16, 2);
+    rig.run(12, &cut, &cam, 1.0);
+    for min in [Some(SIDE / 16.0), None, Some(SIDE / 8.0), None] {
+        rig.pool.set_min_side(min);
+        for frame in 0..10 {
+            let plan = rig.step(&cut, &cam, 1.0);
+            assert_eq!(plan.counters.nodes_without_level, 0, "{min:?} {frame}");
+            assert_covers_once(&plan.entries[0]);
+            assert!(
+                plan.fetch_requests
+                    .iter()
+                    .all(|key| rig.nodes[&key.node].stored.contains(&key.depth))
+            );
+        }
+    }
+}

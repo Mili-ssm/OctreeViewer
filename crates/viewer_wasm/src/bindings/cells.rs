@@ -26,7 +26,7 @@ use super::{WasmVoxelViewer, builder::WasmSceneBuilder};
 use crate::{
     CellPlanStats, CellUpdateConfig, PoolAck,
     cells_glue::{
-        BuilderCells, BuilderOutput, CellsStats, TARGET_PIXELS_RANGE, ViewerCells,
+        BuilderCells, BuilderOutput, CellsStats, Continuity, TARGET_PIXELS_RANGE, ViewerCells,
         WASM_CPU_BUDGET_BYTES, driver_config,
     },
     scene_builder::SceneBuilderCore,
@@ -123,6 +123,7 @@ pub(super) fn add_cells_stats(
         ("queuedNodeCells", stats.queued_nodes as f64),
         ("queuedNodeBytes", stats.queued_bytes as f64),
         ("cellsForgottenTotal", stats.forgotten_total as f64),
+        ("cellNodesReceivedTotal", stats.nodes_received_total as f64),
         ("cellCpuBytes", stats.cpu_cell_bytes as f64),
         ("poolCapacityPages", f64::from(stats.pool_capacity_pages)),
         ("poolStages", f64::from(counters.stages)),
@@ -141,6 +142,19 @@ pub(super) fn add_cells_stats(
     ] {
         set(object, name, &JsValue::from_f64(number))?;
     }
+    set(object, "continuity", &JsValue::from_bool(stats.continuity))?;
+    set(
+        object,
+        "continuityFactor",
+        &JsValue::from_f64(stats.continuity_factor),
+    )?;
+    set(
+        object,
+        "continuityMinSide",
+        &stats
+            .continuity_min_side
+            .map_or(JsValue::NULL, JsValue::from_f64),
+    )?;
     set(
         object,
         "poolDescendantTooFine",
@@ -345,6 +359,13 @@ impl WasmSceneBuilder {
             &js_sys::Float64Array::from(grid.root_min.as_slice()),
         )?;
         set(&info, "rootSide", &JsValue::from_f64(grid.root_side))?;
+        set(
+            &info,
+            "referenceSpacing",
+            &dataset
+                .reference_spacing()
+                .map_or(JsValue::NULL, JsValue::from_f64),
+        )?;
         Ok(info.into())
     }
 
@@ -502,10 +523,10 @@ impl WasmVoxelViewer {
             .and_then(viewer_render_wgpu::SurfaceRenderer::cell_pool_pages);
         match dataset {
             Some(dataset) if dataset.supports_cells() && device_ok => {
-                self.cells_local = Some(crate::cells_glue::InProcessCells::new(
-                    dataset,
-                    wasm_update_config(pool_pages),
-                ));
+                let mut cells =
+                    crate::cells_glue::InProcessCells::new(dataset, wasm_update_config(pool_pages));
+                cells.set_continuity(self.continuity);
+                self.cells_local = Some(cells);
                 self.cell_path = PATH_ENABLED;
             }
             _ => self.cell_path = PATH_UNSUPPORTED,
@@ -572,6 +593,7 @@ impl WasmVoxelViewer {
         origin: js_sys::Float64Array,
         root_min: js_sys::Float64Array,
         root_side: f64,
+        reference_spacing: Option<f64>,
     ) -> Result<String, JsValue> {
         // Arguments and renderer are checked before any state changes: an error leaves the
         // previous cells path as it was.
@@ -617,11 +639,33 @@ impl WasmVoxelViewer {
         {
             config.pool.capacity_pages = pages;
         }
-        let mut cells = ViewerCells::new(config, self.cell_node_cap);
+        let mut cells =
+            ViewerCells::new(config, self.cell_node_cap).with_reference_spacing(reference_spacing);
+        cells.set_continuity(self.continuity);
         cells.camera_changed(self.view_epoch);
         self.cells_remote = Some(cells);
         self.cell_path = PATH_ENABLED;
         Ok(PATH_ENABLED.to_owned())
+    }
+
+    /// Continuity of the open cloud (RF-05): with `enabled`, no cell is drawn smaller than
+    /// `factor` (default 1) x the reference spacing of the cloud; off is the literal mode, which
+    /// is the default. It survives `beginRemoteCells` and dataset changes, takes effect on the
+    /// next frame and rebuilds nothing: the cells hold every level.
+    #[wasm_bindgen(js_name = setContinuity)]
+    pub fn set_continuity(&mut self, enabled: bool, factor: Option<f64>) -> Result<(), JsValue> {
+        let continuity = Continuity::new(enabled, factor).map_err(|e| JsValue::from_str(&e))?;
+        self.continuity = continuity;
+        if let Some(cells) = &mut self.cells_remote {
+            cells.set_continuity(continuity);
+        }
+        if let Some(cells) = &mut self.cells_local {
+            cells.set_continuity(continuity);
+        }
+        if self.lod_session.is_some() {
+            self.lod_dirty = self.lod_config.is_some();
+        }
+        Ok(())
     }
 
     /// Bytes of `nodeCells` applied per frame (at least one node); takes effect on the next
