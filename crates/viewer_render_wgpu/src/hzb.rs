@@ -873,9 +873,9 @@ fn is_occluded(instance_id: u32) -> bool {
     let span = max(pixel_max - pixel_min + vec2<f32>(1.0), vec2<f32>(1.0));
     let mip = min(u32(ceil(log2(max(span.x, span.y)))), params.mip_count - 1u);
     let mip_scale = f32(1u << mip);
-    let pyramid_pixel_scale = vec2<f32>(params.pyramid_size) / vec2<f32>(params.viewport);
-    let sample_min = vec2<i32>(floor(pixel_min * pyramid_pixel_scale / mip_scale));
-    let sample_max = vec2<i32>(floor(pixel_max * pyramid_pixel_scale / mip_scale));
+    // The pyramid holds depth 1:1 with pixels (padding is far depth), so no rescaling.
+    let sample_min = vec2<i32>(floor(pixel_min / mip_scale));
+    let sample_max = vec2<i32>(floor(pixel_max / mip_scale));
     if any(sample_max - sample_min > vec2<i32>(3)) { return false; }
     let mip_size = vec2<i32>(textureDimensions(hzb, i32(mip)));
     var farthest_occluder = 0.0;
@@ -1236,6 +1236,210 @@ mod tests {
                     + size_of::<u32>()
                     + size_of::<super::DrawIndexedIndirectArgs>()) as u64
             );
+        });
+    }
+
+    /// Regression: the pyramid is padded to powers of two but holds depth 1:1 with pixels,
+    /// so a non-power-of-two viewport must be looked up without rescaling.
+    #[test]
+    fn hzb_lookup_matches_pixels_at_non_power_of_two_viewport() {
+        pollster::block_on(async {
+            use wgpu::util::DeviceExt;
+
+            const VIEWPORT: [u32; 2] = [1280, 720];
+            let instance = wgpu::Instance::default();
+            let Ok(adapter) = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
+                    power_preference: wgpu::PowerPreference::LowPower,
+                    compatible_surface: None,
+                    force_fallback_adapter: true,
+                    ..Default::default()
+                })
+                .await
+            else {
+                return;
+            };
+            let Ok((device, queue)) = adapter
+                .request_device(&wgpu::DeviceDescriptor {
+                    label: Some("octree-viewer-hzb-npot-test-device"),
+                    required_features: wgpu::Features::empty(),
+                    required_limits: wgpu::Limits::downlevel_defaults()
+                        .using_resolution(adapter.limits()),
+                    memory_hints: wgpu::MemoryHints::MemoryUsage,
+                    ..Default::default()
+                })
+                .await
+            else {
+                return;
+            };
+            let uniform = super::ViewProjection {
+                matrix: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+                render_origin: [0.0, 0.0, 0.0, 1.0],
+                style: [0.0, 1.0, 0.0, 1.0],
+                intensity_range: [0.0, 1.0, 0.0, 0.0],
+            };
+            let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("octree-viewer-hzb-npot-test-camera"),
+                contents: bytemuck::bytes_of(&uniform),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("octree-viewer-hzb-npot-test-depth"),
+                size: wgpu::Extent3d {
+                    width: VIEWPORT[0],
+                    height: VIEWPORT[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let Some(mut hzb) = super::HzbResources::new(
+                &device,
+                &adapter,
+                &camera_buffer,
+                &depth_texture,
+                wgpu::TextureFormat::Rgba8Unorm,
+                VIEWPORT,
+                device.limits().max_texture_dimension_2d,
+            )
+            .await
+            .expect("HZB resource validation") else {
+                return;
+            };
+            // Pixel x = 400 and x = 900 at y = 360; the occluder covers pixels x >= 600.
+            let ndc_x = |pixel: f32| pixel / (VIEWPORT[0] as f32 / 2.0) - 1.0;
+            let voxels = [400.0, 900.0].map(|pixel| crate::InstanceRaw {
+                center: [ndc_x(pixel), 0.0, 0.7],
+                size: 0.02,
+                color: [1.0, 1.0, 1.0, 1.0],
+                intensity: 0.0,
+                classification: -1.0,
+            });
+            let source = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("octree-viewer-hzb-npot-test-voxel"),
+                contents: bytemuck::cast_slice(&voxels),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+            hzb.prepare_scene(
+                &device,
+                &source,
+                (size_of::<crate::InstanceRaw>() * voxels.len()) as u64,
+                voxels.len(),
+            );
+
+            let occluder_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("octree-viewer-hzb-npot-test-occluder"),
+                source: wgpu::ShaderSource::Wgsl(
+                    "@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+                        let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
+                        return vec4<f32>(p * 4.0 - 2.0, 0.3, 1.0);
+                    }"
+                    .into(),
+                ),
+            });
+            let occluder_pipeline =
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("octree-viewer-hzb-npot-test-occluder"),
+                    layout: None,
+                    vertex: wgpu::VertexState {
+                        module: &occluder_shader,
+                        entry_point: Some("vs"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
+                    },
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::Always),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    fragment: None,
+                    multiview_mask: None,
+                    cache: None,
+                });
+            let depth_view = depth_texture.create_view(&Default::default());
+            let mut encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("octree-viewer-hzb-npot-test-occluder"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&occluder_pipeline);
+                pass.set_scissor_rect(600, 0, VIEWPORT[0] - 600, VIEWPORT[1]);
+                pass.draw(0..3, 0..1);
+            }
+            hzb.build_depth_pyramid(&mut encoder);
+            hzb.cull(&mut encoder, &queue);
+            let readback = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("octree-viewer-hzb-npot-test-count"),
+                size: (size_of::<DrawIndexedIndirectArgs>() + size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            encoder.copy_buffer_to_buffer(
+                hzb.indirect_args().expect("prepared indirect args"),
+                0,
+                &readback,
+                0,
+                size_of::<DrawIndexedIndirectArgs>() as u64,
+            );
+            encoder.copy_buffer_to_buffer(
+                hzb.visible_indices
+                    .as_ref()
+                    .expect("prepared visible indices"),
+                0,
+                &readback,
+                size_of::<DrawIndexedIndirectArgs>() as u64,
+                size_of::<u32>() as u64,
+            );
+            queue.submit([encoder.finish()]);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            readback
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = sender.send(result);
+                });
+            device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("GPU poll");
+            receiver
+                .recv()
+                .expect("GPU mapping callback")
+                .expect("GPU readback mapping");
+            let mapped = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("GPU mapped range");
+            let visible = *bytemuck::from_bytes::<[u32; 6]>(&mapped);
+            drop(mapped);
+            readback.unmap();
+            // Oracle: voxel 0 sits over cleared depth (visible); voxel 1 behind the occluder.
+            assert_eq!(visible, [CUBE_INDEX_COUNT, 1, 0, 0, 0, 0]);
         });
     }
 }
