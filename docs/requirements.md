@@ -176,6 +176,55 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: celdas y modos de color | Hasta la Tarea 12, otro modo de color vuelve a la ruta CPU y volver a RGB reactiva las celdas. | R3-Q23 |
 | R3: celdas sin worker de construcción | Sin el worker de construcción se usa la ruta CPU y `cellPath` lo indica (`needsBuildWorker`). | R3-Q24 |
 
+## Catálogo: funcional o técnico, duro o blando (propuesta 14-11-2026)
+
+**Propuesta pendiente de revisión del propietario.** Funcional: lo que el producto debe lograr (el fin). Técnico: el medio elegido. Duro: necesidad real (usuario, producto, legal, seguridad o resultado fijado por el propietario) que solo cambia con una decisión suya. Blando: medio elegido o medida temporal que se puede abandonar cuando la ganancia supere el coste; «Revisar si» da la condición. «Por confirmar» marca la dureza dudosa. Los ASM-* son supuestos, no requisitos: no se clasifican. Los umbrales numéricos de los RQ son objetivos medibles de un fin duro; su cifra concreta es revisable.
+
+| ID | Funcional o técnico | Duro o blando | Por qué | Revisar si |
+| --- | --- | --- | --- | --- |
+| RF-01 | Funcional | Duro | Caso de uso central (varias nubes) | — |
+| RF-02 | Funcional | Duro | Evita mezclar geometrías incoherentes (ADR 0021) | — |
+| RF-03 | Funcional | Duro | P1: cubos 3D obligatorios | — |
+| RF-04 | Funcional | Duro | Fidelidad: no inventar datos | — |
+| RF-05 | Funcional | Blando | Opcional por nube; mejora visual | Un modo mejor lo sustituya |
+| RF-06 | Funcional | Por confirmar | Es el modo por defecto, ¿o el comportamiento es la necesidad? | El propietario decida el modo por defecto |
+| RF-07 | Funcional | Blando | Opcional; 16,7 ms es la meta de fluidez | Cambie la meta de fotogramas |
+| RF-08 | Técnico | Blando | Medio para no bloquear el frame (ADR 0018) | Otra estrategia dé la misma fluidez |
+| RF-09 | Funcional | Duro | Nubes locales y remotas (P6) | — |
+| RF-10 | Funcional | Duro | Funciones de producto | — |
+| RF-11 | Funcional | Duro | Integrador, resolución del propietario (ADR 0026) | — |
+| RF-12–RF-15 | Funcional | Duro | Superficie de la API para el integrador | — |
+| RF-20, RF-21 | Funcional | Duro | Entradas y fusión del conversor | — |
+| RF-22 | Funcional | Duro | Mezclar CRS exige reproyección (ADR 0021) | — |
+| RF-23 | Técnico | Duro | Resolución del propietario; sustenta RF-02 y la fusión | Otra técnica dé celdas coincidentes |
+| RF-24 | Funcional | Duro | Sin pérdida de metadatos LAS (ADR 0022) | — |
+| RF-25 | Funcional | Por confirmar | Protege al usuario de fallos tardíos; ¿requisito o salvaguarda? | — |
+| RF-26 | Técnico | Blando | Mecanismo de identidad de checkpoint | Otro mecanismo detecte fuentes cambiadas |
+| RF-27 | Técnico | Blando | Límite del formato (ADR 0007) | El formato admita más atributos |
+| RF-28 | Funcional | Blando | Refleja el alcance validado hoy (Majadas) | Se valide un tamaño mayor |
+| RF-29 | Técnico | Blando | Apaño del límite de cuota de Firefox | Firefox deje de ser mejor esfuerzo o cambie la cuota |
+| RQ-01–RQ-05 | Funcional | Duro | Fluidez, escala y memoria acotada (propósito) | Cifras: cambie el equipo o la red de referencia |
+| RQ-06 | Técnico | Blando | Objetivo sin medir (ASM-03) | El spike de temporales lo mida |
+| RQ-07 | Técnico | Blando | Protege coste de conversión; el 30 % es elección | Una ganancia de lectura o disco compense más |
+| RQ-08 | Técnico | Por confirmar | Garantiza reproducibilidad; ¿lo exige el usuario o es comodidad de pruebas? | — |
+| RQ-09 | Funcional | Duro | Fidelidad de nivel de detalle; la tolerancia del 0,5 % es blanda (ADR 0034) | La tolerancia cueste más que lo que gana |
+| RQ-10 | Funcional | Duro | Accesibilidad de la app pública | — |
+| RQ-11 | Funcional | Duro | Demuestra la puerta de escala | — |
+| CON-01 | Funcional | Duro | Alcance de plataformas fijado por el propietario | El propietario amplíe el alcance |
+| CON-02 | Técnico | Blando | Sin exigir cabeceras del servidor (ADR 0024) | Los hilos wasm pasen a ser necesarios |
+| CON-03 | Funcional | Duro | Licencia (legal) | — |
+| CON-04 | Técnico | Duro | Resolución del propietario (ADR 0026) | Decisión del propietario |
+| CON-05 | Funcional | Duro | Criterio de publicación del propietario | — |
+| CON-06 | Funcional | Por confirmar | Sin razón registrada | — |
+| CON-07 | Técnico | Blando | Atomics requieren nightly (ADR 0011, 0024) | Estabilice `build-std` con atomics |
+| CON-08 | Técnico | Blando | Límite práctico del navegador | Se valide la conversión web a mayor escala |
+| CON-09 | Técnico | Blando | Elección de implementación (ADR 0025) | Una dependencia externa sea mejor |
+| CON-10 | Técnico | Por confirmar | Cada ADR citado tiene su propia razón | Un ADR citado se sustituya |
+| **Orden de filas de la fuente dentro de cada bloque** (`crates/viewer_format/src/contracts.rs:11,28`; `occupied_point_block.rs`, `occupied_cell_index.rs` en `viewer_core`) | Técnico | Blando | OQ-09 (propietario, 14-11-2026). Medido: el orden Morton ahorraría 10,7 MB de 1.712 MB (0,63 %) en Belvedere v7.5 (geometría −0,49 %, atributos −0,75 %, mejor caso, variante en memoria, commit 832b578 en `explore/oq09-morton`). Cambiarlo toca el contrato, el índice de celdas ocupadas, los resúmenes de nodo y las pruebas de paridad ordenadas | El ahorro medido supere el coste (p. ej. ≥ 5 % en el corpus de referencia) o un requisito funcional lo necesite |
+| **Instancia de 16 B** (ADR 0035) | Técnico | Blando | Medio de la ruta de celdas | Cambie la compactación o la oclusión |
+| **Pool de celdas de 512 MiB** (ADR 0040) | Técnico | Blando | Medio dentro de la GPU mínima de 4 GB | Un adaptador objetivo no lo admita |
+| **Presupuesto de CPU de 512 MiB en wasm** (ADR 0037) | Técnico | Blando | Medio para acotar memoria wasm | Se mida que un presupuesto mayor no cuesta memoria |
+
 ## Preguntas abiertas
 
 | Id | Pregunta | Por qué se aplaza | Revisar cuando |
@@ -188,5 +237,5 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | OQ-06 | ~~Direccionamiento compacto de nodos: nivel `u8` + camino relativo `u16` (5 niveles × 3 bits) con nodos ancla de prefijo completo cada 5 niveles (propietario, 02-11-2026)~~ | Adoptado en [ADR 0030](adr/0030-jerarquia-paginada-por-anclas.md): nodos de página por (profundidad relativa `u8`, camino `u16`) bajo un ancla de prefijo completo | — |
 | OQ-07 | Profundidad del visor por encima de 24: claves `u64` en CPU y posiciones relativas a un ancla cercana en GPU (WGSL no tiene `u64`) | Majadas y Belvedere llegan a ~22 y las nubes locales ya tienen raíz ajustada | Reanudar R3 (celdas ancladas por nodo) |
 | OQ-08 | No dibujar celdas ocultas: HZB en dos pasadas por página (Tarea 16), raymarching por píxel o un híbrido ([opciones](records/benchmarks/R3_OCCLUSION_OPTIONS_05-11-2026.md); propietario, 05-11-2026) | La Tarea 16a pasa con compactación y Hi-Z por celda en dos fases: Majadas dentro de una hoja a 4 px en 4,39 ms en la peor dirección ([registro](records/benchmarks/R3_T16_OCCLUSION_05-11-2026.md)); el raymarching no se activa (ADR 0035) | La Tarea 16b o la 17 superan 16,7 ms en Majadas dentro de una hoja a 4 px |
-| OQ-09 | ¿Debe conservarse el orden de filas de la fuente dentro de cada bloque en V7 final? El orden Morton quitaría el índice de fila por punto del códec de ocupación ([revisión, TF1](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#formato)) | Sin medir el ahorro en disco | Antes de congelar V7 (ADR 0022) |
+| OQ-09 | ~~¿Debe conservarse el orden de filas de la fuente dentro de cada bloque en V7 final? El orden Morton quitaría el índice de fila por punto del códec de ocupación ([revisión, TF1](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#formato))~~ | Resuelta (propietario, 14-11-2026): requisito técnico blando; se mantiene el orden mientras el ahorro medido (0,63 %) no compense el coste ([catálogo](#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026)) | — |
 | OQ-10 | ¿Se prevé un visor nativo o sin cabeza? Decide si la política de LOD y de carga sale de `viewer_wasm` ([revisión, TA4](records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md#arquitectura-y-patrones)) | Sin necesidad de producto registrada | Al planificar la API pública (ADR 0026) |
