@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A, B1 y B2 cerradas; siguiente: B2b y B3)
+Estado: en curso · 14-11-2026 (fase A y B1 cerradas; B2 reabierta por B2b, en curso)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -44,13 +44,21 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   escala de `hzb.rs` corregido con test; margen del Hi-Z derivado (`u·(25ρ + 24)`, ≈ +3 % de GPU);
   tiempo de GPU por frame con timestamps (R3-Q31), p95 7,38 ms en Majadas dentro de una hoja a 4 px.
   Con esto pasan la Tarea 11 y la 16b.
-- [x] B2. Tarea 12, modos de color ([registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md)): todos los
+- [x] B2. Tarea 12, modos de color (reabierta por B2b) ([registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md)): todos los
   modos con celdas, función WGSL común (paridad con diferencia 0), modos de shader sin reconstruir y
   modos de atributo con generación de color; sin vuelta a la ruta CPU.
-- [ ] B2b. Datos de atributos: el rango de cada columna de atributos es `[0, 0]` en Belvedere y Majadas
-  v7.5 (también en la ruta CPU), y en Majadas la clasificación se ve igual que RGB. Averiguar si viene
-  de los datos, del conversor o de los metadatos. Check: rango no nulo en una columna con valores, o
-  evidencia de que los datos son así.
+- [ ] B2b. Intensidad y clase en la ruta asíncrona. Las columnas de intensidad y clase de Belvedere y
+  Majadas son constantes a 0 en origen (rangos `[0, 0]` correctos: es el dato). Pero en el navegador
+  el worker de construcción lee en modo RGB solo la geometría (`build-worker.js:290-301`,
+  `insertAsyncLodBlock` con un solo atributo): las celdas quedan sin intensidad ni clase y los modos de
+  shader muestran luminancia y RGB, donde la ruta CPU muestra gris plano y rojo. B2.2 solo cubrió la
+  ruta síncrona. Reabre la Tarea 12. Rama `explore/b2b-async-attrs`.
+  - [ ] B2b.1. Test rojo: las celdas construidas por la ruta asíncrona en modo RGB llevan las palabras
+    de intensidad y clase.
+  - [ ] B2b.2. La ruta asíncrona de celdas lee siempre intensidad y clase junto a la geometría (y el
+    atributo del modo `attribute:N:M`). Check: B2b.1 en verde.
+  - [ ] B2b.3. Navegador: en Majadas, intensidad y clasificación con celdas iguales a la ruta CPU (gris
+    plano y rojo); registro nuevo fechado que corrige el de B2.
 - [ ] B3. Tarea 13: un mismo espaciado de referencia por nube (T0b) no cambia al injertar páginas.
 - [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
