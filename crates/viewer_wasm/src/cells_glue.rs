@@ -880,6 +880,7 @@ impl InProcessCells {
                 cpu_coarsened: stats.cpu_coarsened,
                 gpu_coarsened: stats.gpu_coarsened,
                 gpu_pool_pages: stats.gpu_pool_pages,
+                stage_pixels: done.stage_pixels,
                 diag: stats.diag,
             };
             let Some(reader) = reader

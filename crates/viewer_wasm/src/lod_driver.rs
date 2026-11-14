@@ -103,8 +103,6 @@ pub(crate) struct CellStep<'a> {
 /// One cells update and the rung of the ladder it ran at.
 pub(crate) struct CellStageUpdate {
     pub update: LodCellUpdate,
-    #[cfg_attr(not(test), allow(dead_code))]
-    // only tests read it; `InProcessCells` keeps the rung in its own `stage_pixels`
     pub stage_pixels: f64,
 }
 

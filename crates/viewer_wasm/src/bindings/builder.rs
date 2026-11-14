@@ -309,6 +309,12 @@ impl WasmSceneBuilder {
                 // Cells mode never emits a scene: the render worker would drop its pool.
                 self.pending_async_blocks = output.async_priority_order.clone();
                 let lod = self.cells_lod_stats(&output.stats)?;
+                // The same meaning as the CPU path: the ladder rung the plan ran at and the final target.
+                js_sys::Reflect::set(
+                    &lod,
+                    &"targetVoxelPixels".into(),
+                    &JsValue::from_f64(output.target_pixels),
+                )?;
                 let needs_refinement = self.cells.as_ref().is_some_and(BuilderCells::is_dirty);
                 return builder_output_to_js(&output, needs_refinement, &lod);
             }

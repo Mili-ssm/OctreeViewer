@@ -116,6 +116,8 @@ pub struct CellPlanStats {
     pub gpu_coarsened: usize,
     /// Pool pages the cut was fitted to; 0 when the build side was not told (no fit).
     pub gpu_pool_pages: u32,
+    /// The rung of the px ladder this plan ran at (published as `lodStagePixels`).
+    pub stage_pixels: f64,
     pub diag: CellDiag,
 }
 
@@ -1344,6 +1346,7 @@ impl LodDataset {
             cpu_coarsened,
             gpu_coarsened,
             gpu_pool_pages: config.gpu_pool_pages.unwrap_or(0),
+            stage_pixels: stage_px,
             diag,
         };
         self.visible_plan = Some(plan);

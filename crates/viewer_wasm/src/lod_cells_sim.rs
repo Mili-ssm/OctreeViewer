@@ -616,6 +616,41 @@ fn the_lost_sample_oracle_asks_the_plan_of_the_cut_that_is_drawn() {
 // Focused: pins, parents first, the ladder
 // ---------------------------------------------------------------------------------------------
 
+/// The stage the host publishes as `lodStagePixels` is the rung the plan ran at: it starts at 16 px,
+/// only goes down while the camera stays and stays on the halving rungs toward the target.
+#[test]
+fn the_published_stage_is_the_ladder_rung() {
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let view = synthetic_views().0;
+    let step = CellStep {
+        view: &view,
+        target_pixels: 2.0,
+        config: h.config,
+        can_load_blocks: true,
+    };
+    let mut rungs = Vec::new();
+    for _ in 0..400 {
+        let p = plan_cells_staged(
+            &mut h.dataset,
+            &step,
+            &mut h.stage,
+            &mut h.dirty,
+            None,
+            &mut h.blocks,
+        )
+        .unwrap();
+        assert_eq!(p.update.stats.stage_pixels, p.stage_pixels);
+        rungs.push(p.stage_pixels);
+    }
+    assert_eq!(rungs.first(), Some(&16.0));
+    assert!(rungs.windows(2).all(|pair| pair[1] <= pair[0]), "{rungs:?}");
+    assert!(
+        rungs
+            .iter()
+            .all(|rung| [16.0, 8.0, 4.0, 2.0].contains(rung))
+    );
+}
+
 #[test]
 fn an_unacknowledged_cut_stays_pinned_until_its_ack() {
     let mut h = synthetic_harness(1 << 20, 2.0);
