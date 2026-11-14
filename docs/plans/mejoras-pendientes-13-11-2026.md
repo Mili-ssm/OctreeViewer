@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D, D3a)
+Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D, D3b)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -85,9 +85,9 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
   llegaba al objetivo).
 - [ ] D3. Congelar V7 final (ADR 0022) con el orden de filas libre por bloque ([ADR 0041](../adr/0041-orden-de-filas-libre-por-bloque.md),
   [registro de OQ-09](../records/benchmarks/OQ09_MORTON_ORDER_14-11-2026.md)).
-  - [ ] D3a. Investigar por qué los ficheros todo Morton construyen las celdas un 35–50 % más rápido
-    (rama `explore/oq09-build-cause`); comprobación: la fase que difiere, con cifras, y un arreglo medido
-    o descartado. Va antes de C4 (propietario, 14-11-2026).
+  - [x] D3a. Causa de la construcción más rápida con ficheros Morton ([registro](../records/benchmarks/D3A_CELL_SORT_ORDER_14-11-2026.md)):
+    el constructor ordenaba con pdqsort; con un radix estable, construir las celdas cuesta un 25–45 %
+    menos con cualquier orden de fichero.
   - [ ] D3b. Escritor híbrido de producción con una regla de elección más barata que codificar dos veces;
     contrato de `OctreeReader` y pruebas de paridad por conjunto de filas. Comprobación: `check.sh` verde,
     `.oct` de Belvedere ≤ 530 MB, y tiempo total y RSS de conversión medidos frente a RQ-07.
