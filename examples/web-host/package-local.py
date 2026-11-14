@@ -66,6 +66,16 @@ def main() -> None:
     range_source_import = 'import { resolveSource } from "./http-range-source.mjs";\n'
     worker_js = require_replace(worker_js, range_source_import, "", "range source import")
     build_worker_js = require_replace(build_worker_js, range_source_import, "", "build worker range source import")
+    # The dynamic px controller is a small pure module: inline it in place of its import.
+    px_controller_js = (HOST / "px-controller.mjs").read_text(encoding="utf-8")
+    inline_px_controller_js = re.sub(r"^export ", "", px_controller_js, flags=re.MULTILINE)
+    px_controller_import = 'import { WINDOW_MS as PX_WINDOW_MS, createPxController } from "./px-controller.mjs";\n'
+    worker_js = require_replace(
+        worker_js,
+        px_controller_import,
+        inline_px_controller_js + "\nconst PX_WINDOW_MS = WINDOW_MS;\n",
+        "px controller import",
+    )
     embed_worker_js = worker_js
     embed_build_worker_js = build_worker_js
     wasm_js = (ROOT / "pkg" / "viewer_wasm.js").read_text(encoding="utf-8")
