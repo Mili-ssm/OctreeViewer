@@ -351,41 +351,42 @@ mod tests {
         assert!(block.attributes().is_empty());
     }
 
-    #[test]
-    fn cells_built_in_rgb_mode_carry_intensity_and_class_words() {
+    fn packed(block: PointBlock) -> Vec<(u16, i16)> {
         use viewer_core::SpatialBounds;
         use viewer_render_wgpu::{
             CellGrid, NodeCellSource, NodeInput, PointNodeCellSource, pack_node,
         };
-        let packed = |block: PointBlock| {
-            let grid = CellGrid {
-                root_min: [0.0; 3],
-                root_side: 1.0,
-            };
-            let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
-            let id = NodeId::new(0);
-            let cells = PointNodeCellSource::default()
-                .node_cells(&grid, id, bounds, None, true, &[block])
-                .unwrap();
-            let node = pack_node(
-                &grid,
-                [0.0; 3],
-                NodeInput {
-                    id,
-                    bounds,
-                    points: 2,
-                    local_grid: grid,
-                    cells: &cells,
-                },
-            )
-            .unwrap();
-            node.levels
-                .iter()
-                .flat_map(|level| level.instances.iter())
-                .filter(|cell| !cell.is_empty())
-                .map(|cell| (cell.intensity(), cell.class()))
-                .collect::<Vec<_>>()
+        let grid = CellGrid {
+            root_min: [0.0; 3],
+            root_side: 1.0,
         };
+        let bounds = SpatialBounds::new([0.0; 3], [1.0; 3]).unwrap();
+        let id = NodeId::new(0);
+        let cells = PointNodeCellSource::default()
+            .node_cells(&grid, id, bounds, None, true, &[block])
+            .unwrap();
+        let node = pack_node(
+            &grid,
+            [0.0; 3],
+            NodeInput {
+                id,
+                bounds,
+                points: 2,
+                local_grid: grid,
+                cells: &cells,
+            },
+        )
+        .unwrap();
+        node.levels
+            .iter()
+            .flat_map(|level| level.instances.iter())
+            .filter(|cell| !cell.is_empty())
+            .map(|cell| (cell.intensity(), cell.class()))
+            .collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn cells_built_in_rgb_mode_carry_intensity_and_class_words() {
         let mut reader = MemoryReader::new();
         let with_columns = packed(load_cell_block(&mut reader, BlockId::new(7), None).unwrap());
         assert!(!with_columns.is_empty());
@@ -401,5 +402,31 @@ mod tests {
         )
         .unwrap();
         assert!(packed(rgb).iter().all(|word| *word == (u16::MAX, -1)));
+    }
+
+    #[test]
+    fn async_cell_blocks_carry_intensity_and_class_in_rgb_mode() {
+        // The block the build worker's async path delivers in RGB mode: geometry plus the
+        // intensity and classification columns it plans with `geometryAttributes` (R3-Q32).
+        let mut reader = MemoryReader::new();
+        let geometry = reader.read_geometry(BlockId::new(7)).unwrap();
+        let schema = reader.metadata().hierarchy().attributes().to_vec();
+        let carried = [0, 1]
+            .map(|index| reader.read_attribute(BlockId::new(7), index).unwrap())
+            .to_vec();
+        let block = crate::lod_driver::assemble_async_block(
+            BlockId::new(7),
+            geometry,
+            None,
+            carried,
+            &schema,
+            None,
+            None,
+            usize::MAX,
+        )
+        .unwrap();
+        let words = packed(block);
+        assert!(!words.is_empty());
+        assert!(words.iter().all(|word| *word == (150, 2)), "{words:?}");
     }
 }

@@ -23,18 +23,29 @@ const opened = () => ({
 
 // ---- Build worker in a vm with a fake WASM binding ------------------------------------------
 
-async function runBuildWorker({ updates = [], graftFails = false, pageLoadFails = false } = {}) {
+async function runBuildWorker({
+    updates = [], graftFails = false, pageLoadFails = false, asyncBlocks = null,
+} = {}) {
     const posted = [];
     const grafted = [];
     const pageLoads = [];
     const updateCalls = [];
     const builders = [];
     const budgets = [];
+    const planCalls = [];
+    const inserts = [];
     let receive;
     class WasmSceneBuilder {
         constructor(maxVoxels, maxBytes) { this.limits = [maxVoxels, maxBytes]; builders.push(this); }
-        openLodDataset() { return { status: "metadata_ready", visualScale: 2 }; }
-        pendingAsyncLodBlocks() { return []; }
+        openLodDataset() {
+            return {
+                status: "metadata_ready", visualScale: 2, cellPath: asyncBlocks?.cells ? "enabled" : "disabled",
+            };
+        }
+        enableCells() {}
+        setCellPoolPages() {}
+        pendingAsyncLodBlocks() { return asyncBlocks && !inserts.length ? ["7"] : []; }
+        insertAsyncLodBlock(...args) { inserts.push(args); }
         setColorMode(mode) {
             if (mode === "attribute:9:0") throw new Error("invalid attribute index");
             this.mode = mode;
@@ -63,9 +74,22 @@ async function runBuildWorker({ updates = [], graftFails = false, pageLoadFails 
             if (pageLoadFails) throw new Error("network error");
             return { anchor, free() {} };
         }
+        planLodRead(...args) {
+            planCalls.push(args);
+            return {
+                cancelToken: () => ({ cancel() {} }),
+                read: async () => ({
+                    value: { positions: new Float32Array(3), colors: new Uint8Array(3), attributes: ["column"] },
+                    release() {}, free() {},
+                }),
+                free() {},
+            };
+        }
         lodDatasetDescriptor() {
             return {
-                coordinateOrigin: [0, 0, 0], semantics: "replacement", hasAttributes: false, attributeSchema: [],
+                coordinateOrigin: [0, 0, 0], semantics: "replacement",
+                hasAttributes: Boolean(asyncBlocks),
+                attributeSchema: asyncBlocks?.schema ?? [],
                 dataMin: [0, 0, 0], dataMax: [0.5, 0.5, 0.5],
                 nodeCount: 1,
                 maxLevel: 0,
@@ -82,7 +106,11 @@ async function runBuildWorker({ updates = [], graftFails = false, pageLoadFails 
     }
     class Scheduler {
         updateBlocks() { return []; }
-        pendingBlocks() { return []; }
+        pendingBlocks() { return asyncBlocks && !inserts.length ? ["7"] : []; }
+        inFlightCount() { return 0; }
+        takeNextAdmitted() { return { ticket: 1 }; }
+        isCurrent() { return true; }
+        complete() { return "completed"; }
         cancelAll() { return []; }
     }
     vm.runInNewContext(buildSource, {
@@ -101,7 +129,7 @@ async function runBuildWorker({ updates = [], graftFails = false, pageLoadFails 
     send("init", {});
     send("open", { gen: 1, file: {}, cacheBytes: 1024, limits: [100, 200] });
     await settle();
-    return { posted, updateCalls, builders, grafted, budgets, pageLoads, send, settle };
+    return { posted, updateCalls, builders, grafted, budgets, pageLoads, planCalls, inserts, send, settle };
 }
 
 test("build worker opens the dataset and reports its metadata", async () => {
@@ -237,6 +265,34 @@ test("build worker reports a rejected colour mode as an error and keeps the prev
     assert.equal(error.gen, 1);
     assert.match(error.message, /invalid attribute index/);
     assert.deepEqual(worker.posted.filter(item => item.type === "colorMode").map(item => item.mode), ["intensity"]);
+});
+
+const COLUMNS = [{ name: "intensity" }, { name: "classification" }, { name: "vector" }];
+const plan = call => JSON.parse(JSON.stringify(call, (_key, value) => (typeof value === "bigint" ? `${value}n` : value)));
+const sendView = async (worker, epoch = 1) => {
+    worker.send("view", { gen: 1, epoch, camera: [1], viewport: [4, 4], visualScale: 2, targetPx: 4 });
+    await worker.settle();
+    await new Promise(resolve => setTimeout(resolve, 20));
+};
+
+test("with cells the build worker reads intensity and class with the geometry in every colour mode", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", null, [0, 1]]);
+    assert.deepEqual(plan(worker.inserts[0].slice(3)), [null, ["column"]]);
+});
+
+test("with cells an attribute colour mode adds its column to the geometry read", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: true, schema: COLUMNS } });
+    worker.send("colorMode", { gen: 1, mode: "attribute:2:1" });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometryAttributes", 2, [0, 1]]);
+});
+
+test("without cells the build worker keeps the per-mode reads", async () => {
+    const worker = await runBuildWorker({ asyncBlocks: { cells: false, schema: COLUMNS } });
+    await sendView(worker);
+    assert.deepEqual(plan(worker.planCalls[0]), ["7n", "geometry", null, null]);
 });
 
 // ---- Render worker in build-worker mode ------------------------------------------------------

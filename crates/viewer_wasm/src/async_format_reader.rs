@@ -58,6 +58,8 @@ pub struct WasmAsyncFormatReader {
 pub struct WasmAsyncLodReadRequest {
     shared: Arc<AsyncReaderShared>,
     plans: Vec<viewer_format::ReadPlan>,
+    /// Trailing plans whose columns travel with the block unpainted (`geometryAttributes`).
+    carried: usize,
     reservation: Option<ReadReservation>,
     cancelled: Rc<Cell<bool>>,
 }
@@ -174,19 +176,19 @@ impl WasmAsyncLodReadRequest {
         let first_selection = first.selection();
         let (first_result, mut read_ms, mut decode_ms) =
             read_plan(&self.shared, first, &self.cancelled).await?;
-        let second_result = if let Some(second) = plans.next() {
+        let mut rest = Vec::with_capacity(plans.len());
+        for plan in plans {
             if self.cancelled.get() {
                 return Err(err("LOD read request was cancelled"));
             }
-            let (result, read, decode) = read_plan(&self.shared, second, &self.cancelled).await?;
+            let (result, read, decode) = read_plan(&self.shared, plan, &self.cancelled).await?;
             read_ms += read;
             decode_ms += decode;
-            Some(result)
-        } else {
-            None
-        };
+            rest.push(result);
+        }
+        let carried = rest.split_off(rest.len().saturating_sub(self.carried));
         let clock = WorkClock::start();
-        let value = lod_result_to_js(first_selection, first_result, second_result)?;
+        let value = lod_result_to_js(first_selection, first_result, rest.pop(), carried)?;
         decode_ms += clock.elapsed_ms();
         Ok(WasmAsyncLodReadResult {
             value: Some(value),
@@ -461,15 +463,19 @@ impl WasmAsyncFormatReader {
 
     /// Plans a block result with one shared reservation, ready for independent async execution.
     /// `positionsAttribute` returns XYZ and one typed column as a single quota-owned result.
+    /// `geometryAttributes` (the cells path) returns XYZ and RGB, the optional `schemaIndex`
+    /// column as `attribute` and every `carriedIndices` column in `attributes`.
     #[wasm_bindgen(js_name = planLodRead)]
     pub fn plan_lod_read(
         &self,
         block_id: u64,
         selection: &str,
         schema_index: Option<u32>,
+        carried_indices: Option<Vec<u32>>,
     ) -> Result<Option<WasmAsyncLodReadRequest>, JsValue> {
         let id = BlockId::new(block_id);
         let mut plans = Vec::with_capacity(2);
+        let mut carried = 0;
         match selection {
             "geometry" => plans.push(
                 self.shared
@@ -498,9 +504,25 @@ impl WasmAsyncFormatReader {
                         .map_err(format_error)?,
                 );
             }
+            "geometryAttributes" => {
+                let plan = |selection| {
+                    self.shared
+                        .reader
+                        .plan_read(id, selection)
+                        .map_err(format_error)
+                };
+                plans.push(plan(ReadSelection::Geometry)?);
+                if let Some(schema_index) = schema_index {
+                    plans.push(plan(ReadSelection::Attribute { schema_index })?);
+                }
+                for schema_index in carried_indices.unwrap_or_default() {
+                    plans.push(plan(ReadSelection::Attribute { schema_index })?);
+                    carried += 1;
+                }
+            }
             _ => {
                 return Err(err(
-                    "selection must be geometry, positions, or positionsAttribute",
+                    "selection must be geometry, positions, positionsAttribute, or geometryAttributes",
                 ));
             }
         }
@@ -512,6 +534,7 @@ impl WasmAsyncFormatReader {
         Ok(Some(WasmAsyncLodReadRequest {
             shared: Arc::clone(&self.shared),
             plans,
+            carried,
             reservation: Some(reservation),
             cancelled: Rc::new(Cell::new(false)),
         }))
@@ -683,6 +706,7 @@ fn lod_result_to_js(
     first_selection: ReadSelection,
     first: SelectedRead,
     second: Option<SelectedRead>,
+    carried: Vec<SelectedRead>,
 ) -> Result<JsValue, JsValue> {
     let first = selected_to_js(first)?;
     let object = js_sys::Object::new();
@@ -702,6 +726,13 @@ fn lod_result_to_js(
             return Err(err("second LOD read result must be an attribute"));
         }
         set(&object, "attribute", &second)?;
+    }
+    if !carried.is_empty() {
+        let columns = js_sys::Array::new();
+        for column in carried {
+            columns.push(&selected_to_js(column)?);
+        }
+        set(&object, "attributes", &columns.into())?;
     }
     let point_count = js_sys::Reflect::get(&first, &JsValue::from_str("pointCount"))?;
     set(&object, "pointCount", &point_count)?;

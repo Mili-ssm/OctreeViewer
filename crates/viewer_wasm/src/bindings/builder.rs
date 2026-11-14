@@ -158,7 +158,9 @@ impl WasmSceneBuilder {
         Ok(result)
     }
 
-    /// Inserts one block delivered by the host; same contract as `WasmVoxelViewer`.
+    /// Inserts one block delivered by the host; same contract as `WasmVoxelViewer`, plus
+    /// `carried`: columns (intensity, classification) that travel with the block unpainted so
+    /// the cells keep them in every colour mode (R3-Q32).
     #[wasm_bindgen(js_name = insertAsyncLodBlock)]
     pub fn insert_async_lod_block(
         &mut self,
@@ -166,6 +168,7 @@ impl WasmSceneBuilder {
         positions: js_sys::Float32Array,
         colors: Option<js_sys::Uint8Array>,
         attribute: Option<JsValue>,
+        carried: Option<js_sys::Array>,
     ) -> Result<usize, JsValue> {
         let core = self.core_mut()?;
         let selection = core.selected_attribute();
@@ -176,6 +179,7 @@ impl WasmSceneBuilder {
             positions,
             colors,
             attribute,
+            carried,
         )?;
         core.block_inserted();
         if let Some(cells) = self.cells.as_mut() {

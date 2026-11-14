@@ -295,13 +295,30 @@ function fillAsyncReads() {
             ? selectedAttribute
             : colorMode === "intensity" ? asyncAttributeIndices.get("intensity")
                 : colorMode === "classification" ? asyncAttributeIndices.get("classification") : null;
-        const geometrySelection = colorMode === "rgb" && selectedAttribute === null
-            ? "geometry" : "positions";
-        const selection = requestedAttribute !== null && asyncHasAttributes
-            ? "positionsAttribute" : geometrySelection;
+        let selection;
+        let attributeColumn = requestedAttribute;
+        let carriedColumns;
+        if (cellsEnabled) {
+            // The cells keep intensity and class in every colour mode (R3-Q32), so a shader-mode
+            // change never rebuilds them. Only an `attribute:N:M` mode paints its column (R3-Q33).
+            selection = "geometryAttributes";
+            attributeColumn = selectedAttribute;
+            carriedColumns = asyncHasAttributes
+                ? ["intensity", "classification"]
+                    .map((name) => asyncAttributeIndices.get(name))
+                    .filter((index) => index !== undefined)
+                : [];
+        } else {
+            const geometrySelection = colorMode === "rgb" && selectedAttribute === null
+                ? "geometry" : "positions";
+            selection = requestedAttribute !== null && asyncHasAttributes
+                ? "positionsAttribute" : geometrySelection;
+        }
         let request;
         try {
-            request = taskReader.planLodRead(BigInt(blockId), selection, requestedAttribute);
+            request = taskReader.planLodRead(
+                BigInt(blockId), selection, attributeColumn, carriedColumns,
+            );
         } catch (error) {
             ticketScheduler.fail(String(blockId));
             failedAsyncBlocks.add(String(blockId));
@@ -342,6 +359,7 @@ async function readBlock(taskReader, taskGeneration, ticketScheduler, blockId, t
         }
         builder.insertAsyncLodBlock(
             blockId, payload.positions, payload.colors ?? null, payload.attribute ?? null,
+            payload.attributes ?? null,
         );
         ticketScheduler.complete(ticket, String(blockId), true);
         ticketCompleted = true;

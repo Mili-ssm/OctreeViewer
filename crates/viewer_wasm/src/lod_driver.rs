@@ -367,10 +367,13 @@ pub(crate) fn resolve_color_selection(
 
 /// Turns one asynchronously delivered block into a cacheable `PointBlock`. With an attribute
 /// selected the column is painted into the colours; otherwise it travels with the block.
+/// `carried` columns always travel with the block (the cells path, R3-Q32).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble_async_block(
     block_id: BlockId,
     geometry: PointBatch,
     column: Option<AttributeColumn>,
+    carried: Vec<AttributeColumn>,
     schema: &[AttributeDescriptor],
     selected_attribute: Option<(u32, u32)>,
     selected_range: Option<[f64; 2]>,
@@ -400,6 +403,7 @@ pub(crate) fn assemble_async_block(
     } else if selected_attribute.is_some() {
         return Err("selected attribute payload is required".to_owned());
     }
+    columns.extend(carried);
     let block = PointBlock::new(block_id, geometry, columns);
     if block.estimated_memory_bytes() > budget_bytes {
         return Err("decoded block allocation exceeds the cache budget".to_owned());

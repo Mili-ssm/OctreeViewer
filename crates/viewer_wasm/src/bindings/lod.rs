@@ -354,6 +354,7 @@ pub(super) fn insert_async_block(
     positions: js_sys::Float32Array,
     colors: Option<js_sys::Uint8Array>,
     attribute: Option<JsValue>,
+    carried: Option<js_sys::Array>,
 ) -> Result<usize, JsValue> {
     let block_id = parse_block_id(&block_id)?;
     let position_components = positions.length() as usize;
@@ -377,11 +378,17 @@ pub(super) fn insert_async_block(
         .as_ref()
         .map(|value| attribute_column_from_js(schema, value, point_count))
         .transpose()?;
-    let attribute_bytes = column
-        .as_ref()
-        .map(attribute_column_payload_bytes)
-        .transpose()?
-        .unwrap_or_default();
+    let carried = carried
+        .iter()
+        .flat_map(|array| array.iter())
+        .map(|value| attribute_column_from_js(schema, &value, point_count))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut attribute_bytes = 0_usize;
+    for column in column.iter().chain(&carried) {
+        attribute_bytes = attribute_bytes
+            .checked_add(attribute_column_payload_bytes(column)?)
+            .ok_or_else(|| JsValue::from_str("block size exceeds the cache budget"))?;
+    }
     let budget_bytes = dataset.block_cache_budget_bytes();
     let requested_bytes = point_count
         .checked_mul(std::mem::size_of::<Point>())
@@ -406,6 +413,7 @@ pub(super) fn insert_async_block(
         block_id,
         PointBatch::new(points),
         column,
+        carried,
         schema,
         selected_attribute,
         selected_range,
@@ -642,6 +650,7 @@ impl WasmVoxelViewer {
             positions,
             colors,
             attribute,
+            None,
         )?;
         self.pending_async_block = None;
         self.pending_async_blocks.clear();
