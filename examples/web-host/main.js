@@ -3,6 +3,7 @@ import {
     FRAME_RATE_WINDOW_MS, FRAME_RATE_WARMUP_MS, lodCounters, lodStillLoading, lodTargetReached, measureFrameRate,
     summarizeFrameReplies,
 } from "./benchmark-metrics.mjs";
+import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 import {
@@ -609,6 +610,7 @@ function handleWorkerMessage(event) {
             }));
         }
     } else if (data.type === "deviceLost") {
+        if (data.reason !== "destroyed") swapCanvasForRecovery();
         statusRoot.textContent = `GPU device lost (${data.reason}): ${data.message}`;
     } else if (data.type === "deviceRecovery") {
         // R3-Q26: the worker recreates the viewer by itself; the page only shows it and draws again.
@@ -679,6 +681,7 @@ function createWorkerViewer() {
             buildWorker: new URLSearchParams(location.search).get("buildWorker") !== "0" ? BUILD_WORKER : undefined,
             // Opt-in R3 cells path (RGB only until Task 12): ?cells=1.
             cells: new URLSearchParams(location.search).get("cells") === "1",
+            canvasReplacement: true,
         }, [offscreen]);
         reloadButton.disabled = false;
         reloadButton.textContent = "Recreate viewer";
@@ -688,6 +691,19 @@ function createWorkerViewer() {
         statusRoot.textContent = `Renderer initialization failed: ${error}. Recreate the viewer to retry.`;
         reloadButton.disabled = false;
     }
+}
+
+// R3-Q34: a GPU-process crash leaves the old canvas blank, so the worker gets a fresh element.
+function swapCanvasForRecovery() {
+    const replaced = replaceCanvasElement(canvas);
+    if (!replaced) {
+        worker.postMessage({ type: "replaceCanvas", canvas: null });
+        return;
+    }
+    canvas = replaced.canvas;
+    bindCanvasInteractions();
+    worker.postMessage({ type: "replaceCanvas", canvas: replaced.offscreen }, [replaced.offscreen]);
+    canvas.dispatchEvent(new CustomEvent("voxelviewer:canvasReplaced", { detail: { canvas } }));
 }
 
 function recreateViewer() {

@@ -278,7 +278,7 @@ test("every colour mode stays on the cells path; only an attribute mode builds n
 // ---- Render worker -------------------------------------------------------------------------
 
 async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" }, cells = true,
-    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false, poolPages = 65536, failCreates = 0 } = {}) {
+    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false, poolPages = 65536, failCreates = 0, canvasReplacement = false } = {}) {
     const messages = [];
     const workers = [];
     const log = [];
@@ -294,6 +294,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     let cellsOn = false;
     let loss = null;
     let creates = 0;
+    const canvasesUsed = [];
     let failuresLeft = failCreates;
     const pose = { position: [1, 2, 3], target: [4, 5, 6] };
     const cpuLodStats = buildWorker ? null : { cellPath: "off", sceneDigest: "cpu" };
@@ -374,8 +375,9 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         resolveSource: async spec => spec,
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
         WasmVoxelViewer: {
-            createOffscreen: async () => {
+            createOffscreen: async (canvas) => {
                 creates += 1;
+                canvasesUsed.push(canvas.id);
                 if (creates > 1 && failuresLeft > 0) {
                     failuresLeft -= 1;
                     throw new Error("no adapter");
@@ -395,7 +397,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         receive({ data: { type, ...fields } });
         await settle();
     };
-    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker, cells, cellNodeBytesPerFrame, deviceRecoveryBackoffMs: [1, 1, 1] });
+    await send("init", { canvas: { id: "old" }, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker, cells, cellNodeBytesPerFrame, canvasReplacement, deviceRecoveryBackoffMs: [1, 1, 1] });
     const frame = (fields = {}) => send("frame", {
         camera: { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, ...fields },
     });
@@ -420,6 +422,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         setPending(value) { pendingMessages = value; },
         loseDevice(reason = "unknown", message = "gpu process crashed") { loss = { reason, message }; },
         creates: () => creates,
+        canvasesUsed,
         setCellStats(value) { cellStats = { ...cellStats, ...value }; },
         renders: () => renderFrames,
         calls: name => log.filter(entry => entry[0] === name),
@@ -958,4 +961,46 @@ test("recovery succeeds on a later attempt", async () => {
     const states = render.messages.filter(m => m.type === "deviceRecovery").map(m => `${m.state}${m.attempt}`);
     assert.deepEqual(states, ["started1", "started2", "started3", "recovered3"]);
     assert.equal(render.messages.some(m => m.type === "error"), false);
+});
+
+test("with canvas replacement the worker waits for replaceCanvas, handled outside the queue, and uses the new canvas", async () => {
+    const render = await runRenderWorker({ canvasReplacement: true });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    assert.equal(render.creates(), 1, "recovery waits for the canvas while the queue is blocked");
+    assert.equal(render.messages.some(m => m.type === "deviceLost"), true, "the host is told first, so it can replace the canvas");
+    await render.send("replaceCanvas", { canvas: { id: "new" } });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(render.canvasesUsed, ["old", "new"]);
+    assert.equal(render.messages.some(m => m.type === "deviceRecovery" && m.state === "recovered"), true);
+});
+
+test("a host that could not replace its canvas answers null and recovery uses the old one", async () => {
+    const render = await runRenderWorker({ canvasReplacement: true });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await render.send("replaceCanvas", { canvas: null });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(render.canvasesUsed, ["old", "old"]);
+});
+
+test("a canvas that never arrives only delays recovery: the old canvas is used after the timeout", async () => {
+    const render = await runRenderWorker({ canvasReplacement: true });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 2200));
+    assert.deepEqual(render.canvasesUsed, ["old", "old"]);
+    assert.equal(render.messages.some(m => m.type === "error"), false);
+});
+
+test("without canvas replacement offered the worker does not wait", async () => {
+    const render = await runRenderWorker();
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(render.canvasesUsed, ["old", "old"]);
 });

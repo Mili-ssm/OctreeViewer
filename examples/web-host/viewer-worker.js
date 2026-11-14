@@ -63,6 +63,12 @@ let lastScene = null;
 let asyncCacheBytes = 0;
 let deviceRecoveryBackoff = DEVICE_RECOVERY_BACKOFF_MS;
 let lossReportedFor = null;
+// The host swaps the canvas on a loss (R3-Q34) and says so with `replaceCanvas`; that message is
+// handled outside `messageQueue`, which the recovery itself is blocking.
+const CANVAS_WAIT_MS = 2000;
+let canvasReplacementOffered = false;
+let canvasArrival = null;
+let resolveCanvasArrival = null;
 let deviceUnrecoverable = false;
 let pendingOpen = null;
 let appliedEpoch = 0;
@@ -1172,6 +1178,12 @@ async function pollDeviceLoss() {
     if (!loss) return false;
     if (lossReportedFor !== viewer) {
         lossReportedFor = viewer;
+        if (canvasReplacementOffered && loss.reason !== "destroyed") {
+            canvasArrival = new Promise((resolve) => {
+                resolveCanvasArrival = resolve;
+                setTimeout(resolve, CANVAS_WAIT_MS);
+            });
+        }
         self.postMessage({ type: "deviceLost", reason: loss.reason, message: loss.message });
     }
     if (loss.reason === "destroyed") return false;
@@ -1236,6 +1248,10 @@ async function recreateViewer(pose) {
     } catch {
         // Freeing a renderer whose device is gone may fail; the canvas is what matters.
     }
+    if (canvasArrival) {
+        await canvasArrival;
+        canvasArrival = null;
+    }
     viewer = await WasmVoxelViewer.createOffscreen(renderCanvas, 0.6);
     viewer.resize(framebufferSize[0], framebufferSize[1]);
     viewer.setDepthShading(depthShadingOn);
@@ -1296,6 +1312,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 framebufferSize = [data.width, data.height];
                 depthShadingOn = data.depthShading;
                 cellNodeBytes = data.cellNodeBytesPerFrame ?? 0;
+                canvasReplacementOffered = Boolean(data.canvasReplacement);
                 if (data.deviceRecoveryBackoffMs) deviceRecoveryBackoff = data.deviceRecoveryBackoffMs;
                 viewer = await WasmVoxelViewer.createOffscreen(data.canvas, 0.6);
                 viewer.resize(data.width, data.height);
@@ -1529,6 +1546,12 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
 
 let messageQueue = Promise.resolve();
 self.addEventListener("message", (event) => {
+    if (event.data.type === "replaceCanvas") {
+        // `canvas: null`: the host could not replace its element; recover on the current one.
+        if (event.data.canvas) renderCanvas = event.data.canvas;
+        resolveCanvasArrival?.();
+        return;
+    }
     const queuedAt = performance.now();
     messageQueue = messageQueue.then(() => handleMessage(event, queuedAt), () => handleMessage(event, queuedAt));
 });
