@@ -119,6 +119,56 @@ impl CellBox {
     }
 }
 
+/// A node box whose bounds and distances to the frame origin all fit in `i64`, so the per-point
+/// checks and the local position need no `i128`. `None` from [`CellBox::i64_fast`] sends the
+/// caller to the `i128` path (a node side above 2^62 quanta, or a shallow root far from the frame).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FastBox {
+    low: [i64; 3],
+    high: [i64; 3],
+    frame_origin: [i64; 3],
+}
+
+impl CellBox {
+    pub(crate) fn i64_fast(self, frame_origin: [i64; 3]) -> Option<FastBox> {
+        if self.side_exponent > 62 {
+            return None;
+        }
+        let side = 1_i64 << self.side_exponent;
+        let mut high = [0_i64; 3];
+        for axis in 0..3 {
+            high[axis] = self.origin[axis].checked_add(side)?;
+            // `q - frame` is monotone in `q`, so both ends bound every point of the box.
+            self.origin[axis].checked_sub(frame_origin[axis])?;
+            high[axis].checked_sub(frame_origin[axis])?;
+        }
+        Some(FastBox {
+            low: self.origin,
+            high,
+            frame_origin,
+        })
+    }
+}
+
+impl FastBox {
+    /// `contains` for an axis-aligned box: it holds for every point of a set iff it holds for the
+    /// per-axis minimum and maximum of the set.
+    pub(crate) fn contains_extremes(&self, min: [i64; 3], max: [i64; 3]) -> bool {
+        (0..3).all(|axis| min[axis] >= self.low[axis] && max[axis] < self.high[axis])
+    }
+
+    pub(crate) fn contains(&self, quanta: [i64; 3]) -> bool {
+        self.contains_extremes(quanta, quanta)
+    }
+
+    /// Same value as [`local_position_units`] for a point inside the box.
+    pub(crate) fn local_position_units(&self, quanta: [i64; 3]) -> [f64; 3] {
+        std::array::from_fn(|axis| {
+            (quanta[axis] - self.frame_origin[axis]) as f64 * UNITS_PER_QUANTUM
+        })
+    }
+}
+
 /// Origin of the block that holds `quanta` inside `node`: the node origin, or the origin of the
 /// 2^32-quanta cell that contains the point when the node is larger than one block.
 pub(crate) fn block_cell_origin(node: CellBox, quanta: [i64; 3]) -> [i64; 3] {
