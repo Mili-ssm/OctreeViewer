@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A, B1 y B2 cerradas; en curso: B3, Tarea 13)
+Estado: en curso · 14-11-2026 (fase A, B1, B2 y B3 cerradas; siguiente: B4, Tarea 14)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -51,14 +51,10 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   que corrige el de B2): el worker de construcción lee intensidad y clase con la geometría siempre que
   hay celdas (`6f37e29`, test rojo → verde); en el navegador, intensidad y clasificación coinciden en
   tipo de color con la ruta CPU. Las columnas valen 0 en origen: los rangos `[0, 0]` son correctos.
-- [ ] B3. Tarea 13, continuidad por nube (RF-05, ADR 0019). El espaciado de referencia ya existe y no
-  cambia al injertar páginas (T0b); falta el modo. Tamaño mínimo de cubo por defecto: 1 × el espaciado
-  de referencia (las celdas ocupadas vecinas se tocan); el ADR solo dice «derivado de su densidad
-  global», así que el factor queda configurable. Rama `explore/b3-continuity`.
-  - [ ] B3.1. Ruta de celdas: con la continuidad activa, el nivel de cada nodo se limita al más fino
-    cuyo lado de celda no baja del mínimo; activable por nube desde la API y la demo. Check: tests de
-    nivel limitado, sin huecos y espaciado estable tras injertar páginas.
-  - [ ] B3.2. Navegador: Belvedere y Majadas con continuidad, captura y estadísticas; registro.
+- [x] B3. Tarea 13, continuidad por nube ([registro](../records/benchmarks/R3_B3_CONTINUITY_14-11-2026.md)):
+  mínimo de cubo = factor × espaciado de referencia (factor 1 por defecto, validado), sin reconstruir
+  celdas al alternar y sin contar como engrosamiento. En Belvedere y Majadas el efecto visual es mínimo:
+  el espaciado de referencia de Majadas es ~2 mm. Subir el factor queda como decisión del propietario.
 - [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
   - [ ] B5.1. El worker de render detecta la pérdida (callback de `wgpu`) y la expone en las estadísticas y en la API.
@@ -94,7 +90,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
-- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color` y `explore/b2b-async-attrs`: integradas en `feat/r3-v75` y borradas.
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb`, `explore/b2-color`, `explore/b2b-async-attrs` y `explore/b3-continuity`: integradas en `feat/r3-v75` y borradas.
 - [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
   `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
   bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).
@@ -103,6 +99,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 
 | Tema | Bloquea |
 | --- | --- |
+| Factor de continuidad (RF-05): con 1 × el espaciado de referencia el efecto es mínimo en Belvedere y Majadas | Nada; ajuste visual |
 | OQ-09 orden de filas en bloque (TF1) | D3 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |

@@ -580,8 +580,8 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 13 ★: continuidad entre nubes (RF-05) con paginación
 
-- [ ] Usar el espaciado de referencia de T0b.
-- [ ] **Pasa si** un mismo espaciado por nube no cambia al injertar páginas.
+- [x] Usar el espaciado de referencia de T0b.
+- [x] **Pasa si** un mismo espaciado por nube no cambia al injertar páginas. **Hecha (14-11-2026):** [registro](../records/benchmarks/R3_B3_CONTINUITY_14-11-2026.md); continuidad por nube con mínimo de 1 × el espaciado de referencia, sin reconstruir celdas al alternar.
 
 ## Tarea 14: modos de px (antes R1-T1b)
 

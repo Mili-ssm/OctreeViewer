@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-continuity",
+  "startedAt": "2026-11-14T02:54:22.265Z",
+  "input": "target/render-data/belvedere-v75.oct",
+  "targetPixels": 1,
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "poses": [
+    {
+      "label": "fitted",
+      "pose": {
+        "position": [
+          412817.4521301963,
+          5089674.240005493,
+          8271.655413105644
+        ],
+        "target": [
+          416057.0599975586,
+          5089674.240005493,
+          2660.489990234375
+        ]
+      },
+      "literal": {
+        "settleMs": 3559,
+        "stats": {
+          "cutApply": "applied",
+          "cutDigestAtRest": "8c30717e39af786f",
+          "cellsBusy": false,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "cpuCoarsened": 0,
+          "gpuCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 8136,
+          "cellNodesReceivedTotal": 100,
+          "continuity": false,
+          "continuityFactor": 1,
+          "continuityMinSide": null,
+          "cellPath": "enabled"
+        }
+      },
+      "continuity": {
+        "settleMs": 161,
+        "stats": {
+          "cutApply": "applied",
+          "cutDigestAtRest": "8c30717e39af786f",
+          "cellsBusy": false,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "cpuCoarsened": 0,
+          "gpuCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 8136,
+          "cellNodesReceivedTotal": 100,
+          "continuity": true,
+          "continuityFactor": 1,
+          "continuityMinSide": 0.25,
+          "cellPath": "enabled"
+        }
+      },
+      "buildsOnToggle": 0,
+      "backToLiteral": {
+        "settleMs": 309,
+        "sameDigest": true,
+        "buildsAfterOff": 0
+      }
+    }
+  ]
+}

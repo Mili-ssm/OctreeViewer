@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "probe": "probe-cells-continuity",
+  "startedAt": "2026-11-14T02:54:28.416Z",
+  "input": "target/render-data/majadas-v75.oct",
+  "targetPixels": 1,
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (File not found)"
+    }
+  ],
+  "poses": [
+    {
+      "label": "fitted",
+      "pose": {
+        "position": [
+          262939.48948669434,
+          4425681.110486083,
+          2100.3895054257328
+        ],
+        "target": [
+          262939.48948669434,
+          4424773.292999268,
+          528.0034942626953
+        ]
+      },
+      "literal": {
+        "settleMs": 619,
+        "stats": {
+          "cutApply": "applied",
+          "cutDigestAtRest": "f11d2f81ee0c4131",
+          "cellsBusy": false,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "cpuCoarsened": 0,
+          "gpuCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 602,
+          "cellNodesReceivedTotal": 37,
+          "continuity": false,
+          "continuityFactor": 1,
+          "continuityMinSide": null,
+          "cellPath": "enabled"
+        }
+      },
+      "continuity": {
+        "settleMs": 311,
+        "stats": {
+          "cutApply": "applied",
+          "cutDigestAtRest": "f11d2f81ee0c4131",
+          "cellsBusy": false,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "cpuCoarsened": 0,
+          "gpuCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 602,
+          "cellNodesReceivedTotal": 37,
+          "continuity": true,
+          "continuityFactor": 1,
+          "continuityMinSide": 0.001953125,
+          "cellPath": "enabled"
+        }
+      },
+      "buildsOnToggle": 0,
+      "backToLiteral": {
+        "settleMs": 309,
+        "sameDigest": true,
+        "buildsAfterOff": 0
+      }
+    },
+    {
+      "label": "leaf",
+      "pose": {
+        "position": [
+          262926.18798828125,
+          4424768.753997803,
+          319.3529968261719
+        ],
+        "target": [
+          262926.18798828125,
+          4424848.041685104,
+          319.3529968261719
+        ]
+      },
+      "literal": {
+        "settleMs": 18752,
+        "stats": {
+          "cutApply": "applied",
+          "cutDigestAtRest": "4a995b93601798b4",
+          "cellsBusy": false,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "cpuCoarsened": 711,
+          "gpuCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 3487,
+          "cellNodesReceivedTotal": 707,
+          "continuity": false,
+          "continuityFactor": 1,
+          "continuityMinSide": null,
+          "cellPath": "enabled"
+        }
+      },
+      "continuity": {
+        "settleMs": 308,
+        "stats": {
+          "cutApply": "applied",
+          "cutDigestAtRest": "c92c43931e1b4a74",
+          "cellsBusy": false,
+          "poolStages": 0,
+          "poolNodesWithoutLevel": 0,
+          "poolCoarsened": 0,
+          "cpuCoarsened": 711,
+          "gpuCoarsened": 0,
+          "poolOverflow": 0,
+          "poolResidentPages": 3489,
+          "cellNodesReceivedTotal": 707,
+          "continuity": true,
+          "continuityFactor": 1,
+          "continuityMinSide": 0.001953125,
+          "cellPath": "enabled"
+        }
+      },
+      "buildsOnToggle": 0,
+      "backToLiteral": {
+        "settleMs": 310,
+        "sameDigest": true,
+        "buildsAfterOff": 0
+      }
+    }
+  ]
+}
