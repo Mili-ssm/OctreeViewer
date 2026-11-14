@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A, B1, B2 y B3 cerradas; siguiente: B4, Tarea 14)
+Estado: en curso · 14-11-2026 (fase A, B1, B2 y B3 cerradas; en curso: B4, Tarea 14)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -55,7 +55,15 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   mínimo de cubo = factor × espaciado de referencia (factor 1 por defecto, validado), sin reconstruir
   celdas al alternar y sin contar como engrosamiento. En Belvedere y Majadas el efecto visual es mínimo:
   el espaciado de referencia de Majadas es ~2 mm. Subir el factor queda como decisión del propietario.
-- [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
+- [ ] B4. Tarea 14, modos de px (RF-06, RF-07, ADR 0019). Rama `explore/b4-px-modes`.
+  - [ ] B4.1. Fijo progresivo (predeterminado, RF-06): comprobar con un test que la escalera de px dibuja
+    lo residente sin esperar al objetivo (primer frame grueso, refinado después).
+  - [ ] B4.2. Dinámico (RF-07): escalera discreta 1, 2, 4, 8 px. Señal: p95 del tiempo de GPU del frame
+    en ventanas de 1 s (temporizador de B1b.3, activado de forma automática en este modo), o sin
+    timestamps el p95 del intervalo entre frames. Engrosa si el p95 de GPU pasa de 16,7 ms (o el
+    intervalo de 20 ms); refina si el de GPU baja de 10 ms dos ventanas seguidas; espera ≥ 2 s tras cada
+    cambio. API, selector en la demo y estadísticas. Check: tests de la regla con tiempos simulados
+    (sin oscilación) y prueba en el navegador.
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
   - [ ] B5.1. El worker de render detecta la pérdida (callback de `wgpu`) y la expone en las estadísticas y en la API.
   - [ ] B5.2. Recrear adaptador, dispositivo, superficie y recursos; el pool usa `poolReset` y el
