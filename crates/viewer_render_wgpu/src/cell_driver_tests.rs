@@ -2,13 +2,13 @@
 //! hazards or holes, converges again after a reset or a lost pool, packs only non-empty levels,
 //! checks the frame of the cells, and forgets nodes under its CPU budget.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use viewer_core::NodeId;
+use viewer_core::{NodeId, SpatialBounds};
 
 use super::*;
 use crate::{
-    NodeCell, NodeCellLevel, OrbitCamera, POOL_PAGE_BYTES, VoxelBuildLimits,
+    NodeCell, NodeCellLevel, OrbitCamera, POOL_PAGE_BYTES, VoxelBuildLimits, pack_level,
     scene_digest_tests::{ORIGIN, SIDE, VIEWPORT, ids},
     test_support::*,
 };
@@ -809,4 +809,68 @@ fn a_node_of_another_generation_is_foreign() {
     assert_eq!(fx.driver.foreign_node(7), Some(NodeId::new(2)));
     fx.driver = CellDriver::new(config(128, 8, u64::MAX));
     assert_eq!(fx.driver.foreign_node(7), None);
+}
+
+#[test]
+fn color_ranges_are_read_from_packed_levels_in_absolute_f64_heights() {
+    // Cells of depth 3 on a grid 1e6 above the origin: heights are the cell centres, exact.
+    let grid = CellGrid {
+        root_min: [0.0, 0.0, 1_000_000.0],
+        root_side: 8.0,
+    };
+    let bounds = SpatialBounds::new(grid.root_min, grid.root_min.map(|v| v + 8.0)).unwrap();
+    let cell = |z: u64, intensity: Option<f64>| NodeCell {
+        coord: [1, 1, z],
+        rgb_sum: [1, 1, 1],
+        intensity_sum: intensity.unwrap_or(0.0),
+        intensity_count: u32::from(intensity.is_some()),
+        count: 1,
+        classification: -1,
+        z_min: 0.0,
+        z_max: 0.0,
+    };
+    let level = NodeCellLevel {
+        depth: 3,
+        cells: vec![cell(2, Some(40.0)), cell(5, None), cell(7, Some(900.0))],
+        octant_offsets: None,
+    };
+    let packed = pack_level(&grid, bounds, NodeId::new(1), &level);
+    let ranges = CellColorRanges::of_levels(&grid, &[packed]);
+    assert_eq!(ranges.z, Some([1_000_002.5, 1_000_007.5]));
+    assert_eq!(ranges.intensity, Some([40.0, 900.0]));
+    // Levels without cells and without intensity add nothing.
+    assert_eq!(
+        CellColorRanges::of_levels(&grid, &[level_of(NodeId::new(2), 3, 2)]),
+        CellColorRanges::default()
+    );
+    let other = CellColorRanges {
+        intensity: Some([10.0, 20.0]),
+        z: Some([1_000_001.0, 1_000_003.0]),
+    };
+    let merged = ranges.merge(other);
+    assert_eq!(merged.z, Some([1_000_001.0, 1_000_007.5]));
+    assert_eq!(merged.intensity, Some([10.0, 900.0]));
+    assert_eq!(CellColorRanges::default().merge(other), other);
+}
+
+#[test]
+fn the_frame_hands_the_target_the_ranges_of_the_drawn_nodes_only() {
+    let mut fx = Fixture::new(octant_nodes(), config(128, 8, u64::MAX));
+    let cam = camera("zoom");
+    let report = fx.run(40, &ids(&CHILDREN), &cam, 4.0);
+    let drawn: HashSet<NodeId> = report.plan.active.iter().map(|a| a.key.node).collect();
+    assert!(!drawn.is_empty());
+    let mut expected = CellColorRanges::default();
+    for (i, (id, node)) in fx.driver.nodes.iter_mut().enumerate() {
+        let k = i as f64 * 10.0;
+        node.colors = CellColorRanges {
+            intensity: Some([k as f32, k as f32 + 5.0]),
+            z: Some([k, k + 1.0]),
+        };
+        if drawn.contains(id) {
+            expected = expected.merge(node.colors);
+        }
+    }
+    fx.step(&ids(&CHILDREN), &cam, 4.0);
+    assert_eq!(fx.gpu.color_ranges, Some(expected));
 }

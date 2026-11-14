@@ -57,6 +57,8 @@ pub struct WasmVoxelViewer {
     remote_dataset_frame: Option<RemoteDatasetFrame>,
     /// The host opted in to the cells path (`enableCells`); the dataset may still not support it.
     cells_requested: bool,
+    /// Shader colour modes stay on the cells path (`enableCellShaderModes`, R3-Q32).
+    cells_shader_modes: bool,
     /// `"off"`, `"enabled"` or `"CellPathUnsupported"` for the open dataset.
     cell_path: &'static str,
     /// Cells with the dataset in this worker: the three steps run back to back.
@@ -147,6 +149,7 @@ impl WasmVoxelViewer {
             last_lod_error: None,
             remote_dataset_frame: None,
             cells_requested: false,
+            cells_shader_modes: false,
             cell_path: cells::PATH_OFF,
             cells_local: None,
             cells_remote: None,

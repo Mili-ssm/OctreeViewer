@@ -1044,7 +1044,8 @@ fn depth_error_stays_within_the_derived_bound_at_worst_case_poses() {
                 .iter()
                 .flat_map(|(_, lo, hi)| [[lo[0], lo[1], lo[2], 0.0], [hi[0], hi[1], hi[2], 0.0]])
                 .collect();
-            let mut frame_bytes = vec![0_u8; 96];
+            // The size of `FrameUniform`; only the matrix is read.
+            let mut frame_bytes = vec![0_u8; 128];
             frame_bytes[..64].copy_from_slice(bytemuck::bytes_of(&matrix));
             let make = |label, contents: &[u8], usage| {
                 h.device

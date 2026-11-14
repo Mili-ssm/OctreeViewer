@@ -30,6 +30,8 @@ use crate::cell_pages::{
     CELL_PAGES_WGSL, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, srgb_to_linear_table,
 };
 use crate::gpu::CUBE_INDICES;
+use crate::scene::SHADER_MODE_COLOR_WGSL;
+use crate::{CellColorRanges, ColorMode};
 
 /// Bytes of every buffer of a pool of `pages` pages (see `CellRenderer::new`).
 pub(crate) const fn pool_resource_bytes(pages: u32) -> u64 {
@@ -275,6 +277,63 @@ pub(crate) struct CellFrame {
     pub viewport: [u32; 2],
 }
 
+/// What the cell shader needs for the shader colour modes (R3-Q32): the mode and the ranges, as
+/// `SurfaceRenderer` derives them for the frame. Changing them only rewrites the frame uniform.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CellColor {
+    pub mode: ColorMode,
+    /// Min and max cell intensity, as `u16` values.
+    pub intensity_range: [f32; 2],
+    /// Added to the eye-relative height of a cell centre to give `z - zmin` in render units:
+    /// `eye_z - zmin`, computed in `f64` so absolute coordinates cost no precision.
+    pub height_offset: f32,
+    /// `zmax - zmin` in render units.
+    pub height_span: f32,
+}
+
+impl CellColor {
+    /// The uniform of a frame. `eye_z` is the eye height of the frame the page entries were built
+    /// with (scaled render units), `origin_z` the renderer's coordinate origin. The offset is
+    /// `eye_z - (zmin - origin_z) * scale` in `f64` and rounds once to `f32`; the shader adds it to
+    /// the eye-relative centre height, so no absolute coordinate is ever held in `f32`.
+    pub(crate) fn for_frame(
+        mode: ColorMode,
+        ranges: CellColorRanges,
+        eye_z: f64,
+        visual_scale: f64,
+        origin_z: f64,
+    ) -> Self {
+        let default = Self::default();
+        let (height_offset, height_span) = ranges.z.map_or(
+            (default.height_offset, default.height_span),
+            |[zmin, zmax]| {
+                (
+                    (eye_z - (zmin - origin_z) * visual_scale) as f32,
+                    ((zmax - zmin) * visual_scale) as f32,
+                )
+            },
+        );
+        Self {
+            mode,
+            intensity_range: ranges.intensity.unwrap_or(default.intensity_range),
+            height_offset,
+            height_span,
+        }
+    }
+}
+
+impl Default for CellColor {
+    /// The values the CPU path uses without ranges.
+    fn default() -> Self {
+        Self {
+            mode: ColorMode::Rgb,
+            intensity_range: [0.0, 1.0],
+            height_offset: 0.0,
+            height_span: 1.0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct FrameUniform {
@@ -287,6 +346,12 @@ struct FrameUniform {
     viewport: [f32; 2],
     mip_count: u32,
     _padding: u32,
+    color_mode: f32,
+    intensity_min: f32,
+    intensity_max: f32,
+    height_offset: f32,
+    height_span: f32,
+    _padding_end: [u32; 3],
 }
 
 pub(crate) const COMMON_WGSL: &str = r"
@@ -299,6 +364,11 @@ struct CellFrame {
     viewport: vec2<f32>,
     mip_count: u32,
     pad0: u32,
+    color_mode: f32,
+    intensity_min: f32,
+    intensity_max: f32,
+    height_offset: f32,
+    height_span: f32,
 };
 
 @group(0) @binding(1)
@@ -499,7 +569,19 @@ fn vs_main(
     out.clip_position = cell_clip(position);
     out.depth = out.clip_position.z / out.clip_position.w;
     out.normal = vec3<f32>(cell_upper(corner)) * 2.0 - vec3<f32>(1.0);
-    out.color = cell_linear_rgb(cell);
+    let word = cell_intensity(cell);
+    let intensity = select(f32(word), -1.0, word == 0xffffu);
+    let lo = cell_lo(page, cell);
+    let hi = cell_hi(page, cell);
+    out.color = shader_mode_color(
+        frame.color_mode,
+        vec4<f32>(cell_linear_rgb(cell), 1.0),
+        intensity,
+        vec2<f32>(frame.intensity_min, frame.intensity_max),
+        f32(cell_class(cell)),
+        (lo.z + hi.z) * 0.5 + frame.height_offset,
+        frame.height_span,
+    ).rgb;
     return out;
 }
 
@@ -528,7 +610,7 @@ pub(crate) fn shader_sources() -> [String; 4] {
         compute(0),
         compute(1),
         compute(2),
-        format!("{CELL_PAGES_WGSL}{COMMON_WGSL}{DRAW_WGSL}"),
+        format!("{CELL_PAGES_WGSL}{COMMON_WGSL}{SHADER_MODE_COLOR_WGSL}{DRAW_WGSL}"),
     ]
 }
 
@@ -605,6 +687,7 @@ pub(crate) struct CellRenderer {
     /// The frame the entries of `shadow` were built with; `None` until the first
     /// `set_page_frame`.
     page_frame: Option<PageFrameStamp>,
+    color: CellColor,
 }
 
 impl CellRenderer {
@@ -918,6 +1001,7 @@ impl CellRenderer {
             mask_allocated: vec![false; capacity as usize],
             mask_mirror: vec![[0; MASK_WORDS]; capacity as usize],
             page_frame: None,
+            color: CellColor::default(),
         }
     }
 
@@ -1119,6 +1203,12 @@ impl CellRenderer {
         self.page_frame = Some(frame);
     }
 
+    /// The colour mode and ranges the next `encode_cells` draws with. Nothing is rebuilt or
+    /// re-uploaded: only the frame uniform changes.
+    pub(crate) fn set_color(&mut self, color: CellColor) {
+        self.color = color;
+    }
+
     pub(crate) fn page_frame(&self) -> Option<PageFrameStamp> {
         self.page_frame
     }
@@ -1236,6 +1326,12 @@ impl CellRenderer {
                 viewport: frame.viewport.map(|v| v as f32),
                 mip_count: self.hiz.mip_count(),
                 _padding: 0,
+                color_mode: self.color.mode.shader_value(),
+                intensity_min: self.color.intensity_range[0],
+                intensity_max: self.color.intensity_range[1],
+                height_offset: self.color.height_offset,
+                height_span: self.color.height_span,
+                _padding_end: [0; 3],
             }),
         );
         if self.occlusion {

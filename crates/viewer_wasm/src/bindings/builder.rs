@@ -25,7 +25,7 @@ use crate::{
     scene_builder::{BuilderStep, BuilderUpdate, SceneBuilderCore, camera_from_transport},
 };
 use viewer_format::FormatReader;
-use viewer_render_wgpu::{ColorMode, VoxelBuildLimits};
+use viewer_render_wgpu::VoxelBuildLimits;
 
 type FormatSession = LodSession<FormatReader<BrowserBlobReader>>;
 
@@ -44,6 +44,8 @@ pub struct WasmSceneBuilder {
     range_read_stats: BrowserReadStats,
     /// The host opted in to the cells path (`enableCells`).
     pub(super) cells_requested: bool,
+    /// Shader colour modes stay on the cells path (`enableCellShaderModes`, R3-Q32).
+    pub(super) cells_shader_modes: bool,
     /// Pages of the render worker's GPU pool (`setCellPoolPages`), for the cut fit of ADR 0040.
     pub(super) cell_pool_pages: Option<u32>,
     pub(super) cells: Option<BuilderCells>,
@@ -73,6 +75,7 @@ impl WasmSceneBuilder {
             browser_read_stats: Arc::new(Mutex::new(BrowserReadStats::default())),
             range_read_stats: BrowserReadStats::default(),
             cells_requested: false,
+            cells_shader_modes: false,
             cell_pool_pages: None,
             cells: None,
             cell_path: PATH_OFF,
@@ -210,7 +213,11 @@ impl WasmSceneBuilder {
         }
         // R3-Q23: cells are RGB only; any other mode sends scenes again, RGB brings cells back.
         if let Some(cells) = self.cells.as_mut() {
-            let rgb = selection.mode == ColorMode::Rgb && selection.attribute.is_none();
+            let rgb = crate::cells_glue::cells_draw_mode(
+                self.cells_shader_modes,
+                selection.mode,
+                selection.attribute.is_some(),
+            );
             cells.set_active(core.session_mut().dataset_mut(), rgb);
         }
         Ok(())

@@ -34,6 +34,8 @@ use std::{
 
 use viewer_core::{NodeId, SpatialBounds};
 
+use crate::cell_pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
+
 use crate::{
     CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, MASK_WORDS,
     NodeCells, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolConfig, PoolCounters,
@@ -67,12 +69,79 @@ pub trait CellTarget {
 
     fn set_node_mask(&mut self, slot: u32, mask: &[u32; MASK_WORDS]) -> Result<(), Self::Error>;
 
+    /// The intensity and elevation ranges of the cut drawn this frame, for the shader colour modes
+    /// (R3-Q32). Called before `set_active_pages`. A target without shader modes ignores it.
+    fn set_color_ranges(&mut self, _ranges: CellColorRanges) {}
+
     /// The page table of this frame; `frame` is the one its entries were built with.
     fn set_active_pages(
         &mut self,
         pages: &[(u32, PageEntry)],
         frame: &PageFrame,
     ) -> Result<(), Self::Error>;
+}
+
+/// Value ranges of the cells of one node or of a cut, which the shader colour modes normalise
+/// with (the CPU path takes them over the voxels it draws). Read from the packed cells, so the
+/// blocks are not decoded again.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct CellColorRanges {
+    /// Min and max of the cell mean intensities (`u16` words), cells without one left out.
+    pub intensity: Option<[f32; 2]>,
+    /// Min and max of the cell centre heights in absolute dataset coordinates, in `f64`.
+    pub z: Option<[f64; 2]>,
+}
+
+fn merge_range<T: PartialOrd + Copy>(a: Option<[T; 2]>, b: Option<[T; 2]>) -> Option<[T; 2]> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some([
+            if b[0] < a[0] { b[0] } else { a[0] },
+            if b[1] > a[1] { b[1] } else { a[1] },
+        ]),
+        (a, b) => a.or(b),
+    }
+}
+
+impl CellColorRanges {
+    #[must_use]
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            intensity: merge_range(self.intensity, other.intensity),
+            z: merge_range(self.z, other.z),
+        }
+    }
+
+    /// The ranges over every cell of `levels`; `grid` is the world grid the pages were packed on.
+    pub fn of_levels(grid: &CellGrid, levels: &[PackedLevel]) -> Self {
+        let mut ranges = Self::default();
+        for level in levels {
+            let side = grid.root_side / (1_u64 << level.depth) as f64;
+            for (page, slots) in level.pages.iter().zip(level.instances.chunks(PAGE_SLOTS)) {
+                let cells = &slots[..page.cells as usize];
+                if cells.is_empty() {
+                    continue;
+                }
+                let rel_z = cells.iter().map(|cell| cell.rel()[2]);
+                let (lo, hi) = rel_z.fold((u16::MAX, 0), |(lo, hi), z| (lo.min(z), hi.max(z)));
+                let center = |rel: u16| {
+                    grid.root_min[2] + ((page.origin[2] + u64::from(rel)) as f64 + 0.5) * side
+                };
+                ranges.z = merge_range(ranges.z, Some([center(lo), center(hi)]));
+                if page.flags & PAGE_HAS_INTENSITY != 0 {
+                    let words = cells
+                        .iter()
+                        .map(|cell| cell.intensity())
+                        .filter(|word| *word != MISSING_INTENSITY);
+                    let (lo, hi) = words.fold((u16::MAX, 0), |(lo, hi), w| (lo.min(w), hi.max(w)));
+                    if lo <= hi {
+                        ranges.intensity =
+                            merge_range(ranges.intensity, Some([f32::from(lo), f32::from(hi)]));
+                    }
+                }
+            }
+        }
+        ranges
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -209,6 +278,8 @@ impl FrameReport {
 
 struct StoredNode {
     pool: PoolNode,
+    /// Ranges of all its levels, read once when it is stored.
+    colors: CellColorRanges,
     /// One per depth of `pool.stored`.
     levels: Vec<Arc<PackedLevel>>,
     bytes: u64,
@@ -479,9 +550,11 @@ impl CellDriver {
         let bytes = levels.iter().map(level_bytes).sum::<u64>();
         let count = levels.len();
         self.cpu_bytes += bytes;
+        let colors = CellColorRanges::of_levels(&self.config.grid, &levels);
         self.nodes.insert(
             id,
             StoredNode {
+                colors,
                 pool: PoolNode {
                     bounds,
                     stored: levels.iter().map(|level| level.depth).collect(),
@@ -754,9 +827,17 @@ impl CellDriver {
             }
         }
         report.active_pages = table.len();
+        let colors = plan
+            .active
+            .iter()
+            .filter_map(|active| self.nodes.get(&active.key.node))
+            .fold(CellColorRanges::default(), |merged, node| {
+                merged.merge(node.colors)
+            });
         mark(FramePhase::TableBuilt);
         // Nothing resident and no pool yet: there is no page table to write.
         if !table.is_empty() || target.has_pool() {
+            target.set_color_ranges(colors);
             target
                 .set_active_pages(&table, &frame)
                 .map_err(CellDriverError::Target)?;

@@ -32,6 +32,10 @@ const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 #[path = "cell_cull_tests.rs"]
 mod cull;
 
+/// Task 12: the shader colour modes of the cell shader against the CPU path's.
+#[path = "cell_color_tests.rs"]
+mod color;
+
 /// Task 8: picking on the pool against the CPU-path picking.
 #[path = "cell_pick_tests.rs"]
 mod pick;
@@ -307,6 +311,19 @@ fn clear_color() -> wgpu::Color {
 
 /// The CPU path as `render_offscreen` builds it, with a caller-chosen scene and lighting.
 fn render_cpu(h: &Harness, instances: &[InstanceRaw], camera: &OrbitCamera, lit: bool) -> Image {
+    render_cpu_styled(h, instances, camera, lit, [0.0, 1.0, 0.0, 1.0], [0.0, 1.0])
+}
+
+/// [`render_cpu`] with the shader colour mode (`style` x, and `z` and `w` for the height range)
+/// and the intensity range of the CPU path.
+fn render_cpu_styled(
+    h: &Harness,
+    instances: &[InstanceRaw],
+    camera: &OrbitCamera,
+    lit: bool,
+    style: [f32; 4],
+    intensity_range: [f32; 2],
+) -> Image {
     let frame = camera.frame([WIDTH, HEIGHT]).unwrap();
     let resources = pollster::block_on(create_pipeline_resources(&h.device, COLOR_FORMAT)).unwrap();
     let mut origin = frame.render_origin;
@@ -317,8 +334,13 @@ fn render_cpu(h: &Harness, instances: &[InstanceRaw], camera: &OrbitCamera, lit:
         bytemuck::bytes_of(&ViewProjection {
             matrix: frame.view_projection,
             render_origin: origin,
-            style: [0.0, 1.0, 0.0, 1.0],
-            intensity_range: [0.0, 1.0, f32::from(u8::from(lit)), 0.0],
+            style,
+            intensity_range: [
+                intensity_range[0],
+                intensity_range[1],
+                f32::from(u8::from(lit)),
+                0.0,
+            ],
         }),
     );
     let buffer = h

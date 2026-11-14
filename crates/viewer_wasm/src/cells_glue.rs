@@ -155,6 +155,18 @@ pub(crate) struct BuilderCells {
     config: CellUpdateConfig,
 }
 
+/// Whether the cells path draws a colour selection (R3-Q23, R3-Q32). Plain RGB always; the shader
+/// modes (intensity, elevation, classification) once the host opted in, because the cells carry
+/// their columns and a mode change only rewrites the shader uniform; `attribute:N:M` modes never
+/// (they need cells repainted, R3-Q33). Until the opt-in, any other mode takes the CPU path.
+pub(crate) fn cells_draw_mode(
+    shader_modes: bool,
+    mode: viewer_render_wgpu::ColorMode,
+    attribute: bool,
+) -> bool {
+    !attribute && (shader_modes || mode == viewer_render_wgpu::ColorMode::Rgb)
+}
+
 impl BuilderCells {
     pub(crate) fn new(config: CellUpdateConfig) -> Self {
         Self {

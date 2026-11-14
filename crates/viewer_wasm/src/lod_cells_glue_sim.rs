@@ -763,6 +763,40 @@ fn queued_nodes_wait_while_the_cells_are_off_and_one_pool_reset_follows_the_swit
 }
 
 #[test]
+fn shader_colour_modes_keep_the_cells_and_the_pool() {
+    use crate::cells_glue::cells_draw_mode;
+    use viewer_render_wgpu::ColorMode;
+    let mut pair = Pair::new();
+    pair.send(0, true);
+    pair.pump();
+    let digest = pair.rest().expect("at rest");
+    let _ = pair.viewer.take_messages();
+    assert!(!cells_draw_mode(false, ColorMode::Intensity, false));
+    assert!(!cells_draw_mode(true, ColorMode::Rgb, true));
+    for mode in [
+        ColorMode::Intensity,
+        ColorMode::Elevation,
+        ColorMode::Classification,
+        ColorMode::Rgb,
+    ] {
+        let draws = cells_draw_mode(true, mode, false);
+        assert!(draws);
+        pair.builder.set_active(&mut pair.h.dataset, draws);
+        pair.viewer.set_active(draws);
+        let built = pair.send(0, true);
+        assert!(built.is_empty(), "{mode:?} rebuilt {} nodes", built.len());
+        for _ in 0..5 {
+            pair.viewer.frame(&mut pair.target, &pair.view).unwrap();
+            assert!(
+                !pair.viewer.take_messages().pool_reset,
+                "{mode:?} reset the pool"
+            );
+        }
+        assert_eq!(pair.rest(), Some(digest));
+    }
+}
+
+#[test]
 fn a_malformed_node_is_refused_at_the_message_and_leaves_the_queue_alone() {
     let mut pair = Pair::new();
     let nodes = pair.send(0, false);

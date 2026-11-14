@@ -6,8 +6,8 @@ use viewer_core::{BlockId, ResidentBlockSource};
 use wgpu::util::DeviceExt;
 
 use crate::{
-    CameraFrame, CellPoolError, ColorMode, GpuBudget, InstanceRaw, OrbitCamera, RenderScene,
-    RendererConfig, SceneBounds, VOXEL_SHADER_WGSL, VoxelBuildLimits,
+    CameraFrame, CellColorRanges, CellPoolError, ColorMode, GpuBudget, InstanceRaw, OrbitCamera,
+    RenderScene, RendererConfig, SceneBounds, VOXEL_SHADER_WGSL, VoxelBuildLimits,
     block_sync::ResidentBlockInfo,
     block_sync::plan_block_sync,
     budget::{buffer_capacity, check_peak_bytes, check_visible_instances},
@@ -15,8 +15,8 @@ use crate::{
     cell_pages::{PackedLevel, PageEntry, PageFrame},
     cell_pick::{PoolPick, prepare_pool_pick},
     cell_render::{
-        CellFrame, CellRenderer, MASK_WORDS, PageFrameStamp, cell_pool_pages, plan_device_limits,
-        pool_resource_bytes,
+        CellColor, CellFrame, CellRenderer, MASK_WORDS, PageFrameStamp, cell_pool_pages,
+        plan_device_limits, pool_resource_bytes,
     },
     instance_buffer_layout,
 };
@@ -354,6 +354,8 @@ pub struct SurfaceRenderer<'window> {
     intensity_range: Option<[f32; 2]>,
     elevation_range: Option<[f32; 2]>,
     color_mode: ColorMode,
+    /// Ranges of the cut the cells draw, for the shader colour modes (`CellTarget::set_color_ranges`).
+    cell_color_ranges: CellColorRanges,
     depth_shading: bool,
     visual_scale: f64,
     coordinate_origin: [f64; 3],
@@ -499,6 +501,7 @@ impl<'window> SurfaceRenderer<'window> {
             intensity_range: None,
             elevation_range: None,
             color_mode: ColorMode::Rgb,
+            cell_color_ranges: CellColorRanges::default(),
             depth_shading: true,
             visual_scale: 1.0,
             coordinate_origin: [0.0; 3],
@@ -893,6 +896,7 @@ impl<'window> SurfaceRenderer<'window> {
     pub fn clear_dataset(&mut self) {
         self.scene_buffer = None;
         self.cell_pool = None;
+        self.cell_color_ranges = CellColorRanges::default();
         self.hzb_reference_camera = None;
         self.hzb_scene_opaque = false;
         self.block_buffers.clear();
@@ -1550,6 +1554,16 @@ impl<'window> SurfaceRenderer<'window> {
             .as_mut()
             .and_then(|timer| timer.begin(&mut encoder));
         if use_cells && let Some(pool) = &mut self.cell_pool {
+            let eye_z = pool
+                .page_frame()
+                .map_or_else(|| self.camera.position()[2], |stamp| stamp.eye_scaled[2]);
+            pool.set_color(CellColor::for_frame(
+                self.color_mode,
+                self.cell_color_ranges,
+                eye_z,
+                self.visual_scale,
+                self.coordinate_origin[2],
+            ));
             pool.encode_cells(
                 &mut encoder,
                 &view,
@@ -2111,6 +2125,10 @@ impl CellTarget for SurfaceRenderer<'_> {
         mask: &[u32; MASK_WORDS],
     ) -> Result<(), GpuRendererError> {
         self.set_cell_node_mask(slot, mask)
+    }
+
+    fn set_color_ranges(&mut self, ranges: CellColorRanges) {
+        self.cell_color_ranges = ranges;
     }
 
     fn set_active_pages(

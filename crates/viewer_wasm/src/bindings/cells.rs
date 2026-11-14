@@ -372,6 +372,13 @@ impl WasmSceneBuilder {
         self.cells_requested = enabled;
     }
 
+    /// Keeps intensity, elevation and classification on the cells path (shader modes, R3-Q32)
+    /// instead of the CPU path of R3-Q23. Off by default until the CPU fallback goes.
+    #[wasm_bindgen(js_name = enableCellShaderModes)]
+    pub fn enable_cell_shader_modes(&mut self, enabled: bool) {
+        self.cells_shader_modes = enabled;
+    }
+
     /// The pages of the render worker's GPU pool (`cellPoolPages` of the viewer); call before
     /// opening a dataset. Without it the cut is not fitted to the pool.
     #[wasm_bindgen(js_name = setCellPoolPages)]
@@ -553,6 +560,13 @@ impl WasmVoxelViewer {
     #[wasm_bindgen(js_name = enableCells)]
     pub fn enable_cells(&mut self, enabled: bool) {
         self.cells_requested = enabled;
+    }
+
+    /// Keeps intensity, elevation and classification on the cells path (shader modes, R3-Q32)
+    /// instead of the CPU path of R3-Q23. Off by default until the CPU fallback goes.
+    #[wasm_bindgen(js_name = enableCellShaderModes)]
+    pub fn enable_cell_shader_modes(&mut self, enabled: bool) {
+        self.cells_shader_modes = enabled;
     }
 
     /// Pages of the GPU cell pool this device runs (65,536 for 512 MiB, fewer when its limits

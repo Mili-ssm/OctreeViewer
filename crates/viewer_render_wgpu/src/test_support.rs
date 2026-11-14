@@ -117,6 +117,8 @@ pub(crate) struct FakeGpu {
     /// The last page table and the frame it came with.
     pub(crate) table: Vec<(u32, PageEntry)>,
     pub(crate) page_frame: Option<PageFrame>,
+    /// The ranges of the last frame's cut (`CellTarget::set_color_ranges`).
+    pub(crate) color_ranges: Option<crate::CellColorRanges>,
 }
 
 impl FakeGpu {
@@ -198,6 +200,10 @@ impl CellTarget for FakeGpu {
         }
         self.mask_words.insert(slot, *mask);
         Ok(())
+    }
+
+    fn set_color_ranges(&mut self, ranges: crate::CellColorRanges) {
+        self.color_ranges = Some(ranges);
     }
 
     fn set_active_pages(

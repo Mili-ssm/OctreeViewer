@@ -47,8 +47,8 @@ pub use cell_cut::{
     octant_wanted_depth, resident_depth,
 };
 pub use cell_driver::{
-    CellDriver, CellDriverError, CellTarget, DriverConfig, FramePhase, FrameReport, NodeAdded,
-    NodeInput, NodeInputError, PackedNode, pack_node, packed_node_bytes,
+    CellColorRanges, CellDriver, CellDriverError, CellTarget, DriverConfig, FramePhase,
+    FrameReport, NodeAdded, NodeInput, NodeInputError, PackedNode, pack_node, packed_node_bytes,
 };
 pub use cell_pages::{
     CELL_PAGES_WGSL, CellInstance, DecodedCell, FLAG_SPANS_OCTANTS, MAX_INTENSITY, MAX_PAGE_EXTENT,
