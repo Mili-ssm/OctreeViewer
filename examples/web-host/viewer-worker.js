@@ -1102,6 +1102,10 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     case "getStats":
                         value = { lod: currentLodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
                         break;
+                    case "setGpuFrameTiming":
+                        viewer.setGpuFrameTiming(Boolean(data.enabled));
+                        value = true;
+                        break;
                     case "resetGpuFrameStats":
                         viewer.resetGpuFrameStats();
                         value = true;

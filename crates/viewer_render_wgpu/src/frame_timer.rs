@@ -12,7 +12,7 @@ use std::sync::mpsc;
 /// Samples kept for the percentiles.
 pub(crate) const WINDOW_CAPACITY: usize = 600;
 /// Frames whose results can be in flight at once.
-const RING_SLOTS: usize = 4;
+const RING_SLOTS: usize = 8;
 
 /// Percentiles of the sampled GPU frame times, in milliseconds.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,6 +21,12 @@ pub struct GpuFrameStats {
     pub p95_ms: f64,
     pub max_ms: f64,
     pub samples: usize,
+    /// Frames not sampled since the last reset because every ring slot was still in flight. Slow
+    /// frames stay in flight longer, so a high count means the percentiles may read low.
+    pub dropped: u64,
+    /// Greatest common divisor of the raw tick deltas, in ns: the timer's visible resolution. A
+    /// value near 100 000 means the browser quantizes timestamps.
+    pub resolution_ns: f64,
 }
 
 /// The last `capacity` samples; the oldest is dropped first.
@@ -68,6 +74,8 @@ impl SampleWindow {
             p95_ms: rank(0.95),
             max_ms: sorted[sorted.len() - 1],
             samples: sorted.len(),
+            dropped: 0,
+            resolution_ns: 0.0,
         })
     }
 }
@@ -84,6 +92,8 @@ struct Slot {
     resolve: wgpu::Buffer,
     readback: wgpu::Buffer,
     state: SlotState,
+    /// Window generation the frame was started in; results of older ones are dropped.
+    generation: u64,
 }
 
 /// Brackets frames with timestamps and collects the results without stalling.
@@ -91,6 +101,10 @@ pub(crate) struct FrameTimer {
     slots: Vec<Slot>,
     period_ns: f64,
     window: SampleWindow,
+    enabled: bool,
+    generation: u64,
+    dropped: u64,
+    tick_gcd: u64,
 }
 
 const TIMESTAMP_BYTES: u64 = 2 * size_of::<u64>() as u64;
@@ -121,23 +135,42 @@ impl FrameTimer {
                     mapped_at_creation: false,
                 }),
                 state: SlotState::Free,
+                generation: 0,
             })
             .collect();
         Some(Self {
             slots,
             period_ns: f64::from(queue.get_timestamp_period()),
             window: SampleWindow::new(WINDOW_CAPACITY),
+            enabled: false,
+            generation: 0,
+            dropped: 0,
+            tick_gcd: 0,
         })
     }
 
-    /// Records the start timestamp. `None` (frame not sampled) when every slot is in flight.
+    /// Off by default: a disabled timer adds no passes, resolves or mappings to the frame.
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    /// Records the start timestamp. `None` when disabled, or (counted as dropped) when every slot
+    /// is in flight.
     pub(crate) fn begin(&mut self, encoder: &mut wgpu::CommandEncoder) -> Option<usize> {
-        let index = self
+        if !self.enabled {
+            return None;
+        }
+        let Some(index) = self
             .slots
             .iter()
-            .position(|slot| matches!(slot.state, SlotState::Free))?;
+            .position(|slot| matches!(slot.state, SlotState::Free))
+        else {
+            self.dropped += 1;
+            return None;
+        };
         let slot = &mut self.slots[index];
         slot.state = SlotState::Encoding;
+        slot.generation = self.generation;
         drop(encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("octree-viewer-frame-start"),
             timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
@@ -179,6 +212,13 @@ impl FrameTimer {
 
     /// Moves finished readbacks into the window. Never blocks.
     pub(crate) fn collect(&mut self, device: &wgpu::Device) {
+        if !self
+            .slots
+            .iter()
+            .any(|slot| matches!(slot.state, SlotState::Pending(_)))
+        {
+            return;
+        }
         // Native backends deliver map callbacks only while polled; the browser does it itself.
         #[cfg(not(target_arch = "wasm32"))]
         let _ = device.poll(wgpu::PollType::Poll);
@@ -194,8 +234,11 @@ impl FrameTimer {
                         let tick = |at: usize| {
                             u64::from_le_bytes(view[at..at + 8].try_into().expect("8 bytes"))
                         };
-                        if let Some(ms) = ticks_to_ms(tick(0), tick(8), self.period_ns) {
-                            self.window.push(ms);
+                        if slot.generation == self.generation
+                            && let Some(delta) = tick(8).checked_sub(tick(0))
+                        {
+                            self.tick_gcd = gcd(self.tick_gcd, delta);
+                            self.window.push(ticks_to_ms(delta, self.period_ns));
                         }
                     }
                     slot.readback.unmap();
@@ -210,18 +253,28 @@ impl FrameTimer {
     }
 
     pub(crate) fn stats(&self) -> Option<GpuFrameStats> {
-        self.window.stats()
+        self.window.stats().map(|stats| GpuFrameStats {
+            dropped: self.dropped,
+            resolution_ns: self.tick_gcd as f64 * self.period_ns,
+            ..stats
+        })
     }
 
-    /// Empties the window; frames still in flight land in the next one.
+    /// Starts a new window: frames still in flight belong to the old generation and are dropped.
     pub(crate) fn reset(&mut self) {
         self.window.clear();
+        self.generation += 1;
+        self.dropped = 0;
+        self.tick_gcd = 0;
     }
 }
 
-/// `None` for a sample whose end precedes its start (a counter wrap or a driver glitch).
-fn ticks_to_ms(start: u64, end: u64, period_ns: f64) -> Option<f64> {
-    (end >= start).then(|| (end - start) as f64 * period_ns / 1e6)
+fn ticks_to_ms(delta: u64, period_ns: f64) -> f64 {
+    delta as f64 * period_ns / 1e6
+}
+
+fn gcd(a: u64, b: u64) -> u64 {
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 #[cfg(test)]

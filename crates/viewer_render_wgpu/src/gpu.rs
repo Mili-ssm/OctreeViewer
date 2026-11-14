@@ -957,6 +957,14 @@ impl<'window> SurfaceRenderer<'window> {
         self.frame_timer.as_ref().and_then(|timer| timer.stats())
     }
 
+    /// Turns the per-frame GPU timing on or off (off by default; no cost while off). A no-op
+    /// without `timestamp-query`.
+    pub fn set_gpu_frame_timing(&mut self, enabled: bool) {
+        if let Some(timer) = &mut self.frame_timer {
+            timer.set_enabled(enabled);
+        }
+    }
+
     /// Starts a new sampling window for `gpu_frame_stats`.
     pub fn reset_gpu_frame_stats(&mut self) {
         if let Some(timer) = &mut self.frame_timer {

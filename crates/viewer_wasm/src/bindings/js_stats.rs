@@ -162,6 +162,8 @@ impl WasmVoxelViewer {
                     ("p95", frame.p95_ms),
                     ("max", frame.max_ms),
                     ("samples", frame.samples as f64),
+                    ("dropped", frame.dropped as f64),
+                    ("resolutionNs", frame.resolution_ns),
                 ] {
                     js_sys::Reflect::set(&object, &name.into(), &JsValue::from_f64(value))?;
                 }
@@ -171,6 +173,14 @@ impl WasmVoxelViewer {
         };
         js_sys::Reflect::set(&stats, &"gpuFrameMs".into(), &frame_ms)?;
         Ok(stats.into())
+    }
+
+    /// Turns per-frame GPU timing on or off (off by default; needs `timestamp-query`).
+    #[wasm_bindgen(js_name = setGpuFrameTiming)]
+    pub fn set_gpu_frame_timing(&mut self, enabled: bool) {
+        if let Some(renderer) = self.gpu_renderer.as_mut() {
+            renderer.set_gpu_frame_timing(enabled);
+        }
     }
 
     /// Starts a new window for the `gpuFrameMs` percentiles.

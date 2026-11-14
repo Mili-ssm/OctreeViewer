@@ -161,6 +161,7 @@ try {
         if (name !== "fitted") await api("setCamera", { position: pose.position, target: pose.target });
         const poseStarted = name === "fitted" ? loadStarted : started;
         entry.poseApplied = true;
+        await api("setGpuFrameTiming", { enabled: true });
         await api("resetGpuFrameStats");
         let previous = null, previousSettled = null, reached = false, settledStreak = false, streak = null, last = null;
         const streaks = [];
@@ -246,7 +247,7 @@ if (report.error || report.poses.length < poseNames.length || report.poses.some(
 fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
 fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
 
-const gpuP95 = g => (g ? `${g.p95.toFixed(2)} ms (${g.samples} samples)` : "n/a (gpu n/a)");
+const gpuP95 = g => (g ? `${g.p95.toFixed(2)} ms (${g.samples} samples, ${g.dropped} dropped, resolution ${g.resolutionNs.toFixed(0)} ns)` : "n/a (gpu n/a)");
 const mib = bytes => (bytes === null || bytes === undefined ? "n/a" : `${(bytes / 1048576).toFixed(0)} MiB`);
 console.log(`dataset ${path.basename(input)} px ${targetPixels}${report.error ? ` ERROR ${report.error.split("\n")[0]}` : ""}`);
 for (const p of report.poses) {

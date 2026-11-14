@@ -43,49 +43,183 @@ fn clear_empties_the_window() {
 }
 
 #[test]
-fn ticks_convert_with_the_period_and_reject_reversed_pairs() {
-    assert_eq!(ticks_to_ms(1_000, 3_000, 500.0), Some(1.0));
-    assert_eq!(ticks_to_ms(3_000, 1_000, 500.0), None);
+fn ticks_convert_with_the_period() {
+    assert_eq!(ticks_to_ms(2_000, 500.0), 1.0);
 }
 
-/// Real GPU: frames bracketed on a device with `TIMESTAMP_QUERY` yield plausible samples. Skips
-/// where no adapter offers the feature (software rasterizers, most CI).
 #[test]
-fn bracketed_frames_produce_plausible_samples() {
+fn gcd_tracks_the_timer_resolution() {
+    let gcd_of = |values: &[u64]| values.iter().fold(0, |acc, &v| gcd(acc, v));
+    assert_eq!(gcd_of(&[]), 0);
+    assert_eq!(gcd_of(&[300_000, 500_000, 1_100_000]), 100_000);
+    assert_eq!(gcd_of(&[37, 41]), 1);
+}
+
+const HEAVY_SHADER: &str = "
+@group(0) @binding(0) var<storage, read_write> sink: array<f32>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    var x = f32(id.x) * 0.001;
+    for (var i = 0u; i < 20000u; i++) { x = fma(x, 1.0001, sin(x) * 0.5); }
+    sink[id.x % 64u] = x;
+}";
+
+struct Rig {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pipeline: wgpu::ComputePipeline,
+    bind_group: wgpu::BindGroup,
+}
+
+impl Rig {
+    /// A frame bracketed by `timer`; `heavy` adds a large compute dispatch inside it.
+    fn frame(&self, timer: &mut FrameTimer, heavy: bool, collect: bool) {
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let slot = timer.begin(&mut encoder);
+        if heavy {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.dispatch_workgroups(4096, 1, 1);
+        }
+        if let Some(slot) = slot {
+            timer.end(&mut encoder, slot);
+        }
+        self.queue.submit([encoder.finish()]);
+        if let Some(slot) = slot {
+            timer.submitted(slot);
+        }
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("poll");
+        if collect {
+            timer.collect(&self.device);
+        }
+    }
+}
+
+/// `None` (with the reason printed) when no real adapter offers `timestamp-query`.
+fn rig() -> Option<(Rig, FrameTimer)> {
     let instance = wgpu::Instance::default();
     let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
     let Some(adapter) = adapters.into_iter().find(|adapter| {
         adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY)
             && adapter.get_info().device_type != wgpu::DeviceType::Cpu
     }) else {
-        eprintln!("skipped: no adapter with timestamp-query");
-        return;
+        eprintln!("skipped: no real adapter offers timestamp-query");
+        return None;
     };
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("frame-timer-test"),
         required_features: wgpu::Features::TIMESTAMP_QUERY,
         ..Default::default()
     }))
-    .expect("device with timestamp-query");
-    let mut timer = FrameTimer::new(&device, &queue).expect("timer");
-    for _ in 0..20 {
-        let mut encoder = device.create_command_encoder(&Default::default());
-        let slot = timer.begin(&mut encoder);
-        if let Some(slot) = slot {
-            timer.end(&mut encoder, slot);
-        }
-        queue.submit([encoder.finish()]);
-        if let Some(slot) = slot {
-            timer.submitted(slot);
-        }
-        device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("poll");
-        timer.collect(&device);
+    .expect("an adapter that lists timestamp-query must give a device with it");
+    let timer = FrameTimer::new(&device, &queue).expect("timer");
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(HEAVY_SHADER.into()),
+    });
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let sink = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 256,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: sink.as_entire_binding(),
+        }],
+    });
+    Some((
+        Rig {
+            device,
+            queue,
+            pipeline,
+            bind_group,
+        },
+        timer,
+    ))
+}
+
+#[test]
+fn a_disabled_timer_samples_nothing() {
+    let Some((rig, mut timer)) = rig() else {
+        return;
+    };
+    for _ in 0..4 {
+        rig.frame(&mut timer, false, true);
     }
-    let stats = timer.stats().expect("samples");
-    assert!(stats.samples >= 10, "{stats:?}");
-    assert!(stats.p50_ms >= 0.0 && stats.max_ms < 1_000.0, "{stats:?}");
-    timer.reset();
     assert_eq!(timer.stats(), None);
+}
+
+#[test]
+fn heavy_frames_measure_longer_than_empty_ones() {
+    let Some((rig, mut timer)) = rig() else {
+        return;
+    };
+    timer.set_enabled(true);
+    for _ in 0..16 {
+        rig.frame(&mut timer, false, true);
+    }
+    let empty = timer
+        .stats()
+        .expect("samples on an adapter with the feature");
+    assert!(empty.samples >= 8 && empty.max_ms < 1_000.0, "{empty:?}");
+    assert!(empty.resolution_ns > 0.0, "{empty:?}");
+    timer.reset();
+    for _ in 0..16 {
+        rig.frame(&mut timer, true, true);
+    }
+    let heavy = timer.stats().expect("samples");
+    assert!(heavy.samples >= 8, "{heavy:?}");
+    assert!(
+        heavy.p50_ms > empty.p50_ms * 5.0 && heavy.p50_ms > 0.05,
+        "empty {empty:?} heavy {heavy:?}"
+    );
+}
+
+#[test]
+fn frames_in_flight_at_a_reset_are_dropped_not_counted() {
+    let Some((rig, mut timer)) = rig() else {
+        return;
+    };
+    timer.set_enabled(true);
+    for _ in 0..3 {
+        rig.frame(&mut timer, false, false);
+    }
+    timer.reset();
+    timer.collect(&rig.device);
+    assert_eq!(timer.stats(), None, "old-generation samples leaked");
+    rig.frame(&mut timer, false, true);
+    assert_eq!(timer.stats().expect("new sample").samples, 1);
+}
+
+#[test]
+fn a_full_ring_drops_frames_and_counts_them() {
+    let Some((rig, mut timer)) = rig() else {
+        return;
+    };
+    timer.set_enabled(true);
+    for _ in 0..RING_SLOTS + 3 {
+        rig.frame(&mut timer, false, false);
+    }
+    timer.collect(&rig.device);
+    let stats = timer.stats().expect("the sampled frames");
+    assert_eq!(stats.samples, RING_SLOTS);
+    assert_eq!(stats.dropped, 3);
+    timer.reset();
+    rig.frame(&mut timer, false, true);
+    assert_eq!(timer.stats().expect("sample").dropped, 0);
 }
