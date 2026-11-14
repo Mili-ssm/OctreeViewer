@@ -1066,9 +1066,11 @@ impl LodDataset {
         }
         // Blocks that are decoded but wait for their cells are not read again. The ancestor whose
         // own ancestors all have cells waits for its blocks before anything else: its
-        // descendants cannot be built without it, and it is built the moment it is read. Reads
-        // alternate with the selection's, so a chain block that cannot stay cached cannot starve
-        // the blocks in view.
+        // descendants cannot be built without it, and it is built the moment it is read. In the
+        // one-block sync step, reads alternate with the selection's, so a chain block that cannot
+        // stay cached cannot starve the blocks in view. The async order puts the chain first
+        // instead (alternating cancels reads in flight): a chain block that cannot stay cached
+        // would keep its read slot there.
         let top_blocks: Vec<BlockId> = {
             let hierarchy = self.metadata.hierarchy();
             let mut blocks: Vec<BlockId> = candidates

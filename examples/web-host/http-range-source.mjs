@@ -352,7 +352,7 @@ const MAX_READS = 64;
 /**
  * Concurrent LOD reads for a source spec (block reads and page reads are each limited to it): a remote
  * `{ url, remoteReads? }` takes `remoteReads`, capped at 64, or `DEFAULT_REMOTE_READS` when it is below 1
- * or not numeric; anything else (a local `Blob`) keeps `DEFAULT_LOCAL_READS`.
+ * or not a finite number; anything else (a local `Blob`) keeps `DEFAULT_LOCAL_READS`.
  */
 export function readConcurrency(spec) {
   if (typeof spec?.url !== "string" || typeof spec.slice === "function") return DEFAULT_LOCAL_READS;

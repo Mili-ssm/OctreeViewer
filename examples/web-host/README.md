@@ -96,7 +96,7 @@ Two tuning options travel with the remote source descriptor (`{ url, maxGap?, re
 the demo URL: `&maxGap=BYTES` merges reads of the same tick separated by up to that many bytes into one
 request (default `0`: only touching ranges; the over-read is counted as `gapBytes` in `remote`), and
 `&remoteReads=N` sets the concurrent LOD reads for that source: up to N block reads plus up to N
-hierarchy page reads, each counted apart (default `8`; values below 1 or not numeric use the default,
+hierarchy page reads, each counted apart (default `8`; values below 1 or not a finite number use the default,
 values above 64 are capped; local `Blob`s always use `4`). D2 measurements on RED-REF (Majadas and Belvedere v7.5): 8 reads cut the time to reached
 by 14-25 % against 4 with no frame regression, 16 adds bytes without further gain, and gap merging
 (16-256 KiB) changed neither requests nor time (the reads are rarely near each other), so `maxGap`
