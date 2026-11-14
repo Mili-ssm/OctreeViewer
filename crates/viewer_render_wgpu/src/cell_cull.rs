@@ -23,20 +23,40 @@
 //! is what makes the test conservative. `hzb.rs` scales its pyramid differently and is not reused.
 //!
 //! # Depth margin
-//! Unit: `u = 2^-24`, the spacing of f32 depths just below 1.0; the margin is absolute (NDC
-//! 0..1 units). A box is occluded only if the nearest depth of its eight corners is greater than
-//! the maximum Hi-Z depth over its screen rectangle plus [`DEPTH_MARGIN`] = 8 u. The test computes
-//! the corners with the same `view_proj * vec4(corner, 1)` as the vertex stage, so what is left
-//! are the roundings the rasterizer applies when it interpolates `z / w` over a triangle
-//! (undefined by the WebGPU spec) and the contraction (`fma`) choices of separately compiled
-//! shaders. They cannot be bounded analytically, so the margin comes from a measurement:
-//! `depth_margin_covers_the_measured_interpolation_error` runs a compute shader with the same
-//! `cell_clip` and `cell_corner` to get each cell's nearest corner depth, renders 2100 cells with
-//! unique colours from 30 real orbit-camera poses (oblique faces, cells near the eye and near the
-//! far plane; most pixels are deeper than 0.999) and records, per pixel, how far its depth falls
-//! below the nearest corner depth of the cell it shows. The margin must be at least twice the
-//! worst value (the same error again for the corner depth the occlusion shader computes), on
-//! every adapter. RADV and llvmpipe measure 2 u, so 8 u keeps a factor 2 on top of the required 2×.
+//! Unit: `u = 2^-24` (unit roundoff of f32 and spacing of depths just below 1.0); the margin is
+//! absolute (NDC 0..1 units). A box is occluded only if the nearest depth of its eight corners
+//! exceeds the maximum Hi-Z depth over its screen rectangle plus
+//! `u * (MARGIN_RHO_U * rho + MARGIN_BASE_U)`, where `rho = max over corners of |corner| / w` is
+//! computed in the shader (the test is skipped above [`RHO_MAX`]). It is sound if no fragment of
+//! any cell inside the box is nearer than `nearest - margin`; [`depth_error_bound_u`] is the
+//! derivation, [`MARGIN_RHO_U`] and [`MARGIN_BASE_U`] a linear upper bound of it.
+//!
+//! Derivation (`d = z_clip / w`, `p` the eye-relative corner, `rho = |p| / w >= 1`):
+//! 1. `z_clip` and `w` are 4-term sums over the f32 matrix `M = proj * view` (eye at the origin,
+//!    so the translation column is zero). Any evaluation order or contraction (`fma`) rounds each
+//!    term at most four times: error <= `4u * (sum |m_i p_i| + |m_b|)`.
+//! 2. The view rows are unit vectors, so `sum |m_wi p_i| <= |p|`; with `a = f / (f - n)` the
+//!    depth row gives `T_z <= a (|p| + b')` and `b' = n f / (f - n) <= a w` (`w >= n` because the
+//!    test requires `z >= 0`). `OrbitCamera::clip_distances` keeps `f >= 2n`, so `a <= 2`.
+//!    The error of `d` is then `E_c <= 4u (a (rho + 1) + rho) * kappa`, `kappa >= 1` absorbing the
+//!    perturbation of the denominator (< 2 % for `rho <= RHO_MAX`).
+//! 3. The nearest computed corner depth of the box and the vertex-stage depth of a corner of a
+//!    cell inside the box (the page pass tests the page box, whose corners are not the cell's)
+//!    both sit within `E_c` of the exact depth, which is monotone along every box edge, so the
+//!    exact minimum over the box is attained at a corner and bounds all of its points. `rho` is
+//!    quasi-convex (`|p| <= c w` is a convex cone), so its maximum over the box is at a corner
+//!    too. The two clip evaluations cost `2 E_c`.
+//! 4. The shader's division adds at most 2.5 ulp (WGSL specification, "Floating Point
+//!    Accuracy"; Vulkan "Precision and Operation of SPIR-V Instructions", `OpFDiv`), and the sum
+//!    `h + margin` rounds by up to `u` when the result reaches 1.
+//! 5. The fixed-function stages (the hardware `z / w`, snapping to the sub-pixel grid and the
+//!    interpolation across the triangle) are not specified by WebGPU or Vulkan (Rasterization,
+//!    "Basic Polygon Rasterization"); [`RASTER_U`] is an assumption, twice the 2.00 u measured on
+//!    RADV and llvmpipe by `depth_error_stays_within_the_derived_bound_at_worst_case_poses`, which also
+//!    checks the bound on the GPU at far, grazing and eye-near poses. Depth32Float stores the
+//!    fragment depth unquantized, so the Hi-Z holds it exactly.
+//!
+//! At `rho = 1` the bound is about 48 u, growing about 25 u per unit of `rho`.
 //!
 //! The screen rectangle is the bounding box of the projected corners, widened by half a pixel
 //! (pixel centres) and [`RECT_SLACK`] pixels (the rasterizer snaps vertices to a sub-pixel grid).
@@ -47,9 +67,45 @@
 //! `CellRenderer::invalidate_viewport` (resize and `Outdated`). Like the visibility bits it is only
 //! derived state: after a lost device the whole renderer is recreated and both start empty.
 
-/// Extra absolute depth the nearest corner must exceed the Hi-Z maximum by: 8 u with `u = 2^-24`. See the module documentation; `depth_margin_covers_the_measured_interpolation_error`
-/// enforces it.
-pub(crate) const DEPTH_MARGIN: f32 = 8.0 / (1 << 24) as f32;
+/// Unit of the depth margin, `u = 2^-24`.
+pub(crate) const DEPTH_UNIT: f64 = 1.0 / (1 << 24) as f64;
+/// Roundings a term of a 4-term clip-space sum can suffer under any order or contraction.
+#[cfg(test)]
+pub(crate) const CLIP_ROUNDINGS: f64 = 4.0;
+/// Upper bound of `a = f / (f - n)`: the camera keeps `f >= 2n`.
+#[cfg(test)]
+pub(crate) const PROJECTION_A_MAX: f64 = 2.0;
+/// ULPs of one division of the occlusion shader.
+#[cfg(test)]
+pub(crate) const DIVISION_ULPS: f64 = 2.5;
+/// Assumed error of the fixed-function stages, in `u`: twice the measured 2.00 u.
+#[cfg(test)]
+pub(crate) const RASTER_U: f64 = 4.0;
+/// Rounding of `h + margin` when the sum reaches 1, in `u`.
+#[cfg(test)]
+pub(crate) const SUM_U: f64 = 1.0;
+/// Largest `rho = |corner| / w` the test accepts; beyond it the box is never occluded.
+pub(crate) const RHO_MAX: f64 = 65536.0;
+/// Linear upper bound of [`depth_error_bound_u`] over `1 <= rho <= RHO_MAX`: slope and offset, in `u`.
+pub(crate) const MARGIN_RHO_U: f64 = 25.0;
+pub(crate) const MARGIN_BASE_U: f64 = 24.0;
+
+/// Depth error that must stay below the margin, in `u`, for a box whose corners have
+/// `|corner| / w <= rho`. See the module documentation for the derivation.
+#[cfg(test)]
+pub(crate) fn depth_error_bound_u(rho: f64) -> f64 {
+    let perturbation = 1.0 + f64::powi(2.0, -22);
+    let kappa = perturbation / (1.0 - CLIP_ROUNDINGS * rho * perturbation * DEPTH_UNIT);
+    let clip = CLIP_ROUNDINGS * (PROJECTION_A_MAX * (rho + 1.0) + rho) * kappa;
+    2.0 * clip + DIVISION_ULPS + RASTER_U + SUM_U
+}
+
+/// The margin the shader applies, in `u`.
+#[cfg(test)]
+pub(crate) fn depth_margin_u(rho: f64) -> f64 {
+    MARGIN_RHO_U * rho + MARGIN_BASE_U
+}
+
 /// Pixels the rectangle of a box grows on every side beyond the half pixel of the pixel centres.
 pub(crate) const RECT_SLACK: f32 = 0.0625;
 
@@ -98,31 +154,39 @@ pub(crate) fn clear_page_bits(
 
 /// WGSL of the occlusion test; it needs `CELL_PAGES_WGSL` and the common frame code before it.
 pub(crate) fn occlusion_wgsl() -> String {
+    let unit = DEPTH_UNIT as f32;
     format!(
         r"
 @group(3) @binding(0) var hiz: texture_2d<f32>;
 
-const DEPTH_MARGIN: f32 = {DEPTH_MARGIN:e};
+const DEPTH_UNIT: f32 = {unit:e};
+const MARGIN_RHO_U: f32 = {MARGIN_RHO_U:e};
+const MARGIN_BASE_U: f32 = {MARGIN_BASE_U:e};
+const RHO_MAX: f32 = {RHO_MAX:e};
 const RECT_SLACK: f32 = {RECT_SLACK:e};
 
 // True only if every pixel the box [lo, hi] can touch already holds something nearer than its
 // nearest corner (see the module documentation of `cell_cull.rs`).
 fn cell_occluded(lo: vec3<f32>, hi: vec3<f32>) -> bool {{
     var nearest = 3.0e38;
+    var rho = 0.0;
     var pmin = vec2<f32>(3.0e38);
     var pmax = vec2<f32>(-3.0e38);
     for (var i = 0u; i < 8u; i++) {{
-        let q = cell_clip(cell_corner(lo, hi, i));
+        let corner = cell_corner(lo, hi, i);
+        let q = cell_clip(corner);
         // Written so that a NaN fails the test and takes the not-occluded exit.
         if !(q.w > 1.0e-30) || !(q.z >= 0.0) {{ return false; }}
         let ndc = q.xyz / q.w;
         if !(abs(ndc.x) <= 3.0e38 && abs(ndc.y) <= 3.0e38 && ndc.z <= 3.0e38) {{ return false; }}
         nearest = min(nearest, ndc.z);
+        rho = max(rho, length(corner) / q.w);
         let px = vec2<f32>(
             (ndc.x * 0.5 + 0.5) * frame.viewport.x, (0.5 - ndc.y * 0.5) * frame.viewport.y);
         pmin = min(pmin, px);
         pmax = max(pmax, px);
     }}
+    if !(rho <= RHO_MAX) {{ return false; }}
     let limit = frame.viewport + vec2<f32>(2.0);
     let low = vec2<i32>(floor(clamp(pmin - vec2<f32>(0.5 + RECT_SLACK), vec2<f32>(-2.0), limit)));
     let high = vec2<i32>(floor(clamp(pmax - vec2<f32>(0.5 - RECT_SLACK), vec2<f32>(-2.0), limit)));
@@ -147,7 +211,7 @@ fn cell_occluded(lo: vec3<f32>, hi: vec3<f32>) -> bool {{
     h = max(h, textureLoad(hiz, vec2<i32>(b2.x, a2.y), l).r);
     h = max(h, textureLoad(hiz, vec2<i32>(a2.x, b2.y), l).r);
     h = max(h, textureLoad(hiz, vec2<i32>(b2.x, b2.y), l).r);
-    return nearest > h + DEPTH_MARGIN;
+    return nearest > h + DEPTH_UNIT * (MARGIN_RHO_U * rho + MARGIN_BASE_U);
 }}
 "
     )

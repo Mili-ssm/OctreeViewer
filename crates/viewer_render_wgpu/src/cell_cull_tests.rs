@@ -8,7 +8,8 @@
 
 use super::*;
 use crate::cell_cull::{
-    DEPTH_MARGIN, HiZ, HiZBuilder, RECT_SLACK, hiz_shader_sources, level_size, mip_count,
+    HiZ, HiZBuilder, MARGIN_BASE_U, MARGIN_RHO_U, RECT_SLACK, RHO_MAX, depth_error_bound_u,
+    depth_margin_u, hiz_shader_sources, level_size, mip_count,
 };
 
 const DEPTH_READ_WGSL: &str = "
@@ -937,15 +938,52 @@ fn spaced_boxes(scene: &Scene, placed: &[Placed], eye: [f64; 3]) -> Vec<(u32, [f
     out
 }
 
+/// `max |corner| / w` over the eight corners of a box, the `rho` of the margin derivation, from the
+/// f32 matrix evaluated in f64.
+fn box_rho(matrix: &[[f32; 4]; 4], lo: [f32; 3], hi: [f32; 3]) -> f64 {
+    (0..8)
+        .map(|corner| {
+            let p: [f64; 3] = std::array::from_fn(|a| {
+                f64::from(if corner >> a & 1 == 1 { hi[a] } else { lo[a] })
+            });
+            let w: f64 = (0..3).map(|a| f64::from(matrix[a][3]) * p[a]).sum();
+            (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt() / w
+        })
+        .fold(0.0, f64::max)
+}
+
+/// The shader's margin is a sound bound at every `rho` it accepts: the linear form is never below
+/// the derived error bound, and the bound starts near 48 u.
+#[test]
+fn depth_margin_dominates_the_derived_bound() {
+    let mut rho = 1.0;
+    while rho <= RHO_MAX {
+        let (bound, margin) = (depth_error_bound_u(rho), depth_margin_u(rho));
+        assert!(
+            bound <= margin,
+            "rho {rho}: bound {bound} u > margin {margin} u"
+        );
+        assert!(
+            margin - bound < 0.1 * margin,
+            "rho {rho}: margin {margin} u is loose"
+        );
+        rho *= 1.07;
+    }
+    assert!((depth_error_bound_u(1.0) - 48.0).abs() < 1.0);
+    assert_eq!((MARGIN_RHO_U, MARGIN_BASE_U), (25.0, 24.0));
+}
+
 /// How far a rasterized fragment falls below the nearest corner depth of its own cell, where the
 /// corner depths come from the shader's `cell_clip` run on the GPU (the quantity the occlusion test
 /// relies on: a pixel of the cell is never nearer than its nearest corner, up to this error).
 /// Absolute NDC depth, in units of u = 2^-24, over 2100 cells seen from 30 real camera poses
-/// (random orbit and zoom, so oblique faces, cells near the eye and near the far plane). Every
-/// pixel names its cell by its unique colour. The margin must be at least twice the worst value:
-/// the same error again for the corner depth the occlusion shader computes.
+/// (random orbit and zoom, so oblique faces, cells near the eye and near the far plane) and from
+/// worst-case poses: far away (eye-relative coordinates up to 1e3 times the scene, depths against
+/// the far plane), grazing (the pitch clamp) and next to the cells. Every pixel names its cell by
+/// its unique colour. The error of each pixel must stay within `depth_error_bound_u` at the `rho`
+/// of its cell, so no visible cell can be culled by the margin.
 #[test]
-fn depth_margin_covers_the_measured_interpolation_error() {
+fn depth_error_stays_within_the_derived_bound_at_worst_case_poses() {
     let ulp = 2.0_f64.powi(-24);
     let mut overall = f64::MIN;
     let mut adapters = Vec::new();
@@ -980,9 +1018,26 @@ fn depth_margin_covers_the_measured_interpolation_error() {
         let (mut worst, mut compared, mut near_one, mut deepest) =
             (f64::MIN, 0_usize, 0_usize, 0.0_f32);
         let mut camera = orbit_camera();
-        for _ in 0..30 {
-            assert!(camera.orbit(unit(&mut rng), (unit(&mut rng) - 0.5) * 0.3));
-            assert!(camera.zoom((unit(&mut rng) - 0.5) * 3.0));
+        let mut worst_slack = f64::MAX;
+        let mut max_rho = 0.0_f64;
+        // Worst-case poses after the random ones: (orbit x, orbit y, zoom).
+        let extreme = [
+            (0.1, 1.0, 6.0),
+            (0.37, -1.0, 7.0),
+            (0.6, 1.0, -3.0),
+            (0.2, 0.05, 9.0),
+            (0.8, -1.0, -3.0),
+            (0.45, 0.02, -2.0),
+        ];
+        for pose in 0..30 + extreme.len() {
+            if let Some((x, y, zoom)) = pose.checked_sub(30).map(|i| extreme[i]) {
+                camera = orbit_camera();
+                assert!(camera.orbit(x, y));
+                assert!(camera.zoom(zoom));
+            } else {
+                assert!(camera.orbit(unit(&mut rng), (unit(&mut rng) - 0.5) * 0.3));
+                assert!(camera.zoom((unit(&mut rng) - 0.5) * 3.0));
+            }
             let matrix = matrix_of(&camera, size);
             let boxes = spaced_boxes(&scene, &placed, camera.position());
             let flat: Vec<[f32; 4]> = boxes
@@ -1056,8 +1111,10 @@ fn depth_margin_covers_the_measured_interpolation_error() {
             h.queue.submit([encoder.finish()]);
             let corner: Vec<f32> = bytemuck::pod_collect_to_vec(&read_buffer(h, &out));
             let mut by_key = vec![2.0_f32; 2500];
-            for ((key, _, _), depth) in boxes.iter().zip(&corner) {
+            let mut rho_of = vec![0.0_f64; 2500];
+            for ((key, lo, hi), depth) in boxes.iter().zip(&corner) {
                 by_key[*key as usize] = *depth;
+                rho_of[*key as usize] = box_rho(&matrix, *lo, *hi);
             }
             pool.set_active_pages(&entries(&scene, &placed, camera.position()))
                 .unwrap();
@@ -1083,14 +1140,28 @@ fn depth_margin_covers_the_measured_interpolation_error() {
                 compared += 1;
                 near_one += usize::from(*depth > 0.999);
                 deepest = deepest.max(*depth);
-                worst = worst.max((f64::from(nearest_corner) - f64::from(*depth)) / ulp);
+                let error = (f64::from(nearest_corner) - f64::from(*depth)) / ulp;
+                worst = worst.max(error);
+                let rho = rho_of[(y * 50 + x) as usize];
+                max_rho = max_rho.max(rho);
+                worst_slack = worst_slack.min(depth_error_bound_u(rho) - error);
             }
         }
         println!(
             "# {}: worst nearer-than-nearest-corner {worst:.2} u over {compared} pixels \
-             ({near_one} deeper than 0.999, deepest {deepest}); margin {} u",
-            h.label,
-            f64::from(DEPTH_MARGIN) / ulp
+             ({near_one} deeper than 0.999, deepest {deepest}); smallest slack to the bound \
+             {worst_slack:.2} u, largest rho {max_rho:.2}",
+            h.label
+        );
+        assert!(
+            worst_slack > 0.0,
+            "{}: a fragment is nearer than the derived bound allows",
+            h.label
+        );
+        assert!(
+            max_rho > 8.0,
+            "{}: no worst-case pose reached rho > 8",
+            h.label
         );
         assert!(
             compared > 20_000,
@@ -1106,11 +1177,7 @@ fn depth_margin_covers_the_measured_interpolation_error() {
         adapters.push(h.label.clone());
         true
     });
-    assert!(
-        f64::from(DEPTH_MARGIN) / ulp >= 2.0 * overall,
-        "DEPTH_MARGIN {} u is less than twice the worst measured error {overall:.2} u ({adapters:?})",
-        f64::from(DEPTH_MARGIN) / ulp
-    );
+    println!("# worst measured error {overall:.2} u on {adapters:?}");
 }
 
 // ---------------------------------------------------------------------------------------------
