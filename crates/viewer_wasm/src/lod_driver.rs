@@ -421,7 +421,7 @@ mod tests {
 
     /// Runs frames of the ladder the way the drivers do (`next_lod_stage` after each rung, no
     /// pending blocks) and returns the rungs in the order they were drawn.
-    fn drawn_rungs(target: f64, target_ready: bool) -> Vec<f64> {
+    fn drawn_rungs(target: f64, target_ready: bool, retry_coarse: bool) -> Vec<f64> {
         let mut stage = None;
         let mut drawn = Vec::new();
         for _ in 0..8 {
@@ -429,7 +429,7 @@ mod tests {
                 &mut (),
                 &mut stage,
                 target,
-                true,
+                retry_coarse,
                 |_| Ok(target_ready),
                 |_, rung, stage_pixels| {
                     drawn.push(rung);
@@ -448,13 +448,21 @@ mod tests {
     /// frame, instead of waiting for the target's cut.
     #[test]
     fn fixed_mode_draws_a_coarse_rung_before_the_target() {
-        assert_eq!(drawn_rungs(2.0, false), [16.0, 8.0, 4.0, 2.0]);
-        assert_eq!(drawn_rungs(0.5, false), [16.0, 8.0, 4.0, 2.0, 1.0, 0.5]);
+        // `true` is the CPU path (`update_lod_view`), `false` the cells path (`plan_cells_staged`).
+        for retry_coarse in [true, false] {
+            assert_eq!(drawn_rungs(2.0, false, retry_coarse), [16.0, 8.0, 4.0, 2.0]);
+            assert_eq!(
+                drawn_rungs(0.5, false, retry_coarse),
+                [16.0, 8.0, 4.0, 2.0, 1.0, 0.5]
+            );
+        }
     }
 
     /// A target whose cut is already built is drawn straight away (nothing coarser to show).
     #[test]
     fn a_resident_target_cut_is_drawn_first() {
-        assert_eq!(drawn_rungs(2.0, true), [2.0]);
+        for retry_coarse in [true, false] {
+            assert_eq!(drawn_rungs(2.0, true, retry_coarse), [2.0]);
+        }
     }
 }

@@ -482,8 +482,11 @@ function openUrlFromQuery() {
 function handleWorkerMessage(event) {
     if (event.currentTarget !== worker) return;
     const { data } = event;
-    if (data.type === "ready") {
+    if (data.type === "pxMode") {
+        pxMode.value = data.mode;
+    } else if (data.type === "ready") {
         ready = true;
+        pxMode.disabled = false;
         fileInput.disabled = false;
         attributesFileInput.disabled = false;
         sampleButton.disabled = false;

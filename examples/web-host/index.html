@@ -277,7 +277,7 @@
                 aria-describedby="voxel-pixels-help" disabled />
             <small id="voxel-pixels-help">Sets the finest projected voxel edge to try. The scene starts with coarse voxels and refines toward this value; if a finer step exceeds the render budget, the last complete scene stays visible. Cells share an aligned grid; gaps remain where the scan has no samples.</small>
             <label for="px-mode">Detail mode</label>
-            <select id="px-mode" aria-describedby="px-mode-help">
+            <select id="px-mode" aria-describedby="px-mode-help" disabled>
                 <option value="fixed">Fixed · target above</option>
                 <option value="dynamic">Dynamic · follows frame time</option>
             </select>

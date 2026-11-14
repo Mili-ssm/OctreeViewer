@@ -243,15 +243,15 @@ function samplePointCloud() {
 }
 
 // RF-06/RF-07 px modes. "fixed" (default) uses the host's target; "dynamic" lets the controller
-// (px-controller.mjs) pick it from GPU frame time (or frame intervals) in 1 s windows. Not a
-// Fixed mode has no controller, so tickPxController returns at once and nothing changes.
+// (px-controller.mjs) pick it from GPU frame time (or frame intervals) in 1 s windows. Fixed mode
+// has no controller, so tickPxController returns at once and nothing changes.
 const PX_MIN_SAMPLES = 5;
 const PX_IDLE_GAP_MS = 500; // a longer gap between frames is an idle scene, not a slow frame
 let pxMode = "fixed";
 let pxController = null;
 let fixedTargetPx = 4;
-let pxTimerEnabledByMode = false;
-let pxWindow = { startMs: 0, lastFrameMs: null, intervals: [] };
+let hostGpuTiming = false; // the host asked for the GPU timer itself; dynamic mode must not turn that off
+let pxWindow = { startMs: 0, lastFrameMs: null, intervals: [], dirty: false };
 
 function pxStats() {
     return {
@@ -264,24 +264,35 @@ function pxStats() {
 
 function setPxMode(mode, now = performance.now()) {
     if (mode !== "fixed" && mode !== "dynamic") throw new TypeError("pxMode must be 'fixed' or 'dynamic'");
+    if (!viewer) throw new Error("the viewer is not ready: choose the px mode after init");
     if (mode === pxMode) return;
     pxMode = mode;
     if (mode === "dynamic") {
         fixedTargetPx = targetVoxelPixels;
         pxController = createPxController({ initialPx: targetVoxelPixels, startMs: now });
         viewer.setGpuFrameTiming(true);
-        pxTimerEnabledByMode = true;
-        viewer.resetGpuFrameStats();
-        pxWindow = { startMs: now, lastFrameMs: null, intervals: [] };
+        restartPxWindow(now);
         targetVoxelPixels = pxController.targetPx;
     } else {
         pxController = null;
-        if (pxTimerEnabledByMode) viewer.setGpuFrameTiming(false);
-        pxTimerEnabledByMode = false;
+        if (!hostGpuTiming) viewer.setGpuFrameTiming(false);
         targetVoxelPixels = fixedTargetPx;
     }
+    self.postMessage({ type: "pxMode", mode });
     advanceSceneGeneration();
     requestLodUpdate();
+}
+
+function restartPxWindow(now) {
+    viewer.resetGpuFrameStats();
+    pxWindow = { startMs: now, lastFrameMs: null, intervals: [], dirty: false };
+}
+
+// A new dataset keeps the chosen mode and rung but starts a fresh window, streak and dwell.
+function restartPxController(now) {
+    if (!pxController) return;
+    pxController = createPxController({ initialPx: pxController.targetPx, startMs: now });
+    restartPxWindow(now);
 }
 
 // The target a load or refine asks for, unless the dynamic controller owns it.
@@ -299,7 +310,17 @@ function percentile95(values) {
 function tickPxController(now) {
     if (!pxController) return;
     const { lastFrameMs, intervals } = pxWindow;
-    if (lastFrameMs !== null && now - lastFrameMs <= PX_IDLE_GAP_MS) intervals.push(now - lastFrameMs);
+    // Frames drawn while the ladder is still on coarser rungs than the target say nothing about the
+    // target's cost, and neither do samples from before an idle gap: start the window over.
+    const lod = currentLodStats();
+    const settled = !lod || !(lod.lodStagePixels > targetVoxelPixels);
+    const idle = lastFrameMs !== null && now - lastFrameMs > PX_IDLE_GAP_MS;
+    if (!settled || idle) {
+        pxWindow = { startMs: now, lastFrameMs: now, intervals: [], dirty: true };
+        return;
+    }
+    if (pxWindow.dirty) restartPxWindow(now);
+    if (lastFrameMs !== null) intervals.push(now - lastFrameMs);
     pxWindow.lastFrameMs = now;
     if (now - pxWindow.startMs < PX_WINDOW_MS) return;
     const gpu = viewer.gpuStats()?.gpuFrameMs;
@@ -307,8 +328,8 @@ function tickPxController(now) {
         gpuP95Ms: gpu && gpu.samples >= PX_MIN_SAMPLES && Number.isFinite(gpu.p95) ? gpu.p95 : null,
         intervalP95Ms: intervals.length >= PX_MIN_SAMPLES ? percentile95(intervals) : null,
     });
-    viewer.resetGpuFrameStats();
-    pxWindow = { startMs: now, lastFrameMs: now, intervals: [] };
+    restartPxWindow(now);
+    pxWindow.lastFrameMs = now;
     if (next !== null) {
         targetVoxelPixels = next;
         advanceSceneGeneration();
@@ -803,6 +824,7 @@ function startBuiltDataset(data, requestId = null) {
     cellsStuckFrames = 0;
     targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
+    restartPxController(datasetOpenedAt);
     currentColorMode = "rgb";
     confirmedColorMode = "rgb";
     buildAttributeRange = null;
@@ -1048,6 +1070,7 @@ function startAsyncDataset(data, requestId = null) {
     asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
     targetVoxelPixels = requestedTargetPixels(data.targetVoxelPixels);
     datasetOpenedAt = performance.now();
+    restartPxController(datasetOpenedAt);
     currentColorMode = "rgb";
     asyncFormatReader = null;
     asyncHasAttributes = false;
@@ -1192,7 +1215,8 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                         value = pxStats();
                         break;
                     case "setGpuFrameTiming":
-                        viewer.setGpuFrameTiming(Boolean(data.enabled));
+                        hostGpuTiming = Boolean(data.enabled);
+                        viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
                         value = true;
                         break;
                     case "resetGpuFrameStats":

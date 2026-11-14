@@ -8,7 +8,7 @@ import { WINDOW_MS, createPxController } from "../px-controller.mjs";
 const source = (await readFile(new URL("../viewer-worker.js", import.meta.url), "utf8"))
     .replace(/^import .*\n/gm, "");
 
-async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null) {
+async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), AsyncFormatReader = null, { skipInit = false } = {}) {
     const messages = [];
     let receive;
     let now = 0;
@@ -23,6 +23,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
     const timing = [];
     const updateLodCalls = [];
     let gpuFrameMs = null;
+    let holdStage = null; // while set, updateLod leaves the ladder on this coarse rung
     let lod = makeLod(targetVoxelPixels, targetVoxelPixels);
     const performance = { now: () => now };
     const viewer = {
@@ -66,7 +67,7 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         updateLod(pixels) {
             updateLodCalls.push(pixels);
             targetVoxelPixels = pixels;
-            if (colorMode !== "intensity") lod = makeLod(pixels, pixels);
+            if (colorMode !== "intensity") lod = makeLod(holdStage ?? pixels, pixels);
             return lod;
         },
         lodStats: () => lod,
@@ -219,13 +220,16 @@ async function runWorker(wasmMemory = new WebAssembly.Memory({ initial: 1 }), As
         await new Promise(setImmediate);
         await new Promise(setImmediate);
     }
-    await send("init", {
-        canvas: {}, width: 1, height: 1, colorMode: "rgb", depthShading: false,
-    });
+    if (!skipInit) {
+        await send("init", {
+            canvas: {}, width: 1, height: 1, colorMode: "rgb", depthShading: false,
+        });
+    }
     return {
         messages,
         send,
         setNow(value) { now = value; },
+        holdStage(stage) { holdStage = stage; lod = makeLod(stage ?? targetVoxelPixels, targetVoxelPixels); },
         setGpuFrameMs(p95, samples = 60) { gpuFrameMs = p95 === null ? null : { p95, samples }; },
         timing,
         updateLodCalls,
@@ -747,4 +751,51 @@ test("an invalid pxMode is rejected", async () => {
     const worker = await openedDynamicWorker();
     await worker.send("pxMode", { mode: "auto" });
     assert.match(worker.messages.at(-1).message, /pxMode must be/);
+});
+
+test("frames on coarse rungs do not count toward a step until the ladder reaches the target", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(25);
+    worker.holdStage(16);
+    let t = await drawFrames(worker, 0, 100, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 4, "5 s of overload on unsettled frames: no step");
+    worker.holdStage(null);
+    t = await drawFrames(worker, t, 60, 50);
+    assert.equal(worker.updateLodCalls.at(-1), 8, "settled, the overload counts");
+});
+
+test("a window that spans an idle gap is discarded", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(25);
+    let t = await drawFrames(worker, 0, 10, 50);
+    t = await drawFrames(worker, t + 5000, 5, 50); // idle, then resumes: the old window is dropped
+    assert.equal(worker.updateLodCalls.at(-1), 4);
+});
+
+test("dynamic mode leaves a host-enabled GPU timer on when going back to fixed", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("api", { operation: "setGpuFrameTiming", enabled: true, requestId: 5 });
+    await worker.send("pxMode", { mode: "dynamic" });
+    await worker.send("pxMode", { mode: "fixed" });
+    assert.equal(worker.timing.filter(value => value === false).length, 0);
+});
+
+test("choosing dynamic before the viewer exists is rejected and the mode stays fixed", async () => {
+    const worker = await runWorker(undefined, null, { skipInit: true });
+    await worker.send("pxMode", { mode: "dynamic" });
+    assert.match(worker.messages.at(-1).message, /not ready/);
+});
+
+test("a new dataset keeps the mode and restarts the window and dwell", async () => {
+    const worker = await openedDynamicWorker();
+    await worker.send("pxMode", { mode: "dynamic" });
+    worker.setGpuFrameMs(25);
+    let t = await drawFrames(worker, 0, 15, 50);
+    await worker.send("openFile", { file: { name: "b.oct", size: 8 }, cacheBytes: 1024, targetVoxelPixels: 4 });
+    await worker.send("api", { operation: "getStats", requestId: 7 });
+    const px = worker.messages.find(message => message.requestId === 7).value.px;
+    assert.equal(px.mode, "dynamic");
+    assert.equal(px.signalSource, null, "the last window's signal is gone");
 });
