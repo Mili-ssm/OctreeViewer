@@ -99,10 +99,10 @@ and `&remoteReads=N` sets the concurrent LOD reads for that source: up to N bloc
 hierarchy page reads, each counted apart (default `8`; values below 1 or not a finite number use the
 default, values above 64 are capped; local `Blob`s always use `4`). D2 measurements on RED-REF
 (Majadas and Belvedere v7.5, CPU path): 8 reads cut the median time to reached by 15-30 % against 4
-with no frame regression, 16 adds bytes without further gain, and gap merging (16-256 KiB) saved at
-most 3 of 31 requests for up to 6 % more bytes without changing the time, so `maxGap` stays `0`
-(record `docs/records/benchmarks/D2_GAP_CONCURRENCY_14-11-2026.md`). `probe-orbit-load.mjs --remote`
-takes `--max-gap=` and `--remote-reads=`.
+with no frame regression, 16 gives no further gain (and more bytes on Belvedere), and gap merging
+(16-256 KiB) saved at most 3 of 31 requests for up to 6 % more bytes without changing the time, so
+`maxGap` stays `0` (record `docs/records/benchmarks/D2_GAP_CONCURRENCY_14-11-2026.md`).
+`probe-orbit-load.mjs --remote` takes `--max-gap=` and `--remote-reads=`.
 
 To measure with the RED-REF network (100 Mbit/s, 50 ms RTT), serve the repository root (for example
 `python3 -m http.server 8767`) and run `node examples/web-host/probe-remote-open.mjs DATA_DIR NAME.oct OUT.json`;

@@ -2,8 +2,8 @@
 
 **Estado: implementado; 8 lecturas concurrentes por defecto en fuentes remotas, `maxGap` sigue en 0.**
 Con RED-REF, pasar de 4 a 8 lecturas concurrentes reduce la mediana del tiempo hasta alcanzar el
-objetivo entre un 15 y un 30 % en la ruta CPU, sin empeorar los frames. 16 lecturas no mejoran más y
-descargan más bytes. Unir lecturas separadas por huecos (16–256 KiB) ahorra como mucho 3 de 31
+objetivo entre un 15 y un 30 % en la ruta CPU, sin empeorar los frames. 16 lecturas no mejoran más; en
+Belvedere descargan más bytes. Unir lecturas separadas por huecos (16–256 KiB) ahorra como mucho 3 de 31
 peticiones, a cambio de hasta un 6 % más de bytes, y no cambia el tiempo. En la ruta de celdas, la
 concurrencia no influye: Belvedere tarda lo mismo con 4 que con 8 lecturas.
 
@@ -33,8 +33,8 @@ pose encuadrada; mediana de 2 rondas intercaladas × 4 valores de `maxGap` (8 ej
 - **Variación:** los tiempos de Majadas se agrupan en dos valores separados por unos 250 ms (~5 RTT),
   así que una mediana de 8 ejecuciones es la cifra útil, no la diferencia entre dos.
 - **`maxGap` con 8 lecturas:** en Majadas a 1 px pasa de 31 a 29 GET con 16 y 64 KiB (+0,7 % de
-  bytes) y a 28 GET con 256 KiB (+5,8 %); el tiempo queda dentro del ruido. En Majadas a 4 px no cambia
-  nada; en Belvedere el número de GET varía entre ejecuciones más que entre valores de `maxGap`.
+  bytes) y a 28 GET con 256 KiB (+5,8 %); el tiempo queda dentro del ruido. En Majadas a 4 px no cambian
+  los GET ni los bytes; en Belvedere el número de GET varía entre ejecuciones más que entre valores de `maxGap`.
 - **RQ-01 en la órbita de 10 s:** intervalo entre frames p95 ≤ 18,1 ms y máximo ≤ 31,3 ms en todos
   los casos (Belvedere CPU a 4 px y Majadas a 1 px, con 4, 8 y 16 lecturas).
 - **Celdas frente a CPU en Belvedere remoto:** 1,7 s frente a 3,2 s con 8 lecturas. La ruta de celdas
