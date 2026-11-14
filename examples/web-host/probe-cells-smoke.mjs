@@ -15,7 +15,7 @@
 // Also records time to reached,
 // RetainedPrevious streaks (samples every ~100 ms), forgotten nodes over a rest window (the camera
 // is redrawn every sample, so a forget/rebuild loop would show), frame interval/render-call percentiles
-// during arrival and the rest window, GTT delta over the idle baseline, console and page errors.
+// during arrival and the rest window, GPU frame time (timestamp queries; the viewer's gpuFrameMs, reset per phase), GTT delta over the idle baseline, console and page errors.
 // Not a unit test and not part of scripts/check.sh.
 import fs from "node:fs";
 import path from "node:path";
@@ -101,7 +101,9 @@ const report = { schemaVersion: 1, probe: "probe-cells-smoke", startedAt: new Da
     targetPixels, timeoutMs, restMs, gttBaselineBytes: gttBaseline, gttAvailable: gttBaseline !== null, consoleMessages, poses: [] };
 const instance = await chromium.launch({
     executablePath: CHROME_BIN, headless: true,
-    args: ["--headless=new", "--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-angle=vulkan"],
+    // allow_unsafe_apis + developer features expose `timestamp-query` to WebGPU without quantizing it (R3-Q31).
+    args: ["--headless=new", "--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-angle=vulkan",
+        "--enable-dawn-features=allow_unsafe_apis", "--enable-webgpu-developer-features"],
 });
 let gttPeak = gttBaseline;
 const gttNow = () => { const v = readGtt(); if (v !== null && (gttPeak === null || v > gttPeak)) gttPeak = v; return v; };
@@ -119,6 +121,8 @@ try {
     const evalJson = async expression => JSON.parse(await evaluate(`(async () => JSON.stringify(await (${expression}),
         (key, value) => ArrayBuffer.isView(value) ? Array.from(value) : value))()`));
     const api = (op, extra) => evalJson(`window.__renderBench.apiCall(${JSON.stringify(op)}${extra ? `, ${JSON.stringify(extra)}` : ""})`);
+    // GPU time per frame (timestamp queries, R3-Q31) over the window since the last reset; null if unsupported.
+    const gpuFrameMs = async () => (await api("getStats"))?.gpu?.gpuFrameMs ?? null;
     const lodStats = async () => (await api("getStats"))?.lod ?? {};
     await page.goto(url.href, { waitUntil: "load" });
     const readyUntil = Date.now() + 120_000;
@@ -157,6 +161,7 @@ try {
         if (name !== "fitted") await api("setCamera", { position: pose.position, target: pose.target });
         const poseStarted = name === "fitted" ? loadStarted : started;
         entry.poseApplied = true;
+        await api("resetGpuFrameStats");
         let previous = null, previousSettled = null, reached = false, settledStreak = false, streak = null, last = null;
         const streaks = [];
         let samples = 0, retainedSamples = 0, lastTrace = 0;
@@ -194,6 +199,7 @@ try {
         entry.reached = reached;
         entry.settled = false;
         entry.timeToReachedMs = reached ? reachedAt - poseStarted : null;
+        entry.arrivalGpuFrameMs = await gpuFrameMs();
         entry.arrivalFrames = await evalJson(`window.__renderBench.summarize(${poseStarted}, ${reachedAt})`);
         entry.retained = {
             samples: retainedSamples, of: samples, streaks: streaks.length,
@@ -203,6 +209,7 @@ try {
         entry.gttAtReachedDeltaBytes = delta(gttNow());
         if (reached || settledStreak) {
             // The rest window keeps waking the render loop on purpose: forgetting only shows when frames run.
+            await api("resetGpuFrameStats");
             const forgottenBefore = last.cellsForgottenTotal ?? 0;
             const restStarted = Date.now();
             let restLod = last;
@@ -218,6 +225,7 @@ try {
                 stillAtRest: (reached ? reachedNow : settledNow)(restLod, samePose(pose, await api("getCamera"))),
                 frames: await evalJson(`window.__renderBench.summarize(${restStarted}, ${Date.now()})`),
                 gttDeltaBytes: delta(gttNow()),
+                gpuFrameMs: await gpuFrameMs(),
             };
             entry.statsAtRestEnd = statsOf(restLod);
             entry.settled = entry.rest.stillAtRest && entry.rest.forgottenDelta === 0;
@@ -238,12 +246,14 @@ if (report.error || report.poses.length < poseNames.length || report.poses.some(
 fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
 fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
 
+const gpuP95 = g => (g ? `${g.p95.toFixed(2)} ms (${g.samples} samples)` : "n/a (gpu n/a)");
 const mib = bytes => (bytes === null || bytes === undefined ? "n/a" : `${(bytes / 1048576).toFixed(0)} MiB`);
 console.log(`dataset ${path.basename(input)} px ${targetPixels}${report.error ? ` ERROR ${report.error.split("\n")[0]}` : ""}`);
 for (const p of report.poses) {
     console.log(`${p.label}: reached ${p.reached}, settled ${p.settled}${p.timeToReachedMs !== null ? ` in ${p.timeToReachedMs} ms` : ""}, retained ${p.retained.streaks} streaks `
         + `(${p.retained.totalMs} ms, longest ${Math.max(0, ...p.retained.durationsMs)} ms), forgotten at rest ${p.rest?.forgottenDelta ?? "n/a"}, `
         + `frame p95 arrival ${p.arrivalFrames?.intervalMs?.p95 ?? "n/a"} / rest ${p.rest?.frames?.intervalMs?.p95 ?? "n/a"} ms, `
-        + `render-call p95 ${p.arrivalFrames?.renderCallMs?.p95 ?? "n/a"} / ${p.rest?.frames?.renderCallMs?.p95 ?? "n/a"} ms, GTT +${mib(p.rest?.gttDeltaBytes ?? p.gttAtReachedDeltaBytes)}`);
+        + `render-call p95 ${p.arrivalFrames?.renderCallMs?.p95 ?? "n/a"} / ${p.rest?.frames?.renderCallMs?.p95 ?? "n/a"} ms, GTT +${mib(p.rest?.gttDeltaBytes ?? p.gttAtReachedDeltaBytes)}, `
+        + `gpu p95 arrival ${gpuP95(p.arrivalGpuFrameMs)} / rest ${gpuP95(p.rest?.gpuFrameMs)}`);
 }
 console.log(`GTT baseline ${mib(gttBaseline)}, peak +${mib(report.gttPeakDeltaBytes)}; console messages ${consoleMessages.length}`);

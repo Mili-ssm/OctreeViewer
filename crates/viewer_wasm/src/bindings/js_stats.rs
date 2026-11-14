@@ -153,7 +153,32 @@ impl WasmVoxelViewer {
             )?;
         }
         js_sys::Reflect::set(&stats, &"requestedResources".into(), &memory)?;
+        // GPU time per frame from timestamp queries (R3-Q31); null without the feature or samples.
+        let frame_ms = match renderer.gpu_frame_stats() {
+            Some(frame) => {
+                let object = js_sys::Object::new();
+                for (name, value) in [
+                    ("p50", frame.p50_ms),
+                    ("p95", frame.p95_ms),
+                    ("max", frame.max_ms),
+                    ("samples", frame.samples as f64),
+                ] {
+                    js_sys::Reflect::set(&object, &name.into(), &JsValue::from_f64(value))?;
+                }
+                object.into()
+            }
+            None => JsValue::NULL,
+        };
+        js_sys::Reflect::set(&stats, &"gpuFrameMs".into(), &frame_ms)?;
         Ok(stats.into())
+    }
+
+    /// Starts a new window for the `gpuFrameMs` percentiles.
+    #[wasm_bindgen(js_name = resetGpuFrameStats)]
+    pub fn reset_gpu_frame_stats(&mut self) {
+        if let Some(renderer) = self.gpu_renderer.as_mut() {
+            renderer.reset_gpu_frame_stats();
+        }
     }
 }
 

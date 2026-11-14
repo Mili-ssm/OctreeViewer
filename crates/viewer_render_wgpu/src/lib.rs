@@ -20,6 +20,7 @@ mod cell_pool;
 mod cell_render;
 #[cfg(test)]
 mod cell_render_tests;
+mod frame_timer;
 mod gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
@@ -60,6 +61,7 @@ pub use cell_pool::{
     POOL_PAGE_BYTES, PageUpload, PoolConfig, PoolCounters, PoolNode, usable_pages,
 };
 pub use cell_render::{CellLimitMode, CellPoolError, MASK_WORDS};
+pub use frame_timer::GpuFrameStats;
 pub use gpu::{BlockUploadStats, FrameStatus, GpuRendererError, GpuResourceStats, SurfaceRenderer};
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,

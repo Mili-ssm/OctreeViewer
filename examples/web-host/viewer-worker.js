@@ -1102,6 +1102,10 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                     case "getStats":
                         value = { lod: currentLodStats(), gpu: viewer.gpuStats(), viewer: viewer.stats(), memory: memoryStats() };
                         break;
+                    case "resetGpuFrameStats":
+                        viewer.resetGpuFrameStats();
+                        value = true;
+                        break;
                     case "moveCamera":
                         advanceSceneGeneration();
                         value = viewer.moveCamera(data.x, data.y, data.z);

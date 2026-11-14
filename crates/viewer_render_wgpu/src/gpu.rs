@@ -327,6 +327,7 @@ pub struct SurfaceRenderer<'window> {
     hzb_scene_opaque: bool,
     hzb_count_readback: Option<wgpu::Buffer>,
     hzb_count_receiver: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
+    frame_timer: Option<crate::frame_timer::FrameTimer>,
     /// Limits of the CPU path: `downlevel_defaults` with the adapter's resolution. Every CPU size
     /// and HZB decision uses these, not the (possibly raised) limits of the device.
     cpu_limits: wgpu::Limits,
@@ -390,7 +391,8 @@ impl<'window> SurfaceRenderer<'window> {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("octree-viewer-device"),
-                required_features: wgpu::Features::empty(),
+                // Frame timing is optional: never fail device creation without it.
+                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
                 required_limits: limits.required_limits,
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 ..Default::default()
@@ -457,6 +459,7 @@ impl<'window> SurfaceRenderer<'window> {
             })
         });
         surface.configure(&device, &surface_config);
+        let frame_timer = crate::frame_timer::FrameTimer::new(&device, &queue);
 
         Ok(Self {
             adapter_info: adapter.get_info(),
@@ -472,6 +475,7 @@ impl<'window> SurfaceRenderer<'window> {
             hzb_scene_opaque: false,
             hzb_count_readback,
             hzb_count_receiver: None,
+            frame_timer,
             cpu_limits: device_limits,
             cell_pool_pages,
             cell_pool_budget_bytes: config.cell_pool_budget_bytes,
@@ -944,6 +948,19 @@ impl<'window> SurfaceRenderer<'window> {
                 self.hzb_count_receiver = None;
             }
             Err(mpsc::TryRecvError::Empty) => {}
+        }
+    }
+
+    /// Percentiles of the GPU time per frame over the last samples; `None` when the device has no
+    /// `timestamp-query` or nothing was sampled yet.
+    pub fn gpu_frame_stats(&self) -> Option<crate::GpuFrameStats> {
+        self.frame_timer.as_ref().and_then(|timer| timer.stats())
+    }
+
+    /// Starts a new sampling window for `gpu_frame_stats`.
+    pub fn reset_gpu_frame_stats(&mut self) {
+        if let Some(timer) = &mut self.frame_timer {
+            timer.reset();
         }
     }
 
@@ -1427,6 +1444,9 @@ impl<'window> SurfaceRenderer<'window> {
     /// Presents a frame with the current camera.
     pub fn render(&mut self) -> Result<FrameStatus, GpuRendererError> {
         self.update_hzb_visible_count();
+        if let Some(timer) = &mut self.frame_timer {
+            timer.collect(&self.device);
+        }
         if self.suspended {
             return Ok(FrameStatus::Suspended);
         }
@@ -1517,6 +1537,10 @@ impl<'window> SurfaceRenderer<'window> {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("octree-viewer-frame"),
             });
+        let timer_slot = self
+            .frame_timer
+            .as_mut()
+            .and_then(|timer| timer.begin(&mut encoder));
         if use_cells && let Some(pool) = &mut self.cell_pool {
             pool.encode_cells(
                 &mut encoder,
@@ -1614,7 +1638,13 @@ impl<'window> SurfaceRenderer<'window> {
                 size_of::<u32>() as u64,
             );
         }
+        if let (Some(timer), Some(slot)) = (&self.frame_timer, timer_slot) {
+            timer.end(&mut encoder, slot);
+        }
         self.queue.submit([encoder.finish()]);
+        if let (Some(timer), Some(slot)) = (&mut self.frame_timer, timer_slot) {
+            timer.submitted(slot);
+        }
         if use_hzb
             && self.hzb_count_receiver.is_none()
             && let Some(readback) = &self.hzb_count_readback
