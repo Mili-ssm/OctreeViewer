@@ -114,6 +114,8 @@ pub(crate) struct FakeGpu {
     /// The next `set_node_mask` fails once. The fake keeps its state (slots, masks) as a live
     /// renderer would, until `drop_pool`.
     pub(crate) fail_next_mask: bool,
+    /// Pages rewritten in place over the same page (recolours).
+    pub(crate) rewrites: usize,
     /// The last page table and the frame it came with.
     pub(crate) table: Vec<(u32, PageEntry)>,
     pub(crate) page_frame: Option<PageFrame>,
@@ -160,10 +162,16 @@ impl CellTarget for FakeGpu {
             color_gen: 0,
         };
         for (info, slot) in level.pages.iter().zip(page_slots) {
+            let page = usize::from(info.box_max[0]);
+            // A recolour rewrites the page its slot already holds: the queue orders the write
+            // after the draws already submitted, so it is not a hazard.
+            if self.owner.get(slot) == Some(&(key, page)) {
+                self.rewrites += 1;
+                continue;
+            }
             assert!(!self.owner.contains_key(slot), "slot {slot} is still owned");
             // A part of a level carries its own pages: the index is the one `fake_level` wrote.
-            self.owner
-                .insert(*slot, (key, usize::from(info.box_max[0])));
+            self.owner.insert(*slot, (key, page));
             self.frame_writes.push(*slot);
         }
         Ok(())

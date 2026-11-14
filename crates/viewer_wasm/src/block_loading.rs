@@ -55,10 +55,19 @@ pub(crate) fn load_render_block<E: std::fmt::Display>(
 pub(crate) fn load_cell_block<E: std::fmt::Display>(
     reader: &mut dyn OctreeReader<Error = E>,
     id: BlockId,
+    paint: Option<crate::cells_glue::CellPaint>,
 ) -> Result<PointBlock, String> {
-    let geometry = reader
+    let mut geometry = reader
         .read_geometry(id)
         .map_err(|error| error.to_string())?;
+    // An attribute colour mode paints the points before the cells are built from them (R3-Q33).
+    if let Some(((index, component), range)) = paint {
+        let column = reader
+            .read_attribute(id, index)
+            .map_err(|e| e.to_string())?;
+        geometry = viewer_render_wgpu::colorize_attribute(geometry, &column, component, range)
+            .map_err(str::to_owned)?;
+    }
     let mut attributes = Vec::new();
     if reader.has_attributes() {
         for name in ["intensity", "classification"] {
@@ -315,7 +324,7 @@ mod tests {
     #[test]
     fn cell_blocks_read_intensity_and_class_for_three_decoded_bytes_per_point() {
         let mut reader = MemoryReader::new();
-        let block = load_cell_block(&mut reader, BlockId::new(7)).unwrap();
+        let block = load_cell_block(&mut reader, BlockId::new(7), None).unwrap();
         assert_eq!(reader.calls, ["xyz", "rgb", "intensity", "classification"]);
         let names: Vec<_> = block
             .attributes()
@@ -338,7 +347,7 @@ mod tests {
         // Without a companion file the cells keep RGB and have no columns.
         let mut reader = MemoryReader::new();
         reader.attributes_available = false;
-        let block = load_cell_block(&mut reader, BlockId::new(7)).unwrap();
+        let block = load_cell_block(&mut reader, BlockId::new(7), None).unwrap();
         assert!(block.attributes().is_empty());
     }
 
@@ -378,7 +387,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let mut reader = MemoryReader::new();
-        let with_columns = packed(load_cell_block(&mut reader, BlockId::new(7)).unwrap());
+        let with_columns = packed(load_cell_block(&mut reader, BlockId::new(7), None).unwrap());
         assert!(!with_columns.is_empty());
         assert!(with_columns.iter().all(|word| *word == (150, 2)));
         // What the CPU path's RGB read gave the cells before: no intensity, no class.

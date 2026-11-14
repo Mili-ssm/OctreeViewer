@@ -628,6 +628,9 @@ struct Level {
     last_used: u64,
     /// Last frame this level was in `active`; 0 when never.
     last_active: u64,
+    /// Recoloured data of a resident level (same cells, other colours): it is written over the
+    /// level's own page slots, so the level keeps drawing without a gap.
+    refresh: Option<Arc<PackedLevel>>,
 }
 
 impl Level {
@@ -856,6 +859,86 @@ impl CellPool {
             }
             _ => false,
         }
+    }
+
+    /// Replaces the data of a level with a recoloured copy of the same cells (colour generation
+    /// change, R3-Q33). Same page count is a precondition (`false` otherwise, nothing changes).
+    /// A level the pool does not hold needs nothing: it is requested from the new data. A level
+    /// not resident yet restarts its upload from the new data; a resident one keeps drawing the
+    /// old colours until the next frame writes the new ones over its page slots (see
+    /// `refresh_uploads`): the page table does not change, so no gap opens.
+    pub fn refresh_level(&mut self, key: LevelKey, level: impl Into<Arc<PackedLevel>>) -> bool {
+        let level = level.into();
+        let Some(entry) = self.levels.get_mut(&key) else {
+            return true;
+        };
+        if entry
+            .pages()
+            .is_some_and(|pages| pages != level.pages.len())
+        {
+            return false;
+        }
+        match &mut entry.state {
+            LevelState::Requested => {
+                if entry.data.is_some() {
+                    entry.data = Some(level);
+                }
+            }
+            LevelState::Uploading { pages_done, .. } => {
+                *pages_done = 0;
+                entry.data = Some(level);
+            }
+            LevelState::Resident { .. } => entry.refresh = Some(level),
+        }
+        true
+    }
+
+    /// Writes the pending recolours over the page slots of their resident levels, coarse to
+    /// fine and one node whole at a time (a node never draws old and new colours together). The
+    /// budget is checked before each node, so a node larger than what is left still goes in one
+    /// frame. Returns the pages written.
+    fn refresh_uploads(&mut self, budget: &mut usize, uploads: &mut Vec<PageUpload>) -> usize {
+        let mut nodes: Vec<(u8, NodeId)> = Vec::new();
+        for (key, level) in &self.levels {
+            if level.refresh.is_some() {
+                match nodes.iter_mut().find(|(_, id)| *id == key.node) {
+                    Some((depth, _)) => *depth = (*depth).min(key.depth),
+                    None => nodes.push((key.depth, key.node)),
+                }
+            }
+        }
+        nodes.sort();
+        let mut written = 0;
+        for (_, node) in nodes {
+            if *budget == 0 {
+                break;
+            }
+            let mut keys: Vec<LevelKey> = self
+                .levels
+                .iter()
+                .filter(|(key, level)| key.node == node && level.refresh.is_some())
+                .map(|(key, _)| *key)
+                .collect();
+            keys.sort();
+            for key in keys {
+                let level = self.levels.get_mut(&key).expect("level");
+                let (Some(data), LevelState::Resident { slots }) =
+                    (level.refresh.take(), &level.state)
+                else {
+                    continue;
+                };
+                let pages = data.pages.len();
+                uploads.push(PageUpload {
+                    key,
+                    slots: slots.clone(),
+                    page_range: 0..pages,
+                });
+                level.data = Some(data);
+                *budget = budget.saturating_sub(pages);
+                written += pages;
+            }
+        }
+        written
     }
 
     /// Exact page counts of the levels of `node` as `(depth, pages)`, known before any upload. The
@@ -2248,6 +2331,7 @@ impl CellPool {
                     data: None,
                     last_used: frame,
                     last_active: 0,
+                    refresh: None,
                 });
                 fetch_requests.push(key);
             }
@@ -2329,7 +2413,7 @@ impl CellPool {
         // Uploads, spread over frames, in the same order.
         let mut budget = (self.config.upload_budget_bytes / POOL_PAGE_BYTES).max(1) as usize;
         let mut uploads = Vec::new();
-        let mut uploaded_pages = 0_usize;
+        let mut uploaded_pages = self.refresh_uploads(&mut budget, &mut uploads);
         let next_free = self.pending_pages_by(frame + 1);
         let mut blocked = false;
         for (key, _) in &order {

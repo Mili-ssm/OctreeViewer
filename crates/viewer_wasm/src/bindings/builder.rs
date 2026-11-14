@@ -213,6 +213,14 @@ impl WasmSceneBuilder {
         }
         // R3-Q23: cells are RGB only; any other mode sends scenes again, RGB brings cells back.
         if let Some(cells) = self.cells.as_mut() {
+            // R3-Q33: a new attribute starts a new colour generation of the cells.
+            if core
+                .session_mut()
+                .dataset_mut()
+                .set_cell_paint(selection.attribute)
+            {
+                cells.recolored();
+            }
             let rgb = crate::cells_glue::cells_draw_mode(
                 self.cells_shader_modes,
                 selection.mode,
@@ -280,7 +288,11 @@ impl WasmSceneBuilder {
                 let before = snapshot_browser_read_stats(&browser_read_stats);
                 // Cells carry every column; the scenes of the CPU path read what their mode needs.
                 let loaded = if cells_active {
-                    crate::block_loading::load_cell_block(reader, block_id)
+                    crate::block_loading::load_cell_block(
+                        reader,
+                        block_id,
+                        selected_attribute.map(|attribute| (attribute, selected_range)),
+                    )
                 } else {
                     crate::block_loading::load_render_block(
                         reader,

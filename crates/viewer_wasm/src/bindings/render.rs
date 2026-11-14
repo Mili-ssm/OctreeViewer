@@ -60,6 +60,10 @@ impl WasmVoxelViewer {
                 dataset.clear_loaded_blocks();
                 // R3-Q23: cells are RGB only; RGB again re-enables them with the nodes kept.
                 if let Some(cells) = self.cells_local.as_mut() {
+                    // R3-Q33: a new attribute starts a new colour generation of the cells.
+                    if dataset.set_cell_paint(selected_attribute) {
+                        cells.mark_dirty();
+                    }
                     cells.set_active(
                         dataset,
                         crate::cells_glue::cells_draw_mode(

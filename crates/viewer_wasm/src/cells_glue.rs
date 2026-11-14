@@ -156,15 +156,19 @@ pub(crate) struct BuilderCells {
 }
 
 /// Whether the cells path draws a colour selection (R3-Q23, R3-Q32). Plain RGB always; the shader
-/// modes (intensity, elevation, classification) once the host opted in, because the cells carry
-/// their columns and a mode change only rewrites the shader uniform; `attribute:N:M` modes never
-/// (they need cells repainted, R3-Q33). Until the opt-in, any other mode takes the CPU path.
+/// modes (intensity, elevation, classification) and `attribute:N:M` once the host opted in: the
+/// cells carry their columns, so a shader mode only rewrites the uniform, and an attribute mode
+/// builds the cells again from painted blocks under a new colour generation (R3-Q33). Until the
+/// opt-in, any other mode takes the CPU path.
+/// An attribute `(schema index, component)` and its range, painted into the cells' blocks.
+pub(crate) type CellPaint = ((u32, u32), Option<[f64; 2]>);
+
 pub(crate) fn cells_draw_mode(
     shader_modes: bool,
     mode: viewer_render_wgpu::ColorMode,
     attribute: bool,
 ) -> bool {
-    !attribute && (shader_modes || mode == viewer_render_wgpu::ColorMode::Rgb)
+    shader_modes || (!attribute && mode == viewer_render_wgpu::ColorMode::Rgb)
 }
 
 impl BuilderCells {
@@ -207,6 +211,11 @@ impl BuilderCells {
             self.stage_pixels = None;
             self.dirty = true;
         }
+    }
+
+    /// The cells' colour generation changed: plan again so the nodes are built anew.
+    pub(crate) fn recolored(&mut self) {
+        self.dirty = true;
     }
 
     /// A block or a page arrived: another update may refine further.
@@ -845,6 +854,7 @@ impl InProcessCells {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_view<R, E, T>(
         &mut self,
+        paint: Option<CellPaint>,
         dataset: &mut LodDataset,
         view: &ViewProjection,
         target_pixels: f64,
@@ -862,7 +872,7 @@ impl InProcessCells {
         let can_load_blocks = reader.is_some() || has_async_reader;
         let mut load_block = |reader: &mut R, block_id| {
             read_hook(ReadPhase::Before);
-            let loaded = crate::block_loading::load_cell_block(reader, block_id).map(Some);
+            let loaded = crate::block_loading::load_cell_block(reader, block_id, paint).map(Some);
             read_hook(ReadPhase::After);
             loaded
         };

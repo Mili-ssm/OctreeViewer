@@ -1,6 +1,7 @@
 //! Task 10a1 pass criteria: the codec gives the same GPU bytes as packing directly, and malformed
 //! input is an error, never a panic; a repeated node of the same generation is ignored.
 
+use crate::cell_generation;
 use viewer_core::NodeId;
 
 use super::*;
@@ -220,18 +221,18 @@ fn a_repeated_node_of_the_same_generation_is_ignored() {
     let mut driver = new_driver();
     let node = pack(2, SHAPES[0]);
     assert_eq!(
-        driver.add_packed_generation(1, node.clone()),
+        driver.add_packed_generation(cell_generation(1, 0), node.clone()),
         Ok(NodeAdded::Stored { levels: 2 })
     );
     let bytes = driver.cpu_bytes();
     assert_eq!(
-        driver.add_packed_generation(1, node.clone()),
+        driver.add_packed_generation(cell_generation(1, 0), node.clone()),
         Ok(NodeAdded::AlreadyStored)
     );
     assert_eq!(driver.cpu_bytes(), bytes);
     // Another generation, or a node stored without one, is a Duplicate error and changes nothing.
     assert_eq!(
-        driver.add_packed_generation(2, node.clone()),
+        driver.add_packed_generation(cell_generation(2, 0), node.clone()),
         Err(NodeInputError::Duplicate(NodeId::new(2)))
     );
     let level = node.levels[0].clone();
@@ -249,7 +250,7 @@ fn a_repeated_node_of_the_same_generation_is_ignored() {
         .add_packed(NodeId::new(2), node.bounds, node.points, vec![level])
         .unwrap();
     assert_eq!(
-        other.add_packed_generation(1, node),
+        other.add_packed_generation(cell_generation(1, 0), node),
         Err(NodeInputError::Duplicate(NodeId::new(2)))
     );
     assert_eq!(driver.cpu_bytes(), bytes);

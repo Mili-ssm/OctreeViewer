@@ -1015,3 +1015,55 @@ fn leaf_level_coarser_than_the_octants_spans_them_all() {
     assert!((0..8).all(|o| level.octant_range(o) == (0..level.cells.len())));
     assert_eq!(crate::octant_ranges(level, 1), vec![0..level.cells.len()]);
 }
+
+#[test]
+fn painted_attribute_cells_equal_the_cpu_voxel_colour_of_the_same_painted_points() {
+    // R3-Q32/Q33: the cells path paints the points with the attribute and builds cells from
+    // them, as the CPU path does, so a cell's colour is the rounded mean of painted colours.
+    let values = vec![0.0_f64, 10.0, 3.0, 7.0];
+    let positions = [[1.0_f32; 3], [1.5; 3], [2.0; 3], [2.5; 3]];
+    let column = AttributeColumn::new(
+        AttributeDescriptor::new("height", AttributeDataType::F64, 1).unwrap(),
+        AttributeValues::F64(values),
+        4,
+    )
+    .unwrap();
+    let geometry = PointBatch::new(
+        positions
+            .iter()
+            .map(|position| Point::new(*position, ColorRgb::new(9, 9, 9)))
+            .collect(),
+    );
+    let painted = crate::colorize_attribute(geometry, &column, 0, Some([0.0, 10.0])).unwrap();
+    let blocks = [plain_block(painted.points().to_vec())];
+    let bounds = cube([0.0; 3], SIDE);
+    let project = |b: SpatialBounds| b.max()[0] - b.min()[0];
+    let mut cpu = crate::voxel_grid::VoxelSceneBuilder::new(bounds, [0.0; 3], 8.0, 100);
+    cpu.add_block(&blocks[0], &project).unwrap();
+    let scene = cpu.finish(&project);
+    let actual = &scene.scene.instances()[0];
+    let cells = PointNodeCellSource { min_growth: 1.0 }
+        .node_cells(&grid(), NodeId::new(1), bounds, None, false, &blocks)
+        .unwrap();
+    let cell = &cells.levels[0].cells[0];
+    assert_eq!(cell.count, 4);
+    let sum = blocks[0]
+        .points()
+        .points()
+        .iter()
+        .fold([0_u64; 3], |sum, p| {
+            [
+                sum[0] + u64::from(p.color.r),
+                sum[1] + u64::from(p.color.g),
+                sum[2] + u64::from(p.color.b),
+            ]
+        });
+    assert_eq!(cell.rgb_sum, sum);
+    let rgb = cell.rgb_sum.map(|s| ((s + 2) / 4) as u8);
+    assert_eq!(
+        actual.color,
+        ColorRgb::new(rgb[0], rgb[1], rgb[2]).to_linear_rgba()
+    );
+    // The painted colours are not the file's.
+    assert_ne!(rgb, [9, 9, 9]);
+}

@@ -170,6 +170,11 @@ pub struct NodeInput<'a> {
 pub enum NodeAdded {
     /// Stored; its non-empty levels are known to the pool.
     Stored { levels: usize },
+    /// The node was stored before with an older colour generation: its cells were replaced by
+    /// these, with the same geometry, and rewritten over the pool pages it already holds.
+    Recolored { levels: usize },
+    /// The message carries a colour generation older than one already seen: dropped.
+    Stale,
     /// The node was stored before by the same generation (`add_packed_generation`): the message
     /// was repeated, and nothing changed.
     AlreadyStored,
@@ -276,6 +281,26 @@ impl FrameReport {
     }
 }
 
+/// Bits of a cell generation that hold the colour generation; the dataset generation sits above
+/// them. One number keeps the wire format and stays exact as a JS number.
+const COLOR_BITS: u32 = 20;
+const COLOR_MASK: u64 = (1 << COLOR_BITS) - 1;
+
+/// The generation stamped on node messages: the dataset's build in the high bits and the colour
+/// generation in the low ones (R3-Q33). Cells painted with other colours get a larger one;
+/// the colour generation saturates, as it would take a million colour changes to reach it.
+pub fn cell_generation(dataset: u64, color: u32) -> u64 {
+    (dataset << COLOR_BITS) | u64::from(color).min(COLOR_MASK)
+}
+
+fn dataset_of(generation: u64) -> u64 {
+    generation >> COLOR_BITS
+}
+
+fn color_of(generation: u64) -> u64 {
+    generation & COLOR_MASK
+}
+
 struct StoredNode {
     pool: PoolNode,
     /// Ranges of all its levels, read once when it is stored.
@@ -310,6 +335,9 @@ pub struct CellDriver {
     /// Nodes the sender needs stored although no cut names them (ancestors of cut nodes still
     /// being built, R3-Q22): `forget` spares them. Replaced by every cut ([`CellDriver::set_support`]).
     support: HashSet<NodeId>,
+    /// The newest cell generation any message brought: a node of an older colour generation of
+    /// the same dataset is dropped, and one stored with an older one is forgotten first.
+    newest_generation: Option<u64>,
 }
 
 /// Bytes of a packed level on the CPU.
@@ -442,6 +470,7 @@ impl CellDriver {
             busy: false,
             arrived_since_cut: HashSet::new(),
             support: HashSet::new(),
+            newest_generation: None,
         }
     }
 
@@ -503,6 +532,11 @@ impl CellDriver {
     /// the pool with levels of the old build, so the caller replaces the driver
     /// (`driverReplaced`) instead. A repeat is assumed to carry the same content (the build is
     /// deterministic per generation) and is not compared.
+    ///
+    /// The generation is a [`cell_generation`]: the same dataset with a larger colour generation
+    /// replaces the stored node in place (R3-Q33: same cells, other colours, the pool rewrites
+    /// the pages it holds), and one with a smaller colour generation than already seen is
+    /// dropped ([`NodeAdded::Stale`]).
     pub fn add_packed_generation(
         &mut self,
         generation: u64,
@@ -525,12 +559,27 @@ impl CellDriver {
         points: u64,
         mut levels: Vec<PackedLevel>,
     ) -> Result<NodeAdded, NodeInputError> {
-        if let Some(stored) = self.nodes.get(&id) {
-            return if generation.is_some() && stored.generation == generation {
-                Ok(NodeAdded::AlreadyStored)
-            } else {
-                Err(NodeInputError::Duplicate(id))
-            };
+        let same_dataset = |other: Option<u64>| match (generation, other) {
+            (Some(a), Some(b)) => dataset_of(a) == dataset_of(b),
+            _ => false,
+        };
+        if let (Some(new), Some(newest)) = (generation, self.newest_generation)
+            && same_dataset(Some(newest))
+            && color_of(new) < color_of(newest)
+        {
+            return Ok(NodeAdded::Stale);
+        }
+        let stored_generation = self.nodes.get(&id).map(|stored| stored.generation);
+        if let Some(stored) = stored_generation {
+            let recolor = same_dataset(stored)
+                && matches!((generation, stored), (Some(new), Some(old)) if color_of(new) > color_of(old));
+            if !recolor {
+                return if generation.is_some() && stored == generation {
+                    Ok(NodeAdded::AlreadyStored)
+                } else {
+                    Err(NodeInputError::Duplicate(id))
+                };
+            }
         }
         levels.retain(|level| !level.pages.is_empty());
         levels.sort_by_key(|level| level.depth);
@@ -539,6 +588,10 @@ impl CellDriver {
         {
             return Err(NodeInputError::InvalidLevel(id));
         }
+        if stored_generation.is_some() {
+            return self.recolor_node(id, generation, levels);
+        }
+        self.newest_generation = self.newest_generation.max(generation);
         if levels.is_empty() {
             return Ok(NodeAdded::NoLevels);
         }
@@ -569,6 +622,46 @@ impl CellDriver {
         self.dirty = true;
         self.arrived_since_cut.insert(id);
         Ok(NodeAdded::Stored { levels: count })
+    }
+
+    /// Replaces the cells of a stored node with the same cells in other colours. The geometry
+    /// must be the same (same depths, same pages per depth): the pool keeps its slots and page
+    /// table and only rewrites the pages, so the node never leaves the image.
+    fn recolor_node(
+        &mut self,
+        id: NodeId,
+        generation: Option<u64>,
+        levels: Vec<PackedLevel>,
+    ) -> Result<NodeAdded, NodeInputError> {
+        let stored = &self.nodes[&id];
+        let same_shape = levels.len() == stored.levels.len()
+            && levels
+                .iter()
+                .zip(&stored.levels)
+                .all(|(new, old)| new.depth == old.depth && new.pages.len() == old.pages.len());
+        if !same_shape {
+            return Err(NodeInputError::InvalidLevel(id));
+        }
+        let bytes = levels.iter().map(level_bytes).sum::<u64>();
+        let count = levels.len();
+        let colors = CellColorRanges::of_levels(&self.config.grid, &levels);
+        let levels: Vec<Arc<PackedLevel>> = levels.into_iter().map(Arc::new).collect();
+        for level in &levels {
+            let refreshed = self
+                .pool
+                .refresh_level(self.pool.key(id, level.depth), Arc::clone(level));
+            debug_assert!(refreshed, "page counts were checked");
+        }
+        let stored = self.nodes.get_mut(&id).expect("stored");
+        self.cpu_bytes = self.cpu_bytes - stored.bytes + bytes;
+        stored.bytes = bytes;
+        stored.levels = levels;
+        stored.colors = colors;
+        stored.generation = generation;
+        self.newest_generation = self.newest_generation.max(generation);
+        self.dirty = true;
+        self.arrived_since_cut.insert(id);
+        Ok(NodeAdded::Recolored { levels: count })
     }
 
     /// Empties the pool and the bookkeeping of the target (device lost, or the renderer dropped
@@ -614,12 +707,12 @@ impl CellDriver {
         self.support.extend(nodes.iter().copied());
     }
 
-    /// A node stored with another generation than `generation` (or with none): the driver was
+    /// A node stored with another dataset generation than that of `generation` (or with none): the driver was
     /// filled by another dataset, so the caller must replace it (`driverReplaced`).
     pub fn foreign_node(&self, generation: u64) -> Option<NodeId> {
         self.nodes
             .iter()
-            .filter(|(_, node)| node.generation != Some(generation))
+            .filter(|(_, node)| node.generation.map(dataset_of) != Some(dataset_of(generation)))
             .map(|(id, _)| *id)
             .min()
     }
@@ -875,7 +968,10 @@ impl CellDriver {
                 + self.config.coordinate_origin[axis]
         });
         let in_cut: HashSet<NodeId> = cut.iter().copied().collect();
-        let mut candidates: Vec<(f64, NodeId)> = self
+        // Nodes of an older colour generation go first: they only stand in until recoloured.
+        let newest = self.newest_generation.map(color_of).unwrap_or(0);
+        let outdated = |node: &StoredNode| node.generation.is_some_and(|g| color_of(g) < newest);
+        let mut candidates: Vec<(bool, f64, NodeId)> = self
             .nodes
             .iter()
             .filter(|(id, node)| {
@@ -884,11 +980,11 @@ impl CellDriver {
                     && !self.arrived_since_cut.contains(id)
                     && !self.support.contains(id)
             })
-            .map(|(id, node)| (distance_to(eye, node.pool.bounds), *id))
+            .map(|(id, node)| (outdated(node), distance_to(eye, node.pool.bounds), *id))
             .collect();
-        candidates.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        candidates.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.total_cmp(&a.1)).then(a.2.cmp(&b.2)));
         let mut forgotten = Vec::new();
-        for (_, id) in candidates {
+        for (_, _, id) in candidates {
             if self.cpu_bytes <= self.config.cpu_budget_bytes {
                 break;
             }

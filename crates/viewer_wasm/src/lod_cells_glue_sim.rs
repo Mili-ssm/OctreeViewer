@@ -772,7 +772,8 @@ fn shader_colour_modes_keep_the_cells_and_the_pool() {
     let digest = pair.rest().expect("at rest");
     let _ = pair.viewer.take_messages();
     assert!(!cells_draw_mode(false, ColorMode::Intensity, false));
-    assert!(!cells_draw_mode(true, ColorMode::Rgb, true));
+    assert!(!cells_draw_mode(false, ColorMode::Rgb, true));
+    assert!(cells_draw_mode(true, ColorMode::Rgb, true));
     for mode in [
         ColorMode::Intensity,
         ColorMode::Elevation,

@@ -856,7 +856,11 @@ impl WasmVoxelViewer {
                 snapshot_browser_read_stats(&browser_read_stats),
             ),
         };
+        let paint = self
+            .selected_attribute
+            .map(|attribute| (attribute, self.selected_attribute_range));
         let result = cells.update_view(
+            paint,
             dataset,
             &view,
             target_voxel_pixels,

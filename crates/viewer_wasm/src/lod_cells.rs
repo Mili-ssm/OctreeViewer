@@ -235,6 +235,9 @@ struct BuiltNode {
     role: BuildRole,
     /// The node had been built before in this dataset.
     rebuild: bool,
+    /// The colour generation its cells were painted with. An older one than the dataset's is
+    /// still drawn by the driver until the node is built again (see [`CellState::has_cells`]).
+    color_gen: u32,
 }
 
 /// The CPU budget fit (ADR 0037) blocks admission above this share of the budget...
@@ -325,6 +328,13 @@ pub(super) struct CellState {
     /// Cuts sent after the last acknowledged epoch: the pool may draw them any moment.
     unacked: Vec<(u64, Vec<NodeId>)>,
     generation: u64,
+    /// R3-Q33: the colour generation of the cells and the attribute the blocks are painted with
+    /// (`None`: the file's RGB). Every change of the attribute starts a new colour generation;
+    /// nodes built with an older one are rebuilt, coarse to fine, by the same ladder that builds
+    /// a node that was never built, while the driver keeps drawing the old cells of the nodes
+    /// that were not rebuilt yet. The two never mix inside a node: the driver swaps a node whole.
+    color_gen: u32,
+    paint: Option<(u32, u32)>,
     /// The last block read was for an ancestor: the next read goes to the selection, so a block
     /// of the chain that cannot stay cached cannot starve the blocks in view.
     read_ancestor_last: bool,
@@ -347,6 +357,8 @@ impl Default for CellState {
             ack_epoch: 0,
             unacked: Vec::new(),
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
+            color_gen: 0,
+            paint: None,
             read_ancestor_last: false,
         }
     }
@@ -380,7 +392,19 @@ impl CellState {
             .sum()
     }
 
+    /// The node has cells of the current colour generation (or none to draw). A node with older
+    /// ones is a candidate to be built again: it counts as without cells for the build ladder,
+    /// and as with cells ([`CellState::has_drawable_cells`]) for the cut, so the cut never loses
+    /// a node because of a colour change.
     pub(super) fn has_cells(&self, node: NodeId) -> bool {
+        self.built
+            .get(&node)
+            .is_some_and(|built| built.color_gen == self.color_gen)
+            || self.empty.contains(&node)
+    }
+
+    /// The driver holds cells to draw for the node, of any colour generation.
+    pub(super) fn has_drawable_cells(&self, node: NodeId) -> bool {
         self.built.contains_key(&node) || self.empty.contains(&node)
     }
 
@@ -531,7 +555,26 @@ impl LodDataset {
 
     /// The generation stamped on the nodes this dataset sends.
     pub fn cell_generation(&self) -> u64 {
-        self.cells.generation
+        viewer_render_wgpu::cell_generation(self.cells.generation, self.cells.color_gen)
+    }
+
+    /// R3-Q33: the blocks of the cells path are painted with attribute `paint` (`None`: the
+    /// file's RGB). A change starts a new colour generation: the decoded blocks are dropped (they
+    /// carry the old paint) and every built node is built again, nearest the cut first. Returns
+    /// whether the paint changed.
+    pub fn set_cell_paint(&mut self, paint: Option<(u32, u32)>) -> bool {
+        if self.cells.paint == paint {
+            return false;
+        }
+        self.cells.paint = paint;
+        self.cells.color_gen = self.cells.color_gen.saturating_add(1);
+        self.clear_loaded_blocks();
+        true
+    }
+
+    /// The attribute the cells are painted with.
+    pub fn cell_paint(&self) -> Option<(u32, u32)> {
+        self.cells.paint
     }
 
     /// Epoch of the last cut sent.
@@ -554,9 +597,11 @@ impl LodDataset {
             .filter_map(|id| hierarchy.node(*id))
             .flat_map(|node| node.blocks().iter().copied())
             .filter(|block| {
-                self.block_owners
-                    .get(block)
-                    .is_none_or(|owners| owners.iter().all(|owner| self.cells.has_cells(*owner)))
+                self.block_owners.get(block).is_none_or(|owners| {
+                    owners
+                        .iter()
+                        .all(|owner| self.cells.has_drawable_cells(*owner))
+                })
             })
             .collect()
     }
@@ -722,7 +767,7 @@ impl LodDataset {
     /// reconciled (resending would be refused as `Duplicate` every update): the caller must
     /// replace it, as `driverReplaced` does across workers.
     pub(crate) fn reconcile_driver(&mut self, driver: &CellDriver) -> Result<(), LodDatasetError> {
-        if let Some(node) = driver.foreign_node(self.cells.generation) {
+        if let Some(node) = driver.foreign_node(self.cell_generation()) {
             return Err(LodDatasetError::CellDriver(format!(
                 "the driver holds {node:?} from another dataset generation: replace the driver"
             )));
@@ -823,6 +868,7 @@ impl LodDataset {
                 coarsest_pages,
                 role,
                 rebuild,
+                color_gen: self.cells.color_gen,
             },
         );
         Ok(Some(packed))
@@ -970,6 +1016,8 @@ impl LodDataset {
             std::hash::Hasher::finish(&hasher)
         };
         let (mut cpu_needed, mut gpu_needed) = (0, 0);
+        // The built nodes the budgets above already count.
+        let mut counted: HashSet<NodeId> = HashSet::new();
         let gpu_budget = config.gpu_pool_pages.map(viewer_render_wgpu::usable_pages);
         if config.cpu_budget_bytes.is_some() || gpu_budget.is_some() {
             // In-progress children count while blocked too: the driver keeps them until it is
@@ -983,6 +1031,7 @@ impl LodDataset {
                 .collect();
             let bytes = |built: &BuiltNode| built.bytes;
             let pages = |built: &BuiltNode| built.coarsest_pages;
+            counted = needed.clone();
             cpu_needed = self.cells.sum_over(&needed, bytes);
             gpu_needed = self.cells.sum_over(&needed, pages);
             let in_progress_cpu = self.cells.sum_over(&in_progress, bytes);
@@ -1031,12 +1080,32 @@ impl LodDataset {
             blocks.dedup();
             blocks
         };
-        let selection_blocks: Vec<BlockId> = initial_plan
+        // Nodes built again for a new colour generation have their blocks counted as resident by
+        // the plan (the old cells are drawable), so their blocks are asked for here: they were
+        // dropped with the old paint.
+        let recoloring = candidates
+            .iter()
+            .any(|c| self.cells.built.contains_key(&c.id));
+        let mut selection_blocks: Vec<BlockId> = initial_plan
             .pending_blocks()
             .iter()
             .copied()
             .filter(|block| !self.cache.contains(*block))
             .collect();
+        if recoloring {
+            // Only those whose ancestors have their new cells: parents come first.
+            let hierarchy = self.metadata.hierarchy();
+            selection_blocks.extend(
+                candidates
+                    .iter()
+                    .filter(|c| self.ancestors_without_cells(c.id).is_empty())
+                    .filter_map(|c| hierarchy.node(c.id))
+                    .flat_map(|node| node.blocks().iter().copied())
+                    .filter(|block| !self.cache.contains(*block)),
+            );
+            selection_blocks.sort();
+            selection_blocks.dedup();
+        }
         let read_ancestors = !top_blocks.is_empty()
             && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
         let to_read = if self.cells.cpu_blocked || self.cells.gpu_blocked {
@@ -1073,7 +1142,10 @@ impl LodDataset {
         let build_started = WorkClock::start();
         let mut built_nodes: Vec<NodeId> = Vec::new();
         let mut new_nodes: Vec<(u64, PackedNode)> = Vec::new();
-        let generation = self.cells.generation;
+        let generation = self.cell_generation();
+        // What the driver holds for the nodes built below, to give back when a build is taken
+        // back: a node of an older colour generation is still drawn.
+        let mut previous: HashMap<NodeId, BuiltNode> = HashMap::new();
         while built_nodes.len() < config.max_node_builds
             && !(self.cells.cpu_blocked || self.cells.gpu_blocked)
         {
@@ -1084,21 +1156,32 @@ impl LodDataset {
             else {
                 break;
             };
+            if let Some(before) = self.cells.built.get(&id) {
+                previous.insert(id, *before);
+            }
             match self.build_node_cells(id) {
                 Ok(packed) => {
+                    // A node built again replaces its own bytes in the budgets.
+                    let (old_bytes, old_pages) = previous
+                        .get(&id)
+                        .filter(|_| counted.contains(&id))
+                        .map_or((0, 0), |built| (built.bytes, built.coarsest_pages));
                     let bytes = self.cells.built.get(&id).map_or(0, |built| built.bytes);
                     let pages = self
                         .cells
                         .built
                         .get(&id)
                         .map_or(0, |built| built.coarsest_pages);
-                    let cpu_over = config
-                        .cpu_budget_bytes
-                        .is_some_and(|b| cpu_needed + bytes > share(b, CPU_ADMIT_PERCENT));
-                    let gpu_over = gpu_budget
-                        .is_some_and(|b| gpu_needed + pages > share(b, GPU_ADMIT_PERCENT));
+                    let cpu_over = config.cpu_budget_bytes.is_some_and(|b| {
+                        cpu_needed + bytes - old_bytes.min(bytes) > share(b, CPU_ADMIT_PERCENT)
+                    });
+                    let gpu_over = gpu_budget.is_some_and(|b| {
+                        gpu_needed + pages - old_pages.min(pages) > share(b, GPU_ADMIT_PERCENT)
+                    });
                     if cpu_over || gpu_over {
-                        if let Some(taken) = self.cells.built.remove(&id)
+                        if let Some(before) = previous.remove(&id) {
+                            self.cells.built.insert(id, before);
+                        } else if let Some(taken) = self.cells.built.remove(&id)
                             && !taken.rebuild
                         {
                             self.cells.ever_built.remove(&id);
@@ -1126,13 +1209,13 @@ impl LodDataset {
                             self.cells.diag.rebuilt_total += 1;
                         }
                     }
-                    cpu_needed += bytes;
-                    gpu_needed += pages;
+                    cpu_needed = cpu_needed + bytes - old_bytes.min(bytes);
+                    gpu_needed = gpu_needed + pages - old_pages.min(pages);
                     built_nodes.push(id);
                     new_nodes.extend(packed.map(|node| (generation, node)));
                 }
                 Err(error) => {
-                    self.forget_unsent(&new_nodes);
+                    self.forget_unsent(&new_nodes, &previous);
                     return Err(error);
                 }
             }
@@ -1157,7 +1240,7 @@ impl LodDataset {
         if !built_nodes.is_empty() || next_block.is_some() {
             self.state_epoch += 1;
         }
-        let mut waiting_blocks = uncached_blocks(self, true);
+        let mut waiting_blocks = uncached_blocks(self, !recoloring);
         let plan = self.prepare_cell_plan(&selection);
         let mut support =
             self.support_nodes(&candidates, &self.shared_block_owners(selection.node_ids()));
@@ -1214,7 +1297,7 @@ impl LodDataset {
         let (max_gap, gaps_over_one) = match self.cut_gaps(&cut) {
             Ok(gaps) => gaps,
             Err(error) => {
-                self.forget_unsent(&new_nodes);
+                self.forget_unsent(&new_nodes, &previous);
                 return Err(error);
             }
         };
@@ -1319,9 +1402,16 @@ impl LodDataset {
     }
 
     /// Takes back nodes whose message was never produced.
-    fn forget_unsent(&mut self, nodes: &[(u64, PackedNode)]) {
+    fn forget_unsent(
+        &mut self,
+        nodes: &[(u64, PackedNode)],
+        previous: &HashMap<NodeId, BuiltNode>,
+    ) {
         for (_, node) in nodes {
-            self.cells.built.remove(&node.id);
+            match previous.get(&node.id) {
+                Some(before) => self.cells.built.insert(node.id, *before),
+                None => self.cells.built.remove(&node.id),
+            };
         }
     }
 

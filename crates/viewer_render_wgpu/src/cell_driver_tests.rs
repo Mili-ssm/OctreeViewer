@@ -874,3 +874,151 @@ fn the_frame_hands_the_target_the_ranges_of_the_drawn_nodes_only() {
     fx.step(&ids(&CHILDREN), &cam, 4.0);
     assert_eq!(fx.gpu.color_ranges, Some(expected));
 }
+
+/// A fixture whose nodes arrive as messages of `generation`, like on the cells path.
+fn generation_fixture(generation: u64) -> Fixture {
+    let nodes = two_regions();
+    let mut fx = Fixture::new(HashMap::new(), config(256, 4, u64::MAX));
+    let mut sorted: Vec<_> = nodes.iter().collect();
+    sorted.sort_by_key(|(id, _)| **id);
+    for (id, node) in sorted {
+        add_generation(&mut fx.driver, *id, node, generation).unwrap();
+    }
+    fx.nodes = nodes;
+    fx
+}
+
+fn add_generation(
+    driver: &mut CellDriver,
+    id: NodeId,
+    node: &PoolNode,
+    generation: u64,
+) -> Result<NodeAdded, NodeInputError> {
+    let levels = node
+        .stored
+        .iter()
+        .map(|depth| level_of(id, *depth, pages_of(node, *depth)))
+        .collect();
+    driver.add_packed_generation(
+        generation,
+        PackedNode {
+            id,
+            bounds: node.bounds,
+            points: node.points,
+            levels,
+        },
+    )
+}
+
+#[test]
+fn a_recoloured_node_is_rewritten_over_its_own_pages_without_a_hole() {
+    let (old, new) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut fx = generation_fixture(old);
+    let cam = camera("fit");
+    fx.run(10, &ids(&[2, 3]), &cam, 64.0);
+    fx.run(60, &fine_cut(), &cam, 4.0);
+    assert!(!fx.driver.needs_frame());
+    let resident = fx.driver.pool().resident_pages();
+    let nodes = fx.nodes.clone();
+    let mut sorted: Vec<_> = nodes.iter().collect();
+    sorted.sort_by_key(|(id, _)| **id);
+    // Coarse nodes first: the first frames draw a mix of old and new nodes, never a hole
+    // (`step` checks it on every frame, and the hazards of the fake GPU).
+    for (id, node) in sorted {
+        assert_eq!(
+            add_generation(&mut fx.driver, *id, node, new).unwrap(),
+            NodeAdded::Recolored {
+                levels: node.stored.len()
+            }
+        );
+        assert_eq!(fx.driver.foreign_node(new), None);
+        let report = fx.step(&fine_cut(), &cam, 4.0);
+        assert_eq!(report.plan.apply, CutApply::Applied);
+        assert_eq!(fx.driver.pool().resident_pages(), resident);
+    }
+    for _ in 0..10 {
+        fx.step(&fine_cut(), &cam, 4.0);
+    }
+    assert!(fx.gpu.rewrites > 0, "the resident pages were rewritten");
+    assert!(!fx.driver.needs_frame());
+    // A repeat of the new message is a repeat.
+    let (id, node) = nodes.iter().next().unwrap();
+    assert_eq!(
+        add_generation(&mut fx.driver, *id, node, new).unwrap(),
+        NodeAdded::AlreadyStored
+    );
+}
+
+#[test]
+fn a_late_message_of_an_older_colour_generation_is_dropped() {
+    let (g0, g1, g2) = (
+        cell_generation(5, 0),
+        cell_generation(5, 1),
+        cell_generation(5, 2),
+    );
+    let mut fx = generation_fixture(g0);
+    let cam = camera("fit");
+    fx.run(10, &ids(&[2, 3]), &cam, 64.0);
+    let nodes = fx.nodes.clone();
+    let (id, node) = nodes.iter().find(|(id, _)| id.get() == 2).unwrap();
+    let (other, other_node) = nodes.iter().find(|(id, _)| id.get() == 3).unwrap();
+    add_generation(&mut fx.driver, *id, node, g2).unwrap();
+    let rewrites = fx.gpu.rewrites;
+    // The message of generation 1 comes after generation 2 was seen, for a stored node...
+    assert_eq!(
+        add_generation(&mut fx.driver, *id, node, g1).unwrap(),
+        NodeAdded::Stale
+    );
+    // ...and for another stored node that still holds generation 0.
+    assert_eq!(
+        add_generation(&mut fx.driver, *other, other_node, g1).unwrap(),
+        NodeAdded::Stale
+    );
+    fx.run(5, &ids(&[2, 3]), &cam, 64.0);
+    assert!(fx.gpu.rewrites >= rewrites);
+    // Another dataset is not a recolour.
+    assert!(matches!(
+        add_generation(&mut fx.driver, *id, node, cell_generation(6, 3)),
+        Err(NodeInputError::Duplicate(_))
+    ));
+}
+
+#[test]
+fn a_recolour_with_another_shape_is_refused() {
+    let mut fx = generation_fixture(cell_generation(5, 0));
+    let node = fx.nodes[&NodeId::new(2)].clone();
+    let mut levels: Vec<PackedLevel> = node
+        .stored
+        .iter()
+        .map(|depth| level_of(NodeId::new(2), *depth, pages_of(&node, *depth) + 1))
+        .collect();
+    let packed = PackedNode {
+        id: NodeId::new(2),
+        bounds: node.bounds,
+        points: node.points,
+        levels: std::mem::take(&mut levels),
+    };
+    assert!(matches!(
+        fx.driver
+            .add_packed_generation(cell_generation(5, 1), packed),
+        Err(NodeInputError::InvalidLevel(_))
+    ));
+}
+
+#[test]
+fn outdated_nodes_are_forgotten_before_current_ones() {
+    let (old, new) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut fx = generation_fixture(old);
+    let nodes = fx.nodes.clone();
+    // Every node but 2 is recoloured; none is in the cut or the pool, so only the order decides.
+    for (id, node) in &nodes {
+        if id.get() != 2 {
+            add_generation(&mut fx.driver, *id, node, new).unwrap();
+        }
+    }
+    let cam = camera("fit");
+    fx.step(&[], &cam, 64.0);
+    fx.driver.config.cpu_budget_bytes = fx.driver.cpu_bytes() - 1;
+    let report = fx.step(&[], &cam, 64.0);
+    assert_eq!(report.forgotten, ids(&[2]));
+}

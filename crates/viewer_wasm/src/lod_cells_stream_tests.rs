@@ -13,12 +13,15 @@ use std::{
     rc::Rc,
     time::Instant,
 };
-use viewer_core::{BlockId, HierarchySemantics, SpatialBounds, SpatialHierarchy, SpatialNode};
+use viewer_core::{
+    BlockId, ColorRgb, HierarchySemantics, Point, PointBatch, PointBlock, SpatialBounds,
+    SpatialHierarchy, SpatialNode,
+};
 use viewer_format::{FormatReader, FormatReaderLimits, OctreeReader};
 use viewer_render_wgpu::{
     CellCutEntry, CellDriver, CellPoolError, CellTarget, CutApply, FramePlan, MASK_WORDS,
-    OrbitCamera, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds, ViewProjection,
-    VoxelBuildLimits, cell_cut_digest,
+    OrbitCamera, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, SceneBounds,
+    ViewProjection, VoxelBuildLimits, cell_cut_digest,
 };
 
 /// Longest run of `RetainedPrevious` frames the pool may take while blocks stream in.
@@ -54,6 +57,8 @@ struct StrictTarget {
     table: Vec<(u32, PageEntry)>,
     page_frame: Option<PageFrame>,
     uploads_total: usize,
+    /// Hash of the cells each slot holds (colours included), to tell recoloured pages apart.
+    page_cells: HashMap<u32, u64>,
 }
 
 impl CellTarget for StrictTarget {
@@ -82,7 +87,23 @@ impl CellTarget for StrictTarget {
                 slots: page_slots.len(),
             });
         }
-        for (slot, page) in page_slots.iter().zip(&level.pages) {
+        for (index, (slot, page)) in page_slots.iter().zip(&level.pages).enumerate() {
+            let cells = &level.instances[index * PAGE_SLOTS..(index + 1) * PAGE_SLOTS];
+            let hash = {
+                let mut hasher = std::hash::DefaultHasher::new();
+                for cell in cells {
+                    std::hash::Hash::hash(&cell.0, &mut hasher);
+                }
+                std::hash::Hasher::finish(&hasher)
+            };
+            // A recolour writes the page its slot already holds: the queue orders it after the
+            // draws already submitted, so it is not a hazard.
+            if self.owner.get(slot) == Some(&(level.node, level.depth)) {
+                self.page_cells.insert(*slot, hash);
+                self.uploads_total += 1;
+                continue;
+            }
+            self.page_cells.insert(*slot, hash);
             if self.owner.contains_key(slot) {
                 return Err(CellPoolError::InvalidLevel(
                     "slot written while still owned",
@@ -167,6 +188,31 @@ impl CellTarget for StrictTarget {
 }
 
 impl StrictTarget {
+    /// What the target would show in colour: the sum over the active pages of a hash of the
+    /// page's identity and cells. Independent of the slots the pages sit in.
+    fn color_digest(&self) -> u64 {
+        self.table.iter().fold(0_u64, |acc, (slot, _)| {
+            let mut hasher = std::hash::DefaultHasher::new();
+            std::hash::Hash::hash(&format!("{:?}", self.page_at[slot]), &mut hasher);
+            std::hash::Hash::hash(&self.page_cells[slot], &mut hasher);
+            acc.wrapping_add(std::hash::Hasher::finish(&hasher))
+        })
+    }
+
+    /// The hash of the cells of every active page, by (node, depth, page of the level).
+    fn active_cells(&self) -> HashMap<(NodeId, u8, usize), u64> {
+        let active: HashSet<u32> = self.table.iter().map(|(slot, _)| *slot).collect();
+        let mut out = HashMap::new();
+        for ((node, depth), slots) in &self.slots_of {
+            for (page, slot) in slots.iter().enumerate() {
+                if active.contains(slot) {
+                    out.insert((*node, *depth, page), self.page_cells[slot]);
+                }
+            }
+        }
+        out
+    }
+
     /// What the driver left in the target equals what the plan asked for: each active node's
     /// mask slot holds the mask of its cut entry, and the page table lists, level by level, every
     /// page that was uploaded for it with the entry that page computes for the plan's mask slot
@@ -1432,4 +1478,187 @@ fn real_pages_with_drawn_nodes_are_not_evicted() {
     assert!(refused > 0, "the budget must refuse at least one graft");
     assert_eq!(real.harness.zone_coarsenings, 0);
     assert_eq!(real.harness.lost_samples, 0);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Colour generations (R3-Q33)
+// ---------------------------------------------------------------------------------------------
+
+/// The synthetic dataset with blocks painted like an attribute mode paints them: while `paint`
+/// is set, the red channel follows x and the others are fixed.
+type PageCells = HashMap<(NodeId, u8, usize), u64>;
+
+fn painting_harness(paint: Rc<std::cell::Cell<bool>>) -> Harness {
+    let PagedSynthetic {
+        dataset,
+        blocks,
+        pages,
+    } = paged_synthetic(1 << 20, 64 << 20);
+    Harness::new(
+        dataset,
+        2.0,
+        Box::new(move |id| {
+            Ok(blocks.get(&id).map(|block| {
+                if !paint.get() {
+                    return block.clone();
+                }
+                let points = block
+                    .points()
+                    .points()
+                    .iter()
+                    .map(|point| {
+                        let red = (f64::from(point.position[0]) / SIDE * 255.0) as u8;
+                        Point::new(point.position, ColorRgb::new(red, 20, 200))
+                    })
+                    .collect();
+                PointBlock::new(block.id(), PointBatch::new(points), Vec::new())
+            }))
+        }),
+        Box::new(move |anchor| {
+            let (number, nodes) = pages.get(&anchor).ok_or("no such page")?;
+            Ok(PageInsert {
+                anchor,
+                number: *number,
+                nodes: nodes.clone(),
+                unloaded: Vec::new(),
+                bytes: 100,
+            })
+        }),
+    )
+}
+
+/// Frames until the ladder is at the target and the driver has nothing left, calling `check`
+/// after every frame. Returns the nodes of the cut at rest.
+fn run_to_rest(
+    h: &mut Harness,
+    view: &ViewProjection,
+    mut check: impl FnMut(&Harness),
+) -> Vec<NodeId> {
+    let mut calm = 0;
+    for _ in 0..2_000 {
+        h.frame(view);
+        check(h);
+        if !h.dirty && h.stage == Some(2.0) && !h.driver.needs_frame() {
+            calm += 1;
+            if calm == 3 {
+                return h.dataset.cells.pool_drawn().to_vec();
+            }
+        } else {
+            calm = 0;
+        }
+    }
+    panic!("no rest: {:?}", h.totals.stages);
+}
+
+#[test]
+fn switching_colour_rebuilds_every_drawn_node_once_without_holes_or_mixed_generations() {
+    let paint = Rc::new(std::cell::Cell::new(false));
+    let mut h = painting_harness(Rc::clone(&paint));
+    let view = synthetic_views().0;
+    let mut phases: Vec<(u64, PageCells)> = Vec::new();
+    let snapshot = |h: &Harness| (h.target.color_digest(), h.target.active_cells());
+    let mut refs: Vec<PageCells> = Vec::new();
+    // rgb -> attribute -> rgb -> attribute, each switch with `paint` and the colour generation
+    // changed together (the binding does both).
+    for (phase, on) in [false, true, false, true].into_iter().enumerate() {
+        if phase > 0 {
+            paint.set(on);
+            assert!(h.dataset.set_cell_paint(on.then_some((0, 0))));
+            h.dirty = true;
+        }
+        let (old, new) = match phase {
+            0 | 1 => (None, None),
+            _ => (Some(refs[phase - 1].clone()), Some(refs[phase - 2].clone())),
+        };
+        let cut = run_to_rest(&mut h, &view, |h| {
+            // Holes are checked by the harness on every frame. A node never shows cells of two
+            // generations: its pages are all the old ones or all the new ones.
+            let (Some(old), Some(new)) = (&old, &new) else {
+                return;
+            };
+            let mut seen: HashMap<NodeId, (bool, bool)> = HashMap::new();
+            for (key, hash) in h.target.active_cells() {
+                let entry = seen.entry(key.0).or_default();
+                let (is_old, is_new) = (old.get(&key) == Some(&hash), new.get(&key) == Some(&hash));
+                if is_old != is_new {
+                    entry.0 |= is_old;
+                    entry.1 |= is_new;
+                }
+            }
+            for (node, (from_old, from_new)) in seen {
+                assert!(
+                    !(from_old && from_new),
+                    "{node:?} draws old and new colours together"
+                );
+            }
+        });
+        assert!(!cut.is_empty());
+        for node in &cut {
+            // Built once at the start and once per switch.
+            assert_eq!(
+                h.totals.builds.get(node).copied(),
+                Some(phase + 1),
+                "phase {phase}: {node:?}"
+            );
+        }
+        let (digest, cells) = snapshot(&h);
+        phases.push((digest, cells.clone()));
+        refs.push(cells);
+    }
+    assert_ne!(
+        phases[0].0, phases[1].0,
+        "attribute colours differ from rgb"
+    );
+    assert_eq!(phases[0].0, phases[2].0, "back to rgb gives the rgb image");
+    assert_eq!(phases[1].0, phases[3].0, "the attribute image repeats");
+}
+
+#[test]
+fn a_late_node_of_an_older_colour_generation_is_dropped_by_the_driver() {
+    let mut h = synthetic_harness(1 << 20, 2.0);
+    let view = synthetic_views().0;
+    let config = h.config;
+    let plan = |h: &mut Harness| {
+        let mut nodes = Vec::new();
+        for _ in 0..600 {
+            let update = h
+                .dataset
+                .plan_cell_update(&view, 2.0, config, None, &mut h.blocks)
+                .unwrap();
+            nodes.extend(update.new_nodes);
+            for anchor in update.stats.pending_page_anchors {
+                let page = (h.pages)(anchor).unwrap();
+                let _ = h.dataset.graft_page(page);
+            }
+            if nodes.len() >= 3 {
+                break;
+            }
+        }
+        nodes
+    };
+    let old = plan(&mut h);
+    assert!(old.len() >= 3);
+    h.dataset.set_cell_paint(Some((0, 0)));
+    let new = plan(&mut h);
+    assert!(new.len() >= 3);
+    assert!(
+        new[0].0 > old[0].0,
+        "a colour change gives a newer generation"
+    );
+    let mut driver = driver_for(&h.dataset, u64::MAX);
+    add_cell_nodes(&mut driver, new.iter().cloned()).unwrap();
+    let bytes = driver.cpu_bytes();
+    // The nodes of the old generation arrive late, for nodes the driver holds and for nodes it
+    // does not: nothing changes.
+    add_cell_nodes(&mut driver, old.iter().cloned()).unwrap();
+    assert_eq!(driver.cpu_bytes(), bytes);
+    for (generation, node) in &old {
+        assert_eq!(
+            driver.has_node(node.id),
+            new.iter().any(|(_, n)| n.id == node.id),
+            "{:?}",
+            node.id
+        );
+        assert!(*generation < new[0].0);
+    }
 }

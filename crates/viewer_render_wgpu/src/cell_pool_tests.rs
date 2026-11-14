@@ -1869,6 +1869,7 @@ fn seed_resident(pool: &mut CellPool, node: u64, depths: &[u8]) {
                 data: None,
                 last_used: 0,
                 last_active: 0,
+                refresh: None,
             },
         );
     }
