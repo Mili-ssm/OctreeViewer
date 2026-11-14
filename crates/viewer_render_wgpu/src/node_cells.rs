@@ -338,9 +338,9 @@ fn build_level(
     let range: [(u64, u64); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
     let single_region = range.iter().all(|(lo, hi)| hi - lo < (1 << 21));
     if single_region {
-        build_level_keyed(grid, points, count, range, morton)
+        build_level_keyed(grid, points, count, range, morton, Some)
     } else {
-        build_level_keyed(grid, points, count, range, region_morton)
+        build_level_keyed(grid, points, count, range, region_morton, |_| None)
     }
 }
 
@@ -350,6 +350,7 @@ fn build_level_keyed<K: Ord + Copy>(
     count: f64,
     range: [(u64, u64); 3],
     key_for: impl Fn([u64; 3]) -> K,
+    as_u64: impl Fn(K) -> Option<u64>,
 ) -> Result<Vec<NodeCell>, NodeCellError> {
     let mut keyed: Vec<(K, usize, usize, [u64; 3])> = Vec::new();
     for (block_index, block) in points.iter().enumerate() {
@@ -369,7 +370,29 @@ fn build_level_keyed<K: Ord + Copy>(
             keyed.push((key, block_index, index, coord));
         }
     }
-    keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
+    // Entries are pushed in (block, index) order, so a stable sort by key alone equals sorting by
+    // (key, block, index). pdqsort is ~8x slower on shuffled keys than on sorted ones; the radix
+    // sort keeps the build time independent of the point order.
+    let pairs: Option<Vec<(u64, u32)>> = if keyed.len() < u32::MAX as usize {
+        keyed
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| as_u64(entry.0).map(|key| (key, position as u32)))
+            .collect()
+    } else {
+        None
+    };
+    let keyed = match pairs {
+        Some(pairs) if pairs.windows(2).all(|pair| pair[0].0 <= pair[1].0) => keyed,
+        Some(pairs) => radix_sort_stable(pairs)
+            .into_iter()
+            .map(|(_, position)| keyed[position as usize])
+            .collect(),
+        None => {
+            keyed.sort_unstable_by_key(|(key, block, index, _)| (*key, *block, *index));
+            keyed
+        }
+    };
     let mut cells: Vec<NodeCell> = Vec::new();
     let mut current = None;
     for (key, block_index, index, coord) in keyed {
@@ -404,6 +427,34 @@ fn build_level_keyed<K: Ord + Copy>(
         cell.z_max = cell.z_max.max(point.position[2]);
     }
     Ok(cells)
+}
+
+/// LSD radix sort on the key; stable, so equal keys keep their input order.
+fn radix_sort_stable(mut pairs: Vec<(u64, u32)>) -> Vec<(u64, u32)> {
+    const BITS: u32 = 11;
+    let top = pairs.iter().fold(0_u64, |acc, (key, _)| acc | key);
+    let mut scratch = vec![(0_u64, 0_u32); pairs.len()];
+    let mut shift = 0;
+    while shift < 64 && (top >> shift) != 0 {
+        let mut counts = [0_usize; 1 << BITS];
+        for (key, _) in &pairs {
+            counts[((key >> shift) & ((1 << BITS) - 1)) as usize] += 1;
+        }
+        let mut start = 0;
+        for count in &mut counts {
+            let n = *count;
+            *count = start;
+            start += n;
+        }
+        for pair in &pairs {
+            let digit = ((pair.0 >> shift) & ((1 << BITS) - 1)) as usize;
+            scratch[counts[digit]] = *pair;
+            counts[digit] += 1;
+        }
+        std::mem::swap(&mut pairs, &mut scratch);
+        shift += BITS;
+    }
+    pairs
 }
 
 fn region_morton(coord: [u64; 3]) -> (u128, u64) {
@@ -478,5 +529,44 @@ mod layout_tests {
     #[test]
     fn single_region_record_fits_six_machine_words() {
         assert!(std::mem::size_of::<KeyedPoint>() <= 6 * std::mem::size_of::<u64>());
+    }
+
+    fn lcg_keys(seed: u64, len: usize, modulus: u64, shift: u32) -> Vec<u64> {
+        let mut state = seed;
+        (0..len)
+            .map(|_| {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                ((state >> 20) % modulus) << shift
+            })
+            .collect()
+    }
+
+    fn assert_matches_stable_sort(keys: &[u64]) {
+        let pairs: Vec<(u64, u32)> = keys
+            .iter()
+            .enumerate()
+            .map(|(position, key)| (*key, position as u32))
+            .collect();
+        let mut expected = pairs.clone();
+        expected.sort_by_key(|(key, _)| *key);
+        assert_eq!(radix_sort_stable(pairs.clone()), expected);
+        // The old order: (key, block, index) with positions standing for the input order.
+        let mut old = pairs;
+        old.sort_unstable_by_key(|(key, position)| (*key, *position));
+        assert_eq!(expected, old);
+    }
+
+    #[test]
+    fn radix_sort_equals_stable_sort_on_random_and_edge_keys() {
+        assert_matches_stable_sort(&[]);
+        assert_matches_stable_sort(&[7]);
+        assert_matches_stable_sort(&[5; 100]);
+        assert_matches_stable_sort(&[0; 100]);
+        assert_matches_stable_sort(&lcg_keys(1, 5000, 50, 0));
+        assert_matches_stable_sort(&lcg_keys(2, 5000, 1 << 40, 0));
+        assert_matches_stable_sort(&lcg_keys(3, 5000, 1 << 10, 53));
+        assert_matches_stable_sort(&[u64::MAX, 0, u64::MAX, 1 << 63, 1, 1 << 63]);
     }
 }
