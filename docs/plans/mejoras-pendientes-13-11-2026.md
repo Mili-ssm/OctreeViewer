@@ -92,6 +92,9 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes en `target/r3-t11/` y `target/r3-b1d/` (fuera de git): borradas al registrar B1c y B1d.
 - [x] L3. Ramas `explore/b1c-cpu-fit` y `explore/b1d-gpu-pool`: integradas en `feat/r3-v75` y borradas.
+- [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
+  `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
+  bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).
 
 ## Decisiones del propietario pendientes
 
