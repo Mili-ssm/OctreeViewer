@@ -1290,3 +1290,30 @@ fn multi_owner_blocks_in_the_v75_datasets() {
         );
     }
 }
+
+#[test]
+fn the_async_read_order_is_stable_while_nothing_arrives() {
+    // The host reads the blocks of the order in flight and cancels the ones that leave it, so an
+    // order that flips between updates (root chain, then the selection's blocks, then the chain
+    // again) cancels every read before its bytes arrive.
+    let mut dataset = cell_dataset();
+    let view = view_at(None);
+    let mut orders = Vec::new();
+    for _ in 0..4 {
+        let mut order = Vec::new();
+        dataset
+            .plan_cell_update(
+                &view,
+                64.0,
+                CellUpdateConfig::default(),
+                Some(&mut order),
+                |_| Ok(None),
+            )
+            .unwrap();
+        orders.push(order);
+    }
+    assert!(orders[0].len() > 1, "{:?}", orders[0]);
+    for order in &orders {
+        assert_eq!(order, &orders[0]);
+    }
+}

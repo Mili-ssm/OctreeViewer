@@ -1108,10 +1108,20 @@ impl LodDataset {
             selection_blocks.sort();
             selection_blocks.dedup();
         }
+        let async_order_wanted = async_priority_order.is_some();
         let read_ancestors = !top_blocks.is_empty()
             && !(self.cells.read_ancestor_last && !selection_blocks.is_empty());
         let to_read = if self.cells.cpu_blocked || self.cells.gpu_blocked {
             Vec::new()
+        } else if async_order_wanted {
+            // The host reads the whole order at once and cancels the reads that leave it: an
+            // order alternating between the chain and the selection would cancel every read
+            // before its bytes arrive. The alternation above is for the one-block sync step.
+            let mut blocks = top_blocks;
+            blocks.extend(selection_blocks);
+            blocks.sort();
+            blocks.dedup();
+            blocks
         } else if read_ancestors {
             top_blocks
         } else {
@@ -1127,7 +1137,9 @@ impl LodDataset {
         let mut evicted_blocks = std::mem::take(&mut self.arrival_evictions);
         self.arrived_blocks = 0;
         if let Some(requested) = next_block {
-            self.cells.read_ancestor_last = read_ancestors;
+            if !async_order_wanted {
+                self.cells.read_ancestor_last = read_ancestors;
+            }
             self.load_block_step(requested, &mut load_block, &mut evicted_blocks)?;
         }
         self.cells.diag.block_evictions += evicted_blocks.len() as u64;
