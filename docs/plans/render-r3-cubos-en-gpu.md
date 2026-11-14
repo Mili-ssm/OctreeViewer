@@ -1,6 +1,6 @@
 # R3 — Cubos por nodo residentes en GPU (v7.5-pre): plan de implementación
 
-Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustituye el plan del 30-10-2026, que sigue en el historial de git)
+Estado: completado · 14-11-2026 (en curso desde el 03-11-2026; enmendado el 05-11-2026 por el ADR 0032; sustituye el plan del 30-10-2026, que sigue en el historial de git)
 
 > **Para agentes:** sub-skill obligatoria: superpowers:subagent-driven-development (recomendada) o
 > superpowers:executing-plans, tarea a tarea. Los pasos usan casillas (`- [ ]`).
@@ -143,7 +143,7 @@ Estado: en curso · 03-11-2026, enmendado el 05-11-2026 por el ADR 0032 (sustitu
   - bytes del corte;
   - frecuencia de `DescendantTooFine`.
 - [x] **Pasa si** no salta ningún criterio de parada de T4: pasa con el nivel por octante y la arista real (R3-Q12) en los dos datasets. El de `DescendantTooFine` (16,7 %, solo en saltos de pose) se revisó en el [ADR 0033](../adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) (R3-Q10).
-- [ ] Píxeles vacíos, cuando exista el render (Tarea 7).
+- [x] Píxeles vacíos, cuando exista el render (Tarea 7). Medidos en la [Tarea 17](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md) (14-11-2026).
 
 ## Tarea 5: spike de GPU
 
@@ -313,7 +313,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 - [x] Pases de `kpc` sobre `k`: Hi-Z sobre la caja ajustada en el pase de páginas, Hi-Z por celda en la fase 2, dos fases y un `drawIndexedIndirect` por fase. Los bits de visibilidad, en doble búfer y por hueco del pool, se ponen a cero cuando se reutiliza un hueco.
 - [x] **Hi-Z propio:** cada texel guarda el máximo de todos sus píxeles. No usa la escala de `hzb.rs`, que no es conservadora fuera de potencias de dos. Se rehace al redimensionar y en `Outdated`.
 - [x] **Margen de profundidad**, derivado y documentado: el pase y el vértice calculan los mismos `clip`, así que solo queda el redondeo de la interpolación del rasterizador. Si no se puede acotar, se mide el peor caso en los tests y se usa el doble.
-- [ ] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo. Pasa a la integración de la Tarea 9, que une `cell_pool` con el renderer; los bits y el Hi-Z son estado derivado que se rehace con el renderer.
+- [x] **Dispositivo perdido:** se vacía la residencia y se emite `Evict` de todo. Pasa a la integración de la Tarea 9, que une `cell_pool` con el renderer; los bits y el Hi-Z son estado derivado que se rehace con el renderer. Resuelto en [B5](../records/benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md) (14-11-2026).
 - [x] **Tests:**
   - profundidad idéntica con y sin oclusión, en un frame quieto y en 10 frames en movimiento desde un arranque en frío;
   - la fase 1 dibuja algo tras el frame 0 y la fase 2 descarta algo;
@@ -695,10 +695,10 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
 
 ## Tarea 17: medida y ruta por defecto
 
-**Medida (14-11-2026):** [registro](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md). RQ-01 y RQ-05 pasan con celdas; RQ-02 pasa salvo +2,7 pp de píxeles vacíos en Majadas. El cambio de ruta predeterminada espera al propietario.
+**Medida (14-11-2026):** [registro](../records/benchmarks/R3_T17_MEASURE_14-11-2026.md). RQ-01 y RQ-05 pasan con celdas; RQ-02 pasa salvo +2,7 pp de píxeles vacíos en Majadas. El propietario aceptó los +2,7 pp y la ruta de celdas es la predeterminada desde el 14-11-2026 (R3-Q35).
 
-- [ ] Matriz de R0 más RED-REF/HTTP Range. «Alcanzado» se define como en T11. Registrar GPU y GTT.
-- [ ] **Pasa si** se cumplen RQ-01, RQ-02 y RQ-05. Entonces `renderPath: "cells"` pasa a ser la ruta por defecto, y se confirman las cifras de ADR 0027 y 0031.
+- [x] Matriz de R0 más RED-REF/HTTP Range. «Alcanzado» se define como en T11. Registrar GPU y GTT.
+- [x] **Pasa si** se cumplen RQ-01, RQ-02 y RQ-05. Entonces `renderPath: "cells"` pasa a ser la ruta por defecto, y se confirman las cifras de ADR 0027 y 0031.
 
 ## Fuera de este plan
 
