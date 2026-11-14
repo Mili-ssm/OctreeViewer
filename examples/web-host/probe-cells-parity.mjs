@@ -55,7 +55,8 @@ function orbitStepPose(pose) {
 async function runArm(chromium, arm) {
     const url = new URL(baseUrl);
     url.searchParams.set("buildWorker", arm.buildWorker ? "1" : "0");
-    if (arm.cells) url.searchParams.set("cells", "1"); else url.searchParams.delete("cells");
+    // Cells are the default path (R3-Q35): the CPU arm must opt out explicitly.
+    url.searchParams.set("cells", arm.cells ? "1" : "0");
     const consoleMessages = [];
     const instance = await chromium.launch({
         executablePath: CHROME_BIN,
