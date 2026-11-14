@@ -38,7 +38,8 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 - [x] B1d. Pool de celdas de 512 MiB (65.535 páginas en la Radeon 880M) con presupuesto propio y corte
   de nodos ajustado al pool ([ADR 0040](../adr/0040-pool-de-512-mib-y-corte-ajustado-al-pool.md);
   [registro](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)). Se asientan las 14 poses a 1 px y
-  a 4 px; GTT pico ~+750 MiB.
+  a 4 px; GTT pico ~+750 MiB. El ajuste al pool no actuó en el navegador (basta el pool mayor); lo
+  cubre un test en simulación. La Tarea 11 queda abierta solo por el criterio de ≤ 16,7 ms (B1b.3).
 - [ ] B1b. Casillas abiertas de la Tarea 16b.
   - [ ] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): test rojo con un viewport que no es
     potencia de dos (1280×720), corrección y profundidad idéntica con y sin oclusión.

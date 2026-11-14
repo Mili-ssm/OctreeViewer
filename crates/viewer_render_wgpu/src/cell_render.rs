@@ -130,7 +130,7 @@ pub(crate) fn pool_pages_for_limits(limits: &wgpu::Limits) -> Option<u32> {
 }
 
 /// Default budget of the pool's own resources (instances, page table, masks, page list, visible
-/// indices, visibility bits): 660 MiB, above the 646 MiB the largest pool needs (ADR 0040). It is
+/// indices, visibility bits): 660 MiB, above the 655 MiB the largest pool needs (ADR 0040). It is
 /// separate from `GpuBudget`, which drives the CPU path.
 pub const DEFAULT_CELL_POOL_BUDGET_BYTES: u64 = 660 << 20;
 
