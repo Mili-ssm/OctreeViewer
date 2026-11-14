@@ -608,6 +608,14 @@ function handleWorkerMessage(event) {
                 detail: { ...data.hit, sceneGeneration: data.sceneGeneration },
             }));
         }
+    } else if (data.type === "deviceLost") {
+        statusRoot.textContent = `GPU device lost (${data.reason}): ${data.message}`;
+    } else if (data.type === "deviceRecovery") {
+        // R3-Q26: the worker recreates the viewer by itself; the page only shows it and draws again.
+        statusRoot.textContent = data.state === "recovered"
+            ? `GPU device recovered (attempt ${data.attempt})`
+            : `GPU device lost: recovering (attempt ${data.attempt})…`;
+        if (data.state === "recovered") wakeRendering();
     } else if (data.type === "error") {
         loadingFile = false;
         observedRefinementId = requestedRefinementId;

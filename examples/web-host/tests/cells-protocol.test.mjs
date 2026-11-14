@@ -278,7 +278,7 @@ test("every colour mode stays on the cells path; only an attribute mode builds n
 // ---- Render worker -------------------------------------------------------------------------
 
 async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "module" }, cells = true,
-    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false, poolPages = 65536 } = {}) {
+    cellPath = "enabled", cellNodeBytesPerFrame, failSpawn = false, poolPages = 65536, failCreates = 0 } = {}) {
     const messages = [];
     const workers = [];
     const log = [];
@@ -292,6 +292,10 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     let pendingMessages = null;
     let cellStats = realCellStats({ viewEpoch: 10 });
     let cellsOn = false;
+    let loss = null;
+    let creates = 0;
+    let failuresLeft = failCreates;
+    const pose = { position: [1, 2, 3], target: [4, 5, 6] };
     const cpuLodStats = buildWorker ? null : { cellPath: "off", sceneDigest: "cpu" };
     const viewer = {
         resize() {}, setColorMode() {},
@@ -337,6 +341,11 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
             return taken;
         },
         cellStats: () => cellStats,
+        deviceLost: () => loss,
+        cameraPose: () => pose,
+        setCameraPose(position, target) { log.push(["setCameraPose", [...position], [...target]]); },
+        setGpuFrameTiming() {},
+        free() { log.push(["free"]); },
     };
     class FakeWorker {
         constructor(url) {
@@ -364,7 +373,20 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         performance: { now: () => 0 },
         resolveSource: async spec => spec,
         init: async () => ({ memory: new WebAssembly.Memory({ initial: 1 }) }),
-        WasmVoxelViewer: { createOffscreen: async () => viewer },
+        WasmVoxelViewer: {
+            createOffscreen: async () => {
+                creates += 1;
+                if (creates > 1 && failuresLeft > 0) {
+                    failuresLeft -= 1;
+                    throw new Error("no adapter");
+                }
+                loss = null;
+                cellsOn = false;
+                // A new driver reports itself to the builder on its first take.
+                if (creates > 1) pendingMessages = { poolAck: null, evict: new BigUint64Array(0), poolReset: false, driverReplaced: true };
+                return viewer;
+            },
+        },
         WasmAsyncReadBudget: class {}, WasmBlockRequestScheduler: class {}, WasmAsyncFormatReader: class {},
         Worker: FakeWorker, Float64Array, Uint8Array, BigUint64Array, setTimeout, clearTimeout,
         console: { warn: message => warnings.push(message), error: message => errors.push(message) },
@@ -373,7 +395,7 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
         receive({ data: { type, ...fields } });
         await settle();
     };
-    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker, cells, cellNodeBytesPerFrame });
+    await send("init", { canvas: {}, width: 100, height: 50, colorMode: "rgb", depthShading: false, buildWorker, cells, cellNodeBytesPerFrame, deviceRecoveryBackoffMs: [1, 1, 1] });
     const frame = (fields = {}) => send("frame", {
         camera: { orbitX: 0, orbitY: 0, panX: 0, panY: 0, zoom: 0, moveX: 0, moveY: 0, moveZ: 0, ...fields },
     });
@@ -396,6 +418,8 @@ async function runRenderWorker({ buildWorker = { url: "build-worker.js", type: "
     return {
         messages, workers, log, errors, warnings, uploads, send, open, openCells, frame, metrics,
         setPending(value) { pendingMessages = value; },
+        loseDevice(reason = "unknown", message = "gpu process crashed") { loss = { reason, message }; },
+        creates: () => creates,
         setCellStats(value) { cellStats = { ...cellStats, ...value }; },
         renders: () => renderFrames,
         calls: name => log.filter(entry => entry[0] === name),
@@ -455,6 +479,8 @@ test("cells without a build worker stay off: CPU path, `cellPath` reports needsB
     assert.equal(render.workers.length, 0);
     await render.frame();
     assert.equal(render.renders(), 1);
+    // This fake's frame fails after the draw; the worker first waits for a device-loss report.
+    await new Promise(resolve => setTimeout(resolve, 450));
     await render.send("metrics");
     const workerMetrics = render.messages.filter(item => item.type === "metrics").at(-1).workerMetrics;
     assert.equal(workerMetrics.cellPath, "needsBuildWorker");
@@ -869,4 +895,67 @@ test("a driver that never settles stops holding the frame loop after the stuck l
     const resumed = lastProgress(render).lod;
     assert.equal(resumed.cellsBusy, true);
     assert.equal(resumed.cellsStuck, false);
+});
+
+// ---- Device loss (R3-Q26) ------------------------------------------------------------------
+
+test("device loss on the cells path: the viewer is recreated, the camera kept and the builder told to resend", async () => {
+    const render = await runRenderWorker();
+    const worker = await render.openCells();
+    const before = render.sent(worker, "driverReplaced").length;
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await settle();
+    assert.equal(render.creates(), 2, "a new viewer on the same canvas");
+    assert.deepEqual(render.messages.filter(m => m.type === "deviceLost").map(m => [m.reason, m.message]),
+        [["unknown", "gpu process crashed"]]);
+    assert.deepEqual(render.messages.filter(m => m.type === "deviceRecovery").map(m => m.state), ["started", "recovered"]);
+    assert.deepEqual(render.calls("setCameraPose"), [["setCameraPose", [1, 2, 3], [4, 5, 6]]]);
+    assert.equal(render.calls("beginRemoteCells").length, 2, "the driver starts again on the new device");
+    assert.equal(worker.terminated, false, "the build worker and its dataset stay");
+    assert.equal(render.workers.length, 1, "no second open of the file");
+    assert.equal(render.messages.some(m => m.type === "error"), false, "the failed frame is not an error for the host");
+    // The recovery finishes with a frame, and later frames work.
+    const rendersAfter = render.renders();
+    await render.frame();
+    assert.ok(render.renders() > rendersAfter);
+    assert.equal(render.sent(worker, "driverReplaced").length, before + 1, "the builder is told the driver was replaced");
+});
+
+test("a destroyed device is reported and not recovered", async () => {
+    const render = await runRenderWorker();
+    await render.openCells();
+    render.loseDevice("destroyed", "destroy() was called");
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(render.creates(), 1);
+    assert.deepEqual(render.messages.filter(m => m.type === "deviceLost").map(m => m.reason), ["destroyed"]);
+    assert.equal(render.messages.some(m => m.type === "deviceRecovery"), false);
+});
+
+test("recovery retries with backoff and then reports one clear error", async () => {
+    const render = await runRenderWorker({ failCreates: 3 });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(render.creates(), 4, "the first create plus three attempts");
+    const errors = render.messages.filter(m => m.type === "error");
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].operation, "deviceLost");
+    assert.match(errors[0].message, /after 3 attempts: Error: no adapter/);
+    await render.frame();
+    assert.equal(render.creates(), 4, "no further attempts once it gave up");
+});
+
+test("recovery succeeds on a later attempt", async () => {
+    const render = await runRenderWorker({ failCreates: 2 });
+    await render.openCells();
+    render.loseDevice();
+    await render.frame();
+    await new Promise(resolve => setTimeout(resolve, 60));
+    const states = render.messages.filter(m => m.type === "deviceRecovery").map(m => `${m.state}${m.attempt}`);
+    assert.deepEqual(states, ["started1", "started2", "started3", "recovered3"]);
+    assert.equal(render.messages.some(m => m.type === "error"), false);
 });

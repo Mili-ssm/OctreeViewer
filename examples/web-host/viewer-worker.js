@@ -50,6 +50,20 @@ let buildOptions = null;
 let buildWorker = null;
 let buildWorkerUsed = false;
 let buildOpened = false;
+// GPU device loss (R3-Q26): what recreating the viewer on the same canvas needs besides the camera.
+const DEVICE_LOSS_POLL_MS = 500;
+const DEVICE_RECOVERY_BACKOFF_MS = [100, 500, 2000];
+let renderCanvas = null;
+let framebufferSize = [1, 1];
+let depthShadingOn = true;
+let continuitySetting = null;
+let cellNodeBytes = 0;
+let builtOpened = null;
+let lastScene = null;
+let asyncCacheBytes = 0;
+let deviceRecoveryBackoff = DEVICE_RECOVERY_BACKOFF_MS;
+let lossReportedFor = null;
+let deviceUnrecoverable = false;
 let pendingOpen = null;
 let appliedEpoch = 0;
 let viewEpoch = 0;
@@ -831,6 +845,8 @@ function startBuiltDataset(data, requestId = null) {
     appliedSceneDigest = null;
     appliedEpoch = 0;
     buildOpened = false;
+    builtOpened = null;
+    lastScene = null;
     lastSentView = null;
     currentLod = null;
     viewSentAt.clear();
@@ -966,6 +982,8 @@ function handleBuildMessage(data) {
             );
             const { name, bytes } = pendingOpen;
             pendingOpen.opened = opened;
+            builtOpened = opened;
+            lastScene = null;
             currentMetadata = { ...opened, name, bytes, hasAttributes: opened.hasAttributes };
             if (opened.cellPath === "enabled" && !beginCells(opened)) return;
             buildOpened = true;
@@ -1017,6 +1035,7 @@ function handleBuildMessage(data) {
                 const startedAt = performance.now();
                 viewer.uploadSceneInstances(new Uint8Array(data.buf), data.blockIds);
                 appliedSceneDigest = data.digest ?? null;
+                lastScene = { buf: data.buf, blockIds: data.blockIds };
                 advanceSceneGeneration();
                 const sentAt = viewSentAt.get(data.viewEpoch);
                 recordBuildSample("sceneApplyMs", performance.now() - startedAt);
@@ -1073,6 +1092,7 @@ function startAsyncDataset(data, requestId = null) {
     restartPxController(datasetOpenedAt);
     currentColorMode = "rgb";
     asyncFormatReader = null;
+    asyncCacheBytes = data.cacheBytes;
     asyncHasAttributes = false;
     asyncAttributeIndices = new Map();
     failedAsyncBlocks.clear();
@@ -1142,12 +1162,141 @@ function startAsyncDataset(data, requestId = null) {
     });
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Reports a loss once and, unless the device was destroyed on purpose, recovers from it. Resolves
+// true when a recovery ran, whatever its outcome (the host is told either way).
+async function pollDeviceLoss() {
+    if (!viewer || deviceUnrecoverable || typeof viewer.deviceLost !== "function") return false;
+    const loss = viewer.deviceLost();
+    if (!loss) return false;
+    if (lossReportedFor !== viewer) {
+        lossReportedFor = viewer;
+        self.postMessage({ type: "deviceLost", reason: loss.reason, message: loss.message });
+    }
+    if (loss.reason === "destroyed") return false;
+    await recoverFromDeviceLoss(loss);
+    return true;
+}
+
+// The loss callback runs after the failing call, so give it a moment before blaming the error.
+async function deviceLostAfter() {
+    if (typeof viewer?.deviceLost !== "function") return false;
+    for (let waited = 0; waited <= 400; waited += 50) {
+        if (waited > 0) await sleep(50);
+        if (await pollDeviceLoss()) return true;
+        if (deviceUnrecoverable) return true;
+    }
+    return false;
+}
+
+// The idle viewer draws nothing, so the loss would go unnoticed until the next interaction.
+function scheduleDeviceLossWatch() {
+    const timer = setTimeout(() => {
+        messageQueue = messageQueue.then(pollDeviceLoss).catch(() => {}).then(() => {
+            if (!deviceUnrecoverable) scheduleDeviceLossWatch();
+        });
+    }, DEVICE_LOSS_POLL_MS);
+    timer.unref?.();
+}
+
+async function recoverFromDeviceLoss(loss) {
+    let pose = null;
+    try {
+        pose = viewer.cameraPose();
+    } catch {
+        // The camera lives on the CPU; without a pose the new viewer starts from the fitted view.
+    }
+    let failure = null;
+    for (let attempt = 1; attempt <= deviceRecoveryBackoff.length; attempt += 1) {
+        self.postMessage({ type: "deviceRecovery", state: "started", attempt, reason: loss.reason });
+        await sleep(deviceRecoveryBackoff[attempt - 1]);
+        try {
+            await recreateViewer(pose);
+            self.postMessage({ type: "deviceRecovery", state: "recovered", attempt, reason: loss.reason });
+            return;
+        } catch (error) {
+            failure = error;
+        }
+    }
+    deviceUnrecoverable = true;
+    self.postMessage({
+        type: "error",
+        operation: "deviceLost",
+        message: `GPU device lost (${loss.reason}: ${loss.message}); recovery failed after `
+            + `${deviceRecoveryBackoff.length} attempts: ${failure}`,
+    });
+}
+
+// New adapter, device and surface on the same canvas, then the open dataset again without reading
+// the file anew: the build worker resends cells (driverReplaced) or the last scene is uploaded.
+async function recreateViewer(pose) {
+    try {
+        viewer.free();
+    } catch {
+        // Freeing a renderer whose device is gone may fail; the canvas is what matters.
+    }
+    viewer = await WasmVoxelViewer.createOffscreen(renderCanvas, 0.6);
+    viewer.resize(framebufferSize[0], framebufferSize[1]);
+    viewer.setDepthShading(depthShadingOn);
+    if (continuitySetting) viewer.setContinuity(...continuitySetting);
+    viewer.setGpuFrameTiming(hostGpuTiming || pxMode === "dynamic");
+    advanceSceneGeneration();
+    if (buildOptions && buildOpened && builtOpened) {
+        viewer.setPresentationColorMode(currentColorMode);
+        const opened = builtOpened;
+        viewer.beginRemoteDataset(opened.visualScale, opened.coordinateOrigin, opened.boundsMin, opened.boundsMax);
+        if (cellsRemote) {
+            viewer.enableCells(true);
+            if (cellNodeBytes) viewer.setCellNodeBytesPerFrame(cellNodeBytes);
+            const info = opened.cellsInfo;
+            const path = viewer.beginRemoteCells(info.origin, info.rootMin, info.rootSide, info.referenceSpacing);
+            if (path !== "enabled") throw new Error(`the new device cannot draw cells (${path})`);
+            pendingCellCut = null;
+            appliedCutEpoch = 0;
+            forwardCellMessages();
+        } else if (lastScene) {
+            viewer.uploadSceneInstances(new Uint8Array(lastScene.buf), lastScene.blockIds);
+        }
+        if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
+        lastSentView = null;
+        syncBuildView(true);
+    } else if (!buildOptions && asyncFormatReader) {
+        const descriptor = asyncFormatReader.lodDatasetDescriptor(asyncCacheBytes);
+        if (descriptor.paged) viewer.openPagedLodDataset(asyncFormatReader, asyncCacheBytes);
+        else viewer.openLodDataset(descriptor);
+        viewer.setColorMode(currentColorMode);
+        viewer.fitScene();
+        if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
+        cancelAllAsyncReads();
+        asyncLodScheduler = new WasmBlockRequestScheduler(MAX_ASYNC_LOD_READS);
+        const lod = withCellGate(viewer.updateLod(targetVoxelPixels));
+        self.postMessage({ type: "lod", lod });
+        scheduleAsyncLodRead(true);
+    } else {
+        viewer.setColorMode(currentColorMode);
+        const sample = samplePointCloud();
+        viewer.replacePoints(sample.positions, sample.colors);
+        viewer.fitScene();
+        if (pose) viewer.setCameraPose(new Float64Array(pose.position), new Float64Array(pose.target));
+    }
+    lossReportedFor = null;
+    lastLodProgressKey = "";
+    renderViewerFrame();
+    postLodProgress(currentLodStats(), true);
+}
+
 async function handleMessage({ data }, queuedAt = performance.now()) {
     const startedAt = performance.now();
     try {
         switch (data.type) {
             case "init": {
                 wasmExports = await init();
+                renderCanvas = data.canvas;
+                framebufferSize = [data.width, data.height];
+                depthShadingOn = data.depthShading;
+                cellNodeBytes = data.cellNodeBytesPerFrame ?? 0;
+                if (data.deviceRecoveryBackoffMs) deviceRecoveryBackoff = data.deviceRecoveryBackoffMs;
                 viewer = await WasmVoxelViewer.createOffscreen(data.canvas, 0.6);
                 viewer.resize(data.width, data.height);
                 viewer.setColorMode(data.colorMode);
@@ -1167,6 +1316,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 }
                 // Compile the build worker's WASM now so the first dataset does not wait for it.
                 if (buildOptions) spawnBuildWorker();
+                scheduleDeviceLossWatch();
                 self.postMessage({ type: "ready" });
                 break;
             }
@@ -1253,6 +1403,7 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 break;
             }
             case "resize":
+                framebufferSize = [data.width, data.height];
                 advanceSceneGeneration();
                 viewer.resize(data.width, data.height);
                 break;
@@ -1279,11 +1430,13 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 setPxMode(data.mode);
                 break;
             case "depthShading":
+                depthShadingOn = data.value;
                 viewer.setDepthShading(data.value);
                 break;
             case "continuity":
                 // RF-05: only changes which cell level each octant draws; nothing is rebuilt.
-                viewer.setContinuity(Boolean(data.enabled), data.factor ?? undefined);
+                continuitySetting = [Boolean(data.enabled), data.factor ?? undefined];
+                viewer.setContinuity(...continuitySetting);
                 advanceSceneGeneration();
                 break;
             case "metrics":
@@ -1332,6 +1485,10 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
                 syncBuildView();
                 const startedAt = performance.now();
                 const frameStatus = renderViewerFrame();
+                if (await pollDeviceLoss()) {
+                    self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
+                    break;
+                }
                 const renderCallMs = performance.now() - startedAt;
                 recordFrameRenderSample(renderCallMs);
                 tickPxController(startedAt + renderCallMs);
@@ -1351,7 +1508,12 @@ async function handleMessage({ data }, queuedAt = performance.now()) {
         }
         syncBuildView();
     } catch (error) {
-        self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
+        // A frame that fails because the GPU went away is not an error for the host: recover instead.
+        if (data.type === "frame" && await deviceLostAfter()) {
+            self.postMessage({ type: "frame", frameStatus: "deviceRecovered", renderCallMs: 0 });
+        } else {
+            self.postMessage({ type: "error", operation: data.type, requestId: data.requestId, message: String(error) });
+        }
     } finally {
         if (coalescedCommands.has(data.type)) {
             self.postMessage({ type: "commandAck", command: data.type });

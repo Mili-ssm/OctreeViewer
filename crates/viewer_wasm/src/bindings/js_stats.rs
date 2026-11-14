@@ -81,6 +81,23 @@ impl WasmVoxelViewer {
         to_value(&self.inner.stats()).map_err(|error| JsValue::from_str(&error.to_string()))
     }
 
+    /// `{ reason: "unknown" | "destroyed", message }` once the GPU device was lost, else `null`.
+    /// Cheap: the host polls it to start the recovery of R3-Q26.
+    #[wasm_bindgen(js_name = deviceLost)]
+    pub fn device_lost(&self) -> JsValue {
+        let Some(loss) = self.gpu_renderer.as_ref().and_then(|r| r.device_loss()) else {
+            return JsValue::NULL;
+        };
+        let object = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&object, &"reason".into(), &JsValue::from_str(loss.reason));
+        let _ = js_sys::Reflect::set(
+            &object,
+            &"message".into(),
+            &JsValue::from_str(&loss.message),
+        );
+        object.into()
+    }
+
     #[wasm_bindgen(js_name = gpuStats)]
     pub fn gpu_stats(&self) -> Result<JsValue, JsValue> {
         let renderer = self
@@ -116,19 +133,7 @@ impl WasmVoxelViewer {
             &JsValue::from_str(&adapter_info.driver_info),
         )?;
         js_sys::Reflect::set(&stats, &"adapter".into(), &adapter)?;
-        let device_lost = match renderer.device_loss() {
-            Some(loss) => {
-                let object = js_sys::Object::new();
-                js_sys::Reflect::set(&object, &"reason".into(), &JsValue::from_str(loss.reason))?;
-                js_sys::Reflect::set(
-                    &object,
-                    &"message".into(),
-                    &JsValue::from_str(&loss.message),
-                )?;
-                object.into()
-            }
-            None => JsValue::NULL,
-        };
+        let device_lost = self.device_lost();
         js_sys::Reflect::set(&stats, &"deviceLost".into(), &device_lost)?;
         js_sys::Reflect::set(
             &stats,

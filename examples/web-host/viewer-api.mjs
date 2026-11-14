@@ -140,6 +140,15 @@ export function createViewer(canvas, options = {}) {
             ensureFrame();
         } else if (data.type === "status") {
             emit("status", data.message);
+        } else if (data.type === "deviceLost") {
+            emit("deviceLost", data);
+        } else if (data.type === "deviceRecovery") {
+            emit("deviceRecovery", data);
+            if (data.state === "recovered") {
+                loading = true;
+                framePending = false;
+                ensureFrame();
+            }
         }
     };
     const onWorkerError = (event) => {
