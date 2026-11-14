@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A, B1c y B1d cerradas; siguiente: B1b)
+Estado: en curso · 14-11-2026 (fase A y B1 cerradas; siguiente: B2, Tarea 12)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -40,16 +40,10 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   [registro](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)). Se asientan las 14 poses a 1 px y
   a 4 px; GTT pico ~+750 MiB. El ajuste al pool no actuó en el navegador (basta el pool mayor); lo
   cubre un test en simulación. La Tarea 11 queda abierta solo por el criterio de ≤ 16,7 ms (B1b.3).
-- [ ] B1b. Casillas abiertas de la Tarea 16b.
-  - [x] B1b.1. Escala de la pirámide de `hzb.rs` (ruta CPU): el fallo era real (la búsqueda escalaba
-    1,6 × 1,42 a 1280×720 y ocultaba lo visible); test rojo → verde y búsqueda 1:1 (`ace9d84`).
-  - [x] B1b.2. Cota del margen de profundidad del Hi-Z: `u·(25ρ + 24)` derivada, con el error de
-    rasterizado supuesto (4 u); test en 6 poses extremas (`3bb1d1b`). Su coste en datos reales se mide en B1b.3.
-  - [ ] B1b.3. ≤ 16,7 ms en wasm medido como tiempo de GPU del frame (R3-Q31): el renderer pide
-    `timestamp-query` si el adaptador la ofrece, mide cada frame sin bloquear (lectura asíncrona) y
-    expone p50/p95 en las estadísticas; el probe lanza Chrome con la feature habilitada y registra el
-    p95 en Majadas dentro de una hoja a 4 px. Check: p95 ≤ 16,7 ms en el probe; sin la feature, la
-    estadística queda vacía y no rompe nada.
+- [x] B1b. Casillas de la Tarea 16b ([registro](../records/benchmarks/R3_B1B_HIZ_14-11-2026.md)): fallo de
+  escala de `hzb.rs` corregido con test; margen del Hi-Z derivado (`u·(25ρ + 24)`, ≈ +3 % de GPU);
+  tiempo de GPU por frame con timestamps (R3-Q31), p95 7,38 ms en Majadas dentro de una hoja a 4 px.
+  Con esto pasan la Tarea 11 y la 16b.
 - [ ] B2. Tarea 12, modos de color, con ≤ 1 LSB en intensidad y elevación (R3-Q25).
   - [ ] B2.1. Mapear los modos de la ruta CPU y la vuelta a ella de R3-Q23 (qué lee cada modo y dónde).
   - [ ] B2.2. Color por atributo en la ruta de celdas: tests de paridad con la CPU, bit a bit en RGB y
@@ -92,8 +86,8 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
-- [x] L2. Salidas temporales de los probes en `target/r3-t11/` y `target/r3-b1d/` (fuera de git): borradas al registrar B1c y B1d.
-- [x] L3. Ramas `explore/b1c-cpu-fit` y `explore/b1d-gpu-pool`: integradas en `feat/r3-v75` y borradas.
+- [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool` y `explore/b1b-hzb`: integradas en `feat/r3-v75` y borradas.
 - [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
   `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
   bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).

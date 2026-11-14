@@ -565,7 +565,7 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 - [x] «Objetivo alcanzado» exige `CutApply::Applied`, `nodesWithoutLevel` = 0, `poolCoarsened` = 0 y ningún nodo dibujado con un nivel más grueso que el deseado (R3-Q3).
 - [x] Medir la congelación por `DescendantTooFine` (R3-Q10): duración y frecuencia en saltos de pose.
 - [x] Con un presupuesto de CPU del driver por debajo del conjunto de trabajo de la vista, los nodos fuera del corte se olvidan y se reconstruyen en cada frame (hallazgo de T10a2: en Belvedere, el acercamiento no se asienta por debajo del 90 % de su conjunto de trabajo, 54,8 MB). En wasm el presupuesto es de 512 MiB y Majadas a 1 px ocupa 824 MiB ([T9](../records/benchmarks/R3_T9_CELLS_06-11-2026.md)): medirlo en el navegador y, si se da, añadir histéresis al olvido.
-- [ ] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright. Los criterios propios de la Tarea 11 pasan ([B1d](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)); falta el de ≤ 16,7 ms de la Tarea 16b, que se comprueba aquí y sigue sin decidir (B1b.3 del [plan de mejoras](mejoras-pendientes-13-11-2026.md)).
+- [x] **Pasa si** no salta ningún criterio de T11. Verificación con Playwright. **Pasa (14-11-2026):** se asientan todas las poses ([B1d](../records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md)) y el tiempo de GPU de la Tarea 16b es p95 7,38 ms ([registro de B1b](../records/benchmarks/R3_B1B_HIZ_14-11-2026.md)).
 
 ## Tarea 12 ★: modos de color
 
@@ -685,7 +685,7 @@ El pool de producción aún no existe (Tarea 7), así que la técnica se mide pr
   | Dibujo (vértices): instancias, páginas, visibles | 3 | 3 |
 
   Ni el pase de huecos ni el pool de 256 MiB (ADR 0033) caben en `downlevel_defaults`. Por eso, según el ADR 0036, la Tarea 7 pide `max_storage_buffers_per_shader_stage` ≥ 8, que es el mínimo del estándar WebGPU, y un `max_storage_buffer_binding_size` y un `max_buffer_size` que alojen el pool, sin pasar de lo que da el adaptador. Si el adaptador no llega, la ruta de celdas no se activa y se usa la ruta CPU (R3-Q5).
-- [ ] **Pasa si** la profundidad es idéntica con y sin oclusión (Tarea 7b), y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms (se mide en la Tarea 11).
+- [x] **Pasa si** la profundidad es idéntica con y sin oclusión (Tarea 7b), y Majadas dentro de una hoja a 4 px en el visor wasm, con los límites de producción, sigue en ≤ 16,7 ms (se mide en la Tarea 11). **Pasa (14-11-2026):** tiempo de GPU p95 7,38 ms en reposo (R3-Q31; [registro de B1b](../records/benchmarks/R3_B1B_HIZ_14-11-2026.md)).
 
 ## Tarea 17: medida y ruta por defecto
 
