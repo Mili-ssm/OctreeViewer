@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fase A y B1 cerradas; en curso: B2, Tarea 12)
+Estado: en curso · 14-11-2026 (fase A, B1 y B2 cerradas; siguiente: B2b y B3)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -44,21 +44,13 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   escala de `hzb.rs` corregido con test; margen del Hi-Z derivado (`u·(25ρ + 24)`, ≈ +3 % de GPU);
   tiempo de GPU por frame con timestamps (R3-Q31), p95 7,38 ms en Majadas dentro de una hoja a 4 px.
   Con esto pasan la Tarea 11 y la 16b.
-- [ ] B2. Tarea 12, modos de color (R3-Q25, R3-Q32, R3-Q33). Rama `explore/b2-color`.
-  - [x] B2.1. Mapa: los modos de shader (intensidad, elevación, clasificación) se calculan en el shader
-    de la ruta CPU con rangos de los bloques visibles; la instancia de celdas ya guarda intensidad
-    (`u16`) y clase, pero en modo RGB los bloques se leen sin esas columnas; `attribute:N:M` pinta el
-    RGB en CPU; `color_gen` existe en el pool pero nunca cambia.
-  - [ ] B2.2. Las celdas llevan siempre intensidad y clase: la ruta de celdas lee esas columnas en
-    cualquier modo. Check: celdas construidas en modo RGB con intensidad (test) y coste en bytes leídos.
-  - [ ] B2.3. Modos de shader en celdas: modo y rangos en el uniforme del shader de celdas (intensidad
-    y z fusionados desde los nodos del corte; elevación con el desplazamiento `ojo − zmin` en `f64`);
-    función de color WGSL común a las dos rutas. Check: test de GPU de paridad (R3-Q32) y cambiar de
-    modo de shader no reconstruye celdas (contador de construcciones).
-  - [ ] B2.4. Modos `attribute:N:M` (R3-Q33): reconstrucción con `color_gen`, generaciones viejas
-    descartadas y sin huecos. Check: tests de descarte y de cobertura.
-  - [ ] B2.5. Quitar la vuelta a la ruta CPU de R3-Q23 y comprobar en el navegador todos los modos
-    (sin ruta CPU, sin errores, colores por modo). Check: probe y registro.
+- [x] B2. Tarea 12, modos de color ([registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md)): todos los
+  modos con celdas, función WGSL común (paridad con diferencia 0), modos de shader sin reconstruir y
+  modos de atributo con generación de color; sin vuelta a la ruta CPU.
+- [ ] B2b. Datos de atributos: el rango de cada columna de atributos es `[0, 0]` en Belvedere y Majadas
+  v7.5 (también en la ruta CPU), y en Majadas la clasificación se ve igual que RGB. Averiguar si viene
+  de los datos, del conversor o de los metadatos. Check: rango no nulo en una columna con valores, o
+  evidencia de que los datos son así.
 - [ ] B3. Tarea 13: un mismo espaciado de referencia por nube (T0b) no cambia al injertar páginas.
 - [ ] B4. Tarea 14, modos de px: fijo progresivo (predeterminado) y dinámico hacia 16,7 ms con histéresis (RF-06, RF-07).
 - [ ] B5. TW6, pérdida de dispositivo: recuperar sin recargar (R3-Q26).
@@ -69,7 +61,7 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
   - [ ] B5.4. Playwright: caída del proceso GPU de Chrome (no `device.destroy()`, cuyo motivo
     `destroyed` no se recupera); la vista vuelve con el mismo digest y sin errores en consola.
 - [ ] B6. Tarea 17, medida y ruta por defecto: matriz de R0 más RED-REF en el equipo de referencia
-  (≥ 4 GB de GPU). Depende de B1d y B2; al cerrarla, actualizar el estado del ADR 0027.
+  (≥ 4 GB de GPU); al cerrarla, actualizar el estado del ADR 0027.
 
 ## Fase C: velocidad de conversión, RQ-07 (rama `explore/convert-speed`)
 
@@ -95,7 +87,7 @@ misma sesión para la razón v7.5/V5. No se mide a la vez que el navegador.
 - [x] L1. Copias sin commitear de la revisión en el checkout principal (`feat/render-r3-node-cells`),
   ya integradas en `b50497f`: descartadas el 13-11-2026.
 - [x] L2. Salidas temporales de los probes de B1c, B1d y B1b (fuera de git): borradas al registrarlas.
-- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool` y `explore/b1b-hzb`: integradas en `feat/r3-v75` y borradas.
+- [x] L3. Ramas `explore/b1c-cpu-fit`, `explore/b1d-gpu-pool`, `explore/b1b-hzb` y `explore/b2-color`: integradas en `feat/r3-v75` y borradas.
 - [ ] L4. Salidas de tareas R3 anteriores en `target/r3-*` del worktree (~29 GB, fuera de git; las mayores,
   `r3-t6-accept`, `r3-t6-check`, `r3-t16-recheck` y `r3-t16-cases`, de 6 GB cada una): borrar con el visto
   bueno del propietario, conservando lo que aún usan los probes y benches (`r3-t16-cases`, `r3-t7c-pool`).

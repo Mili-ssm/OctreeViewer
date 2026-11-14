@@ -571,7 +571,9 @@ Residencia de celdas en GPU y su dibujo con compactación y Hi-Z por celda (R3-Q
 
 ## Tarea 12 ★: modos de color
 
-- [ ] **Pasa si:**
+**Hecha (14-11-2026):** [registro](../records/benchmarks/R3_B2_COLOR_14-11-2026.md). Todos los modos se dibujan con celdas (R3-Q32, R3-Q33); la vuelta a la ruta CPU de R3-Q23 desaparece.
+
+- [x] **Pasa si:**
   - el color por atributo coincide bit a bit con la ruta CPU, salvo intensidad y elevación, con ≤ 1 LSB (R3-Q25);
   - los modos de shader no reconstruyen celdas;
   - las generaciones de color viejas se descartan.
