@@ -41,7 +41,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-02 | Si se carga una nube cuyo CRS difiere del de las nubes abiertas, entonces el visor deberá rechazarla con un mensaje que nombre ambos CRS. | Propietario, ADR 0021 |
 | RF-03 | El visor deberá dibujar cada celda como un **cubo 3D** alineado con la rejilla global. | P1, ADR 0019 |
 | RF-04 | Mientras el modo de huecos sea **literal** (predeterminado), el visor no deberá dibujar cubos donde la fuente no tiene puntos. | P4 |
-| RF-05 | Donde el usuario active la **continuidad** en una nube, el visor deberá aplicar a toda esa nube un tamaño mínimo de cubo derivado de su densidad global (no por región). | P4 |
+| RF-05 | Donde el usuario active la **continuidad** en una nube, el visor deberá aplicar a toda esa nube un tamaño mínimo de cubo derivado de su densidad global (no por región). Pasa a ser el modo «espaciado de la nube» del selector de tamaño mínimo, junto a «solo px» y «longitud» en m/cm/mm ([ADR 0049](adr/0049-tamano-minimo-del-voxel.md), pendiente de implementar). | P4 |
 | RF-06 | Mientras el modo de px sea **fijo** (predeterminado), el visor deberá refinar de forma progresiva hacia el objetivo elegido, dibujando lo residente sin esperar a completarlo. | P5 |
 | RF-07 | Donde el modo de px **dinámico** esté activo, el visor deberá ajustar el objetivo de px para sostener 16,7 ms por frame, con histéresis. | P5 |
 | RF-08 | Mientras la cámara se mueve, el visor deberá reconstruir con la última vista y dibujar la escena anterior hasta que llegue la nueva. | P7, ADR 0018 |
@@ -85,7 +85,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RQ-06 | Disco temporal del CLI **≤ 2 × el tamaño del LAZ de entrada** (objetivo; ASM-03). | Conversión ESC-1 |
 | RQ-07 | V7 final frente a V5: latencia de lectura y navegación igual o mejor; conversión con tiempo ≤ 2,1× y RSS pico ≤ +40 % ([ADR 0043](adr/0043-coste-de-conversion-de-v7-frente-a-v5.md); era ≤ +30 % hasta el 15-11-2026); disco, solo lo que añada la pirámide densa (+15–35 % estimado). | Promoción de V7 |
 | RQ-08 | La conversión web produce los mismos bytes que el CLI (referencias R1). | Cada cambio del conversor |
-| RQ-09 | Ningún cubo por encima del objetivo de px salvo lo que imponga la densidad de la fuente ([contrato](explanation/REGIONAL_VOXEL_LOD.md)). Con la cámara dentro del dataset, la ruta de celdas admite ≤ 0,5 % de celdas en pantalla por encima ([ADR 0034](adr/0034-nivel-por-octante-con-arista-real.md)). | Cada cambio de render |
+| RQ-09 | Ningún cubo por encima del objetivo de px salvo lo que imponga la densidad de la fuente ([contrato](explanation/REGIONAL_VOXEL_LOD.md)) o el tamaño mínimo que elija el usuario ([ADR 0049](adr/0049-tamano-minimo-del-voxel.md)). Con la cámara dentro del dataset, la ruta de celdas admite ≤ 0,5 % de celdas en pantalla por encima ([ADR 0034](adr/0034-nivel-por-octante-con-arista-real.md)). | Cada cambio de render |
 | RQ-10 | Los controles de la app pública cumplen **WCAG 2.2 AA** (teclado completo, foco visible, contraste, etiquetas), verificado con axe y Playwright. El lienzo 3D queda fuera. | App pública |
 | RQ-11 | La escala se demuestra con un dataset real ≥ 50 GB y una réplica sintética hasta ESC-1, midiendo RQ-01 a RQ-05. | 1.0 |
 
@@ -159,7 +159,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | --- | --- | --- |
 | GPU mínima | GPU o iGPU con ≥ 4 GB disponibles para WebGPU; sustituye a P2. | [ADR 0033](adr/0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md), EQ-REF |
 | R3: hojas, claves e instancia | Continuación adaptativa de hojas, clave regional más allá de 21 bits e instancia de 12 B. | ADR 0032, R3-Q7 y R3-Q8 |
-| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. | R3-Q9 |
+| R3: hoja separada | No se refina más; entra en la excepción «densidad de la fuente» de RQ-09. **Cambia (propietario, 15-11-2026):** el render sigue refinando por debajo del espaciado ([ADR 0048](adr/0048-el-render-dibuja-el-nivel-pedido.md), pendiente de implementar). | R3-Q9 |
 | R3: saltos de pose | Con `DescendantTooFine` se retiene el corte anterior hasta completar el nuevo. | ADR 0033, R3-Q10 |
 | R3: corte mayor que el pool | Los nodos más lejanos bajan a un nivel más grueso, como etapa contada, hasta que el corte quepa. | ADR 0033, R3-Q11 |
 | R3: error proyectado | Nivel por octante con la arista proyectada real; ≤ 2× la CPU a 2–8 px y ≤ 2,5× a 1 px en la pose rasante. | ADR 0034, R3-Q12 |

@@ -1,6 +1,6 @@
 # 0034 Nivel por octante con la arista proyectada real
 
-Estado: Aceptada (diseño; se confirma en navegador en la Tarea 11 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)) · Fecha: 05-11-2026 · Decide: propietario · Enmienda a [ADR 0031](0031-celdas-por-nodo-en-v7-5.md)
+Estado: Aceptada (diseño; se confirma en navegador en la Tarea 11 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)); la regla «nivel por octante» la sustituye el [ADR 0050](0050-nivel-por-celda-segun-distancia.md) · Fecha: 05-11-2026 · Decide: propietario · Enmienda a [ADR 0031](0031-celdas-por-nodo-en-v7-5.md)
 
 ## Contexto
 - 0031 elige, por nodo, el nivel guardado más grueso cuyo error proyectado cumple el objetivo de px. Ese error es `projected_error_pixels` (`camera.rs:414`), una cota superior: usa la esquina más cercana del nodo para todas sus celdas y un factor fuera de eje de ≈ 1,31.
