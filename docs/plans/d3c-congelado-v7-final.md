@@ -113,11 +113,11 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 - Consumes: Tareas 1, 2 y 4.
 - Produces: `ConvertOptions::default().format_version() == FormatVersion::DEFAULT_OUTPUT == V7`, `row_order() == Hybrid`, `points_per_block() == 64000`.
 
-- [ ] **Step 1: tests que fallan:** `default_output_is_v7_hybrid`; en `tests/cli.rs`, `default_conversion_writes_v7_pair` (pie `OCTVEND7`, política de muestreo `leaf:64000`); `default_checkpoint_points_to_v5`, `default_ept_points_to_v5`, `default_extra_bytes_error_names_version` y `resume_v5_checkpoint_without_format_is_rejected` (Review Focus 4).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** cambiar el valor por defecto, los errores y la ayuda.
-- [ ] **Step 4:** `scripts/check.sh --offline` verde; solo cambian los SHA de casos sin formato explícito, y cada uno se anota en el informe.
-- [ ] **Step 5:** commit `feat(convert): make the final V7 the default output`.
+- [x] **Step 1: tests que fallan:** `default_output_is_v7_hybrid`; en `tests/cli.rs`, `default_conversion_writes_v7_pair` (pie `OCTVEND7`, política de muestreo `leaf:64000`); `default_checkpoint_points_to_v5`, `default_ept_points_to_v5`, `default_extra_bytes_error_names_version` y `resume_v5_checkpoint_without_format_is_rejected` (Review Focus 4).
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** cambiar el valor por defecto, los errores y la ayuda.
+- [x] **Step 4:** `scripts/check.sh --offline` verde; solo cambian los SHA de casos sin formato explícito, y cada uno se anota en el informe.
+- [x] **Step 5:** commit `feat(convert): make the final V7 the default output`.
 
 ### Task 6: App web con V7 por defecto
 
