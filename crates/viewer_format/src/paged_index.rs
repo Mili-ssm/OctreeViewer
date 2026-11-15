@@ -383,8 +383,9 @@ pub struct IndexLocation {
     pub(crate) layout: StorageLayout,
 }
 
-/// I/O-free state of a lazily read paged file (`v7.5-pre` or `v7`): the metadata block, the root page and the
-/// ids of the pages currently held. Callers fetch the bytes (sync or async) and feed them in.
+/// I/O-free state of a lazily read paged file (`v7.5-pre` or `v7`): the metadata block, the
+/// root page and the ids of the pages currently held. Callers fetch the bytes (sync or async)
+/// and feed them in.
 pub struct PagedCore {
     limits: FormatReaderLimits,
     layout: StorageLayout,

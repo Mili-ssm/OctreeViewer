@@ -69,7 +69,7 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::uses_global_frame)
     }
 
-    /// Whether the index is a metadata block plus a root page with child pages (`v7.5-pre`).
+    /// Whether the index is a metadata block plus a root page with child pages (`v7.5-pre` and `v7`).
     pub fn uses_pages(self) -> bool {
         crate::layout::StorageLayout::from_version(self)
             .is_ok_and(crate::layout::StorageLayout::uses_pages)

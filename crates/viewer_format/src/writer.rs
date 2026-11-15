@@ -5,6 +5,7 @@ use std::{
 
 use viewer_core::{BlockId, DatasetMetadata, NodeId, SpatialHierarchy, SpatialNode};
 
+use crate::MAX_SCHEMA_ATTRIBUTES;
 use crate::layout::{FOOTER_SIZE, HEADER_SIZE, StorageLayout};
 use crate::metadata::validate_metadata;
 use crate::version::FileRole;
@@ -603,16 +604,12 @@ impl<W: Write + Seek> FormatWriter<W> {
     }
 }
 
-/// Largest schema the writer emits: the default reader limit (RF-27), so no file the writer
-/// produces needs explicit reader limits to open.
-const MAX_WRITTEN_ATTRIBUTES: usize = 256;
-
 fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatError> {
     let count = metadata.dataset().hierarchy().attributes().len();
-    if count > MAX_WRITTEN_ATTRIBUTES {
+    if count > MAX_SCHEMA_ATTRIBUTES {
         return Err(FormatError::TooManyAttributes {
             count,
-            limit: MAX_WRITTEN_ATTRIBUTES,
+            limit: MAX_SCHEMA_ATTRIBUTES,
         });
     }
     Ok(())

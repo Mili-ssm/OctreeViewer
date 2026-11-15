@@ -1,6 +1,5 @@
-use crate::FormatError;
+use crate::{FormatError, MAX_SCHEMA_ATTRIBUTES};
 
-const MAX_ATTRIBUTES_DEFAULT: u32 = 256;
 const MAX_COMPONENTS_DEFAULT: u32 = 65_535;
 const MAX_STRING_BYTES_DEFAULT: u32 = 1_048_576;
 const MAX_INDEX_BYTES_DEFAULT: u64 = 256 * 1024 * 1024;
@@ -18,8 +17,9 @@ const MAX_ATTRIBUTE_RANGES_DEFAULT: u64 = 1 << 23;
 
 /// Resource limits checked before reader allocations.
 ///
-/// The default accepts at most 256 attributes. The format and writer allow wider schemas;
-/// callers opening those files must pass suitable limits to `FormatReader::with_limits`.
+/// The default accepts at most 256 attributes, the same bound the writer enforces (RF-27).
+/// The limit only matters for files from elsewhere or older writers with wider schemas;
+/// callers opening those must pass suitable limits to `FormatReader::with_limits`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatReaderLimits {
     pub(crate) max_index_bytes: u64,
@@ -117,7 +117,7 @@ impl Default for FormatReaderLimits {
             max_block_bytes: MAX_BLOCK_BYTES_DEFAULT,
             max_nodes: MAX_NODES_DEFAULT,
             max_blocks: MAX_BLOCKS_DEFAULT,
-            max_attributes: MAX_ATTRIBUTES_DEFAULT,
+            max_attributes: MAX_SCHEMA_ATTRIBUTES as u32,
             max_attribute_components: MAX_COMPONENTS_DEFAULT,
             max_string_bytes: MAX_STRING_BYTES_DEFAULT,
             max_attribute_ranges: MAX_ATTRIBUTE_RANGES_DEFAULT,

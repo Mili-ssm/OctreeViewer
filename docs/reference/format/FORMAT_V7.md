@@ -40,4 +40,5 @@ filas, los ficheros de v7 y v7.5-pre difieren solo en esos bytes.
 El escritor rechaza esquemas de más de 256 atributos en todas las versiones escribibles
 (`FormatError::TooManyAttributes`, RF-27, revisión 30-10-2026 del
 [ADR 0007](../../adr/0007-limites-por-defecto-del-lector.md)): ningún fichero escrito necesita
-límites de lector explícitos para abrirse.
+límites de lector explícitos por su número de atributos (el número de nodos y de bloques sigue
+sujeto a los límites por defecto del lector).

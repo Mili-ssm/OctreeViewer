@@ -112,7 +112,7 @@ impl StorageLayout {
     }
 
     /// Paged hierarchy: the index is a metadata block plus a root page, and the rest of the
-    /// node table lives in child pages (v7.5-pre).
+    /// node table lives in child pages (v7.5-pre and v7).
     pub(crate) const fn uses_pages(self) -> bool {
         matches!(self, Self::V7Pre5 | Self::V7)
     }

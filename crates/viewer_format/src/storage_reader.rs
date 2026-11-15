@@ -337,7 +337,7 @@ impl<R: Read + Seek> OctreeReader for FormatReader<R> {
 }
 
 impl FormatReader<std::io::Cursor<Vec<u8>>> {
-    /// Lazy `v7.5-pre` reader whose payloads and pages are fetched by the caller (browser Blobs).
+    /// Lazy paged-layout (`v7.5-pre` and `v7`) reader whose payloads and pages are fetched by the caller (browser Blobs).
     /// `footer` is the last 40 bytes of the file and `index` the index region it names.
     pub fn paged_external(
         file_length: u64,

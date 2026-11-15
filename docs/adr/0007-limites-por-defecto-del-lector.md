@@ -25,3 +25,6 @@ Se decide la política de compatibilidad por defecto, o un corpus real supera al
 
 ## Revisión 30-10-2026
 Aceptada por el propietario. Pregunta abierta resuelta: el escritor rechaza esquemas de más de 256 atributos con un mensaje claro (RF-27 de [requisitos](../requirements.md)). **Pendiente:** hoy el escritor los acepta (test `wide_schema_requires_explicit_reader_limits`); hay que cambiar el escritor y ese test. La columna de alternativas conserva su texto original.
+
+## Revisión 15-11-2026
+El escritor ya rechaza esquemas de más de 256 atributos (`FormatError::TooManyAttributes`, RF-27). El test `wide_schema_requires_explicit_reader_limits` pasó a llamarse `wide_schema_is_limited_to_the_default_reader_limit` (`crates/viewer_format/src/writer_tests.rs`); el test de integración `writer_rejects_more_than_256_attributes` (`crates/viewer_format/tests/v7_final.rs`) cubre el mismo rechazo.
