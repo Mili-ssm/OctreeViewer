@@ -1,0 +1,32 @@
+name: Mejora
+description: Algo que falta o se puede hacer mejor
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      description: Quien tría añade la etiqueta de área y la de prioridad.
+      options: [formato, conversor, visor, web, api, docs, herramientas]
+    validations:
+      required: true
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema
+      description: Qué falta o qué estorba hoy; requisito o plan relacionado.
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      placeholder: "- [ ] ..."
+    validations:
+      required: true

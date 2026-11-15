@@ -1,13 +1,13 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c hechos; siguiente: PR de `feat/r3-v75` a `main`, luego D4; ver
+Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c hechos; siguiente: fusionar la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1), luego D4 ([#11](https://github.com/Mili-ssm/OctreeViewer/issues/11)); ver
 [Cómo retomar](#cómo-retomar-15-11-2026))
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
 según el [orden de trabajo acordado](../requirements.md#orden-de-trabajo-acordado): R3 → R5 (completado;
 queda la robustez remota) → congelar V7 final → API pública. La velocidad de conversión (RQ-07) es
-requisito para promover V7. Las prioridades activas siguen en el [README](../../README.md#prioridades-pendientes).
+requisito para promover V7. El resumen de prioridades está en el [README](../../README.md#prioridades-pendientes) y lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues).
 
 **Ramas:** `feat/r3-v75` (worktree `~/.cache/codex-worktrees/octree-r3-v75`, que guarda los datasets
 v7.5 en `target/render-data`) recibe lo verificado. El trabajo sin verificar va en una rama `explore/`
@@ -42,7 +42,9 @@ que no es de esta línea de trabajo.
   con seguimiento; `git ls-remote origin` muestra los dos SHA locales.
 - [x] D3c (ver la fase D, hecho el 15-11-2026): [plan propio](d3c-congelado-v7-final.md), con pre-mortem y decisiones del propietario en el
   [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Comprobación: la de D3c.
-- [ ] PR de `feat/r3-v75` a `main`, con descripción redactada a partir de los registros; después, D4.
+- [x] PR de `feat/r3-v75` a `main` abierta (15-11-2026): [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1); la fusión la decide el propietario.
+- [x] Flujo de GitHub adoptado (15-11-2026): lo pendiente pasa a [issues](https://github.com/Mili-ssm/OctreeViewer/issues) ([reglas](../../CONTRIBUTING.md#issues-y-prs)); los experimentos son PRs en borrador (#2–#10).
+- [ ] D4: [#11](https://github.com/Mili-ssm/OctreeViewer/issues/11), dentro del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27).
 
 **Ramas conservadas como evidencia** (sin integrar): `explore/convert-speed`, `explore/convert-batch` (fase
 C), `explore/oq09-morton` (worktree de un agente en `.claude/worktrees/agent-a218fbc1eaf663ffd`
@@ -152,9 +154,6 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 
 ## Decisiones del propietario pendientes
 
-| Tema | Bloquea |
-| --- | --- |
-| Factor de continuidad (RF-05): con 1 × el espaciado de referencia el efecto es mínimo en Belvedere y Majadas | Nada; ajuste visual |
-| OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
-| Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |
-| ADR 0008 (`release` optimiza tamaño; usa `opt-level = 3` desde el 02-11-2026) y ADR 0025 (aceptado; el codificador propio no existe) | Nada; requieren ADR nuevo o decisión |
+Viven en issues con la etiqueta [`pregunta-propietario`](https://github.com/Mili-ssm/OctreeViewer/issues?q=is%3Aopen+label%3Apregunta-propietario):
+RF-05 ([#17](https://github.com/Mili-ssm/OctreeViewer/issues/17)), OQ-10 ([#18](https://github.com/Mili-ssm/OctreeViewer/issues/18)), B1b.3 ([#19](https://github.com/Mili-ssm/OctreeViewer/issues/19)) y ADR 0008
+([#20](https://github.com/Mili-ssm/OctreeViewer/issues/20)); el codificador propio del ADR 0025 va tras el congelado ([#14](https://github.com/Mili-ssm/OctreeViewer/issues/14)).

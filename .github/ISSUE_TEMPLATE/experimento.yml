@@ -1,0 +1,23 @@
+name: Experimento
+description: Hipótesis que se prueba en una rama explore/ o experiment/ antes de decidir
+labels: [experimento]
+body:
+  - type: textarea
+    id: hipotesis
+    attributes:
+      label: Hipótesis
+      description: Qué se espera ganar y en qué métrica.
+    validations:
+      required: true
+  - type: textarea
+    id: metodo
+    attributes:
+      label: Método y criterio de parada
+      description: Dataset, perfil, rondas y el umbral que decide integrar o descartar.
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decisión
+      description: Se rellena al acabar, con enlace al registro en docs/records/benchmarks/.
