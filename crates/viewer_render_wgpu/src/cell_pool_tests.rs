@@ -304,6 +304,7 @@ fn root_node() -> HashMap<NodeId, PoolNode> {
         PoolNode {
             bounds: cube(ORIGIN, SIDE),
             stored: vec![3, 4, 5],
+            buildable: (3, 5),
             points: 2000,
         },
     )])
@@ -631,6 +632,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
             PoolNode {
                 bounds: cube(ORIGIN, SIDE),
                 stored: vec![3, 4],
+                buildable: (3, 4),
                 points: 2000,
             },
         ),
@@ -639,6 +641,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
             PoolNode {
                 bounds: cube(ORIGIN, SIDE / f64::from(1_u32 << (MAX_MASK_LEVELS + 1))),
                 stored: vec![7, 8],
+                buildable: (7, 8),
                 points: 2000,
             },
         ),
@@ -647,6 +650,7 @@ fn chain_nodes() -> HashMap<NodeId, PoolNode> {
             PoolNode {
                 bounds: cube(ORIGIN, SIDE / f64::from(1_u32 << MAX_MASK_LEVELS)),
                 stored: vec![6, 7],
+                buildable: (6, 7),
                 points: 2000,
             },
         ),
@@ -1252,6 +1256,7 @@ fn the_fallback_never_makes_the_real_cut_too_fine() {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
             stored: vec![4, 5],
+            buildable: (4, 5),
             points: 2000,
         },
     );
@@ -1949,6 +1954,7 @@ fn only_a_node_with_an_ancestor_the_fallback_would_use_can_be_held() {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 4.0, ORIGIN[1], ORIGIN[2]], SIDE / 32.0),
             stored: vec![8, 9, 10],
+            buildable: (8, 10),
             points: 2000,
         },
     );
@@ -2437,6 +2443,7 @@ fn a_zone_nothing_can_cover_retains_the_previous_cut_and_counts_the_loss() {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
             stored: vec![4, 5],
+            buildable: (4, 5),
             points: 2000,
         },
     );
@@ -2532,6 +2539,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
         PoolNode {
             bounds: cube([ORIGIN[0] + SIDE / 2.0, ORIGIN[1], ORIGIN[2]], SIDE / 2.0),
             stored: vec![4, 5],
+            buildable: (4, 5),
             points: 2000,
         },
     );
@@ -2540,6 +2548,7 @@ fn chain_with_extras() -> HashMap<NodeId, PoolNode> {
         PoolNode {
             bounds: cube(ORIGIN, SIDE / 32.0),
             stored: vec![9, 10],
+            buildable: (9, 10),
             points: 2000,
         },
     );

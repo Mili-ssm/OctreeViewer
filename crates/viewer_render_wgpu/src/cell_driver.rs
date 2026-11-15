@@ -178,6 +178,15 @@ pub struct NodeInput<'a> {
     pub cells: &'a NodeCells,
 }
 
+/// The outcome of [`CellDriver::add_packed_levels`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelsAdded {
+    /// This many new depths were merged into the stored node.
+    Added(usize),
+    /// Nothing changed: unknown node, another or older generation, or every depth stored already.
+    Ignored,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeAdded {
     /// Stored; its non-empty levels are known to the pool.
@@ -383,6 +392,8 @@ pub struct PackedNode {
     /// Node bounds in the world frame.
     pub bounds: SpatialBounds,
     pub points: u64,
+    /// Depths the node can build on demand, inclusive (`NodeCells::buildable`).
+    pub buildable: (u8, u8),
     /// Non-empty levels only.
     pub levels: Vec<PackedLevel>,
 }
@@ -453,6 +464,7 @@ fn pack_checked(
         id,
         bounds,
         points,
+        buildable: cells.buildable,
         levels,
     })
 }
@@ -526,7 +538,14 @@ impl CellDriver {
             return Err(NodeInputError::Duplicate(input.id));
         }
         let node = pack_checked(&self.config.grid, self.config.coordinate_origin, input)?;
-        self.add_packed(node.id, node.bounds, node.points, node.levels)
+        self.store_packed(
+            None,
+            node.id,
+            node.bounds,
+            node.points,
+            node.buildable,
+            node.levels,
+        )
     }
 
     /// Stores a node whose levels are already packed. The pages hold integer cell coordinates of
@@ -540,7 +559,15 @@ impl CellDriver {
         points: u64,
         levels: Vec<PackedLevel>,
     ) -> Result<NodeAdded, NodeInputError> {
-        self.store_packed(None, id, bounds, points, levels)
+        let mut depths = levels
+            .iter()
+            .filter(|level| !level.pages.is_empty())
+            .map(|level| level.depth);
+        let first = depths.next().unwrap_or(0);
+        let buildable = depths.fold((first, first), |(low, high), depth| {
+            (low.min(depth), high.max(depth))
+        });
+        self.store_packed(None, id, bounds, points, buildable, levels)
     }
 
     /// [`add_packed`](Self::add_packed) for nodes that arrive in messages, which may repeat.
@@ -569,8 +596,64 @@ impl CellDriver {
             node.id,
             node.bounds,
             node.points,
+            node.buildable,
             node.levels,
         )
+    }
+
+    /// Adds levels built on demand to a stored node: `levels.levels` holds only the new depths,
+    /// merged in depth order next to the ones already stored (their pool sizes and CPU bytes
+    /// included). `Ignored` when the node is unknown (forgotten, or never stored), when the
+    /// generation is not the one the node was stored with or its colour is older than one already
+    /// seen, and when every depth is stored already.
+    pub fn add_packed_levels(
+        &mut self,
+        generation: u64,
+        levels: PackedNode,
+    ) -> Result<LevelsAdded, NodeInputError> {
+        let PackedNode { id, mut levels, .. } = levels;
+        levels.retain(|level| !level.pages.is_empty());
+        levels.sort_by_key(|level| level.depth);
+        if levels.iter().any(|level| level.node != id)
+            || levels.windows(2).any(|pair| pair[0].depth == pair[1].depth)
+        {
+            return Err(NodeInputError::InvalidLevel(id));
+        }
+        let outdated = self.newest_generation.is_some_and(|newest| {
+            dataset_of(newest) == dataset_of(generation) && color_of(generation) < color_of(newest)
+        });
+        let Some(stored) = self.nodes.get_mut(&id) else {
+            return Ok(LevelsAdded::Ignored);
+        };
+        if outdated || stored.generation != Some(generation) {
+            return Ok(LevelsAdded::Ignored);
+        }
+        levels.retain(|level| !stored.pool.stored.contains(&level.depth));
+        if levels.is_empty() {
+            return Ok(LevelsAdded::Ignored);
+        }
+        let sizes: Vec<(u8, usize)> = levels
+            .iter()
+            .map(|level| (level.depth, level.pages.len()))
+            .collect();
+        self.pool.set_level_sizes(id, &sizes);
+        let added = levels.len();
+        let colors = level_ranges(&self.config.grid, &levels);
+        for (level, color) in levels.into_iter().zip(colors) {
+            let bytes = level_bytes(&level);
+            let at = stored
+                .pool
+                .stored
+                .partition_point(|depth| *depth < level.depth);
+            stored.pool.stored.insert(at, level.depth);
+            stored.colors.insert(at, color);
+            stored.levels.insert(at, Arc::new(level));
+            stored.bytes += bytes;
+            self.cpu_bytes += bytes;
+        }
+        self.dirty = true;
+        self.arrived_since_cut.insert(id);
+        Ok(LevelsAdded::Added(added))
     }
 
     fn store_packed(
@@ -579,6 +662,7 @@ impl CellDriver {
         id: NodeId,
         bounds: SpatialBounds,
         points: u64,
+        buildable: (u8, u8),
         mut levels: Vec<PackedLevel>,
     ) -> Result<NodeAdded, NodeInputError> {
         let same_dataset = |other: Option<u64>| match (generation, other) {
@@ -611,7 +695,7 @@ impl CellDriver {
             return Err(NodeInputError::InvalidLevel(id));
         }
         if stored_generation.is_some() {
-            return self.recolor_node(id, generation, levels);
+            return self.recolor_node(id, generation, buildable, levels);
         }
         self.newest_generation = self.newest_generation.max(generation);
         if levels.is_empty() {
@@ -633,6 +717,7 @@ impl CellDriver {
                 pool: PoolNode {
                     bounds,
                     stored: levels.iter().map(|level| level.depth).collect(),
+                    buildable,
                     points,
                 },
                 levels: levels.into_iter().map(Arc::new).collect(),
@@ -653,16 +738,52 @@ impl CellDriver {
         &mut self,
         id: NodeId,
         generation: Option<u64>,
+        buildable: (u8, u8),
         levels: Vec<PackedLevel>,
     ) -> Result<NodeAdded, NodeInputError> {
+        // Depths built on demand are not in the incoming node: they keep the old colours, so they
+        // go, and the cut asks for them again. Checked on the kept ones first: a refused
+        // recolour changes nothing.
         let stored = &self.nodes[&id];
-        let same_shape = levels.len() == stored.levels.len()
-            && levels
-                .iter()
-                .zip(&stored.levels)
-                .all(|(new, old)| new.depth == old.depth && new.pages.len() == old.pages.len());
+        let kept: Vec<usize> = (0..stored.levels.len())
+            .filter(|at| {
+                levels
+                    .iter()
+                    .any(|new| new.depth == stored.levels[*at].depth)
+            })
+            .collect();
+        let same_shape = levels.len() == kept.len()
+            && levels.iter().zip(&kept).all(|(new, at)| {
+                let old = &stored.levels[*at];
+                new.depth == old.depth && new.pages.len() == old.pages.len()
+            });
         if !same_shape {
             return Err(NodeInputError::InvalidLevel(id));
+        }
+        if kept.len() < stored.levels.len() {
+            let stored = self.nodes.get_mut(&id).expect("stored");
+            let mut at = 0;
+            let mut dropped = 0;
+            stored.levels.retain(|level| {
+                at += 1;
+                let keep = kept.contains(&(at - 1));
+                if !keep {
+                    dropped += level_bytes(level);
+                }
+                keep
+            });
+            let mut at = 0;
+            stored.pool.stored.retain(|_| {
+                at += 1;
+                kept.contains(&(at - 1))
+            });
+            let mut at = 0;
+            stored.colors.retain(|_| {
+                at += 1;
+                kept.contains(&(at - 1))
+            });
+            stored.bytes -= dropped;
+            self.cpu_bytes -= dropped;
         }
         let bytes = levels.iter().map(level_bytes).sum::<u64>();
         let count = levels.len();
@@ -677,6 +798,7 @@ impl CellDriver {
         let stored = self.nodes.get_mut(&id).expect("stored");
         self.cpu_bytes = self.cpu_bytes - stored.bytes + bytes;
         stored.bytes = bytes;
+        stored.pool.buildable = buildable;
         stored.levels = levels;
         stored.colors = colors;
         stored.generation = generation;

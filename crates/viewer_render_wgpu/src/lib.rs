@@ -48,8 +48,8 @@ pub use cell_cut::{
 };
 pub use cell_driver::{
     CellColorRanges, CellDriver, CellDriverError, CellTarget, DriverConfig, FramePhase,
-    FrameReport, NodeAdded, NodeInput, NodeInputError, PackedNode, cell_generation, pack_node,
-    packed_node_bytes,
+    FrameReport, LevelsAdded, NodeAdded, NodeInput, NodeInputError, PackedNode, cell_generation,
+    pack_node, packed_node_bytes,
 };
 pub use cell_pages::{
     CELL_PAGES_WGSL, CellInstance, DecodedCell, FLAG_SPANS_OCTANTS, MAX_INTENSITY, MAX_PAGE_EXTENT,

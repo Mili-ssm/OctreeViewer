@@ -92,7 +92,10 @@ fn node_cells(seed: u64, depths: &[(u8, usize)]) -> NodeCells {
     NodeCells {
         node: NodeId::new(NODE),
         levels,
-        buildable: (0, crate::MAX_CELL_DEPTH),
+        buildable: (
+            depths.iter().map(|&(depth, _)| depth).min().unwrap_or(0),
+            depths.iter().map(|&(depth, _)| depth).max().unwrap_or(0),
+        ),
     }
 }
 

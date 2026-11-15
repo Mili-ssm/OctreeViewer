@@ -136,6 +136,10 @@ fn load_case(dir: &Path) -> Result<Case> {
             CaseNode {
                 pool: PoolNode {
                     bounds,
+                    buildable: (
+                        stored.iter().copied().min().unwrap_or(0),
+                        stored.iter().copied().max().unwrap_or(0),
+                    ),
                     stored,
                     points: node["points"].as_u64().ok_or("points")?,
                 },

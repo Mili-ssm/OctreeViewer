@@ -354,7 +354,10 @@ fn node_cells(node: u64, depths: &[u8]) -> NodeCells {
                 octant_offsets: None,
             })
             .collect(),
-        buildable: (0, crate::MAX_CELL_DEPTH),
+        buildable: (
+            depths.iter().copied().min().unwrap_or(0),
+            depths.iter().copied().max().unwrap_or(0),
+        ),
     }
 }
 
@@ -916,6 +919,10 @@ fn add_generation(
             id,
             bounds: node.bounds,
             points: node.points,
+            buildable: (
+                node.stored.first().copied().unwrap_or(0),
+                node.stored.last().copied().unwrap_or(0),
+            ),
             levels,
         },
     )
@@ -1007,6 +1014,7 @@ fn a_recolour_with_another_shape_is_refused() {
         id: NodeId::new(2),
         bounds: node.bounds,
         points: node.points,
+        buildable: node.buildable,
         levels: std::mem::take(&mut levels),
     };
     assert!(matches!(
@@ -1032,4 +1040,133 @@ fn outdated_nodes_are_forgotten_before_current_ones() {
     fx.driver.config.cpu_budget_bytes = fx.driver.cpu_bytes() - 1;
     let report = fx.step(&[], &cam, 64.0);
     assert_eq!(report.forgotten, ids(&[2]));
+}
+
+/// A node of `depths` (two pages each) in the generation, standing in for one built on demand.
+fn packed_at(id: u64, depths: &[u8]) -> PackedNode {
+    let node = NodeId::new(id);
+    PackedNode {
+        id: node,
+        bounds: octant_nodes()[&node].bounds,
+        points: 2000,
+        buildable: (10, 14),
+        levels: depths
+            .iter()
+            .map(|depth| level_of(node, *depth, 2))
+            .collect(),
+    }
+}
+
+fn stored_depths(driver: &CellDriver, id: u64) -> Vec<u8> {
+    driver.nodes[&NodeId::new(id)].pool.stored.clone()
+}
+
+fn colour_depths(driver: &CellDriver, id: u64) -> Vec<u8> {
+    driver.nodes[&NodeId::new(id)]
+        .colors
+        .iter()
+        .map(|(depth, _)| *depth)
+        .collect()
+}
+
+#[test]
+fn added_levels_extend_the_stored_chain_in_order() {
+    let generation = cell_generation(5, 0);
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    driver
+        .add_packed_generation(generation, packed_at(2, &[10, 14]))
+        .unwrap();
+    let before = driver.cpu_bytes();
+    let added = driver
+        .add_packed_levels(generation, packed_at(2, &[12]))
+        .unwrap();
+    assert_eq!(added, LevelsAdded::Added(1));
+    assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
+    assert_eq!(colour_depths(&driver, 2), [10, 12, 14]);
+    let id = NodeId::new(2);
+    let level = level_of(id, 12, 2);
+    assert_eq!(driver.cpu_bytes(), before + level_bytes(&level));
+    assert_eq!(driver.pool.known_pages(driver.pool.key(id, 12)), Some(2));
+    assert_eq!(driver.nodes[&id].levels.len(), 3);
+    assert_eq!(driver.nodes[&id].pool.buildable, (10, 14));
+}
+
+#[test]
+fn an_already_stored_depth_is_ignored() {
+    let generation = cell_generation(5, 0);
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    driver
+        .add_packed_generation(generation, packed_at(2, &[10, 14]))
+        .unwrap();
+    let before = driver.cpu_bytes();
+    assert_eq!(
+        driver.add_packed_levels(generation, packed_at(2, &[14])),
+        Ok(LevelsAdded::Ignored)
+    );
+    assert_eq!(driver.cpu_bytes(), before);
+    assert_eq!(stored_depths(&driver, 2), [10, 14]);
+}
+
+#[test]
+fn levels_for_a_forgotten_node_or_old_generation_are_ignored() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    assert_eq!(
+        driver.add_packed_levels(g0, packed_at(2, &[12])),
+        Ok(LevelsAdded::Ignored),
+        "unknown node"
+    );
+    driver
+        .add_packed_generation(g0, packed_at(2, &[10, 14]))
+        .unwrap();
+    driver
+        .add_packed_generation(g1, packed_at(3, &[10, 14]))
+        .unwrap();
+    // Node 2 still holds colour 0 and colour 1 was seen: its levels are old.
+    assert_eq!(
+        driver.add_packed_levels(g0, packed_at(2, &[12])),
+        Ok(LevelsAdded::Ignored),
+        "old generation"
+    );
+    assert_eq!(
+        driver.add_packed_levels(g1, packed_at(2, &[12])),
+        Ok(LevelsAdded::Ignored),
+        "colour the node does not hold"
+    );
+    assert_eq!(stored_depths(&driver, 2), [10, 14]);
+    assert_eq!(
+        driver.add_packed_levels(g1, packed_at(3, &[12])),
+        Ok(LevelsAdded::Added(1))
+    );
+}
+
+#[test]
+fn recolor_drops_on_demand_levels() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let mut driver = CellDriver::new(config(44, 4, u64::MAX));
+    driver
+        .add_packed_generation(g0, packed_at(2, &[10, 14]))
+        .unwrap();
+    let base = driver.cpu_bytes();
+    driver.add_packed_levels(g0, packed_at(2, &[12])).unwrap();
+    assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
+    assert_eq!(
+        driver.add_packed_generation(g1, packed_at(2, &[10, 14])),
+        Ok(NodeAdded::Recolored { levels: 2 })
+    );
+    assert_eq!(stored_depths(&driver, 2), [10, 14]);
+    assert_eq!(colour_depths(&driver, 2), [10, 14]);
+    assert_eq!(driver.nodes[&NodeId::new(2)].levels.len(), 2);
+    assert_eq!(driver.cpu_bytes(), base);
+    // A recolour of another shape is still refused and drops nothing.
+    driver.add_packed_levels(g1, packed_at(2, &[12])).unwrap();
+    let with_12 = driver.cpu_bytes();
+    let mut odd = packed_at(2, &[10, 14]);
+    odd.levels[0] = level_of(NodeId::new(2), 10, 3);
+    assert_eq!(
+        driver.add_packed_generation(cell_generation(5, 2), odd),
+        Err(NodeInputError::InvalidLevel(NodeId::new(2)))
+    );
+    assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
+    assert_eq!(driver.cpu_bytes(), with_12);
 }

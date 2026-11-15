@@ -48,6 +48,7 @@ pub(crate) fn octant_nodes() -> HashMap<NodeId, PoolNode> {
                 PoolNode {
                     bounds: cube(min, half),
                     stored: vec![4, 5, 6, 7],
+                    buildable: (4, 7),
                     points: 2000,
                 },
             )
@@ -336,6 +337,7 @@ pub(crate) fn octants_of(
                 PoolNode {
                     bounds: cube(min, half),
                     stored: stored.to_vec(),
+                    buildable: (stored[0], stored[stored.len() - 1]),
                     points: 2000,
                 },
             )

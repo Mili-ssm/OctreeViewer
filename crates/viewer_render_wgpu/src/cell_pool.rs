@@ -151,6 +151,8 @@ pub struct PoolNode {
     pub bounds: SpatialBounds,
     /// Absolute depths of the stored levels, ascending.
     pub stored: Vec<u8>,
+    /// Depths the node can build on demand, inclusive: `stored` lies inside it.
+    pub buildable: (u8, u8),
     /// Points of the node, for the size estimate of levels that have not arrived.
     pub points: u64,
 }
@@ -976,7 +978,7 @@ impl CellPool {
     }
 
     /// The size of a level when known: its data, else its exact size.
-    fn known_pages(&self, key: LevelKey) -> Option<usize> {
+    pub(crate) fn known_pages(&self, key: LevelKey) -> Option<usize> {
         self.levels
             .get(&key)
             .and_then(Level::pages)

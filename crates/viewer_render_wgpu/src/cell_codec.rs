@@ -32,8 +32,8 @@ use crate::{
 
 const MAGIC: [u8; 4] = *b"R3NC";
 /// Version of the byte format.
-pub const CODEC_VERSION: u32 = 1;
-const HEADER_BYTES: usize = 4 + 4 + 8 + 8 + 48 + 4;
+pub const CODEC_VERSION: u32 = 2;
+const HEADER_BYTES: usize = 4 + 4 + 8 + 8 + 48 + 2 + 4;
 const LEVEL_BYTES: usize = 8;
 const PAGE_RECORD_BYTES: usize = 46;
 const INSTANCE_BYTES: usize = size_of::<CellInstance>();
@@ -129,11 +129,19 @@ fn validate_level(
     Ok(())
 }
 
+fn check_buildable((first, last): (u8, u8)) -> Result<(), CodecError> {
+    if first > last || u32::from(last) > MAX_DEPTH {
+        return Err(CodecError::Invalid("buildable range"));
+    }
+    Ok(())
+}
+
 /// Encodes a node. Levels without pages are left out (the driver drops them too); the others must
 /// pass the checks of the decoder (see `validate_level`) and be in strictly increasing depth, so
 /// the output always decodes.
 pub fn encode_node_levels(node: &PackedNode) -> Result<Vec<u8>, CodecError> {
     let too_big = CodecError::Invalid("node too large");
+    check_buildable(node.buildable)?;
     let levels: Vec<&PackedLevel> = node
         .levels
         .iter()
@@ -164,6 +172,7 @@ pub fn encode_node_levels(node: &PackedNode) -> Result<Vec<u8>, CodecError> {
     for value in node.bounds.min().into_iter().chain(node.bounds.max()) {
         out.extend_from_slice(&value.to_le_bytes());
     }
+    out.extend_from_slice(&[node.buildable.0, node.buildable.1]);
     out.extend_from_slice(&level_count.to_le_bytes());
     for level in levels {
         out.extend_from_slice(&u32::from(level.depth).to_le_bytes());
@@ -247,6 +256,8 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
         [bounds[3], bounds[4], bounds[5]],
     )
     .map_err(|_| CodecError::Invalid("bounds"))?;
+    let buildable = (reader.array::<1>()?[0], reader.array::<1>()?[0]);
+    check_buildable(buildable)?;
     let level_count = reader.u32()? as usize;
     // Every level takes at least its header and one page, so this caps the allocation below.
     if level_count > reader.0.len() / (LEVEL_BYTES + PAGE_BYTES) {
@@ -321,6 +332,7 @@ pub fn decode_node_levels(bytes: &[u8]) -> Result<PackedNode, CodecError> {
         id,
         bounds,
         points,
+        buildable,
         levels,
     })
 }
