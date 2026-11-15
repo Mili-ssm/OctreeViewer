@@ -148,9 +148,10 @@ pub(crate) fn convert_file_inner(
         );
     }
     if checkpoint_mode.is_some() && options.format_version().uses_pages() {
-        return Err(ConvertError::UnsupportedForPagedFormat(
-            "a checkpointed or resumed conversion",
-        ));
+        return Err(ConvertError::UnsupportedForPagedFormat {
+            what: "a checkpointed or resumed conversion",
+            version: options.format_version(),
+        });
     }
     let requested_attributes_path = output_attributes_path(output_path);
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {

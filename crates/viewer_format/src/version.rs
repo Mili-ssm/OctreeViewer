@@ -39,7 +39,7 @@ impl FormatVersion {
     pub const V7_PRE5: Self = Self::V7Pre(NonZeroU32::new(5).expect("nonzero revision"));
 
     /// Revision written when the caller does not choose one.
-    pub const DEFAULT_OUTPUT: Self = Self::V5;
+    pub const DEFAULT_OUTPUT: Self = Self::V7;
 
     /// Every revision the writer implements, in user-facing listing order.
     pub const WRITABLE: [Self; 11] = [

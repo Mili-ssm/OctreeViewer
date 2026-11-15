@@ -1,6 +1,7 @@
 use std::{io, path::PathBuf};
 
 use thiserror::Error;
+use viewer_format::FormatVersion;
 
 use crate::options::{MAX_BLOCKS, MAX_POINTS_PER_BLOCK, MAX_SPATIAL_WORKERS};
 
@@ -32,6 +33,12 @@ pub enum ConvertError {
     Format(#[from] viewer_format::FormatError),
     #[error("LAS Extra Bytes: {0}")]
     LasExtraBytes(#[from] viewer_core::las::LasExtraBytesError),
+    /// Extra Bytes rejected while adapting the source to a format that stores them.
+    #[error("LAS Extra Bytes cannot be written as {version}: {source}")]
+    LasExtraBytesForFormat {
+        version: FormatVersion,
+        source: viewer_core::las::LasExtraBytesError,
+    },
     #[error(transparent)]
     Spatial(#[from] viewer_core::SpatialError),
     #[error(transparent)]
@@ -87,14 +94,25 @@ pub enum ConvertError {
     InvalidEpt(String),
     #[error("{0} is fixed by the output format version and cannot be overridden")]
     FixedByFormat(&'static str),
-    #[error("{0} cannot be written as v7.4-pre")]
-    UnsupportedForGlobalFormat(&'static str),
-    #[error("{0} cannot be written as v7.5-pre")]
-    UnsupportedForPagedFormat(&'static str),
+    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
+    UnsupportedForGlobalFormat {
+        what: &'static str,
+        version: FormatVersion,
+    },
+    #[error("{what} cannot be written as {version}; pass --format-version v5 to convert it")]
+    UnsupportedForPagedFormat {
+        what: &'static str,
+        version: FormatVersion,
+    },
     #[error("row order hybrid needs a v7 output format")]
     HybridRowOrderUnsupported,
-    #[error("coordinate magnitude {0} exceeds the converter limit of 2^35 CRS units for v7.4-pre")]
-    GlobalCoordinateRange(f64),
+    #[error(
+        "coordinate magnitude {coordinate} exceeds the converter limit of 2^35 CRS units for {version}"
+    )]
+    GlobalCoordinateRange {
+        coordinate: f64,
+        version: FormatVersion,
+    },
     #[error("conversion size or identifier count overflowed")]
     SizeOverflow,
     #[error("point {point_index} at {position:?} is outside the LAS/LAZ header bounds")]

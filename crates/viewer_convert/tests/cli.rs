@@ -199,3 +199,157 @@ fn format_fixed_options_are_checked_independently_of_flag_order() {
         fs::read(tmp.path().join("b.oct")).unwrap()
     );
 }
+
+fn run_cli(args: &[&std::path::Path], flags: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+        .args(args)
+        .args(flags)
+        .output()
+        .unwrap()
+}
+
+fn stderr(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+#[test]
+fn default_conversion_writes_v7_pair() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("out.oct");
+    let run = run_cli(&[&input, &output], &[]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let primary = fs::read(&output).unwrap();
+    let attributes = fs::read(tmp.path().join("out.octattrs")).unwrap();
+    assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVEND7");
+    assert_eq!(&attributes[attributes.len() - 40..][..8], b"OCTVEND7");
+    assert!(contains(&primary, b"leaf:64000"));
+}
+
+#[test]
+fn default_checkpoint_points_to_v5() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("c.oct");
+    let run = run_cli(&[&input, &output], &["--checkpoint"]);
+    assert!(!run.status.success());
+    let message = stderr(&run);
+    assert!(message.contains("v7"), "{message}");
+    assert!(message.contains("--format-version v5"), "{message}");
+    assert!(!output.exists());
+    assert!(!tmp.path().join("c.octattrs").exists());
+    assert_eq!(
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
+    );
+}
+
+#[test]
+fn default_ept_points_to_v5() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("ept");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("ept.json"), "{}").unwrap();
+    let output = tmp.path().join("e.oct");
+    let run = run_cli(&[&root, &output], &[]);
+    assert!(!run.status.success());
+    let message = stderr(&run);
+    assert!(message.contains("EPT"), "{message}");
+    assert!(message.contains("--format-version v5"), "{message}");
+    assert!(!output.exists());
+    assert!(!tmp.path().join("e.octattrs").exists());
+}
+
+#[test]
+fn default_extra_bytes_error_names_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    // Three Extra Bytes per record and no descriptor of that size: inconsistent.
+    let mut builder = Builder::from((1, 4));
+    builder.point_format = Format::new(0).unwrap();
+    builder.point_format.extra_bytes = 3;
+    builder.vlrs.push(las::Vlr {
+        user_id: "LASF_Spec".to_owned(),
+        record_id: 4,
+        description: String::new(),
+        data: vec![0; 192],
+    });
+    let mut writer = Writer::from_path(&input, builder.into_header().unwrap()).unwrap();
+    writer
+        .write_point(Point {
+            extra_bytes: vec![0; 3],
+            ..Point::default()
+        })
+        .unwrap();
+    writer.close().unwrap();
+    let output = tmp.path().join("x.oct");
+    let run = run_cli(&[&input, &output], &[]);
+    assert!(!run.status.success());
+    let message = stderr(&run);
+    assert!(message.contains("Extra Bytes"), "{message}");
+    assert!(message.contains("v7"), "{message}");
+    assert!(!message.contains("v7.5-pre"), "{message}");
+    assert!(!output.exists());
+}
+
+#[test]
+fn resume_v5_checkpoint_without_format_is_rejected() {
+    use viewer_convert::{
+        CheckpointMode, ConversionStage, ConvertError, convert_file_with_checkpoint,
+    };
+    use viewer_convert_core::ConvertOptions;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("r.oct");
+    // Built like the CLI does, so the positive control below matches the checkpoint identity.
+    let defaults = ConvertOptions::default();
+    let v5 = ConvertOptions::with_memory_budget(
+        defaults.points_per_block(),
+        defaults.max_quantization_error(),
+        defaults.max_memory_budget_bytes(),
+    )
+    .unwrap()
+    .with_format_version("v5".parse().unwrap())
+    .unwrap();
+    // Cancel while writing blocks so the checkpoint stays on disk.
+    let cancelled =
+        convert_file_with_checkpoint(&input, &output, v5, CheckpointMode::Create, |progress| {
+            !(progress.stage == ConversionStage::ReadingAndWritingBlocks
+                && progress.points_processed > 0)
+        });
+    assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+    let files = |dir: &std::path::Path| {
+        let mut names: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        names
+    };
+    let before = files(tmp.path());
+    assert!(before.len() > 1, "a checkpoint remains: {before:?}");
+
+    // Without --format-version the resume resolves to v7: it must not mix formats.
+    let resumed = run_cli(&[&input, &output], &["--resume"]);
+    assert!(!resumed.status.success());
+    assert!(
+        stderr(&resumed).contains("checkpoint"),
+        "{}",
+        stderr(&resumed)
+    );
+    assert!(!output.exists());
+    assert_eq!(files(tmp.path()), before);
+
+    // Positive control: the same checkpoint resumes when the format matches.
+    let resumed = run_cli(&[&input, &output], &["--resume", "--format-version", "v5"]);
+    assert!(resumed.status.success(), "{}", stderr(&resumed));
+}

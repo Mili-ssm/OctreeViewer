@@ -167,7 +167,7 @@ fn paged_format_refuses_ept_checkpoints_and_keeps_fixed_parameters() {
             crate::CheckpointMode::Create,
             &mut |_| true,
         ),
-        Err(ConvertError::UnsupportedForPagedFormat(_))
+        Err(ConvertError::UnsupportedForPagedFormat { .. })
     ));
     let ept = tempfile::tempdir().unwrap();
     fs::write(ept.path().join("ept.json"), "{}").unwrap();
@@ -179,7 +179,7 @@ fn paged_format_refuses_ept_checkpoints_and_keeps_fixed_parameters() {
     );
     assert!(matches!(
         result,
-        Err(ConvertError::UnsupportedForPagedFormat(_))
+        Err(ConvertError::UnsupportedForPagedFormat { .. })
     ));
     assert!(matches!(
         ConvertOptions::new(1000, 0.01)

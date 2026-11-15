@@ -124,14 +124,16 @@ pub(super) fn convert(
     mut diagnostics: Option<&mut ConversionDiagnostics>,
 ) -> Result<ConversionReport, ConvertError> {
     if options.format_version().uses_pages() {
-        return Err(ConvertError::UnsupportedForPagedFormat(
-            "an EPT dataset (additive hierarchy)",
-        ));
+        return Err(ConvertError::UnsupportedForPagedFormat {
+            what: "an EPT dataset (additive hierarchy)",
+            version: options.format_version(),
+        });
     }
     if options.format_version().uses_global_frame() {
-        return Err(ConvertError::UnsupportedForGlobalFormat(
-            "an EPT dataset (additive hierarchy)",
-        ));
+        return Err(ConvertError::UnsupportedForGlobalFormat {
+            what: "an EPT dataset (additive hierarchy)",
+            version: options.format_version(),
+        });
     }
     if output_path.exists() && checkpoint_mode != Some(CheckpointMode::Resume) {
         return Err(ConvertError::OutputExists(output_path.to_owned()));

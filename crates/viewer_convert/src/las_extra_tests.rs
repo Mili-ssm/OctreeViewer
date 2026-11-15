@@ -303,25 +303,28 @@ fn unsupported_or_inconsistent_extra_bytes_are_explicit_errors() {
     for data_type in [0_u8, 31, 255] {
         assert!(matches!(
             convert("t", Some(descriptor(data_type, 0, "x", 1.0, 0.0, 0)), 1),
-            Err(ConvertError::LasExtraBytes(
-                LasExtraBytesError::UnsupportedType { .. }
-            ))
+            Err(ConvertError::LasExtraBytesForFormat {
+                source: LasExtraBytesError::UnsupportedType { .. },
+                ..
+            })
         ));
     }
     // Descriptors of another size than the record's Extra Bytes.
     assert!(matches!(
         convert("m", Some(descriptor(3, 0, "x", 1.0, 0.0, 0)), 1),
-        Err(ConvertError::LasExtraBytes(
-            LasExtraBytesError::SizeMismatch { .. }
-        ))
+        Err(ConvertError::LasExtraBytesForFormat {
+            source: LasExtraBytesError::SizeMismatch { .. },
+            ..
+        })
     ));
     // 8 base columns (7 + flags) + 249 one-byte attributes > 256.
     let many = descriptor(1, 0, "b", 1.0, 0.0, 0).repeat(249);
     assert!(matches!(
         convert("n", Some(many), 249),
-        Err(ConvertError::LasExtraBytes(
-            LasExtraBytesError::TooManyAttributes { count: 257 }
-        ))
+        Err(ConvertError::LasExtraBytesForFormat {
+            source: LasExtraBytesError::TooManyAttributes { count: 257 },
+            ..
+        })
     ));
     // The same descriptors are fine for a format that drops Extra Bytes.
     let input = dir.path().join("m.las");

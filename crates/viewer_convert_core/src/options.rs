@@ -350,6 +350,15 @@ mod tests {
     }
 
     #[test]
+    fn default_output_is_v7_hybrid() {
+        let options = ConvertOptions::default().validate().unwrap();
+        assert_eq!(options.format_version(), FormatVersion::V7);
+        assert_eq!(options.row_order(), RowOrder::Hybrid);
+        assert_eq!(options.points_per_block(), GLOBAL_LEAF_POINT_LIMIT);
+        assert_eq!(options.points_per_block(), 64_000);
+    }
+
+    #[test]
     fn v7_with_source_is_fixed_by_format() {
         let source = ConvertOptions::default()
             .with_row_order(RowOrder::Source)

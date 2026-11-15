@@ -380,9 +380,9 @@ fn r3_small_fixtures_open_with_expected_relative_depths() {
 }
 
 #[test]
-fn v7_5_is_writable_and_v5_stays_the_default() {
+fn v7_5_is_writable_and_v7_is_the_default() {
     assert!(FormatVersion::WRITABLE.contains(&V75));
-    assert_eq!(FormatVersion::DEFAULT_OUTPUT, FormatVersion::V5);
+    assert_eq!(FormatVersion::DEFAULT_OUTPUT, FormatVersion::V7);
     assert_eq!(V75.to_string(), "v7.5-pre");
     let bytes = write(V75, &random_tree(1, 3, 10), None);
     assert_eq!(&bytes[..8], b"OCTVFRM1");
