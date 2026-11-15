@@ -72,7 +72,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-27 | Si el esquema supera 256 atributos, entonces el escritor deberá rechazar la conversión con un mensaje claro. | Propietario, ADR 0007 |
 | RF-28 | La UI de conversión web deberá anunciar «validado hasta Majadas (~6 GB de LAZ)» y mostrar la estimación de RAM y OPFS antes de empezar; lo mayor se deriva al CLI. | Propietario |
 | RF-29 | Si en Firefox la conversión necesita más cuota de la concedida sin `persist()`, entonces la UI deberá pedir `persist()` y explicar el límite. | W2 |
-| RF-30 | El conversor deberá aceptar, como referencias configurables, los puntos máximos por hoja (N), el lado mínimo de hoja (S) y una distancia de fusión de puntos opcional (M), redondeando S y M a potencias de dos de la rejilla global ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md), pendiente). | Propietario |
+| RF-30 | El conversor deberá aceptar, como referencias configurables, los puntos máximos por hoja (N), el lado mínimo de hoja (S) y una distancia de fusión de puntos (M; activada por defecto y adaptativa, ~1 % de puntos fundidos), redondeando S y M a potencias de dos de la rejilla global ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md), pendiente). | Propietario |
 
 ## Requisitos de calidad
 
