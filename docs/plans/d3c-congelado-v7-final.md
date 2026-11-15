@@ -142,10 +142,10 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 - Regenerate: `fuzz/corpus/fuzz_format_reader/seed-sample*` con `gen_seeds`
 - Create: `docs/records/benchmarks/D3C_V7_REFERENCES_<fecha>.md` (+ JSON)
 
-- [ ] **Step 1:** convertir Belvedere y Majadas por defecto; pie `OCTVEND7`; la app llega al objetivo (`probe-orbit-load.mjs --rest-first`, servidor `python3 -m http.server 8767 --bind 127.0.0.1` en la raíz del worktree).
-- [ ] **Step 2:** `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --offline lod_cells` pasa con las rutas nuevas.
-- [ ] **Step 3:** SHA con el CLI por defecto sobre las entradas de [R1](../records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md#comandos) y SHA del corpus de fuzz; registro con entorno, comandos y resultados.
-- [ ] **Step 4:** `scripts/check.sh --offline` verde; commit `test(data): regenerate V7 datasets, references and fuzz seeds`.
+- [x] **Step 1:** convertir Belvedere y Majadas por defecto; pie `OCTVEND7`; la app llega al objetivo (`probe-orbit-load.mjs --rest-first`, servidor `python3 -m http.server 8767 --bind 127.0.0.1` en la raíz del worktree).
+- [x] **Step 2:** `R3_REQUIRE_REAL_DATA=1 cargo test -p viewer_wasm --offline cells` pasa con las rutas nuevas.
+- [x] **Step 3:** SHA con el CLI por defecto sobre las entradas de [R1](../records/benchmarks/R1_REFERENCE_SHA_2026-10-29.md#comandos) y SHA del corpus de fuzz; registro con entorno, comandos y resultados.
+- [x] **Step 4:** `scripts/check.sh --offline` verde; commit `test(data): regenerate V7 datasets, references and fuzz seeds`.
 
 ### Task 8: Documentación del congelado
 
