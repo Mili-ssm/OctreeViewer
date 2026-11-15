@@ -21,7 +21,8 @@ Python, comprobación de enlaces (`scripts/check_docs_links.py`, excepciones en
 `git diff --check HEAD`. Por defecto usa `--offline`; `CHECK_LOCKED=1` usa `--locked`.
 
 **Sin CI** (decisión del propietario, 15-11-2026): es un proyecto personal y los checks se ejecutan
-solo en local. No se añaden workflows de GitHub Actions, y Actions está desactivado en el repositorio.
+solo en local. No se añaden workflows de GitHub Actions; Actions solo ejecuta el despliegue gestionado de
+GitHub Pages de la demo (acciones de GitHub, gratis en un repositorio público; [ADR 0045](docs/adr/0045-demo-experimental-publica-antes-de-la-1-0.md)).
 
 `convert parity bindings` ejecuta los bindings reales de `viewer_wasm` (`wasm-bindgen`) en Node contra el CLI; se omite solo si la versión del CLI `wasm-bindgen` difiere de `Cargo.lock` o con `CHECK_WASM_BINDINGS=0`.
 
