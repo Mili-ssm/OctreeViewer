@@ -862,7 +862,7 @@ fn full_depths(cam: &OrbitCamera, node: &PoolNode, target: f64) -> [u8; 8] {
             ORIGIN,
             node.bounds,
             o,
-            &node.stored,
+            node.buildable,
             target,
         )
     })
@@ -940,15 +940,15 @@ fn the_hinted_search_equals_the_full_search() {
         let octant = (next(&mut state) * 8.0) as usize % 8;
         let hint = stored[(next(&mut state) * stored.len() as f64) as usize % stored.len()];
         let v = view(&cam);
-        let full =
-            octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, &stored, target_px);
+        let range = (stored[0], *stored.last().unwrap());
+        let full = octant_wanted_depth(&v, &grid(), ORIGIN, node.bounds, octant, range, target_px);
         let near = crate::cell_cut::octant_wanted_depth_near(
             &v,
             &grid(),
             ORIGIN,
             node.bounds,
             octant,
-            &stored,
+            range,
             target_px,
             hint,
         );
@@ -1310,7 +1310,9 @@ fn a_far_node_that_draws_nothing_is_not_starved_by_refinements_elsewhere() {
     // depth 6 and deeper. By absolute depth alone the refinement of node 8 would go first.
     let mut nodes = octant_nodes();
     nodes.get_mut(&NodeId::new(8)).unwrap().stored = vec![4, 5];
+    nodes.get_mut(&NodeId::new(8)).unwrap().buildable = (4, 5);
     nodes.get_mut(&NodeId::new(2)).unwrap().stored = vec![6, 7];
+    nodes.get_mut(&NodeId::new(2)).unwrap().buildable = (6, 7);
     let mut rig = Rig::new(nodes, 128, 1, 0);
     let cam = camera("zoom");
     assert_eq!(by_distance(&cam, &[2, 8]), vec![8, 2], "setup");
@@ -1343,6 +1345,7 @@ fn requests_and_uploads_go_coarse_to_fine() {
     // alone the depth-7 level of node 8 would come first.
     let mut nodes = octant_nodes();
     nodes.get_mut(&NodeId::new(2)).unwrap().stored = vec![4, 5];
+    nodes.get_mut(&NodeId::new(2)).unwrap().buildable = (4, 5);
     let mut rig = Rig::new(nodes, 128, 64, 0);
     let cut = ids(&[8, 2]);
     let cam = camera("zoom");
@@ -1899,6 +1902,7 @@ fn eval_with(rig: &Rig, cut: &[NodeId], wanted: u8) -> (HoldEval, Vec<NodeId>) {
             let node = nodes.get(&id)?;
             Some(CellCutNode {
                 bounds: node.bounds,
+                buildable: node.buildable,
                 stored: node.stored.clone(),
                 resident: node
                     .stored
@@ -2902,10 +2906,11 @@ fn continuity_caps_the_drawn_level_without_a_stage_and_literal_mode_is_unchanged
 }
 
 #[test]
-fn the_continuity_cap_snaps_to_a_stored_level_and_falls_back_to_the_coarsest() {
+fn the_continuity_cap_uses_the_buildable_range() {
     let cut = ids(&[1]);
     let cam = camera("fit");
-    // A minimum between two depths rounds up the side: depth 4 is SIDE / 16, 3 is SIDE / 8.
+    // A minimum between two depths rounds up the side: depth 4 is SIDE / 16, 3 is SIDE / 8. Depth
+    // 4 is not stored (3 and 5 are) but it is buildable, so the cap lands on it.
     for (min, expect) in [
         (SIDE / 16.0, 4),
         (SIDE / 12.0, 3),
@@ -2913,20 +2918,27 @@ fn the_continuity_cap_snaps_to_a_stored_level_and_falls_back_to_the_coarsest() {
         (SIDE, 3),
         (SIDE * 4.0, 3),
         (SIDE / 32.0, 5),
-        (SIDE / 1024.0, 5),
+        (SIDE / 1024.0, 7),
     ] {
-        let mut rig = Rig::new(root_node(), 64, 16, 1);
+        let mut nodes = root_node();
+        let node = nodes.get_mut(&NodeId::new(1)).unwrap();
+        node.stored = vec![3, 5];
+        node.buildable = (3, 7);
+        let mut rig = Rig::new(nodes, 64, 16, 1);
         rig.pool.set_min_side(Some(min));
         let plan = rig.run(12, &cut, &cam, 1.0);
-        assert_eq!(drawn_depth(&plan), expect, "min {min}");
+        assert_eq!(plan.entries[0].wanted, [Some(expect); 8], "min {min}");
     }
-    // Every stored level is finer than the minimum: the coarsest one draws.
+    // Every buildable depth is finer than the minimum: the coarsest one is wanted.
     let mut fine = root_node();
-    fine.get_mut(&NodeId::new(1)).unwrap().stored = vec![6, 7];
+    let node = fine.get_mut(&NodeId::new(1)).unwrap();
+    node.stored = vec![6, 7];
+    node.buildable = (6, 7);
     let mut rig = Rig::new(fine, 64, 16, 1);
     rig.pool.set_min_side(Some(SIDE / 4.0));
     let plan = rig.run(12, &cut, &cam, 1.0);
     assert_eq!(drawn_depth(&plan), 6);
+    assert_eq!(plan.entries[0].wanted, [Some(6); 8]);
 }
 
 #[test]

@@ -348,6 +348,18 @@ impl CutView {
         self.active[j][octant_of_cell(c)].is_some() && !cell_hidden(&self.entries[j].mask, c)
     }
 
+    /// Depth the entry wants for an octant, limited to what its stored levels can give: a wanted
+    /// depth finer than the stored chain is met by the finest stored level until levels are built
+    /// on demand, and drawing it is not a coarsening.
+    fn wanted_of(&self, i: usize, octant: usize) -> Option<u8> {
+        let entry = &self.entries[i];
+        let wanted = entry.wanted[octant]?;
+        Some(match entry.drawn[octant] {
+            Some(drawn) if !entry.stage[octant] => wanted.min(drawn),
+            _ => wanted,
+        })
+    }
+
     /// Depth the cut wants at `p`: the finest wanted depth of the unhidden cells holding it.
     fn wanted_at(&self, p: [f64; 3]) -> Option<u8> {
         (0..self.nodes.len())
@@ -356,7 +368,7 @@ impl CutView {
                 if cell_hidden(&self.entries[i].mask, c) {
                     return None;
                 }
-                self.entries[i].wanted[octant_of_cell(c)]
+                self.wanted_of(i, octant_of_cell(c))
             })
             .max()
     }
@@ -612,7 +624,7 @@ impl Harness {
                         if self.count_octant_coarsenings {
                             // Same rule as the cross-node metric: only below what the capped
                             // wish allows counts (a fit-forced lowering to the wish is legitimate).
-                            let wanted = cut.entries[i].wanted[octant].unwrap_or(u8::MAX);
+                            let wanted = cut.wanted_of(i, octant).unwrap_or(u8::MAX);
                             if before.is_some_and(|b| now < b) {
                                 self.octant_lowered += 1;
                             }

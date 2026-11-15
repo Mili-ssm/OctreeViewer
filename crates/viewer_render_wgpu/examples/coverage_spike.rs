@@ -779,6 +779,10 @@ fn main() -> Result<()> {
                             };
                             CellCutNode {
                                 bounds: n.bounds,
+                                buildable: stored
+                                    .first()
+                                    .zip(stored.last())
+                                    .map_or((0, 0), |(a, b)| (*a, *b)),
                                 resident: stored.clone(),
                                 stored,
                             }
@@ -1130,6 +1134,10 @@ fn main() -> Result<()> {
                         variant.kept(n).iter().map(|&i| n.levels[i].depth).collect();
                     CellCutNode {
                         bounds: n.bounds,
+                        buildable: stored
+                            .first()
+                            .zip(stored.last())
+                            .map_or((0, 0), |(a, b)| (*a, *b)),
                         resident: stored.clone(),
                         stored,
                     }

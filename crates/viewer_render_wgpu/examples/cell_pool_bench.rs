@@ -770,6 +770,7 @@ fn size_diagnostics(case: &Case, rig: &Rig, plan: &FramePlan, camera: OrbitCamer
         let node = case.nodes.get(&id)?;
         Some(CellCutNode {
             bounds: node.pool.bounds,
+            buildable: node.pool.buildable,
             stored: node.pool.stored.clone(),
             resident: node.pool.stored.clone(),
         })

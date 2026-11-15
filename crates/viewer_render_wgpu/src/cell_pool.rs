@@ -78,7 +78,7 @@ use crate::{
     CellCutEntry, CellCutError, CellCutNode, CellGrid, PAGE_SLOTS, PackedLevel, ViewProjection,
     cell_cut::{
         FastMap, FastSet, MAX_MASK_LEVELS, cell_cut_with, drawn_levels, octant_wanted_depth,
-        octant_wanted_depth_near,
+        octant_wanted_depth_near, served_depth,
     },
     representative_depth,
 };
@@ -756,12 +756,11 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    /// `octant_wanted_depth` of the octant for `data.stored`, from the cache of the full list: the
-    /// first stored depth that meets the target, else the finest, so a prefix of the list gets
-    /// the same depth capped at its last element.
+    /// `octant_wanted_depth` of the octant for `data.buildable`, from the cache of the full
+    /// range: the coarsest depth that meets the target, else the finest, so a range cut short by
+    /// a cap gets the same depth capped at its finest.
     fn depth(&self, id: NodeId, octant: usize, data: &CellCutNode) -> u8 {
-        let last = *data.stored.last().expect("stored levels are not empty");
-        self.depths[&id].depths[octant].min(last)
+        self.depths[&id].depths[octant].min(data.buildable.1)
     }
 }
 
@@ -1140,6 +1139,7 @@ impl CellPool {
                 };
                 Some(CellCutNode {
                     bounds: node.bounds,
+                    buildable: capped_range(node.buildable, caps.get(&id)),
                     stored,
                     resident,
                 })
@@ -1171,8 +1171,11 @@ impl CellPool {
             if let Some(coarsest) = coarsest(&node.stored, caps.get(&entry.node)) {
                 set.insert(self.key(entry.node, coarsest));
             }
+            // Until levels are requested on demand, a wanted depth is fetched as the stored one
+            // that serves it.
+            let stored = capped(&node.stored, caps.get(&entry.node));
             for depth in entry.wanted.iter().flatten() {
-                set.insert(self.key(entry.node, *depth));
+                set.insert(self.key(entry.node, served_depth(&stored, *depth)));
             }
         }
         set
@@ -1251,6 +1254,7 @@ impl CellPool {
                         continue;
                     };
                     let stored = capped(&nodes[&id].stored, caps.get(&id));
+                    let top = served_depth(&stored, top);
                     // The finest level below `top` that is smaller; estimates can tie.
                     let size =
                         |depth: u8| self.pages_of(self.key(id, depth), &nodes[&id], ctx.grid);
@@ -1310,7 +1314,7 @@ impl CellPool {
             return None;
         }
         let lacks = (0..8).any(|octant| {
-            let wanted = ctx.depth(id, octant, node);
+            let wanted = served_depth(&node.stored, ctx.depth(id, octant, node));
             needed.contains(&self.key(id, wanted)) && !node.resident.iter().any(|d| *d >= wanted)
         });
         lacks.then_some(old)
@@ -1615,6 +1619,7 @@ impl CellPool {
                     &|_| {
                         Some(CellCutNode {
                             bounds: data.bounds,
+                            buildable: capped_range(data.buildable, self.caps.get(&id)),
                             stored: stored.clone(),
                             resident: resident.clone(),
                         })
@@ -1626,9 +1631,15 @@ impl CellPool {
                     .and_then(|solo| solo.first().map(|e| e.wanted))
                     .unwrap_or(entry.wanted)
             };
-            let (here, _) = drawn_levels(&wanted, &resident, f.rep.saturating_sub(MAX_MASK_LEVELS));
+            let (here, _) = drawn_levels(
+                &wanted,
+                &stored,
+                &resident,
+                f.rep.saturating_sub(MAX_MASK_LEVELS),
+            );
             let short = (0..8).any(|o| {
                 wanted[o]
+                    .map(|w| served_depth(&stored, w))
                     .is_some_and(|w| limit[o].is_some_and(|l| here[o].is_none_or(|d| d < l.min(w))))
             });
             if short {
@@ -1864,7 +1875,7 @@ impl CellPool {
                     origin,
                     data.bounds,
                     octant,
-                    &data.stored,
+                    data.buildable,
                     target_px,
                     hints[octant],
                 ),
@@ -1874,12 +1885,12 @@ impl CellPool {
                     origin,
                     data.bounds,
                     octant,
-                    &data.stored,
+                    data.buildable,
                     target_px,
                 ),
             });
             let depths = match finest_allowed {
-                Some(limit) => depths.map(|depth| continuity_depth(&data.stored, depth, limit)),
+                Some(limit) => depths.map(|depth| continuity_depth(data.buildable, depth, limit)),
                 None => depths,
             };
             let differs = was.is_none_or(|cached| cached.depths != depths);
@@ -2130,6 +2141,7 @@ impl CellPool {
                 };
                 let mut node = CellCutNode {
                     bounds: data.bounds,
+                    buildable: capped_range(data.buildable, caps.get(&id)),
                     stored,
                     resident,
                 };
@@ -2819,16 +2831,18 @@ fn uncovered_levels(
     (uncovered, octants)
 }
 
-/// `wanted` limited to the finest stored depth at or below `limit` (cells of that depth or
-/// coarser have a side of at least the continuity minimum); the coarsest stored depth when all
+/// `wanted` limited to the finest buildable depth at or below `limit` (cells of that depth or
+/// coarser have a side of at least the continuity minimum); the coarsest buildable depth when all
 /// are finer.
-fn continuity_depth(stored: &[u8], wanted: u8, limit: u8) -> u8 {
-    let allowed = stored
-        .iter()
-        .copied()
-        .rfind(|depth| *depth <= limit)
-        .unwrap_or(stored[0]);
-    wanted.min(allowed)
+fn continuity_depth(buildable: (u8, u8), wanted: u8, limit: u8) -> u8 {
+    wanted.min(limit.clamp(buildable.0, buildable.1))
+}
+
+/// `buildable` with its finest depth lowered to the cap (never below its coarsest).
+fn capped_range(buildable: (u8, u8), cap: Option<&u8>) -> (u8, u8) {
+    cap.map_or(buildable, |cap| {
+        (buildable.0, buildable.1.min(*cap).max(buildable.0))
+    })
 }
 
 /// `stored` truncated to depths at or below the cap.

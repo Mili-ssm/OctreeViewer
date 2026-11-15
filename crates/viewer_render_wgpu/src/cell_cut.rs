@@ -75,6 +75,9 @@ pub struct CellCutNode {
     pub bounds: SpatialBounds,
     /// Absolute depths of the stored levels, ascending.
     pub stored: Vec<u8>,
+    /// Depths the node can build on demand, inclusive: `stored` lies inside it. The view wants a
+    /// depth of this range; `stored` and `resident` only say what can be drawn now.
+    pub buildable: (u8, u8),
     /// Absolute depths of the resident levels.
     pub resident: Vec<u8>,
 }
@@ -82,7 +85,7 @@ pub struct CellCutNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellCutEntry {
     pub node: NodeId,
-    /// Stored depth the view asks for, per octant.
+    /// Buildable depth the view asks for, per octant.
     pub wanted: [Option<u8>; 8],
     /// Resident depth to draw, per octant; `None` when no level is resident.
     pub drawn: [Option<u8>; 8],
@@ -182,43 +185,38 @@ fn octant_box(bounds: SpatialBounds, octant: usize) -> Option<SpatialBounds> {
     SpatialBounds::new(min, max).ok()
 }
 
-/// The first stored depth (ascending) for which a cell of that depth, placed at the point of
-/// `octant` nearest the eye and shifted to stay inside it, projects to at most `target_px`; else
-/// the finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never meets the target.
+/// The coarsest buildable depth (`buildable` is inclusive) for which a cell of that depth, placed
+/// at the point of `octant` nearest the eye and shifted to stay inside it, projects to at most
+/// `target_px`; else the finest (source density, RQ-09/R3-Q9). An infinite or NaN edge never meets
+/// the target.
 ///
 /// The test runs relative to `coordinate_origin` (bounds minus origin, eye `position / scale`,
 /// origin `[0; 3]` for the view), the frame the view itself uses, so large origins lose no
-/// precision. `stored` must not be empty and ascend.
+/// precision. `buildable.0 <= buildable.1`.
 pub fn octant_wanted_depth(
     view: &ViewProjection,
     grid: &CellGrid,
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
     octant: usize,
-    stored: &[u8],
+    buildable: (u8, u8),
     target_px: f64,
 ) -> u8 {
-    debug_assert!(
-        stored.windows(2).all(|pair| pair[0] < pair[1]),
-        "stored depths ascend"
-    );
-    let finest = *stored.last().expect("stored levels are not empty");
+    debug_assert!(buildable.0 <= buildable.1, "buildable range is ordered");
     let Some(meets) = OctantProbe::new(view, grid, coordinate_origin, bounds, octant, target_px)
     else {
-        return finest;
+        return buildable.1;
     };
-    stored
-        .iter()
-        .copied()
+    (buildable.0..=buildable.1)
         .find(|depth| meets.at(*depth))
-        .unwrap_or(finest)
+        .unwrap_or(buildable.1)
 }
 
 /// `octant_wanted_depth` searched outward from `hint` (the answer of a nearby view), assuming that
 /// once a depth meets the target every finer one does too (a finer cell sits inside the coarser
 /// one at the same nearest point, so its edges project shorter). It then costs 2 projections when
-/// the answer has not moved, instead of one per coarser stored level, and returns the same depth
-/// whenever that holds. A `hint` that is not stored falls back to the full search.
+/// the answer has not moved, instead of one per coarser depth, and returns the same depth
+/// whenever that holds. A `hint` outside the range falls back to the full search.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn octant_wanted_depth_near(
     view: &ViewProjection,
@@ -226,41 +224,52 @@ pub(crate) fn octant_wanted_depth_near(
     coordinate_origin: [f64; 3],
     bounds: SpatialBounds,
     octant: usize,
-    stored: &[u8],
+    buildable: (u8, u8),
     target_px: f64,
     hint: u8,
 ) -> u8 {
-    let Some(at) = stored.iter().position(|depth| *depth == hint) else {
+    let (coarsest, finest) = buildable;
+    if !(coarsest..=finest).contains(&hint) {
         return octant_wanted_depth(
             view,
             grid,
             coordinate_origin,
             bounds,
             octant,
-            stored,
+            buildable,
             target_px,
         );
-    };
-    let finest = stored.len() - 1;
+    }
     let Some(meets) = OctantProbe::new(view, grid, coordinate_origin, bounds, octant, target_px)
     else {
-        return stored[finest];
+        return finest;
     };
-    let mut index = at;
-    if meets.at(stored[index]) {
-        while index > 0 && meets.at(stored[index - 1]) {
-            index -= 1;
+    let mut depth = hint;
+    if meets.at(depth) {
+        while depth > coarsest && meets.at(depth - 1) {
+            depth -= 1;
         }
-        stored[index]
+        depth
     } else {
-        while index < finest {
-            index += 1;
-            if meets.at(stored[index]) {
-                return stored[index];
+        while depth < finest {
+            depth += 1;
+            if meets.at(depth) {
+                return depth;
             }
         }
-        stored[finest]
+        finest
     }
+}
+
+/// The stored depth that serves a wanted `depth`: the first stored one at least as fine, else the
+/// finest stored. Levels are fetched and drawn from `stored` until they are built on demand.
+pub(crate) fn served_depth(stored: &[u8], depth: u8) -> u8 {
+    stored
+        .iter()
+        .copied()
+        .find(|stored| *stored >= depth)
+        .or_else(|| stored.last().copied())
+        .expect("stored levels are not empty")
 }
 
 /// The test of `octant_wanted_depth` for one octant: does a cell of a given depth, placed at the
@@ -348,12 +357,15 @@ pub fn resident_depth(wanted: u8, resident: &[u8]) -> Option<(u8, bool)> {
 }
 
 /// `(drawn, stage)` of a node from its `wanted` depths and `resident` levels, as `cell_cut`
-/// decides them; `node_depth` is the depth whose levels span octants.
+/// decides them; `node_depth` is the depth whose levels span octants. A wanted depth that is not
+/// `stored` is served by `served_depth`.
 pub(crate) fn drawn_levels(
     wanted: &[Option<u8>; 8],
+    stored: &[u8],
     resident: &[u8],
     node_depth: u8,
 ) -> ([Option<u8>; 8], [bool; 8]) {
+    let wanted: [Option<u8>; 8] = wanted.map(|w| w.map(|w| served_depth(stored, w)));
     let mut drawn = [None; 8];
     let mut stage = [false; 8];
     for o in 0..8 {
@@ -400,14 +412,14 @@ pub fn cell_cut(
             coordinate_origin,
             data.bounds,
             octant,
-            &data.stored,
+            data.buildable,
             target_px,
         )
     })
 }
 
 /// `cell_cut` with the per-octant depth of the view supplied by `wanted_depth(node, octant,
-/// data)`, which must return what `octant_wanted_depth` would for `data.stored`. It lets a caller
+/// data)`, which must return what `octant_wanted_depth` would for `data.buildable`. It lets a caller
 /// that evaluates the same view several times (the cell pool) compute each depth once; the output
 /// is identical to `cell_cut` when the depths are.
 pub(crate) fn cell_cut_with(
@@ -489,10 +501,10 @@ pub(crate) fn cell_cut_with(
     }
 
     for ((entry, data), placed) in entries.iter_mut().zip(&nodes).zip(&placed) {
-        let finest = *data.stored.last().expect("checked above");
+        let finest = data.buildable.1;
         let node_depth = placed.rep.saturating_sub(MAX_MASK_LEVELS);
         // A level at depth <= the node's spans octants and cannot be split; when no finer level is
-        // stored, the whole node uses the finest one.
+        // buildable, the whole node uses the finest one.
         let spans_all = finest <= node_depth;
         for o in 0..8 {
             if octant_fully_masked(&entry.mask, o) {
@@ -504,16 +516,14 @@ pub(crate) fn cell_cut_with(
                 wanted_depth(entry.node, o, data)
             };
             if wanted <= node_depth && !spans_all {
-                wanted = data
-                    .stored
-                    .iter()
-                    .copied()
+                wanted = (data.buildable.0..=data.buildable.1)
                     .find(|depth| *depth > node_depth)
-                    .expect("a finer stored level exists");
+                    .expect("a finer buildable level exists");
             }
             entry.wanted[o] = Some(wanted);
         }
-        (entry.drawn, entry.stage) = drawn_levels(&entry.wanted, &data.resident, node_depth);
+        (entry.drawn, entry.stage) =
+            drawn_levels(&entry.wanted, &data.stored, &data.resident, node_depth);
     }
     Ok(entries)
 }
