@@ -23,8 +23,8 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
 | --- | --- | --- |
 | D1 | El nivel deseado es cualquier profundidad; uno que falta se pide al worker de construcción (`levelRequest` → `nodeLevel`), que lo construye desde los bloques del nodo con la agregación de `build_level_keyed`. La petición lleva `gen`, generación de color, `cutEpoch` y prioridad; la última por nodo sustituye a las anteriores; un fallo de caché programa la lectura de bloques; las peticiones tienen presupuesto propio, aparte de las 2 construcciones por actualización; los niveles a demanda cuentan en el presupuesto de CPU y se reconstruyen al recolorear | ADR 0048; sin cancelación ni prioridad las peticiones se acumulan durante un zoom |
 | D2 | Selección por celda en `slot_state`, **sobre coordenadas enteras relativas al nodo**: la página lleva su origen relativo al nodo (u32×3) y cada nodo un ancla f32 relativa al ojo. El ancestro es `(rel_página + rel) >> (d − d_prev)`. Una sola función WGSL `refines(nodo, prof, coord)` sirve para la celda y para su madre, con un gemelo Rust bit a bit para picking, métricas y dorados. La prueba va antes de la separación de fases de oclusión, para que las dos fases usen el mismo predicado | Sin coordenadas enteras, madre e hija redondean distinto: dobles cubos o huecos |
-| D3 | Regla monótona: `refina(c) := lado(c) > max(lado_mín, px_objetivo · max(dist(c, ojo), cerca) / focal)`. El uniforme del frame gana objetivo de px, focal y lado mínimo; la página gana los niveles residentes vecinos (la entrada probablemente pasa de 32 a 48 B) | Sin monotonía, un nivel intermedio y uno fino se dibujan a la vez |
-| D4 | Residencia acotada: la distancia cercana se limita al plano cercano; por debajo de la profundidad de separación solo se mantienen el nivel actual y el siguiente. Si el corte no cabe, sube el objetivo de px efectivo de toda la nube ([ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11) | Desde dentro de un nodo, «solo px» pediría niveles hasta la profundidad 63; la nube debe verse homogénea |
+| D3 | Regla monótona: `refina(c) := lado(c) > max(lado_mín, px_objetivo · max(dist(punto de c más cercano al ojo, ojo), cerca) / focal)`. El uniforme del frame gana objetivo de px, focal y lado mínimo; la página gana los niveles residentes vecinos (la entrada probablemente pasa de 32 a 48 B) | Sin monotonía, un nivel intermedio y uno fino se dibujan a la vez |
+| D4 | Residencia acotada (aprobada por el propietario, 16-11-2026, tras la fase 0a): cada nodo mantiene las profundidades que dibuja más la siguiente más fina (R2: 294 MiB en Majadas a 1 px dentro de una hoja, frente a 531 MiB con el rango contiguo). Mantener siempre también la más gruesa (R3c) da 522 MiB a 1 px, por encima de 512, así que se propone mantenerla **solo si cabe**: es lo primero que se suelta con presión de memoria ([registro](../records/benchmarks/R3_CELL_LOD_0A_15-11-2026.md)). La distancia cercana se limita al plano cercano. Si el corte no cabe, sube el objetivo de px efectivo de toda la nube ([ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11) | Desde dentro de un nodo, el rango contiguo superaba los 512 MiB; la nube debe verse homogénea |
 | D8 | Opcional (ADR 0052, revisión): si la población de los hijos ya está disponible sin coste (nivel hijo construido pero aún no en GPU), la celda que debe refinar puede dibujarse como sus hijos poblados con el color del padre; si no, se mantiene hasta que cargan. No se añade nada a la instancia solo para esto | Idea oportunista del propietario, no requisito |
 | D5 | Celdas que abarcan octantes: cuentan como «refina» si la máscara del nodo no está vacía; una celda más gruesa que la rejilla 8³ prueba todos los bits de máscara que cubre | Hoy se saltan octante y máscara y pintarían encima de hijos residentes |
 | D6 | Unidad del CRS: `viewer_format` lee solo la `UNIT` de primer nivel del PROJCS o sistema de coordenadas (WKT1, WKT2, compuesto) y la clave GeoTIFF 3076; un CRS geográfico desactiva el modo longitud; sin unidad, metros | ADR 0049; un `UNIT["degree"]` anidado no debe desactivar una nube proyectada |
@@ -32,7 +32,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
 
 ## Fases
 
-- [ ] **0a. Medida en CPU antes de tocar la GPU.** Ampliar `examples/coverage_spike.rs` con la regla D2/D3 y la
+- [x] **0a. Medida en CPU antes de tocar la GPU** (15-11-2026, [registro](../records/benchmarks/R3_CELL_LOD_0A_15-11-2026.md); salta 512 MiB a 1 px con el rango contiguo, resuelto con la nueva D4). Ampliar `examples/coverage_spike.rs` con la regla D2/D3 y la
   residencia D4. Majadas y Belvedere en órbita, rasante y dentro de una hoja, a 1, 2, 4 y 8 px, en «solo px» y
   «espaciado». Registrar instancias dibujadas, bytes residentes (con niveles a demanda bajo el espaciado),
   profundidad máxima pedida y peticiones por segundo de zoom. Comprobación: registro en `docs/records/benchmarks/`.
@@ -61,6 +61,12 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   cortes.
 
 Cada fase de código tendrá su plan detallado (`writing-plans`) al empezarla.
+
+## Riesgo abierto tras la fase 0a
+
+- Con la regla D3 (distancia y focal) entre el 1,6 % y el 13 % de las celdas dibujadas quedan por encima del objetivo
+  de px, y medir al punto más cercano no lo corrige; `octant_tight` quedaba en ≤ 0,26 % (ADR 0034). La fase 2a debe
+  usar la arista proyectada real (`projected_voxel_edge_pixels`) o justificar otra regla monótona que cumpla RQ-09.
 
 ## Criterios de parada
 

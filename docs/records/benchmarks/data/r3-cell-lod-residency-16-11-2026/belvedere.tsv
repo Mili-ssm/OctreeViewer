@@ -1,0 +1,248 @@
+# cell_lod: reference spacing Some(0.25) (viewer_core::reference_spacing over the leaves, dataset units); focal 869.1169 px; near/eye per pose in the case table
+# coverage_spike /home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct
+# viewport 1280x720; root_side 16384; origin (413891.5100,5086642.4700,1471.0200)
+# point budget (viewer) 18446744073709551615 from crates/viewer_wasm/src/lod_dataset.rs:517; budgets run: [18446744073709551615]
+# selector: select_lod_stable_projector as lod_dataset.rs:517-522; visual_scale 0.01649201621495024 (dataset metadata, bindings/lod.rs:240); voxel limits max_voxels 8000000 (min of voxel_grid.rs:64 and budget.rs:19-22, via gpu.rs:721), max_estimated_bytes 268435456 (voxel_grid.rs:65); RendererConfig defaults, the web host may override
+# pose orbit-0: position (64.3269,348.9357,450.0557) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose orbit-90: position (-274.8862,9.7225,450.0557) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose grazing: position (64.3269,487.6169,152.6529) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose inside-leaf: position (46.3836,44.5537,14.7930) target (63.2715,44.5537,14.7930) (local coords x visual_scale)
+# pose zoom-0: position (64.3269,348.9357,450.0557) target (64.3269,9.7225,110.8425) (local coords x visual_scale)
+# pose zoom-1: position (55.3553,196.7447,232.4244) target (63.7992,27.1381,62.8178) (local coords x visual_scale)
+# pose zoom-2: position (50.8695,120.6492,123.6087) target (63.5353,35.8459,38.8054) (local coords x visual_scale)
+# pose zoom-3: position (48.6265,82.6014,69.2008) target (63.4034,40.1998,26.7992) (local coords x visual_scale)
+# pose zoom-4: position (47.5051,63.5776,41.9969) target (63.3374,42.3767,20.7961) (local coords x visual_scale)
+# pose zoom-5: position (46.9444,54.0656,28.3950) target (63.3044,43.4652,17.7946) (local coords x visual_scale)
+# pose zoom-6: position (46.6640,49.3096,21.5940) target (63.2879,44.0094,16.2938) (local coords x visual_scale)
+# pose zoom-7: position (46.5238,46.9317,18.1935) target (63.2797,44.2816,15.5434) (local coords x visual_scale)
+# pose zoom-8: position (46.4537,45.7427,16.4933) target (63.2756,44.4176,15.1682) (local coords x visual_scale)
+# pose zoom-9: position (46.3836,44.5537,14.7930) target (63.2715,44.5537,14.7930) (local coords x visual_scale)
+# inside-leaf: node 425201762329 with 63986 points, bounds SpatialBounds { min: [2748.489990234375, 2637.529998779297, 832.9800109863281], max: [2876.489990234375, 2765.529998779297, 960.9800109863281] }
+# grazing: eye 0.0873 rad above the horizontal plane through the root centre, looking down, fitted distance 479.7199
+# orbit-90: OrbitCamera::orbit(0.25, 0.0) (quarter turn in normalized units)
+# block case
+dataset_file	pose	target_px	budget	variant	cut_nodes	cut_points	cells_total	cells_on_screen	bytes12	bytes16	cpu_instances	ratio_on_screen_vs_cpu	stage_octants	build_ms	over_target_cells	over_target_frac	over_target_source_limited	cpu_oversized	resident_bytes12	resident_levels	draw_ranges
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	pyramid	6	186763	47825	47825	573900	765200	46512	1.028	0	7.3	0	0.0000	0	0	573900	6	8
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	tight	6	186763	77821	77821	933852	1245136	46512	1.673	0	11.8	0	0.0000	0	0	933852	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	octant	6	186763	186679	186679	2240148	2986864	46512	4.014	0	28.4	0	0.0000	0	0	2240148	6	8
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	octant_tight	6	186763	73999	73999	887988	1183984	46512	1.591	0	11.4	0	0.0000	0	0	1055340	7	8
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	octant_tight_guard	6	186763	73999	73999	887988	1183984	46512	1.591	0	11.4	0	0.0000	0	0	1055340	7	8
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	octant_tight_offaxis	6	186763	186679	186679	2240148	2986864	46512	4.014	0	28.4	0	0.0000	0	0	2240148	6	8
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	18446744073709551615	octant_tight_near	6	186763	73999	73999	887988	1183984	46512	1.591	0	11.4	0	0.0000	0	0	1055340	7	8
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	pyramid	4	46512	11549	11549	138588	184784	11549	1.000	0	1.8	0	0.0000	0	0	138588	4	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	tight	4	46512	42957	42957	515484	687312	11549	3.720	0	6.5	0	0.0000	0	0	515484	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	octant	4	46512	46512	46512	558144	744192	11549	4.027	0	7.1	0	0.0000	0	0	558144	4	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	octant_tight	4	46512	19177	19177	230124	306832	11549	1.660	0	3.2	0	0.0000	0	0	639288	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	octant_tight_guard	4	46512	19177	19177	230124	306832	11549	1.660	0	3.2	0	0.0000	0	0	639288	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	octant_tight_offaxis	4	46512	46512	46512	558144	744192	11549	4.027	0	7.1	0	0.0000	0	0	558144	4	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	18446744073709551615	octant_tight_near	4	46512	19177	19177	230124	306832	11549	1.660	0	3.2	0	0.0000	0	0	639288	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	pyramid	4	46512	2921	2921	35052	46736	2921	1.000	0	0.5	0	0.0000	0	0	35052	4	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	tight	4	46512	10636	10636	127632	170176	2921	3.641	0	1.6	0	0.0000	0	0	127632	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	octant	4	46512	11549	11549	138588	184784	2921	3.954	0	1.8	0	0.0000	0	0	138588	4	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	octant_tight	4	46512	4796	4796	57552	76736	2921	1.642	0	0.8	0	0.0000	0	0	158856	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	octant_tight_guard	4	46512	4796	4796	57552	76736	2921	1.642	0	0.8	0	0.0000	0	0	158856	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	octant_tight_offaxis	4	46512	11549	11549	138588	184784	2921	3.954	0	1.8	0	0.0000	0	0	138588	4	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	18446744073709551615	octant_tight_near	4	46512	4796	4796	57552	76736	2921	1.642	0	0.8	0	0.0000	0	0	158856	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	pyramid	1	11549	761	761	9132	12176	761	1.000	0	0.1	0	0.0000	0	0	9132	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	tight	1	11549	2921	2921	35052	46736	761	3.838	0	0.4	0	0.0000	0	0	35052	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	octant	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	173640	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	octant_tight	1	11549	2697	2697	32364	43152	761	3.544	0	0.4	0	0.0000	0	0	44184	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	octant_tight_guard	1	11549	2697	2697	32364	43152	761	3.544	0	0.4	0	0.0000	0	0	44184	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	octant_tight_offaxis	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	173640	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	18446744073709551615	octant_tight_near	1	11549	2697	2697	32364	43152	761	3.544	0	0.4	0	0.0000	0	0	44184	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	pyramid	6	186763	47825	47825	573900	765200	46512	1.028	0	7.7	0	0.0000	0	0	573900	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	tight	6	186763	47825	47825	573900	765200	46512	1.028	0	7.6	0	0.0000	0	0	573900	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	octant	6	186763	186679	186679	2240148	2986864	46512	4.014	0	29.8	0	0.0000	0	0	2240148	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	octant_tight	6	186763	47825	47825	573900	765200	46512	1.028	0	7.7	0	0.0000	0	0	573900	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	octant_tight_guard	6	186763	47825	47825	573900	765200	46512	1.028	0	7.7	0	0.0000	0	0	573900	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	octant_tight_offaxis	6	186763	186679	186679	2240148	2986864	46512	4.014	0	29.8	0	0.0000	0	0	2240148	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	18446744073709551615	octant_tight_near	6	186763	47825	47825	573900	765200	46512	1.028	0	7.7	0	0.0000	0	0	573900	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	pyramid	4	46512	44944	44944	539328	719104	11549	3.892	0	7.2	0	0.0000	0	0	539328	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	tight	4	46512	44944	44944	539328	719104	11549	3.892	0	7.2	0	0.0000	0	0	539328	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	octant	4	46512	46512	46512	558144	744192	11549	4.027	0	7.4	0	0.0000	0	0	558144	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	octant_tight	4	46512	11549	11549	138588	184784	11549	1.000	0	2.2	0	0.0000	0	0	671160	6	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	octant_tight_guard	4	46512	11549	11549	138588	184784	11549	1.000	0	2.2	0	0.0000	0	0	671160	6	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	octant_tight_offaxis	4	46512	46512	46512	558144	744192	11549	4.027	0	7.5	0	0.0000	0	0	558144	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	18446744073709551615	octant_tight_near	4	46512	11549	11549	138588	184784	11549	1.000	0	2.2	0	0.0000	0	0	671160	6	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	pyramid	4	46512	11151	11151	133812	178416	2921	3.818	0	1.8	0	0.0000	0	0	133812	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	tight	4	46512	11151	11151	133812	178416	2921	3.818	0	1.8	0	0.0000	0	0	133812	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	octant	4	46512	11549	11549	138588	184784	2921	3.954	0	1.9	0	0.0000	0	0	138588	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	octant_tight	4	46512	2921	2921	35052	46736	2921	1.000	0	0.6	0	0.0000	0	0	166884	6	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	octant_tight_guard	4	46512	2921	2921	35052	46736	2921	1.000	0	0.6	0	0.0000	0	0	166884	6	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	octant_tight_offaxis	4	46512	11549	11549	138588	184784	2921	3.954	0	1.9	0	0.0000	0	0	138588	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	18446744073709551615	octant_tight_near	4	46512	2921	2921	35052	46736	2921	1.000	0	0.6	0	0.0000	0	0	166884	6	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	pyramid	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	35052	1	2
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	tight	1	11549	2921	2921	35052	46736	761	3.838	0	0.5	0	0.0000	0	0	35052	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	octant	1	11549	2921	2921	35052	46736	761	3.838	0	0.6	0	0.0000	0	0	173640	2	2
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	octant_tight	1	11549	2804	2804	33648	44864	761	3.685	0	0.5	0	0.0000	0	0	44184	2	2
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	octant_tight_guard	1	11549	2804	2804	33648	44864	761	3.685	0	0.5	0	0.0000	0	0	44184	2	2
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	octant_tight_offaxis	1	11549	2921	2921	35052	46736	761	3.838	0	0.6	0	0.0000	0	0	173640	2	2
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	18446744073709551615	octant_tight_near	1	11549	2804	2804	33648	44864	761	3.685	0	0.5	0	0.0000	0	0	44184	2	2
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	pyramid	6	186763	172802	172802	2073624	2764832	130932	1.320	0	26.2	0	0.0000	0	0	2073624	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	tight	6	186763	172802	172802	2073624	2764832	130932	1.320	0	26.2	0	0.0000	0	0	2073624	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	octant	6	186763	186679	186679	2240148	2986864	130932	1.426	0	28.3	0	0.0000	0	0	2240148	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	octant_tight	6	186763	172802	172802	2073624	2764832	130932	1.320	0	27.8	0	0.0000	0	0	2073624	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	octant_tight_guard	6	186763	172802	172802	2073624	2764832	130932	1.320	0	26.3	0	0.0000	0	0	2073624	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	octant_tight_offaxis	6	186763	186679	186679	2240148	2986864	130932	1.426	0	28.3	0	0.0000	0	0	2240148	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	18446744073709551615	octant_tight_near	6	186763	172802	172802	2073624	2764832	130932	1.320	0	26.2	0	0.0000	0	0	2073624	6	6
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	pyramid	4	46512	42957	42957	515484	687312	32877	1.307	0	6.5	0	0.0000	0	0	515484	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	tight	4	46512	42957	42957	515484	687312	32877	1.307	0	6.5	0	0.0000	0	0	515484	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	octant	4	46512	46512	46512	558144	744192	32877	1.415	0	7.1	0	0.0000	0	0	558144	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	octant_tight	4	46512	42957	42957	515484	687312	32877	1.307	0	6.6	0	0.0000	0	0	515484	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	octant_tight_guard	4	46512	42957	42957	515484	687312	32877	1.307	0	6.5	0	0.0000	0	0	515484	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	octant_tight_offaxis	4	46512	46512	46512	558144	744192	32877	1.415	0	7.1	0	0.0000	0	0	558144	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	18446744073709551615	octant_tight_near	4	46512	42957	42957	515484	687312	32877	1.307	0	6.5	0	0.0000	0	0	515484	4	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	pyramid	1	11549	2921	2921	35052	46736	8208	0.356	0	0.5	1776	0.6080	0	0	35052	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	tight	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	octant	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	octant_tight	1	11549	10636	10636	127632	170176	8208	1.296	0	1.7	0	0.0000	0	0	173640	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	octant_tight_guard	1	11549	10636	10636	127632	170176	8208	1.296	0	1.7	0	0.0000	0	0	173640	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	octant_tight_offaxis	1	11549	11549	11549	138588	184784	8208	1.407	0	1.8	0	0.0000	0	0	138588	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	18446744073709551615	octant_tight_near	1	11549	10636	10636	127632	170176	8208	1.296	0	1.7	0	0.0000	0	0	173640	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	pyramid	1	11549	761	761	9132	12176	2115	0.360	0	0.1	463	0.6084	0	0	9132	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	tight	1	11549	2921	2921	35052	46736	2115	1.381	0	0.4	0	0.0000	0	0	35052	1	1
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	octant	1	11549	2921	2921	35052	46736	2115	1.381	0	0.4	0	0.0000	0	0	35052	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	octant_tight	1	11549	2697	2697	32364	43152	2115	1.275	0	0.4	0	0.0000	0	0	44184	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	octant_tight_guard	1	11549	2697	2697	32364	43152	2115	1.275	0	0.4	0	0.0000	0	0	44184	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	octant_tight_offaxis	1	11549	2921	2921	35052	46736	2115	1.381	0	0.5	0	0.0000	0	0	35052	1	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	18446744073709551615	octant_tight_near	1	11549	2697	2697	32364	43152	2115	1.275	0	0.4	0	0.0000	0	0	44184	2	4
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	pyramid	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1072.9	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	tight	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1071.4	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	octant	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1068.6	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	octant_tight	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1072.1	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	octant_tight_guard	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1075.5	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	octant_tight_offaxis	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1074.6	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	18446744073709551615	octant_tight_near	334	8605510	8422248	7166813	101066976	134755968	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	1079.0	83456	0.0116	83456	NA	101066976	334	334
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	pyramid	170	6072506	5542717	4222673	66512604	88683472	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	642.5	29505	0.0070	29505	NA	66512604	170	189
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	tight	170	6072506	5519819	4199775	66237828	88317104	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	639.4	31650	0.0075	29505	NA	66237828	170	170
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	octant	170	6072506	5715919	4413372	68591028	91454704	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	693.9	32453	0.0074	29505	NA	73753188	183	189
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	octant_tight	170	6072506	5295764	3975720	63549168	84732224	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	612.2	35506	0.0089	29505	NA	70218396	185	189
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	octant_tight_guard	170	6072506	5295764	3975720	63549168	84732224	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	614.7	35506	0.0089	29505	NA	70218396	185	189
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	octant_tight_offaxis	170	6072506	5787180	4462487	69446160	92594880	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	683.2	29505	0.0066	29505	NA	73472664	180	189
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	18446744073709551615	octant_tight_near	170	6072506	5295764	3975720	63549168	84732224	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	611.8	35506	0.0089	29505	NA	70218396	185	189
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	pyramid	73	2954800	2737415	1712794	32848980	43798640	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	268.8	9831	0.0057	9067	NA	32848980	73	83
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	tight	73	2954800	2737415	1712794	32848980	43798640	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	268.9	9831	0.0057	9067	NA	32848980	73	73
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	octant	73	2954800	2865489	1842998	34385868	45847824	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	290.0	9067	0.0049	9067	NA	36678120	84	83
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	octant_tight	73	2954800	2571640	1549071	30859680	41146240	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	249.6	13071	0.0084	9067	NA	35232492	83	83
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	octant_tight_guard	73	2954800	2571640	1549071	30859680	41146240	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	248.1	13071	0.0084	9067	NA	35232492	83	83
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	octant_tight_offaxis	73	2954800	2884687	1860066	34616244	46154992	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	292.6	9067	0.0049	9067	NA	36290784	80	83
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	18446744073709551615	octant_tight_near	73	2954800	2571640	1549071	30859680	41146240	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	0	248.2	13071	0.0084	9067	NA	35232492	83	83
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	pyramid	66	2614220	2038434	1116505	24461208	32614944	427564	2.611	0	179.3	2634	0.0024	1765	0	24461208	66	89
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	tight	66	2614220	1807383	933024	21688596	28918128	427564	2.182	0	151.3	3141	0.0034	1765	0	21688596	66	66
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	octant	66	2614220	1577452	944318	18929424	25239232	427564	2.209	0	150.4	2479	0.0026	1765	0	19305528	72	89
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	octant_tight	66	2614220	1714751	865207	20577012	27436016	427564	2.024	0	147.8	3552	0.0041	1765	0	29265156	88	89
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	octant_tight_guard	66	2614220	1714751	865207	20577012	27436016	427564	2.024	0	147.8	3552	0.0041	1765	0	29265156	88	89
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	octant_tight_offaxis	66	2614220	1983161	1051300	23797932	31730576	427564	2.459	0	175.5	1765	0.0017	1765	0	30494424	82	89
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	18446744073709551615	octant_tight_near	66	2614220	1714751	865207	20577012	27436016	427564	2.024	0	147.7	3552	0.0041	1765	0	29265156	88	89
+# block cell_lod
+dataset_file	pose	target_px	mode	cut_nodes	drawn_instances	octant_tight_instances	ratio_vs_octant_tight	cpu_instances	ratio_vs_cpu	resident_bytes	on_demand_bytes	octant_tight_resident_bytes	drawn_depths_only_bytes	r2_bytes	r3_bytes	r3_coarser_only_bytes	deepest_depth	resident_levels	over_target_cells	beyond_chain_cells	below_separation_cells	unbuilt_nodes	lod_ms	over_1p5_target_cells
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	px	6	47825	73999	0.646	46512	1.028	4054080	49440	1442000	791040	791040	4054080	1021760	17	18	0	0	0	0	15	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	1	spacing	6	47825	73999	0.646	46512	1.028	4054080	49440	1442000	791040	791040	4054080	1021760	17	18	0	0	0	0	10	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	px	4	11549	19177	0.602	11549	1.000	1030000	0	881680	206000	206000	1030000	271920	8	12	0	0	0	0	3	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	2	spacing	4	11549	19177	0.602	11549	1.000	1030000	0	881680	206000	206000	1030000	271920	8	12	0	0	0	0	2	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	px	4	2921	4796	0.609	2921	1.000	313120	0	238960	65920	65920	313120	107120	7	12	0	0	0	0	1	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	4	spacing	4	2921	4796	0.609	2921	1.000	313120	0	238960	65920	65920	313120	107120	7	12	0	0	0	0	1	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	px	1	761	2697	0.282	761	1.000	74160	0	65920	16480	16480	74160	24720	6	3	0	0	0	0	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-0	8	spacing	1	761	2697	0.282	761	1.000	74160	0	65920	16480	16480	74160	24720	6	3	0	0	0	0	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	px	6	47825	47825	1.000	46512	1.028	4054080	49440	791040	791040	791040	4054080	1021760	17	18	0	0	0	0	10	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	1	spacing	6	47825	47825	1.000	46512	1.028	4054080	49440	791040	791040	791040	4054080	1021760	17	18	0	0	0	0	10	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	px	4	11549	11549	1.000	11549	1.000	1030000	0	922880	206000	206000	1030000	271920	8	12	0	0	0	0	2	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	2	spacing	4	11549	11549	1.000	11549	1.000	1030000	0	922880	206000	206000	1030000	271920	8	12	0	0	0	0	2	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	px	4	2921	2921	1.000	2921	1.000	313120	0	255440	65920	65920	313120	107120	7	12	0	0	0	0	1	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	4	spacing	4	2921	2921	1.000	2921	1.000	313120	0	255440	65920	65920	313120	107120	7	12	0	0	0	0	1	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	px	1	761	2804	0.271	761	1.000	74160	0	65920	16480	16480	74160	24720	6	3	0	0	0	0	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	orbit-90	8	spacing	1	761	2804	0.271	761	1.000	74160	0	65920	16480	16480	74160	24720	6	3	0	0	0	0	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	px	6	114961	172802	0.665	130932	0.878	6715600	2752160	2809840	3328960	3328960	6715600	3683280	17	20	5729	0	0	0	24	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	1	spacing	6	114961	172802	0.665	130932	0.878	6715600	2752160	2809840	3328960	3328960	6715600	3683280	17	20	5729	0	0	0	21	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	px	4	28591	42957	0.666	32877	0.870	1705680	675680	708640	881680	881680	1705680	947600	9	14	1400	0	0	0	6	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	2	spacing	4	28591	42957	0.666	32877	0.870	1705680	675680	708640	881680	881680	1705680	947600	9	14	1400	0	0	0	5	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	px	1	7140	10636	0.671	8208	0.870	444960	189520	238960	238960	238960	444960	255440	8	4	363	0	0	0	2	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	4	spacing	1	7140	10636	0.671	8208	0.870	444960	189520	238960	238960	238960	444960	255440	8	4	363	0	0	0	1	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	px	1	1850	2697	0.686	2115	0.875	263680	0	65920	65920	65920	263680	74160	7	4	86	0	0	0	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	grazing	8	spacing	1	1850	2697	0.686	2115	0.875	263680	0	65920	65920	65920	263680	74160	7	4	86	0	0	0	0	0
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	px	334	7101473	7166813	0.991	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	397126800	263778880	136990000	138934640	143631440	397126800	269975360	29	937	113092	35328	35328	0	1407	49079
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	1	spacing	334	7101533	7166813	0.991	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	389364720	256016800	136990000	131172560	131172560	389364720	257516480	29	928	131845	0	0	0	1086	72230
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	px	170	3322575	3975720	0.836	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	217387680	111042240	94957760	75717360	76739120	217387680	128807680	20	471	258750	7748	7748	0	623	66765
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	2	spacing	170	3322600	3975720	0.836	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	214322400	107976960	94957760	72652080	72652080	214322400	124720640	17	468	262750	0	0	0	550	71938
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	px	73	1049411	1549071	0.677	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	92675280	40705600	47610720	35102400	36124160	92675280	52274560	19	197	137555	2244	2244	0	241	29101
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	4	spacing	73	1049419	1549071	0.677	NA(EstimatedMemoryLimitExceeded { required_bytes: 268435600, max_bytes: 268435456 })	NA	90631760	38662080	47610720	33058880	33058880	90631760	49209280	17	195	138906	0	0	0	187	30497
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	px	66	675154	865207	0.780	427564	1.579	64206080	28634000	39617920	20682400	21704160	64206080	35901680	18	183	37391	491	491	0	124	7881
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	inside-leaf	8	spacing	66	675156	865207	0.780	427564	1.579	63184320	27612240	39617920	19660640	19660640	63184320	33858160	17	182	37688	0	0	0	118	8078
+# block cell_lod_zoom
+dataset_file	pose	cut_nodes	drawn_instances	resident_bytes	on_demand_bytes	deepest_depth	resident_levels	new_levels	new_on_demand_levels	new_level_bytes	eye_to_inside_leaf	near	min_side
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-0	4	2921	313120	0	7	12	12	0	313120	32223.82	12061.2547	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-1	6	13724	1771600	49440	17	19	15	2	1722160	16111.91	0.4162	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-2	8	66176	6287120	49440	17	26	19	0	5562000	8055.96	0.3374	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-3	54	322908	28807040	4581440	17	162	159	14	28732880	4027.98	0.2991	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-4	84	384668	40178240	3666800	17	227	216	16	39799200	2013.99	0.2829	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-5	132	1487580	119018560	49266960	17	368	347	102	116142800	1006.99	0.2805	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-6	133	1704368	139445520	65722240	17	357	245	108	103148320	503.50	0.2848	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-7	112	1522656	126484000	60176720	17	307	45	29	26763520	251.75	0.2891	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-8	103	1474816	119578880	55191520	17	279	4	2	2266000	125.87	0.2918	0.0000
+/home/mili/.cache/codex-worktrees/octree-r3-v75/target/render-data/belvedere-v7.oct	zoom-9	73	1049411	92675280	40705600	19	197	43	11	21564080	0.00	0.2947	0.0000
+# block cell_lod_stop_criteria
+PASS	[cell_lod px] resident bytes <= 460 MiB (>= 2 px) / 512 MiB (1 px) in every pose
+PASS	[cell_lod px] drawn instances <= 2.5x (1 px) / 2x (2-8 px) the CPU path in the grazing pose
+PASS	[cell_lod spacing] resident bytes <= 460 MiB (>= 2 px) / 512 MiB (1 px) in every pose
+PASS	[cell_lod spacing] drawn instances <= 2.5x (1 px) / 2x (2-8 px) the CPU path in the grazing pose
+# block octant_mismatches
+octant_mismatches	0	(compared 5480 (node, octant) pairs of octant_tight; 0 fully masked octants skipped)
+# block transitions
+transition	budget	variant	prev_nodes	next_nodes	union_nodes	result	offending_pairs
+within orbit-0 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-0 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-0 2->1px	18446744073709551615	pyramid	4	6	10	ok	0
+within orbit-90 8->4px	18446744073709551615	pyramid	1	4	5	ok	0
+within orbit-90 4->2px	18446744073709551615	pyramid	4	4	4	ok	0
+within orbit-90 2->1px	18446744073709551615	pyramid	4	6	10	ok	0
+between orbit-0->orbit-90 1px	18446744073709551615	pyramid	6	6	6	ok	0
+between orbit-0->orbit-90 2px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-0->orbit-90 4px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-0->orbit-90 8px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 8->4px	18446744073709551615	pyramid	1	1	1	ok	0
+within grazing 4->2px	18446744073709551615	pyramid	1	4	5	ok	0
+within grazing 2->1px	18446744073709551615	pyramid	4	6	10	ok	0
+between orbit-90->grazing 1px	18446744073709551615	pyramid	6	6	6	ok	0
+between orbit-90->grazing 2px	18446744073709551615	pyramid	4	4	4	ok	0
+between orbit-90->grazing 4px	18446744073709551615	pyramid	4	1	5	ok	0
+between orbit-90->grazing 8px	18446744073709551615	pyramid	1	1	1	ok	0
+within inside-leaf 8->4px	18446744073709551615	pyramid	66	73	79	ok	0
+within inside-leaf 4->2px	18446744073709551615	pyramid	73	170	200	ok	0
+within inside-leaf 2->1px	18446744073709551615	pyramid	170	334	378	ok	0
+between grazing->inside-leaf 1px	18446744073709551615	pyramid	6	334	339	DescendantTooFine	325
+between grazing->inside-leaf 2px	18446744073709551615	pyramid	4	170	174	DescendantTooFine	167
+between grazing->inside-leaf 4px	18446744073709551615	pyramid	1	73	74	DescendantTooFine	72
+between grazing->inside-leaf 8px	18446744073709551615	pyramid	1	66	67	DescendantTooFine	65
+# transitions evaluated per variant: 24 of 24 expected (the rest involve skipped cases)
+# pyramid: DescendantTooFine in 4/24 transitions (frequency 0.1667)
+#   fails: between grazing->inside-leaf 1px budget 18446744073709551615: 325 pairs
+#   fails: between grazing->inside-leaf 2px budget 18446744073709551615: 167 pairs
+#   fails: between grazing->inside-leaf 4px budget 18446744073709551615: 72 pairs
+#   fails: between grazing->inside-leaf 8px budget 18446744073709551615: 65 pairs
+# block stop_criteria
+FAIL	[octant_tight] draw_ranges <= 3 x cut_nodes at 4 px in every case (worst grazing budget 18446744073709551615: draw_ranges 4, cut_nodes 1, limit 3): grazing budget 18446744073709551615: 4 ranges vs 1 nodes
+PASS	[pyramid] cut bytes (12 B) <= 256 MiB in every case
+PASS	[pyramid] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[pyramid] on-screen instances <= 2x CPU instances in the grazing pose
+PASS	[tight] cut bytes (12 B) <= 256 MiB in every case
+PASS	[tight] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[tight] on-screen instances <= 2x CPU instances in the grazing pose
+PASS	[octant] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant] on-screen instances <= 2x CPU instances in the grazing pose
+PASS	[octant_tight] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_guard] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_guard] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_guard] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_offaxis] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_offaxis] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_offaxis] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+PASS	[octant_tight_near] cut bytes (12 B) <= 256 MiB in every case
+PASS	[octant_tight_near] resident_bytes12 (whole drawn levels) <= 256 MiB in every case
+PASS	[octant_tight_near] on-screen instances <= 2.5x (1 px) / 2x (2, 4, 8 px) CPU instances in the grazing pose
+FAIL	DescendantTooFine in <= 5 % of cut updates (worst variant 0.1667)
+# cell cache: 668 nodes, 539924400 bytes (nothing evicted, so peak = final)
+# nodes whose first stored level is coarser than their 8^3 grid: 0
+# nodes with a first stored level coarser than their 8^3 grid:
