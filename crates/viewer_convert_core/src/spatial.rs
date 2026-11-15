@@ -32,11 +32,18 @@ pub(crate) const MAX_SPOOL_RECORD_BYTES: usize = 55 + 1 + MAX_EXTRA_BYTES_PER_PO
 const CHILD_SPOOL_BUFFER_BYTES: usize = 32 * 1024;
 pub const MAX_SPATIAL_DEPTH: u32 = 32;
 
+/// Deepest job depth `consume_rank` accepts. Global-frame layouts split up to absolute level
+/// `GLOBAL_MAX_INTERNAL_LEVEL`, deeper than the legacy `MAX_SPATIAL_DEPTH`; the headroom keeps
+/// `(MAX_CONSUME_DEPTH + 1) << 16` inside `u32`.
+pub const MAX_CONSUME_DEPTH: u32 = 64;
+const _: () = assert!(MAX_CONSUME_DEPTH > crate::pipeline::node_job::GLOBAL_MAX_INTERNAL_LEVEL);
+const _: () = assert!(MAX_CONSUME_DEPTH > MAX_SPATIAL_DEPTH);
+
 /// Consume-order rank of the child spool `key` at `depth` (>= 1). The depth-first planner
 /// consumes deeper spools first and, at equal depth, the lower key first; the queued spools of
 /// one depth always share a parent, so `key` alone orders them.
 pub fn consume_rank(depth: u32, key: u16) -> u32 {
-    ((MAX_SPATIAL_DEPTH + 1 - depth) << 16) | u32::from(key)
+    ((MAX_CONSUME_DEPTH + 1 - depth) << 16) | u32::from(key)
 }
 const PLANNED_NODE_BYTES: u64 = 256;
 const SPATIAL_WORKER_OVERHEAD_BYTES: u64 = 1024 * 1024;

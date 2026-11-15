@@ -402,7 +402,7 @@ mod spool_hints {
     use super::*;
     use crate::{
         pipeline::spool_store::{LedgerTotals, SpoolAccounting, SpoolExtent},
-        spatial::{MAX_SPATIAL_DEPTH, consume_rank},
+        spatial::{MAX_CONSUME_DEPTH, consume_rank},
     };
 
     #[derive(Default)]
@@ -525,7 +525,23 @@ mod spool_hints {
     fn consume_rank_orders_deeper_first_then_by_key() {
         assert!(consume_rank(2, 60_000) < consume_rank(1, 0));
         assert!(consume_rank(1, 3) < consume_rank(1, 4));
-        assert_eq!(consume_rank(MAX_SPATIAL_DEPTH, 0), 1 << 16);
+        assert_eq!(consume_rank(MAX_CONSUME_DEPTH, 0), 1 << 16);
+    }
+
+    #[test]
+    fn consume_rank_covers_global_depths() {
+        use crate::pipeline::node_job::GLOBAL_MAX_INTERNAL_LEVEL;
+        for key in [0u16, 7, u16::MAX] {
+            for depth in 1..=GLOBAL_MAX_INTERNAL_LEVEL {
+                assert!(
+                    consume_rank(depth + 1, key) < consume_rank(depth, key),
+                    "depth {depth} key {key}"
+                );
+            }
+        }
+        for depth in 1..=GLOBAL_MAX_INTERNAL_LEVEL + 1 {
+            assert!(consume_rank(depth, 3) < consume_rank(depth, 4));
+        }
     }
 
     #[test]
@@ -563,7 +579,7 @@ mod spool_hints {
                 assert!(
                     log.consumptions
                         .iter()
-                        .any(|(rank, _)| rank >> 16 < MAX_SPATIAL_DEPTH),
+                        .any(|(rank, _)| rank >> 16 < MAX_CONSUME_DEPTH),
                     "{label}: no consumption below depth 1"
                 );
             }

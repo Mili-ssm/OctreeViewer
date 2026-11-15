@@ -24,7 +24,7 @@ use crate::spatial::{
 
 /// Nodes at an absolute level below this are larger than one block (2^32 quanta).
 const GLOBAL_BLOCK_LEVEL: u32 = 32;
-const GLOBAL_MAX_INTERNAL_LEVEL: u32 = 55;
+pub(crate) const GLOBAL_MAX_INTERNAL_LEVEL: u32 = 55;
 /// Leaf spacing search stops after this many halvings of the leaf side (R4 task 1).
 /// Deepest candidate for a leaf spacing: `u32` cell coordinates per axis in the sorted search.
 const LEAF_SPACING_MAX_DEPTH: u32 = 32;
