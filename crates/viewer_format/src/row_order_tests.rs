@@ -87,9 +87,13 @@ fn options(order: RowOrder) -> FormatWriterOptions {
 }
 
 fn write(order: RowOrder) -> (Vec<u8>, Vec<u8>) {
+    write_version(VERSION, order)
+}
+
+fn write_version(version: FormatVersion, order: RowOrder) -> (Vec<u8>, Vec<u8>) {
     let (block, count) = dense_block();
     let mut writer = FormatWriter::new_split_for_version(
-        VERSION,
+        version,
         Cursor::new(Vec::new()),
         Cursor::new(Vec::new()),
         metadata(count as u64),
@@ -173,4 +177,32 @@ fn morton_key_covers_all_96_bits_and_ties_break_by_source_row() {
     assert_eq!(super::morton_key([0, 0, 1 << 31]), 1u128 << 93);
     let coordinates = [[9, 9, 9], [0, 0, 0], [9, 9, 9], [0, 0, 1 << 31]];
     assert_eq!(super::morton_permutation(&coordinates), vec![1, 0, 2, 3]);
+}
+
+#[test]
+fn hybrid_is_ignored_outside_v7_layouts() {
+    // V6 pre4 supports compact occupancy, so only the layout check keeps it source ordered.
+    assert_eq!(
+        write_version(FormatVersion::V6_PRE4, RowOrder::Source),
+        write_version(FormatVersion::V6_PRE4, RowOrder::Hybrid)
+    );
+}
+
+#[test]
+fn diagnostics_report_delta_morton_when_it_wins() {
+    let (block, _) = dense_block();
+    let (prepared, diagnostics) = super::prepare_point_block_for_version_with_diagnostics(
+        VERSION,
+        block,
+        &metadata(5000),
+        options(RowOrder::Hybrid),
+    )
+    .unwrap();
+    assert_eq!(prepared.geometry_encoding, GeometryEncoding::DeltaVarint);
+    let morton = diagnostics
+        .candidates
+        .iter()
+        .find(|c| c.kind == crate::GeometryCandidateKind::DeltaMorton)
+        .expect("DeltaMorton candidate reported");
+    assert_eq!((morton.attempts, morton.selected_winners), (1, 1));
 }

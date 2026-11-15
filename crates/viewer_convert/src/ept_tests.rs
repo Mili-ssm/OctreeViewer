@@ -651,3 +651,76 @@ fn rejects_oversized_hierarchy_page_before_parsing() {
         .unwrap();
     assert_rejected_by_size_cap(&root);
 }
+
+#[test]
+fn ept_hybrid_row_order_reaches_the_writer() {
+    // Clustered points interleaved in source order: compact occupancy wins in source order and
+    // Morton-sorted delta wins in hybrid, so the outputs differ only if the option is applied.
+    let mut state = 7u64;
+    let mut rnd = || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let centers: Vec<[f64; 3]> = (0..40)
+        .map(|_| [0.5 + rnd() * 5.0, 0.5 + rnd() * 5.0, 0.5 + rnd() * 6.0])
+        .collect();
+    let points: Vec<[f64; 3]> = (0..4000)
+        .map(|i| {
+            let c = centers[i % 40];
+            [
+                c[0] + rnd() * 0.03,
+                c[1] + rnd() * 0.03,
+                c[2] + rnd() * 0.001,
+            ]
+        })
+        .collect();
+    let tmp = dir();
+    let root = tmp.path().to_owned();
+    fs::create_dir_all(root.join("ept-data")).unwrap();
+    fs::create_dir_all(root.join("ept-hierarchy")).unwrap();
+    write_manifest(&root, "laszip", points.len() as u64);
+    fs::write(
+        root.join("ept-hierarchy/0-0-0-0.json"),
+        format!(r#"{{"0-0-0-0":{}}}"#, points.len()),
+    )
+    .unwrap();
+    let mut builder = Builder::from((1, 2));
+    builder.point_format = Format::new(0).unwrap();
+    builder.point_format.is_compressed = true;
+    // Fine LAS scale so source positions are not snapped to a coarse lattice.
+    builder.transforms.x.scale = 1e-6;
+    builder.transforms.y.scale = 1e-6;
+    builder.transforms.z.scale = 1e-6;
+    let mut writer = Writer::from_path(
+        root.join("ept-data/0-0-0-0.laz"),
+        builder.into_header().unwrap(),
+    )
+    .unwrap();
+    for p in &points {
+        writer
+            .write_point(Point {
+                x: p[0],
+                y: p[1],
+                z: p[2],
+                ..Point::default()
+            })
+            .unwrap();
+    }
+    drop(writer);
+    let convert = |name: &str, order| {
+        let options = ConvertOptions::new(8192, 0.001)
+            .unwrap()
+            .with_format_version(viewer_format::FormatVersion::V7_PRE2)
+            .unwrap()
+            .with_row_order(order)
+            .unwrap();
+        let output = root.join(name);
+        crate::convert_file(&root, &output, options).unwrap();
+        fs::read(output).unwrap()
+    };
+    let source = convert("source.oct", viewer_format::RowOrder::Source);
+    let hybrid = convert("hybrid.oct", viewer_format::RowOrder::Hybrid);
+    assert!(hybrid.len() < source.len());
+}

@@ -124,6 +124,13 @@ impl StorageLayout {
         matches!(self, Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5)
     }
 
+    pub(crate) const fn is_v7(self) -> bool {
+        matches!(
+            self,
+            Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5
+        )
+    }
+
     pub(crate) const fn supports_occupancy(self) -> bool {
         matches!(
             self,

@@ -484,7 +484,8 @@ pub(super) fn convert(
     );
     let writer_options =
         FormatWriterOptions::new(options.max_quantization_error(), 64 * 1024 * 1024)
-            .map_err(ConvertError::Format)?;
+            .map_err(ConvertError::Format)?
+            .with_row_order(options.row_order());
     let mut resume_cursor = (0_usize, 0_u64);
     let mut processed = 0_u64;
     let mut written_blocks = 0_u64;

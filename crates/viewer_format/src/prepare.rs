@@ -333,6 +333,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     // retried with its rows sorted by Morton key and DeltaVarint; ties keep source order.
     let mut row_permutation: Option<Vec<u32>> = None;
     if options.row_order == RowOrder::Hybrid
+        && layout.is_v7()
         && geometry_encoding == GeometryEncoding::CompactOccupied
         && u32::try_from(point_count).is_ok()
     {
@@ -390,6 +391,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
         .try_reserve_exact(schema.len() + 2)
         .map_err(|_| FormatError::AllocationFailed(schema.len() + 2))?;
     let mut raw = raw_geometry;
+    let mut scratch = Vec::new();
     append_encoded_payload(
         encoded_geometry,
         geometry_raw_length,
@@ -401,7 +403,8 @@ pub(crate) fn prepare_point_block_for_version_impl(
         raw.extend_from_slice(&[color.r, color.g, color.b]);
     }
     if let Some(permutation) = &row_permutation {
-        raw = permute_rows(&raw, permutation, 3);
+        permute_rows(&raw, permutation, 3, &mut scratch);
+        std::mem::swap(&mut raw, &mut scratch);
     }
     append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
     for column in attributes {
@@ -413,7 +416,8 @@ pub(crate) fn prepare_point_block_for_version_impl(
         encode_values(column.values(), &mut raw);
         let width = crate::layout::attribute_tuple_width(column.descriptor())?;
         if let Some(permutation) = &row_permutation {
-            raw = permute_rows(&raw, permutation, width);
+            permute_rows(&raw, permutation, width, &mut scratch);
+            std::mem::swap(&mut raw, &mut scratch);
         }
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
@@ -485,23 +489,24 @@ fn morton_key(coordinate: [u32; 3]) -> u128 {
 
 /// Source row indices ordered by (Morton key, source row): a deterministic total order.
 fn morton_permutation(coordinates: &[[u32; 3]]) -> Vec<u32> {
-    let mut keyed: Vec<(u128, u32)> = coordinates
+    // The key has 96 bits, so `(key << 32) | row` orders by key, then row, in 16 bytes per point.
+    let mut keyed: Vec<u128> = coordinates
         .iter()
         .enumerate()
-        .map(|(row, c)| (morton_key(*c), row as u32))
+        .map(|(row, c)| (morton_key(*c) << 32) | row as u128)
         .collect();
     keyed.sort_unstable();
-    keyed.into_iter().map(|(_, row)| row).collect()
+    keyed.into_iter().map(|k| k as u32).collect()
 }
 
 /// Row `i` of the result is row `permutation[i]` of `raw`, whose rows are `width` bytes.
-fn permute_rows(raw: &[u8], permutation: &[u32], width: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(raw.len());
+fn permute_rows(raw: &[u8], permutation: &[u32], width: usize, out: &mut Vec<u8>) {
+    out.clear();
+    out.reserve(raw.len());
     for &row in permutation {
         let start = row as usize * width;
         out.extend_from_slice(&raw[start..start + width]);
     }
-    out
 }
 
 pub(crate) fn candidate_metric(

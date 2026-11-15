@@ -289,7 +289,7 @@ converter.dispose();
 
 | Item | Behaviour |
 | --- | --- |
-| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion`, `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
+| Options | `converterOptions` (creation) or `convert(file, { options })` (per call): `formatVersion`, `rowOrder` (`"source"` or `"hybrid"`, default `"source"`; hybrid only for v7 formats; measurement only until the V7 freeze, ADR 0042), `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB`, `ramBudget` (bytes, default 4 GB, capped at 8 GB; only used without OPFS) |
 | `ready` | Promise that settles once stale partial files are deleted; `convert()` waits for it on its own, so awaiting it is optional |
 | Events | `on("progress" \| "status" \| "warning" \| "complete" \| "cancelled" \| "error", callback)` returns an unsubscribe function |
 | `warning` | Emitted when OPFS is unavailable (Chrome `file://`): the conversion runs RAM-only and is limited by `ramBudget`; serve the page over `http://localhost` for large files |
