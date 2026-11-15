@@ -115,7 +115,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 
 ## Orden de trabajo acordado
 
-1. W1: la etapa 4 está integrada en `master`, sin evidencia registrada del chequeo previo a la integración.
+1. W1: la etapa 4 está integrada en `main`, sin evidencia registrada del chequeo previo a la integración.
 2. Escala: R4 (pirámide densa y rejilla global) → R3 (cubos en GPU; [ADR 0028](adr/0028-r4-antes-que-r3.md), 01-11-2026) → R5 (jerarquía paginada y
    remoto) → congelar V7 final ([plan de render](plans/render-y-carga-escala.md)).
 3. API pública y funciones RF-10 a RF-15.
@@ -183,7 +183,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | C4 / RQ-07: coste de conversión de V7 | Se revisa la cifra de conversión de [RQ-07](#requisitos-de-calidad); TC5 no se planifica. | [ADR 0043](adr/0043-coste-de-conversion-de-v7-frente-a-v5.md) |
 | Congelado de V7 (D3c) | V7 final sobre v7.5-pre, escritor híbrido fijo, salida predeterminada ya; checkpoint y EPT exigen otro formato ([inventario](reference/inventory.md#entrada-checkpoints-y-formato)); `-pre` conservadas; LZ4 propio después. | [ADR 0044](adr/0044-v7-final-congelada-y-predeterminada.md) |
 | Integración continua | Sin CI: los checks se ejecutan en local con `scripts/check.sh`; se retira `.github/workflows/ci.yml` y se desactiva GitHub Actions. | [CONTRIBUTING](../CONTRIBUTING.md#checks) |
-| Integración de `feat/r3-v75` | Remoto `origin` = `github.com/Mili-ssm/OctreeViewer` (privado); su historial de 2023 no tiene relación con este y se sobrescribe; la integración va por PR. | [Plan](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026) |
+| Integración de `feat/r3-v75` | Remoto `origin` = `github.com/Mili-ssm/OctreeViewer`; integrada en `main` por la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1) (15-11-2026). | [Plan](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026) |
 
 ## Catálogo: funcional o técnico, duro o blando (propuesta 14-11-2026)
 

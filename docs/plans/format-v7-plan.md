@@ -3,7 +3,7 @@
 Estado: activo · 30-10-2026
 
 Decisión del 24-10-2026: dedicar el desarrollo al sucesor V7 y retirar V5/V6 al completar
-su sustitución. El [README](../../README.md#prioridades-pendientes) registra el progreso activo.
+su sustitución. El [estado](../estado.md#prioridades-pendientes) registra el progreso activo.
 Este documento fija el contrato, las alternativas y los criterios de cierre. La base V7.1-pre
 y el plan selectivo de lectura están implementados; las integraciones pendientes se indican
 en cada fase y en el README.

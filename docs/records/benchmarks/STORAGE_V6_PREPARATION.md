@@ -12,7 +12,7 @@ con fallback y lectura selectiva; [contrato pre3](../archive/FORMAT_V6_PRE3.md).
 [Contrato físico pre2](../archive/FORMAT_V6_PRE2.md). Pre4 añade planos de bytes
 independientes y máscaras compactas con hojas/prefijos implícitos, manteniendo fallbacks;
 [contrato pre4](../archive/FORMAT_V6_PRE4.md). La lista activa de trabajo está en el
-[README](../../../README.md#prioridades-pendientes); este documento desarrolla contratos y límites.
+[estado](../../estado.md#prioridades-pendientes); este documento desarrolla contratos y límites.
 
 ## Capas y versiones
 

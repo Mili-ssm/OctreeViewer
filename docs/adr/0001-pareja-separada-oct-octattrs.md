@@ -20,4 +20,4 @@ Dos archivos que pueden desincronizarse; su publicación no es atómica (el conv
 Se necesita publicación atómica de la pareja o un contenedor único con carga parcial.
 
 ## Evidencia
-[FORMAT_V5](../reference/format/FORMAT_V5.md); [README](../../README.md#uso-y-formato)
+[FORMAT_V5](../reference/format/FORMAT_V5.md); [uso y formato](../estado.md#uso-y-formato)

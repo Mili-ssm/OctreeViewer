@@ -1,7 +1,7 @@
 # Inventario del proyecto — 02-11-2026
 
 Mapa de referencia del código, manifests, pruebas e informes de este checkout. Estado y
-prioridades activas: [README](../../README.md); índice de documentos: [docs/README.md](../README.md).
+prioridades activas: [estado](../estado.md); índice de documentos: [docs/README.md](../README.md).
 «Implementado» indica una ruta de código existente; «medido» remite a una ejecución fechada;
 «experimental» no implica integración en el visor. Este documento no ejecuta benchmarks ni
 certifica el checkout; los checks se ejecutan con `scripts/check.sh` ([CONTRIBUTING](../../CONTRIBUTING.md)).

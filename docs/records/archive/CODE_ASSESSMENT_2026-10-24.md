@@ -4,7 +4,7 @@ Revisión inicial de `master` en `2b6f3a0`, con cambios aún sin confirmar. Se
 inspeccionaron los cinco crates, el host web, los contratos, tests y documentos activos.
 Es una auditoría por rutas e invariantes, no una prueba de cada combinación de entrada.
 Las secciones 1–4 conservan los hallazgos previos a las correcciones locales de la sección 5.
-La [tabla de prioridades del README](../../../README.md#prioridades-pendientes)
+La [tabla de prioridades del estado](../../estado.md#prioridades-pendientes)
 continúa siendo la única hoja de ruta activa; este informe aporta evidencia y criterios de cierre.
 
 «Comprobado» significa inspección directa o ejecución indicada; «documentado» es una afirmación

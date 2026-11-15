@@ -7,7 +7,7 @@ Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c he
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
 según el [orden de trabajo acordado](../requirements.md#orden-de-trabajo-acordado): R3 → R5 (completado;
 queda la robustez remota) → congelar V7 final → API pública. La velocidad de conversión (RQ-07) es
-requisito para promover V7. El resumen de prioridades está en el [README](../../README.md#prioridades-pendientes) y lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues).
+requisito para promover V7. El resumen de prioridades está en el [estado](../estado.md#prioridades-pendientes) y lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues).
 
 **Ramas:** `feat/r3-v75` (worktree `~/.cache/codex-worktrees/octree-r3-v75`, que guarda los datasets
 v7.5 en `target/render-data`) recibe lo verificado. El trabajo sin verificar va en una rama `explore/`

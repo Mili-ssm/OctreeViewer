@@ -1,6 +1,6 @@
 # Resolución regional de representantes Replacement — 14-10-2026
 
-Entrega parcial de la prioridad 1 del [README](../../README.md#prioridades-pendientes).
+Entrega parcial de la prioridad 1 del [estado](../estado.md#prioridades-pendientes).
 Una rama con representantes gruesos ya no impone automáticamente su resolución a todo el
 corte. Se conserva una grilla diádica compartida, con celdas enteras y una única regla terminal
 para todos los bloques. No cambia v5/pre1–pre4, la política de caché ni Additive.

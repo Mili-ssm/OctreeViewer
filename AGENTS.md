@@ -20,7 +20,7 @@ leyendo el código; las reglas completas viven en [CONTRIBUTING](CONTRIBUTING.md
 
 | Pregunta | Dónde |
 | --- | --- |
-| Qué se está haciendo ahora | [README, «Prioridades pendientes»](README.md#prioridades-pendientes) |
+| Qué se está haciendo ahora | [docs/estado.md, «Prioridades pendientes»](docs/estado.md#prioridades-pendientes) |
 | Qué está pendiente o abierto | `gh issue list` · `gh pr list` (incluye experimentos en borrador); reglas en [CONTRIBUTING](CONTRIBUTING.md#issues-y-prs) |
 | Qué debe hacer el producto | [docs/requirements.md](docs/requirements.md) (IDs `RF-`, `RQ-`, `CON-`, `OQ-`) |
 | Por qué se decidió algo | [docs/adr/](docs/adr/README.md); `grep -n '^Estado:' docs/adr/*.md` |
@@ -48,5 +48,5 @@ Los documentos largos se leen por rangos: primero sus encabezados (`grep -n '^#'
   producción), navegador, dataset y equipo; no se trasladan.
 - **Versiones de formato**: `FormatVersion::V<n>` solo dentro de `viewer_format`
   (lo vigila `scripts/check_version_literals.sh`).
-- **Idioma y fechas**: documentación en español (salvo `examples/web-host/README.md`, en inglés);
+- **Idioma y fechas**: documentación en español (salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md`, en inglés);
   código, comentarios y commits en inglés; fechas `dd-mm-aaaa`.

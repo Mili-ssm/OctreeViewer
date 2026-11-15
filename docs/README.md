@@ -1,6 +1,6 @@
 # Índice de documentación
 
-Punto de entrada del proyecto: [README](../README.md) (estado y resumen de prioridades; lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues)). Marcas:
+Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [estado y prioridades](estado.md); lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues)). Marcas:
 **vivo** = se mantiene con el código; **histórico** = registro fechado, no se edita ([política](../CONTRIBUTING.md#convenciones)).
 
 ## Requisitos
@@ -8,6 +8,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y resumen de prior
 | Documento | Contenido | Marca |
 | --- | --- | --- |
 | [Requisitos](requirements.md) | Propósito, usuarios, escenarios de escala, requisitos EARS, restricciones, supuestos y preguntas abiertas. | vivo |
+| [Estado](estado.md) | Estado por línea de trabajo, prioridades, orden general y uso del conversor. | vivo |
 
 ## Referencia
 
@@ -183,5 +184,5 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | Por qué funciona algo así, sin pasos | [explanation/](explanation/) | Vivo; los resultados fechados van a registros |
 | Medida, spike, evaluación o diagnóstico | [records/benchmarks/](records/benchmarks/) | `NOMBRE_dd-mm-aaaa.md`, inmutable; perfil, equipo y revisión dentro |
 | Documento retirado o sustituido | [records/archive/](records/archive/) | Inmutable salvo enlaces rotos |
-| Estado y prioridades activas | [README](../README.md#prioridades-pendientes) | Resumen con enlaces a issues |
+| Estado y prioridades activas | [Estado](estado.md#prioridades-pendientes) | Resumen con enlaces a issues |
 | Tarea pendiente, fallo, hallazgo aparcado o decisión que espera al propietario | [Issue de GitHub](https://github.com/Mili-ssm/OctreeViewer/issues) | Plantillas y etiquetas en [CONTRIBUTING](../CONTRIBUTING.md#issues-y-prs); el `.md` enlaza la issue |
