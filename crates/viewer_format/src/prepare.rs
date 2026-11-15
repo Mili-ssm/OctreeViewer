@@ -436,12 +436,13 @@ pub enum RowOrder {
     Hybrid,
 }
 
-/// Interleaves the 32 bits of each coordinate into a 96-bit Morton key (no truncation).
+/// Interleaves the 32 bits of each coordinate into a 96-bit Morton key (no truncation), x in the
+/// high bit of each triple like the cell builder (`viewer_render_wgpu` `node_cells::morton`).
 fn morton_key(coordinate: [u32; 3]) -> u128 {
     let mut key = 0u128;
     for bit in 0..32 {
         for (axis, value) in coordinate.iter().enumerate() {
-            key |= u128::from((value >> bit) & 1) << (3 * bit + axis);
+            key |= u128::from((value >> bit) & 1) << (3 * bit + (2 - axis));
         }
     }
     key

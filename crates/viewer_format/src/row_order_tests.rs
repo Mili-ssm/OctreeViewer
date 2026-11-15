@@ -167,8 +167,10 @@ fn hybrid_output_is_deterministic_with_duplicate_morton_keys() {
 #[test]
 fn morton_key_covers_all_96_bits_and_ties_break_by_source_row() {
     assert_eq!(super::morton_key([u32::MAX; 3]), (1u128 << 96) - 1);
-    assert_eq!(super::morton_key([1, 0, 0]), 1);
-    assert_eq!(super::morton_key([0, 0, 1 << 31]), 1u128 << 95);
+    assert_eq!(super::morton_key([1, 0, 0]), 0b100);
+    assert_eq!(super::morton_key([0, 0, 1]), 1);
+    assert_eq!(super::morton_key([1 << 31, 0, 0]), 1u128 << 95);
+    assert_eq!(super::morton_key([0, 0, 1 << 31]), 1u128 << 93);
     let coordinates = [[9, 9, 9], [0, 0, 0], [9, 9, 9], [0, 0, 1 << 31]];
     assert_eq!(super::morton_permutation(&coordinates), vec![1, 0, 2, 3]);
 }
