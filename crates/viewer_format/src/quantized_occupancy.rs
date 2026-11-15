@@ -96,13 +96,14 @@ impl QuantizedOccupancy {
         &self.index
     }
 
-    /// Low bits in original row/XYZ order, least significant bit first; final padding is zero.
+    /// Low bits in the input row/XYZ order, least significant bit first; final padding is zero.
     /// Only residuals: this byte slice cannot reconstruct a block without its index/metadata.
     pub fn residual_bytes(&self) -> &[u8] {
         &self.residual_bytes
     }
 
-    /// Reconstructs all u32 coordinates in original row order, with unchanged transform/error.
+    /// Reconstructs all u32 coordinates in the input row order, with unchanged transform/error.
+    /// The writer may have reordered rows before this (ADR 0041); the codec keeps whatever order it gets.
     /// Allocates the output; source and candidate need not remain alive together.
     pub fn reconstruct(&self) -> QuantizedCoordinates {
         let mut coordinates = vec![[0; 3]; self.index.row_count()];
@@ -268,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn points_in_one_cell_keep_distinct_residuals_and_source_order() {
+    fn points_in_one_cell_keep_distinct_residuals_and_input_order() {
         let expected = vec![[7, 1, 2], [3, 6, 5], [7, 1, 2]];
         let candidate = QuantizedOccupancy::new(&fixture(expected.clone()), 3).unwrap();
         assert_eq!(candidate.index().leaf_count(), 1);
