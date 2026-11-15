@@ -1,6 +1,6 @@
 # 0031 Celdas por nodo en v7.5: pirámide por nodo, coordenadas por página del pool y claves de 64 bits
 
-Estado: Aceptada · enmendada por [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) y [0034](0034-nivel-por-octante-con-arista-real.md) (diseño; las cifras se confirman en las Tareas 4, 5 y 17 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)) · Fecha: 03-11-2026 · Decide: propietario · Sustituye en parte a [ADR 0027](0027-celdas-por-nodo-en-pool-paginado.md) · Poda precisada por el [ADR 0046](0046-la-poda-de-niveles-no-limita-el-render.md)
+Estado: Aceptada · enmendada por [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md) y [0034](0034-nivel-por-octante-con-arista-real.md) (diseño; las cifras se confirman en las Tareas 4, 5 y 17 del [plan de R3](../plans/render-r3-cubos-en-gpu.md)) · Fecha: 03-11-2026 · Decide: propietario · Sustituye en parte a [ADR 0027](0027-celdas-por-nodo-en-pool-paginado.md) · Poda precisada por el [ADR 0046](0046-la-poda-de-niveles-no-limita-el-render.md); nivel dibujado: [ADR 0048](0048-el-render-dibuja-el-nivel-pedido.md)
 
 ## Contexto
 - En `v7.5-pre` cada nodo interno muestrea una rejilla de 256³ (`options.rs:17`). En Belvedere eso da unas 67 000 celdas por nodo y unos 51 M en total, alrededor de 780 MiB con 16 B por celda: más que el pool de 256 MiB (pre-mortem del 03-11-2026; *inferido*).

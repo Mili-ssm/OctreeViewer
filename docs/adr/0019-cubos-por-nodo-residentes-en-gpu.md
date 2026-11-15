@@ -1,6 +1,6 @@
 # 0019 Cubos 3D por nodo, independientes de la vista y residentes en GPU (R3)
 
-Estado: Aceptada · enmendada por [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) (GPU mínima) · Fecha: 30-10-2026
+Estado: Aceptada · enmendada por [0033](0033-gpu-minima-4-gb-y-corte-ajustado-al-pool.md) (GPU mínima); modo de huecos sustituido por el selector de tamaño mínimo del [ADR 0049](0049-tamano-minimo-del-voxel.md) · Fecha: 30-10-2026
 
 ## Contexto
 - La voxelización en CPU por vista del corte completo es el cuello de botella B1 de la [evaluación](../records/archive/RENDER_ASSESSMENT_2026-10-30.md).

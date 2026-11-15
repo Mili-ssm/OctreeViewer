@@ -1,6 +1,6 @@
 # 0046 La poda de la cadena de niveles es de almacenamiento; el render deriva el nivel que pide la vista
 
-Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Precisa los ADR [0031](0031-celdas-por-nodo-en-v7-5.md) y [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md)
+Estado: Aceptada; decisión y revisión sustituidas por el [ADR 0048](0048-el-render-dibuja-el-nivel-pedido.md) · Fecha: 15-11-2026 · Decide: propietario · Precisa los ADR [0031](0031-celdas-por-nodo-en-v7-5.md) y [0032](0032-hojas-adaptativas-e-instancia-de-12-b.md)
 
 ## Contexto
 - Cada nodo guarda una cadena de niveles de celdas. Las hojas bajan hasta separar todas sus posiciones
