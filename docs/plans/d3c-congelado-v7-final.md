@@ -80,11 +80,11 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 - Produces: `FormatWriterOptions` guarda `Option<RowOrder>`; `None` = `fixed_row_order().unwrap_or(RowOrder::Source)`; un orden explícito distinto del fijado → `FormatError::RowOrderFixedByFormat(FormatVersion)`.
 - Produces: `ConvertOptions` guarda `Option` para formato, hoja, rejilla, divisiones y orden de filas. Los accesores `format_version()`, `points_per_block()`, `sample_grid()`, `spatial_divisions()` y `row_order()` devuelven valores resueltos: formato (pedido o `DEFAULT_OUTPUT`) → valores fijados por el formato → valor pedido → valor por defecto actual. `ConvertOptions::validate(self) -> Result<Self, ConvertError>` devuelve la variante existente `ConvertError::FixedByFormat(&'static str)` si un valor pedido contradice uno fijado, y la existente `HybridRowOrderUnsupported` si se pide híbrido con un formato que no es v7; los setters solo comprueban rangos, así que el orden de llamada no importa.
 
-- [ ] **Step 1: tests que fallan:** `v5_with_four_divisions_in_any_order` (setters en los dos órdenes); `explicit_v7_with_4096_points_is_fixed_by_format`; `v7_resolves_global_values_and_hybrid` (hoja 64000, rejilla 256, híbrido sin pedirlos); `v7_with_source_is_fixed_by_format`; `v7_5_pre_keeps_source_default`; en `row_order_tests.rs`, `v7_writes_hybrid_by_default` y `v7_rejects_explicit_source_order`; en `tests/cli.rs`, `--format-version v7 --row-order source` y `--spatial-divisions 4 --format-version v5` (los dos órdenes).
-- [ ] **Step 2:** fallan.
-- [ ] **Step 3:** implementar la resolución, `validate` en cada entrada de conversión (CLI, wasm, `convert_file` y equivalentes), la ayuda del CLI y del wasm (V7 fija el orden híbrido; `--row-order` solo vale para `v7.N-pre`) y las herramientas de paridad.
-- [ ] **Step 4:** `scripts/check.sh --offline` verde; ningún SHA de V5 ni de las `-pre` cambia.
-- [ ] **Step 5:** commit `feat(convert): resolve format-fixed options independently of setter order`.
+- [x] **Step 1: tests que fallan:** `v5_with_four_divisions_in_any_order` (setters en los dos órdenes); `explicit_v7_with_4096_points_is_fixed_by_format`; `v7_resolves_global_values_and_hybrid` (hoja 64000, rejilla 256, híbrido sin pedirlos); `v7_with_source_is_fixed_by_format`; `v7_5_pre_keeps_source_default`; en `row_order_tests.rs`, `v7_resolves_hybrid_row_order_by_default` y `v7_rejects_explicit_source_order`; en `tests/cli.rs`, `--format-version v7 --row-order source` y `--spatial-divisions 4 --format-version v5` (los dos órdenes).
+- [x] **Step 2:** fallan.
+- [x] **Step 3:** implementar la resolución, `validate` en cada entrada de conversión (CLI, wasm, `convert_file` y equivalentes), la ayuda del CLI y del wasm (V7 fija el orden híbrido; `--row-order` solo vale para `v7.N-pre`) y las herramientas de paridad.
+- [x] **Step 4:** `scripts/check.sh --offline` verde; ningún SHA de V5 ni de las `-pre` cambia.
+- [x] **Step 5:** commit `feat(convert): resolve format-fixed options independently of setter order`.
 
 ### Task 3: RQ-07 con V7 antes del cambio de valor por defecto
 
