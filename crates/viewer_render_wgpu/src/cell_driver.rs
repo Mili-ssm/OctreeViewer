@@ -39,7 +39,7 @@ use crate::cell_pages::{MISSING_INTENSITY, PAGE_HAS_INTENSITY};
 use crate::{
     CellCutError, CellGrid, CellPool, CellPoolEvent, CutApply, FramePlan, LevelKey, MASK_WORDS,
     NodeCells, PAGE_SLOTS, PackedLevel, PageEntry, PageFrame, PageInfo, PoolConfig, PoolCounters,
-    PoolNode, ViewProjection, pack_level,
+    PoolNode, ViewProjection, node_cells::anchor_tolerance, pack_level,
 };
 
 /// The renderer side of the driver: the pool of pages, mask slots and the page table of one
@@ -394,7 +394,7 @@ fn check_grid(world: &CellGrid, origin: [f64; 3], found: CellGrid) -> Result<(),
         && (0..3).all(|axis| {
             let scale = world.root_min[axis].abs().max(origin[axis].abs());
             (found.root_min[axis] + origin[axis] - world.root_min[axis]).abs()
-                <= 4.0 * f64::EPSILON * scale
+                <= anchor_tolerance(scale)
         });
     if same {
         Ok(())

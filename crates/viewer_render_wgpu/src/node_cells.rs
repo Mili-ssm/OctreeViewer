@@ -26,8 +26,17 @@ pub struct CellGrid {
     pub root_side: f64,
 }
 
-// Bounds are stored as f32: real sides deviate ~1e-5 relative from root_side / 2^k.
+// Node sides carry float noise from the frame shifts: on real data log2(root_side / side) lies
+// ~1e-5 off an integer.
 const DEPTH_SNAP_TOLERANCE: f64 = 1e-3;
+
+/// How far a grid anchor at `scale` may lie from its exact value: the rounding of `world -
+/// origin` (half an ulp of the larger operand) plus the reader's own rounding of the stored
+/// corner. A node corner closer than this to a cell edge is on the edge, within what the grid
+/// can express.
+pub(crate) fn anchor_tolerance(scale: f64) -> f64 {
+    4.0 * f64::EPSILON * scale
+}
 
 /// Depth at which a node's side spans 8 cells, derived from the node side so it holds for any
 /// `--spatial-divisions` of the converter (2, 4 or 8).
@@ -324,8 +333,9 @@ struct AxisAnchor {
 /// centimetres when a global cloud keeps the whole 2^64-quanta lattice as its root (points on
 /// both sides of a sign bit, issue #30), so close points never separate. Deeper than the node,
 /// indices are measured from the node's minimum corner instead when that corner is a cell edge at
-/// the node depth (always for global formats, whose nodes lie on the dyadic grid): its index is
-/// exact there and shifts left below it. Other corners keep the root anchor.
+/// the node depth up to [`anchor_tolerance`] (always for global formats, whose nodes lie on the
+/// dyadic grid): its index is the rounded edge there, exact while the node side exceeds twice
+/// that tolerance, and shifts left below it. Corners off the grid keep the root anchor.
 fn axis_anchor(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> AxisAnchor {
     let root = AxisAnchor {
         position: grid.root_min[axis],
@@ -337,7 +347,8 @@ fn axis_anchor(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -
     }
     let node_cell_side = grid.root_side / (1_u64 << node_depth) as f64;
     let edge = (bounds.min()[axis] - grid.root_min[axis]) / node_cell_side;
-    if (edge - edge.round()).abs() >= DEPTH_SNAP_TOLERANCE {
+    let scale = grid.root_min[axis].abs().max(bounds.min()[axis].abs());
+    if (edge - edge.round()).abs() * node_cell_side > anchor_tolerance(scale) {
         return root;
     }
     let (corner, _) = node_range(grid, bounds, node_depth, axis);

@@ -1132,3 +1132,72 @@ fn leaf_far_from_the_root_corner_separates_close_points_exactly() {
         ]
     );
 }
+
+#[test]
+fn small_leaf_under_a_sign_crossing_root_separates_close_points_exactly() {
+    // The local grid as `LodDataset::build_node_cells` derives it for fs_e430_n4008_18 (issue
+    // #30, review round 1): the stored world corner, which the reader's rounding of `local +
+    // origin` leaves 2^-5 off the lattice corner -2^48 on x and y, minus a non-dyadic coordinate
+    // origin. Leaves of side 8 and 1 sit on the lattice; their points are 1 cm apart.
+    // Frame origins are multiples of 2^-15; with this one (about half of them behave so) the
+    // corner error does not cancel when `min - root_min` is rounded.
+    let origin = [
+        431_028.0 + 1029.0 / 32_768.0,
+        4_006_000.019_989_013_7,
+        -1.170_013_427_734_375,
+    ];
+    let lattice_root = -(2.0_f64.powi(48));
+    let stored_root = [
+        lattice_root + 2.0_f64.powi(-5),
+        lattice_root + 2.0_f64.powi(-5),
+        lattice_root,
+    ];
+    let grid = CellGrid {
+        root_min: std::array::from_fn(|axis| stored_root[axis] - origin[axis]),
+        root_side: 2.0_f64.powi(49),
+    };
+    let world_min = [430_080.0, 4_007_936.0, 0.0];
+    for side in [8.0_f64, 1.0] {
+        let local_min: [f64; 3] = std::array::from_fn(|axis| world_min[axis] - origin[axis]);
+        let offsets = [
+            [side / 4.0 + 0.004, side / 2.0, side / 2.0],
+            [side / 4.0 + 0.0117, side / 2.0, side / 2.0],
+        ];
+        let positions: Vec<[f32; 3]> = offsets
+            .iter()
+            .map(|offset| std::array::from_fn(|axis| (local_min[axis] + offset[axis]) as f32))
+            .collect();
+        let block = plain_block(
+            positions
+                .iter()
+                .map(|p| Point::new(*p, ColorRgb::new(1, 2, 3)))
+                .collect(),
+        );
+        let bounds = SpatialBounds::new(local_min, local_min.map(|value| value + side)).unwrap();
+        let cells = PointNodeCellSource::default()
+            .node_cells(
+                &grid,
+                NodeId::new(1),
+                bounds,
+                Some(side / 8.0),
+                true,
+                &[block],
+            )
+            .unwrap_or_else(|error| panic!("side {side}: {error:?}"));
+        let finest = cells.levels.last().unwrap();
+        assert_eq!(finest.depth, 56, "side {side}");
+        // Lattice index: the world corner's cells from -2^48 plus the in-node offset, exactly.
+        let expected: Vec<[u64; 3]> = positions
+            .iter()
+            .map(|p| {
+                std::array::from_fn(|axis| {
+                    let corner = ((world_min[axis] - lattice_root) as u64) << (56 - 49);
+                    let offset = (f64::from(p[axis]) - local_min[axis]) * 2.0_f64.powi(56 - 49);
+                    corner + offset.floor() as u64
+                })
+            })
+            .collect();
+        let coords: Vec<_> = finest.cells.iter().map(|cell| cell.coord).collect();
+        assert_eq!(coords, expected, "side {side}");
+    }
+}
