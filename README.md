@@ -6,7 +6,7 @@ A LiDAR point-cloud viewer in Rust, WebAssembly and WebGPU, with a LAS/LAZ conve
 
 ## Status
 
-- Experimental and pre-1.0, developed by a single maintainer with LLM coding agents. Nothing is published to npm; APIs and file formats may change.
+- Experimental and pre-1.0, developed by a single maintainer. Nothing is published to npm; APIs and file formats may change.
 - Targets desktop Chrome/Edge with WebGPU. Firefox is best effort; Safari and mobile are out of scope.
 - The [public demo](https://mili-ssm.github.io/OctreeViewer/) is experimental: it may lag behind `main` and has known bugs (see the [issues](https://github.com/Mili-ssm/OctreeViewer/issues)).
 
@@ -15,7 +15,7 @@ A LiDAR point-cloud viewer in Rust, WebAssembly and WebGPU, with a LAS/LAZ conve
 - Converts LAS, LAZ, COPC (read as sequential LAS/LAZ) and local EPT to a persistent `.oct` (geometry) and `.octattrs` (attributes) pair with the default `v7` format.
 - Loads only the blocks a view needs, from local files or over HTTP Range.
 - Keeps per-node voxel cells resident on the GPU with level of detail (LOD).
-- Target scale: hundreds of GB of LAZ with bounded memory. **Proven so far:** datasets up to about 6 GB of LAZ (Majadas), measured against budgets for frame time, time to first frame and memory ([requirements](docs/requirements.md), [records](docs/records/benchmarks/)). **Not proven:** the full target scale and parity with Potree.
+- Target scale: hundreds of GB of LAZ with bounded memory. **Proven so far:** real datasets up to Majadas (1.3 GB of LAZ, 415 million points), measured against budgets for frame time, time to first frame and memory ([requirements](docs/requirements.md), [records](docs/records/benchmarks/)). **Not proven:** the full target scale and parity with Potree.
 
 ## Quick start
 
@@ -53,7 +53,7 @@ scripts/serve-demo.sh
 
 ## Documentation
 
-The documentation is in Spanish, except this README, `SECURITY.md` and the web host README.
+The documentation is in Spanish, except this README, `SECURITY.md` and the web host README and probes.
 
 - [docs/README.md](docs/README.md): documentation index
 - [docs/estado.md](docs/estado.md): current status and priorities

@@ -511,7 +511,11 @@ function handleWorkerMessage(event) {
         requestFrameOnce();
         openUrlFromQuery();
         // A visitor with no `?url=` sees something at once; the button stays for reopening it.
-        if (!urlOpened && !sampleAutoOpened) {
+        // Automated browsers (probes, Playwright) skip it so their measurements start empty;
+        // `?sample=1` forces it, `?sample=0` disables it.
+        const sampleParam = new URLSearchParams(location.search).get("sample");
+        const autoSample = sampleParam === "1" || (sampleParam !== "0" && !navigator.webdriver);
+        if (autoSample && !urlOpened && !sampleAutoOpened) {
             sampleAutoOpened = true;
             sampleButton.click();
         }

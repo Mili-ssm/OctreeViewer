@@ -48,5 +48,5 @@ Los documentos largos se leen por rangos: primero sus encabezados (`grep -n '^#'
   producción), navegador, dataset y equipo; no se trasladan.
 - **Versiones de formato**: `FormatVersion::V<n>` solo dentro de `viewer_format`
   (lo vigila `scripts/check_version_literals.sh`).
-- **Idioma y fechas**: documentación en español (salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md`, en inglés);
+- **Idioma y fechas**: documentación en español (salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md`, en inglés);
   código, comentarios y commits en inglés; fechas `dd-mm-aaaa`.

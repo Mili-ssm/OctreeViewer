@@ -73,7 +73,7 @@ Fuente única de las reglas.
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
 - **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
   nueva evidencia va en un registro nuevo o en `format-v7-evidence.md`, que se amplía.
-- **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` (inglés).
+- **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md` (inglés).
 - **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
 - **Un hecho, un documento**: el resto enlaza; dónde va cada tipo de documento, en el
   [índice](docs/README.md#dónde-va-cada-cosa). El resumen de prioridades activas, en «Prioridades

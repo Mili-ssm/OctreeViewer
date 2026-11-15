@@ -36,7 +36,7 @@ host=examples/web-host
 cp "$host"/index.html "$host"/sample.oct "$host"/sample.octattrs "$site"/
 # The page and its workers; probes, spikes, tests and the RED-REF server stay out.
 for f in "$host"/*.js "$host"/*.mjs; do
-  case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs) continue ;; esac
+  case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs|pixel-metrics.mjs|benchmark-metrics.mjs|collect-*) continue ;; esac
   cp "$f" "$site"/
 done
 cp pkg/viewer_wasm.js pkg/viewer_wasm_bg.wasm "$site/pkg/"

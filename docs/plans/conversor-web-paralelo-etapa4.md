@@ -51,7 +51,7 @@ Decisión técnica del coordinador: el brazo de 4 GiB de spools se mide con `ram
 - El núcleo sigue sin E/S, hilos, reloj ni funciones de libm (lint de clippy, ADR 0014 y 0016); sin `unsafe` nuevo.
 - R8: funciona con `python3 -m http.server` y desde el paquete `file://` sin COOP/COEP; sin `SharedArrayBuffer`.
 - Registros nuevos fechados con el día de ejecución, en español; no editar registros ya mergeados.
-- Commits convencionales en inglés con la línea `Co-Authored-By` del modelo que los escribe; sin push.
+- Commits convencionales en inglés sin líneas de atribución; sin push.
 - Tareas en paralelo con código: worktree y `CARGO_TARGET_DIR` propios; mediciones de tiempo sin otros agentes activos.
 
 ## Review Focus

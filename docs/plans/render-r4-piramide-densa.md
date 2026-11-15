@@ -64,7 +64,7 @@ RQ-02, RQ-07, RQ-08, RQ-09.
 - Sin `log2` en las rutas de formato (ADR 0016): los exponentes salen de los bits de `f64` y se prueban en wasm32.
 - Paridad web/CLI byte a byte (RQ-08).
 - Registros fechados en `docs/records/benchmarks/`; spec vigente en `docs/reference/format/`; commits
-  convencionales en inglés con `Co-Authored-By`; sin push.
+  convencionales en inglés, sin líneas de atribución; sin push.
 
 ## Criterios de parada
 

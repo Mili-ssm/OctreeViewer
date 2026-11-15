@@ -38,7 +38,7 @@ y pirámide LOD sin densidades intermedias (B2); problemas acotados: B3–B7.
 - **Puertas por contadores deterministas** (`sceneBuilds`, `voxelSourcePoints`, bloques cargados, nodos sin cubrir, expulsiones de pendientes, ms de selección en bench nativo); el tiempo de pared es orientativo con n = 3. Matriz completa solo en R0 y en la medida final; por tarea, una ejecución de humo en Majadas.
 - **Serie sobre `lod_dataset.rs`/`bindings/lod.rs`**: una tarea cada vez en ese código (orden abajo). El host sirve la raíz del worktree que se mide; cada registro anota el SHA del `.wasm` y del dataset.
 - Antes de cronometrar: ningún `cargo`, `rustc` ni otro navegador activo (`pgrep`) y `loadavg` anotado.
-- Registros nuevos fechados con el día de ejecución, en español; commits convencionales en inglés con `Co-Authored-By`; sin push.
+- Registros nuevos fechados con el día de ejecución, en español; commits convencionales en inglés, sin líneas de atribución; sin push.
 
 ## Review Focus
 
