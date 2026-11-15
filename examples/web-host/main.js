@@ -7,7 +7,7 @@ import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 import {
-    FORMAT_VERSIONS, progressText, spoolText, timingsText, validateConverterOptions,
+    FORMAT_VERSIONS, OPTION_DEFAULTS, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
 } from "./converter-ui.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
@@ -819,7 +819,16 @@ continuity.addEventListener("change", () => {
     queueWorkerCommand("continuity", { enabled: continuity.checked });
 });
 for (const version of FORMAT_VERSIONS) {
-    optionFields.formatVersion.append(new Option(version, version, false, version === "v5"));
+    optionFields.formatVersion.append(new Option(version, version, false, version === OPTION_DEFAULTS.formatVersion));
+}
+
+// Global-frame formats fix these two values: disable the controls and say why (aria-describedby).
+function syncFixedFrameControls() {
+    const fixed = isGlobalFrameFormat(optionFields.formatVersion.value);
+    for (const name of ["pointsPerBlock", "spatialDivisions"]) {
+        optionFields[name].disabled = fixed;
+        document.getElementById(`${optionFields[name].id}-fixed`).hidden = !fixed;
+    }
 }
 
 function readConverterOptions() {
@@ -830,6 +839,7 @@ function readConverterOptions() {
 
 // Shows each field's message next to it (aria-describedby) and returns the options, or null if any is invalid.
 function refreshConverterOptions() {
+    syncFixedFrameControls();
     const { errors, options } = readConverterOptions();
     for (const [name, element] of Object.entries(optionFields)) {
         const message = document.getElementById(`${element.id}-error`);
@@ -852,6 +862,7 @@ function showConvertNotice(kind, message) {
 
 for (const element of Object.values(optionFields)) element.addEventListener("input", refreshConverterOptions);
 convertFileInput.addEventListener("change", refreshConverterOptions);
+refreshConverterOptions();
 convertButton.addEventListener("click", () => {
     const file = convertFileInput.files?.[0];
     if (!file || converterApi) return;

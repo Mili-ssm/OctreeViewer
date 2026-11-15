@@ -4,12 +4,17 @@
 const GB = 1e9;
 
 /** Writable output revisions, in the CLI listing order (`FormatVersion::WRITABLE`). */
-export const FORMAT_VERSIONS = ["v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre"];
+export const FORMAT_VERSIONS = ["v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
+
+const GLOBAL_FRAME_FORMATS = new Set(["v7", "v7.4-pre", "v7.5-pre"]);
+
+/** Global-frame formats fix points per block and spatial divisions; the core rejects other values. */
+export const isGlobalFrameFormat = (formatVersion) => GLOBAL_FRAME_FORMATS.has(formatVersion);
 
 /** CLI defaults (`ConvertOptions::default`), as the strings shown in the form. */
 export const OPTION_DEFAULTS = Object.freeze({
-    formatVersion: "v5",
+    formatVersion: "v7",
     pointsPerBlock: "262144",
     maxError: "0.01",
     spatialDivisions: "2",
@@ -46,17 +51,23 @@ export function validateConverterOptions(raw = {}) {
     if (FORMAT_VERSIONS.includes(input.formatVersion)) options.formatVersion = input.formatVersion;
     else errors.formatVersion = "Choose one of the listed format versions.";
 
-    const points = integerInRange(input.pointsPerBlock, 1, MAX_POINTS_PER_BLOCK, "Points per block");
-    if (points.error) errors.pointsPerBlock = points.error;
-    else options.pointsPerBlock = points.value;
+    const fixedFrame = isGlobalFrameFormat(input.formatVersion);
+
+    if (!fixedFrame) {
+        const points = integerInRange(input.pointsPerBlock, 1, MAX_POINTS_PER_BLOCK, "Points per block");
+        if (points.error) errors.pointsPerBlock = points.error;
+        else options.pointsPerBlock = points.value;
+    }
 
     const maxError = parseNumber(input.maxError);
     if (!Number.isFinite(maxError) || maxError < 0) errors.maxError = "Max error must be a number of 0 or more.";
     else options.maxError = maxError;
 
-    const divisions = Number(input.spatialDivisions);
-    if (SPATIAL_DIVISIONS.includes(divisions)) options.spatialDivisions = divisions;
-    else errors.spatialDivisions = `Spatial divisions must be ${SPATIAL_DIVISIONS.join(", ")}.`;
+    if (!fixedFrame) {
+        const divisions = Number(input.spatialDivisions);
+        if (SPATIAL_DIVISIONS.includes(divisions)) options.spatialDivisions = divisions;
+        else errors.spatialDivisions = `Spatial divisions must be ${SPATIAL_DIVISIONS.join(", ")}.`;
+    }
 
     const planner = integerInRange(input.plannerBudgetMiB, 1, MAX_PLANNER_BUDGET_MIB, "Planner budget", " MiB");
     if (planner.error) errors.plannerBudgetMiB = planner.error;

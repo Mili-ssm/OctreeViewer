@@ -132,7 +132,7 @@ function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
 }
 
 // Runs one binding conversion; `outputQuota` and `zoneQuota` (bytes) make the fakes write short.
-function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity, formatVersion, rowOrder } = {}) {
+function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity, formatVersion, rowOrder, omitPointsPerBlock = false } = {}) {
   const paths = [`${name}.oct`, `${name}.octattrs`].map((file) => join(workDir, file));
   const handles = [
     openFsSyncHandle(paths[0], { quotaBytes: outputQuota }),
@@ -149,7 +149,7 @@ function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, z
       handles[0],
       handles[1],
       {
-        pointsPerBlock: ppb,
+        ...(omitPointsPerBlock ? {} : { pointsPerBlock: ppb }),
         spatialDivisions: divisions,
         maxError: 0.01,
         spoolBudgetBytes: SPOOL_BUDGET_BYTES,
@@ -193,6 +193,16 @@ for (const { name, input, ppb, divisions } of cases) {
       `attrs=${attrs.slice(0, 12)}/${native.attrs.slice(0, 12)} spilled=${summary.spool.spilledBytes}B` +
       (problems.length ? ` (${problems.join(", ")})` : ""),
   );
+}
+
+// An absent `pointsPerBlock` keeps the engine default (262144) for a v5 conversion, as the web UI relies on.
+{
+  const native = nativeConvert("small-no-ppb", small, 262144, 2, "v5");
+  const { oct, attrs } = bindingConvert("small-no-ppb", small, 262144, 2, { formatVersion: "v5", omitPointsPerBlock: true });
+  const problems = [];
+  if (oct !== native.oct) problems.push("oct differs");
+  if (attrs !== native.attrs) problems.push("octattrs differs");
+  report(problems.length === 0, `small-no-ppb bindings=${oct.slice(0, 12)} native=${native.oct.slice(0, 12)}` + (problems.length ? ` (${problems.join(", ")})` : ""));
 }
 
 // `rowOrder` reaches the bindings: the v7.5-pre hybrid pair matches native hybrid and differs from

@@ -188,7 +188,7 @@ def main() -> None:
     converter_api_js = converter_api_js.replace("export function createConverter", "function createConverter")
     main_js = require_replace(
         main_js,
-        'import {\n    FORMAT_VERSIONS, progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
+        'import {\n    FORMAT_VERSIONS, OPTION_DEFAULTS, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,\n} from "./converter-ui.mjs";\n',
         "",
         "converter UI import",
     )

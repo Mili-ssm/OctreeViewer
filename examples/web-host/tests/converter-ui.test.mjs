@@ -2,17 +2,37 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    FORMAT_VERSIONS, OPTION_DEFAULTS, progressText, spoolText, timingsText, validateConverterOptions,
+    FORMAT_VERSIONS, OPTION_DEFAULTS, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
 } from "../converter-ui.mjs";
 
 test("defaults are the CLI defaults and map to core options", () => {
     const { errors, options } = validateConverterOptions(OPTION_DEFAULTS);
     assert.deepEqual(errors, {});
     assert.deepEqual(options, {
-        formatVersion: "v5", pointsPerBlock: 262144, maxError: 0.01, spatialDivisions: 2,
-        maxMemoryMiB: 512, ramBudget: 4e9,
+        formatVersion: "v7", maxError: 0.01, maxMemoryMiB: 512, ramBudget: 4e9,
     });
     assert.deepEqual(validateConverterOptions().options, options);
+    assert.equal(FORMAT_VERSIONS[0], "v7");
+    assert.equal(OPTION_DEFAULTS.formatVersion, "v7");
+});
+
+test("v5 and v7.5-pre are accepted; only v5 sends leaf size and divisions", () => {
+    const v5 = validateConverterOptions({ formatVersion: "v5" });
+    assert.deepEqual(v5.errors, {});
+    assert.equal(v5.options.pointsPerBlock, 262144);
+    assert.equal(v5.options.spatialDivisions, 2);
+    assert.ok(FORMAT_VERSIONS.includes("v7.5-pre"));
+    assert.deepEqual(validateConverterOptions({ formatVersion: "v7.5-pre" }).errors, {});
+});
+
+test("global-frame formats send neither points per block nor divisions, even if invalid", () => {
+    for (const formatVersion of ["v7", "v7.4-pre", "v7.5-pre"]) {
+        assert.ok(isGlobalFrameFormat(formatVersion));
+        const { errors, options } = validateConverterOptions({ formatVersion, pointsPerBlock: "0", spatialDivisions: "3" });
+        assert.deepEqual(errors, {});
+        assert.ok(!("pointsPerBlock" in options) && !("spatialDivisions" in options), formatVersion);
+    }
+    for (const formatVersion of ["v5", "v6.1-pre", "v7.3-pre"]) assert.ok(!isGlobalFrameFormat(formatVersion));
 });
 
 test("every listed format version is accepted and unknown ones are not", () => {
@@ -32,7 +52,7 @@ test("out of range, fractional and empty values are rejected per field", () => {
     ];
     for (const [field, values] of cases) {
         for (const value of values) {
-            const { errors } = validateConverterOptions({ [field]: value });
+            const { errors } = validateConverterOptions({ formatVersion: "v5", [field]: value });
             assert.deepEqual(Object.keys(errors), [field], `${field}=${JSON.stringify(value)}`);
         }
     }
@@ -40,7 +60,7 @@ test("out of range, fractional and empty values are rejected per field", () => {
 
 test("boundaries are accepted and RAM budget is converted to bytes", () => {
     const { errors, options } = validateConverterOptions({
-        pointsPerBlock: "1000000", maxError: "0", spatialDivisions: "8", plannerBudgetMiB: "4096", ramBudgetGB: "8",
+        formatVersion: "v5", pointsPerBlock: "1000000", maxError: "0", spatialDivisions: "8", plannerBudgetMiB: "4096", ramBudgetGB: "8",
     });
     assert.deepEqual(errors, {});
     assert.equal(options.ramBudget, 8e9);
