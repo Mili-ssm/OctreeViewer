@@ -330,6 +330,7 @@ fn convert(
                 let name = match candidate.kind {
                     viewer_format::GeometryCandidateKind::Raw => "raw".to_string(),
                     viewer_format::GeometryCandidateKind::Delta => "delta".to_string(),
+                    viewer_format::GeometryCandidateKind::DeltaMorton => "delta_morton".to_string(),
                     viewer_format::GeometryCandidateKind::Occupancy {
                         residual_bits,
                         own_octant,

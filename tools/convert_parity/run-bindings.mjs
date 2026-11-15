@@ -123,15 +123,16 @@ if (singleInput) {
 const small = join(root, "data/samples/fs_e430_n4008_18.las");
 const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
 
-function nativeConvert(name, input, ppb, divisions) {
+function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
   const output = join(workDir, `${name}.native.oct`);
-  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions)], { encoding: "utf8" });
+  const extra = format ? [format, ...(rowOrder ? [rowOrder] : [])] : [];
+  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...extra], { encoding: "utf8" });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
   return { oct: sha256(readFileSync(output)), attrs: sha256(readFileSync(`${output}attrs`)) };
 }
 
 // Runs one binding conversion; `outputQuota` and `zoneQuota` (bytes) make the fakes write short.
-function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity } = {}) {
+function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, zoneQuota = Infinity, formatVersion, rowOrder } = {}) {
   const paths = [`${name}.oct`, `${name}.octattrs`].map((file) => join(workDir, file));
   const handles = [
     openFsSyncHandle(paths[0], { quotaBytes: outputQuota }),
@@ -147,7 +148,14 @@ function bindingConvert(name, input, ppb, divisions, { outputQuota = Infinity, z
       fdBlob(fd),
       handles[0],
       handles[1],
-      { pointsPerBlock: ppb, spatialDivisions: divisions, maxError: 0.01, spoolBudgetBytes: SPOOL_BUDGET_BYTES },
+      {
+        pointsPerBlock: ppb,
+        spatialDivisions: divisions,
+        maxError: 0.01,
+        spoolBudgetBytes: SPOOL_BUDGET_BYTES,
+        ...(formatVersion ? { formatVersion } : {}),
+        ...(rowOrder ? { rowOrder } : {}),
+      },
       undefined,
       createSpoolHost({ zones }),
     );
@@ -186,6 +194,22 @@ for (const { name, input, ppb, divisions } of cases) {
       (problems.length ? ` (${problems.join(", ")})` : ""),
   );
 }
+
+// `rowOrder` reaches the bindings: the v7.5-pre hybrid pair matches native hybrid and differs from
+// the source-order pair. The source twin's hashes come from the same run.
+const rowOrderOptions = { formatVersion: "v7.5-pre" };
+const rowOrderResults = {};
+for (const rowOrder of ["source", "hybrid"]) {
+  const name = `synthetic-v75-${rowOrder}`;
+  const native = nativeConvert(name, synthetic, 262144, 2, "v7.5-pre", rowOrder);
+  const { oct, attrs } = bindingConvert(name, synthetic, 262144, 2, { ...rowOrderOptions, rowOrder });
+  rowOrderResults[rowOrder] = oct;
+  const problems = [];
+  if (oct !== native.oct) problems.push("oct differs");
+  if (attrs !== native.attrs) problems.push("octattrs differs");
+  report(problems.length === 0, `${name} bindings=${oct.slice(0, 12)} native=${native.oct.slice(0, 12)}` + (problems.length ? ` (${problems.join(", ")})` : ""));
+}
+report(rowOrderResults.source !== rowOrderResults.hybrid, "rowOrder hybrid differs from source");
 
 // A full spill zone or a full output surfaces as a `QuotaExceededError`.
 const quotaCases = [

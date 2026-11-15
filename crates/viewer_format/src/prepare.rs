@@ -336,6 +336,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
         && geometry_encoding == GeometryEncoding::CompactOccupied
         && u32::try_from(point_count).is_ok()
     {
+        let morton_started = collect_codec_diagnostics.then(std::time::Instant::now);
         let permutation = morton_permutation(quantized.coordinates());
         let sorted: Vec<[u32; 3]> = permutation
             .iter()
@@ -349,10 +350,21 @@ pub(crate) fn prepare_point_block_for_version_impl(
             .checked_add(delta.len() as u64)
             .ok_or(FormatError::BlockSizeOverflow)?;
         if delta_total <= options.max_uncompressed_block_bytes {
+            let encoding_ns = morton_started.map_or(0, |started| started.elapsed().as_nanos());
+            let compression_started = collect_codec_diagnostics.then(std::time::Instant::now);
             let encoded = compress_block(&delta);
+            if codec_diagnostics.is_some() {
+                candidates.push(candidate_metric(
+                    crate::GeometryCandidateKind::DeltaMorton,
+                    encoding_ns,
+                    compression_started.map_or(0, |started| started.elapsed().as_nanos()),
+                    delta.len(),
+                    encoded.bytes().len(),
+                ));
+            }
             if encoded.bytes().len() < encoded_geometry.bytes().len() {
                 geometry_encoding = GeometryEncoding::DeltaVarint;
-                selected_candidate = crate::GeometryCandidateKind::Delta;
+                selected_candidate = crate::GeometryCandidateKind::DeltaMorton;
                 geometry_raw_length = delta.len();
                 encoded_geometry = encoded;
                 row_permutation = Some(permutation);
@@ -434,6 +446,29 @@ pub enum RowOrder {
     /// Blocks whose best source-order geometry is `CompactOccupied` are re-encoded sorted by
     /// Morton key with `DeltaVarint` when that is strictly smaller (ADR 0042).
     Hybrid,
+}
+
+impl RowOrder {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Hybrid => "hybrid",
+        }
+    }
+}
+
+impl std::str::FromStr for RowOrder {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "source" => Ok(Self::Source),
+            "hybrid" => Ok(Self::Hybrid),
+            other => Err(format!(
+                "unknown row order {other:?} (expected source or hybrid)"
+            )),
+        }
+    }
 }
 
 /// Interleaves the 32 bits of each coordinate into a 96-bit Morton key (no truncation), x in the

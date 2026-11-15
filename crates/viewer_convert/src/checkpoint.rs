@@ -7,10 +7,10 @@ use std::{
 
 use crate::{CheckpointError, ConvertOptions, fs_util::sync_parent};
 
-use viewer_format::{FormatVersion, HEADER_ENVELOPE_VERSION};
+use viewer_format::{FormatVersion, HEADER_ENVELOPE_VERSION, RowOrder};
 
-// V5 binds resumable state to the exact output header identity and envelope.
-const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V5";
+// V6 adds `row_order`; V5 bound resumable state to the exact output header identity and envelope.
+const MANIFEST_VERSION: &str = "OCTREE_CONVERSION_CHECKPOINT_V6";
 const HASH_OFFSET: u128 = 0x6c62272e07bb014262b821756295c58d;
 const HASH_PRIME: u128 = 0x0000000001000000000000000000013b;
 
@@ -47,6 +47,7 @@ struct Manifest {
     max_quantization_error_bits: u64,
     max_memory_bytes: u64,
     spatial_divisions: u8,
+    row_order: RowOrder,
     stage: CheckpointStage,
 }
 
@@ -97,6 +98,7 @@ impl Checkpoint {
             max_quantization_error_bits: options.max_quantization_error().to_bits(),
             max_memory_bytes: options.max_memory_budget_bytes(),
             spatial_divisions: options.spatial_divisions(),
+            row_order: options.row_order(),
             stage: CheckpointStage::Started,
         };
         let manifest_path = root.join("manifest.txt");
@@ -117,6 +119,7 @@ impl Checkpoint {
                     || existing.max_quantization_error_bits != expected.max_quantization_error_bits
                     || existing.max_memory_bytes != expected.max_memory_bytes
                     || existing.spatial_divisions != expected.spatial_divisions
+                    || existing.row_order != expected.row_order
                 {
                     return Err(CheckpointError::Mismatch);
                 }
@@ -325,7 +328,7 @@ fn encode_manifest(manifest: &Manifest) -> String {
         _ => (0, 0, 0),
     };
     format!(
-        "{MANIFEST_VERSION}\noutput_major={}\noutput_revision={}\nheader_envelope={HEADER_ENVELOPE_VERSION}\nstage={stage}\nsource_bytes={}\nsource_hash={:032x}\npoints_per_block={}\nmax_error_bits={:016x}\nmax_memory_bytes={}\nspatial_divisions={}\nartifact_bytes={}\nartifact_hash={:032x}\nattributes_bytes={}\nattributes_hash={:032x}\npoint_count={point_count}\nblock_count={block_count}\nestimated_memory_bytes={estimated_memory_bytes}\n",
+        "{MANIFEST_VERSION}\noutput_major={}\noutput_revision={}\nheader_envelope={HEADER_ENVELOPE_VERSION}\nstage={stage}\nsource_bytes={}\nsource_hash={:032x}\npoints_per_block={}\nmax_error_bits={:016x}\nmax_memory_bytes={}\nspatial_divisions={}\nrow_order={}\nartifact_bytes={}\nartifact_hash={:032x}\nattributes_bytes={}\nattributes_hash={:032x}\npoint_count={point_count}\nblock_count={block_count}\nestimated_memory_bytes={estimated_memory_bytes}\n",
         manifest.output_version.major(),
         manifest.output_version.revision(),
         manifest.source.bytes,
@@ -334,6 +337,7 @@ fn encode_manifest(manifest: &Manifest) -> String {
         manifest.max_quantization_error_bits,
         manifest.max_memory_bytes,
         manifest.spatial_divisions,
+        manifest.row_order.as_str(),
         artifact.map_or(0, |fingerprint| fingerprint.bytes),
         artifact.map_or(0, |fingerprint| fingerprint.hash),
         match manifest.stage {
@@ -468,6 +472,9 @@ fn read_manifest(
         spatial_divisions: parse("spatial_divisions")?
             .parse()
             .map_err(|_| CheckpointError::Invalid("invalid spatial divisions".to_owned()))?,
+        row_order: parse("row_order")?
+            .parse()
+            .map_err(|_| CheckpointError::Invalid("invalid row order".to_owned()))?,
         stage,
     })
 }
@@ -482,6 +489,7 @@ mod tests {
         Checkpoint, CheckpointError, CheckpointMode, CheckpointStage, FileFingerprint,
         MANIFEST_VERSION,
     };
+    use viewer_format::{FormatVersion, RowOrder};
 
     fn options(points_per_block: u64, spatial_divisions: u8) -> ConvertOptions {
         ConvertOptions::with_memory_budget(points_per_block, 0.01, 1024)
@@ -547,6 +555,48 @@ mod tests {
     }
 
     #[test]
+    fn resume_rejects_a_different_row_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("out.oct");
+        let source = FileFingerprint {
+            bytes: 123,
+            hash: 456,
+        };
+        let v7 = |order| {
+            options(32, 2)
+                .with_format_version(FormatVersion::V7_PRE3)
+                .unwrap()
+                .with_row_order(order)
+                .unwrap()
+        };
+        let checkpoint = Checkpoint::open(
+            &output,
+            CheckpointMode::Create,
+            source,
+            v7(RowOrder::Source),
+        )
+        .unwrap();
+        drop(checkpoint);
+
+        assert!(matches!(
+            Checkpoint::open(
+                &output,
+                CheckpointMode::Resume,
+                source,
+                v7(RowOrder::Hybrid)
+            ),
+            Err(CheckpointError::Mismatch)
+        ));
+        Checkpoint::open(
+            &output,
+            CheckpointMode::Resume,
+            source,
+            v7(RowOrder::Source),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn older_manifest_versions_cannot_resume_incompatible_spools() {
         let tmp = tempfile::tempdir().unwrap();
         let output = tmp.path().join("out.oct");
@@ -566,6 +616,7 @@ mod tests {
             "OCTREE_CONVERSION_CHECKPOINT_V2",
             "OCTREE_CONVERSION_CHECKPOINT_V3",
             "OCTREE_CONVERSION_CHECKPOINT_V4",
+            "OCTREE_CONVERSION_CHECKPOINT_V5",
         ] {
             fs::write(
                 &manifest_path,

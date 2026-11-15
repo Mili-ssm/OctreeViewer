@@ -97,6 +97,7 @@ const cases = [
   { name: "small-v75", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "flags-extra-v75", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "synthetic-v75", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
+  { name: "synthetic-v75-hybrid", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre", rowOrder: "hybrid", sourceTwin: "synthetic-v75" },
   { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
 ];
 if (autzen) {
@@ -123,11 +124,11 @@ const dumpDir = process.env.CONVERT_PARITY_DUMP;
 // `convert_parity_run` format argument.
 const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2 };
 
-function wasmConvert(name, bytes, ppb, divisions, format) {
+function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
   const ptr = x.convert_parity_alloc(bytes.length);
   // Viewed after the allocation: growing memory detaches earlier buffers.
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""]);
+  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : 0);
   const view = (p, l) => new Uint8Array(x.memory.buffer, p, l);
   if (!ok) {
     const message = new TextDecoder().decode(
@@ -150,12 +151,12 @@ function wasmConvert(name, bytes, ppb, divisions, format) {
   };
 }
 
-function nativeConvert(name, input, ppb, divisions, format) {
+function nativeConvert(name, input, ppb, divisions, format, rowOrder) {
   const output = join(workDir, `${name}.oct`);
   // The converter refuses to overwrite an existing output.
   rmSync(output, { force: true });
   rmSync(`${output}attrs`, { force: true });
-  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...(format ? [format] : [])], {
+  const run = spawnSync(nativeBin, [input, output, String(ppb), String(divisions), ...(format ? [format] : []), ...(rowOrder ? [rowOrder] : [])], {
     encoding: "utf8",
   });
   if (run.status !== 0) throw new Error(`native conversion failed: ${run.stderr}`);
@@ -167,10 +168,14 @@ function nativeConvert(name, input, ppb, divisions, format) {
 }
 
 let failed = false;
-for (const { name, input, ppb, divisions, multi, format } of cases) {
-  const native = nativeConvert(name, input, ppb, divisions, format);
-  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions, format);
+const results = new Map();
+for (const { name, input, ppb, divisions, multi, format, rowOrder, sourceTwin } of cases) {
+  const native = nativeConvert(name, input, ppb, divisions, format, rowOrder);
+  const wasm = wasmConvert(name, readFileSync(input), ppb, divisions, format, rowOrder);
+  results.set(name, native);
   const problems = [];
+  // The option must reach both sides: the hybrid pair differs from its source-order twin.
+  if (sourceTwin && results.get(sourceTwin).oct === native.oct) problems.push("hybrid equals source order");
   if (native.oct !== wasm.oct) problems.push("oct differs");
   if (native.attrs !== wasm.attrs) problems.push("octattrs differs");
   if (native.blocks !== wasm.blocks) problems.push("block count differs");

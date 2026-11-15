@@ -1,4 +1,4 @@
-use viewer_format::FormatVersion;
+use viewer_format::{FormatVersion, RowOrder};
 
 use crate::error::ConvertError;
 
@@ -45,11 +45,16 @@ pub struct ConvertOptions {
     pub(crate) format_version: FormatVersion,
     /// `v7.5-pre` page size target; `None` keeps the format default.
     pub(crate) page_target_bytes: Option<usize>,
+    /// Row order of each block; `Hybrid` is only valid for v7 formats (ADR 0041/0042).
+    pub(crate) row_order: RowOrder,
 }
 
 impl ConvertOptions {
     pub fn with_format_version(mut self, version: FormatVersion) -> Result<Self, ConvertError> {
         version.ensure_writable()?;
+        if self.row_order == RowOrder::Hybrid && version.major() != 7 {
+            return Err(ConvertError::HybridRowOrderUnsupported);
+        }
         if version.uses_global_frame() {
             // The version fixes these; a value the user changed from the defaults is an error.
             if !matches!(
@@ -77,6 +82,20 @@ impl ConvertOptions {
     pub const fn with_page_target_bytes(mut self, bytes: usize) -> Self {
         self.page_target_bytes = Some(bytes);
         self
+    }
+
+    /// Row order of each block (default [`RowOrder::Source`]). `Hybrid` needs a v7 format, so
+    /// set the format version first; a later version change is checked again.
+    pub fn with_row_order(mut self, row_order: RowOrder) -> Result<Self, ConvertError> {
+        if row_order == RowOrder::Hybrid && self.format_version.major() != 7 {
+            return Err(ConvertError::HybridRowOrderUnsupported);
+        }
+        self.row_order = row_order;
+        Ok(self)
+    }
+
+    pub const fn row_order(self) -> RowOrder {
+        self.row_order
     }
 
     pub const fn format_version(self) -> FormatVersion {
@@ -119,6 +138,7 @@ impl ConvertOptions {
             root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             format_version: FormatVersion::DEFAULT_OUTPUT,
             page_target_bytes: None,
+            row_order: RowOrder::Source,
         })
     }
 
@@ -227,6 +247,7 @@ impl Default for ConvertOptions {
             root_partition_ranges: DEFAULT_ROOT_PARTITION_RANGES,
             format_version: FormatVersion::DEFAULT_OUTPUT,
             page_target_bytes: None,
+            row_order: RowOrder::Source,
         }
     }
 }
@@ -234,4 +255,35 @@ impl Default for ConvertOptions {
 /// Applies the same input staging limit to planning, spooling and EPT reads.
 pub fn input_batch_point_limit(points_per_block: u64, record_length: usize) -> u64 {
     points_per_block.min((MAX_INPUT_BYTES_PER_BATCH / record_length.max(1)).max(1) as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use viewer_format::{FormatVersion, RowOrder};
+
+    use super::ConvertOptions;
+    use crate::ConvertError;
+
+    #[test]
+    fn hybrid_row_order_needs_a_v7_format_in_either_call_order() {
+        let source = ConvertOptions::default();
+        assert_eq!(source.row_order(), RowOrder::Source);
+        assert!(matches!(
+            source
+                .with_format_version(FormatVersion::V5)
+                .unwrap()
+                .with_row_order(RowOrder::Hybrid),
+            Err(ConvertError::HybridRowOrderUnsupported)
+        ));
+        let hybrid = source
+            .with_format_version(FormatVersion::V7_PRE5)
+            .unwrap()
+            .with_row_order(RowOrder::Hybrid)
+            .unwrap();
+        assert_eq!(hybrid.row_order(), RowOrder::Hybrid);
+        assert!(matches!(
+            hybrid.with_format_version(FormatVersion::V5),
+            Err(ConvertError::HybridRowOrderUnsupported)
+        ));
+    }
 }

@@ -10,7 +10,7 @@ use viewer_convert_core::{
     HybridSpoolStore, HybridStats, LasFactory, NoClock, SpoolEstimate, convert_serial,
     estimate_spools, inspect_source, validate_output_serial,
 };
-use viewer_format::FormatVersion;
+use viewer_format::{FormatVersion, RowOrder};
 use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Blob;
 
@@ -55,7 +55,7 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
 }
 
 /// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys:
-/// `formatVersion`, `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and
+/// `formatVersion`, `rowOrder` (`source`|`hybrid`, after the version), `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and
 /// `spatialWorkers`.
 fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
     let defaults = ConvertOptions::default();
@@ -86,6 +86,15 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
         if let Some(version) = version.as_string() {
             let version: FormatVersion = version.parse().map_err(JsValue::from_str)?;
             converted = converted.with_format_version(version).map_err(invalid)?;
+        }
+        let order = js_sys::Reflect::get(options, &"rowOrder".into())?;
+        if !order.is_undefined() && !order.is_null() {
+            let order: RowOrder = order
+                .as_string()
+                .ok_or_else(|| JsValue::from_str("option rowOrder must be a string"))?
+                .parse()
+                .map_err(|error: String| JsValue::from_str(&error))?;
+            converted = converted.with_row_order(order).map_err(invalid)?;
         }
     }
     Ok(converted)

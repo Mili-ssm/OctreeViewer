@@ -12,7 +12,7 @@ use viewer_convert::{
     CheckpointMode, ConversionStage, ConvertOptions, convert_file_with_checkpoint,
     convert_file_with_progress,
 };
-use viewer_format::{FormatVersion, block_checkpoint_versions};
+use viewer_format::{FormatVersion, RowOrder, block_checkpoint_versions};
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -47,6 +47,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut checkpoint_mode = None;
     let mut format_version = ConvertOptions::default().format_version();
     let mut page_target_bytes = None;
+    let mut row_order = RowOrder::Source;
     let mut index = 2;
     while index < arguments.len() {
         let flag = arguments[index].to_string_lossy();
@@ -70,6 +71,7 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
         let value = arguments.get(index + 1).ok_or("missing value for option")?;
         match flag.as_ref() {
             "--format-version" => format_version = value.to_string_lossy().parse()?,
+            "--row-order" => row_order = value.to_string_lossy().parse()?,
             // Hidden: tests and benchmarks that need several pages in a small file.
             "--page-target-bytes" => page_target_bytes = Some(value.to_string_lossy().parse()?),
             "--points-per-block" => points_per_block = value.to_string_lossy().parse()?,
@@ -91,7 +93,8 @@ fn run(arguments: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Err
     let mut options =
         ConvertOptions::with_memory_budget(points_per_block, max_error, max_memory_bytes)?
             .with_spatial_divisions(spatial_divisions)?
-            .with_format_version(format_version)?;
+            .with_format_version(format_version)?
+            .with_row_order(row_order)?;
     options = options.with_pipelined_writes(pipelined_writes);
     if let Some(bytes) = page_target_bytes {
         options = options.with_page_target_bytes(bytes);
@@ -205,12 +208,13 @@ fn print_help() {
         .join("/");
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
-        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
+        "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--row-order source|hybrid] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
          Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. v7.5-pre does not support EPT, --checkpoint or --resume.\n\
          viewer_convert verify FILE.oct reads every index page of a v7.5-pre file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
          Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
+         --row-order hybrid (v7 formats only; default source) re-sorts the rows of blocks where that shrinks the geometry; such files are for measurement and keep the v7.5-pre identity.\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires one of {checkpoint_versions}.\n\

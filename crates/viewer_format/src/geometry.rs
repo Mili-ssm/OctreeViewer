@@ -4,8 +4,15 @@ use crate::FormatError;
 pub enum GeometryCandidateKind {
     Raw,
     Delta,
-    Occupancy { residual_bits: u8, own_octant: bool },
-    CompactOccupancy { residual_bits: u8 },
+    /// Delta of rows sorted by Morton key (`RowOrder::Hybrid`); `Delta` keeps source order.
+    DeltaMorton,
+    Occupancy {
+        residual_bits: u8,
+        own_octant: bool,
+    },
+    CompactOccupancy {
+        residual_bits: u8,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

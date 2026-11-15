@@ -67,6 +67,7 @@ pub fn output_writer<W: Write + Seek>(
     if let Some(bytes) = options.page_target_bytes {
         writer_options = writer_options.with_page_target_bytes(bytes);
     }
+    writer_options = writer_options.with_row_order(options.row_order);
     let writer = FormatWriter::new_split_for_version(
         options.format_version(),
         geometry,

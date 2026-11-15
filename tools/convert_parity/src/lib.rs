@@ -44,6 +44,7 @@ fn run(
     divisions: u8,
     workers: usize,
     format: Option<viewer_format::FormatVersion>,
+    row_order: viewer_format::RowOrder,
 ) -> Result<Outcome, String> {
     let mut options = ConvertOptions::new(points_per_block, 0.01)
         .and_then(|options| options.with_spatial_divisions(divisions))
@@ -53,6 +54,9 @@ fn run(
             .with_format_version(version)
             .map_err(|error| error.to_string())?;
     }
+    options = options
+        .with_row_order(row_order)
+        .map_err(|error| error.to_string())?;
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)
@@ -88,7 +92,7 @@ fn run(
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre`. Returns 1
+/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre`; `row_order` is 0 for source and 1 for hybrid. Returns 1
 /// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
@@ -101,6 +105,7 @@ pub unsafe extern "C" fn convert_parity_run(
     divisions: u32,
     workers: u32,
     format: u32,
+    row_order: u32,
 ) -> u32 {
     // SAFETY: the caller passes a buffer from `convert_parity_alloc` of exactly `len` bytes.
     let input = unsafe { std::slice::from_raw_parts(ptr, len) };
@@ -114,6 +119,11 @@ pub unsafe extern "C" fn convert_parity_run(
             0 => None,
             1 => Some(viewer_format::FormatVersion::V7_PRE4),
             _ => Some(viewer_format::FormatVersion::V7_PRE5),
+        },
+        if row_order == 0 {
+            viewer_format::RowOrder::Source
+        } else {
+            viewer_format::RowOrder::Hybrid
         },
     );
     let succeeded = result.is_ok();
