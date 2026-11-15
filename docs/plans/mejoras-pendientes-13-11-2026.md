@@ -72,8 +72,9 @@ v7.5 40,2 s (razón 1,92). La diferencia está en construir la jerarquía (+12,4
 TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada. Nada se integra; las ramas
 `explore/convert-speed` y `explore/convert-batch` se conservan como evidencia.
 
-- [ ] C4. **Decisión del propietario, aplazada el 14-11-2026 a después de la fase D:** TC5 (rediseño del
-  pipeline con plan propio), revisar RQ-07 o probar la copia diferida del más cercano.
+- [ ] C4. **Decisión del propietario:** TC5 (rediseño del pipeline con plan propio) o revisar RQ-07. La copia
+  diferida del más cercano se probó y se descartó: la cota es −1,8 % en la jerarquía, y la razón v7.5/V5
+  sigue en ~2,0 ([registro](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)). Bloquea D3c.
 
 ## Fase D: fuente remota y V7 final
 

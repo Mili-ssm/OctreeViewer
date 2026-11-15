@@ -1,0 +1,10 @@
+base InspectingInput=0.01 PlanningMetadata=0.04 PlanningSpatialIndex=7.40 BuildingSpatialHierarchy=13.41 ReadingAndWritingBlocks=8.19 ValidatingOutput=3.02 PublishingOutput=0.00 Complete=0.01 total=32.08 rss=89824
+ub2 InspectingInput=0.01 PlanningMetadata=0.06 PlanningSpatialIndex=8.20 BuildingSpatialHierarchy=13.09 ReadingAndWritingBlocks=8.22 ValidatingOutput=3.12 PublishingOutput=0.00 Complete=0.00 total=32.71 rss=94220
+base InspectingInput=0.01 PlanningMetadata=0.05 PlanningSpatialIndex=8.73 BuildingSpatialHierarchy=13.35 ReadingAndWritingBlocks=8.15 ValidatingOutput=3.02 PublishingOutput=0.00 Complete=0.00 total=33.31 rss=94812
+ub2 InspectingInput=0.01 PlanningMetadata=0.07 PlanningSpatialIndex=9.90 BuildingSpatialHierarchy=13.13 ReadingAndWritingBlocks=8.11 ValidatingOutput=3.03 PublishingOutput=0.00 Complete=0.00 total=34.25 rss=93044
+base InspectingInput=0.01 PlanningMetadata=0.07 PlanningSpatialIndex=9.90 BuildingSpatialHierarchy=13.30 ReadingAndWritingBlocks=8.14 ValidatingOutput=3.09 PublishingOutput=0.00 Complete=0.00 total=34.52 rss=95628
+ub2 InspectingInput=0.01 PlanningMetadata=0.07 PlanningSpatialIndex=7.78 BuildingSpatialHierarchy=13.17 ReadingAndWritingBlocks=8.18 ValidatingOutput=3.06 PublishingOutput=0.00 Complete=0.00 total=32.28 rss=91788
+base InspectingInput=0.01 PlanningMetadata=0.04 PlanningSpatialIndex=7.62 BuildingSpatialHierarchy=13.35 ReadingAndWritingBlocks=8.07 ValidatingOutput=3.09 PublishingOutput=0.00 Complete=0.01 total=32.19 rss=94344
+ub2 InspectingInput=0.01 PlanningMetadata=0.06 PlanningSpatialIndex=9.11 BuildingSpatialHierarchy=13.02 ReadingAndWritingBlocks=8.09 ValidatingOutput=3.08 PublishingOutput=0.00 Complete=0.00 total=33.38 rss=93220
+base InspectingInput=0.01 PlanningMetadata=0.06 PlanningSpatialIndex=7.91 BuildingSpatialHierarchy=13.29 ReadingAndWritingBlocks=8.18 ValidatingOutput=3.08 PublishingOutput=0.00 Complete=0.00 total=32.54 rss=94136
+ub2 InspectingInput=0.01 PlanningMetadata=0.07 PlanningSpatialIndex=3.51 viewer_convert: No such file or directory (os error 2)=0.00 Command exited with non-zero status 1=0.00 total=3.59 rss=27084
