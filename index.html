@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>viewer_wasm host demo</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: "Iosevka", "Fira Code", monospace;
+            background: radial-gradient(circle at top, #1b2735 0%, #0d1117 65%);
+            color: #edf2f7;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: minmax(280px, 360px) 1fr;
+            background: transparent;
+        }
+
+        aside {
+            padding: 24px;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+            background: rgba(7, 11, 16, 0.45);
+        }
+
+        main {
+            position: relative;
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 1.5rem;
+        }
+
+        p,
+        li,
+        pre {
+            line-height: 1.45;
+            color: #cbd5e1;
+        }
+
+        canvas {
+            width: 100%;
+            height: calc(100vh - 48px);
+            display: block;
+            border-radius: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
+            box-shadow: 0 25px 90px rgba(0, 0, 0, 0.35);
+            touch-action: none;
+        }
+
+        button:focus-visible,
+        select:focus-visible,
+        input:focus-visible,
+        canvas:focus-visible {
+            outline: 3px solid #38bdf8;
+            outline-offset: 3px;
+        }
+
+        button {
+            appearance: none;
+            border: 0;
+            border-radius: 999px;
+            padding: 12px 18px;
+            background: linear-gradient(120deg, #f97316, #ea580c);
+            color: white;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .panel {
+            padding: 16px;
+            border-radius: 16px;
+            background: rgba(15, 23, 42, 0.7);
+            margin-top: 18px;
+        }
+
+        .panel label {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0 6px;
+        }
+
+        .panel select,
+        .panel input {
+            width: 100%;
+            font: inherit;
+        }
+
+        .panel small {
+            display: block;
+            margin-top: 8px;
+            line-height: 1.4;
+            color: #cbd5e1;
+        }
+
+        .panel summary {
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .panel summary:focus-visible,
+        .notice:focus-visible {
+            outline: 3px solid #38bdf8;
+            outline-offset: 3px;
+        }
+
+        .panel fieldset {
+            border: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        .panel input[aria-invalid="true"] {
+            outline: 2px solid #f87171;
+        }
+
+        .panel small[hidden] {
+            display: none;
+        }
+
+        .panel .field-error,
+        .panel .notice.error {
+            color: #fca5a5;
+        }
+
+        .panel .notice {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid currentColor;
+        }
+
+        .panel .notice.warning {
+            color: #fcd34d;
+        }
+
+        .panel .notice.success {
+            color: #86efac;
+        }
+
+        .stats {
+            display: grid;
+            gap: 8px;
+            white-space: pre-line;
+        }
+
+        @media (max-width: 760px) {
+            body {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            aside,
+            main {
+                min-width: 0;
+            }
+
+            aside {
+                border-right: 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            main {
+                padding: 12px;
+            }
+
+            canvas {
+                height: min(65vh, 720px);
+            }
+
+            pre {
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+            }
+        }
+
+        code,
+        pre {
+            font-family: inherit;
+        }
+    </style>
+</head>
+
+<body>
+    <aside>
+        <h1>Embeddable voxel viewer</h1>
+        <p>
+            This host owns the canvas and controls a Rust/WASM renderer in a dedicated worker. Open a
+            project-format file or explore the synthetic sample.
+        </p>
+        <button id="reload-scene" type="button">Recreate viewer</button>
+        <button id="cancel-load" type="button" hidden>Cancel file load</button>
+        <button id="fit-scene" type="button">Fit scene</button>
+        <section class="panel" aria-label="Dataset options">
+            <button id="open-sample" type="button" disabled>Open built-in sample · 4,096 points</button>
+            <label for="dataset-file">Open project dataset</label>
+            <input id="dataset-file" type="file" aria-describedby="dataset-help" disabled />
+            <label for="attributes-file">Optional .octattrs sidecar</label>
+            <input id="attributes-file" type="file" accept=".octattrs,application/octet-stream" aria-describedby="dataset-help" disabled />
+            <small id="dataset-help">The built-in sample is a local project file. Choose its optional matching .octattrs sidecar with the second file picker. Without the optional attribute file, geometry is gray. Reads run in the worker.</small>
+        </section>
+        <section class="panel" aria-label="Convert LAS or LAZ">
+            <strong>Convert a local LAS/LAZ file</strong>
+            <label for="convert-file">Source file</label>
+            <input id="convert-file" type="file" accept=".las,.laz,application/octet-stream" />
+            <details id="convert-options">
+                <summary>Options</summary>
+                <fieldset id="convert-options-fields">
+                    <legend class="visually-hidden">Conversion options</legend>
+                    <label for="opt-format-version">Format version</label>
+                    <select id="opt-format-version"></select>
+                    <label for="opt-points-per-block">Points per block</label>
+                    <input id="opt-points-per-block" type="number" inputmode="numeric" min="1" max="1000000" step="1" value="262144" aria-describedby="opt-points-per-block-fixed opt-points-per-block-error" />
+                    <small id="opt-points-per-block-fixed" hidden></small>
+                    <small id="opt-points-per-block-error" class="field-error" hidden></small>
+                    <label for="opt-max-error">Max error</label>
+                    <input id="opt-max-error" type="number" inputmode="decimal" min="0" step="any" value="0.01" aria-describedby="opt-max-error-error" />
+                    <small id="opt-max-error-error" class="field-error" hidden></small>
+                    <label for="opt-spatial-divisions">Spatial divisions</label>
+                    <select id="opt-spatial-divisions" aria-describedby="opt-spatial-divisions-fixed">
+                        <option value="2" selected>2</option>
+                        <option value="4">4</option>
+                        <option value="8">8</option>
+                    </select>
+                    <small id="opt-spatial-divisions-fixed" hidden></small>
+                    <label for="opt-planner-budget">Planner budget (MiB)</label>
+                    <input id="opt-planner-budget" type="number" inputmode="numeric" min="1" max="4096" step="1" value="512" aria-describedby="opt-planner-budget-error" />
+                    <small id="opt-planner-budget-error" class="field-error" hidden></small>
+                    <label for="opt-ram-budget">RAM budget (GB)</label>
+                    <input id="opt-ram-budget" type="number" inputmode="numeric" min="1" max="8" step="1" value="4" aria-describedby="opt-ram-budget-help opt-ram-budget-error" />
+                    <small id="opt-ram-budget-help">Memory the conversion may use before it spills to browser storage (1 to 8 GB). Defaults match the command-line converter.</small>
+                    <small id="opt-ram-budget-error" class="field-error" hidden></small>
+                </fieldset>
+            </details>
+            <button id="convert-start" type="button" disabled>Convert to .oct</button>
+            <button id="convert-cancel" type="button" hidden>Cancel conversion</button>
+            <progress id="convert-progress" value="0" max="1" hidden></progress>
+            <small id="convert-status" role="status" aria-live="polite">Choose a LAS/LAZ file. Conversion runs locally in a separate worker and writes to browser storage.</small>
+            <small id="convert-warning" class="notice warning" role="status" hidden></small>
+            <small id="convert-result" class="notice" tabindex="-1" hidden></small>
+            <small id="convert-details" hidden></small>
+            <button id="convert-download" type="button" hidden>Download converted .oct</button>
+            <button id="convert-download-attributes" type="button" hidden>Download converted .octattrs</button>
+            <button id="convert-open" type="button" hidden>Open converted .oct in viewer</button>
+            <small>This browser path runs the same conversion pipeline as the command-line converter, spooling intermediate data in RAM and in OPFS zones. Extra Bytes and CRS are not retained. OPFS quota and large-file performance depend on the device. Successful outputs stay in site storage; remove site data to reclaim space. Closing the tab abruptly can leave an incomplete temporary file.</small>
+        </section>
+        <section class="panel" aria-label="Camera mode">
+            <label for="camera-mode">Camera mode</label>
+            <select id="camera-mode">
+                <option value="observer">Observer · orbit around a center</option>
+                <option value="bird">Bird · free navigation</option>
+            </select>
+            <output id="camera-mode-help">Observer: click a voxel to set the orbit center, left drag pans, right drag rotates, wheel changes radius.</output>
+        </section>
+        <section class="panel" aria-label="Rendering options">
+            <label for="voxel-pixels">Finest voxel detail <output id="voxel-pixels-value">4 px</output></label>
+            <input id="voxel-pixels" type="range" min="0.5" max="16" step="0.5" value="4"
+                aria-describedby="voxel-pixels-help" disabled />
+            <small id="voxel-pixels-help">Sets the finest projected voxel edge to try. The scene starts with coarse voxels and refines toward this value; if a finer step exceeds the render budget, the last complete scene stays visible. Cells share an aligned grid; gaps remain where the scan has no samples.</small>
+            <label for="px-mode">Detail mode</label>
+            <select id="px-mode" aria-describedby="px-mode-help" disabled>
+                <option value="fixed">Fixed · target above</option>
+                <option value="dynamic">Dynamic · follows frame time</option>
+            </select>
+            <small id="px-mode-help">Dynamic picks 1, 2, 4 or 8 px from the GPU frame time (frame interval when the GPU cannot time frames) and ignores the slider until you go back to Fixed.</small>
+            <label for="color-mode">Color</label>
+            <select id="color-mode">
+                <option value="rgb">RGB</option>
+                <option value="intensity">Intensity</option>
+                <option value="elevation">Elevation</option>
+                <option value="classification">Classification</option>
+            </select>
+            <label><input id="depth-shading" type="checkbox" checked /> Depth shading</label>
+            <label><input id="continuity" type="checkbox" aria-describedby="continuity-help" /> Continuity</label>
+            <small id="continuity-help">Cells path only. Draws no cell smaller than the cloud's reference spacing, so occupied neighbouring cells touch; off keeps the literal look (gaps where the scan has no samples).</small>
+            <small id="render-options-help">Missing intensity falls back to grayscale RGB; missing classification keeps RGB.</small>
+        </section>
+        <p id="renderer-status" role="status" aria-live="polite">Waiting for WebGPU…</p>
+        <p id="camera-help">
+            Observer: click a voxel to set the orbit center, left drag to pan, right drag to orbit,
+            wheel to change radius. Bird: left drag to pan, right drag to orbit, WASD/QE to move,
+            wheel to change movement speed. Focus the canvas; use arrows, +/−, and Home to fit.
+        </p>
+        <section class="panel">
+            <strong>Stats</strong>
+            <div class="stats" id="stats"></div>
+            <small>Render call is synchronous JS/WASM CPU time; it does not measure GPU execution.</small>
+        </section>
+        <section class="panel" aria-label="Web benchmark">
+            <strong>Performance benchmark</strong>
+            <button id="start-benchmark" type="button" disabled>Run 15 s FPS benchmark</button>
+            <button id="download-benchmark" type="button" disabled>Export run JSON</button>
+            <small>Loading does not start the benchmark automatically. Once the target LOD is reached, click Run and keep the camera still for 15 seconds. The viewer idles after loading unless you request this measurement.</small>
+        </section>
+        <section class="panel">
+            <strong>Integration contract</strong>
+            <pre>worker: createOffscreen(canvas, voxelSize)
+worker: openFormatDataset(file, cacheBytes, attributes?)
+worker: updateLod(targetVoxelPixels)
+worker: renderFrame() · LOD loads before draw</pre>
+        </section>
+    </aside>
+    <main>
+        <p id="webgpu-notice" role="alert" hidden
+            style="position:absolute;z-index:1;margin:16px;padding:12px 16px;border-radius:12px;background:#7f1d1d;color:#fff"></p>
+        <canvas id="viewer-canvas" width="1280" height="720" tabindex="0"
+            aria-label="3D point cloud. Use the camera mode controls and keyboard instructions in the side panel."
+            aria-describedby="camera-help"></canvas>
+    </main>
+    <!-- The packager replaces this entire bootstrap with the offline runtime. -->
+    <script id="demo-bootstrap">
+        const status = document.getElementById("renderer-status");
+        if (location.protocol === "file:") {
+            status.textContent = "This development demo needs localhost or HTTPS; file:// blocks its modules. ";
+            const localViewer = document.createElement("a");
+            localViewer.href = "../../artifacts/visor-web-local/index.html";
+            localViewer.textContent = "Open the self-contained local viewer";
+            status.append(localViewer, ". If it does not exist yet, build it as examples/web-host/README.md explains.");
+        } else {
+            const module = document.createElement("script");
+            module.type = "module";
+            module.src = "./main.js";
+            module.addEventListener("error", () => {
+                status.textContent = "The demo could not load. See examples/web-host/README.md and serve the whole repository root.";
+            });
+            document.body.append(module);
+        }
+    </script>
+</body>
+
+</html>
