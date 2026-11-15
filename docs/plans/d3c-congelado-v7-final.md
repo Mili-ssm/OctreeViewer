@@ -91,9 +91,9 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 **Files:**
 - Create: `docs/records/benchmarks/D3C_RQ07_V7_<fecha>.md` (+ JSON en `docs/records/benchmarks/data/`)
 
-- [ ] **Step 1:** compilar `viewer_convert` con perfil `perf`; Belvedere con `--format-version v7` frente a `v5`, ≥ 5 rondas intercaladas con la máquina libre, salidas en `target/` (borrarlas antes de cada conversión); tiempo total y RSS pico en KiB con `/usr/bin/time`; medianas sin redondear; tamaño del par frente a V5.
-- [ ] **Step 2:** pasa si tiempo ≤ 2,1× y RSS ≤ +40 % ([ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)); si no, criterio de parada.
-- [ ] **Step 3:** registro con entorno, comandos, medianas y rangos; commit `docs(records): measure RQ-07 with the final V7`.
+- [x] **Step 1:** compilar `viewer_convert` con perfil `perf`; Belvedere con `--format-version v7` frente a `v5`, ≥ 5 rondas intercaladas con la máquina libre, salidas en `target/` (borrarlas antes de cada conversión); tiempo total y RSS pico en KiB con `/usr/bin/time`; medianas sin redondear; tamaño del par frente a V5.
+- [x] **Step 2:** pasa si tiempo ≤ 2,1× y RSS ≤ +40 % ([ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)); si no, criterio de parada.
+- [x] **Step 3:** registro con entorno, comandos, medianas y rangos; commit `docs(records): measure RQ-07 with the final V7`.
 
 ### Task 4: Tests que prueban V5, EPT o checkpoints fijan `v5` (sin cambio de comportamiento)
 
