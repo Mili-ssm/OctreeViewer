@@ -5,7 +5,7 @@ Estado: vivo · 15-11-2026
 Resumen de decisiones vigentes, estado por línea de trabajo y prioridades. El repositorio es público
 desde el 15-11-2026 como proyecto experimental pre-1.0 de un solo propietario; la portada está en el
 [README](../README.md) (inglés) y el índice de documentos en [docs/README.md](README.md). El trabajo
-pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (#11–#36). La demo experimental está publicada; queda [#35](https://github.com/Mili-ssm/OctreeViewer/issues/35): una nube con puntos muy juntos se ve como un punto al convertirla en la demo ([ADR 0046](adr/0046-la-poda-de-niveles-no-limita-el-render.md)).
+pendiente vive en [issues](https://github.com/Mili-ssm/OctreeViewer/issues) (#11–#36). La demo experimental está publicada (aviso transitorio de pérdida del dispositivo al cargar: [#36](https://github.com/Mili-ssm/OctreeViewer/issues/36)); queda [#35](https://github.com/Mili-ssm/OctreeViewer/issues/35): una nube con puntos muy juntos se ve como un punto al convertirla en la demo ([ADR 0046](adr/0046-la-poda-de-niveles-no-limita-el-render.md)).
 
 ## Estado actual
 

@@ -36,3 +36,11 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Precisa los ADR 
 
 ## Revisar si
 Derivar niveles en el render cuesta más tiempo de frame que guardarlos, medido en Majadas y Belvedere.
+
+## Revisión 15-11-2026
+- «Nivel guardado más cercano» es el más grueso de los guardados que son **más finos** que el pedido; solo
+  esos se pueden agrupar. Si hay un nivel guardado más grueso que el pedido, se dibuja ese, como hasta ahora.
+- Afecta a R3-Q9 (la hoja separada no se refina más) y al [ADR 0034](0034-nivel-por-octante-con-arista-real.md)
+  (cada octante dibuja su nivel guardado): una hoja ya no se dibuja más fina que lo que pide la vista; R3-Q9
+  sigue valiendo para no refinar por debajo de su separación.
+- «Agrupar es barato» es una estimación sin medir; la implementación lo mide.
