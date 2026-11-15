@@ -26,8 +26,17 @@ pub struct CellGrid {
     pub root_side: f64,
 }
 
-// Bounds are stored as f32: real sides deviate ~1e-5 relative from root_side / 2^k.
+// Node sides carry float noise from the frame shifts: on real data log2(root_side / side) lies
+// ~1e-5 off an integer.
 const DEPTH_SNAP_TOLERANCE: f64 = 1e-3;
+
+/// How far a grid anchor at `scale` may lie from its exact value: the rounding of `world -
+/// origin` (half an ulp of the larger operand) plus the reader's own rounding of the stored
+/// corner. A node corner closer than this to a cell edge is on the edge, within what the grid
+/// can express.
+pub(crate) fn anchor_tolerance(scale: f64) -> f64 {
+    4.0 * f64::EPSILON * scale
+}
 
 /// Depth at which a node's side spans 8 cells, derived from the node side so it holds for any
 /// `--spatial-divisions` of the converter (2, 4 or 8).
@@ -306,23 +315,56 @@ pub(crate) fn node_range(
 ) -> (u64, u64) {
     let count = 1_u64 << depth;
     let cell_side = grid.root_side / count as f64;
-    let edge = |value: f64| ((value - grid.root_min[axis]) / cell_side).round();
-    let lo = clamp_cell(edge(bounds.min()[axis]), 0, count - 1);
-    let hi = clamp_cell(edge(bounds.max()[axis]) - 1.0, lo, count - 1);
+    let anchor = axis_anchor(grid, bounds, depth, axis);
+    let edge = |value: f64| ((value - anchor.position) / cell_side).round();
+    let lo = offset_cell(anchor.cell, edge(bounds.min()[axis]), 0, count - 1);
+    let hi = offset_cell(anchor.cell, edge(bounds.max()[axis]) - 1.0, lo, count - 1);
     (lo, hi)
 }
 
-/// Clamps a cell index computed in f64 to `[lo, hi]` in the integer domain: from depth 54 on,
-/// `hi as f64` rounds up past the grid (2^63 - 1 becomes 2^63), so an f64 clamp would emit a cell
-/// outside it.
-fn clamp_cell(value: f64, lo: u64, hi: u64) -> u64 {
-    if value <= lo as f64 {
-        lo
-    } else if value >= hi as f64 {
-        hi
-    } else {
-        (value as u64).clamp(lo, hi)
+/// A position on one axis and its exact cell index at some depth; indices are measured from it.
+#[derive(Debug, Clone, Copy)]
+struct AxisAnchor {
+    position: f64,
+    cell: u64,
+}
+
+/// Indices measured from the root corner in `f64` resolve only `root_side * 2^-53` units: a few
+/// centimetres when a global cloud keeps the whole 2^64-quanta lattice as its root (points on
+/// both sides of a sign bit, issue #30), so close points never separate. Deeper than the node,
+/// indices are measured from the node's minimum corner instead when that corner is a cell edge at
+/// the node depth up to [`anchor_tolerance`] (always for global formats, whose nodes lie on the
+/// dyadic grid): its index is the rounded edge there, exact while the node side exceeds twice
+/// that tolerance, and shifts left below it. Corners off the grid keep the root anchor.
+fn axis_anchor(grid: &CellGrid, bounds: SpatialBounds, depth: u8, axis: usize) -> AxisAnchor {
+    let root = AxisAnchor {
+        position: grid.root_min[axis],
+        cell: 0,
+    };
+    let node_depth = representative_depth(grid, bounds).saturating_sub(3);
+    if depth <= node_depth {
+        return root;
     }
+    let node_cell_side = grid.root_side / (1_u64 << node_depth) as f64;
+    let edge = (bounds.min()[axis] - grid.root_min[axis]) / node_cell_side;
+    let scale = grid.root_min[axis].abs().max(bounds.min()[axis].abs());
+    if (edge - edge.round()).abs() * node_cell_side > anchor_tolerance(scale) {
+        return root;
+    }
+    let (corner, _) = node_range(grid, bounds, node_depth, axis);
+    AxisAnchor {
+        position: bounds.min()[axis],
+        cell: corner << (depth - node_depth),
+    }
+}
+
+/// `anchor + offset` clamped to `[lo, hi]` in the integer domain; `offset` is a whole `f64`. From
+/// depth 54 on, `hi as f64` rounds up past the grid (2^63 - 1 becomes 2^63), so an `f64` clamp
+/// would emit a cell outside it. Every operand fits `i64` (cells are below 2^63).
+fn offset_cell(anchor: u64, offset: f64, lo: u64, hi: u64) -> u64 {
+    (anchor as i64)
+        .saturating_add(offset as i64)
+        .clamp(lo as i64, hi as i64) as u64
 }
 
 #[cfg(test)]
@@ -336,11 +378,12 @@ fn build_level(
 ) -> Result<Vec<NodeCell>, NodeCellError> {
     let count = (1_u64 << depth) as f64;
     let range: [(u64, u64); 3] = std::array::from_fn(|axis| node_range(grid, bounds, depth, axis));
+    let anchors = std::array::from_fn(|axis| axis_anchor(grid, bounds, depth, axis));
     let single_region = range.iter().all(|(lo, hi)| hi - lo < (1 << 21));
     if single_region {
-        build_level_keyed(grid, points, count, range, morton, Some)
+        build_level_keyed(grid, points, count, range, anchors, morton, Some)
     } else {
-        build_level_keyed(grid, points, count, range, region_morton, |_| None)
+        build_level_keyed(grid, points, count, range, anchors, region_morton, |_| None)
     }
 }
 
@@ -349,6 +392,7 @@ fn build_level_keyed<K: Ord + Copy>(
     points: &[Points<'_>],
     count: f64,
     range: [(u64, u64); 3],
+    anchors: [AxisAnchor; 3],
     key_for: impl Fn([u64; 3]) -> K,
     as_u64: impl Fn(K) -> Option<u64>,
 ) -> Result<Vec<NodeCell>, NodeCellError> {
@@ -359,11 +403,11 @@ fn build_level_keyed<K: Ord + Copy>(
                 continue;
             }
             let coord = std::array::from_fn(|axis| {
-                let scaled = ((f64::from(point.position[axis]) - grid.root_min[axis])
+                let scaled = ((f64::from(point.position[axis]) - anchors[axis].position)
                     / grid.root_side
                     * count)
                     .floor();
-                clamp_cell(scaled, range[axis].0, range[axis].1)
+                offset_cell(anchors[axis].cell, scaled, range[axis].0, range[axis].1)
             });
             let relative = std::array::from_fn(|axis| coord[axis] - range[axis].0);
             let key = key_for(relative);
