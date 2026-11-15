@@ -1,6 +1,6 @@
 # Nivel pedido, LOD por celda y tamaño mínimo del cubo
 
-Estado: propuesto · 15-11-2026 · pendiente del visto bueno del propietario (pre-mortem aplicado)
+Estado: en curso · 15-11-2026 · aprobado por el propietario (pre-mortem aplicado)
 
 **Objetivo:** que el render dibuje en cada celda el nivel que pide su distancia, construyendo a demanda los niveles
 que la cadena podada no guarda, con transiciones graduales en bandas alrededor del ojo, y que el usuario elija el
@@ -24,7 +24,8 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
 | D1 | El nivel deseado es cualquier profundidad; uno que falta se pide al worker de construcción (`levelRequest` → `nodeLevel`), que lo construye desde los bloques del nodo con la agregación de `build_level_keyed`. La petición lleva `gen`, generación de color, `cutEpoch` y prioridad; la última por nodo sustituye a las anteriores; un fallo de caché programa la lectura de bloques; las peticiones tienen presupuesto propio, aparte de las 2 construcciones por actualización; los niveles a demanda cuentan en el presupuesto de CPU y se reconstruyen al recolorear | ADR 0048; sin cancelación ni prioridad las peticiones se acumulan durante un zoom |
 | D2 | Selección por celda en `slot_state`, **sobre coordenadas enteras relativas al nodo**: la página lleva su origen relativo al nodo (u32×3) y cada nodo un ancla f32 relativa al ojo. El ancestro es `(rel_página + rel) >> (d − d_prev)`. Una sola función WGSL `refines(nodo, prof, coord)` sirve para la celda y para su madre, con un gemelo Rust bit a bit para picking, métricas y dorados. La prueba va antes de la separación de fases de oclusión, para que las dos fases usen el mismo predicado | Sin coordenadas enteras, madre e hija redondean distinto: dobles cubos o huecos |
 | D3 | Regla monótona: `refina(c) := lado(c) > max(lado_mín, px_objetivo · max(dist(c, ojo), cerca) / focal)`. El uniforme del frame gana objetivo de px, focal y lado mínimo; la página gana los niveles residentes vecinos (la entrada probablemente pasa de 32 a 48 B) | Sin monotonía, un nivel intermedio y uno fino se dibujan a la vez |
-| D4 | Residencia acotada: la distancia cercana se limita al plano cercano; por debajo de la profundidad de separación solo se mantienen el nivel actual y el siguiente; con presión de memoria se suelta por bytes por área de pantalla, nunca un nivel dibujado junto al ojo | Desde dentro de un nodo, «solo px» pediría niveles hasta la profundidad 63 |
+| D4 | Residencia acotada: la distancia cercana se limita al plano cercano; por debajo de la profundidad de separación solo se mantienen el nivel actual y el siguiente. Si el corte no cabe, sube el objetivo de px efectivo de toda la nube ([ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md), R3-Q11) | Desde dentro de un nodo, «solo px» pediría niveles hasta la profundidad 63; la nube debe verse homogénea |
+| D8 | Hijos provisionales (ADR 0052, R3-Q21): cada celda lleva una máscara de población de 8 bits; mientras su nivel hijo no está residente, la celda que debe refinar se dibuja como sus hijos poblados con el color del padre. Sitio en la instancia: reempaquetar la clase a 9 bits o el alfa, a decidir en el plan de la fase 2 | Transición suave al acercarse |
 | D5 | Celdas que abarcan octantes: cuentan como «refina» si la máscara del nodo no está vacía; una celda más gruesa que la rejilla 8³ prueba todos los bits de máscara que cubre | Hoy se saltan octante y máscara y pintarían encima de hijos residentes |
 | D6 | Unidad del CRS: `viewer_format` lee solo la `UNIT` de primer nivel del PROJCS o sistema de coordenadas (WKT1, WKT2, compuesto) y la clave GeoTIFF 3076; un CRS geográfico desactiva el modo longitud; sin unidad, metros | ADR 0049; un `UNIT["degree"]` anidado no debe desactivar una nube proyectada |
 | D7 | La UI sustituye la casilla de continuidad por el selector de tres modos; `setContinuity` queda para el modo «espaciado» | ADR 0049 |
@@ -35,13 +36,13 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   residencia D4. Majadas y Belvedere en órbita, rasante y dentro de una hoja, a 1, 2, 4 y 8 px, en «solo px» y
   «espaciado». Registrar instancias dibujadas, bytes residentes (con niveles a demanda bajo el espaciado),
   profundidad máxima pedida y peticiones por segundo de zoom. Comprobación: registro en `docs/records/benchmarks/`.
-- [ ] **0b. Pregunta al propietario:** R3-Q19, R3-Q21 y R3-Q11 están redactadas por nodo entero; un ADR propone su
-  versión por celda. Comprobación: ADR aceptado antes de la fase 2.
+- [x] **0b. Pregunta al propietario:** R3-Q19, R3-Q21 y R3-Q11 por celda. Resuelta en el
+  [ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md) (15-11-2026).
 - [ ] **1. Niveles a demanda (ADR 0048, #35).** D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
   envían un rango de profundidades y una prioridad. Comprobación: `fs_e430` (#35) se dibuja como superficie en la
   demo; tests del protocolo y del corte; p95 de petición a residente medido; dorados regenerados con su motivo;
   `scripts/check.sh` completo.
-- [ ] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`).** D2, D3 y D5 sobre
+- [ ] **2a. Selección por celda tras una opción `cellLod: octant|cell` (predeterminada `octant`).** D2, D3, D5 y D8 sobre
   niveles residentes, con el gemelo Rust, el picking y una prueba de partición en GPU (patrón de
   `cell_render_tests.rs`): leer `visible` y comprobar una sola celda dibujada por punto, con ≥3 niveles, profundidades
   no contiguas, un nivel que abarca octantes con máscara, oclusión activada y desactivada, ≥1000 poses aleatorias con
