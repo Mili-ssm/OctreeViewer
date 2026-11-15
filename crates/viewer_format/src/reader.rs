@@ -943,24 +943,50 @@ impl<R: Read + Seek> IndexedReader<R> {
             cursor.remaining_slice(),
             point_count,
         )?;
+        // Block origin plus a `u32` offset must stay in `i64` for the fast path.
+        let fast = cell.i64_fast(frame_origin).filter(|_| {
+            entry
+                .origin_quanta
+                .iter()
+                .all(|origin| origin.checked_add(i64::from(u32::MAX)).is_some())
+        });
         for _ in 0..point_count {
             let offset = decoder.next_coordinate()?;
-            let quanta: [i128; 3] = std::array::from_fn(|axis| {
-                i128::from(entry.origin_quanta[axis]) + i128::from(offset[axis])
-            });
-            if !cell.contains(quanta) {
-                return Err(FormatError::MalformedBlock(
-                    "decoded position is outside its node",
-                ));
-            }
-            let local = crate::global_frame::local_position_units(quanta, frame_origin);
+            let (exact, local) = match fast {
+                Some(fast) => {
+                    let exact: [i64; 3] = std::array::from_fn(|axis| {
+                        entry.origin_quanta[axis] + i64::from(offset[axis])
+                    });
+                    if !fast.contains(exact) {
+                        return Err(FormatError::MalformedBlock(
+                            "decoded position is outside its node",
+                        ));
+                    }
+                    (exact, fast.local_position_units(exact))
+                }
+                None => {
+                    let quanta: [i128; 3] = std::array::from_fn(|axis| {
+                        i128::from(entry.origin_quanta[axis]) + i128::from(offset[axis])
+                    });
+                    if !cell.contains(quanta) {
+                        return Err(FormatError::MalformedBlock(
+                            "decoded position is outside its node",
+                        ));
+                    }
+                    let exact =
+                        quanta.map(|value| i64::try_from(value).expect("inside the node box"));
+                    (
+                        exact,
+                        crate::global_frame::local_position_units(quanta, frame_origin),
+                    )
+                }
+            };
             let local = local.map(|value| value as f32);
             if local.iter().any(|value| !value.is_finite()) {
                 return Err(FormatError::MalformedBlock(
                     "decoded position is out of range",
                 ));
             }
-            let exact = quanta.map(|value| i64::try_from(value).expect("inside the node box"));
             visit(exact, local);
         }
         decoder.finish()

@@ -289,13 +289,18 @@ impl SampleGrid {
     // Hot loop: `inline(always)` saves ~0.55% Ir over `inline` (M1_R7 record, diagnosis).
     #[inline(always)]
     fn add(&mut self, record: &[u8], position: [f64; 3], bounds: SpatialBounds) {
-        let (voxel_key, center) = if self.global {
+        let (voxel_key, distance_squared) = if self.global {
             let grid = self.grid;
             self.frame
                 .get_or_insert_with(|| GlobalCellFrame::new(bounds, grid))
-                .cell(position)
+                .cell_and_distance(position)
         } else {
-            sample_cell(position, bounds, self.grid)
+            let (key, center) = sample_cell(position, bounds, self.grid);
+            let delta = [0, 1, 2].map(|axis| position[axis] - center[axis]);
+            (
+                key,
+                delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2],
+            )
         };
         let accumulator = match &mut self.cells {
             SampleCells::Dense(slots) => {
@@ -303,7 +308,7 @@ impl SampleGrid {
             }
             SampleCells::Sparse(cells) => cells.entry(voxel_key),
         };
-        accumulator.add(&mut self.records, self.layout, record, position, center);
+        accumulator.add_at_distance(&mut self.records, self.layout, record, distance_squared);
     }
 }
 

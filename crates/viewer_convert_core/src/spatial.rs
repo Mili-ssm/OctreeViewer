@@ -1802,6 +1802,22 @@ impl SampleAccumulator {
         position: [f64; 3],
         center: [f64; 3],
     ) {
+        let delta_x = position[0] - center[0];
+        let delta_y = position[1] - center[1];
+        let delta_z = position[2] - center[2];
+        let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
+        self.add_at_distance(records, layout, record, distance_squared);
+    }
+
+    /// [`Self::add`] with the squared distance to the cell center already computed.
+    #[inline]
+    pub fn add_at_distance(
+        &mut self,
+        records: &mut NearestRecords,
+        layout: SpoolLayout,
+        record: &[u8],
+        distance_squared: f64,
+    ) {
         self.count += 1;
         let tail = record.len() - 3;
         for axis in 0..3 {
@@ -1816,10 +1832,6 @@ impl SampleAccumulator {
                 ]));
             }
         }
-        let delta_x = position[0] - center[0];
-        let delta_y = position[1] - center[1];
-        let delta_z = position[2] - center[2];
-        let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
         if self.slot == Self::NO_SLOT {
             self.slot = records.push(record);
             self.nearest_distance_squared = distance_squared;
@@ -2428,6 +2440,43 @@ impl GlobalCellFrame {
         } else {
             global_cell_center(self.origin[axis], cell, self.shift)
         }
+    }
+
+    /// Cell index and squared distance (CRS units²) from `position` to the cell center, equal to
+    /// the float distance of [`Self::cell`] bit for bit. Cells of at most 2^25 quanta keep every
+    /// term below 2^53, so the integer sum of squares is exact and so is the float one (a position
+    /// on the 2^-15 grid has the same difference to the center in both); larger cells use `cell`.
+    #[inline]
+    pub fn cell_and_distance(&self, position: [f64; 3]) -> (usize, f64) {
+        if !self.centers_fit || self.shift > 25 {
+            let (cell, center) = self.cell(position);
+            let delta = [0, 1, 2].map(|axis| position[axis] - center[axis]);
+            return (
+                cell,
+                delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2],
+            );
+        }
+        let q = quanta(position);
+        let grid = self.grid;
+        let half = if self.shift == 0 {
+            0
+        } else {
+            1_i64 << (self.shift - 1)
+        };
+        let mut cell = [0_usize; 3];
+        let mut squares = 0_u64;
+        for axis in 0..3 {
+            let relative = q[axis].wrapping_sub(self.origin[axis]);
+            let index = (relative >> self.shift).clamp(0, grid as i64 - 1);
+            cell[axis] = index as usize;
+            let delta = relative.wrapping_sub((index << self.shift).wrapping_add(half));
+            squares += delta.unsigned_abs() * delta.unsigned_abs();
+        }
+        let unit = viewer_format::quanta_to_units(1);
+        (
+            (cell[0] * grid + cell[1]) * grid + cell[2],
+            squares as f64 * (unit * unit),
+        )
     }
 
     /// Cell index and center of `position`; see [`sample_cell_global`].

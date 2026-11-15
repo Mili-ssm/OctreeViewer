@@ -230,30 +230,60 @@ pub(crate) fn quantize_global_positions(
     if positions.iter().flatten().any(|value| !value.is_finite()) {
         return Err(QuantizationError::InvalidPosition);
     }
-    let mut block_origin = node.origin;
-    let mut coordinates = Vec::with_capacity(positions.len());
-    let mut max_error: f64 = 0.0;
-    for (index, position) in positions.iter().enumerate() {
+    let mut all_quanta = Vec::with_capacity(positions.len());
+    let mut min = [i64::MAX; 3];
+    let mut max = [i64::MIN; 3];
+    for position in positions {
         let mut quanta = [0_i64; 3];
         for axis in 0..3 {
             let world = frame_origin[axis] + position[axis];
             quanta[axis] = quantize_coordinate(world)
                 .ok_or(QuantizationError::CoordinateOutOfRange { axis, value: world })?;
+            min[axis] = min[axis].min(quanta[axis]);
+            max[axis] = max[axis].max(quanta[axis]);
         }
-        if !node.contains(quanta.map(i128::from)) {
-            return Err(QuantizationError::PointOutsideNode);
+        all_quanta.push(quanta);
+    }
+    // The node is an axis-aligned box, so `contains` and "one 2^32-quanta cell" hold for every
+    // point iff they hold for the per-axis minimum and maximum; `i128` only for huge nodes.
+    let fast = node.i64_fast(frame_origin_quanta);
+    let mut block_origin = node.origin;
+    if let Some(&first) = all_quanta.first() {
+        match fast {
+            Some(fast) => {
+                if !fast.contains_extremes(min, max) {
+                    return Err(QuantizationError::PointOutsideNode);
+                }
+                block_origin = block_cell_origin(node, min);
+                if block_cell_origin(node, max) != block_origin {
+                    return Err(QuantizationError::BlockSpansCells);
+                }
+            }
+            None => {
+                block_origin = block_cell_origin(node, first);
+                for &quanta in &all_quanta {
+                    if !node.contains(quanta.map(i128::from)) {
+                        return Err(QuantizationError::PointOutsideNode);
+                    }
+                    if block_cell_origin(node, quanta) != block_origin {
+                        return Err(QuantizationError::BlockSpansCells);
+                    }
+                }
+            }
         }
-        let cell_origin = block_cell_origin(node, quanta);
-        if index == 0 {
-            block_origin = cell_origin;
-        } else if cell_origin != block_origin {
-            return Err(QuantizationError::BlockSpansCells);
-        }
+    }
+    let mut coordinates = Vec::with_capacity(positions.len());
+    let mut max_error: f64 = 0.0;
+    for (position, &quanta) in positions.iter().zip(&all_quanta) {
+        // Inside one cell of the block origin, so the difference is in [0, 2^32).
         let offset = std::array::from_fn(|axis| {
-            u32::try_from(i128::from(quanta[axis]) - i128::from(block_origin[axis]))
+            u32::try_from(quanta[axis] - block_origin[axis])
                 .expect("the point lies inside the 2^32-quanta cell of its block origin")
         });
-        let decoded = local_position_units(quanta.map(i128::from), frame_origin_quanta);
+        let decoded = match fast {
+            Some(fast) => fast.local_position_units(quanta),
+            None => local_position_units(quanta.map(i128::from), frame_origin_quanta),
+        };
         let decoded_f32 = decoded.map(|value| value as f32);
         if decoded.iter().any(|value| !value.is_finite())
             || decoded_f32.iter().any(|value| !value.is_finite())
