@@ -7,7 +7,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0001](0001-pareja-separada-oct-octattrs.md) | La salida es una pareja separada `.oct` / `.octattrs` | Aceptada |
 | [0002](0002-v5-predeterminado-en-transicion.md) | V5 sigue siendo la salida predeterminada durante la transición a V7 | Sustituida por 0044 |
 | [0003](0003-v6-final-y-pre5-rechazados.md) | V6 final y pre5 permanecen rechazados | Aceptada |
-| [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Aceptada |
+| [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Aceptada (promoción ejecutada por 0044; retirada pendiente) |
 | [0005](0005-identidades-exactas-v7n-pre-por-candidato.md) | Cada candidato de writer V7 tiene identidad exacta `v7.N-pre` | Aceptada (revisar) |
 | [0006](0006-politica-de-version-solo-en-viewer-format.md) | La política de versiones vive solo en `viewer_format` | Aceptada |
 | [0007](0007-limites-por-defecto-del-lector.md) | El lector aplica límites por defecto configurables | Aceptada |
@@ -25,7 +25,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0019](0019-cubos-por-nodo-residentes-en-gpu.md) | Cubos 3D por nodo, independientes de la vista y residentes en GPU (R3) | Aceptada |
 | [0020](0020-piramide-lod-densa.md) | La pirámide LOD es densa: un nivel por cada ×2 de densidad (R4) | Aceptada |
 | [0021](0021-rejilla-global-determinista-y-crs.md) | Rejilla de cuantización global determinista anclada en el CRS | Aceptada |
-| [0022](0022-alcance-y-congelacion-de-v7-final.md) | V7 final incluye R4, R5 y la rejilla global, y se congela una vez | Aceptada (umbral de conversión revisado por 0043) |
+| [0022](0022-alcance-y-congelacion-de-v7-final.md) | V7 final incluye R4, R5 y la rejilla global, y se congela una vez | Aceptada (umbral de conversión revisado por 0043; congelado y promoción ejecutados por 0044) |
 | [0023](0023-fuentes-locales-y-remotas.md) | El visor lee fuentes locales (Blob) y remotas (HTTP Range) | Aceptada |
 | [0024](0024-hilos-wasm-opcionales-con-coop-coep.md) | Hilos wasm opcionales cuando la página está aislada (COOP/COEP) | Aceptada |
 | [0025](0025-codificador-lz4-propio.md) | Codificador LZ4 propio en `viewer_format` | Aceptada |

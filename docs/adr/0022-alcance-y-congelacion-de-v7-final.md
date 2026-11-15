@@ -1,6 +1,6 @@
 # 0022 V7 final incluye R4, R5 y la rejilla global, y se congela una vez
 
-Estado: Aceptada (umbral de conversión revisado por el [ADR 0043](0043-coste-de-conversion-de-v7-frente-a-v5.md)) · Fecha: 30-10-2026
+Estado: Aceptada (umbral de conversión revisado por el [ADR 0043](0043-coste-de-conversion-de-v7-frente-a-v5.md); congelado y promoción ejecutados por el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md)) · Fecha: 30-10-2026
 
 ## Contexto
 El [plan V7](../plans/format-v7-plan.md) (l.21–22) reconocía que no había mínimos de hardware, almacenamiento ni tolerancias acordados antes de congelar el formato. Ahora R4 ([ADR 0020](0020-piramide-lod-densa.md)), R5 y la rejilla global ([ADR 0021](0021-rejilla-global-determinista-y-crs.md)) cambian el formato.
