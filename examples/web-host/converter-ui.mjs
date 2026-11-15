@@ -25,7 +25,10 @@ export const fixedFrameHint = (name) => `Fixed by the selected format (${Number(
 export const fixedFrameDisplayValue = (name, formatVersion, saved) =>
     isGlobalFrameFormat(formatVersion) ? FIXED_FRAME_VALUES[name] : (saved ?? OPTION_DEFAULTS[name]);
 
-/** CLI defaults (`ConvertOptions::default`), as the strings shown in the form. */
+/**
+ * Form strings for the options that formats do not fix; global-frame formats show
+ * `FIXED_FRAME_VALUES` instead (see `fixedFrameDisplayValue`).
+ */
 export const OPTION_DEFAULTS = Object.freeze({
     formatVersion: "v7",
     pointsPerBlock: "262144",

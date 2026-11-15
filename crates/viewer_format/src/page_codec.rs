@@ -1,4 +1,4 @@
-//! Page codec of `v7.5-pre` ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)): node
+//! Page codec of the paged layouts (`v7.5-pre` and `v7`) ([spec](../../../docs/reference/format/FORMAT_V7_PRE5.md)): node
 //! identity as `(page number, index in the page)`, and encode/decode/validation of one page.
 
 use viewer_core::{AttributeDescriptor, BlockId, NodeId};

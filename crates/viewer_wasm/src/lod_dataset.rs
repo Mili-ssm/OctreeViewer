@@ -255,7 +255,7 @@ pub enum LodDatasetError {
     #[error("voxel scene build failed: {0}")]
     VoxelScene(#[from] VoxelSceneBuildError),
     #[error(
-        "the cell path needs a v7.4/v7.5 dataset with replacement semantics (R3-Q5: older formats and additive clouds use the CPU path)"
+        "the cell path needs a v7.4-pre, v7.5-pre or v7 dataset with replacement semantics (R3-Q5: older formats and additive clouds use the CPU path)"
     )]
     CellPathUnsupported,
     #[error("cells of a node could not be built: {0}")]

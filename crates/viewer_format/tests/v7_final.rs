@@ -71,6 +71,22 @@ fn set_header_revision(bytes: &mut [u8], revision: u32) {
 }
 
 #[test]
+fn truncated_paged_companion_is_rejected_without_underflow() {
+    let (primary, attributes) = write_pair(V7);
+    let truncated = attributes[..30].to_vec();
+    let mut eager = FormatReader::new(Cursor::new(primary.clone())).unwrap();
+    assert!(
+        eager
+            .attach_attributes(Cursor::new(truncated.clone()))
+            .is_err()
+    );
+    let mut lazy =
+        FormatReader::open_lazy(Cursor::new(primary), FormatReaderLimits::default()).unwrap();
+    let error = lazy.attach_attributes(Cursor::new(truncated)).unwrap_err();
+    assert!(matches!(error, FormatError::FileTooShort), "{error:?}");
+}
+
+#[test]
 fn v7_round_trips_paged_pair() {
     let (primary, attributes) = write_pair(V7);
     assert_eq!(&primary[primary.len() - 40..][..8], b"OCTVEND7");

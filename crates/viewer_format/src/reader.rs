@@ -418,6 +418,9 @@ impl<R: Read + Seek> IndexedReader<R> {
         {
             return Err(FormatError::InvalidHeader);
         }
+        if length < HEADER_SIZE + FOOTER_SIZE {
+            return Err(FormatError::FileTooShort);
+        }
         attributes.seek(SeekFrom::Start(length - FOOTER_SIZE))?;
         let mut footer = [0; FOOTER_SIZE as usize];
         attributes.read_exact(&mut footer)?;
