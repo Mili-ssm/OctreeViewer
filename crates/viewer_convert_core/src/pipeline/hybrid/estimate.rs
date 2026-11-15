@@ -107,6 +107,8 @@ mod tests {
 
     fn estimate(points: u64, format: u8, divisions: u8, budget: u64) -> SpoolEstimate {
         let options = ConvertOptions::default()
+            .with_format_version(viewer_format::FormatVersion::V5)
+            .unwrap()
             .with_spatial_divisions(divisions)
             .unwrap();
         estimate_spools(&info(points, format), options, HybridConfig::web(budget)).unwrap()

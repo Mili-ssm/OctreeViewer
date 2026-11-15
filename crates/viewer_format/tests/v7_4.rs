@@ -753,7 +753,7 @@ fn only_v7_4_takes_a_global_frame() {
         );
     }
     assert!(V74.uses_global_frame());
-    assert!(!FormatVersion::DEFAULT_OUTPUT.uses_global_frame());
+    assert!(!FormatVersion::V5.uses_global_frame());
     assert!(!V74.supports_block_checkpoint());
     assert!(FormatVersion::WRITABLE.contains(&V74));
 }

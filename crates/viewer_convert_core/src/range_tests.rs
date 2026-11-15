@@ -5,6 +5,7 @@ use std::io::Cursor;
 
 use las::{Builder, Point, Writer, point::Format};
 use viewer_core::SpatialBounds;
+use viewer_format::FormatVersion;
 
 use crate::{
     ConvertError, ConvertOptions, LasFactory, MemBytes, MemSpoolStore, NoClock, SourceFactory,
@@ -60,6 +61,8 @@ fn las_bytes(points: &[[f64; 3]], compressed: bool, intensity: impl Fn(usize) ->
 
 fn options(points_per_block: u64, divisions: u8, ranges: usize) -> ConvertOptions {
     ConvertOptions::new(points_per_block, 0.01)
+        .unwrap()
+        .with_format_version(FormatVersion::V5)
         .unwrap()
         .with_spatial_divisions(divisions)
         .unwrap()
@@ -381,9 +384,14 @@ fn ranges_are_admitted_by_the_memory_budget_and_reported_in_the_estimate() {
     assert!(estimate(&bytes, single(options(4096, 2, 4))) > default);
     // A budget with no room for a second range keeps the estimate of one range.
     let tight = |ranges| {
-        single(ConvertOptions::with_memory_budget(4096, 0.01, default + 1_000_000).unwrap())
-            .with_root_partition_ranges(ranges)
-            .unwrap()
+        single(
+            ConvertOptions::with_memory_budget(4096, 0.01, default + 1_000_000)
+                .unwrap()
+                .with_format_version(FormatVersion::V5)
+                .unwrap(),
+        )
+        .with_root_partition_ranges(ranges)
+        .unwrap()
     };
     assert_eq!(estimate(&bytes, tight(8)), default);
 }

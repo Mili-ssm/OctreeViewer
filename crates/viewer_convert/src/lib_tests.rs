@@ -17,6 +17,7 @@ use super::{
     convert_file_with_checkpoint, convert_file_with_diagnostics, convert_file_with_progress,
 };
 use crate::options::{DEFAULT_SPATIAL_WORKERS, MAX_SPATIAL_WORKERS};
+use crate::test_options::{v5_budget, v5_default, v5_new};
 
 #[test]
 fn visual_scale_normalizes_bounds_without_changing_coordinates() {
@@ -41,7 +42,7 @@ fn rejects_checkpoint_candidates_with_a_stale_visual_scale() {
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
-    convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
+    convert_file(&input, &output, v5_new(2, 0.01).unwrap()).unwrap();
 
     assert!(matches!(
         verify_candidate_visual_scale(&output, 25.0),
@@ -89,10 +90,9 @@ fn diagnostics_report_internal_windows_without_changing_output_bytes() {
     let profiled = dir.join("profiled.oct");
     fixture(&input, false, true, 24);
 
-    convert_file(&input, &baseline, ConvertOptions::default()).unwrap();
+    convert_file(&input, &baseline, v5_default()).unwrap();
     let (_, diagnostics) =
-        convert_file_with_diagnostics(&input, &profiled, ConvertOptions::default(), |_| true)
-            .unwrap();
+        convert_file_with_diagnostics(&input, &profiled, v5_default(), |_| true).unwrap();
 
     assert_eq!(fs::read(&baseline).unwrap(), fs::read(&profiled).unwrap());
     assert_eq!(
@@ -165,7 +165,7 @@ fn v7_codec_diagnostics_preserve_output_and_separate_winner_from_attempts() {
         let baseline = dir.join("baseline.oct");
         let profiled = dir.join("profiled.oct");
         fixture(&input, false, true, 24);
-        let options = ConvertOptions::new(8, 0.01)
+        let options = v5_new(8, 0.01)
             .unwrap()
             .with_format_version(version)
             .unwrap();
@@ -200,7 +200,7 @@ fn diagnostics_count_partition_and_lod_spool_payloads() {
     let serial_output = dir.join("serial.oct");
     let parallel_output = dir.join("parallel.oct");
     fixture(&input, false, false, 200);
-    let options = ConvertOptions::new(16, 0.01)
+    let options = v5_new(16, 0.01)
         .unwrap()
         .with_spatial_workers(1)
         .unwrap()
@@ -334,15 +334,10 @@ fn converts_laz_in_bounded_blocks_and_preserves_intensity_and_rgb16() {
     let output = dir.join("result.oct");
     fixture(&input, true, true, 5);
     let mut progress = Vec::new();
-    let report = convert_file_with_progress(
-        &input,
-        &output,
-        ConvertOptions::new(2, 0.01).unwrap(),
-        |event| {
-            progress.push(event);
-            true
-        },
-    )
+    let report = convert_file_with_progress(&input, &output, v5_new(2, 0.01).unwrap(), |event| {
+        progress.push(event);
+        true
+    })
     .unwrap();
     assert_eq!(report.point_count, 5);
     assert!(report.block_count >= 4);
@@ -471,7 +466,7 @@ fn converts_las_without_rgb_and_uses_intensity_for_display_color() {
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
-    let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
+    let report = convert_file(&input, &output, v5_new(2, 0.01).unwrap()).unwrap();
 
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     reader
@@ -504,7 +499,7 @@ fn bounded_spatial_workers_preserve_the_serial_output() {
     let serial_output = dir.join("serial.oct");
     let parallel_output = dir.join("parallel.oct");
     fixture(&input, false, true, 200);
-    let serial_options = ConvertOptions::new(16, 0.01)
+    let serial_options = v5_new(16, 0.01)
         .unwrap()
         .with_spatial_workers(1)
         .unwrap()
@@ -605,7 +600,7 @@ fn spatial_workers_preserve_output_across_counts_divisions_and_compression() {
         });
         fixture(&input, compressed, true, 4_000);
         for divisions in [2, 4, 8] {
-            let options = ConvertOptions::new(64, 0.01)
+            let options = v5_new(64, 0.01)
                 .unwrap()
                 .with_spatial_divisions(divisions)
                 .unwrap();
@@ -630,10 +625,7 @@ fn coincident_root_output_is_independent_of_worker_count() {
     let dir = tmp.path().to_owned();
     let input = dir.join("coincident.las");
     coincident_fixture(&input);
-    let options = ConvertOptions::new(64, 0.01)
-        .unwrap()
-        .with_spatial_divisions(8)
-        .unwrap();
+    let options = v5_new(64, 0.01).unwrap().with_spatial_divisions(8).unwrap();
     let reference = convert_with_workers(&input, &dir.join("reference.oct"), options, 1);
     for workers in [2, 4, 8] {
         let output = dir.join(format!("workers-{workers}.oct"));
@@ -738,14 +730,14 @@ fn pipeline_with_no_memory_margin_preserves_serial_output() {
     let serial_output = dir.join("serial.oct");
     let output = dir.join("tight.oct");
     fixture(&input, false, true, 100);
-    let options = ConvertOptions::new(8, 0.01)
+    let options = v5_new(8, 0.01)
         .unwrap()
         .with_spatial_workers(1)
         .unwrap()
         .with_format_version(viewer_format::FormatVersion::V6_PRE4)
         .unwrap();
     let serial = convert_file(&input, &serial_output, options).unwrap();
-    let tight = ConvertOptions::with_memory_budget(8, 0.01, serial.estimated_peak_memory_bytes)
+    let tight = v5_budget(8, 0.01, serial.estimated_peak_memory_bytes)
         .unwrap()
         .with_spatial_workers(1)
         .unwrap()
@@ -771,7 +763,7 @@ fn cancelling_pipelined_conversion_does_not_publish_outputs() {
     let input = dir.join("source.las");
     let output = dir.join("pipelined.oct");
     fixture(&input, false, true, 100);
-    let options = ConvertOptions::new(8, 0.01)
+    let options = v5_new(8, 0.01)
         .unwrap()
         .with_format_version(viewer_format::FormatVersion::V6_PRE4)
         .unwrap()
@@ -801,7 +793,7 @@ fn v6_serial_and_parallel_conversion_outputs_are_identical_and_readable() {
         let serial_output = dir.join("serial-v6.oct");
         let parallel_output = dir.join("parallel-v6.oct");
         fixture(&input, false, true, 24);
-        let serial_options = ConvertOptions::new(8, 0.01)
+        let serial_options = v5_new(8, 0.01)
             .unwrap()
             .with_format_version(version)
             .unwrap()
@@ -864,28 +856,28 @@ fn parallel_worker_limits_are_validated_and_budget_is_respected() {
     let input = dir.join("source.las");
     let output = dir.join("parallel.oct");
     fixture(&input, false, false, 100);
-    let options = ConvertOptions::with_memory_budget(10, 0.01, 17 * 1024 * 1024)
+    let options = v5_budget(10, 0.01, 17 * 1024 * 1024)
         .unwrap()
         .with_spatial_workers(2)
         .unwrap();
 
     assert!(matches!(
-        ConvertOptions::default().with_spatial_workers(0),
+        v5_default().with_spatial_workers(0),
         Err(ConvertError::InvalidSpatialWorkerCount(0))
     ));
     assert!(matches!(
-        ConvertOptions::default().with_spatial_workers(9),
+        v5_default().with_spatial_workers(9),
         Err(ConvertError::InvalidSpatialWorkerCount(9))
     ));
     assert_eq!(
-        ConvertOptions::default()
+        v5_default()
             .with_spatial_workers(MAX_SPATIAL_WORKERS)
             .unwrap()
             .spatial_workers(),
         MAX_SPATIAL_WORKERS
     );
     assert!(matches!(
-        ConvertOptions::default().with_spatial_divisions(3),
+        v5_default().with_spatial_divisions(3),
         Err(ConvertError::InvalidSpatialDivisions(3))
     ));
     assert!(matches!(
@@ -901,9 +893,9 @@ fn default_worker_count_uses_available_parallelism_with_a_safe_cap() {
     let expected = std::thread::available_parallelism()
         .map_or(1, |workers| workers.get().min(DEFAULT_SPATIAL_WORKERS));
 
-    assert_eq!(ConvertOptions::default().spatial_workers(), expected);
+    assert_eq!(v5_default().spatial_workers(), expected);
     assert_eq!(
-        ConvertOptions::with_memory_budget(10, 0.01, 32 * 1024 * 1024)
+        v5_budget(10, 0.01, 32 * 1024 * 1024)
             .unwrap()
             .spatial_workers(),
         expected
@@ -917,10 +909,7 @@ fn cancellation_during_parallel_spatial_planning_does_not_publish_output() {
     let input = dir.join("source.las");
     let output = dir.join("parallel.oct");
     fixture(&input, false, false, 100);
-    let options = ConvertOptions::new(10, 0.01)
-        .unwrap()
-        .with_spatial_workers(2)
-        .unwrap();
+    let options = v5_new(10, 0.01).unwrap().with_spatial_workers(2).unwrap();
     let mut hierarchy_updates = 0;
 
     let result = convert_file_with_progress(&input, &output, options, |event| {
@@ -945,7 +934,7 @@ fn preserves_optional_gps_time_rgb_and_nir_dimensions() {
     let input = dir.join("extended.las");
     let output = dir.join("result.oct");
     extended_fixture(&input);
-    let report = convert_file(&input, &output, ConvertOptions::default()).unwrap();
+    let report = convert_file(&input, &output, v5_default()).unwrap();
     assert!(
         report
             .omitted_dimensions
@@ -989,7 +978,7 @@ fn keeps_existing_outputs_unchanged_and_cleans_temporary_files_on_failure() {
     fixture(&input, false, false, 3);
     fs::write(&output, b"existing").unwrap();
     assert!(matches!(
-        convert_file(&input, &output, ConvertOptions::default()),
+        convert_file(&input, &output, v5_default()),
         Err(ConvertError::OutputExists(_))
     ));
     assert_eq!(fs::read(&output).unwrap(), b"existing");
@@ -998,7 +987,7 @@ fn keeps_existing_outputs_unchanged_and_cleans_temporary_files_on_failure() {
     let mut truncated = fs::read(&input).unwrap();
     truncated.pop();
     fs::write(&input, truncated).unwrap();
-    assert!(convert_file(&input, &output, ConvertOptions::default()).is_err());
+    assert!(convert_file(&input, &output, v5_default()).is_err());
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
 }
@@ -1010,7 +999,7 @@ fn memory_budget_rejects_the_plan_before_creating_an_output() {
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 3);
-    let options = ConvertOptions::with_memory_budget(2, 0.01, 1).unwrap();
+    let options = v5_budget(2, 0.01, 1).unwrap();
 
     assert!(matches!(
         convert_file(&input, &output, options),
@@ -1028,7 +1017,7 @@ fn identical_positions_remain_full_resolution_without_deep_empty_splits() {
     let output = dir.join("result.oct");
     coincident_fixture(&input);
 
-    let report = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap()).unwrap();
+    let report = convert_file(&input, &output, v5_new(2, 0.01).unwrap()).unwrap();
     assert_eq!(report.point_count, 5);
     assert_eq!(report.block_count, 3);
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
@@ -1068,7 +1057,7 @@ fn shared_leaf_and_lod_spools_are_released_before_validation() {
             } else {
                 fixture(&input, false, true, 5);
             }
-            let options = ConvertOptions::new(2, 0.01)
+            let options = v5_new(2, 0.01)
                 .unwrap()
                 .with_spatial_workers(workers)
                 .unwrap();
@@ -1126,7 +1115,7 @@ fn lod_voxels_average_color_and_copy_other_attributes_from_nearest_point() {
     }
     drop(writer);
 
-    convert_file(&input, &output, ConvertOptions::new(1, 0.01).unwrap()).unwrap();
+    convert_file(&input, &output, v5_new(1, 0.01).unwrap()).unwrap();
     let mut reader = FormatReader::new(fs::File::open(&output).unwrap()).unwrap();
     reader
         .attach_attributes(fs::File::open(output_attributes_path(&output)).unwrap())
@@ -1169,21 +1158,14 @@ fn cancellation_removes_the_temporary_file_without_publishing_output() {
     let output = dir.join("result.oct");
     fixture(&input, false, false, 5);
     let mut cancelled = false;
-    let result = convert_file_with_progress(
-        &input,
-        &output,
-        ConvertOptions::new(2, 0.01).unwrap(),
-        |event| {
-            if event.stage == ConversionStage::ReadingAndWritingBlocks
-                && event.points_processed >= 2
-            {
-                cancelled = true;
-                false
-            } else {
-                true
-            }
-        },
-    );
+    let result = convert_file_with_progress(&input, &output, v5_new(2, 0.01).unwrap(), |event| {
+        if event.stage == ConversionStage::ReadingAndWritingBlocks && event.points_processed >= 2 {
+            cancelled = true;
+            false
+        } else {
+            true
+        }
+    });
 
     assert!(cancelled);
     assert!(matches!(
@@ -1195,7 +1177,7 @@ fn cancellation_removes_the_temporary_file_without_publishing_output() {
     assert!(!output.exists());
     assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
 
-    let rebuilt = convert_file(&input, &output, ConvertOptions::new(2, 0.01).unwrap())
+    let rebuilt = convert_file(&input, &output, v5_new(2, 0.01).unwrap())
         .expect("a cancelled conversion can be rebuilt from its source");
     assert_eq!(rebuilt.point_count, 5);
     assert!(output.exists());
@@ -1212,10 +1194,7 @@ fn resumes_from_the_completed_source_spool_and_rejects_changed_options() {
     checkpoint_dir.push(".checkpoint");
     let checkpoint_dir = PathBuf::from(checkpoint_dir);
     coincident_fixture(&input);
-    let options = ConvertOptions::new(2, 0.01)
-        .unwrap()
-        .with_spatial_workers(2)
-        .unwrap();
+    let options = v5_new(2, 0.01).unwrap().with_spatial_workers(2).unwrap();
 
     let mut checkpoint_source = None;
     let cancelled =
@@ -1238,7 +1217,7 @@ fn resumes_from_the_completed_source_spool_and_rejects_changed_options() {
     );
     assert!(!output.exists());
 
-    let changed_options = ConvertOptions::new(3, 0.01).unwrap();
+    let changed_options = v5_new(3, 0.01).unwrap();
     assert!(matches!(
         convert_file_with_checkpoint(
             &input,
@@ -1297,7 +1276,7 @@ fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_r
         checkpoint_dir.push(".checkpoint");
         let checkpoint_dir = PathBuf::from(checkpoint_dir);
         fixture(&input, false, false, 5);
-        let options = ConvertOptions::new(2, 0.01)
+        let options = v5_new(2, 0.01)
             .unwrap()
             .with_format_version(version)
             .unwrap();
@@ -1317,7 +1296,7 @@ fn resumes_validation_after_output_is_published_but_checkpoint_cleanup_did_not_r
             convert_file_with_checkpoint(
                 &input,
                 &output,
-                ConvertOptions::new(2, 0.01).unwrap(),
+                v5_new(2, 0.01).unwrap(),
                 CheckpointMode::Resume,
                 |_| true
             ),
@@ -1376,7 +1355,7 @@ fn rejects_changed_input_and_preserves_the_checkpoint() {
     checkpoint_dir.push(".checkpoint");
     let checkpoint_dir = PathBuf::from(checkpoint_dir);
     fixture(&input, false, false, 5);
-    let options = ConvertOptions::new(2, 0.01).unwrap();
+    let options = v5_new(2, 0.01).unwrap();
 
     let cancelled =
         convert_file_with_checkpoint(&input, &output, options, CheckpointMode::Create, |event| {
@@ -1415,13 +1394,13 @@ fn pair_output_refuses_existing_companion_and_geometry_alone_is_gray() {
     fixture(&input, false, false, 5);
     fs::write(&attrs, b"foreign").unwrap();
     assert!(matches!(
-        convert_file(&input, &output, ConvertOptions::default()),
+        convert_file(&input, &output, v5_default()),
         Err(ConvertError::OutputExists(_))
     ));
     assert!(!output.exists());
     assert_eq!(fs::read(&attrs).unwrap(), b"foreign");
     fs::remove_file(&attrs).unwrap();
-    let report = convert_file(&input, &output, ConvertOptions::default()).unwrap();
+    let report = convert_file(&input, &output, v5_default()).unwrap();
     assert_eq!(
         report.output_bytes,
         fs::metadata(&output).unwrap().len() + fs::metadata(&attrs).unwrap().len()
@@ -1446,7 +1425,7 @@ fn checkpoint_resumes_companion_only_publication_and_rejects_foreign_companion()
     let input = dir.join("source.las");
     let output = dir.join("result.oct");
     fixture(&input, false, false, 5);
-    let options = ConvertOptions::default();
+    let options = v5_default();
     assert!(matches!(
         convert_file_with_checkpoint(
             &input,
@@ -1498,7 +1477,7 @@ fn spool_diagnostics_account_written_and_live_bytes() {
     let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     fixture(&input, false, false, 4_000);
-    let options = ConvertOptions::new(64, 0.01)
+    let options = v5_new(64, 0.01)
         .unwrap()
         .with_spatial_divisions(4)
         .unwrap()
@@ -1546,10 +1525,7 @@ fn node_spool_events_match_child_spool_totals() {
     let dir = tmp.path().to_owned();
     let input = dir.join("source.las");
     fixture(&input, false, false, 4_000);
-    let options = ConvertOptions::new(64, 0.01)
-        .unwrap()
-        .with_spatial_divisions(4)
-        .unwrap();
+    let options = v5_new(64, 0.01).unwrap().with_spatial_divisions(4).unwrap();
 
     let mut shapes = Vec::new();
     for workers in [1, 2, 4] {
@@ -1766,10 +1742,7 @@ fn characterize_planner_structure_for_4000_points_with_divisions_4() {
     let tmp = test_dir();
     let input = tmp.path().join("source.las");
     fixture(&input, false, true, 4_000);
-    let options = ConvertOptions::new(64, 0.01)
-        .unwrap()
-        .with_spatial_divisions(4)
-        .unwrap();
+    let options = v5_new(64, 0.01).unwrap().with_spatial_divisions(4).unwrap();
     let (nodes, sha) = planner_snapshot_for(&input, tmp.path(), options);
     println!(
         "{}\nL={}\nSHA={sha}",
@@ -1796,10 +1769,7 @@ fn characterize_planner_structure_for_coincident_points() {
     let tmp = test_dir();
     let input = tmp.path().join("coincident.las");
     coincident_fixture(&input);
-    let options = ConvertOptions::new(2, 0.01)
-        .unwrap()
-        .with_spatial_divisions(4)
-        .unwrap();
+    let options = v5_new(2, 0.01).unwrap().with_spatial_divisions(4).unwrap();
     let (nodes, sha) = planner_snapshot_for(&input, tmp.path(), options);
     println!("L={}\nSHA={sha}", sha256_hex(nodes.join("\n").as_bytes()));
     assert_structure(
@@ -1823,7 +1793,7 @@ fn planner_budget_outcome(
     workers: usize,
 ) -> Option<(u64, u64)> {
     let output = dir.join(format!("budget-{budget}-{workers}.oct"));
-    let options = ConvertOptions::with_memory_budget(64, 0.01, budget)
+    let options = v5_budget(64, 0.01, budget)
         .unwrap()
         .with_spatial_divisions(4)
         .unwrap()
@@ -1967,7 +1937,7 @@ fn convert_error_at(
     workers: usize,
 ) -> ConvertError {
     let output = dir.join(format!("err-{workers}.oct"));
-    let options = ConvertOptions::new(16, 0.01)
+    let options = v5_new(16, 0.01)
         .unwrap()
         .with_spatial_divisions(4)
         .unwrap()
@@ -2089,7 +2059,7 @@ fn mem_spool_store_peak_matches_the_native_ledger_and_drains_after_the_block_pha
     let tmp = test_dir();
     let input = tmp.path().join("source.las");
     fixture(&input, false, true, 4_000);
-    let options = ConvertOptions::new(64, 0.01)
+    let options = v5_new(64, 0.01)
         .unwrap()
         .with_spatial_divisions(4)
         .unwrap()
@@ -2239,7 +2209,7 @@ fn node_jobs_commit_nodes_and_blocks_in_preorder() {
         let input = dir.join(name);
         write(&input);
         for divisions in [2, 4, 8] {
-            let options = ConvertOptions::new(16, 0.01)
+            let options = v5_new(16, 0.01)
                 .unwrap()
                 .with_spatial_divisions(divisions)
                 .unwrap();
@@ -2289,7 +2259,7 @@ fn mem_spool_store_lifecycle_holds_for_whole_plans_and_leaves_no_spool() {
     equal_cluster_fixture(&equal_cluster);
     for input in [&dense, &clusters, &equal_cluster] {
         for workers in [1, 2, 4] {
-            let options = ConvertOptions::new(16, 0.01)
+            let options = v5_new(16, 0.01)
                 .unwrap()
                 .with_spatial_divisions(4)
                 .unwrap()
@@ -2306,7 +2276,7 @@ fn an_all_equal_root_is_respooled_and_planned_as_one_leaf() {
     let tmp = test_dir();
     let input = tmp.path().join("equal-root.las");
     all_equal_root_fixture(&input, 300);
-    let options = ConvertOptions::new(16, 0.01).unwrap();
+    let options = v5_new(16, 0.01).unwrap();
     let phases = mem_plan_and_drain(&input, options);
     let events = &phases.node_spool_events;
     assert_eq!(events.len(), 1);
@@ -2330,7 +2300,7 @@ fn a_child_with_all_points_equal_becomes_a_leaf() {
     let tmp = test_dir();
     let input = tmp.path().join("equal-cluster.las");
     equal_cluster_fixture(&input);
-    let options = ConvertOptions::new(16, 0.01).unwrap();
+    let options = v5_new(16, 0.01).unwrap();
     let phases = mem_plan_and_drain(&input, options);
     let equal = phases
         .node_spool_events
@@ -2488,7 +2458,7 @@ fn plan_from_reader<S: crate::pipeline::spool_store::PlanStore>(
 }
 
 fn cluster_options(workers: usize) -> ConvertOptions {
-    ConvertOptions::new(16, 0.01)
+    v5_new(16, 0.01)
         .unwrap()
         .with_spatial_workers(workers)
         .unwrap()
@@ -2585,7 +2555,7 @@ fn a_panicking_progress_callback_propagates_under_the_ready_queue() {
     let input = tmp.path().join("source.las");
     fixture(&input, false, true, 4_000);
     let output = tmp.path().join("panic.oct");
-    let options = ConvertOptions::new(16, 0.01)
+    let options = v5_new(16, 0.01)
         .unwrap()
         .with_spatial_divisions(4)
         .unwrap()
@@ -2622,7 +2592,7 @@ fn a_lower_branch_commit_error_wins_over_a_higher_branch_job_error() {
     sized_cluster_fixture(&input, [2000, 40, 40, 40, 40, 40, 2001, 40]);
     let quick = std::time::Duration::ZERO;
     let options = |budget| {
-        ConvertOptions::with_memory_budget(16, 0.01, budget)
+        v5_budget(16, 0.01, budget)
             .unwrap()
             .with_spatial_workers(8)
             .unwrap()
@@ -2777,9 +2747,9 @@ fn workspace_path(relative: &str) -> PathBuf {
 #[test]
 fn serial_core_matches_native_on_the_small_las() {
     let input = workspace_path("data/samples/fs_e430_n4008_18.las");
-    assert_serial_matches_native(&input, ConvertOptions::default(), false, "default");
+    assert_serial_matches_native(&input, v5_default(), false, "default");
     for divisions in [2, 8] {
-        let options = ConvertOptions::new(4096, 0.01)
+        let options = v5_new(4096, 0.01)
             .unwrap()
             .with_spatial_divisions(divisions)
             .unwrap();
@@ -2795,7 +2765,7 @@ fn serial_core_matches_native_on_the_variable_chunk_laz() {
         (8, "657f70173571", "d8478842254c"),
     ];
     for (divisions, oct, attrs) in expected {
-        let options = ConvertOptions::new(4096, 0.01)
+        let options = v5_new(4096, 0.01)
             .unwrap()
             .with_spatial_divisions(divisions)
             .unwrap();
@@ -2861,7 +2831,7 @@ fn hybrid_store_matches_mem_store_on_the_small_las_and_the_variable_chunk_laz() 
     ] {
         let input = workspace_path(relative);
         for divisions in [2, 8] {
-            let options = ConvertOptions::new(4096, 0.01)
+            let options = v5_new(4096, 0.01)
                 .unwrap()
                 .with_spatial_divisions(divisions)
                 .unwrap();
@@ -2884,7 +2854,7 @@ fn serial_core_matches_native_on_synthetic_fixtures_for_each_worker_count() {
         let input = tmp.path().join(format!("source-{compressed}.las"));
         fixture(&input, compressed, true, 4_000);
         for workers in [1, 4] {
-            let options = ConvertOptions::new(64, 0.01)
+            let options = v5_new(64, 0.01)
                 .unwrap()
                 .with_spatial_workers(workers)
                 .unwrap();
@@ -2913,7 +2883,7 @@ fn serial_validation(
 #[test]
 fn serial_validation_accepts_the_output_and_rejects_a_flipped_payload_byte_like_native() {
     let input = workspace_path("tools/laz_chunk_probe/fixtures/synthetic_variable_chunks.laz");
-    let options = ConvertOptions::new(4096, 0.01).unwrap();
+    let options = v5_new(4096, 0.01).unwrap();
     let run = run_serial(&input, options);
     serial_validation(&run).unwrap();
 
@@ -2964,7 +2934,7 @@ fn serial_validation_reports_progress_and_honours_cancellation() {
     use std::io::Cursor;
     use viewer_convert_core::{ConversionProgress, ConversionStage, validate_output_serial};
     let input = workspace_path("data/samples/fs_e430_n4008_18.las");
-    let run = run_serial(&input, ConvertOptions::new(4096, 0.01).unwrap());
+    let run = run_serial(&input, v5_new(4096, 0.01).unwrap());
     let mut last = None;
     validate_output_serial(
         Cursor::new(run.geometry.as_slice()),
@@ -2995,7 +2965,7 @@ fn ranged(options: ConvertOptions, ranges: usize) -> ConvertOptions {
 }
 
 fn block_options(divisions: u8) -> ConvertOptions {
-    ConvertOptions::new(4096, 0.01)
+    v5_new(4096, 0.01)
         .unwrap()
         .with_spatial_divisions(divisions)
         .unwrap()

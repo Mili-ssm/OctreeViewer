@@ -128,7 +128,7 @@ fn write_revision(version: FormatVersion) -> (Vec<u8>, Option<(Vec<u8>, Vec<u8>)
     let options = || FormatWriterOptions::new(0.001, 1024).unwrap();
 
     // The paged revision is only written as a pair, so its monolithic seed is the primary alone.
-    let monolithic = if version == FormatVersion::V7_PRE5 {
+    let monolithic = if version.uses_pages() {
         Vec::new()
     } else {
         let mut writer = FormatWriter::new_for_version(

@@ -23,7 +23,10 @@ fn main() {
     let blocks = viewer_convert::plan_sample_blocks(
         &input,
         &output,
-        ConvertOptions::default(),
+        // The parity digest covers V5 blocks, whatever the default output becomes.
+        ConvertOptions::default()
+            .with_format_version("v5".parse().expect("v5"))
+            .expect("v5 is writable"),
         LEAVES,
         LODS,
     )

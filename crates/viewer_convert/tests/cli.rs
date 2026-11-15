@@ -38,6 +38,7 @@ fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
     let output = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
         .arg(&root)
         .arg(&output_path)
+        .args(["--format-version", "v5"])
         .output()
         .unwrap();
     assert!(
@@ -56,7 +57,7 @@ fn ept_cli_preserves_implicit_workers_and_rejects_explicit_repartitioning() {
     let rejected = Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
         .arg(&root)
         .arg(&rejected_path)
-        .args(["--spatial-workers", "2"])
+        .args(["--format-version", "v5", "--spatial-workers", "2"])
         .output()
         .unwrap();
     assert!(!rejected.status.success());

@@ -88,20 +88,21 @@ const synthetic = join(root, "tools/laz_chunk_probe/fixtures/synthetic_variable_
 const autzen = findAutzen();
 // `multi`: the case must produce more than one block, else it would not exercise the planner.
 const cases = [
-  { name: "small-default", input: small, ppb: 262144, divisions: 2, multi: false },
-  { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true },
-  { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true },
-  { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true },
-  { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true },
+  { name: "small-default", input: small, ppb: 262144, divisions: 2, multi: false, format: "v5" },
+  { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true, format: "v5" },
+  { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true, format: "v5" },
+  { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true, format: "v5" },
+  { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8, multi: true, format: "v5" },
   { name: "small-v74", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
   { name: "small-v75", input: small, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "flags-extra-v75", input: flagsExtra, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "synthetic-v75", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre" },
   { name: "synthetic-v75-hybrid", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.5-pre", rowOrder: "hybrid", sourceTwin: "synthetic-v75" },
   { name: "synthetic-v74", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7.4-pre" },
+  { name: "synthetic-v7", input: synthetic, ppb: 262144, divisions: 2, multi: false, format: "v7" },
 ];
 if (autzen) {
-  cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false });
+  cases.push({ name: "autzen-copc-4096-d2", input: autzen, ppb: 4096, divisions: 2, multi: false, format: "v5" });
 } else {
   console.log("skip autzen-copc: las-0.11 test data not found in the cargo registry");
 }
@@ -122,7 +123,7 @@ const x = (await WebAssembly.instantiate(module, imports)).exports;
 const dumpDir = process.env.CONVERT_PARITY_DUMP;
 
 // `convert_parity_run` format argument.
-const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2 };
+const FORMAT_CODES = { "": 0, "v7.4-pre": 1, "v7.5-pre": 2, v5: 3, v7: 4 };
 
 function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
   const ptr = x.convert_parity_alloc(bytes.length);

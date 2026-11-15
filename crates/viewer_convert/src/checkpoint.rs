@@ -492,7 +492,7 @@ mod tests {
     use viewer_format::{FormatVersion, RowOrder};
 
     fn options(points_per_block: u64, spatial_divisions: u8) -> ConvertOptions {
-        ConvertOptions::with_memory_budget(points_per_block, 0.01, 1024)
+        crate::test_options::v5_budget(points_per_block, 0.01, 1024)
             .unwrap()
             .with_spatial_divisions(spatial_divisions)
             .unwrap()

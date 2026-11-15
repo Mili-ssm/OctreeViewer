@@ -298,7 +298,7 @@ mod tests {
         let pre = v(hybrid, FormatVersion::V7_PRE5).validate().unwrap();
         assert_eq!(pre.row_order(), RowOrder::Hybrid);
         assert_eq!(
-            ConvertOptions::default().row_order(),
+            v(ConvertOptions::default(), FormatVersion::V5).row_order(),
             RowOrder::Source,
             "an unfixed format defaults to source"
         );

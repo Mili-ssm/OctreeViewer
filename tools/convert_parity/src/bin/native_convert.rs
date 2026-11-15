@@ -9,7 +9,7 @@ fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let [input, output, points_per_block, divisions, rest @ ..] = arguments.as_slice() else {
         eprintln!(
-            "usage: native_convert INPUT OUTPUT.oct POINTS_PER_BLOCK DIVISIONS [v7.4-pre|v7.5-pre [source|hybrid]]"
+            "usage: native_convert INPUT OUTPUT.oct POINTS_PER_BLOCK DIVISIONS [v5|v7.4-pre|v7.5-pre|v7 [source|hybrid]]"
         );
         std::process::exit(2);
     };

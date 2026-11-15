@@ -97,7 +97,7 @@ fn run(
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre`; `row_order` is 0 for the format default, 1 for hybrid and 2 for source. Returns 1
+/// default. `format` is 0 for the default revision, 1 for `v7.4-pre`, 2 for `v7.5-pre`, 3 for `v5` and 4 for `v7`; `row_order` is 0 for the format default, 1 for hybrid and 2 for source. Returns 1
 /// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
@@ -123,6 +123,8 @@ pub unsafe extern "C" fn convert_parity_run(
         match format {
             0 => None,
             1 => Some(viewer_format::FormatVersion::V7_PRE4),
+            3 => Some(viewer_format::FormatVersion::V5),
+            4 => Some(viewer_format::FormatVersion::V7),
             _ => Some(viewer_format::FormatVersion::V7_PRE5),
         },
         // 0 leaves the order to the format; 1 requests hybrid, 2 requests source explicitly.

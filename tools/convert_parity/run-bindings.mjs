@@ -180,8 +180,8 @@ const cases = [
   { name: "synthetic-4096-d8", input: synthetic, ppb: 4096, divisions: 8 },
 ];
 for (const { name, input, ppb, divisions } of cases) {
-  const native = nativeConvert(name, input, ppb, divisions);
-  const { summary, oct, attrs } = bindingConvert(name, input, ppb, divisions);
+  const native = nativeConvert(name, input, ppb, divisions, "v5");
+  const { summary, oct, attrs } = bindingConvert(name, input, ppb, divisions, { formatVersion: "v5" });
   const problems = [];
   if (oct !== native.oct) problems.push("oct differs");
   if (attrs !== native.attrs) problems.push("octattrs differs");
@@ -213,8 +213,8 @@ report(rowOrderResults.source !== rowOrderResults.hybrid, "rowOrder hybrid diffe
 
 // A full spill zone or a full output surfaces as a `QuotaExceededError`.
 const quotaCases = [
-  { name: "zone-quota", options: { zoneQuota: 256 * 1024 } },
-  { name: "output-quota", options: { outputQuota: 64 * 1024 } },
+  { name: "zone-quota", options: { formatVersion: "v5", zoneQuota: 256 * 1024 } },
+  { name: "output-quota", options: { formatVersion: "v5", outputQuota: 64 * 1024 } },
 ];
 for (const { name, options } of quotaCases) {
   try {

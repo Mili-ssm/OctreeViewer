@@ -25,6 +25,8 @@ mod publish;
 mod report;
 mod source;
 mod spatial;
+#[cfg(test)]
+mod test_options;
 mod verify;
 mod workspace;
 

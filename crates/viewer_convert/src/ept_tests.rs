@@ -5,6 +5,7 @@ use viewer_core::{DatasetSource, HierarchySemantics, NodeId};
 use viewer_format::{FormatReader, OctreeReader};
 
 use super::*;
+use crate::test_options::{v5_budget, v5_default, v5_new};
 
 fn dir() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
@@ -105,9 +106,7 @@ fn converts_local_laszip_ept_pages_as_additive_hierarchy() {
 
         let output = root.join("result.oct");
         let mut progress = Vec::new();
-        let options = ConvertOptions::default()
-            .with_format_version(version)
-            .unwrap();
+        let options = v5_default().with_format_version(version).unwrap();
         let report = crate::convert_file_with_progress(&root, &output, options, |event| {
             progress.push(event);
             true
@@ -151,7 +150,7 @@ fn converts_local_laszip_ept_pages_as_additive_hierarchy() {
             assert!(diagnostics.block_stream.is_some());
             assert!(diagnostics.finalize_and_sync_elapsed_ns.is_some());
         }
-        let constrained_options = ConvertOptions::with_memory_budget(
+        let constrained_options = v5_budget(
             options.points_per_block(),
             options.max_quantization_error(),
             report.estimated_peak_memory_bytes,
@@ -236,7 +235,7 @@ fn ept_checkpoint_resumes_within_laz_and_matches_clean_output() {
         &root.join("ept-data/0-0-0-0.laz"),
         &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
     );
-    let options = ConvertOptions::new(1, 0.01)
+    let options = v5_new(1, 0.01)
         .unwrap()
         .with_format_version(viewer_format::FormatVersion::V7_PRE1)
         .unwrap()
@@ -296,7 +295,7 @@ fn ept_v72_and_v73_checkpoints_resume_between_blocks_and_match_clean_output() {
             &root.join("ept-data/0-0-0-0.laz"),
             &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]],
         );
-        let options = ConvertOptions::new(1, 0.01)
+        let options = v5_new(1, 0.01)
             .unwrap()
             .with_format_version(version)
             .unwrap();
@@ -363,7 +362,7 @@ fn ept_checkpoint_recovers_after_output_validation_before_publication() {
     write_manifest(&root, "laszip", 1);
     fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":1}"#).unwrap();
     write_laz(&root.join("ept-data/0-0-0-0.laz"), [1.0, 1.0, 1.0]);
-    let options = ConvertOptions::default()
+    let options = v5_default()
         .with_format_version(viewer_format::FormatVersion::V7_PRE1)
         .unwrap();
     let output = root.join("recovered.oct");
@@ -395,7 +394,7 @@ fn ept_checkpoint_rejects_changed_source_metadata_without_touching_prefix() {
     fs::write(root.join("ept-hierarchy/0-0-0-0.json"), r#"{"0-0-0-0":2}"#).unwrap();
     let source = root.join("ept-data/0-0-0-0.laz");
     write_laz_points(&source, &[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]]);
-    let options = ConvertOptions::new(1, 0.01)
+    let options = v5_new(1, 0.01)
         .unwrap()
         .with_format_version(viewer_format::FormatVersion::V7_PRE1)
         .unwrap()
@@ -457,7 +456,7 @@ fn v7_ept_rgb_conversion_preserves_display_and_typed_values() {
     crate::convert_file(
         &root,
         &output,
-        ConvertOptions::default()
+        v5_default()
             .with_format_version(viewer_format::FormatVersion::V7_PRE1)
             .unwrap(),
     )
@@ -491,7 +490,7 @@ fn rejects_unsupported_ept_codec_before_reading_hierarchy() {
         convert(
             &root,
             &root.join("result.oct"),
-            ConvertOptions::default(),
+            v5_default(),
             None,
             &mut |_| true,
             None,
@@ -510,14 +509,14 @@ fn rejects_checkpoint_and_repartition_options_for_ept() {
         crate::convert_file_with_checkpoint(
             &root,
             &output,
-            ConvertOptions::default(),
+            v5_default(),
             crate::CheckpointMode::Create,
             |_| true,
         ),
         Err(ConvertError::Checkpoint(crate::CheckpointError::Invalid(message)))
             if message.contains("v7.1-pre")
     ));
-    let repartitioned = ConvertOptions::default().with_spatial_divisions(4).unwrap();
+    let repartitioned = v5_default().with_spatial_divisions(4).unwrap();
     assert!(matches!(
         convert(&root, &output, repartitioned, None, &mut |_| true, None),
         Err(ConvertError::UnsupportedEpt(message)) if message.contains("topology")
@@ -536,7 +535,7 @@ fn rejects_ept_count_mismatch_and_missing_node_files() {
         convert(
             &root,
             &root.join("result.oct"),
-            ConvertOptions::default(),
+            v5_default(),
             None,
             &mut |_| true,
             None,
@@ -549,7 +548,7 @@ fn rejects_ept_count_mismatch_and_missing_node_files() {
         convert(
             &root,
             &root.join("result.oct"),
-            ConvertOptions::default(),
+            v5_default(),
             None,
             &mut |_| true,
             None,
@@ -572,7 +571,7 @@ fn rejects_ept_memory_budget_before_planning_all_nodes_or_creating_output() {
     .unwrap();
     write_laz(&root.join("ept-data/0-0-0-0.laz"), [7.0, 7.0, 7.0]);
     let output = root.join("result.oct");
-    let options = ConvertOptions::with_memory_budget(1, 0.01, 1).unwrap();
+    let options = v5_budget(1, 0.01, 1).unwrap();
 
     assert!(matches!(
         convert(&root, &output, options, None, &mut |_| true, None),
@@ -602,7 +601,7 @@ fn rejects_ept_memory_budget_while_reading_large_hierarchy_page() {
     )
     .unwrap();
     let output = root.join("result.oct");
-    let options = ConvertOptions::with_memory_budget(1, 0.01, 17 * 1024 * 1024).unwrap();
+    let options = v5_budget(1, 0.01, 17 * 1024 * 1024).unwrap();
 
     assert!(matches!(
         convert(&root, &output, options, None, &mut |_| true, None),
@@ -617,7 +616,7 @@ fn rejects_ept_memory_budget_while_reading_large_hierarchy_page() {
 
 fn assert_rejected_by_size_cap(root: &Path) {
     let output = root.join("result.oct");
-    let options = ConvertOptions::with_memory_budget(1, 0.01, 1 << 30).unwrap();
+    let options = v5_budget(1, 0.01, 1 << 30).unwrap();
     match convert(root, &output, options, None, &mut |_| true, None) {
         Err(ConvertError::InvalidEpt(message)) => {
             assert!(message.contains("exceeding"), "{message}");
@@ -710,7 +709,7 @@ fn ept_hybrid_row_order_reaches_the_writer() {
     }
     drop(writer);
     let convert = |name: &str, order| {
-        let options = ConvertOptions::new(8192, 0.001)
+        let options = v5_new(8192, 0.001)
             .unwrap()
             .with_format_version(viewer_format::FormatVersion::V7_PRE2)
             .unwrap()
