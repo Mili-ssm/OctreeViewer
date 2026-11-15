@@ -36,7 +36,7 @@ host=examples/web-host
 cp "$host"/index.html "$host"/sample.oct "$host"/sample.octattrs "$site"/
 # The page and its workers; probes, spikes, tests and the RED-REF server stay out.
 for f in "$host"/*.js "$host"/*.mjs; do
-  case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs|pixel-metrics.mjs|benchmark-metrics.mjs|collect-*) continue ;; esac
+  case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs|pixel-metrics.mjs|collect-*) continue ;; esac
   cp "$f" "$site"/
 done
 cp pkg/viewer_wasm.js pkg/viewer_wasm_bg.wasm "$site/pkg/"
@@ -46,6 +46,12 @@ if grep -l '\.\./\.\./pkg' "$site"/*.js "$site"/*.mjs 2>/dev/null; then
   echo "unpatched ../../pkg import left in the site" >&2
   exit 1
 fi
+# Every relative import of the page and its workers must resolve inside the site.
+missing=0
+for ref in $(grep -ho 'from "\./[^"]*"\|import("\./[^"]*")\|new URL("\./[^"]*"' "$site"/*.js "$site"/*.mjs | grep -o '\./[^"]*' | sort -u); do
+  [ -f "$site/$ref" ] || { echo "missing in site: $ref" >&2; missing=1; }
+done
+[ "$missing" = "0" ] || exit 1
 touch "$site/.nojekyll"
 
 site_abs="$(cd "$site" && pwd)"
