@@ -478,13 +478,28 @@ impl std::str::FromStr for RowOrder {
 /// Interleaves the 32 bits of each coordinate into a 96-bit Morton key (no truncation), x in the
 /// high bit of each triple like the cell builder (`viewer_render_wgpu` `node_cells::morton`).
 fn morton_key(coordinate: [u32; 3]) -> u128 {
-    let mut key = 0u128;
-    for bit in 0..32 {
-        for (axis, value) in coordinate.iter().enumerate() {
-            key |= u128::from((value >> bit) & 1) << (3 * bit + (2 - axis));
-        }
-    }
-    key
+    // Bit i of axis a goes to 3*i + (2 - a): the low 21 bits fill bits 0..63, the high 11 bits
+    // fill bits 63..96. Magic-mask spreading instead of a 96-step loop (the key is computed for
+    // every point of every dense block).
+    let interleave = |part: fn(u32) -> u64| {
+        (spread_by_3(part(coordinate[0])) << 2)
+            | (spread_by_3(part(coordinate[1])) << 1)
+            | spread_by_3(part(coordinate[2]))
+    };
+    let low = interleave(|value| u64::from(value & 0x1f_ffff));
+    let high = interleave(|value| u64::from(value >> 21));
+    u128::from(low) | (u128::from(high) << 63)
+}
+
+/// Spreads the low 21 bits of `value` so that bit i lands on bit 3*i.
+fn spread_by_3(value: u64) -> u64 {
+    let mut x = value & 0x1f_ffff;
+    x = (x | (x << 32)) & 0x001f_0000_0000_ffff;
+    x = (x | (x << 16)) & 0x001f_0000_ff00_00ff;
+    x = (x | (x << 8)) & 0x100f_00f0_0f00_f00f;
+    x = (x | (x << 4)) & 0x10c3_0c30_c30c_30c3;
+    x = (x | (x << 2)) & 0x1249_2492_4924_9249;
+    x
 }
 
 /// Source row indices ordered by (Morton key, source row): a deterministic total order.
