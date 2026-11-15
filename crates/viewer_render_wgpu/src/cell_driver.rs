@@ -647,7 +647,14 @@ impl CellDriver {
                 .partition_point(|depth| *depth < level.depth);
             stored.pool.stored.insert(at, level.depth);
             stored.colors.insert(at, color);
-            stored.levels.insert(at, Arc::new(level));
+            let level = Arc::new(level);
+            // The pool may still hold this depth with the colours of before a recolour; its new
+            // colours replace them (a vacant key is requested from `stored` as usual). A level
+            // with another page count cannot be refreshed and stays until it is evicted.
+            let _ = self
+                .pool
+                .refresh_level(self.pool.key(id, level.depth), Arc::clone(&level));
+            stored.levels.insert(at, level);
             stored.bytes += bytes;
             self.cpu_bytes += bytes;
         }
@@ -761,6 +768,10 @@ impl CellDriver {
             return Err(NodeInputError::InvalidLevel(id));
         }
         if kept.len() < stored.levels.len() {
+            let gone: Vec<u8> = (0..stored.levels.len())
+                .filter(|at| !kept.contains(at))
+                .map(|at| stored.levels[at].depth)
+                .collect();
             let stored = self.nodes.get_mut(&id).expect("stored");
             let mut at = 0;
             let mut dropped = 0;
@@ -784,6 +795,12 @@ impl CellDriver {
             });
             stored.bytes -= dropped;
             self.cpu_bytes -= dropped;
+            // A resident copy would keep the old colours under the same key. One the cut draws
+            // or the pool pins stays (no coarsening while a level waits, R3-Q21): it is replaced
+            // when the depth returns (`add_packed_levels`).
+            for depth in gone {
+                let _ = self.pool.evict(self.pool.key(id, depth));
+            }
         }
         let bytes = levels.iter().map(level_bytes).sum::<u64>();
         let count = levels.len();

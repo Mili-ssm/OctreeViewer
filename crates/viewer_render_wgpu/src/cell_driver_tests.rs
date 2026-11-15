@@ -8,7 +8,8 @@ use viewer_core::{NodeId, SpatialBounds};
 
 use super::*;
 use crate::{
-    NodeCell, NodeCellLevel, OrbitCamera, POOL_PAGE_BYTES, VoxelBuildLimits, pack_level,
+    CellInstance, NodeCell, NodeCellLevel, OrbitCamera, POOL_PAGE_BYTES, VoxelBuildLimits,
+    pack_level,
     scene_digest_tests::{ORIGIN, SIDE, VIEWPORT, ids},
     test_support::*,
 };
@@ -1169,4 +1170,87 @@ fn recolor_drops_on_demand_levels() {
     );
     assert_eq!(stored_depths(&driver, 2), [10, 12, 14]);
     assert_eq!(driver.cpu_bytes(), with_12);
+}
+
+/// Packed levels of node 2 for a recolour: depths 5 to 7 as the fixture packs them, tagged.
+fn recoloured_node_2(fx: &Fixture, tag: u32) -> PackedNode {
+    let node = &fx.nodes[&NodeId::new(2)];
+    let levels = node
+        .stored
+        .iter()
+        .filter(|depth| **depth != 4)
+        .map(|depth| {
+            let mut level = level_of(NodeId::new(2), *depth, pages_of(node, *depth));
+            level.instances[0].0[0] = tag;
+            level
+        })
+        .collect();
+    PackedNode {
+        id: NodeId::new(2),
+        bounds: node.bounds,
+        points: node.points,
+        buildable: (4, 7),
+        levels,
+    }
+}
+
+#[test]
+fn a_dropped_on_demand_level_leaves_the_pool_and_a_drawn_one_is_refreshed_when_it_returns() {
+    let (g0, g1) = (cell_generation(5, 0), cell_generation(5, 1));
+    let cam = camera("fit");
+    let id = NodeId::new(2);
+    let first_levels = |fx: &Fixture, depth: u8| {
+        let key = fx.driver.pool.key(id, depth);
+        fx.driver
+            .pool
+            .level(key)
+            .map(|level| level.instances[0].0[0])
+    };
+
+    // Not drawn when the node is recoloured: depth 4 (the "on-demand" one) is evicted.
+    let mut fx = generation_fixture(g0);
+    fx.run(10, &ids(&[2, 3]), &cam, 64.0);
+    let key = fx.driver.pool.key(id, 4);
+    assert!(fx.driver.pool.is_resident(key));
+    fx.run(4, &ids(&[3]), &cam, 64.0);
+    let tagged = recoloured_node_2(&fx, 1);
+    assert_eq!(
+        fx.driver.add_packed_generation(g1, tagged),
+        Ok(NodeAdded::Recolored { levels: 3 })
+    );
+    assert!(!fx.driver.pool.is_resident(key), "the dropped depth left");
+    fx.run(2, &ids(&[3]), &cam, 64.0);
+    assert!(fx.driver.pool.level(key).is_none());
+
+    // Drawn: it stays with the old colours until the depth returns with the new ones.
+    let mut fx = generation_fixture(g0);
+    fx.run(10, &ids(&[2, 3]), &cam, 64.0);
+    assert!(fx.driver.pool.is_resident(key));
+    assert_eq!(first_levels(&fx, 4), Some(CellInstance::EMPTY.0[0]));
+    let tagged = recoloured_node_2(&fx, 1);
+    fx.driver.add_packed_generation(g1, tagged).unwrap();
+    assert!(
+        fx.driver.pool.is_resident(key),
+        "a drawn level is not evicted"
+    );
+    let mut back = PackedNode {
+        levels: vec![level_of(id, 4, 1)],
+        ..recoloured_node_2(&fx, 1)
+    };
+    back.levels[0].instances[0].0[0] = 9;
+    assert_eq!(
+        fx.driver.add_packed_levels(g1, back),
+        Ok(LevelsAdded::Added(1))
+    );
+    fx.nodes = fx
+        .nodes
+        .iter()
+        .map(|(id, node)| (*id, node.clone()))
+        .collect();
+    fx.run(3, &ids(&[2, 3]), &cam, 64.0);
+    assert_eq!(
+        first_levels(&fx, 4),
+        Some(9),
+        "the new colours replaced the old"
+    );
 }
