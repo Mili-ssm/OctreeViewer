@@ -18,9 +18,9 @@ es un registro interno; demo: abre la muestra, pero una conversión V7 pequeña 
 
 - [x] Fusionar #1 y #29 en `main` con merge commit (conserva los SHA citados). Comprobación: `main` en `2c7364d`.
 - [ ] Arreglar #30 (celdas de una conversión V7 pequeña). Comprobación: test que falla antes y pasa después; la demo la dibuja.
-- [ ] Quitar del árbol los renders de SensOFOREST (sin licencia) en `main` y en las ramas de experimentos, y
+- [x] Quitar del árbol los renders de SensOFOREST (sin licencia) en `main` y en las ramas de experimentos, y
   atribuir los renders del Stanford Bunny. Comprobación: `git ls-files | grep -ci majadas.*png` = 0; enlaces en verde.
-- [ ] Portada en inglés (`README.md`, ~70 líneas) y estado y prioridades en `docs/estado.md`; excepción de
+- [x] Portada en inglés (`README.md`, ~70 líneas) y estado y prioridades en `docs/estado.md`; excepción de
   idioma en `AGENTS.md` y `CONTRIBUTING.md`; `SECURITY.md`. Comprobación: checks de docs en verde.
 - [ ] Demo: inicio rápido y requisitos en `examples/web-host/README.md`, sondas a `PROBES.md`, la muestra se abre
   sola, script de servidor local y publicación en GitHub Pages desde una rama construida en local (ADR 0045).
