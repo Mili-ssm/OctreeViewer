@@ -127,8 +127,24 @@ impl ConvertOptions {
         max_quantization_error: f64,
         max_memory_bytes: u64,
     ) -> Result<Self, ConvertError> {
-        if points_per_block == 0 || points_per_block > MAX_POINTS_PER_BLOCK {
-            return Err(ConvertError::InvalidBlockPointLimit(points_per_block));
+        Self::with_requested_points_per_block(
+            Some(points_per_block),
+            max_quantization_error,
+            max_memory_bytes,
+        )
+    }
+
+    /// Like [`Self::with_memory_budget`], but `None` records no points-per-block request, so the
+    /// format resolves it (64000 for global-frame formats, 262144 otherwise).
+    pub fn with_requested_points_per_block(
+        points_per_block: Option<u64>,
+        max_quantization_error: f64,
+        max_memory_bytes: u64,
+    ) -> Result<Self, ConvertError> {
+        if let Some(points) = points_per_block
+            && (points == 0 || points > MAX_POINTS_PER_BLOCK)
+        {
+            return Err(ConvertError::InvalidBlockPointLimit(points));
         }
         if !max_quantization_error.is_finite() || max_quantization_error < 0.0 {
             return Err(ConvertError::InvalidQuantizationError(
@@ -139,7 +155,7 @@ impl ConvertOptions {
             return Err(ConvertError::InvalidMemoryBudget);
         }
         Ok(Self {
-            points_per_block: Some(points_per_block),
+            points_per_block,
             max_quantization_error,
             max_memory_bytes,
             spatial_workers: default_spatial_workers(),
@@ -347,6 +363,24 @@ mod tests {
             FormatVersion::V7,
         );
         assert_eq!(new.validate().unwrap().points_per_block(), 64_000);
+    }
+
+    #[test]
+    fn unrequested_points_per_block_resolves_by_format() {
+        let unrequested = ConvertOptions::with_requested_points_per_block(
+            None,
+            0.01,
+            super::DEFAULT_MEMORY_BUDGET_BYTES,
+        )
+        .unwrap();
+        let v5 = v(unrequested, FormatVersion::V5).validate().unwrap();
+        assert_eq!(v5.points_per_block(), super::DEFAULT_POINTS_PER_BLOCK);
+        let v7 = v(unrequested, FormatVersion::V7).validate().unwrap();
+        assert_eq!(v7.points_per_block(), GLOBAL_LEAF_POINT_LIMIT);
+        assert!(matches!(
+            ConvertOptions::with_requested_points_per_block(Some(0), 0.01, 1),
+            Err(ConvertError::InvalidBlockPointLimit(0))
+        ));
     }
 
     #[test]

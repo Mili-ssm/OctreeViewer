@@ -135,14 +135,18 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
 }
 
 fn small_las(path: &std::path::Path) {
+    las_with_points(path, 500);
+}
+
+fn las_with_points(path: &std::path::Path, count: u32) {
     let mut builder = Builder::from((1, 2));
     builder.point_format = Format::new(0).unwrap();
     let mut writer = Writer::from_path(path, builder.into_header().unwrap()).unwrap();
-    for index in 0..500_u32 {
+    for index in 0..count {
         writer
             .write_point(Point {
-                x: f64::from(index % 20),
-                y: f64::from(index / 20),
+                x: f64::from(index % 200),
+                y: f64::from(index / 200),
                 z: f64::from(index % 5),
                 ..Point::default()
             })
@@ -265,6 +269,12 @@ fn default_ept_points_to_v5() {
     assert!(message.contains("--format-version v5"), "{message}");
     assert!(!output.exists());
     assert!(!tmp.path().join("e.octattrs").exists());
+    // Only the EPT directory remains next to the missing output.
+    assert_eq!(
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
+    );
 }
 
 #[test]
@@ -297,6 +307,38 @@ fn default_extra_bytes_error_names_version() {
     assert!(message.contains("v7"), "{message}");
     assert!(!message.contains("v7.5-pre"), "{message}");
     assert!(!output.exists());
+    assert_eq!(
+        fs::read_dir(tmp.path()).unwrap().count(),
+        1,
+        "partial output"
+    );
+}
+
+#[test]
+fn v5_without_points_per_block_keeps_262144() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    // More points than the 64000 a wrong default would cap blocks at.
+    las_with_points(&input, 150_000);
+    let implicit = tmp.path().join("implicit.oct");
+    let explicit = tmp.path().join("explicit.oct");
+    let run = run_cli(&[&input, &implicit], &["--format-version", "v5"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let run = run_cli(
+        &[&input, &explicit],
+        &["--format-version", "v5", "--points-per-block", "262144"],
+    );
+    assert!(run.status.success(), "{}", stderr(&run));
+    // `assert!`, not `assert_eq!`, so a failure does not dump megabytes.
+    assert!(
+        fs::read(&implicit).unwrap() == fs::read(&explicit).unwrap(),
+        ".oct differs"
+    );
+    assert!(
+        fs::read(tmp.path().join("implicit.octattrs")).unwrap()
+            == fs::read(tmp.path().join("explicit.octattrs")).unwrap(),
+        ".octattrs differs"
+    );
 }
 
 #[test]
@@ -312,8 +354,8 @@ fn resume_v5_checkpoint_without_format_is_rejected() {
     let output = tmp.path().join("r.oct");
     // Built like the CLI does, so the positive control below matches the checkpoint identity.
     let defaults = ConvertOptions::default();
-    let v5 = ConvertOptions::with_memory_budget(
-        defaults.points_per_block(),
+    let v5 = ConvertOptions::with_requested_points_per_block(
+        None,
         defaults.max_quantization_error(),
         defaults.max_memory_budget_bytes(),
     )
@@ -352,4 +394,65 @@ fn resume_v5_checkpoint_without_format_is_rejected() {
     // Positive control: the same checkpoint resumes when the format matches.
     let resumed = run_cli(&[&input, &output], &["--resume", "--format-version", "v5"]);
     assert!(resumed.status.success(), "{}", stderr(&resumed));
+}
+
+#[test]
+fn resume_v5_checkpoint_with_other_options_is_rejected_by_identity() {
+    use viewer_convert::{
+        CheckpointMode, ConversionStage, ConvertError, convert_file_with_checkpoint,
+    };
+    use viewer_convert_core::ConvertOptions;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let output = tmp.path().join("r.oct");
+    // Built like the CLI does, so the positive control below matches the checkpoint identity.
+    let defaults = ConvertOptions::default();
+    let v5 = ConvertOptions::with_requested_points_per_block(
+        None,
+        defaults.max_quantization_error(),
+        defaults.max_memory_budget_bytes(),
+    )
+    .unwrap()
+    .with_format_version("v5".parse().unwrap())
+    .unwrap();
+    // Cancel while writing blocks so the checkpoint stays on disk.
+    let cancelled =
+        convert_file_with_checkpoint(&input, &output, v5, CheckpointMode::Create, |progress| {
+            !(progress.stage == ConversionStage::ReadingAndWritingBlocks
+                && progress.points_processed > 0)
+        });
+    assert!(matches!(cancelled, Err(ConvertError::Cancelled { .. })));
+    let files = |dir: &std::path::Path| {
+        let mut names: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        names
+    };
+    let before = files(tmp.path());
+    assert!(before.len() > 1, "a checkpoint remains: {before:?}");
+
+    // Another block-checkpoint format fails the manifest version check, before the identity
+    // check; the same format with another option value reaches the identity check.
+    let resumed = run_cli(
+        &[&input, &output],
+        &[
+            "--resume",
+            "--format-version",
+            "v5",
+            "--points-per-block",
+            "4096",
+        ],
+    );
+    assert!(!resumed.status.success());
+    assert!(
+        stderr(&resumed).contains("checkpoint does not match the source or conversion options"),
+        "{}",
+        stderr(&resumed)
+    );
+    assert!(!output.exists());
+    assert_eq!(files(tmp.path()), before);
 }

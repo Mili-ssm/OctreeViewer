@@ -43,7 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get(5)
                 .map(|value| value.to_string_lossy().parse())
                 .transpose()?
-                .unwrap_or(ConvertOptions::default().points_per_block());
+                .unwrap_or(
+                    // The bench defaults to V5, which resolves the non-global value.
+                    ConvertOptions::default()
+                        .with_format_version(viewer_format::FormatVersion::V5)?
+                        .points_per_block(),
+                );
             let format_version = arguments
                 .get(6)
                 .map(|value| {

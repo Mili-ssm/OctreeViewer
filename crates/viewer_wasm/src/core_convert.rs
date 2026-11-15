@@ -61,16 +61,16 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
 fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
     let defaults = ConvertOptions::default();
     let invalid = |error: ConvertError| JsValue::from_str(&error.to_string());
-    let points =
-        number(options, "pointsPerBlock")?.map_or(defaults.points_per_block(), |v| v as u64);
+    // Absent stays unrequested: the format resolves it (64000 global-frame, else 262144).
+    let points = number(options, "pointsPerBlock")?.map(|v| v as u64);
     let max_error = number(options, "maxError")?.unwrap_or(defaults.max_quantization_error());
     let memory = number(options, "maxMemoryMiB")?
         .map(|mib| (mib as u64).checked_mul(1024 * 1024))
         .map_or(Ok(defaults.max_memory_budget_bytes()), |bytes| {
             bytes.ok_or_else(|| JsValue::from_str("option maxMemoryMiB overflows bytes"))
         })?;
-    let mut converted =
-        ConvertOptions::with_memory_budget(points, max_error, memory).map_err(invalid)?;
+    let mut converted = ConvertOptions::with_requested_points_per_block(points, max_error, memory)
+        .map_err(invalid)?;
     if let Some(workers) = number(options, "spatialWorkers")? {
         converted = converted
             .with_spatial_workers(workers as usize)
