@@ -66,12 +66,13 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-21 | Cuando reciba varias entradas, el CLI deberá, según una opción, fusionarlas en una nube o generar una nube por archivo. | Propietario |
 | RF-22 | Donde se indique un CRS de destino, el CLI nativo deberá reproyectar las entradas a ese CRS. | Propietario, ADR 0021 |
 | RF-23 | El conversor deberá cuantizar sobre una **rejilla global determinista**: dos nubes con el mismo CRS, convertidas en cualquier lugar o momento, deberán producir celdas coincidentes en todos los niveles. | Propietario, ADR 0021 |
-| RF-24 | El formato deberá conservar CRS (WKT/GeoTIFF), flags LAS (withheld, synthetic, keypoint, overlap) y Extra Bytes, y la exportación deberá devolverlos. Waveform queda fuera. | Propietario, ADR 0022 |
+| RF-24 | El formato deberá conservar CRS (WKT/GeoTIFF), flags LAS (withheld, synthetic, keypoint, overlap) y Extra Bytes, y la exportación deberá devolverlos. Waveform queda fuera. Excepción: los puntos fundidos por M toman los del primer punto ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md)). | Propietario, ADR 0022 |
 | RF-25 | Si el disco temporal estimado no cabe en el destino, entonces el CLI deberá rechazar la conversión antes de empezar. | Propietario |
 | RF-26 | El CLI deberá identificar la fuente de un checkpoint por ruta, tamaño y `mtime` y, donde se pase `--verify-source`, también por hash del contenido. | Propietario |
 | RF-27 | Si el esquema supera 256 atributos, entonces el escritor deberá rechazar la conversión con un mensaje claro. | Propietario, ADR 0007 |
 | RF-28 | La UI de conversión web deberá anunciar «validado hasta Majadas (~6 GB de LAZ)» y mostrar la estimación de RAM y OPFS antes de empezar; lo mayor se deriva al CLI. | Propietario |
 | RF-29 | Si en Firefox la conversión necesita más cuota de la concedida sin `persist()`, entonces la UI deberá pedir `persist()` y explicar el límite. | W2 |
+| RF-30 | El conversor deberá aceptar, como referencias configurables, los puntos máximos por hoja (N), el lado mínimo de hoja (S) y una distancia de fusión de puntos (M; activada por defecto y adaptativa, ~1 % de puntos fundidos), redondeando S y M a potencias de dos de la rejilla global ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md), pendiente). | Propietario |
 
 ## Requisitos de calidad
 
@@ -212,6 +213,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-27 | Técnico | Blando | Límite del formato (ADR 0007) | El formato admita más atributos |
 | RF-28 | Funcional | Blando | Refleja el alcance validado hoy (Majadas) | Se valide un tamaño mayor |
 | RF-29 | Técnico | Blando | Apaño del límite de cuota de Firefox | Firefox deje de ser mejor esfuerzo o cambie la cuota |
+| RF-30 | Funcional | Blando | Nubes densas y pequeñas, carga gradual y fusión entre nubes; los valores son referencias | El experimento #46 no mida mejora |
 | RQ-01–RQ-05 | Funcional | Duro | Fluidez, escala y memoria acotada (propósito) | Cifras: cambie el equipo o la red de referencia |
 | RQ-06 | Técnico | Blando | Objetivo sin medir (ASM-03) | El spike de temporales lo mida |
 | RQ-07 | Técnico | Blando | Protege coste de conversión; cifra revisada por el propietario (ADR 0043) | Ver «Revisar si» del ADR 0043 |

@@ -54,3 +54,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0048](0048-el-render-dibuja-el-nivel-pedido.md) | El render dibuja siempre el nivel que pide la vista y lo construye a demanda si no está guardado (sustituye la decisión de 0046) | Aceptada |
 | [0049](0049-tamano-minimo-del-voxel.md) | El tamaño mínimo del cubo se elige en px, en longitud o por el espaciado de la nube (precisa RF-05 y RQ-09) | Aceptada |
 | [0050](0050-nivel-por-celda-segun-distancia.md) | El nivel de detalle sigue la distancia de cada celda, no la de su octante, y las transiciones son graduales (sustituye la regla por octante de 0034) | Aceptada |
+| [0051](0051-granularidad-de-hojas-configurable.md) | La granularidad de las hojas es configurable: puntos máximos, lado mínimo y distancia de fusión (precisa 0044) | Aceptada (pendiente) |
