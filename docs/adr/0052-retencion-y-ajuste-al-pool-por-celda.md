@@ -39,3 +39,13 @@ Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Precisa R3-Q19, 
 ## Revisar si
 Los hijos provisionales se ven peor que mantener el vóxel padre, o subir el objetivo de toda la nube no basta para
 caber en el pool en Majadas.
+
+## Revisión 15-11-2026
+- El propietario aclara que los hijos provisionales **no son un requisito**: «es una idea intermedia; si ya tenemos
+  los datos disponibles, los usemos; si no, simplemente esperamos a que carguen».
+- La regla de R3-Q21 por celda es solo esta: la celda se sigue viendo igual hasta que cargan sus hijos.
+- Los hijos provisionales con el color del padre se usan únicamente si la población de los hijos ya está disponible
+  sin coste añadido (por ejemplo, porque el nivel de los hijos está construido pero aún no residente en GPU). No se
+  añade una máscara de 8 bits a la instancia solo para esto; la consecuencia sobre la instancia de 16 B queda sin
+  efecto salvo que el plan encuentre ese dato gratis.
+
