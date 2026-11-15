@@ -128,11 +128,11 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 - Consumes: el wasm acepta `formatVersion: "v7"` (Tareas 2 y 5).
 - Produces: `FORMAT_VERSIONS` empieza por `"v7"` e incluye `"v7.5-pre"`; `OPTION_DEFAULTS.formatVersion === "v7"`; con un formato de marco global, `pointsPerBlock` y `spatialDivisions` no se envían y sus controles quedan deshabilitados.
 
-- [ ] **Step 1: test que falla** en `converter-ui.test.mjs`: valor por defecto `v7`; `v5` y `v7.5-pre` aceptados; con `v7` no se envían hoja ni divisiones (Review Focus 5).
-- [ ] **Step 2:** `node --test examples/web-host/tests/converter-ui.test.mjs` falla.
-- [ ] **Step 3:** cambiar la lista, el valor preseleccionado, los controles y el README.
-- [ ] **Step 4:** `node --test examples/web-host/tests/*.test.mjs` verde. Medir la conversión web de Belvedere en V7 frente a V5 (tiempo y memoria pico de la pestaña) con el arnés del conversor web; criterio de parada. Verificación en navegador (`agent-skills:ui-verifier`): convertir un LAS pequeño con la opción por defecto, abrir el par, consola sin errores, escritorio y móvil, teclado.
-- [ ] **Step 5:** commit `feat(web-host): default the converter to the final V7`.
+- [x] **Step 1: test que falla** en `converter-ui.test.mjs`: valor por defecto `v7`; `v5` y `v7.5-pre` aceptados; con `v7` no se envían hoja ni divisiones (Review Focus 5).
+- [x] **Step 2:** `node --test examples/web-host/tests/converter-ui.test.mjs` falla.
+- [x] **Step 3:** cambiar la lista, el valor preseleccionado, los controles y el README.
+- [x] **Step 4:** `node --test examples/web-host/tests/*.test.mjs` verde. Medir la conversión web de Belvedere en V7 frente a V5 (tiempo y memoria pico de la pestaña) con el arnés del conversor web; criterio de parada. Verificación en navegador (`agent-skills:ui-verifier`): convertir un LAS pequeño con la opción por defecto, abrir el par, consola sin errores, escritorio y móvil, teclado.
+- [x] **Step 5:** commit `feat(web-host): default the converter to the final V7`.
 
 ### Task 7: Datasets, referencias y semillas
 
