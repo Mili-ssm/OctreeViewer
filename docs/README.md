@@ -33,6 +33,7 @@ trabajo nuevo va en un plan nuevo.
 | [D3c: congelado de V7 final](plans/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | completado |
 | [Publicación del repositorio](plans/publicacion-del-repositorio.md) | Repositorio público: portada, documentación, demo experimental en GitHub Pages y ajustes de GitHub (ADR 0045). | completado |
 | [Muestra de la demo en V7](plans/muestra-de-la-demo-en-v7.md) | La muestra integrada pasa a V7 y a 589.824 puntos; V5 queda como heredado hasta V8 (ADR 0047). | completado |
+| [Nivel pedido y LOD por celda](plans/nivel-pedido-y-lod-por-celda.md) | Niveles a demanda (#35), LOD por celda según distancia (#44) y selector de tamaño mínimo (ADR 0048–0050); fase 0a de medida antes de la GPU. | propuesto |
 | [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | completado |
 | [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
 | [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
