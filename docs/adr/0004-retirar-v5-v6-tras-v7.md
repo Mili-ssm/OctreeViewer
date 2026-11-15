@@ -1,6 +1,6 @@
 # 0004 Retirar V5/V6 al completar V7
 
-Estado: Aceptada (promoción de V7 ejecutada por el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md); la retirada de V5/V6 sigue pendiente) · Fecha: 24-10-2026
+Estado: Aceptada (promoción de V7 ejecutada por el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md); la retirada de V5/V6 sigue pendiente; V5 se retira al empezar V8, [ADR 0047](0047-v5-heredado-hasta-v8.md)) · Fecha: 24-10-2026
 
 ## Contexto
 Mantener tres familias de formato multiplica backends, opciones y suites. V7 es la única línea de evolución.

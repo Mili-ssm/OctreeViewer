@@ -435,7 +435,7 @@ settings. Names/sizes describe inputs, not cryptographic content identity.
 The legacy 4,096-point fixture (`sample-v5.*`) includes typed intensity (`u16`, 0–65,016) and
 classification (`u8`, 0–3). Regenerate it with
 `cargo run --offline -p viewer_format --example create_legacy_sample`. The default `sample.*` carries
-the same columns (intensity 0–64,386).
+the same columns (intensity 0–64,428).
 
 Majadas RGB pairing completed three Firefox runs with the same final geometry counters and a
 visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed legacy sample by default;
@@ -448,7 +448,7 @@ are integration diagnostics, not host load/FPS benchmarks. Repeated host column-
 other browsers remain pending. See the
 [measured matrix](../../docs/records/benchmarks/WEB_PERFORMANCE_BENCH.md).
 
-Firefox 157.0.1 headless also passed opening the regenerated local package directly through
+With the legacy 4,096-point sample, Firefox 157.0.1 headless also passed opening the local package directly through
 `file://` with the HTTP server stopped and a fresh WebGPU-enabled profile. The embedded sample
 and sidecar loaded; keyboard type-ahead selected Classification, complete 4,096-voxel refinement
 and a 10,000 ms benchmark export succeeded. This validates the standalone load path and that
