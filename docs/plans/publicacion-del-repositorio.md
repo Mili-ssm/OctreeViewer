@@ -1,6 +1,6 @@
 # Publicación del repositorio en GitHub
 
-Estado: activo · 15-11-2026
+Estado: completado · 15-11-2026
 
 **Objetivo:** hacer público `Mili-ssm/OctreeViewer` como escaparate experimental (pre-1.0) con la
 documentación, la portada y la demo en orden, y un flujo de desarrollo sin fricción para un solo
@@ -22,12 +22,13 @@ es un registro interno; demo: abre la muestra, pero una conversión V7 pequeña 
   atribuir los renders del Stanford Bunny. Comprobación: `git ls-files | grep -ci majadas.*png` = 0; enlaces en verde.
 - [x] Portada en inglés (`README.md`, ~70 líneas) y estado y prioridades en `docs/estado.md`; excepción de
   idioma en `AGENTS.md` y `CONTRIBUTING.md`; `SECURITY.md`. Comprobación: checks de docs en verde.
-- [ ] Demo: inicio rápido y requisitos en `examples/web-host/README.md`, sondas a `PROBES.md`, la muestra se abre
+- [x] Demo: inicio rápido y requisitos en `examples/web-host/README.md`, sondas a `PROBES.md`, la muestra se abre
   sola, script de servidor local y publicación en GitHub Pages desde una rama construida en local (ADR 0045).
   Comprobación: Playwright sobre la URL pública, escritorio y móvil.
 - [x] Ajustes de GitHub: descripción, temas, web; solo merge commit; borrar ramas al fusionar; wiki y proyectos
   desactivados; regla ligera en `main`; avisos de seguridad y de secretos; borrar las ejecuciones de Actions
   antiguas y las ramas ya fusionadas. Comprobación: `gh api repos/Mili-ssm/OctreeViewer`.
 - [x] Hacer público el repositorio y comprobarlo sin sesión. Comprobación: la portada y la demo cargan sin login.
-- [ ] Arreglar #35 (una conversión cuya z cruza 0 se ve como un punto) y volver a publicar la demo con
-  `scripts/publish-demo.sh --push`. Comprobación: Playwright sobre la URL pública con la conversión de la muestra.
+- [x] #35 (una nube con puntos muy juntos se ve como un punto): causa raíz establecida; el propietario decidió que el
+  render derive el nivel pedido ([ADR 0046](../adr/0046-la-poda-de-niveles-no-limita-el-render.md)). Su implementación
+  pasa al desarrollo, en la issue.
