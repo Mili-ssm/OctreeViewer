@@ -1,8 +1,8 @@
 # Fase 1: niveles a demanda (#35) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 Estado: propuesto · 16-11-2026
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** the cell cut may want any depth of a node's buildable range; a depth the pruned chain does not hold is
 requested from the build worker, built from the node's points and added to the stored node, so a cloud whose leaves
