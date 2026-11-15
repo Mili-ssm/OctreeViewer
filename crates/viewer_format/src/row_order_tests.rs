@@ -282,3 +282,39 @@ fn morton_permutation_equals_sorting_by_key_then_row() {
         );
     }
 }
+
+#[test]
+fn v7_writes_hybrid_by_default() {
+    let unset = FormatWriterOptions::new(0.001, 16 << 20).unwrap();
+    assert_eq!(
+        unset.resolved_row_order(FormatVersion::V7).unwrap(),
+        RowOrder::Hybrid
+    );
+    assert_eq!(
+        unset.resolved_row_order(FormatVersion::V7_PRE5).unwrap(),
+        RowOrder::Source
+    );
+    assert_eq!(FormatVersion::V7.fixed_row_order(), Some(RowOrder::Hybrid));
+    assert_eq!(FormatVersion::V7_PRE5.fixed_row_order(), None);
+}
+
+#[test]
+fn v7_rejects_explicit_source_order() {
+    let (block, _) = dense_block();
+    let result = prepare_point_block_for_version(
+        FormatVersion::V7,
+        block,
+        &metadata(5000),
+        options(RowOrder::Source),
+    );
+    assert!(matches!(
+        result,
+        Err(crate::FormatError::RowOrderFixedByFormat(FormatVersion::V7))
+    ));
+    // Explicit hybrid is what the format fixes anyway.
+    assert!(
+        options(RowOrder::Hybrid)
+            .resolved_row_order(FormatVersion::V7)
+            .is_ok()
+    );
+}

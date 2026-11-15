@@ -132,3 +132,69 @@ fn verify_subcommand_accepts_a_paged_file_and_rejects_a_corrupt_page() {
     assert_eq!(mismatched.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&mismatched.stderr).contains("companion"));
 }
+
+fn small_las(path: &std::path::Path) {
+    let mut builder = Builder::from((1, 2));
+    builder.point_format = Format::new(0).unwrap();
+    let mut writer = Writer::from_path(path, builder.into_header().unwrap()).unwrap();
+    for index in 0..500_u32 {
+        writer
+            .write_point(Point {
+                x: f64::from(index % 20),
+                y: f64::from(index / 20),
+                z: f64::from(index % 5),
+                ..Point::default()
+            })
+            .unwrap();
+    }
+    writer.close().unwrap();
+}
+
+#[test]
+fn format_fixed_options_are_checked_independently_of_flag_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("in.las");
+    small_las(&input);
+    let run = |name: &str, args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_viewer_convert"))
+            .arg(&input)
+            .arg(tmp.path().join(name))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let rejected = run(
+        "v7.oct",
+        &["--format-version", "v7", "--row-order", "source"],
+    );
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("row order is fixed by the output format"),
+        "{}",
+        String::from_utf8_lossy(&rejected.stderr)
+    );
+    assert!(!tmp.path().join("v7.oct").exists());
+
+    for (name, args) in [
+        (
+            "a.oct",
+            ["--spatial-divisions", "4", "--format-version", "v5"],
+        ),
+        (
+            "b.oct",
+            ["--format-version", "v5", "--spatial-divisions", "4"],
+        ),
+    ] {
+        let ok = run(name, &args);
+        assert!(
+            ok.status.success(),
+            "{}",
+            String::from_utf8_lossy(&ok.stderr)
+        );
+    }
+    assert_eq!(
+        fs::read(tmp.path().join("a.oct")).unwrap(),
+        fs::read(tmp.path().join("b.oct")).unwrap()
+    );
+}

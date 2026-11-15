@@ -44,6 +44,7 @@ pub fn estimate_spools(
     options: ConvertOptions,
     config: HybridConfig,
 ) -> Result<SpoolEstimate, ConvertError> {
+    let options = options.validate()?;
     let points = u128::from(source.point_count);
     let record = SpoolLayout::source(source).record_bytes() as u128;
     let divisions = u128::from(options.spatial_divisions()).max(1);

@@ -19,6 +19,8 @@ pub enum FormatError {
     UnsupportedVersion(u16),
     #[error("format version {0} is recognized but has no supported decoder")]
     UnsupportedFormatVersion(crate::FormatVersion),
+    #[error("format version {0} fixes its row order; another order cannot be requested")]
+    RowOrderFixedByFormat(crate::FormatVersion),
     #[error("prepared block version {block} does not match writer version {writer}")]
     PreparedVersionMismatch {
         writer: crate::FormatVersion,

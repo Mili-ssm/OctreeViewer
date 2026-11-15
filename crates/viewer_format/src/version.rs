@@ -75,6 +75,15 @@ impl FormatVersion {
             .is_ok_and(crate::layout::StorageLayout::uses_pages)
     }
 
+    /// Row order the format fixes: `v7` always writes hybrid (ADR 0044); every other revision
+    /// leaves the choice to the caller (`Source` by default).
+    pub const fn fixed_row_order(self) -> Option<crate::RowOrder> {
+        match self {
+            Self::V7 => Some(crate::RowOrder::Hybrid),
+            _ => None,
+        }
+    }
+
     /// Reject unimplemented output formats before touching any output stream.
     pub fn ensure_writable(self) -> Result<(), FormatError> {
         crate::layout::StorageLayout::from_version(self).map(|_| ())

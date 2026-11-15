@@ -138,6 +138,7 @@ impl SourceInfo {
     /// Adapts the source to the output format: for `v7.4-pre` the frame origin becomes the
     /// minimum quantized corner and the root the smallest global node containing the header box.
     pub fn for_options(mut self, options: ConvertOptions) -> Result<Self, ConvertError> {
+        let options = options.validate()?;
         if options.format_version().uses_pages() {
             let extras = parse_extra_byte_descriptors(&self.extra_byte_vlrs)?;
             // Without any descriptor the bytes cannot be typed: they are dropped (and reported

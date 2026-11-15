@@ -44,19 +44,24 @@ fn run(
     divisions: u8,
     workers: usize,
     format: Option<viewer_format::FormatVersion>,
-    row_order: viewer_format::RowOrder,
+    row_order: Option<viewer_format::RowOrder>,
 ) -> Result<Outcome, String> {
-    let mut options = ConvertOptions::new(points_per_block, 0.01)
-        .and_then(|options| options.with_spatial_divisions(divisions))
-        .map_err(|error| error.to_string())?;
+    let mut options =
+        ConvertOptions::new(points_per_block, 0.01).map_err(|error| error.to_string())?;
     if let Some(version) = format {
         options = options
             .with_format_version(version)
             .map_err(|error| error.to_string())?;
     }
     options = options
-        .with_row_order(row_order)
+        .with_spatial_divisions(divisions)
         .map_err(|error| error.to_string())?;
+    if let Some(order) = row_order {
+        options = options
+            .with_row_order(order)
+            .map_err(|error| error.to_string())?;
+    }
+    options = options.validate().map_err(|error| error.to_string())?;
     if workers != 0 {
         options = options
             .with_spatial_workers(workers)
@@ -92,7 +97,7 @@ fn run(
 }
 
 /// Converts and validates the buffer from `convert_parity_alloc`; `workers == 0` keeps the core
-/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre`; `row_order` is 0 for source and 1 for hybrid. Returns 1
+/// default. `format` is 0 for the default revision, 1 for `v7.4-pre` and 2 for `v7.5-pre`; `row_order` is 0 for the format default, 1 for hybrid and 2 for source. Returns 1
 /// on success; on failure returns 0 and the message is at `error_ptr`.
 ///
 /// # Safety
@@ -120,10 +125,11 @@ pub unsafe extern "C" fn convert_parity_run(
             1 => Some(viewer_format::FormatVersion::V7_PRE4),
             _ => Some(viewer_format::FormatVersion::V7_PRE5),
         },
-        if row_order == 0 {
-            viewer_format::RowOrder::Source
-        } else {
-            viewer_format::RowOrder::Hybrid
+        // 0 leaves the order to the format; 1 requests hybrid, 2 requests source explicitly.
+        match row_order {
+            0 => None,
+            1 => Some(viewer_format::RowOrder::Hybrid),
+            _ => Some(viewer_format::RowOrder::Source),
         },
     );
     let succeeded = result.is_ok();

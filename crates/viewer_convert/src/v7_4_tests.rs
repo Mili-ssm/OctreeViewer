@@ -325,17 +325,21 @@ fn fixed_parameters_cannot_be_overridden_and_ept_is_refused() {
     assert!(matches!(
         base.with_spatial_divisions(4)
             .unwrap()
-            .with_format_version(FormatVersion::V7_PRE4),
+            .with_format_version(FormatVersion::V7_PRE4)
+            .unwrap()
+            .validate(),
         Err(ConvertError::FixedByFormat(_))
     ));
     assert!(matches!(
         ConvertOptions::new(1000, 0.01)
             .unwrap()
-            .with_format_version(FormatVersion::V7_PRE4),
+            .with_format_version(FormatVersion::V7_PRE4)
+            .unwrap()
+            .validate(),
         Err(ConvertError::FixedByFormat(_))
     ));
     assert!(matches!(
-        options().with_sample_grid(8),
+        options().with_sample_grid(8).unwrap().validate(),
         Err(ConvertError::FixedByFormat(_))
     ));
     assert_eq!(options().points_per_block(), 64_000);

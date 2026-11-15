@@ -55,8 +55,9 @@ fn number(options: &JsValue, key: &str) -> Result<Option<f64>, JsValue> {
 }
 
 /// Builds the options from a JS object; absent keys keep the CLI defaults (R2). Keys:
-/// `formatVersion`, `rowOrder` (`source`|`hybrid`, after the version), `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and
-/// `spatialWorkers`.
+/// `formatVersion`, `rowOrder` (`source`|`hybrid`; only for `v7.N-pre`, `v7` fixes hybrid),
+/// `pointsPerBlock`, `maxError`, `spatialDivisions`, `maxMemoryMiB` and `spatialWorkers`. The
+/// format resolves and checks the values it fixes, whatever the key order.
 fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
     let defaults = ConvertOptions::default();
     let invalid = |error: ConvertError| JsValue::from_str(&error.to_string());
@@ -70,12 +71,6 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
         })?;
     let mut converted =
         ConvertOptions::with_memory_budget(points, max_error, memory).map_err(invalid)?;
-    if let Some(divisions) = number(options, "spatialDivisions")? {
-        let divisions = u8::try_from(divisions as u64).unwrap_or(u8::MAX);
-        converted = converted
-            .with_spatial_divisions(divisions)
-            .map_err(invalid)?;
-    }
     if let Some(workers) = number(options, "spatialWorkers")? {
         converted = converted
             .with_spatial_workers(workers as usize)
@@ -87,6 +82,12 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
             let version: FormatVersion = version.parse().map_err(JsValue::from_str)?;
             converted = converted.with_format_version(version).map_err(invalid)?;
         }
+        if let Some(divisions) = number(options, "spatialDivisions")? {
+            let divisions = u8::try_from(divisions as u64).unwrap_or(u8::MAX);
+            converted = converted
+                .with_spatial_divisions(divisions)
+                .map_err(invalid)?;
+        }
         let order = js_sys::Reflect::get(options, &"rowOrder".into())?;
         if !order.is_undefined() && !order.is_null() {
             let order: RowOrder = order
@@ -97,7 +98,7 @@ fn parse_options(options: &JsValue) -> Result<ConvertOptions, JsValue> {
             converted = converted.with_row_order(order).map_err(invalid)?;
         }
     }
-    Ok(converted)
+    converted.validate().map_err(invalid)
 }
 
 /// Converts a LAS/LAZ Blob into the `.oct` / `.octattrs` pair behind two OPFS sync access handles.

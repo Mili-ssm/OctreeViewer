@@ -55,6 +55,7 @@ where
     C: Clock,
     W: Write + Seek,
 {
+    let options = options.validate()?;
     emit_progress(
         on_progress,
         progress(ConversionStage::InspectingInput, 0, 0),

@@ -184,7 +184,9 @@ fn paged_format_refuses_ept_checkpoints_and_keeps_fixed_parameters() {
     assert!(matches!(
         ConvertOptions::new(1000, 0.01)
             .unwrap()
-            .with_format_version(FormatVersion::V7_PRE5),
+            .with_format_version(FormatVersion::V7_PRE5)
+            .unwrap()
+            .validate(),
         Err(ConvertError::FixedByFormat(_))
     ));
     assert_eq!(options(FormatVersion::V7_PRE5).points_per_block(), 64_000);

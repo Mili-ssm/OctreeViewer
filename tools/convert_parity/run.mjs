@@ -128,7 +128,7 @@ function wasmConvert(name, bytes, ppb, divisions, format, rowOrder) {
   const ptr = x.convert_parity_alloc(bytes.length);
   // Viewed after the allocation: growing memory detaches earlier buffers.
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : 0);
+  const ok = x.convert_parity_run(ptr, bytes.length, BigInt(ppb), divisions, 0, FORMAT_CODES[format ?? ""], rowOrder === "hybrid" ? 1 : rowOrder === "source" ? 2 : 0);
   const view = (p, l) => new Uint8Array(x.memory.buffer, p, l);
   if (!ok) {
     const message = new TextDecoder().decode(

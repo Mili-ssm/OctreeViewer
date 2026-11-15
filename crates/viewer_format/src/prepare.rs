@@ -50,6 +50,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     collect_codec_diagnostics: bool,
 ) -> Result<(PreparedPointBlock, Option<crate::GeometryCodecDiagnostics>), FormatError> {
     let layout = StorageLayout::from_version(version)?;
+    let row_order = options.resolved_row_order(version)?;
     let point_count = block.positions_local().len();
     if block.colors().len() != point_count {
         return Err(FormatError::ColorCountMismatch {
@@ -332,7 +333,7 @@ pub(crate) fn prepare_point_block_for_version_impl(
     // Hybrid writer (ADR 0041/0042): a block whose source-order winner is CompactOccupied is
     // retried with its rows sorted by Morton key and DeltaVarint; ties keep source order.
     let mut row_permutation: Option<Vec<u32>> = None;
-    if options.row_order == RowOrder::Hybrid
+    if row_order == RowOrder::Hybrid
         && layout.is_v7()
         && geometry_encoding == GeometryEncoding::CompactOccupied
         && u32::try_from(point_count).is_ok()
@@ -862,7 +863,8 @@ pub struct FormatWriterOptions {
     max_quantization_error: f64,
     max_uncompressed_block_bytes: u64,
     page_target_bytes: usize,
-    row_order: RowOrder,
+    /// `None` takes the format's fixed order or `Source`.
+    row_order: Option<RowOrder>,
 }
 
 impl FormatWriterOptions {
@@ -882,7 +884,7 @@ impl FormatWriterOptions {
             max_quantization_error,
             max_uncompressed_block_bytes,
             page_target_bytes: crate::TARGET_PAGE_BYTES,
-            row_order: RowOrder::Source,
+            row_order: None,
         })
     }
 
@@ -893,10 +895,23 @@ impl FormatWriterOptions {
         self
     }
 
-    /// Row order of each block (default [`RowOrder::Source`]).
+    /// Requests a row order of each block. Unset, the format's fixed order applies (`v7` is
+    /// always hybrid) or else [`RowOrder::Source`]; a different explicit order for a format
+    /// that fixes one fails when blocks are prepared.
     pub fn with_row_order(mut self, row_order: RowOrder) -> Self {
-        self.row_order = row_order;
+        self.row_order = Some(row_order);
         self
+    }
+
+    /// Row order that blocks of `version` are written with.
+    pub fn resolved_row_order(&self, version: FormatVersion) -> Result<RowOrder, FormatError> {
+        match (version.fixed_row_order(), self.row_order) {
+            (Some(fixed), Some(requested)) if fixed != requested => {
+                Err(FormatError::RowOrderFixedByFormat(version))
+            }
+            (Some(fixed), _) => Ok(fixed),
+            (None, requested) => Ok(requested.unwrap_or(RowOrder::Source)),
+        }
     }
 
     pub(crate) fn page_target_bytes(&self) -> usize {
