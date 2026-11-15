@@ -100,9 +100,9 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 **Files:**
 - Modify: `crates/viewer_convert/src/lib_tests.rs` (caracterizaciones con SHA, `1710-1811`), `crates/viewer_convert/src/ept_tests.rs`, los tests de checkpoint, `crates/viewer_format/tests/v7_5.rs:385`, `tests/v7_4.rs:756`, `tests/index_amplification.rs:112` (dejan de depender de `DEFAULT_OUTPUT`), `fuzz/src/bin/gen_seeds.rs:131` (`uses_pages()` en lugar de `== V7_PRE5`), `tools/convert_parity/src/lib.rs`, `tools/convert_parity/run.mjs:91-125`, `tools/convert_parity/run-bindings.mjs:180-204`, `tools/convert_parity/src/bin/native_convert.rs` (códigos `v5`, `v7.4-pre`, `v7.5-pre`, `v7` explícitos; los casos `*-d8`, COPC y EPT en `v5`)
 
-- [ ] **Step 1:** fijar `v5` explícito en cada test que prueba V5, EPT o checkpoints; añadir a `gen_seeds` y a la paridad el código de V7.
-- [ ] **Step 2:** `scripts/check.sh --offline` verde con `DEFAULT_OUTPUT` todavía en V5 y **sin ningún SHA cambiado**.
-- [ ] **Step 3:** commit `test: pin V5 where tests exercise V5, EPT or checkpoints`.
+- [x] **Step 1:** fijar `v5` explícito en cada test que prueba V5, EPT o checkpoints; añadir a `gen_seeds` y a la paridad el código de V7.
+- [x] **Step 2:** `scripts/check.sh --offline` verde con `DEFAULT_OUTPUT` todavía en V5 y **sin ningún SHA cambiado**.
+- [x] **Step 3:** commit `test: pin V5 where tests exercise V5, EPT or checkpoints`.
 
 ### Task 5: V7 como salida predeterminada
 
