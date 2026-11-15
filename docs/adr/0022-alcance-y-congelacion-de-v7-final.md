@@ -29,3 +29,6 @@ RQ-07 no se cumple con la pirámide densa, o R5 exige un cambio incompatible tra
 
 ## Evidencia
 [Plan V7](../plans/format-v7-plan.md) · [Requisitos RQ-07, RF-24](../requirements.md)
+
+## Revisión 15-11-2026
+El congelado se ejecuta con el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md). Por decisión del propietario, el codificador LZ4 propio queda fuera y va después ([ADR 0025](0025-codificador-lz4-propio.md#revisión-15-11-2026)); RQ-07 se mide con V7 antes de cambiar el valor por defecto.

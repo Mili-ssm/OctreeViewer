@@ -21,3 +21,6 @@ V7.2/V7.3 solo cambian heurísticas del writer y el coste de identidades supera 
 
 ## Evidencia
 [V7.1](../reference/format/FORMAT_V7_PRE1.md), [V7.2](../reference/format/FORMAT_V7_PRE2.md), [V7.3](../reference/format/FORMAT_V7_PRE3.md); [evidencia](../records/benchmarks/format-v7-evidence.md)
+
+## Revisión 15-11-2026
+Al congelar V7 final ([ADR 0044](0044-v7-final-congelada-y-predeterminada.md)) las identidades `-pre` no se colapsan todavía: se siguen leyendo y escribiendo hasta la retirada ([ADR 0004](0004-retirar-v5-v6-tras-v7.md)).

@@ -5,7 +5,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | Nº | Decisión | Estado |
 | --- | --- | --- |
 | [0001](0001-pareja-separada-oct-octattrs.md) | La salida es una pareja separada `.oct` / `.octattrs` | Aceptada |
-| [0002](0002-v5-predeterminado-en-transicion.md) | V5 sigue siendo la salida predeterminada durante la transición a V7 | Aceptada |
+| [0002](0002-v5-predeterminado-en-transicion.md) | V5 sigue siendo la salida predeterminada durante la transición a V7 | Sustituida por 0044 |
 | [0003](0003-v6-final-y-pre5-rechazados.md) | V6 final y pre5 permanecen rechazados | Aceptada |
 | [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Aceptada |
 | [0005](0005-identidades-exactas-v7n-pre-por-candidato.md) | Cada candidato de writer V7 tiene identidad exacta `v7.N-pre` | Aceptada (revisar) |
@@ -47,3 +47,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0041](0041-orden-de-filas-libre-por-bloque.md) | Orden de filas libre por bloque en V7 y escritor híbrido (precisa 0022) | Aceptada |
 | [0042](0042-escritor-hibrido-en-la-identidad-final-de-v7.md) | El escritor híbrido entra en la identidad final de V7, sin revisión `-pre` propia (enmienda a 0005) | Aceptada |
 | [0043](0043-coste-de-conversion-de-v7-frente-a-v5.md) | El coste de conversión de V7 final se acota a ≤ 2,1× el tiempo y ≤ +40 % el RSS de V5 (revisa RQ-07) | Aceptada |
+| [0044](0044-v7-final-congelada-y-predeterminada.md) | V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada (sustituye a 0002) | Aceptada |

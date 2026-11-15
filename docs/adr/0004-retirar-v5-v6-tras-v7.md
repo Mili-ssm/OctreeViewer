@@ -25,3 +25,6 @@ V7 no alcanza criterios de cierre o aparece un consumidor externo de V5/V6.
 
 ## Revisión 30-10-2026
 El alcance y el congelado de V7 final se definen en la [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md). V5 sigue siendo el valor por defecto hasta ese congelado.
+
+## Revisión 15-11-2026
+V7 final es la salida predeterminada desde el [ADR 0044](0044-v7-final-congelada-y-predeterminada.md). La retirada exige antes checkpoints en el formato paginado o una decisión sobre RF-26, porque V7 no los admite.

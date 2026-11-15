@@ -37,9 +37,10 @@ que no es de esta línea de trabajo.
 
 **Siguiente trabajo, en orden:**
 
-- [ ] Publicar en el remoto: `master` → `main` (forzado, con la copia anterior guardada) y `feat/r3-v75`, tras
-  revisar el paso. Comprobación: `git ls-remote origin` muestra los dos SHA locales.
-- [ ] D3c (ver la fase D), con plan propio y pre-mortem. Comprobación: la de D3c.
+- [x] Publicar en el remoto (15-11-2026): `master` (`ded7ee8`) → `main` con `--force-with-lease` y `feat/r3-v75`
+  con seguimiento; `git ls-remote origin` muestra los dos SHA locales.
+- [ ] D3c (ver la fase D): [plan propio](d3c-congelado-v7-final.md), con pre-mortem y decisiones del propietario en el
+  [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Comprobación: la de D3c.
 - [ ] PR de `feat/r3-v75` a `main`, con descripción redactada a partir de los registros; después, D4.
 
 **Ramas conservadas como evidencia** (sin integrar): `explore/convert-speed`, `explore/convert-batch` (fase
@@ -133,7 +134,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     identidad propia ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md),
     [registro](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md)): Belvedere 815 → 531 MB con un +1,3 %
     de tiempo total; Majadas sin cambio apreciable (+0,26 % sobre su óptimo).
-  - [ ] D3c. Congelar (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
+  - [ ] D3c ([plan](d3c-congelado-v7-final.md), [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)). Congelar (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
