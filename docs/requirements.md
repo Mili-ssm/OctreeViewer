@@ -66,7 +66,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-21 | Cuando reciba varias entradas, el CLI deberá, según una opción, fusionarlas en una nube o generar una nube por archivo. | Propietario |
 | RF-22 | Donde se indique un CRS de destino, el CLI nativo deberá reproyectar las entradas a ese CRS. | Propietario, ADR 0021 |
 | RF-23 | El conversor deberá cuantizar sobre una **rejilla global determinista**: dos nubes con el mismo CRS, convertidas en cualquier lugar o momento, deberán producir celdas coincidentes en todos los niveles. | Propietario, ADR 0021 |
-| RF-24 | El formato deberá conservar CRS (WKT/GeoTIFF), flags LAS (withheld, synthetic, keypoint, overlap) y Extra Bytes, y la exportación deberá devolverlos. Waveform queda fuera. | Propietario, ADR 0022 |
+| RF-24 | El formato deberá conservar CRS (WKT/GeoTIFF), flags LAS (withheld, synthetic, keypoint, overlap) y Extra Bytes, y la exportación deberá devolverlos. Waveform queda fuera. Excepción: los puntos fundidos por M toman los del primer punto ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md)). | Propietario, ADR 0022 |
 | RF-25 | Si el disco temporal estimado no cabe en el destino, entonces el CLI deberá rechazar la conversión antes de empezar. | Propietario |
 | RF-26 | El CLI deberá identificar la fuente de un checkpoint por ruta, tamaño y `mtime` y, donde se pase `--verify-source`, también por hash del contenido. | Propietario |
 | RF-27 | Si el esquema supera 256 atributos, entonces el escritor deberá rechazar la conversión con un mensaje claro. | Propietario, ADR 0007 |
