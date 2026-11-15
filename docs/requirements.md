@@ -72,6 +72,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RF-27 | Si el esquema supera 256 atributos, entonces el escritor deberá rechazar la conversión con un mensaje claro. | Propietario, ADR 0007 |
 | RF-28 | La UI de conversión web deberá anunciar «validado hasta Majadas (~6 GB de LAZ)» y mostrar la estimación de RAM y OPFS antes de empezar; lo mayor se deriva al CLI. | Propietario |
 | RF-29 | Si en Firefox la conversión necesita más cuota de la concedida sin `persist()`, entonces la UI deberá pedir `persist()` y explicar el límite. | W2 |
+| RF-30 | El conversor deberá aceptar, como referencias configurables, los puntos máximos por hoja (N), el lado mínimo de hoja (S) y una distancia de fusión de puntos opcional (M), redondeando S y M a potencias de dos de la rejilla global ([ADR 0051](adr/0051-granularidad-de-hojas-configurable.md), pendiente). | Propietario |
 
 ## Requisitos de calidad
 
@@ -212,6 +213,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-27 | Técnico | Blando | Límite del formato (ADR 0007) | El formato admita más atributos |
 | RF-28 | Funcional | Blando | Refleja el alcance validado hoy (Majadas) | Se valide un tamaño mayor |
 | RF-29 | Técnico | Blando | Apaño del límite de cuota de Firefox | Firefox deje de ser mejor esfuerzo o cambie la cuota |
+| RF-30 | Funcional | Blando | Nubes densas y pequeñas, carga gradual y fusión entre nubes; los valores son referencias | El experimento #46 no mida mejora |
 | RQ-01–RQ-05 | Funcional | Duro | Fluidez, escala y memoria acotada (propósito) | Cifras: cambie el equipo o la red de referencia |
 | RQ-06 | Técnico | Blando | Objetivo sin medir (ASM-03) | El spike de temporales lo mida |
 | RQ-07 | Técnico | Blando | Protege coste de conversión; cifra revisada por el propietario (ADR 0043) | Ver «Revisar si» del ADR 0043 |

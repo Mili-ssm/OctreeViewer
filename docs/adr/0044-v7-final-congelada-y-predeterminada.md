@@ -1,6 +1,6 @@
 # 0044 V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada
 
-Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Sustituye al [ADR 0002](0002-v5-predeterminado-en-transicion.md); ejecuta el congelado del [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md)
+Estado: Aceptada · Fecha: 15-11-2026 · Decide: propietario · Sustituye al [ADR 0002](0002-v5-predeterminado-en-transicion.md); ejecuta el congelado del [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md) · Regla de hoja fija precisada por el [ADR 0051](0051-granularidad-de-hojas-configurable.md)
 
 ## Contexto
 - R3, R4, R5 y la rejilla global están dentro de `v7.5-pre`. RQ-07 queda revisado por el
