@@ -828,9 +828,12 @@ function syncFixedFrameControls() {
     const fixed = isGlobalFrameFormat(optionFields.formatVersion.value);
     for (const name of ["pointsPerBlock", "spatialDivisions"]) {
         const field = optionFields[name];
-        if (fixed && !field.disabled) savedFixedFrameValues[name] = field.value;
-        field.value = fixedFrameDisplayValue(name, optionFields.formatVersion.value, savedFixedFrameValues[name]);
-        if (!fixed) delete savedFixedFrameValues[name];
+        // Rewrite the value only when the fixed state flips, so typing in an enabled field sticks.
+        if (fixed !== field.disabled) {
+            if (fixed) savedFixedFrameValues[name] = field.value;
+            field.value = fixedFrameDisplayValue(name, optionFields.formatVersion.value, savedFixedFrameValues[name]);
+            if (!fixed) delete savedFixedFrameValues[name];
+        }
         field.disabled = fixed;
         const hint = document.getElementById(`${field.id}-fixed`);
         hint.textContent = fixedFrameHint(name);
