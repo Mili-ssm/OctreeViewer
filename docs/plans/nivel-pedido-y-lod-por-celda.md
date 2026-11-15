@@ -38,7 +38,7 @@ RQ de tiempo de GPU. Nadie lee la unidad del CRS.
   profundidad máxima pedida y peticiones por segundo de zoom. Comprobación: registro en `docs/records/benchmarks/`.
 - [x] **0b. Pregunta al propietario:** R3-Q19, R3-Q21 y R3-Q11 por celda. Resuelta en el
   [ADR 0052](../adr/0052-retencion-y-ajuste-al-pool-por-celda.md) (15-11-2026).
-- [ ] **1. Niveles a demanda (ADR 0048, #35).** D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
+- [ ] **1. Niveles a demanda (ADR 0048, #35)** ([plan detallado](fase-1-niveles-a-demanda.md)). D1. El corte y el pool dejan de suponer «deseado ∈ guardados» y ya
   envían un rango de profundidades y una prioridad. Comprobación: `fs_e430` (#35) se dibuja como superficie en la
   demo; tests del protocolo y del corte; p95 de petición a residente medido; dorados regenerados con su motivo;
   `scripts/check.sh` completo.
