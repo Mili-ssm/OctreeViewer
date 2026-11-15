@@ -224,7 +224,7 @@ fn print_help() {
          Defaults: format {default_version}, 262144 points per block, maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
          --spatial-workers uses 1 to 8 bounded workers for root subtrees; the default is min(4, available parallelism).\n\
-         v7 fixes hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key) and rejects any other --row-order. --row-order source|hybrid only applies to v7.N-pre (default source; hybrid is for measurement).\n\
+         v7 fixes hybrid row order (blocks whose geometry shrinks are re-sorted by Morton key) and rejects any other --row-order. --row-order hybrid needs a v7 format; v7.N-pre default to source (hybrid is for measurement); older formats keep source.\n\
          --pipeline-writes overlaps one preparation batch with ordered writes within the estimated memory budget (LAS/LAZ only).\n\
          --checkpoint preserves completed phases; repeat with --resume to continue the same output. Checkpoint and resume flags are mutually exclusive.\n\
          COPC points are read sequentially and replanned into an adaptive octree; the COPC hierarchy is not retained. Local EPT JSON datasets with dataType=laszip preserve their additive hierarchy; remote datasets and other codecs are unsupported. Spatial repartition options apply only to LAS/LAZ inputs; EPT checkpoint/resume requires one of {checkpoint_versions}.\n\

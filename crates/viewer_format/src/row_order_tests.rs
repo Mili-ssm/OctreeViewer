@@ -284,7 +284,7 @@ fn morton_permutation_equals_sorting_by_key_then_row() {
 }
 
 #[test]
-fn v7_writes_hybrid_by_default() {
+fn v7_resolves_hybrid_row_order_by_default() {
     let unset = FormatWriterOptions::new(0.001, 16 << 20).unwrap();
     assert_eq!(
         unset.resolved_row_order(FormatVersion::V7).unwrap(),

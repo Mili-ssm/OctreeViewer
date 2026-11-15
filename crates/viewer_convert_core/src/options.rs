@@ -59,7 +59,7 @@ impl ConvertOptions {
     }
 
     /// Checks the requested values against the ones the resolved format fixes. Setters only
-    /// check ranges, so every conversion entry point calls this once.
+    /// check ranges, so each conversion entry point runs this idempotent check.
     pub fn validate(self) -> Result<Self, ConvertError> {
         let version = self.format_version();
         if self.row_order == Some(RowOrder::Hybrid) && version.major() != 7 {
