@@ -30,7 +30,6 @@ use crate::{
     crc32::checksum_matches,
 };
 
-const LAYOUT: StorageLayout = StorageLayout::V7Pre5;
 /// How much of the file end a reader fetches first: footer, metadata block and root page.
 pub const TAIL_READ_BYTES: u64 = 1024 * 1024;
 const PAGE_HEADER_LEN: usize = 38;
@@ -257,12 +256,23 @@ fn write_extension<W: Write>(
     Ok(())
 }
 
+/// The paged layout whose footer magic `footer` carries, if any.
+pub(crate) fn paged_layout_of_footer(footer: &[u8]) -> Option<StorageLayout> {
+    if footer.len() != FOOTER_SIZE as usize {
+        return None;
+    }
+    [StorageLayout::V7Pre5, StorageLayout::V7]
+        .into_iter()
+        .find(|layout| footer[..8] == *layout.footer_magic())
+}
+
 fn parse_header_block(
+    layout: StorageLayout,
     cursor: &mut SliceCursor<'_>,
     limits: &FormatReaderLimits,
     index_offset: u64,
 ) -> Result<PagedHeader, FormatError> {
-    if cursor.take(8)? != LAYOUT.index_magic() {
+    if cursor.take(8)? != layout.index_magic() {
         return Err(FormatError::MalformedIndex("invalid index magic"));
     }
     let IndexPrefix {
@@ -370,12 +380,14 @@ pub struct IndexLocation {
     pub offset: u64,
     pub length: u64,
     pub crc: u32,
+    pub(crate) layout: StorageLayout,
 }
 
-/// I/O-free state of a lazily read `v7.5-pre` file: the metadata block, the root page and the
+/// I/O-free state of a lazily read paged file (`v7.5-pre` or `v7`): the metadata block, the root page and the
 /// ids of the pages currently held. Callers fetch the bytes (sync or async) and feed them in.
 pub struct PagedCore {
     limits: FormatReaderLimits,
+    layout: StorageLayout,
     header: PagedHeader,
     root: Page,
     index_offset: u64,
@@ -389,9 +401,9 @@ pub struct PagedCore {
 }
 
 impl PagedCore {
-    /// Whether `footer` (the last 40 bytes of a file) carries the `v7.5-pre` footer magic.
+    /// Whether `footer` (the last 40 bytes of a file) carries a paged footer magic.
     pub fn is_paged_footer(footer: &[u8]) -> bool {
-        footer.len() == FOOTER_SIZE as usize && footer[..8] == *LAYOUT.footer_magic()
+        paged_layout_of_footer(footer).is_some()
     }
 
     /// Parses the 40-byte footer (the last bytes of the file) and checks the index range.
@@ -405,13 +417,15 @@ impl PagedCore {
         }
         let footer: &[u8; FOOTER_SIZE as usize] =
             footer.try_into().map_err(|_| FormatError::InvalidFooter)?;
+        let layout = paged_layout_of_footer(footer).ok_or(FormatError::InvalidFooter)?;
         let (offset, length, declared_length, crc) =
-            parse_split_footer(footer, LAYOUT.footer_magic())?;
+            parse_split_footer(footer, layout.footer_magic())?;
         validate_index_range(file_length, offset, length, declared_length, *limits)?;
         Ok(IndexLocation {
             offset,
             length,
             crc,
+            layout,
         })
     }
 
@@ -428,7 +442,7 @@ impl PagedCore {
             return Err(FormatError::InvalidChecksum("index"));
         }
         let mut cursor = SliceCursor::new(index);
-        let header = parse_header_block(&mut cursor, &limits, location.offset)?;
+        let header = parse_header_block(location.layout, &mut cursor, &limits, location.offset)?;
         let root = decode_page(
             cursor.remaining_slice(),
             &PageContext {
@@ -437,11 +451,13 @@ impl PagedCore {
                 limits: &limits,
                 pages_start: header.pages_start,
                 index_offset: location.offset,
+                layout: location.layout,
             },
             PageExpect::Root,
         )?;
         let mut core = Self {
             limits,
+            layout: location.layout,
             header,
             root,
             index_offset: location.offset,
@@ -454,6 +470,10 @@ impl PagedCore {
         let root_range = core.root.block_id_range();
         core.register_page(location.offset, 0, root_range)?;
         Ok(core)
+    }
+
+    pub(crate) fn layout(&self) -> StorageLayout {
+        self.layout
     }
 
     pub fn header(&self) -> &PagedHeader {
@@ -507,6 +527,7 @@ impl PagedCore {
                 limits: &self.limits,
                 pages_start: self.header.pages_start,
                 index_offset: self.index_offset,
+                layout: self.layout,
             },
             PageExpect::Child {
                 anchor,
@@ -1056,14 +1077,15 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
     metadata: &FormatMetadata,
     blocks: &BTreeMap<BlockId, BlockRecord>,
     page_target_bytes: usize,
+    layout: StorageLayout,
 ) -> Result<PagedIndexWritten, FormatError> {
     let frame = metadata.global_frame().ok_or(FormatError::InvalidMetadata(
-        "v7.5-pre needs a global frame in the metadata",
+        "paged layouts need a global frame in the metadata",
     ))?;
     let hierarchy = metadata.dataset().hierarchy();
     if hierarchy.semantics() != HierarchySemantics::Replacement {
         return Err(FormatError::InvalidMetadata(
-            "v7.5-pre does not support additive hierarchies",
+            "paged layouts do not support additive hierarchies",
         ));
     }
     if hierarchy.attributes().len() > usize::from(u16::MAX) {
@@ -1292,7 +1314,7 @@ pub(crate) fn write_paged_index<W: Write + Seek>(
             checksum: Crc32::new(),
             length: 0,
         };
-        out.write(LAYOUT.index_magic())?;
+        out.write(layout.index_magic())?;
         write_index_prefix(&mut out, metadata, Some(frame))?;
         out.u64(plan.len() as u64)?;
         out.u64(blocks.len() as u64)?;
@@ -1356,9 +1378,13 @@ fn page_entries(
 }
 
 /// Footer bytes for a paged file.
-pub(crate) fn paged_footer(written: &PagedIndexWritten, file_length: u64) -> [u8; 40] {
+pub(crate) fn paged_footer(
+    layout: StorageLayout,
+    written: &PagedIndexWritten,
+    file_length: u64,
+) -> [u8; 40] {
     footer_bytes(
-        LAYOUT.footer_magic(),
+        layout.footer_magic(),
         written.index_offset,
         written.index_length,
         file_length,

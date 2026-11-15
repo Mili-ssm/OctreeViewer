@@ -31,6 +31,8 @@ pub(crate) enum StorageLayout {
     V7Pre3,
     V7Pre4,
     V7Pre5,
+    /// Final v7: the v7.5-pre byte layout under its own identity.
+    V7,
 }
 
 impl StorageLayout {
@@ -46,6 +48,7 @@ impl StorageLayout {
             crate::FormatVersion::V7Pre(revision) if revision.get() == 3 => Ok(Self::V7Pre3),
             crate::FormatVersion::V7Pre(revision) if revision.get() == 4 => Ok(Self::V7Pre4),
             crate::FormatVersion::V7Pre(revision) if revision.get() == 5 => Ok(Self::V7Pre5),
+            crate::FormatVersion::V7 => Ok(Self::V7),
             _ => Err(FormatError::UnsupportedFormatVersion(version)),
         }
     }
@@ -62,6 +65,7 @@ impl StorageLayout {
             Self::V7Pre3 => crate::FormatVersion::V7_PRE3,
             Self::V7Pre4 => crate::FormatVersion::V7_PRE4,
             Self::V7Pre5 => crate::FormatVersion::V7_PRE5,
+            Self::V7 => crate::FormatVersion::V7,
         }
     }
 
@@ -77,6 +81,7 @@ impl StorageLayout {
             Self::V7Pre3 => b"OCTVI73P",
             Self::V7Pre4 => b"OCTVI74P",
             Self::V7Pre5 => b"OCTVI75P",
+            Self::V7 => b"OCTVIDX7",
         }
     }
 
@@ -92,6 +97,7 @@ impl StorageLayout {
             Self::V7Pre3 => b"OCTVE73P",
             Self::V7Pre4 => b"OCTVE74P",
             Self::V7Pre5 => b"OCTVE75P",
+            Self::V7 => b"OCTVEND7",
         }
     }
 
@@ -102,32 +108,32 @@ impl StorageLayout {
 
     /// Global `i64` integer frame, node prefixes, CRS record and `u32` offsets (v7.4-pre onward).
     pub(crate) const fn uses_global_frame(self) -> bool {
-        matches!(self, Self::V7Pre4 | Self::V7Pre5)
+        matches!(self, Self::V7Pre4 | Self::V7Pre5 | Self::V7)
     }
 
     /// Paged hierarchy: the index is a metadata block plus a root page, and the rest of the
     /// node table lives in child pages (v7.5-pre).
     pub(crate) const fn uses_pages(self) -> bool {
-        matches!(self, Self::V7Pre5)
+        matches!(self, Self::V7Pre5 | Self::V7)
     }
 
     /// Writer policy: occupancy blocks are always compact 24-bit candidates.
     pub(crate) const fn restricts_occupancy_to_compact24(self) -> bool {
         matches!(
             self,
-            Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5
+            Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7
         )
     }
 
     /// Writer policy: attribute payloads use the v7.3 dictionary-tuple encoder.
     pub(crate) const fn restricts_dictionary_tuples(self) -> bool {
-        matches!(self, Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5)
+        matches!(self, Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7)
     }
 
     pub(crate) const fn is_v7(self) -> bool {
         matches!(
             self,
-            Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5
+            Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5 | Self::V7
         )
     }
 
@@ -142,13 +148,20 @@ impl StorageLayout {
                 | Self::V7Pre3
                 | Self::V7Pre4
                 | Self::V7Pre5
+                | Self::V7
         )
     }
 
     pub(crate) const fn supports_compact_occupancy(self) -> bool {
         matches!(
             self,
-            Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5
+            Self::V6Pre4
+                | Self::V7Pre1
+                | Self::V7Pre2
+                | Self::V7Pre3
+                | Self::V7Pre4
+                | Self::V7Pre5
+                | Self::V7
         )
     }
 
@@ -162,13 +175,20 @@ impl StorageLayout {
                 | Self::V7Pre3
                 | Self::V7Pre4
                 | Self::V7Pre5
+                | Self::V7
         )
     }
 
     pub(crate) const fn supports_byte_planes(self) -> bool {
         matches!(
             self,
-            Self::V6Pre4 | Self::V7Pre1 | Self::V7Pre2 | Self::V7Pre3 | Self::V7Pre4 | Self::V7Pre5
+            Self::V6Pre4
+                | Self::V7Pre1
+                | Self::V7Pre2
+                | Self::V7Pre3
+                | Self::V7Pre4
+                | Self::V7Pre5
+                | Self::V7
         )
     }
 }

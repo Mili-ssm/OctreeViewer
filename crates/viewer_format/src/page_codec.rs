@@ -282,6 +282,7 @@ pub(crate) struct PageContext<'a> {
     pub(crate) limits: &'a FormatReaderLimits,
     pub(crate) pages_start: u64,
     pub(crate) index_offset: u64,
+    pub(crate) layout: StorageLayout,
 }
 
 fn prefix_fits(level: u32, prefix: u64) -> bool {
@@ -652,7 +653,7 @@ fn decode_block(
     level: u32,
     id: u64,
 ) -> Result<PageBlock, FormatError> {
-    let layout = StorageLayout::V7Pre5;
+    let layout = ctx.layout;
     let offset = cursor.u64()?;
     let attribute_offset = cursor.u64()?;
     let point_count = cursor.u64()?;

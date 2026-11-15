@@ -65,7 +65,8 @@ Qué no demuestra lo implementado; consultar antes de afirmar capacidades. Los r
 | `v7.3-pre` (`7/3`) | Optativa; además limita diccionarios de atributos a tuplas de 1/2/4 B. `OCTVI73P`/`OCTVE73P`. Checkpoint EPT por bloques. | [V7.3-pre](format/FORMAT_V7_PRE3.md) |
 | `v7.4-pre` (`7/4`) | Optativa; pirámide LOD densa (R4): marco y nodos sobre enteros, espaciado por nodo y CRS ([ADR 0029](../adr/0029-octree-global-por-bits-de-enteros.md)). `OCTVI74P`/`OCTVE74P`. | [V7.4-pre](format/FORMAT_V7_PRE4.md) |
 | `v7.5-pre` (`7/5`) | Optativa; jerarquía paginada (R5, [ADR 0030](../adr/0030-jerarquia-paginada-por-anclas.md)), flags LAS y Extra Bytes (RF-24). `OCTVI75P`/`OCTVE75P`. Índice −54/−55 % frente a v7.4 en Belvedere/Majadas. Rechaza EPT, checkpoints y Additive. | [V7.5-pre](format/FORMAT_V7_PRE5.md) |
-| `v7` final / `v6` final / otras revisiones | Identificables por cabecera, sin backend admitido. No se infiere compatibilidad por orden. | [Identidades](../../crates/viewer_format/src/version.rs) |
+| `v7` (`7/0`) | Final (ADR 0044); disposición de bytes de `v7.5-pre` con magics propios `OCTVIDX7`/`OCTVEND7`. Escribible como pareja `.oct`/`.octattrs`; el escritor usa el orden de filas híbrido. Aún no es el predeterminado. | [V7](format/FORMAT_V7.md) |
+| `v6` final / otras revisiones | Identificables por cabecera, sin backend admitido. No se infiere compatibilidad por orden. | [Identidades](../../crates/viewer_format/src/version.rs) |
 | v1–v4 / provisional `OCTVWFRM` | Reconvertir desde fuente; sin migración automática ni lector legacy. | [Preparación/compatibilidad](../records/benchmarks/STORAGE_V6_PREPARATION.md) |
 
 Ambos archivos deben tener identidad exacta y asociación de dataset compatibles. Abrir solo

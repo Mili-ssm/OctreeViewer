@@ -736,7 +736,7 @@ fn only_v7_4_takes_a_global_frame() {
     let (with_frame, _) = tree(wkt_crs(), None);
     let plain = common::metadata(0, Vec::new());
     for version in FormatVersion::WRITABLE {
-        let given = if version == V74 || version == FormatVersion::V7_PRE5 {
+        let given = if version.uses_global_frame() {
             &plain
         } else {
             &with_frame

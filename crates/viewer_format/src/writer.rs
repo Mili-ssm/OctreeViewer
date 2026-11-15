@@ -211,7 +211,7 @@ impl<W: Write + Seek> FormatWriter<W> {
         let layout = StorageLayout::from_version(version)?;
         if layout.uses_pages() {
             return Err(FormatError::InvalidMetadata(
-                "v7.5-pre is written as a .oct / .octattrs pair",
+                "paged layouts are written as a .oct / .octattrs pair",
             ));
         }
         Self::new_with_layout(writer, metadata, options, layout)
@@ -249,12 +249,13 @@ impl<W: Write + Seek> FormatWriter<W> {
         writer.seek(SeekFrom::Start(0))?;
         ensure_global_frame_matches(layout, &metadata)?;
         validate_metadata(&metadata)?;
+        ensure_schema_within_limit(&metadata)?;
         if layout.uses_pages()
             && metadata.dataset().hierarchy().semantics()
                 != viewer_core::HierarchySemantics::Replacement
         {
             return Err(FormatError::InvalidMetadata(
-                "v7.5-pre does not support additive hierarchies",
+                "paged layouts do not support additive hierarchies",
             ));
         }
         let block_nodes = build_block_nodes(metadata.dataset().hierarchy())?;
@@ -432,6 +433,7 @@ impl<W: Write + Seek> FormatWriter<W> {
                 &metadata,
                 &self.blocks,
                 self.options.page_target_bytes(),
+                self.layout,
             )?;
             let file_length = written
                 .index_offset
@@ -452,8 +454,11 @@ impl<W: Write + Seek> FormatWriter<W> {
                 ))?;
                 attributes.flush()?;
             }
-            self.writer
-                .write_all(&crate::paged_index::paged_footer(&written, file_length))?;
+            self.writer.write_all(&crate::paged_index::paged_footer(
+                self.layout,
+                &written,
+                file_length,
+            ))?;
             self.writer.flush()?;
             return Ok((self.writer, self.attributes));
         }
@@ -596,6 +601,21 @@ impl<W: Write + Seek> FormatWriter<W> {
         }
         Ok(source_metadata.with_dataset(dataset, ranges))
     }
+}
+
+/// Largest schema the writer emits: the default reader limit (RF-27), so no file the writer
+/// produces needs explicit reader limits to open.
+const MAX_WRITTEN_ATTRIBUTES: usize = 256;
+
+fn ensure_schema_within_limit(metadata: &FormatMetadata) -> Result<(), FormatError> {
+    let count = metadata.dataset().hierarchy().attributes().len();
+    if count > MAX_WRITTEN_ATTRIBUTES {
+        return Err(FormatError::TooManyAttributes {
+            count,
+            limit: MAX_WRITTEN_ATTRIBUTES,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]

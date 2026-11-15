@@ -42,7 +42,7 @@ impl FormatVersion {
     pub const DEFAULT_OUTPUT: Self = Self::V5;
 
     /// Every revision the writer implements, in user-facing listing order.
-    pub const WRITABLE: [Self; 10] = [
+    pub const WRITABLE: [Self; 11] = [
         Self::V7_PRE1,
         Self::V7_PRE2,
         Self::V7_PRE3,
@@ -53,6 +53,7 @@ impl FormatVersion {
         Self::V6_PRE4,
         Self::V7_PRE4,
         Self::V7_PRE5,
+        Self::V7,
     ];
 
     /// Whether block-level EPT checkpoint/resume can target this revision.
@@ -252,7 +253,6 @@ mod tests {
         }
         for version in [
             FormatVersion::V6,
-            FormatVersion::V7,
             FormatVersion::V6Pre(NonZeroU32::new(5).unwrap()),
             FormatVersion::V7Pre(NonZeroU32::new(6).unwrap()),
         ] {
@@ -265,7 +265,7 @@ mod tests {
             .collect();
         assert_eq!(
             names.join("|"),
-            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre"
+            "v7.1-pre|v7.2-pre|v7.3-pre|v5|v6.1-pre|v6.2-pre|v6.3-pre|v6.4-pre|v7.4-pre|v7.5-pre|v7"
         );
     }
 

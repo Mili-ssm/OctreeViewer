@@ -227,6 +227,7 @@ impl<R: Read + Seek> IndexedReader<R> {
         let root = core.root_page().clone();
         let index_identity = core.index_identity();
         let limits = *core.limits();
+        let layout = core.layout();
         let (metadata, _, _) =
             crate::paged_index::assemble_with(&header, std::slice::from_ref(&root), true)?;
         let (source, _) = crate::lazy_pages::PageSource::new(core)?;
@@ -236,7 +237,7 @@ impl<R: Read + Seek> IndexedReader<R> {
             attributes_attached: false,
             external_payloads_only: external,
             split: true,
-            layout: StorageLayout::V7Pre5,
+            layout,
             index_identity,
             attribute_file_length: 0,
             metadata: Arc::new(metadata),
@@ -306,7 +307,14 @@ impl<R: Read + Seek> IndexedReader<R> {
                 return Err(FormatError::InvalidHeader);
             }
             // Eager view: every page is read and the global checks run. Lazy readers use
-            // `PagedReader` instead.
+            // `PagedReader` instead and never read the header, so only this path can compare
+            // the header identity with the footer one.
+            reader.seek(SeekFrom::Start(file_length - FOOTER_SIZE))?;
+            let mut footer = [0; FOOTER_SIZE as usize];
+            reader.read_exact(&mut footer)?;
+            if crate::paged_index::paged_layout_of_footer(&footer) != Some(layout) {
+                return Err(FormatError::InvalidFooter);
+            }
             let ((metadata, blocks, block_bounds), index_identity, reference_spacing) =
                 crate::paged_index::load_all(&mut reader, &limits)?;
             let attribute_file_length = split_attribute_file_length(&blocks)?;

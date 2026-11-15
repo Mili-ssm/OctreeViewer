@@ -1428,7 +1428,6 @@ fn unsupported_v6_final_pre5_and_v7_pre6_are_rejected_by_writer_encoder_and_read
     let versions = [
         FormatVersion::V6,
         FormatVersion::V6Pre(std::num::NonZeroU32::new(5).unwrap()),
-        FormatVersion::V7,
         FormatVersion::V7Pre(std::num::NonZeroU32::new(6).unwrap()),
     ];
     for version in versions {

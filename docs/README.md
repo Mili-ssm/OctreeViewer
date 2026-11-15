@@ -15,6 +15,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y prioridades acti
 | --- | --- | --- |
 | [Inventario](reference/inventory.md) | Mapa de componentes, identidades de formato, herramientas, límites y candidatos. | vivo |
 | [Formato V5](reference/format/FORMAT_V5.md) | Especificación del `.oct`/`.octattrs` predeterminado. | vivo |
+| [Formato V7](reference/format/FORMAT_V7.md) | Especificación de la identidad final `v7` (disposición de v7.5-pre, magics propios). | vivo |
 | [V7.1-pre](reference/format/FORMAT_V7_PRE1.md), [V7.2-pre](reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](reference/format/FORMAT_V7_PRE5.md) | Especificaciones de las revisiones V7 experimentales (v7.5: índice paginado, R5). | vivo |
 
 ## Planes y specs

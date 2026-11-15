@@ -7,6 +7,8 @@ opening a cloud no longer costs bytes proportional to its node count
 [ADR 0030](../../adr/0030-jerarquia-paginada-por-anclas.md) and the owner's resolutions of
 02-11-2026; the size model comes from the [P0 spike](../../records/benchmarks/R5_P0_PAGES_02-11-2026.md).
 
+The final [v7](FORMAT_V7.md) identity reuses this byte layout with its own header revision and magics.
+
 ## Differences from V7.4-pre
 
 Everything not listed here matches [V7.4-pre](FORMAT_V7_PRE4.md): header, global frame, CRS record,

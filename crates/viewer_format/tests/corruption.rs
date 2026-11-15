@@ -319,10 +319,11 @@ fn repair(bytes: &mut [u8], target: Target) {
 fn sweep_versions(body: impl Fn(FormatVersion) -> Vec<String> + Sync) {
     let findings: Vec<String> = std::thread::scope(|scope| {
         let body = &body;
-        // `v7.5-pre` has no split layout and a paged index: `tests/v7_5.rs` covers its corruption.
+        // `v7.5-pre` and `v7` have no monolithic layout and a paged index: `tests/v7_5.rs` covers
+        // their corruption.
         let handles: Vec<_> = FormatVersion::WRITABLE
             .into_iter()
-            .filter(|version| *version != FormatVersion::V7_PRE5)
+            .filter(|version| !version.uses_pages())
             .map(|version| scope.spawn(move || body(version)))
             .collect();
         handles
@@ -717,7 +718,7 @@ fn index_and_footer_fields_extreme_values_are_rejected() {
 fn node_count_beyond_index_bytes_is_rejected_without_reserving() {
     let default_max_nodes = 2_000_000_u64;
     for version in FormatVersion::WRITABLE {
-        if version == FormatVersion::V7_PRE5 {
+        if version.uses_pages() {
             continue; // paged index: covered by `tests/v7_5.rs`
         }
         let mut fixture = monolithic(version);

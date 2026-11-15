@@ -86,6 +86,8 @@ pub enum FormatError {
     StringTooLong(usize),
     #[error("attribute schema has too many entries")]
     SchemaTooLarge,
+    #[error("attribute schema has {count} columns, above the writer limit of {limit}")]
+    TooManyAttributes { count: usize, limit: usize },
     #[error("hierarchy has too many nodes")]
     TooManyNodes,
     #[error("format contains too many blocks")]
