@@ -1,6 +1,6 @@
 # 0041 Orden de filas libre por bloque en V7 y escritor híbrido
 
-Estado: Aceptada · Fecha: 14-11-2026 · Decide: propietario (OQ-09) · Relacionado: [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md) (alcance de V7) y [ADR 0005](0005-identidades-exactas-v7n-pre-por-candidato.md)
+Estado: Aceptada · Fecha: 14-11-2026 · Decide: propietario (OQ-09) · Coste de conversión acotado por el [ADR 0043](0043-coste-de-conversion-de-v7-frente-a-v5.md) · Relacionado: [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md) (alcance de V7) y [ADR 0005](0005-identidades-exactas-v7n-pre-por-candidato.md)
 
 ## Contexto
 - El contrato actual conserva el orden de filas de la fuente dentro de cada bloque. Es un requisito técnico blando

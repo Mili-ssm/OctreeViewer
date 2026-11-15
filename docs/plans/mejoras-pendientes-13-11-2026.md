@@ -1,7 +1,7 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en pausa · 15-11-2026 (fases A y B cerradas; D1, D2, D3a y D3b hechos; C4 experimento descartado y
-decisión del propietario pendiente, que bloquea D3c; ver [Cómo retomar](#cómo-retomar-15-11-2026))
+Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a y D3b hechos; siguiente: D3c; ver
+[Cómo retomar](#cómo-retomar-15-11-2026))
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -27,20 +27,20 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 `feat/render-r3-node-cells` (`c473c85`, ancestro) con una línea `.superpowers/` sin commit en `.gitignore`
 que no es de esta línea de trabajo.
 
-**Decisiones del propietario que bloquean** (se preguntaron el 15-11-2026 y la sesión terminó sin respuesta):
+**Decisiones del propietario del 15-11-2026** (resueltas; [requisitos](../requirements.md#resoluciones-del-15-11-2026)):
 
-| Decisión | Opciones | Propuesta | Evidencia |
-| --- | --- | --- | --- |
-| C4 / RQ-07: la conversión v7.5 tarda ~2,0× V5 y usa un 36–39 % más de RSS (RQ-07 pide ≤ +30 % en los dos) | Revisar RQ-07; TC5 (rediseño del pipeline) primero; o revisar ahora y planificar TC5 después | Revisar RQ-07 con un ADR nuevo: tiempo ≤ 2,1× y RSS ≤ +40 % frente a V5 (nivel actual), porque v7.5 híbrido ocupa un 10,7 % menos que V5 y RQ-07 es técnico y blando | [C4](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md), [D3b](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md), [catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026) |
-| PR de `feat/r3-v75` a `master` sin remoto | Fusión local con avance rápido tras D3c; el propietario añade un remoto; esperar | Fusión local tras D3c, con revisión previa del paso | La descripción se redacta de nuevo a partir de los registros |
+- Se revisa la cifra de conversión de RQ-07 ([ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)).
+  D3c ya no está bloqueado.
+- Remoto `origin` = `https://github.com/Mili-ssm/OctreeViewer.git` (privado). Su historial (9 commits de 2023,
+  otro proyecto) no tiene relación con este y se sobrescribe; antes se guarda en la ref local
+  `refs/legacy/octreeviewer-2023`. `master` se publica como `main` y `feat/r3-v75` se integra por PR.
 
 **Siguiente trabajo, en orden:**
 
-- [ ] Preguntar al propietario las dos decisiones anteriores; no actuar sobre ninguna antes. Comprobación:
-  respuesta registrada (ADR nuevo para RQ-07 si se revisa) y fila quitada de «Decisiones del propietario
-  pendientes».
-- [ ] Si se elige TC5: plan propio y pre-mortem antes de tocar código. Comprobación: plan en `docs/plans/`.
-- [ ] D3c (ver la fase D). Después, integración en `master` según la decisión de la PR, y D4.
+- [ ] Publicar en el remoto: `master` → `main` (forzado, con la copia anterior guardada) y `feat/r3-v75`, tras
+  revisar el paso. Comprobación: `git ls-remote origin` muestra los dos SHA locales.
+- [ ] D3c (ver la fase D), con plan propio y pre-mortem. Comprobación: la de D3c.
+- [ ] PR de `feat/r3-v75` a `main`, con descripción redactada a partir de los registros; después, D4.
 
 **Ramas conservadas como evidencia** (sin integrar): `explore/convert-speed`, `explore/convert-batch` (fase
 C), `explore/oq09-morton` (worktree de un agente en `.claude/worktrees/agent-a218fbc1eaf663ffd`
@@ -105,16 +105,16 @@ escritor experimental `OQ09_MORTON=best`), `explore/oq09-viewer-sort`, `explore/
   con celdas en este equipo; el propietario aceptó los +2,7 pp de píxeles vacíos de Majadas y la ruta de
   celdas es la predeterminada (R3-Q35, `8aa40fa`; ADR 0027 aceptado). Con esto se cierra la fase B.
 
-## Fase C: velocidad de conversión, RQ-07 (parada)
+## Fase C: velocidad de conversión, RQ-07 (cerrada)
 
 [Registro](../records/benchmarks/EXPLORE_CONVERT_SPEED_14-11-2026.md). Línea base Belvedere: V5 20,9 s,
 v7.5 40,2 s (razón 1,92). La diferencia está en construir la jerarquía (+12,4 s, muestreo). TC3, TC1 y
 TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada. Nada se integra; las ramas
 `explore/convert-speed` y `explore/convert-batch` se conservan como evidencia.
 
-- [ ] C4. **Decisión del propietario:** TC5 (rediseño del pipeline con plan propio) o revisar RQ-07. La copia
-  diferida del más cercano se probó y se descartó: la cota es −1,8 % en la jerarquía, y la razón v7.5/V5
-  sigue en ~2,0 ([registro](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)). Bloquea D3c.
+- [x] C4. La copia diferida del más cercano se probó y se descartó: −1,8 % en la jerarquía, razón v7.5/V5 en
+  ~2,0 ([registro](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)). El propietario revisó RQ-07 en
+  lugar de TC5 ([ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)).
 
 ## Fase D: fuente remota y V7 final
 
@@ -133,7 +133,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     identidad propia ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md),
     [registro](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md)): Belvedere 815 → 531 MB con un +1,3 %
     de tiempo total; Majadas sin cambio apreciable (+0,26 % sobre su óptimo).
-  - [ ] D3c. Congelar tras C4 (RQ-07): identidad final de V7 con el escritor híbrido por defecto (unos 30
+  - [ ] D3c. Congelar (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.
@@ -153,8 +153,6 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
 | Tema | Bloquea |
 | --- | --- |
 | Factor de continuidad (RF-05): con 1 × el espaciado de referencia el efecto es mínimo en Belvedere y Majadas | Nada; ajuste visual |
-| C4 / RQ-07: revisar el objetivo o TC5 (copia diferida descartada; ver [Cómo retomar](#cómo-retomar-15-11-2026)) | D3c, promover V7 |
 | OQ-10 visor nativo o sin cabeza (TA4) | Planificar la API pública |
 | Criterio de ≤ 16,7 ms si no se mide el tiempo de GPU (B1b.3) | B1b |
 | ADR 0008 (`release` optimiza tamaño; usa `opt-level = 3` desde el 02-11-2026) y ADR 0025 (aceptado; el codificador propio no existe) | Nada; requieren ADR nuevo o decisión |
-| PR de `feat/r3-v75` a `master`: sin remoto (fusión local tras D3c, añadir remoto o esperar) | Integración |

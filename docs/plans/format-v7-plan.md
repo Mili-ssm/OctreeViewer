@@ -22,7 +22,8 @@ cualquier codec más costoso. El objetivo de más de 500 GB sigue sin demostrars
 
 Objetivos acordados (30-10-2026) en [requisitos](../requirements.md): equipo EQ-REF, PSS del visor RQ-05,
 disco temporal RQ-06 y tolerancias de V7 frente a V5 RQ-07; alcance y congelación en el
-[ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (RSS de conversión ≤ +30 %) y RQ-06
+[ADR 0022](../adr/0022-alcance-y-congelacion-de-v7-final.md). RQ-07 (cifra de conversión revisada por el
+[ADR 0043](../adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)) y RQ-06
 (temporales ≤ 2 × LAZ) son los objetivos vigentes; las mediciones actuales de §4 y §6 aún no los demuestran.
 
 **Alcance de V7 final:** pirámide densa (R4, [ADR 0020](../adr/0020-piramide-lod-densa.md)), jerarquía

@@ -83,7 +83,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | RQ-04 | En remoto: **primer frame ≤ 10 s** y **objetivo de 4 px ≤ 120 s**. | ESC-1, RED-REF |
 | RQ-05 | PSS de la pestaña del visor **≤ 8 GiB**. | ESC-1 y ESC-2, EQ-REF |
 | RQ-06 | Disco temporal del CLI **≤ 2 × el tamaño del LAZ de entrada** (objetivo; ASM-03). | Conversión ESC-1 |
-| RQ-07 | V7 final frente a V5: latencia de lectura y navegación igual o mejor; tiempo y RSS de conversión ≤ +30 %; disco, solo lo que añada la pirámide densa (+15–35 % estimado). | Promoción de V7 |
+| RQ-07 | V7 final frente a V5: latencia de lectura y navegación igual o mejor; conversión con tiempo ≤ 2,1× y RSS pico ≤ +40 % ([ADR 0043](adr/0043-coste-de-conversion-de-v7-frente-a-v5.md); era ≤ +30 % hasta el 15-11-2026); disco, solo lo que añada la pirámide densa (+15–35 % estimado). | Promoción de V7 |
 | RQ-08 | La conversión web produce los mismos bytes que el CLI (referencias R1). | Cada cambio del conversor |
 | RQ-09 | Ningún cubo por encima del objetivo de px salvo lo que imponga la densidad de la fuente ([contrato](explanation/REGIONAL_VOXEL_LOD.md)). Con la cámara dentro del dataset, la ruta de celdas admite ≤ 0,5 % de celdas en pantalla por encima ([ADR 0034](adr/0034-nivel-por-octante-con-arista-real.md)). | Cada cambio de render |
 | RQ-10 | Los controles de la app pública cumplen **WCAG 2.2 AA** (teclado completo, foco visible, contraste, etiquetas), verificado con axe y Playwright. El lienzo 3D queda fuera. | App pública |
@@ -176,6 +176,13 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | R3: celdas y modos de color | Hasta la Tarea 12, otro modo de color vuelve a la ruta CPU y volver a RGB reactiva las celdas. | R3-Q23 |
 | R3: celdas sin worker de construcción | Sin el worker de construcción se usa la ruta CPU y `cellPath` lo indica (`needsBuildWorker`). | R3-Q24 |
 
+## Resoluciones del 15-11-2026
+
+| Pregunta | Resolución | Registro |
+| --- | --- | --- |
+| C4 / RQ-07: coste de conversión de V7 | Se revisa la cifra de conversión de [RQ-07](#requisitos-de-calidad); TC5 no se planifica. | [ADR 0043](adr/0043-coste-de-conversion-de-v7-frente-a-v5.md) |
+| Integración de `feat/r3-v75` | Remoto `origin` = `github.com/Mili-ssm/OctreeViewer` (privado); su historial de 2023 no tiene relación con este y se sobrescribe; la integración va por PR. | [Plan](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026) |
+
 ## Catálogo: funcional o técnico, duro o blando (propuesta 14-11-2026)
 
 **Propuesta pendiente de revisión del propietario.** Funcional: lo que el producto debe lograr (el fin). Técnico: el medio elegido. Duro: necesidad real (usuario, producto, legal, seguridad o resultado fijado por el propietario) que solo cambia con una decisión suya. Blando: medio elegido o medida temporal que se puede abandonar cuando la ganancia supere el coste; «Revisar si» da la condición. «Por confirmar» marca la dureza dudosa. Los ASM-* son supuestos, no requisitos: no se clasifican. Los umbrales numéricos de los RQ son objetivos medibles de un fin duro; su cifra concreta es revisable.
@@ -205,7 +212,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | RF-29 | Técnico | Blando | Apaño del límite de cuota de Firefox | Firefox deje de ser mejor esfuerzo o cambie la cuota |
 | RQ-01–RQ-05 | Funcional | Duro | Fluidez, escala y memoria acotada (propósito) | Cifras: cambie el equipo o la red de referencia |
 | RQ-06 | Técnico | Blando | Objetivo sin medir (ASM-03) | El spike de temporales lo mida |
-| RQ-07 | Técnico | Blando | Protege coste de conversión; el 30 % es elección | Una ganancia de lectura o disco compense más |
+| RQ-07 | Técnico | Blando | Protege coste de conversión; cifra revisada por el propietario (ADR 0043) | Ver «Revisar si» del ADR 0043 |
 | RQ-08 | Técnico | Por confirmar | Garantiza reproducibilidad; ¿lo exige el usuario o es comodidad de pruebas? | — |
 | RQ-09 | Funcional | Duro | Fidelidad de nivel de detalle; la tolerancia del 0,5 % es blanda (ADR 0034) | La tolerancia cueste más que lo que gana |
 | RQ-10 | Funcional | Duro | Accesibilidad de la app pública | — |

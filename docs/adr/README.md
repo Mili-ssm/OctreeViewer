@@ -25,7 +25,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0019](0019-cubos-por-nodo-residentes-en-gpu.md) | Cubos 3D por nodo, independientes de la vista y residentes en GPU (R3) | Aceptada |
 | [0020](0020-piramide-lod-densa.md) | La pirámide LOD es densa: un nivel por cada ×2 de densidad (R4) | Aceptada |
 | [0021](0021-rejilla-global-determinista-y-crs.md) | Rejilla de cuantización global determinista anclada en el CRS | Aceptada |
-| [0022](0022-alcance-y-congelacion-de-v7-final.md) | V7 final incluye R4, R5 y la rejilla global, y se congela una vez | Aceptada |
+| [0022](0022-alcance-y-congelacion-de-v7-final.md) | V7 final incluye R4, R5 y la rejilla global, y se congela una vez | Aceptada (umbral de conversión revisado por 0043) |
 | [0023](0023-fuentes-locales-y-remotas.md) | El visor lee fuentes locales (Blob) y remotas (HTTP Range) | Aceptada |
 | [0024](0024-hilos-wasm-opcionales-con-coop-coep.md) | Hilos wasm opcionales cuando la página está aislada (COOP/COEP) | Aceptada |
 | [0025](0025-codificador-lz4-propio.md) | Codificador LZ4 propio en `viewer_format` | Aceptada |
@@ -46,3 +46,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0040](0040-pool-de-512-mib-y-corte-ajustado-al-pool.md) | Pool de celdas de 512 MiB y corte de nodos ajustado al pool (enmienda a 0033) | Aceptada |
 | [0041](0041-orden-de-filas-libre-por-bloque.md) | Orden de filas libre por bloque en V7 y escritor híbrido (precisa 0022) | Aceptada |
 | [0042](0042-escritor-hibrido-en-la-identidad-final-de-v7.md) | El escritor híbrido entra en la identidad final de V7, sin revisión `-pre` propia (enmienda a 0005) | Aceptada |
+| [0043](0043-coste-de-conversion-de-v7-frente-a-v5.md) | El coste de conversión de V7 final se acota a ≤ 2,1× el tiempo y ≤ +40 % el RSS de V5 (revisa RQ-07) | Aceptada |
