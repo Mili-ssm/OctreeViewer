@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: en curso · 14-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D; siguiente: C4)
+Estado: en curso · 15-11-2026 (fases A y B cerradas; fase C parada, C4 pendiente del propietario; en curso: fase D; siguiente: C4)
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
@@ -90,8 +90,8 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     menos con cualquier orden de fichero.
   - [x] D3b. Escritor híbrido detrás de una opción del escritor (`--row-order hybrid`, `rowOrder`), sin
     identidad propia ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md),
-    [registro](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md)): Belvedere 815 → 531 MB con el mismo
-    tiempo total; Majadas sin cambio apreciable (+0,26 % sobre su óptimo).
+    [registro](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md)): Belvedere 815 → 531 MB con un +1,3 %
+    de tiempo total; Majadas sin cambio apreciable (+0,26 % sobre su óptimo).
   - [ ] D3c. Congelar tras C4 (RQ-07): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
