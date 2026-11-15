@@ -7,7 +7,7 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0001](0001-pareja-separada-oct-octattrs.md) | La salida es una pareja separada `.oct` / `.octattrs` | Aceptada |
 | [0002](0002-v5-predeterminado-en-transicion.md) | V5 sigue siendo la salida predeterminada durante la transición a V7 | Sustituida por 0044 |
 | [0003](0003-v6-final-y-pre5-rechazados.md) | V6 final y pre5 permanecen rechazados | Aceptada |
-| [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Aceptada (promoción ejecutada por 0044; retirada pendiente) |
+| [0004](0004-retirar-v5-v6-tras-v7.md) | Retirar V5/V6 al completar V7 | Aceptada (promoción ejecutada por 0044; retirada precisada por 0047) |
 | [0005](0005-identidades-exactas-v7n-pre-por-candidato.md) | Cada candidato de writer V7 tiene identidad exacta `v7.N-pre` | Aceptada (revisar) |
 | [0006](0006-politica-de-version-solo-en-viewer-format.md) | La política de versiones vive solo en `viewer_format` | Aceptada |
 | [0007](0007-limites-por-defecto-del-lector.md) | El lector aplica límites por defecto configurables | Aceptada |
@@ -50,3 +50,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0044](0044-v7-final-congelada-y-predeterminada.md) | V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada (sustituye a 0002) | Aceptada |
 | [0045](0045-demo-experimental-publica-antes-de-la-1-0.md) | La demo web se publica como demo experimental antes de la 1.0 (acota CON-05) | Aceptada |
 | [0046](0046-la-poda-de-niveles-no-limita-el-render.md) | La poda de la cadena de niveles es de almacenamiento; el render deriva el nivel que pide la vista (precisa 0031 y 0032) | Aceptada |
+| [0047](0047-v5-heredado-hasta-v8.md) | V5 queda como formato heredado de comparación hasta que empiece V8; la demo usa la última versión estable (precisa 0004) | Aceptada |

@@ -20,8 +20,8 @@ self.onmessage = async ({ data = {} }) => {
     let viewer;
     try {
         await init();
-        const bytes = await (data.coordinates ?? await fetch(new URL("../sample.oct", import.meta.url)).then(r => r.blob())).arrayBuffer();
-        const attributes = data.attributes ?? await fetch(new URL("../sample.octattrs", import.meta.url)).then(r => r.blob());
+        const bytes = await (data.coordinates ?? await fetch(new URL("../sample-v5.oct", import.meta.url)).then(r => r.blob())).arrayBuffer();
+        const attributes = data.attributes ?? await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(r => r.blob());
         const header = new DataView(bytes, 0, 24);
         const major = header.getUint16(8, true);
         const revision = header.getUint32(16, true);
