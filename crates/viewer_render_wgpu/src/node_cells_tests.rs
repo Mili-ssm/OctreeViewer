@@ -1092,3 +1092,43 @@ fn painted_attribute_cells_equal_the_cpu_voxel_colour_of_the_same_painted_points
     // The painted colours are not the file's.
     assert_ne!(rgb, [9, 9, 9]);
 }
+
+#[test]
+fn leaf_far_from_the_root_corner_separates_close_points_exactly() {
+    // A global cloud whose points cross a sign bit (z around 0) keeps the whole 2^64-quanta
+    // lattice as its root: side 2^49 units anchored at -2^48 (issue #30). Indices measured from
+    // that corner in f64 keep about 2^-4 units, so points 1 cm apart never separated.
+    let grid = CellGrid {
+        root_min: [-(2.0_f64.powi(48)); 3],
+        root_side: 2.0_f64.powi(49),
+    };
+    let positions = [[1.0_f32, 1.0, 1.0], [1.01, 1.0, 1.0]];
+    let block = plain_block(
+        positions
+            .into_iter()
+            .map(|p| Point::new(p, ColorRgb::new(1, 2, 3)))
+            .collect(),
+    );
+    let cells = PointNodeCellSource::default()
+        .node_cells(
+            &grid,
+            NodeId::new(1),
+            cube([0.0; 3], 1024.0),
+            Some(1.0),
+            true,
+            &[block],
+        )
+        .expect("1 cm apart separate at depth 56");
+    let finest = cells.levels.last().unwrap();
+    // 2^7 cells per unit at depth 56: 1.0 -> 128, 1.01 -> 129.28.
+    assert_eq!(finest.depth, 56);
+    let half = 1_u64 << 55;
+    let coords: Vec<_> = finest.cells.iter().map(|cell| cell.coord).collect();
+    assert_eq!(
+        coords,
+        vec![
+            [half + 128, half + 128, half + 128],
+            [half + 129, half + 128, half + 128]
+        ]
+    );
+}
