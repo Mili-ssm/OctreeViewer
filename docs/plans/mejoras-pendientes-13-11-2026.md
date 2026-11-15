@@ -1,6 +1,6 @@
 # Mejoras y pendientes tras la revisión del 13-11-2026: plan de trabajo
 
-Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a y D3b hechos; siguiente: D3c; ver
+Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c hechos; siguiente: PR de `feat/r3-v75` a `main`, luego D4; ver
 [Cómo retomar](#cómo-retomar-15-11-2026))
 
 **Objetivo:** ordenar en un solo plan lo que queda de R3, los pendientes menores del README y las
@@ -21,9 +21,10 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 
 ## Cómo retomar (15-11-2026)
 
-**Estado del código:** `feat/r3-v75`, árbol limpio, sin remoto ni push. Último commit de código: `ec73e01`
-(un comentario sobre `aba5286`); lo posterior es documentación. `scripts/check.sh` pasó los 24 pasos en
-`aba5286` (sesión del 15-11-2026; el log no se guardó en el repositorio). El checkout principal sigue en
+**Estado del código:** `feat/r3-v75` con D3c integrada: `v7` final es la salida predeterminada del CLI, el wasm
+y la app web ([ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)); los datasets de render son
+`target/render-data/belvedere-v7` y `majadas-v7` (los `*-v75` siguen en disco, sin uso). La rama está publicada
+en `origin` y aún no está integrada en `main`. El checkout principal sigue en
 `feat/render-r3-node-cells` (`c473c85`, ancestro) con una línea `.superpowers/` sin commit en `.gitignore`
 que no es de esta línea de trabajo.
 
@@ -39,7 +40,7 @@ que no es de esta línea de trabajo.
 
 - [x] Publicar en el remoto (15-11-2026): `master` (`ded7ee8`) → `main` con `--force-with-lease` y `feat/r3-v75`
   con seguimiento; `git ls-remote origin` muestra los dos SHA locales.
-- [ ] D3c (ver la fase D): [plan propio](d3c-congelado-v7-final.md), con pre-mortem y decisiones del propietario en el
+- [x] D3c (ver la fase D, hecho el 15-11-2026): [plan propio](d3c-congelado-v7-final.md), con pre-mortem y decisiones del propietario en el
   [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Comprobación: la de D3c.
 - [ ] PR de `feat/r3-v75` a `main`, con descripción redactada a partir de los registros; después, D4.
 
@@ -134,7 +135,7 @@ TC2(b) dan salida idéntica pero ≤ 8 % de mejora: salta el criterio de parada.
     identidad propia ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md),
     [registro](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md)): Belvedere 815 → 531 MB con un +1,3 %
     de tiempo total; Majadas sin cambio apreciable (+0,26 % sobre su óptimo).
-  - [ ] D3c ([plan](d3c-congelado-v7-final.md), [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md)). Congelar (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
+  - [x] D3c (15-11-2026; [plan](d3c-congelado-v7-final.md), [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md); registros [RQ-07](../records/benchmarks/D3C_RQ07_V7_15-11-2026.md), [web Belvedere](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) y [referencias](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md)). Congelado (RQ-07 revisado por el ADR 0043): identidad final de V7 con el escritor híbrido por defecto (unos 30
     puntos: versiones, E/S paginada, CLI, especificación, índices, pruebas), regeneración de datasets y
     referencias. Comprobación: `check.sh` verde con la identidad final y referencias R1 regeneradas.
 - [ ] D4. TW8 `{url}` en la API pública; pertenece a la etapa de API pública, después de D3.

@@ -1,6 +1,6 @@
 # Native `.oct` format, v7.5-pre
 
-Development identity: major **7**, revision **5**, opt-in as `v7.5-pre`. V5 remains the default;
+Development identity: major **7**, revision **5**, opt-in as `v7.5-pre`. The default output is the final [v7](FORMAT_V7.md) ([ADR 0044](../../adr/0044-v7-final-congelada-y-predeterminada.md));
 v5 and v7.1–4-pre stay readable with unchanged bytes. This revision pages the node table so that
 opening a cloud no longer costs bytes proportional to its node count
 ([plan R5](../../plans/render-r5-jerarquia-paginada.md), task P2). Decisions come from

@@ -65,8 +65,8 @@ python3 examples/web-host/package-local.py
 Fuente única de las reglas.
 
 - Commits: [Conventional Commits](https://www.conventionalcommits.org/) (`docs:`, `build:`, `fix:`…).
-- **V5 predeterminado**: sigue siendo la salida por defecto durante la transición a V7, que
-  concentra el desarrollo; no se crean revisiones V5/V6 nuevas.
+- **V7 predeterminado**: `v7` final es la salida por defecto ([ADR 0044](docs/adr/0044-v7-final-congelada-y-predeterminada.md));
+  V5, V6 y las `-pre` siguen legibles y escribibles hasta su retirada. No se crean revisiones V5/V6 nuevas.
 - **Literales de versión**: `FormatVersion::V<n>` solo vive en `viewer_format`; el resto usa su
   API de capacidades (`DEFAULT_OUTPUT`, `WRITABLE`, `supports_block_checkpoint()`), así añadir una
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.

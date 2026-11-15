@@ -21,16 +21,20 @@ Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
   pre4, `v7.2-pre` reduce la búsqueda de ocupación y `v7.3-pre` limita diccionarios a tuplas de
   1/2/4 B. Son revisiones experimentales: su identidad por sí sola no reduce disco.
   [Plan y criterios](docs/plans/format-v7-plan.md).
-- **`v7.4-pre` (R4) y `v7.5-pre` (R5)** están implementados y son optativos. `v7.5-pre` pagina el
+- **`v7.4-pre` (R4) y `v7.5-pre` (R5)** están implementados y son optativos (la disposición de `v7.5-pre` es la de `v7` final). `v7.5-pre` pagina el
   índice (apertura local y por HTTP Range sin leer el índice entero), conserva flags LAS y Extra
-  Bytes (RF-24) y tiene el subcomando `viewer_convert verify`. R5 vive en la rama
-  `feat/r5-paged-hierarchy`, pendiente de integración. Medido en RED-REF: primer frame 370–390 ms
+  Bytes (RF-24) y tiene el subcomando `viewer_convert verify`. Medido en RED-REF: primer frame 370–390 ms
   y 4 px ≤ 1,3 s, dentro de RQ-04 ([registro](docs/records/benchmarks/R5_P4_HTTP_RANGE_02-11-2026.md)).
   El perfil `release` usa `opt-level = 3` ([conversor](docs/records/benchmarks/EXPLORE_OPT_LEVEL_02-11-2026.md),
   [WASM](docs/records/benchmarks/EXPLORE_OPT_LEVEL_WASM_02-11-2026.md)).
-- Formato predeterminado durante la transición: **v5 definitivo** (`OCTVFRM1`, revisión 0), con
-  `.oct` (coordenadas y jerarquía) y `.octattrs` (RGB y atributos numéricos) separados. Los
-  archivos v1–v4 y v5 provisionales (`OCTVWFRM`) deben regenerarse desde sus fuentes.
+- Formato predeterminado: **`v7` final** (`OCTVIDX7`, revisión 0; disposición de `v7.5-pre` con el
+  escritor de orden híbrido fijo, hoja de 64 000 puntos, rejilla 256 y 2 divisiones), con `.oct`
+  (coordenadas y jerarquía paginada) y `.octattrs` (RGB y atributos numéricos) separados
+  ([ADR 0044](docs/adr/0044-v7-final-congelada-y-predeterminada.md),
+  [especificación](docs/reference/format/FORMAT_V7.md)). `v5` (`OCTVFRM1`), `v6.N-pre` y `v7.N-pre`
+  siguen legibles y escribibles con `--format-version`; los checkpoints y la entrada EPT exigen
+  `v5` (o `v7.1`–`v7.3-pre` para EPT con checkpoints). Los archivos v1–v4 y v5 provisionales
+  (`OCTVWFRM`) deben regenerarse desde sus fuentes.
 - `v6.1-pre`–`v6.4-pre` están implementados y son optativos (comparación y compatibilidad);
   V6 final y pre5 permanecen rechazados. Identidades y qué añade cada una:
   [inventario](docs/reference/inventory.md#contrato-de-almacenamiento-y-atributos).
@@ -53,15 +57,15 @@ Toolchain nightly fijado: [CONTRIBUTING](CONTRIBUTING.md#toolchain).
 
 ### Estado (15-11-2026)
 
-Activo; siguiente trabajo en [Cómo retomar](docs/plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026).
+Activo (D3c completado el 15-11-2026); siguiente trabajo en [Cómo retomar](docs/plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026).
 Ramas (remoto `origin`, GitHub privado): el trabajo verificado está en `feat/r3-v75`; `feat/render-r3-node-cells` es su ancestro. Los experimentos de R3 quedan en `experiment/r3-adaptive-depth`, `experiment/r3-layout-narrow` (base de la Tarea 1) y `experiment/r3-region-widths`.
 
 | Orden | Trabajo | Estado | Siguiente paso |
 | --- | --- | --- | --- |
 | 1 | R3 sobre v7.5 ([plan](docs/plans/render-r3-cubos-en-gpu.md); ADR [0031](docs/adr/0031-celdas-por-nodo-en-v7-5.md) a [0036](docs/adr/0036-hi-z-por-celda.md)) | **Completado.** Celdas por nodo residentes en GPU (pool de 512 MiB, Hi-Z por celda, residencia por celdas, corte ajustado a los presupuestos de CPU y GPU), todos los modos de color, continuidad por nube, modos de px fijo y dinámico y recuperación ante la pérdida del dispositivo. En este equipo cumple RQ-01, RQ-02 y RQ-05 (ADR 0027 y 0031 a 0040) | R3 completado el 14-11-2026: Tareas 11 a 17 hechas ([B1c](docs/records/benchmarks/R3_B1C_CPU_FIT_14-11-2026.md), [B1d](docs/records/benchmarks/R3_B1D_GPU_POOL_14-11-2026.md), [B1b](docs/records/benchmarks/R3_B1B_HIZ_14-11-2026.md), [B2](docs/records/benchmarks/R3_B2_COLOR_14-11-2026.md) y [B2b](docs/records/benchmarks/R3_B2B_ASYNC_ATTRS_14-11-2026.md), [B3](docs/records/benchmarks/R3_B3_CONTINUITY_14-11-2026.md), [B4](docs/records/benchmarks/R3_B4_PX_MODES_14-11-2026.md), [B5](docs/records/benchmarks/R3_B5_DEVICE_LOST_14-11-2026.md), [T17](docs/records/benchmarks/R3_T17_MEASURE_14-11-2026.md)); la ruta de celdas es la predeterminada (R3-Q35). Desde entonces, la construcción de celdas ya no depende del orden de los puntos ([D3a](docs/records/benchmarks/D3A_CELL_SORT_ORDER_14-11-2026.md)) |
-| 2 | Velocidad de conversión (RQ-07) | **Fase cerrada** (RQ-07 se comprueba al promover V7). v7.5/V5 ≈ 2,0× en Belvedere. La [fase C](docs/records/benchmarks/EXPLORE_CONVERT_SPEED_14-11-2026.md) y la copia diferida ([C4](docs/records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)) no lo mejoran: el coste son accesos aleatorios a memoria | El propietario revisó la cifra de conversión de RQ-07 el 15-11-2026 ([ADR 0043](docs/adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)); TC5 no se planifica |
-| 3 | Fuente remota y V7 final ([plan](docs/plans/mejoras-pendientes-13-11-2026.md#fase-d-fuente-remota-y-v7-final)) | Hechos D1 (cancelación y reintentos), D2 (8 lecturas remotas), OQ-09 ([ADR 0041](docs/adr/0041-orden-de-filas-libre-por-bloque.md)) y el escritor híbrido ([D3b](docs/records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md): `.oct` de Belvedere −34,9 % frente al orden de la fuente; `.oct` y `.octattrs` juntos, −10,7 % frente a V5 según [C4](docs/records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)) | D3c: congelar V7 con el escritor híbrido por defecto ([ADR 0042](docs/adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)), ya desbloqueado |
-| 4 | Integración | `feat/r3-v75` verificado (`check.sh` 24/24); remoto `origin` decidido el 15-11-2026 (sobrescribe un historial de 2023 sin relación) | Publicar `master` como `main` y `feat/r3-v75`; PR a `main` tras D3c |
+| 2 | Velocidad de conversión (RQ-07) | **Cerrado.** RQ-07 medido con `v7` final: ×2,015 en tiempo y +35,8 % de RSS frente a V5, dentro del ADR 0043 ([registro](docs/records/benchmarks/D3C_RQ07_V7_15-11-2026.md)); antes, v7.5/V5 ≈ 2,0× en Belvedere. La [fase C](docs/records/benchmarks/EXPLORE_CONVERT_SPEED_14-11-2026.md) y la copia diferida ([C4](docs/records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)) no lo mejoran: el coste son accesos aleatorios a memoria | El propietario revisó la cifra de conversión de RQ-07 el 15-11-2026 ([ADR 0043](docs/adr/0043-coste-de-conversion-de-v7-frente-a-v5.md)); TC5 no se planifica |
+| 3 | Fuente remota y V7 final ([plan](docs/plans/mejoras-pendientes-13-11-2026.md#fase-d-fuente-remota-y-v7-final)) | Hechos D1 (cancelación y reintentos), D2 (8 lecturas remotas), OQ-09 ([ADR 0041](docs/adr/0041-orden-de-filas-libre-por-bloque.md)), el escritor híbrido ([D3b](docs/records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md): `.oct` de Belvedere −34,9 % frente al orden de la fuente; `.oct` y `.octattrs` juntos, −10,7 % frente a V5 según [C4](docs/records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md)) y **D3c (15-11-2026)**: `v7` final congelado y predeterminado ([ADR 0044](docs/adr/0044-v7-final-congelada-y-predeterminada.md), [plan](docs/plans/d3c-congelado-v7-final.md); web Belvedere ×1,869, [registro](docs/records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md)) | Ninguno; D3c cerrado. Después: D4 (TW8 `{url}` en la API pública) y la retirada de V5/V6 |
+| 4 | Integración | `feat/r3-v75` con D3c hecha; remoto `origin` decidido el 15-11-2026 (sobrescribe un historial de 2023 sin relación) | PR de `feat/r3-v75` a `main` en `origin`; después D4 |
 
 Revisión de técnicas del 13-11-2026 ([registro](docs/records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md)): sus propuestas, ordenadas tras R3, la velocidad de conversión y la robustez remota, están en el [plan de mejoras](docs/plans/mejoras-pendientes-13-11-2026.md), que también corrige la guarda de reintentos de páginas. Pendientes menores: medición remota sin órbita, S3 real ni compresión. Worktrees obsoletos eliminados el 05-11-2026 con permiso del propietario; las ramas se conservan.
 
@@ -115,16 +119,17 @@ condicionadas en el inventario, sin convertirlos en compromisos nuevos.
 
 ```sh
 cargo run --profile perf -p viewer_convert -- INPUT.laz OUTPUT.oct --format-version v7.3-pre
-# v5 es el default si se omite --format-version. También admite un directorio EPT local
+# v7 final es el default si se omite --format-version (checkpoints y EPT exigen v5, ADR 0044). También admite un directorio EPT local
 # laszip o su ept.json. --checkpoint conserva fases LAS/LAZ y bloques EPT (V7.1/V7.2/V7.3-pre);
 # --resume retoma la misma entrada/opciones. v7.2-pre limita ocupación a compact24; v7.3-pre
 # además limita diccionarios a tuplas de 1/2/4 B.
 ```
 
-Cada `v7.N-pre` identifica una revisión exacta de desarrollo, aún provisional; `v7` final y
-revisiones posteriores a V7.5-pre se rechazan, igual que versiones sin backend o checkpoints de otra
+Cada `v7.N-pre` identifica una revisión exacta de desarrollo, aún provisional; `v7` final (identidad
+congelada, [spec](docs/reference/format/FORMAT_V7.md)) es la salida predeterminada; las
+revisiones posteriores a `v7` final se rechazan, igual que versiones sin backend o checkpoints de otra
 identidad. Especificaciones:
-[V5](docs/reference/format/FORMAT_V5.md), [V7.1-pre](docs/reference/format/FORMAT_V7_PRE1.md),
+[V5](docs/reference/format/FORMAT_V5.md), [V7](docs/reference/format/FORMAT_V7.md), [V7.1-pre](docs/reference/format/FORMAT_V7_PRE1.md),
 [V7.2-pre](docs/reference/format/FORMAT_V7_PRE2.md), [V7.3-pre](docs/reference/format/FORMAT_V7_PRE3.md), [V7.4-pre](docs/reference/format/FORMAT_V7_PRE4.md), [V7.5-pre](docs/reference/format/FORMAT_V7_PRE5.md).
 
 | Archivo | Contenido | Uso |

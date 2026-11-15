@@ -1,6 +1,6 @@
 # D3c: congelado de V7 final — plan de implementación
 
-Estado: listo para ejecutar · 15-11-2026 · tarea D3c del [plan de mejoras](mejoras-pendientes-13-11-2026.md#fase-d-fuente-remota-y-v7-final); enmendado por su pre-mortem el mismo día
+Estado: completado · 15-11-2026 · tarea D3c del [plan de mejoras](mejoras-pendientes-13-11-2026.md#fase-d-fuente-remota-y-v7-final); enmendado por su pre-mortem el mismo día
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -152,6 +152,13 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 **Files:**
 - Modify: `README.md` (formato predeterminado, «Prioridades pendientes»), `CONTRIBUTING.md:68-70`, `docs/reference/inventory.md`, `docs/plans/format-v7-plan.md:440-447` (inventario de promoción: qué queda para la retirada), `docs/plans/mejoras-pendientes-13-11-2026.md` (D3c hecho), este plan (estado)
 
-- [ ] **Step 1:** buscar afirmaciones que el cambio vuelve falsas: `grep -rn 'V5 sigue\|predetermin\|DEFAULT_OUTPUT\|v7.5-pre' README.md CONTRIBUTING.md docs --include='*.md' | grep -v docs/records/`; corregir cada una o enlazarla al ADR 0044.
-- [ ] **Step 2:** `python3 scripts/check_docs_links.py && python3 scripts/check_docs_index.py` verdes.
-- [ ] **Step 3:** commit `docs: record the V7 freeze and the new default output`.
+- [x] **Step 1:** buscar afirmaciones que el cambio vuelve falsas: `grep -rn 'V5 sigue\|predetermin\|DEFAULT_OUTPUT\|v7.5-pre' README.md CONTRIBUTING.md docs --include='*.md' | grep -v docs/records/`; corregir cada una o enlazarla al ADR 0044.
+- [x] **Step 2:** `python3 scripts/check_docs_links.py && python3 scripts/check_docs_index.py` verdes.
+- [x] **Step 3:** commit `docs: record the V7 freeze and the new default output`.
+
+## Resultado
+
+Commits `4523c09..HEAD` en `feat/r3-v75`; decisión en el [ADR 0044](../adr/0044-v7-final-congelada-y-predeterminada.md). Registros: [RQ-07 con V7](../records/benchmarks/D3C_RQ07_V7_15-11-2026.md) (x2,015 en tiempo, +35,8 % de RSS: pasa el ADR 0043), [Belvedere web](../records/benchmarks/D3C_WEB_BELVEDERE_15-11-2026.md) (x1,869) y [referencias](../records/benchmarks/D3C_V7_REFERENCES_15-11-2026.md).
+- Desviación 1: los casos R1 no predeterminados no se pueden reproducir con V7, porque fija hoja, rejilla y divisiones.
+- Desviación 2: se corrigió un desbordamiento de `consume_rank` con profundidades globales > 33 (panic en debug; en release solo envolvía una pista), `71660fc`.
+- Aparcado: separar `LasExtraBytes` de `LasExtraBytesForFormat`; copia en JS del conjunto de formatos de marco global; aserción superficial de checkpoint intacto; funciones `pub` de `spatial`/`blocks` sin `validate()`.
