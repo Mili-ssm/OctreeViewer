@@ -1,0 +1,8 @@
+base_commit 7ec7e85 (explore/cell-lod-spike, plus the uncommitted-at-run spike changes committed with this record)
+rustc rustc 1.101.0-nightly (41089d07a 2026-10-27)
+kernel 7.3.3-300.fc45.x86_64
+cpu AMD Ryzen AI 9 365 w/ Radeon 880M
+ab83ea5db6cfc21b6dfc175836c59020d54a0593b717fa9a80cc24e8c8503cc5  crates/viewer_render_wgpu/examples/coverage_spike.rs
+a0cbe40efa400897d0b83efa816a485f006b16a20ae0a65980a65ea08769d1c5  target/perf/examples/coverage_spike
+da206a659ea0bfdfbfb3d8141592387cb2dde7133e6a5e44ed9a7a5db3c9f0c4  render-data/belvedere-v7.oct
+a213eb2391cac51c37e2b2e213e30d8ab54141a5e0bf55ebcd6a0a031d480783  render-data/majadas-v7.oct
