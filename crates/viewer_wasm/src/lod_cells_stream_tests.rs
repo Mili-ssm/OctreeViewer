@@ -1,6 +1,6 @@
 //! R3 Task 9b2a: the px ladder of the cells path, streamed block by block (R3-Q19), with a
 //! strict recording `CellTarget` and a cell-level coverage oracle. The real-data tests need
-//! `target/render-data/belvedere-v75.oct` and skip with a message without it, unless
+//! `target/render-data/belvedere-v7.oct` and skip with a message without it, unless
 //! `R3_REQUIRE_REAL_DATA=1` makes the missing file a failure.
 
 use super::cells::MAX_CELL_CUT_GAP;
@@ -1338,7 +1338,7 @@ impl Real {
 
 #[test]
 fn real_streaming_ladder_belvedere() {
-    let Some(mut real) = open_real("belvedere-v75.oct", 4.0, 256 << 20) else {
+    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, 256 << 20) else {
         return;
     };
     let anchors = real.anchors_near([0.5, 0.5, 0.5]);
@@ -1384,7 +1384,7 @@ const REGRAFT_PAGE_BUDGET: usize = 60_000;
 
 #[test]
 fn real_regraft_belvedere() {
-    let Some(mut real) = open_real("belvedere-v75.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
+    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
         return;
     };
     let (a, b) = region_views(&real);
@@ -1442,7 +1442,7 @@ fn real_regraft_belvedere() {
 
 #[test]
 fn real_pages_with_drawn_nodes_are_not_evicted() {
-    let Some(mut real) = open_real("belvedere-v75.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
+    let Some(mut real) = open_real("belvedere-v7.oct", 4.0, REGRAFT_PAGE_BUDGET) else {
         return;
     };
     let (a, b) = region_views(&real);

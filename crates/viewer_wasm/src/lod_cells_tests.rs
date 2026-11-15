@@ -1258,9 +1258,9 @@ fn a_leaf_is_a_resident_node_without_children_never_an_unloaded_anchor() {
 /// (`cargo test -p viewer_wasm --offline -- --ignored multi_owner --nocapture`).
 #[test]
 #[ignore = "needs the datasets of target/render-data"]
-fn multi_owner_blocks_in_the_v75_datasets() {
+fn multi_owner_blocks_in_the_v7_datasets() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/render-data");
-    for name in ["majadas-v75.oct", "belvedere-v75.oct"] {
+    for name in ["majadas-v7.oct", "belvedere-v7.oct"] {
         let path = dir.join(name);
         let Ok(file) = std::fs::File::open(&path) else {
             eprintln!("SKIP {name}: {} is missing", path.display());

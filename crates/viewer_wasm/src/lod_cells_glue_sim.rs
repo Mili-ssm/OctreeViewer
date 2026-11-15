@@ -758,7 +758,7 @@ fn a_malformed_node_is_refused_at_the_message_and_leaves_the_queue_alone() {
 }
 
 fn glue_real_case(name: &str, orbit: bool, budget_percent: u64, seeds: &[u64], inject: Inject) {
-    let open = || open_real("belvedere-v75.oct", 4.0, 256 << 20);
+    let open = || open_real("belvedere-v7.oct", 4.0, 256 << 20);
     let Some(real) = open() else { return };
     let views = real_views(&real, orbit);
     let mut unlimited = real.harness;

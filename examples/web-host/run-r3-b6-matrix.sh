@@ -44,14 +44,14 @@ for kind in ${KINDS:-timing pixels rest}; do
   [ "$kind" = rest ] && extra=(--rest-first)
   for ds in majadas belvedere; do
     for a in cpu cells; do
-      run "$kind-$ds-$a-4px-local" 400 "$DATA/$ds-v75.oct" --px=4 --cells="$(arm $a)" --max-load-s=120 --pixels=final "${extra[@]}"
+      run "$kind-$ds-$a-4px-local" 400 "$DATA/$ds-v7.oct" --px=4 --cells="$(arm $a)" --max-load-s=120 --pixels=final "${extra[@]}"
     done
   done
   if [ "$kind" != pixels ]; then
     for a in cpu cells; do
-      run "$kind-majadas-$a-4px-remote" 500 "$DATA/majadas-v75.oct" --px=4 --cells="$(arm $a)" --max-load-s=180 --remote --pixels=final "${extra[@]}"
+      run "$kind-majadas-$a-4px-remote" 500 "$DATA/majadas-v7.oct" --px=4 --cells="$(arm $a)" --max-load-s=180 --remote --pixels=final "${extra[@]}"
     done
-    run "$kind-majadas-cells-1px-local" 500 "$DATA/majadas-v75.oct" --px=1 --cells=1 --max-load-s=240 --pixels=final "${extra[@]}"
+    run "$kind-majadas-cells-1px-local" 500 "$DATA/majadas-v7.oct" --px=1 --cells=1 --max-load-s=240 --pixels=final "${extra[@]}"
   fi
 done
 echo "== done $(date +%T)"
