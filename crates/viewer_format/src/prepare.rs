@@ -505,8 +505,8 @@ fn spread_by_3(value: u64) -> u64 {
 /// Source row indices ordered by (Morton key, source row): a deterministic total order.
 fn morton_permutation(coordinates: &[[u32; 3]]) -> Vec<u32> {
     // Stable LSD radix sort of the rows by key: equal keys keep source row order, so the result
-    // is the (key, row) order. Only the bits where the block's keys differ are visited; a dense
-    // block spans a few dozen of the 96, so this takes a handful of 11-bit passes.
+    // is the (key, row) order. Only the bits where the block's keys differ are visited (at most
+    // nine 11-bit passes). The caller guarantees the row count fits in u32.
     const BITS: u32 = 11;
     const MASK: u128 = (1 << BITS) - 1;
     let keys: Vec<u128> = coordinates.iter().map(|c| morton_key(*c)).collect();
