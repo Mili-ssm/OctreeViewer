@@ -72,6 +72,10 @@ git -C "$tmp" rm -rfq --ignore-unmatch . >/dev/null
 find "$tmp" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 cp -a "$site_abs"/. "$tmp"/
 git -C "$tmp" add -A
+if git -C "$tmp" diff --cached --quiet; then
+  echo "gh-pages already matches $sha; nothing to publish"
+  exit 0
+fi
 git -C "$tmp" commit -q -m "deploy: publish the experimental demo from $sha"
 git -C "$tmp" push origin gh-pages
 echo "Published $sha to gh-pages"
