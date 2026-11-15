@@ -1331,3 +1331,22 @@ fn buildable_range_matches_the_chain_bounds() {
         Err(NodeCellError::AbsoluteDepthExceeded)
     );
 }
+
+#[test]
+fn a_leaf_level_at_max_depth_with_merged_positions_is_an_error() {
+    let points = vec![
+        Point::new([16.0; 3], ColorRgb::new(1, 2, 3)),
+        Point::new([16.000_1; 3], ColorRgb::new(4, 5, 6)),
+    ];
+    let block = plain_block(points);
+    let result = node_cell_level(
+        &grid(),
+        NodeId::new(1),
+        cube([8.0; 3], 8.0),
+        None,
+        true,
+        std::slice::from_ref(&block),
+        MAX_CELL_DEPTH,
+    );
+    assert_eq!(result, Err(NodeCellError::AbsoluteDepthExceeded));
+}

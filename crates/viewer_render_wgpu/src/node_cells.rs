@@ -174,31 +174,14 @@ impl NodeCellSource for PointNodeCellSource {
         let (first, last) = setup.buildable;
         let node_depth = setup.node_depth;
         let points: Vec<_> = blocks.iter().map(Points::new).collect();
-        let distinct_positions: HashSet<_> = blocks
-            .iter()
-            .flat_map(|block| block.points().points())
-            .filter(|point| is_leaf && point.position.iter().all(|value| value.is_finite()))
-            .map(|point| {
-                point
-                    .position
-                    .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
-            })
-            .collect();
+        let distinct = distinct_position_count(blocks, is_leaf);
         let mut levels = Vec::new();
         for depth in first..=last {
-            let cells = build_level(grid, bounds, &points, depth)?;
-            let fully_separated = is_leaf && cells.len() == distinct_positions.len();
-            let octant_offsets = octant_offsets(grid, bounds, node_depth, depth, &cells);
-            levels.push(NodeCellLevel {
-                depth,
-                cells,
-                octant_offsets,
-            });
+            let (level, fully_separated) =
+                build_checked_level(grid, bounds, &points, node_depth, depth, is_leaf, distinct)?;
+            levels.push(level);
             if fully_separated {
                 break;
-            }
-            if is_leaf && depth == MAX_CELL_DEPTH {
-                return Err(NodeCellError::AbsoluteDepthExceeded);
             }
         }
         let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
@@ -229,13 +212,57 @@ pub fn node_cell_level(
         return Err(NodeCellError::AbsoluteDepthExceeded);
     }
     let points: Vec<_> = blocks.iter().map(Points::new).collect();
-    let cells = build_level(grid, bounds, &points, depth)?;
-    let octant_offsets = octant_offsets(grid, bounds, setup.node_depth, depth, &cells);
-    Ok(NodeCellLevel {
+    let distinct = distinct_position_count(blocks, is_leaf);
+    build_checked_level(
+        grid,
+        bounds,
+        &points,
+        setup.node_depth,
+        depth,
+        is_leaf,
+        distinct,
+    )
+    .map(|(level, _)| level)
+}
+
+/// Distinct finite positions of a leaf (0 for an internal node, which never separates fully).
+fn distinct_position_count(blocks: &[PointBlock], is_leaf: bool) -> usize {
+    blocks
+        .iter()
+        .flat_map(|block| block.points().points())
+        .filter(|point| is_leaf && point.position.iter().all(|value| value.is_finite()))
+        .map(|point| {
+            point
+                .position
+                .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
+        })
+        .collect::<HashSet<_>>()
+        .len()
+}
+
+/// One level plus whether a leaf holds one cell per distinct position there. A leaf still merged
+/// at `MAX_CELL_DEPTH` is an error (ADR 0032), for the chain and the single-level build alike.
+fn build_checked_level(
+    grid: &CellGrid,
+    bounds: SpatialBounds,
+    points: &[Points<'_>],
+    node_depth: u8,
+    depth: u8,
+    is_leaf: bool,
+    distinct: usize,
+) -> Result<(NodeCellLevel, bool), NodeCellError> {
+    let cells = build_level(grid, bounds, points, depth)?;
+    let fully_separated = is_leaf && cells.len() == distinct;
+    if is_leaf && depth == MAX_CELL_DEPTH && !fully_separated {
+        return Err(NodeCellError::AbsoluteDepthExceeded);
+    }
+    let octant_offsets = octant_offsets(grid, bounds, node_depth, depth, &cells);
+    let level = NodeCellLevel {
         depth,
         cells,
         octant_offsets,
-    })
+    };
+    Ok((level, fully_separated))
 }
 
 /// Validated depth range of a node, shared by the chain and the single-level build.
