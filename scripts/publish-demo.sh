@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Builds the experimental web demo as a static site and, with --push, publishes it to the
+# gh-pages branch (https://mili-ssm.github.io/OctreeViewer/, ADR 0045).
+#   scripts/publish-demo.sh [--no-build] [--push]
+# Without --push it only assembles target/demo-site and prints how to test it.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+build=1
+push=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-build) build=0 ;;
+    --push) push=1 ;;
+    -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$push" = "1" ] && [ -n "$(git status --porcelain)" ]; then
+  echo "refusing to publish with a dirty working tree; commit or stash first" >&2
+  exit 1
+fi
+
+if [ "$build" = "1" ]; then
+  command -v wasm-pack >/dev/null || { echo "wasm-pack not found (cargo install wasm-pack)" >&2; exit 1; }
+  (cd crates/viewer_wasm && wasm-pack build --release --target web --out-dir ../../pkg)
+fi
+for f in viewer_wasm.js viewer_wasm_bg.wasm; do
+  [ -f "pkg/$f" ] || { echo "pkg/$f missing: run without --no-build" >&2; exit 1; }
+done
+
+site="target/demo-site"
+rm -rf "$site"
+mkdir -p "$site/pkg"
+host=examples/web-host
+cp "$host"/index.html "$host"/sample.oct "$host"/sample.octattrs "$site"/
+# The page and its workers; probes, spikes, tests and the RED-REF server stay out.
+for f in "$host"/*.js "$host"/*.mjs; do
+  case "$(basename "$f")" in probe-*|spike-*|red-ref-server.mjs) continue ;; esac
+  cp "$f" "$site"/
+done
+cp pkg/viewer_wasm.js pkg/viewer_wasm_bg.wasm "$site/pkg/"
+# Workers import the bindings from ../../pkg in the repository layout; here pkg/ sits next to them.
+sed -i 's#"\.\./\.\./pkg/viewer_wasm\.js"#"./pkg/viewer_wasm.js"#' "$site"/*.js
+if grep -l '\.\./\.\./pkg' "$site"/*.js "$site"/*.mjs 2>/dev/null; then
+  echo "unpatched ../../pkg import left in the site" >&2
+  exit 1
+fi
+touch "$site/.nojekyll"
+
+site_abs="$(cd "$site" && pwd)"
+sha="$(git rev-parse --short HEAD)"
+
+if [ "$push" = "0" ]; then
+  echo "Site built at $site_abs"
+  echo "Test it: python3 -m http.server -d $site_abs 8001   then open http://127.0.0.1:8001/"
+  exit 0
+fi
+
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/gh-pages.XXXXXX")"
+cleanup() { git worktree remove --force "$tmp" 2>/dev/null || true; rm -rf "$tmp"; git worktree prune; }
+trap cleanup EXIT
+git fetch origin gh-pages 2>/dev/null || true
+if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+  git worktree add --detach "$tmp" origin/gh-pages
+  git -C "$tmp" checkout -B gh-pages origin/gh-pages
+else
+  git worktree add --detach "$tmp"
+  git -C "$tmp" checkout --orphan gh-pages
+fi
+git -C "$tmp" rm -rfq --ignore-unmatch . >/dev/null
+find "$tmp" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+cp -a "$site_abs"/. "$tmp"/
+git -C "$tmp" add -A
+git -C "$tmp" commit -q -m "deploy: publish the experimental demo from $sha"
+git -C "$tmp" push origin gh-pages
+echo "Published $sha to gh-pages"
