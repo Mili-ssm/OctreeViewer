@@ -89,6 +89,8 @@ const autzen = findAutzen();
 // `multi`: the case must produce more than one block, else it would not exercise the planner.
 const cases = [
   { name: "small-default", input: small, ppb: 262144, divisions: 2, multi: false, format: "v5" },
+  // Intentionally no `format`: follows DEFAULT_OUTPUT on both sides.
+  { name: "small-follows-default", input: small, ppb: 262144, divisions: 2, multi: false },
   { name: "small-4096-d2", input: small, ppb: 4096, divisions: 2, multi: true, format: "v5" },
   { name: "small-4096-d8", input: small, ppb: 4096, divisions: 8, multi: true, format: "v5" },
   { name: "synthetic-4096-d2", input: synthetic, ppb: 4096, divisions: 2, multi: true, format: "v5" },
@@ -190,8 +192,8 @@ for (const { name, input, ppb, divisions, multi, format, rowOrder, sourceTwin } 
 // The native 4x harness (`native_hybrid`, file spill zones, one worker) must write the same pair as
 // the CLI whether the budget forces spilling (64 KiB) or not (2 GiB).
 const hybridCases = cases.filter(({ name }) => name === "small-default" || name === "synthetic-4096-d8");
-for (const { name, input, ppb, divisions } of hybridCases) {
-  const native = nativeConvert(name, input, ppb, divisions);
+for (const { name, input, ppb, divisions, format } of hybridCases) {
+  const native = nativeConvert(name, input, ppb, divisions, format);
   for (const [label, budget, spills] of [["64k", 65536, true], ["2g", 2 ** 31, false]]) {
     const output = join(workDir, `${name}-hybrid-${label}.oct`);
     const zones = join(workDir, `${name}-zones-${label}`);
