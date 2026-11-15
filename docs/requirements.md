@@ -182,7 +182,7 @@ Opciones y recomendación originales de cada pregunta: `git show 10e5074^:docs/e
 | --- | --- | --- |
 | C4 / RQ-07: coste de conversión de V7 | Se revisa la cifra de conversión de [RQ-07](#requisitos-de-calidad); TC5 no se planifica. | [ADR 0043](adr/0043-coste-de-conversion-de-v7-frente-a-v5.md) |
 | Congelado de V7 (D3c) | V7 final sobre v7.5-pre, escritor híbrido fijo, salida predeterminada ya; checkpoint y EPT exigen otro formato ([inventario](reference/inventory.md#entrada-checkpoints-y-formato)); `-pre` conservadas; LZ4 propio después. | [ADR 0044](adr/0044-v7-final-congelada-y-predeterminada.md) |
-| Integración continua | Sin CI: los checks se ejecutan en local con `scripts/check.sh`; se retira `.github/workflows/ci.yml` y se desactiva GitHub Actions. | [CONTRIBUTING](../CONTRIBUTING.md#checks) |
+| Integración continua | Sin CI: los checks se ejecutan en local con `scripts/check.sh`; se retira `.github/workflows/ci.yml`; Actions queda solo para el despliegue gestionado de Pages (ADR 0045). | [CONTRIBUTING](../CONTRIBUTING.md#checks) |
 | Integración de `feat/r3-v75` | Remoto `origin` = `github.com/Mili-ssm/OctreeViewer`; integrada en `main` por la [PR #1](https://github.com/Mili-ssm/OctreeViewer/pull/1) (15-11-2026). | [Plan](plans/mejoras-pendientes-13-11-2026.md#cómo-retomar-15-11-2026) |
 
 ## Catálogo: funcional o técnico, duro o blando (propuesta 14-11-2026)
