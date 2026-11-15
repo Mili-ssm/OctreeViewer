@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-    FORMAT_VERSIONS, OPTION_DEFAULTS, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
+    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
 } from "../converter-ui.mjs";
 
 test("defaults are the CLI defaults and map to core options", () => {
@@ -81,4 +81,13 @@ test("timings and spool stats render only what is present", () => {
     assert.equal(spoolText({ spilledBytes: 2.5e9, pagesPeak: 12000 }), "Spool: spilled 2.5 GB · pages peak 12,000");
     assert.equal(spoolText({ spilledBytes: 0, pagesPeak: 0 }), "Spool: spilled 0.0 MB · pages peak 0");
     assert.equal(spoolText(undefined), "");
+});
+
+test("fixed-frame fields show the fixed values for global-frame formats and restore the user's otherwise", () => {
+    assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v7", "1000"), "64000");
+    assert.equal(fixedFrameDisplayValue("spatialDivisions", "v7.5-pre", "4"), "2");
+    assert.equal(fixedFrameDisplayValue("pointsPerBlock", "v5", "1000"), "1000");
+    assert.equal(fixedFrameDisplayValue("spatialDivisions", "v5", undefined), OPTION_DEFAULTS.spatialDivisions);
+    assert.equal(fixedFrameHint("pointsPerBlock"), "Fixed by the selected format (64,000).");
+    assert.equal(fixedFrameHint("spatialDivisions"), "Fixed by the selected format (2).");
 });

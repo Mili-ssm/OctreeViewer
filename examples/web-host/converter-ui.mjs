@@ -3,7 +3,7 @@
 
 const GB = 1e9;
 
-/** Writable output revisions, in the CLI listing order (`FormatVersion::WRITABLE`). */
+/** Writable output revisions: v7 (the default) first, then the v7.N-pre revisions in ascending order, then v5 and the v6.N-pre revisions. */
 export const FORMAT_VERSIONS = ["v7", "v7.1-pre", "v7.2-pre", "v7.3-pre", "v7.4-pre", "v7.5-pre", "v5", "v6.1-pre", "v6.2-pre", "v6.3-pre", "v6.4-pre"];
 export const SPATIAL_DIVISIONS = [2, 4, 8];
 
@@ -11,6 +11,19 @@ const GLOBAL_FRAME_FORMATS = new Set(["v7", "v7.4-pre", "v7.5-pre"]);
 
 /** Global-frame formats fix points per block and spatial divisions; the core rejects other values. */
 export const isGlobalFrameFormat = (formatVersion) => GLOBAL_FRAME_FORMATS.has(formatVersion);
+
+/** Values the global-frame formats fix (the core's 64,000 points per block and 2 divisions), as shown in the form. */
+export const FIXED_FRAME_VALUES = Object.freeze({ pointsPerBlock: "64000", spatialDivisions: "2" });
+
+/** Hint shown next to a disabled field, derived from `FIXED_FRAME_VALUES`. */
+export const fixedFrameHint = (name) => `Fixed by the selected format (${Number(FIXED_FRAME_VALUES[name]).toLocaleString("en-US")}).`;
+
+/**
+ * Value to display in a fixed-frame field: the fixed one for a global-frame format, otherwise the
+ * user's `saved` value (or the non-global default when none was saved).
+ */
+export const fixedFrameDisplayValue = (name, formatVersion, saved) =>
+    isGlobalFrameFormat(formatVersion) ? FIXED_FRAME_VALUES[name] : (saved ?? OPTION_DEFAULTS[name]);
 
 /** CLI defaults (`ConvertOptions::default`), as the strings shown in the form. */
 export const OPTION_DEFAULTS = Object.freeze({

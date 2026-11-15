@@ -7,7 +7,7 @@ import { replaceCanvasElement } from "./canvas-replacement.mjs";
 import { framebufferSize } from "./rendering-budget.mjs";
 import { createConverter } from "./converter-api.mjs";
 import {
-    FORMAT_VERSIONS, OPTION_DEFAULTS, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
+    FORMAT_VERSIONS, OPTION_DEFAULTS, fixedFrameDisplayValue, fixedFrameHint, isGlobalFrameFormat, progressText, spoolText, timingsText, validateConverterOptions,
 } from "./converter-ui.mjs";
 
 let canvas = document.getElementById("viewer-canvas");
@@ -823,11 +823,18 @@ for (const version of FORMAT_VERSIONS) {
 }
 
 // Global-frame formats fix these two values: disable the controls and say why (aria-describedby).
+const savedFixedFrameValues = {};
 function syncFixedFrameControls() {
     const fixed = isGlobalFrameFormat(optionFields.formatVersion.value);
     for (const name of ["pointsPerBlock", "spatialDivisions"]) {
-        optionFields[name].disabled = fixed;
-        document.getElementById(`${optionFields[name].id}-fixed`).hidden = !fixed;
+        const field = optionFields[name];
+        if (fixed && !field.disabled) savedFixedFrameValues[name] = field.value;
+        field.value = fixedFrameDisplayValue(name, optionFields.formatVersion.value, savedFixedFrameValues[name]);
+        if (!fixed) delete savedFixedFrameValues[name];
+        field.disabled = fixed;
+        const hint = document.getElementById(`${field.id}-fixed`);
+        hint.textContent = fixedFrameHint(name);
+        hint.hidden = !fixed;
     }
 }
 
