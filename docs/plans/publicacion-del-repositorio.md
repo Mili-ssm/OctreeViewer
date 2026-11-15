@@ -29,6 +29,6 @@ es un registro interno; demo: abre la muestra, pero una conversión V7 pequeña 
   desactivados; regla ligera en `main`; avisos de seguridad y de secretos; borrar las ejecuciones de Actions
   antiguas y las ramas ya fusionadas. Comprobación: `gh api repos/Mili-ssm/OctreeViewer`.
 - [x] Hacer público el repositorio y comprobarlo sin sesión. Comprobación: la portada y la demo cargan sin login.
-- [x] #35 (una nube con puntos muy juntos se ve como un punto): causa raíz establecida; el propietario decidió que el
+Fuera del plan: [#35](https://github.com/Mili-ssm/OctreeViewer/issues/35) (una nube con puntos muy juntos se ve como un punto) sigue abierta; causa raíz establecida; el propietario decidió que el
   render derive el nivel pedido ([ADR 0046](../adr/0046-la-poda-de-niveles-no-limita-el-render.md)). Su implementación
   pasa al desarrollo, en la issue.

@@ -48,7 +48,7 @@ if grep -l '\.\./\.\./pkg' "$site"/*.js "$site"/*.mjs 2>/dev/null; then
 fi
 # Every relative import of the page and its workers must resolve inside the site.
 missing=0
-for ref in $(grep -ho 'from "\./[^"]*"\|import("\./[^"]*")\|new URL("\./[^"]*"' "$site"/*.js "$site"/*.mjs | grep -o '\./[^"]*' | sort -u); do
+for ref in $(grep -hoE "(from|import\(|new URL\() *['\"]\./[^'\"]*['\"]" "$site"/*.js "$site"/*.mjs | grep -oE "\./[^'\"]*" | sort -u); do
   [ -f "$site/$ref" ] || { echo "missing in site: $ref" >&2; missing=1; }
 done
 [ "$missing" = "0" ] || exit 1
