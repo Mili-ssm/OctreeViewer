@@ -69,7 +69,9 @@ pub use quantized_occupancy::{QuantizedOccupancy, QuantizedOccupancyError};
 pub use reader::{
     BlockPayloadKind, BlockPayloadStorageStats, BlockStorageStats, FormatReaderLimits,
 };
-pub use writer::{FormatWriter, FormatWriterOptions, PreparedPointBlock, prepare_point_block};
+pub use writer::{
+    FormatWriter, FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block,
+};
 
 pub use version::{
     FileRole, FormatIdentity, FormatVersion, block_checkpoint_versions, probe_format,

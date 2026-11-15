@@ -329,6 +329,36 @@ pub(crate) fn prepare_point_block_for_version_impl(
             }
         }
     }
+    // Hybrid writer (ADR 0041/0042): a block whose source-order winner is CompactOccupied is
+    // retried with its rows sorted by Morton key and DeltaVarint; ties keep source order.
+    let mut row_permutation: Option<Vec<u32>> = None;
+    if options.row_order == RowOrder::Hybrid
+        && geometry_encoding == GeometryEncoding::CompactOccupied
+        && u32::try_from(point_count).is_ok()
+    {
+        let permutation = morton_permutation(quantized.coordinates());
+        let sorted: Vec<[u32; 3]> = permutation
+            .iter()
+            .map(|&row| quantized.coordinates()[row as usize])
+            .collect();
+        let delta = encode_delta(&sorted)?;
+        let other_raw_size = uncompressed_size
+            .checked_sub(geometry_length as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        let delta_total = other_raw_size
+            .checked_add(delta.len() as u64)
+            .ok_or(FormatError::BlockSizeOverflow)?;
+        if delta_total <= options.max_uncompressed_block_bytes {
+            let encoded = compress_block(&delta);
+            if encoded.bytes().len() < encoded_geometry.bytes().len() {
+                geometry_encoding = GeometryEncoding::DeltaVarint;
+                selected_candidate = crate::GeometryCandidateKind::Delta;
+                geometry_raw_length = delta.len();
+                encoded_geometry = encoded;
+                row_permutation = Some(permutation);
+            }
+        }
+    }
     if let Some(diagnostics) = codec_diagnostics.as_mut() {
         for candidate in &mut candidates {
             if candidate.kind == selected_candidate {
@@ -358,6 +388,9 @@ pub(crate) fn prepare_point_block_for_version_impl(
     for color in block.colors() {
         raw.extend_from_slice(&[color.r, color.g, color.b]);
     }
+    if let Some(permutation) = &row_permutation {
+        raw = permute_rows(&raw, permutation, 3);
+    }
     append_payload(&raw, &mut bytes, &mut payloads, layout, 3)?;
     for column in attributes {
         let length = attribute_payload_size(point_count as u64, column.descriptor())?;
@@ -367,6 +400,9 @@ pub(crate) fn prepare_point_block_for_version_impl(
             .map_err(|_| FormatError::AllocationFailed(length))?;
         encode_values(column.values(), &mut raw);
         let width = crate::layout::attribute_tuple_width(column.descriptor())?;
+        if let Some(permutation) = &row_permutation {
+            raw = permute_rows(&raw, permutation, width);
+        }
         append_payload(&raw, &mut bytes, &mut payloads, layout, width)?;
     }
     Ok((
@@ -387,6 +423,49 @@ pub(crate) fn prepare_point_block_for_version_impl(
         },
         codec_diagnostics,
     ))
+}
+
+/// Row order chosen by the writer. V7 rows of a block may be in any order (ADR 0041).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RowOrder {
+    /// Rows stay in the order of the source block.
+    #[default]
+    Source,
+    /// Blocks whose best source-order geometry is `CompactOccupied` are re-encoded sorted by
+    /// Morton key with `DeltaVarint` when that is strictly smaller (ADR 0042).
+    Hybrid,
+}
+
+/// Interleaves the 32 bits of each coordinate into a 96-bit Morton key (no truncation).
+fn morton_key(coordinate: [u32; 3]) -> u128 {
+    let mut key = 0u128;
+    for bit in 0..32 {
+        for (axis, value) in coordinate.iter().enumerate() {
+            key |= u128::from((value >> bit) & 1) << (3 * bit + axis);
+        }
+    }
+    key
+}
+
+/// Source row indices ordered by (Morton key, source row): a deterministic total order.
+fn morton_permutation(coordinates: &[[u32; 3]]) -> Vec<u32> {
+    let mut keyed: Vec<(u128, u32)> = coordinates
+        .iter()
+        .enumerate()
+        .map(|(row, c)| (morton_key(*c), row as u32))
+        .collect();
+    keyed.sort_unstable();
+    keyed.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Row `i` of the result is row `permutation[i]` of `raw`, whose rows are `width` bytes.
+fn permute_rows(raw: &[u8], permutation: &[u32], width: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len());
+    for &row in permutation {
+        let start = row as usize * width;
+        out.extend_from_slice(&raw[start..start + width]);
+    }
+    out
 }
 
 pub(crate) fn candidate_metric(
@@ -698,6 +777,7 @@ pub struct FormatWriterOptions {
     max_quantization_error: f64,
     max_uncompressed_block_bytes: u64,
     page_target_bytes: usize,
+    row_order: RowOrder,
 }
 
 impl FormatWriterOptions {
@@ -717,6 +797,7 @@ impl FormatWriterOptions {
             max_quantization_error,
             max_uncompressed_block_bytes,
             page_target_bytes: crate::TARGET_PAGE_BYTES,
+            row_order: RowOrder::Source,
         })
     }
 
@@ -724,6 +805,12 @@ impl FormatWriterOptions {
     /// (default [`crate::TARGET_PAGE_BYTES`]). A page never has fewer than one level.
     pub fn with_page_target_bytes(mut self, bytes: usize) -> Self {
         self.page_target_bytes = bytes;
+        self
+    }
+
+    /// Row order of each block (default [`RowOrder::Source`]).
+    pub fn with_row_order(mut self, row_order: RowOrder) -> Self {
+        self.row_order = row_order;
         self
     }
 
@@ -754,3 +841,7 @@ impl PreparedPointBlock {
         self.bytes.capacity()
     }
 }
+
+#[cfg(test)]
+#[path = "row_order_tests.rs"]
+mod row_order_tests;

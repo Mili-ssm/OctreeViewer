@@ -18,7 +18,7 @@ pub(crate) use crate::prepare::{
     BlockRecord, BoundsAccumulator, build_block_nodes, ensure_global_frame_matches,
     prepare_point_block_for_version,
 };
-pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, prepare_point_block};
+pub use crate::prepare::{FormatWriterOptions, PreparedPointBlock, RowOrder, prepare_point_block};
 
 /// Writes independently encoded blocks and a canonical index to a fresh seekable stream.
 /// A footer is emitted only after every payload and the complete index have been written.
