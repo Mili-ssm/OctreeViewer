@@ -219,7 +219,7 @@ fn print_help() {
     let default_version = FormatVersion::DEFAULT_OUTPUT;
     eprintln!(
         "Usage: viewer_convert INPUT.las|INPUT.laz|INPUT.copc.laz|EPT_DIRECTORY|EPT_DIRECTORY/ept.json OUTPUT.oct [--format-version {versions}] [--points-per-block N] [--max-error E] [--max-memory-mib MIB] [--spatial-divisions 2|4|8] [--spatial-workers N] [--row-order source|hybrid] [--pipeline-writes] [--checkpoint|--resume (EPT: {checkpoint_versions} only)]\n\
-         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. Paged global-frame formats (v7.4-pre, v7.5-pre, v7) refuse EPT, --checkpoint and --resume: pass --format-version v5 or one of {checkpoint_versions}.\n\
+         Output: OUTPUT.oct (coordinates/index) + OUTPUT.octattrs (optional color/attributes). Reported bytes include both. Global-frame formats (v7.4-pre, v7.5-pre, v7) refuse EPT input, and the paged ones (v7.5-pre, v7) also refuse --checkpoint and --resume: pass --format-version v5 (EPT with checkpoints needs one of {checkpoint_versions}).\n\
          viewer_convert verify FILE.oct reads every index page of a paged v7 file and runs the global checks (and the companion footer when FILE.octattrs exists); exit code 0 if valid, 1 otherwise.\n\
          Defaults: format {default_version}, points per block 64000 (fixed by global-frame formats such as the default v7; 262144 for the others), maximum quantization error 0.01 in source units, estimated memory budget 512 MiB, 2 spatial divisions per axis.\n\
          --spatial-divisions sets the adaptive partition to 2x2x2, 4x4x4, or 8x8x8; the default is 2x2x2.\n\
