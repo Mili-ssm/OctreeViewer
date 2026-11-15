@@ -1,6 +1,6 @@
 # Fase 1: niveles a demanda (#35) Implementation Plan
 
-Estado: propuesto · 16-11-2026
+Estado: en curso · 16-11-2026
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
