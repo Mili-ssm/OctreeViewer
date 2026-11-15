@@ -246,3 +246,39 @@ fn morton_key_matches_the_bit_loop_reference() {
         );
     }
 }
+
+#[test]
+fn morton_permutation_equals_sorting_by_key_then_row() {
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    let mut next = |modulus: u32| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 33) as u32) % modulus
+    };
+    // Narrow ranges give many duplicate keys; the wide case spans the high key bits.
+    for (count, modulus, offset) in [
+        (0, 1, 0),
+        (1, 1, 0),
+        (500, 1, 7),
+        (5000, 16, 1 << 20),
+        (5000, u32::MAX, 0),
+    ] {
+        let coordinates: Vec<[u32; 3]> = (0..count)
+            .map(|_| {
+                [
+                    offset + next(modulus),
+                    offset + next(modulus),
+                    offset + next(modulus),
+                ]
+            })
+            .collect();
+        let mut expected: Vec<u32> = (0..count as u32).collect();
+        expected.sort_by_key(|&row| (super::morton_key(coordinates[row as usize]), row));
+        assert_eq!(
+            super::morton_permutation(&coordinates),
+            expected,
+            "count {count} modulus {modulus}"
+        );
+    }
+}

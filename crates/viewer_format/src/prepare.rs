@@ -504,14 +504,43 @@ fn spread_by_3(value: u64) -> u64 {
 
 /// Source row indices ordered by (Morton key, source row): a deterministic total order.
 fn morton_permutation(coordinates: &[[u32; 3]]) -> Vec<u32> {
-    // The key has 96 bits, so `(key << 32) | row` orders by key, then row, in 16 bytes per point.
-    let mut keyed: Vec<u128> = coordinates
-        .iter()
-        .enumerate()
-        .map(|(row, c)| (morton_key(*c) << 32) | row as u128)
-        .collect();
-    keyed.sort_unstable();
-    keyed.into_iter().map(|k| k as u32).collect()
+    // Stable LSD radix sort of the rows by key: equal keys keep source row order, so the result
+    // is the (key, row) order. Only the bits where the block's keys differ are visited; a dense
+    // block spans a few dozen of the 96, so this takes a handful of 11-bit passes.
+    const BITS: u32 = 11;
+    const MASK: u128 = (1 << BITS) - 1;
+    let keys: Vec<u128> = coordinates.iter().map(|c| morton_key(*c)).collect();
+    let mut order: Vec<u32> = (0..keys.len() as u32).collect();
+    let Some(&first) = keys.first() else {
+        return order;
+    };
+    let varying = keys.iter().fold(0, |acc, key| acc | (key ^ first));
+    if varying == 0 {
+        return order;
+    }
+    let end = 128 - varying.leading_zeros();
+    let mut shift = varying.trailing_zeros();
+    let mut scratch = vec![0_u32; order.len()];
+    while shift < end {
+        let mut counts = [0_usize; 1 << BITS];
+        for &row in &order {
+            counts[((keys[row as usize] >> shift) & MASK) as usize] += 1;
+        }
+        let mut start = 0;
+        for count in &mut counts {
+            let n = *count;
+            *count = start;
+            start += n;
+        }
+        for &row in &order {
+            let digit = ((keys[row as usize] >> shift) & MASK) as usize;
+            scratch[counts[digit]] = row;
+            counts[digit] += 1;
+        }
+        std::mem::swap(&mut order, &mut scratch);
+        shift += BITS;
+    }
+    order
 }
 
 /// Row `i` of the result is row `permutation[i]` of `raw`, whose rows are `width` bytes.
