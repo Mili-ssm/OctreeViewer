@@ -1,3 +1,4 @@
+// V5 is kept as a legacy comparison format until a V8 starts (ADR 0047).
 use std::{env, error::Error, fs::File, path::PathBuf};
 
 use viewer_core::{
@@ -13,7 +14,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let output = env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("examples/web-host/sample.oct"));
+        .unwrap_or_else(|| PathBuf::from("examples/web-host/sample-v5.oct"));
     let version = env::args()
         .nth(2)
         .map(|value| value.parse::<FormatVersion>())

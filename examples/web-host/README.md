@@ -12,14 +12,15 @@ scripts/serve-demo.sh        # builds the wasm bindings, then serves the reposit
 ```
 
 Open <http://127.0.0.1:8000/examples/web-host/> (`PORT=9000 scripts/serve-demo.sh` changes the port;
-`--no-build` skips the build). The page opens the bundled sample (4,096 points) on load; the
+`--no-build` skips the build). The page opens the bundled sample (589,824 points) on load; the
 **Open built-in sample** button reopens it. To try your own cloud, use **Convert a local LAS/LAZ file**
 in the side panel, press **Convert to .oct**, then open the result. Converted files default to the
 `v7` format.
 
-The bundled `sample.oct` is a v5 file (header bytes 8-9 = major 5, bytes 16-19 = revision 0);
-`sample-v7.oct` is a v7 file (major 7, revision 1, `v7.1-pre`) used by the Blob-range probe. The
-built-in sample button opens `sample.oct`.
+The built-in sample button opens `sample.oct`, a final `v7` file drawn by the cells path. The demo
+sample always uses the latest stable format ([ADR 0047](../../docs/adr/0047-v5-heredado-hasta-v8.md)).
+`sample-v5.oct` (v5, legacy comparison) and `sample-v7.oct` (`v7.1-pre`, Blob-range probe) back
+older probes only.
 
 `?url=FILE.oct` opens a file over HTTP and needs a server with **HTTP Range and CORS**; python's
 `http.server` does not support Range. Locally use
@@ -38,20 +39,21 @@ rustup target add wasm32-unknown-unknown
 scripts/build-wasm-bindings.sh   # cargo build --release --target wasm32-unknown-unknown + wasm-bindgen into pkg/
 ```
 
-The repository includes `sample.oct` and `sample.octattrs`, a deterministic 4,096-point dataset
-regenerated with final v5 headers (`OCTVFRM1`, revision 0). Provisional v5 files are rejected;
-reconvert local datasets and rebuild/repackage old embedded demos. Regenerate it from the
-workspace root with:
+The repository includes `sample.oct` and `sample.octattrs`: a deterministic synthetic wave surface
+over 64×64 m on a 768×768 grid (≈ 8.3 cm spacing, 589,824 points, about 4.2 MiB) with fine relief.
+The example writes it as LAS and converts it with the converter defaults (`v7`). Regenerate it from the workspace root with:
 
 ```bash
-cargo run --offline -p viewer_format --example create_web_sample -- examples/web-host/sample.oct
+cargo run --offline --release -p viewer_convert --example create_web_sample
 ```
 
-The split pair `sample-v7.oct` / `sample-v7.octattrs` uses `v7.1-pre` and backs the asynchronous
-Blob-reader probe. Regenerate it with:
+The legacy pairs keep the old 4,096-point grid (1 m spacing). `sample-v5.oct` / `sample-v5.octattrs`
+(v5, `OCTVFRM1`, revision 0) back the CPU-path LOD probes; `sample-v7.oct` / `sample-v7.octattrs`
+(`v7.1-pre`) back the asynchronous Blob-reader probe. Regenerate them with:
 
 ```bash
-cargo run --offline -p viewer_format --example create_web_sample -- examples/web-host/sample-v7.oct v7.1-pre
+cargo run --offline -p viewer_format --example create_legacy_sample
+cargo run --offline -p viewer_format --example create_legacy_sample -- examples/web-host/sample-v7.oct v7.1-pre
 ```
 
 ## Serve the demo
@@ -330,9 +332,10 @@ The host decides whether to download or open `result.file`. Extra Bytes and CRS 
 `timings.totalMs` is a browser wall-clock measurement. Large-file behaviour and quotas per browser are
 recorded in the [stage 4 plan](../../docs/plans/conversor-web-paralelo-etapa4.md).
 
-Use the keyboard-accessible **Open built-in sample** button to load the included v5 file, or focus
-the labeled file picker to choose another local dataset. The sample is generated from a fixed 64×64
-wave grid and does not depend on external or licensed point-cloud data.
+Use the keyboard-accessible **Open built-in sample** button to load the included `v7` file, or focus
+the labeled file picker to choose another local dataset. The sample is a synthetic wave surface
+(see [Build the WASM package](#build-the-wasm-package)) and does not depend on external or licensed
+point-cloud data.
 
 The demo exposes RGB, intensity, elevation, and classification color modes, plus one slider for the
 finest projected voxel detail to try (0.5–16 framebuffer pixels). `updateLod(targetVoxelPixels)` selects
@@ -429,12 +432,13 @@ callbacks. Exports identify the sidecar as `dataset.attributes: {name, fileBytes
 the collector separates absent, present and unknown legacy companions, and displays color/depth
 settings. Names/sizes describe inputs, not cryptographic content identity.
 
-The reproducible 4,096-point fixture now includes typed intensity (`u16`, 0–65,016) and
-classification (`u8`, 0–3), with unchanged positions/display colors. Regenerate the pair with
-`cargo run --offline -p viewer_format --example create_web_sample` and repackage the local demo.
+The legacy 4,096-point fixture (`sample-v5.*`) includes typed intensity (`u16`, 0–65,016) and
+classification (`u8`, 0–3). Regenerate it with
+`cargo run --offline -p viewer_format --example create_legacy_sample`. The default `sample.*` carries
+the same columns (intensity 0–64,386).
 
 Majadas RGB pairing completed three Firefox runs with the same final geometry counters and a
-visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed sample by default;
+visibly colored capture. `tests/lod-attributes.browser.mjs` checks the typed legacy sample by default;
 create it as a module Worker and post one message. Optionally supply coordinate/attribute Blobs,
 `modes` and an `incompatibleAttributes` Blob. It validates complete refinement, matching geometry
 counts, invalid-column rejection and retention after failed sidecar attachment. It requires

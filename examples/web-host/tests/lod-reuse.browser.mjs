@@ -10,8 +10,8 @@ self.onmessage = async () => {
     try {
         await init();
         viewer = await WasmVoxelViewer.createOffscreen(new OffscreenCanvas(640, 480), 0.6);
-        const coordinates = await fetch(new URL("../sample.oct", import.meta.url)).then(r => r.blob());
-        const attributes = await fetch(new URL("../sample.octattrs", import.meta.url)).then(r => r.blob());
+        const coordinates = await fetch(new URL("../sample-v5.oct", import.meta.url)).then(r => r.blob());
+        const attributes = await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(r => r.blob());
         const finish = (pixels = 4) => {
             for (let attempt = 0; attempt < 20; attempt += 1) {
                 const stats = viewer.updateLod(pixels);

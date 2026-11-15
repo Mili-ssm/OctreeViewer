@@ -16,8 +16,8 @@ self.onmessage = async ({ data = {} }) => {
     let viewer;
     try {
         await init();
-        const coordinates = await fetch(new URL("../sample.oct", import.meta.url)).then(r => r.blob());
-        const attributes = await fetch(new URL("../sample.octattrs", import.meta.url)).then(r => r.blob());
+        const coordinates = await fetch(new URL("../sample-v5.oct", import.meta.url)).then(r => r.blob());
+        const attributes = await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(r => r.blob());
         const descriptor = {
             coordinateOrigin: [0, 0, 0], semantics: "replacement", cacheBytes: 1024 * 1024,
             sourcePointCount: "1", nodes: [{ id: "0", parent: null, level: 0,

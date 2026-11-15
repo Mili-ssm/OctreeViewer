@@ -32,8 +32,8 @@ self.onmessage = async ({ data }) => {
                 }
                 if (!device) throw new Error("Browser device capture failed");
                 watchDevice();
-                const coordinates = await fetch(new URL("../sample.oct", import.meta.url)).then(response => response.blob());
-                const attributes = await fetch(new URL("../sample.octattrs", import.meta.url)).then(response => response.blob());
+                const coordinates = await fetch(new URL("../sample-v5.oct", import.meta.url)).then(response => response.blob());
+                const attributes = await fetch(new URL("../sample-v5.octattrs", import.meta.url)).then(response => response.blob());
                 viewer.openFormatDataset(coordinates, 256 * 1024 * 1024, attributes);
                 viewer.fitScene();
                 let lod;

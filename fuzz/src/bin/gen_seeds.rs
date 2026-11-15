@@ -288,8 +288,8 @@ fn main() {
     let pairs = [
         (
             "sample",
-            "examples/web-host/sample.oct",
-            "examples/web-host/sample.octattrs",
+            "examples/web-host/sample-v5.oct",
+            "examples/web-host/sample-v5.octattrs",
         ),
         (
             "sample-v7",
