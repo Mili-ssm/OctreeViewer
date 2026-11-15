@@ -924,7 +924,7 @@ headless termina con segfault en este entorno y aún falta validación en un nav
 
 | Dataset | Ángulo 1 | Ángulo 2 |
 | --- | --- | --- |
-| Stanford Bunny | ![Stanford Bunny, ángulo 1](../../point-cloud-previews/bunny-angle-1.png) | ![Stanford Bunny, ángulo 2](../../point-cloud-previews/bunny-angle-2.png) |
+| Stanford Bunny | (imagen retirada el 15-11-2026: datos sin licencia de redistribución) | (imagen retirada el 15-11-2026: datos sin licencia de redistribución) |
 | Outer Banks (costa) | ![Outer Banks, ángulo 1](../../point-cloud-previews/outer-banks-angle-1.png) | ![Outer Banks, ángulo 2](../../point-cloud-previews/outer-banks-angle-2.png) |
 
 ### Fase 8 — Validación de escala, calidad y compatibilidad

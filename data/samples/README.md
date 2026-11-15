@@ -1,9 +1,9 @@
 # Muestras de nubes de puntos
 
 Datasets pequeños para probar importación, conversión LAS/LAZ y el formato `.oct`. Los `.oct`
-versionados de Outer Banks y sus `.octattrs` se regeneraron en formato v5 definitivo (`OCTVFRM1`, revisión 0) y se validaron al finalizar la conversión. El lector actual
-solo admite v5 definitivo; vuelve a convertir también los archivos locales v5 provisionales
-(`OCTVWFRM`) desde sus LAS. El Bunny local no versionado puede requerir esa regeneración.
+versionados de Outer Banks y sus `.octattrs` están en formato V5 definitivo (`OCTVFRM1`, revisión 0), que
+sigue siendo legible; el conversor escribe hoy V7 por defecto. Los archivos locales v5 provisionales
+(`OCTVWFRM`) ya no se leen: hay que volver a convertirlos desde sus LAS.
 
 | Archivo | Contenido | Puntos | Fuente |
 | --- | --- | ---: | --- |
@@ -25,7 +25,8 @@ intensidad uniforme de 45000 para que el importador actual la muestre en gris. P
 sintético, y el LAS no conserva normales ni color medido. Los [términos de Stanford](https://www.stanford.edu/terms/)
 limitan el uso de sus materiales a fines personales y no comerciales; el [registro de PCL](https://sourceforge.net/projects/pointclouds/files/PCD%20datasets/registration/stanford_bunny.zip/download)
 no declara una licencia específica para estos datos. Los archivos locales de esta vista no se
-versionan ni se redistribuyen; el `.gitignore` del directorio los mantiene fuera de Git.
+versionan ni se redistribuyen; el `.gitignore` del directorio los mantiene fuera de Git. Por la misma razón,
+los renders del Bunny se retiraron del repositorio el 15-11-2026.
 
 Para regenerar la pareja desde LAS (usar una ruta de salida nueva; el CLI no sobrescribe):
 

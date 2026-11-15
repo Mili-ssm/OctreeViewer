@@ -97,7 +97,7 @@ Demostración (RQ-11): un dataset real ≥ 50 GB y una réplica sintética en mo
 | CON-02 | No se exige COOP/COEP; si el sitio las sirve, se usan hilos wasm con memoria compartida. | Propietario, ADR 0024 |
 | CON-03 | Licencia **MIT OR Apache-2.0**. | Propietario, ADR 0026 |
 | CON-04 | La API es un paquete npm en TypeScript tipado; los crates de Rust son internos, sin descartar publicarlos en el futuro. | Propietario, ADR 0026 |
-| CON-05 | Nada se publica (npm ni app pública) hasta la **1.0**: RQ-11 superado, V7 final congelado y API con RF-10 a RF-15, con la demo construida solo sobre ella. | Propietario, ADR 0026 |
+| CON-05 | Nada se publica (npm ni app pública) hasta la **1.0**: RQ-11 superado, V7 final congelado y API con RF-10 a RF-15, con la demo construida solo sobre ella. La demo experimental de GitHub Pages es la excepción ([ADR 0045](adr/0045-demo-experimental-publica-antes-de-la-1-0.md)). | Propietario, ADR 0026 |
 | CON-06 | La UI y los mensajes de la API, solo en inglés. | Propietario |
 | CON-07 | Nightly con fecha fija se mantiene: los hilos wasm opcionales necesitan `build-std` con atomics. | Propietario, ADR 0011, ADR 0024 |
 | CON-08 | La conversión de cientos de GB solo es nativa (CLI); en el navegador, hasta Majadas. | Propietario |
