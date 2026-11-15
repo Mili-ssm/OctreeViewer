@@ -1,0 +1,33 @@
+name: Fallo
+description: Algo no funciona como dicen los requisitos, la especificación o la documentación
+labels: [bug]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      description: Quien tría añade la etiqueta de área y la de prioridad.
+      options: [formato, conversor, visor, web, api, docs, herramientas]
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Cómo reproducirlo
+      description: Comando, dataset, navegador, revisión (commit) y perfil.
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Esperado frente a obtenido
+      description: Cita el requisito (RF-, RQ-), ADR o documento que define lo esperado.
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      placeholder: "- [ ] Test que falla antes y pasa después\n- [ ] ..."
+    validations:
+      required: true
