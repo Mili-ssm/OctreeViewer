@@ -68,8 +68,8 @@ pub use gpu::{
 };
 pub use node_cells::{
     CHAIN_MIN_GROWTH, CHAIN_SPAN, CellGrid, MAX_CELL_DEPTH, NodeCell, NodeCellError, NodeCellLevel,
-    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cells_digest,
-    representative_depth, representative_depth_for_spacing,
+    NodeCellSource, NodeCells, PointNodeCellSource, chain_keep_mask, node_cell_level,
+    node_cells_digest, representative_depth, representative_depth_for_spacing,
 };
 pub use scene::{
     ColorMode, InstanceRaw, RenderScene, RenderStats, SceneBounds, VOXEL_SHADER_WGSL,

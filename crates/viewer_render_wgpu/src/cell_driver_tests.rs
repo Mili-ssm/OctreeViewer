@@ -354,6 +354,7 @@ fn node_cells(node: u64, depths: &[u8]) -> NodeCells {
                 octant_offsets: None,
             })
             .collect(),
+        buildable: (0, crate::MAX_CELL_DEPTH),
     }
 }
 

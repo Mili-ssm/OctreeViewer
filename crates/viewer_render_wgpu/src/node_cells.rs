@@ -106,6 +106,8 @@ impl NodeCellLevel {
 pub struct NodeCells {
     pub node: NodeId,
     pub levels: Vec<NodeCellLevel>,
+    /// Inclusive first and last depth `node_cell_level` can build for this node.
+    pub buildable: (u8, u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -168,6 +170,88 @@ impl NodeCellSource for PointNodeCellSource {
         is_leaf: bool,
         blocks: &[PointBlock],
     ) -> Result<NodeCells, NodeCellError> {
+        let setup = NodeSetup::new(grid, bounds, spacing, is_leaf)?;
+        let (first, last) = setup.buildable;
+        let node_depth = setup.node_depth;
+        let points: Vec<_> = blocks.iter().map(Points::new).collect();
+        let distinct_positions: HashSet<_> = blocks
+            .iter()
+            .flat_map(|block| block.points().points())
+            .filter(|point| is_leaf && point.position.iter().all(|value| value.is_finite()))
+            .map(|point| {
+                point
+                    .position
+                    .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
+            })
+            .collect();
+        let mut levels = Vec::new();
+        for depth in first..=last {
+            let cells = build_level(grid, bounds, &points, depth)?;
+            let fully_separated = is_leaf && cells.len() == distinct_positions.len();
+            let octant_offsets = octant_offsets(grid, bounds, node_depth, depth, &cells);
+            levels.push(NodeCellLevel {
+                depth,
+                cells,
+                octant_offsets,
+            });
+            if fully_separated {
+                break;
+            }
+            if is_leaf && depth == MAX_CELL_DEPTH {
+                return Err(NodeCellError::AbsoluteDepthExceeded);
+            }
+        }
+        let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
+        let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
+        levels.retain(|_| keep.next().unwrap_or(true));
+        Ok(NodeCells {
+            node,
+            levels,
+            buildable: setup.buildable,
+        })
+    }
+}
+
+/// Builds the cells of one `depth` on their own, equal to the level the unpruned chain of
+/// [`PointNodeCellSource::node_cells`] holds at that depth. Depths outside `NodeCells::buildable`
+/// fail with `AbsoluteDepthExceeded`.
+pub fn node_cell_level(
+    grid: &CellGrid,
+    _node: NodeId,
+    bounds: SpatialBounds,
+    spacing: Option<f64>,
+    is_leaf: bool,
+    blocks: &[PointBlock],
+    depth: u8,
+) -> Result<NodeCellLevel, NodeCellError> {
+    let setup = NodeSetup::new(grid, bounds, spacing, is_leaf)?;
+    if depth < setup.buildable.0 || depth > setup.buildable.1 {
+        return Err(NodeCellError::AbsoluteDepthExceeded);
+    }
+    let points: Vec<_> = blocks.iter().map(Points::new).collect();
+    let cells = build_level(grid, bounds, &points, depth)?;
+    let octant_offsets = octant_offsets(grid, bounds, setup.node_depth, depth, &cells);
+    Ok(NodeCellLevel {
+        depth,
+        cells,
+        octant_offsets,
+    })
+}
+
+/// Validated depth range of a node, shared by the chain and the single-level build.
+struct NodeSetup {
+    /// Inclusive first and last depth that can be built.
+    buildable: (u8, u8),
+    node_depth: u8,
+}
+
+impl NodeSetup {
+    fn new(
+        grid: &CellGrid,
+        bounds: SpatialBounds,
+        spacing: Option<f64>,
+        is_leaf: bool,
+    ) -> Result<Self, NodeCellError> {
         if !(grid.root_side.is_finite()
             && grid.root_side > 0.0
             && grid.root_min.iter().all(|value| value.is_finite()))
@@ -204,39 +288,10 @@ impl NodeCellSource for PointNodeCellSource {
         if last > MAX_CELL_DEPTH {
             return Err(NodeCellError::AbsoluteDepthExceeded);
         }
-        let node_depth = representative_depth(grid, bounds).saturating_sub(3);
-        let points: Vec<_> = blocks.iter().map(Points::new).collect();
-        let distinct_positions: HashSet<_> = blocks
-            .iter()
-            .flat_map(|block| block.points().points())
-            .filter(|point| is_leaf && point.position.iter().all(|value| value.is_finite()))
-            .map(|point| {
-                point
-                    .position
-                    .map(|value| if value == 0.0 { 0 } else { value.to_bits() })
-            })
-            .collect();
-        let mut levels = Vec::new();
-        for depth in first..=last {
-            let cells = build_level(grid, bounds, &points, depth)?;
-            let fully_separated = is_leaf && cells.len() == distinct_positions.len();
-            let octant_offsets = octant_offsets(grid, bounds, node_depth, depth, &cells);
-            levels.push(NodeCellLevel {
-                depth,
-                cells,
-                octant_offsets,
-            });
-            if fully_separated {
-                break;
-            }
-            if is_leaf && depth == MAX_CELL_DEPTH {
-                return Err(NodeCellError::AbsoluteDepthExceeded);
-            }
-        }
-        let counts: Vec<usize> = levels.iter().map(|level| level.cells.len()).collect();
-        let mut keep = chain_keep_mask(&counts, self.min_growth).into_iter();
-        levels.retain(|_| keep.next().unwrap_or(true));
-        Ok(NodeCells { node, levels })
+        Ok(Self {
+            buildable: (first, last),
+            node_depth: representative_depth(grid, bounds).saturating_sub(3),
+        })
     }
 }
 

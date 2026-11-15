@@ -69,6 +69,7 @@ fn node_cells(node: u64, depths: &[(u8, usize)]) -> NodeCells {
     NodeCells {
         node: NodeId::new(node),
         levels,
+        buildable: (0, crate::MAX_CELL_DEPTH),
     }
 }
 
