@@ -14,6 +14,7 @@ let canvas = document.getElementById("viewer-canvas");
 const reloadButton = document.getElementById("reload-scene");
 const cancelButton = document.getElementById("cancel-load");
 const sampleButton = document.getElementById("open-sample");
+const webgpuNotice = document.getElementById("webgpu-notice");
 const fitButton = document.getElementById("fit-scene");
 const fileInput = document.getElementById("dataset-file");
 const attributesFileInput = document.getElementById("attributes-file");
@@ -469,6 +470,7 @@ function startBenchmark() {
 // `&maxGap=BYTES` merges range reads separated by up to that many bytes (default 0: touching only);
 // `&remoteReads=N` sets the concurrent LOD reads for this remote source (default 8).
 let urlOpened = false;
+let sampleAutoOpened = false;
 function openUrlFromQuery() {
     const params = new URLSearchParams(location.search);
     const target = params.get("url");
@@ -508,6 +510,11 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = "Renderer ready · synthetic sample";
         requestFrameOnce();
         openUrlFromQuery();
+        // A visitor with no `?url=` sees something at once; the button stays for reopening it.
+        if (!urlOpened && !sampleAutoOpened) {
+            sampleAutoOpened = true;
+            sampleButton.click();
+        }
     } else if (data.type === "commandAck") {
         commandQueue.acknowledge(data.command);
     } else if (data.type === "status") {
@@ -654,6 +661,16 @@ function handleWorkerMessage(event) {
 const BUILD_WORKER = { url: new URL("./build-worker.js", import.meta.url).href, type: "module" };
 
 function createWorkerViewer() {
+    if (!navigator.gpu) {
+        const message = "WebGPU is not available in this browser. This demo needs desktop Chrome or Edge with WebGPU enabled.";
+        statusRoot.textContent = message;
+        if (webgpuNotice) {
+            webgpuNotice.textContent = message;
+            webgpuNotice.hidden = false;
+        }
+        reloadButton.disabled = false;
+        return;
+    }
     statusRoot.textContent = "Starting renderer worker…";
     if (!HTMLCanvasElement.prototype.transferControlToOffscreen || !window.Worker) {
         statusRoot.textContent = "This browser does not support OffscreenCanvas workers.";
