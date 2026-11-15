@@ -21,26 +21,29 @@ borra al cerrar su tarea; el detalle queda en git y en los registros.
 
 ## Cómo retomar (15-11-2026)
 
-**Estado del código:** `feat/r3-v75` en `31b5838`, árbol limpio, sin remoto ni push. `scripts/check.sh` pasó
-los 24 pasos en `aba5286` (código de D3b; lo posterior es documentación y un comentario). El checkout
-principal sigue en `feat/render-r3-node-cells` (`c473c85`, ancestro), sin tocar.
+**Estado del código:** `feat/r3-v75`, árbol limpio, sin remoto ni push. Último commit de código: `ec73e01`
+(un comentario sobre `aba5286`); lo posterior es documentación. `scripts/check.sh` pasó los 24 pasos en
+`aba5286` (sesión del 15-11-2026; el log no se guardó en el repositorio). El checkout principal sigue en
+`feat/render-r3-node-cells` (`c473c85`, ancestro) con una línea `.superpowers/` sin commit en `.gitignore`
+que no es de esta línea de trabajo.
 
 **Decisiones del propietario que bloquean** (se preguntaron el 15-11-2026 y la sesión terminó sin respuesta):
 
 | Decisión | Opciones | Propuesta | Evidencia |
 | --- | --- | --- | --- |
-| C4 / RQ-07: la conversión v7.5 tarda ~2,0× V5 (RQ-07 pide ≤ 1,30×) | Revisar RQ-07; TC5 (rediseño del pipeline) primero; o revisar ahora y planificar TC5 después | Revisar RQ-07 con un ADR nuevo: tiempo ≤ 2,1× V5 (nivel actual), justificado porque v7.5 híbrido ocupa un 10,7 % menos que V5 y RQ-07 es técnico y blando | [C4](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md), [D3b](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md), [catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026) |
-| PR de `feat/r3-v75` a `master` sin remoto | Fusión local con avance rápido tras D3c; el propietario añade un remoto; esperar | Fusión local tras D3c, con revisión previa del paso | Borrador de descripción en el scratchpad de la sesión del 14-11-2026 (`pr-feat-r3-v75.md`, fuera del repo) |
+| C4 / RQ-07: la conversión v7.5 tarda ~2,0× V5 y usa un 36–39 % más de RSS (RQ-07 pide ≤ +30 % en los dos) | Revisar RQ-07; TC5 (rediseño del pipeline) primero; o revisar ahora y planificar TC5 después | Revisar RQ-07 con un ADR nuevo: tiempo ≤ 2,1× y RSS ≤ +40 % frente a V5 (nivel actual), porque v7.5 híbrido ocupa un 10,7 % menos que V5 y RQ-07 es técnico y blando | [C4](../records/benchmarks/C4_DEFERRED_COPY_15-11-2026.md), [D3b](../records/benchmarks/D3B_HYBRID_WRITER_15-11-2026.md), [catálogo](../requirements.md#catálogo-funcional-o-técnico-duro-o-blando-propuesta-14-11-2026) |
+| PR de `feat/r3-v75` a `master` sin remoto | Fusión local con avance rápido tras D3c; el propietario añade un remoto; esperar | Fusión local tras D3c, con revisión previa del paso | La descripción se redacta de nuevo a partir de los registros |
 
 **Siguiente trabajo, en orden:**
 
-1. Registrar la decisión de C4 (ADR nuevo si se revisa RQ-07; plan propio y pre-mortem si se elige TC5).
-2. D3c: identidad final de V7 con el escritor híbrido por defecto ([ADR 0042](../adr/0042-escritor-hibrido-en-la-identidad-final-de-v7.md)),
-   regeneración de datasets y referencias.
-3. Integración en `master` según la decisión de la PR; después D4.
+- [ ] Preguntar al propietario las dos decisiones anteriores; no actuar sobre ninguna antes. Comprobación:
+  respuesta registrada (ADR nuevo para RQ-07 si se revisa) y fila quitada de «Decisiones del propietario
+  pendientes».
+- [ ] Si se elige TC5: plan propio y pre-mortem antes de tocar código. Comprobación: plan en `docs/plans/`.
+- [ ] D3c (ver la fase D). Después, integración en `master` según la decisión de la PR, y D4.
 
 **Ramas conservadas como evidencia** (sin integrar): `explore/convert-speed`, `explore/convert-batch` (fase
-C), `explore/oq09-morton` (worktree bloqueado de un agente en `.claude/worktrees/agent-a218fbc1eaf663ffd`
+C), `explore/oq09-morton` (worktree de un agente en `.claude/worktrees/agent-a218fbc1eaf663ffd`
 del checkout principal), `explore/oq09-remote` (ejemplos `oq09_content_hash` y `oq09_block_sizes` y el
 escritor experimental `OQ09_MORTON=best`), `explore/oq09-viewer-sort`, `explore/oq09-build-cause`.
 
