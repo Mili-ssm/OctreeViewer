@@ -57,6 +57,11 @@ let converterApi = null;
 let convertedFile = null;
 let currentProjectFile = null;
 let currentProjectName = null;
+// The dataset being opened, and the one on screen (set once the worker shows it). Only the shown
+// one is reopened by "Recreate viewer", so a cancelled or failed open is never replayed.
+let pendingProject = null;
+let shownProject = null;
+let reopenAfterRecreate = null;
 let convertedAttributesFile = null;
 let convertedOutputName = "converted.oct";
 let convertedAttributesOutputName = "converted.octattrs";
@@ -509,6 +514,12 @@ function handleWorkerMessage(event) {
         }
         statusRoot.textContent = "Renderer ready · synthetic sample";
         requestFrameOnce();
+        if (reopenAfterRecreate) {
+            const { file, name, attributes } = reopenAfterRecreate;
+            reopenAfterRecreate = null;
+            openProjectFile(file, name, attributes);
+            return;
+        }
         openUrlFromQuery();
         // A visitor with no `?url=` sees something at once; the button stays for reopening it.
         // Automated browsers (probes, Playwright) skip it so their measurements start empty;
@@ -532,6 +543,7 @@ function handleWorkerMessage(event) {
         statusRoot.textContent = `Read ranges: ${formatBytes(read)} of ${formatBytes(total)} (unique bytes)`;
     } else if (data.type === "dataset") {
         datasetName = data.name;
+        if (pendingProject) shownProject = pendingProject;
         updateAttributeChoices(data.opened);
         latestLodStats = data.lod;
         updateProgressiveLoadState(data.lod);
@@ -734,7 +746,10 @@ function swapCanvasForRecovery() {
     canvas.dispatchEvent(new CustomEvent("voxelviewer:canvasReplaced", { detail: { canvas } }));
 }
 
-function recreateViewer() {
+function recreateViewer({ reopen = false } = {}) {
+    reopenAfterRecreate = reopen ? shownProject : null;
+    pendingProject = null;
+    shownProject = null;
     stopRendering();
     clearTimeout(activityStopTimer);
     clearTimeout(benchmarkStopTimer);
@@ -779,7 +794,7 @@ function cancelFileLoad() {
     statusRoot.textContent = "File load cancelled · viewer restarted";
 }
 
-reloadButton.addEventListener("click", recreateViewer);
+reloadButton.addEventListener("click", () => recreateViewer({ reopen: true }));
 cancelButton.addEventListener("click", cancelFileLoad);
 startBenchmarkButton.addEventListener("click", startBenchmark);
 function resetBenchmarkWindow() {
@@ -1008,6 +1023,8 @@ function openProjectFile(file, displayName = file?.name, attributesFile = undefi
     if (!ready || !file) return;
     currentProjectFile = file;
     currentProjectName = displayName;
+    pendingProject = { file, name: displayName, attributes: attributesFile };
+    shownProject = null;
     resetBenchmarkWindow();
     colorMode.value = "rgb";
     benchmarkRun = {
