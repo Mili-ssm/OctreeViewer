@@ -249,6 +249,10 @@ pub struct SampleGrid {
     global: bool,
     /// Constants of the node, taken from the first point added (all share the same bounds).
     frame: Option<GlobalCellFrame>,
+    /// Scratch of [`Self::add_batch`]: `key << 32 | index` words, their sort buffer and distances.
+    words: Vec<u64>,
+    sorted: Vec<u64>,
+    distances: Vec<f64>,
 }
 
 impl SampleGrid {
@@ -269,6 +273,9 @@ impl SampleGrid {
             records: NearestRecords::new(layout, reserve),
             global,
             frame: None,
+            words: Vec::new(),
+            sorted: Vec::new(),
+            distances: Vec::new(),
         }
     }
 
@@ -304,6 +311,88 @@ impl SampleGrid {
             SampleCells::Sparse(cells) => cells.entry(voxel_key),
         };
         accumulator.add(&mut self.records, self.layout, record, position, center);
+    }
+
+    /// Adds a batch of spool records grouped by cell: the (cell, record) words are radix-sorted
+    /// by cell (stable, so record order inside a cell is kept) and each run of one cell costs a
+    /// single accumulator lookup. Same sums and same nearest rule as [`Self::add`] per record.
+    fn add_batch(&mut self, batch: &[u8], bounds: SpatialBounds) {
+        let record_bytes = self.layout.record_bytes();
+        let count = batch.len() / record_bytes;
+        self.words.clear();
+        self.distances.clear();
+        for (index, record) in batch.chunks_exact(record_bytes).enumerate() {
+            let position = decode_position(record, self.layout);
+            let (key, center) = if self.global {
+                let grid = self.grid;
+                self.frame
+                    .get_or_insert_with(|| GlobalCellFrame::new(bounds, grid))
+                    .cell(position)
+            } else {
+                sample_cell(position, bounds, self.grid)
+            };
+            let delta = [0, 1, 2].map(|axis| position[axis] - center[axis]);
+            self.distances
+                .push(delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]);
+            self.words.push((key as u64) << 32 | index as u64);
+        }
+        let key_bits = (self.grid.pow(3) as u64)
+            .next_power_of_two()
+            .trailing_zeros();
+        radix_sort_by_key(&mut self.words, &mut self.sorted, key_bits);
+        let mut start = 0;
+        while start < count {
+            let key = self.words[start] >> 32;
+            let mut end = start + 1;
+            while end < count && self.words[end] >> 32 == key {
+                end += 1;
+            }
+            let key = key as usize;
+            let accumulator = match &mut self.cells {
+                SampleCells::Dense(slots) => {
+                    slots[key].get_or_insert_with(SampleAccumulator::default)
+                }
+                SampleCells::Sparse(cells) => cells.entry(key),
+            };
+            for &word in &self.words[start..end] {
+                let index = (word & u64::from(u32::MAX)) as usize;
+                accumulator.add_at_distance(
+                    &mut self.records,
+                    self.layout,
+                    &batch[index * record_bytes..(index + 1) * record_bytes],
+                    self.distances[index],
+                );
+            }
+            start = end;
+        }
+    }
+}
+
+/// Stable LSD radix sort of `words` by bits `32..32 + key_bits` (11 bits per pass).
+fn radix_sort_by_key(words: &mut Vec<u64>, scratch: &mut Vec<u64>, key_bits: u32) {
+    const DIGIT_BITS: u32 = 11;
+    let mut shift = 32;
+    while shift < 32 + key_bits {
+        scratch.clear();
+        scratch.resize(words.len(), 0);
+        let mut counts = [0_usize; 1 << DIGIT_BITS];
+        let digit = |word: u64| ((word >> shift) & ((1 << DIGIT_BITS) - 1)) as usize;
+        for &word in words.iter() {
+            counts[digit(word)] += 1;
+        }
+        let mut total = 0;
+        for count in counts.iter_mut() {
+            let here = *count;
+            *count = total;
+            total += here;
+        }
+        for &word in words.iter() {
+            let slot = &mut counts[digit(word)];
+            scratch[*slot] = word;
+            *slot += 1;
+        }
+        std::mem::swap(words, scratch);
+        shift += DIGIT_BITS;
     }
 }
 
@@ -371,7 +460,7 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
         },
     )?;
     let record_bytes = ctx.layout.record_bytes();
-    let records_per_batch = (SPOOL_IO_BUFFER_BYTES / record_bytes).max(1);
+    let records_per_batch = (batch_bytes() / record_bytes).max(1);
     let mut record_buffer = vec![0; records_per_batch * record_bytes];
     loop {
         let read_started = start_phase(clock, &metrics);
@@ -411,8 +500,8 @@ pub fn run_node_job<S: SpoolStore, C: Clock>(
                 )
             });
             child.write_record(store, bytes)?;
-            samples.add(bytes, position, job.bounds);
         }
+        samples.add_batch(&record_buffer[..records * record_bytes], job.bounds);
         end_phase(clock, &mut metrics, classify_started, |m| {
             &mut m.partition_and_sample_ns
         });
@@ -1205,6 +1294,13 @@ fn end_phase<C: Clock>(
         let target = target(metrics);
         *target = target.saturating_add(clock.elapsed_ns(started));
     }
+}
+
+fn batch_bytes() -> usize {
+    std::env::var("CONVERT_BATCH_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(SPOOL_IO_BUFFER_BYTES)
 }
 
 #[cfg(test)]

@@ -1791,16 +1791,14 @@ impl Default for SampleAccumulator {
 impl SampleAccumulator {
     const NO_SLOT: u32 = u32::MAX;
 
-    /// Adds the source record `record` (of `layout`) at `position`, which must be the position
-    /// `decode_position` returns for it.
+    /// [`Self::add`] with the squared distance to the cell center already computed.
     #[inline]
-    pub fn add(
+    pub fn add_at_distance(
         &mut self,
         records: &mut NearestRecords,
         layout: SpoolLayout,
         record: &[u8],
-        position: [f64; 3],
-        center: [f64; 3],
+        distance_squared: f64,
     ) {
         self.count += 1;
         let tail = record.len() - 3;
@@ -1816,10 +1814,6 @@ impl SampleAccumulator {
                 ]));
             }
         }
-        let delta_x = position[0] - center[0];
-        let delta_y = position[1] - center[1];
-        let delta_z = position[2] - center[2];
-        let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
         if self.slot == Self::NO_SLOT {
             self.slot = records.push(record);
             self.nearest_distance_squared = distance_squared;
@@ -1827,6 +1821,24 @@ impl SampleAccumulator {
             self.nearest_distance_squared = distance_squared;
             records.set(self.slot, record);
         }
+    }
+
+    /// Adds the source record `record` (of `layout`) at `position`, which must be the position
+    /// `decode_position` returns for it.
+    #[inline]
+    pub fn add(
+        &mut self,
+        records: &mut NearestRecords,
+        layout: SpoolLayout,
+        record: &[u8],
+        position: [f64; 3],
+        center: [f64; 3],
+    ) {
+        let delta_x = position[0] - center[0];
+        let delta_y = position[1] - center[1];
+        let delta_z = position[2] - center[2];
+        let distance_squared = delta_x * delta_x + delta_y * delta_y + delta_z * delta_z;
+        self.add_at_distance(records, layout, record, distance_squared);
     }
 
     /// Folds in the accumulator of the points that follow this one's in the source order. The
