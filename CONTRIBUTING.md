@@ -48,8 +48,7 @@ Apagadas por defecto; lista y alcance en el [inventario](docs/reference/inventor
 Detalle, API y probes: [host web](examples/web-host/README.md).
 
 ```sh
-cd crates/viewer_wasm
-wasm-pack build --target web --out-dir ../../pkg
+scripts/build-wasm-bindings.sh   # cargo + wasm-bindgen (versión de Cargo.lock) en pkg/
 ```
 
 Paquete local para `file://`:

@@ -19,7 +19,7 @@ A LiDAR point-cloud viewer in Rust, WebAssembly and WebGPU, with a LAS/LAZ conve
 
 ## Quick start
 
-Requirements: [rustup](https://rustup.rs) (the nightly toolchain pinned in `rust-toolchain.toml` installs itself), [wasm-pack](https://rustwasm.github.io/wasm-pack/), Python 3, and Chrome or Edge.
+Requirements: [rustup](https://rustup.rs) (the nightly toolchain pinned in `rust-toolchain.toml` installs itself), the `wasm-bindgen` CLI at the version in `Cargo.lock` (`cargo install wasm-bindgen-cli --version 0.2.129`), Python 3, and Chrome or Edge.
 
 Convert a point cloud (writes `output.oct` and `output.octattrs`):
 
@@ -27,7 +27,7 @@ Convert a point cloud (writes `output.oct` and `output.octattrs`):
 cargo run --release -p viewer_convert -- input.laz output.oct
 ```
 
-Run the demo locally. The script builds the wasm bindings and serves the repository; open the printed URL (`http://127.0.0.1:8000/examples/web-host/`), then open your `.oct`, optionally with its `.octattrs`:
+Run the demo locally. The script builds the wasm bindings and serves the repository; open the printed URL (`http://127.0.0.1:8000/examples/web-host/`). A bundled sample opens by itself; you can then open your own `.oct` (with its `.octattrs`) or convert a LAS/LAZ file in the page:
 
 ```sh
 scripts/serve-demo.sh

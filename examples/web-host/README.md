@@ -4,7 +4,8 @@
 
 Requirements: [rustup](https://rustup.rs) (it installs the toolchain pinned in `rust-toolchain.toml`
 and its `wasm32-unknown-unknown` target; otherwise run `rustup target add wasm32-unknown-unknown`),
-[wasm-pack](https://rustwasm.github.io/wasm-pack/), Python 3, and desktop Chrome or Edge with WebGPU.
+the `wasm-bindgen` CLI at the version in `Cargo.lock` (`cargo install wasm-bindgen-cli --version 0.2.129`),
+Python 3, and desktop Chrome or Edge with WebGPU.
 
 ```bash
 scripts/serve-demo.sh        # builds the wasm bindings, then serves the repository root
@@ -34,8 +35,7 @@ and WebGPU renderer. JavaScript does not copy the render instances back for draw
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cd crates/viewer_wasm
-wasm-pack build --target web --out-dir ../../pkg
+scripts/build-wasm-bindings.sh   # cargo build --release --target wasm32-unknown-unknown + wasm-bindgen into pkg/
 ```
 
 The repository includes `sample.oct` and `sample.octattrs`, a deterministic 4,096-point dataset

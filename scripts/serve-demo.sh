@@ -15,8 +15,7 @@ for arg in "$@"; do
 done
 
 if [ "$build" = "1" ]; then
-  command -v wasm-pack >/dev/null || { echo "wasm-pack not found (cargo install wasm-pack)" >&2; exit 1; }
-  (cd crates/viewer_wasm && wasm-pack build --target web --out-dir ../../pkg)
+  scripts/build-wasm-bindings.sh
 fi
 [ -f pkg/viewer_wasm.js ] || { echo "pkg/viewer_wasm.js missing: run without --no-build" >&2; exit 1; }
 
