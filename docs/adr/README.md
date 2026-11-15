@@ -49,3 +49,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0043](0043-coste-de-conversion-de-v7-frente-a-v5.md) | El coste de conversión de V7 final se acota a ≤ 2,1× el tiempo y ≤ +40 % el RSS de V5 (revisa RQ-07) | Aceptada |
 | [0044](0044-v7-final-congelada-y-predeterminada.md) | V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada (sustituye a 0002) | Aceptada |
 | [0045](0045-demo-experimental-publica-antes-de-la-1-0.md) | La demo web se publica como demo experimental antes de la 1.0 (acota CON-05) | Aceptada |
+| [0046](0046-la-poda-de-niveles-no-limita-el-render.md) | La poda de la cadena de niveles es de almacenamiento; el render deriva el nivel que pide la vista (precisa 0031 y 0032) | Aceptada |
