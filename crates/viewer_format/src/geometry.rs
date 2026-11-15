@@ -110,7 +110,15 @@ impl GeometryEncoding {
 }
 
 pub(crate) fn encode_delta(coords: &[[u32; 3]]) -> Result<Vec<u8>, FormatError> {
-    let point_count = u64::try_from(coords.len()).map_err(|_| FormatError::PointCountOutOfRange)?;
+    encode_delta_iter(coords.iter().copied(), coords.len())
+}
+
+/// [`encode_delta`] over coordinates produced in order, so a reordered block needs no copy.
+pub(crate) fn encode_delta_iter(
+    coords: impl Iterator<Item = [u32; 3]>,
+    len: usize,
+) -> Result<Vec<u8>, FormatError> {
+    let point_count = u64::try_from(len).map_err(|_| FormatError::PointCountOutOfRange)?;
     let max_len = point_count
         .checked_mul(15)
         .ok_or(FormatError::BlockSizeOverflow)?;

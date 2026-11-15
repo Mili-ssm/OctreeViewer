@@ -4,7 +4,7 @@ use viewer_core::{
     AttributeValues, BlockId, DatasetMetadata, NodeId, SpatialBounds, SpatialHierarchy,
 };
 
-use crate::geometry::{GeometryEncoding, encode_delta};
+use crate::geometry::{GeometryEncoding, encode_delta, encode_delta_iter};
 use crate::layout::{
     PayloadDirectoryEntry, StorageLayout, attribute_payload_size, block_payload_size,
 };
@@ -339,11 +339,11 @@ pub(crate) fn prepare_point_block_for_version_impl(
     {
         let morton_started = collect_codec_diagnostics.then(std::time::Instant::now);
         let permutation = morton_permutation(quantized.coordinates());
-        let sorted: Vec<[u32; 3]> = permutation
-            .iter()
-            .map(|&row| quantized.coordinates()[row as usize])
-            .collect();
-        let delta = encode_delta(&sorted)?;
+        let coordinates = quantized.coordinates();
+        let delta = encode_delta_iter(
+            permutation.iter().map(|&row| coordinates[row as usize]),
+            coordinates.len(),
+        )?;
         let other_raw_size = uncompressed_size
             .checked_sub(geometry_length as u64)
             .ok_or(FormatError::BlockSizeOverflow)?;
