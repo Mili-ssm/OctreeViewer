@@ -26,7 +26,7 @@ test("double click explains file restrictions without requesting external module
     assert.equal(requests.length, 0);
     assert.match(status.textContent, /file:\/\//);
     assert.equal(status.items[0].href, "../../artifacts/visor-web-local/index.html");
-    assert.match(status.items[0].textContent, /visor local/i);
+    assert.match(status.items[0].textContent, /local viewer/i);
 });
 
 for (const protocol of ["http:", "https:"]) {

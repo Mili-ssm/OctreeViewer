@@ -27,7 +27,7 @@ Estado: Aceptada · Fecha: 30-10-2026
 Upstream publica un codificador con salida garantizada e idéntica entre arquitecturas.
 
 ## Evidencia
-[README, prioridades pendientes](../../README.md#prioridades-pendientes) · [Requisitos CON-09](../requirements.md)
+[estado](../estado.md#prioridades-pendientes) · [Requisitos CON-09](../requirements.md)
 
 ## Revisión 15-11-2026
 El propietario decidió congelar V7 con la bifurcación vendorizada ([ADR 0044](0044-v7-final-congelada-y-predeterminada.md)). El codificador propio va después: no cambia el formato; cambia los bytes y las SHA de salida, pero los datasets ya escritos siguen siendo válidos sin regenerarlos.

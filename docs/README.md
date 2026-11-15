@@ -1,6 +1,6 @@
 # Índice de documentación
 
-Punto de entrada del proyecto: [README](../README.md) (estado y resumen de prioridades; lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues)). Marcas:
+Punto de entrada del proyecto: [README](../README.md) (portada en inglés); [estado y prioridades](estado.md); lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues)). Marcas:
 **vivo** = se mantiene con el código; **histórico** = registro fechado, no se edita ([política](../CONTRIBUTING.md#convenciones)).
 
 ## Requisitos
@@ -8,6 +8,7 @@ Punto de entrada del proyecto: [README](../README.md) (estado y resumen de prior
 | Documento | Contenido | Marca |
 | --- | --- | --- |
 | [Requisitos](requirements.md) | Propósito, usuarios, escenarios de escala, requisitos EARS, restricciones, supuestos y preguntas abiertas. | vivo |
+| [Estado](estado.md) | Estado por línea de trabajo, prioridades, orden general y uso del conversor. | vivo |
 
 ## Referencia
 
@@ -30,6 +31,7 @@ trabajo nuevo va en un plan nuevo.
 | [Render y carga a escala](plans/render-y-carga-escala.md) | Fases R0–R5: arnés y línea base, mejoras de LOD y carga (R1), worker de construcción (R2) y fases decididas R3–R5 (ADR 0019–0023). | activo |
 | [Mejoras y pendientes (13-11-2026)](plans/mejoras-pendientes-13-11-2026.md) | Orden de trabajo tras la revisión de técnicas: higiene, cierre de R3, velocidad de conversión y robustez remota. | activo (15-11-2026; D3c hecho, siguen el PR a `main` y D4) |
 | [D3c: congelado de V7 final](plans/d3c-congelado-v7-final.md) | Identidad final V7 sobre v7.5-pre con el escritor híbrido, salida predeterminada y regeneración de datasets y referencias (ADR 0044). | completado |
+| [Publicación del repositorio](plans/publicacion-del-repositorio.md) | Repositorio público: portada, documentación, demo experimental en GitHub Pages y ajustes de GitHub (ADR 0045). | activo |
 | [R3: cubos por nodo en GPU](plans/render-r3-cubos-en-gpu.md) | Celdas por nodo independientes de la cámara en un pool de GPU paginado (ADR 0027), spikes primero, modos de huecos y de px. | completado |
 | [R3: anchura de región, layout, máscaras y flags](plans/r3-anchura-de-region.md) | Experimento: anchura de página 8–32, ubicación de flags y modelos de página; decidido en ADR 0032. | completado |
 | [R4: pirámide densa y rejilla global](plans/render-r4-piramide-densa.md) | Revisión `v7.4-pre`: hojas pequeñas, espaciado por nodo, rejilla anclada en el CRS y CRS completo; spike de densidad primero. | completado |
@@ -182,5 +184,5 @@ Benchmarks en [records/benchmarks](records/benchmarks/); sus cifras pertenecen a
 | Por qué funciona algo así, sin pasos | [explanation/](explanation/) | Vivo; los resultados fechados van a registros |
 | Medida, spike, evaluación o diagnóstico | [records/benchmarks/](records/benchmarks/) | `NOMBRE_dd-mm-aaaa.md`, inmutable; perfil, equipo y revisión dentro |
 | Documento retirado o sustituido | [records/archive/](records/archive/) | Inmutable salvo enlaces rotos |
-| Estado y prioridades activas | [README](../README.md#prioridades-pendientes) | Resumen con enlaces a issues |
+| Estado y prioridades activas | [Estado](estado.md#prioridades-pendientes) | Resumen con enlaces a issues |
 | Tarea pendiente, fallo, hallazgo aparcado o decisión que espera al propietario | [Issue de GitHub](https://github.com/Mili-ssm/OctreeViewer/issues) | Plantillas y etiquetas en [CONTRIBUTING](../CONTRIBUTING.md#issues-y-prs); el `.md` enlaza la issue |

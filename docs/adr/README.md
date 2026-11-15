@@ -48,3 +48,4 @@ MADR corto: una decisión por registro. Una decisión aceptada no se edita: se s
 | [0042](0042-escritor-hibrido-en-la-identidad-final-de-v7.md) | El escritor híbrido entra en la identidad final de V7, sin revisión `-pre` propia (enmienda a 0005) | Aceptada |
 | [0043](0043-coste-de-conversion-de-v7-frente-a-v5.md) | El coste de conversión de V7 final se acota a ≤ 2,1× el tiempo y ≤ +40 % el RSS de V5 (revisa RQ-07) | Aceptada |
 | [0044](0044-v7-final-congelada-y-predeterminada.md) | V7 final se congela sobre v7.5-pre con el escritor híbrido y pasa a ser la salida predeterminada (sustituye a 0002) | Aceptada |
+| [0045](0045-demo-experimental-publica-antes-de-la-1-0.md) | La demo web se publica como demo experimental antes de la 1.0 (acota CON-05) | Aceptada |

@@ -34,7 +34,7 @@ Playwright 1.64 vía scripts Node (como los drivers de S8/S9).
 - R7: mediana pareada de `real_dataset_bench convert` en Belvedere (4 workers, perfil `perf`), 7–10 pares A/B alternados en máquina en reposo, registrando `/proc/pressure`, governor y perfil de energía; dentro de ±3% de la rama base medida en la misma sesión.
 - El núcleo no usa `std::fs`, `std::thread`, `rayon`, `Instant::now`, `SystemTime::now`, `std::process` ni `laz-parallel`; un lint `disallowed-methods` (denegado) y `cargo check --target wasm32-unknown-unknown` en `check.sh` lo garantizan. Sin `dyn` ni asignación por punto en el bucle caliente (criterio de parada de M2).
 - Registros nuevos fechados con el día de ejecución (`dd-mm-aaaa` en el texto, `<aaaa-mm-dd>` ISO en el nombre), en español; no editar registros ya mergeados; no trasladar cifras entre revisiones, perfiles ni equipos.
-- Commits convencionales en inglés con la línea `Co-Authored-By` del modelo que los escribe; sin push.
+- Commits convencionales en inglés sin líneas de atribución; sin push.
 - No enviar avisos upstream (backlog, prioridad 9 del README).
 
 ## Review Focus

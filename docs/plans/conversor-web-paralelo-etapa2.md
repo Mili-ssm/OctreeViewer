@@ -34,7 +34,7 @@ Playwright para los navegadores.
 - R1: los SHA de salida del CLI no cambian; referencia: [M0](../records/benchmarks/WEB_CONVERTER_BASELINE_2026-10-29.md) (LAS pequeño `413858a9…`, Belvedere `6ca0f86d…`, Belvedere divisiones 8 `fb90a490…`, Majadas `74226286…`).
 - R7: mediana pareada de `real_dataset_bench convert` en Belvedere (4 workers, perfil `perf`), ≥ 5 rondas A/B alternadas, dentro de ±3% de la rama base medida en la misma sesión.
 - Registros nuevos fechados con el día de ejecución (`dd-mm-aaaa` en el texto, `<aaaa-mm-dd>` ISO en el nombre), en español; no editar registros ya mergeados; no trasladar cifras entre revisiones, perfiles ni equipos.
-- Commits convencionales en inglés con la línea `Co-Authored-By` del modelo que los escribe; sin push.
+- Commits convencionales en inglés sin líneas de atribución; sin push.
 - No enviar avisos upstream (backlog, prioridad 9 del README).
 
 ## Review Focus

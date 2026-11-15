@@ -7,10 +7,10 @@ Estado: activo · 15-11-2026 (fases A, B y C cerradas; D1, D2, D3a, D3b y D3c he
 propuestas de la [revisión de técnicas](../records/benchmarks/REVIEW_TECHNIQUES_13-11-2026.md),
 según el [orden de trabajo acordado](../requirements.md#orden-de-trabajo-acordado): R3 → R5 (completado;
 queda la robustez remota) → congelar V7 final → API pública. La velocidad de conversión (RQ-07) es
-requisito para promover V7. El resumen de prioridades está en el [README](../../README.md#prioridades-pendientes) y lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues).
+requisito para promover V7. El resumen de prioridades está en el [estado](../estado.md#prioridades-pendientes) y lo pendiente, en [issues](https://github.com/Mili-ssm/OctreeViewer/issues).
 
-**Ramas:** `feat/r3-v75` (worktree `~/.cache/codex-worktrees/octree-r3-v75`, que guarda los datasets
-v7.5 en `target/render-data`) recibe lo verificado. El trabajo sin verificar va en una rama `explore/`
+**Ramas:** `feat/r3-v75` (un worktree local que guarda los datasets v7.5 en `target/render-data`) recibía
+lo verificado; se fusionó en `main` el 15-11-2026. El trabajo sin verificar va en una rama `explore/`
 y se integra con avance rápido cuando pasa su check. La revisión se escribió sobre `c473c85`; su
 vigencia en esta rama se anota en cada tarea.
 
@@ -47,8 +47,7 @@ que no es de esta línea de trabajo.
 - [ ] D4: [#11](https://github.com/Mili-ssm/OctreeViewer/issues/11), dentro del [proyecto API pública](https://github.com/Mili-ssm/OctreeViewer/issues/27).
 
 **Ramas conservadas como evidencia** (sin integrar): `explore/convert-speed`, `explore/convert-batch` (fase
-C), `explore/oq09-morton` (worktree de un agente en `.claude/worktrees/agent-a218fbc1eaf663ffd`
-del checkout principal), `explore/oq09-remote` (ejemplos `oq09_content_hash` y `oq09_block_sizes` y el
+C), `explore/oq09-morton`, `explore/oq09-remote` (ejemplos `oq09_content_hash` y `oq09_block_sizes` y el
 escritor experimental `OQ09_MORTON=best`), `explore/oq09-viewer-sort`, `explore/oq09-build-cause`.
 
 **Notas de medida que costaron tiempo:**

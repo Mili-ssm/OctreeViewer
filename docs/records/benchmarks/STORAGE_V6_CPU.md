@@ -102,7 +102,7 @@ Ruff no está instalado; Python se comprueba mediante sintaxis/CLI y la suite un
 Candidatos al cerrar la primera ronda (estado actualizado al final de este documento):
 la tabla u8 ya está integrada y el [experimento de tiles](STORAGE_V6_BYTE_PLANES.md) está cerrado
 sin cambio del codec. La lectura selectiva paralela sigue pendiente en el
-[README](../../../README.md#prioridades-pendientes).
+[estado](../../estado.md#prioridades-pendientes).
 
 - Tabla directa de 256 entradas para diccionarios de columnas `u8`, conservando orden de
   primera aparición. Comparar CPU y bytes exactos frente a HashMap; no omitir candidatos.

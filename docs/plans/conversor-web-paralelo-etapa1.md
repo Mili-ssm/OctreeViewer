@@ -28,8 +28,7 @@ con los datos de S1.
 - Los SHA nativos de salida no cambian (R7): ninguna tarea altera bytes en x86_64.
 - No editar registros existentes en `docs/records/`; los nuevos van fechados (`dd-mm-aaaa`), en español.
 - No trasladar cifras entre revisiones, perfiles ni equipos.
-- Commits convencionales en inglés, terminados en
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; sin push.
+- Commits convencionales en inglés, sin líneas de atribución; sin push.
 - No enviar avisos upstream (backlog, prioridad 9 del README).
 
 ## Review Focus

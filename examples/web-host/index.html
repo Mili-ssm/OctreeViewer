@@ -322,6 +322,8 @@ worker: renderFrame() · LOD loads before draw</pre>
         </section>
     </aside>
     <main>
+        <p id="webgpu-notice" role="alert" hidden
+            style="position:absolute;z-index:1;margin:16px;padding:12px 16px;border-radius:12px;background:#7f1d1d;color:#fff"></p>
         <canvas id="viewer-canvas" width="1280" height="720" tabindex="0"
             aria-label="3D point cloud. Use the camera mode controls and keyboard instructions in the side panel."
             aria-describedby="camera-help"></canvas>
@@ -330,17 +332,17 @@ worker: renderFrame() · LOD loads before draw</pre>
     <script id="demo-bootstrap">
         const status = document.getElementById("renderer-status");
         if (location.protocol === "file:") {
-            status.textContent = "Esta demo de desarrollo necesita localhost o HTTPS; file:// bloquea sus módulos. ";
+            status.textContent = "This development demo needs localhost or HTTPS; file:// blocks its modules. ";
             const localViewer = document.createElement("a");
             localViewer.href = "../../artifacts/visor-web-local/index.html";
-            localViewer.textContent = "Abrir visor local autocontenido";
-            status.append(localViewer, ". Si aún no existe, genéralo siguiendo examples/web-host/README.md.");
+            localViewer.textContent = "Open the self-contained local viewer";
+            status.append(localViewer, ". If it does not exist yet, build it as examples/web-host/README.md explains.");
         } else {
             const module = document.createElement("script");
             module.type = "module";
             module.src = "./main.js";
             module.addEventListener("error", () => {
-                status.textContent = "No se pudo cargar la demo. Consulta examples/web-host/README.md y sirve la raíz completa del repositorio.";
+                status.textContent = "The demo could not load. See examples/web-host/README.md and serve the whole repository root.";
             });
             document.body.append(module);
         }

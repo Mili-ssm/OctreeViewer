@@ -20,7 +20,7 @@ y solo después de que los tests fijen `v5` donde prueban V5 y de medir RQ-07.
 
 ## Global Constraints
 
-- Rama `feat/r3-v75`, worktree `~/.cache/codex-worktrees/octree-r3-v75`; un commit por tarea; sin push hasta el final.
+- Rama `feat/r3-v75` (worktree local); un commit por tarea; sin push hasta el final.
 - `scripts/check.sh --offline` verde al cerrar cada tarea de código (en segundo plano, ~15 min; no editar el worktree mientras corre).
 - `FormatVersion::V<n>` solo dentro de `crates/viewer_format/` salvo en tests (`scripts/check_version_literals.sh`).
 - Magics de V7: índice `OCTVIDX7`, pie `OCTVEND7`; cabecera mayor 7, revisión 0; texto `v7`.

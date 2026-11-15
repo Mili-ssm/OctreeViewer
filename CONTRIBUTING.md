@@ -48,8 +48,7 @@ Apagadas por defecto; lista y alcance en el [inventario](docs/reference/inventor
 Detalle, API y probes: [host web](examples/web-host/README.md).
 
 ```sh
-cd crates/viewer_wasm
-wasm-pack build --target web --out-dir ../../pkg
+scripts/build-wasm-bindings.sh   # cargo + wasm-bindgen (versión de Cargo.lock) en pkg/
 ```
 
 Paquete local para `file://`:
@@ -74,11 +73,11 @@ Fuente única de las reglas.
   revisión no toca otros crates. Lo vigila `scripts/check_version_literals.sh`.
 - **Registros inmutables**: lo de `docs/records/` no se edita (salvo corregir enlaces rotos);
   nueva evidencia va en un registro nuevo o en `format-v7-evidence.md`, que se amplía.
-- **Fechas** `dd-mm-aaaa`; documentación en español salvo el README del host web (inglés).
+- **Fechas** `dd-mm-aaaa`; documentación en español salvo `README.md`, `SECURITY.md` y `examples/web-host/README.md` y `PROBES.md` (inglés).
 - **Decisiones**: las de diseño duraderas se registran en [docs/adr/](docs/adr/README.md); una aceptada se sustituye con un ADR nuevo, no se edita.
 - **Un hecho, un documento**: el resto enlaza; dónde va cada tipo de documento, en el
   [índice](docs/README.md#dónde-va-cada-cosa). El resumen de prioridades activas, en «Prioridades
-  pendientes» del README; las preguntas para el propietario, en
+  pendientes» de [docs/estado.md](docs/estado.md#prioridades-pendientes); las preguntas para el propietario, en
   [requisitos](docs/requirements.md#preguntas-abiertas) con su issue; lo pendiente, en
   [issues](#issues-y-prs).
 - **Benchmarks**: las cifras no se trasladan entre revisiones, perfiles, navegadores, datasets ni
@@ -90,7 +89,7 @@ Fuente única de las reglas.
 
 Desde el 15-11-2026 el trabajo pendiente vive en GitHub
 ([`Mili-ssm/OctreeViewer`](https://github.com/Mili-ssm/OctreeViewer)); los `.md` guardan lo duradero
-(requisitos, ADR, planes, registros) y enlazan la issue.
+(requisitos, ADR, planes, registros) y enlazan la issue. Las reglas suponen un único propietario que trabaja con agentes LLM: las decisiones que le corresponden se etiquetan `pregunta-propietario`.
 
 | Qué | Dónde | Regla |
 | --- | --- | --- |

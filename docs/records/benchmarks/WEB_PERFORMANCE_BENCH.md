@@ -869,7 +869,7 @@ are unavailable. Playwright MCP could not start because its configured Chrome ex
 is absent; Firefox BiDi supplied this browser evidence.
 
 Reproduction commands and stop conditions are in
-[the host README](../../../examples/web-host/README.md#reproduce-a-cachecamera-diagnostic-in-firefox).
+[the host README](../../../examples/web-host/PROBES.md#reproduce-a-cachecamera-diagnostic-in-firefox).
 Raw snapshots/session/console/screenshot: ignored
 `target/cache-pressure-probe/belvedere-entry-camera-fresh/`.
 WASM SHA-256: `4d996a69ad6b9189bb37401b0dd9a7897c5432af6ada9fcf0ea617f0d969f294`.
@@ -1021,7 +1021,7 @@ The committed `examples/web-host/sample-process-memory.py` replaces the profile-
 sampling scripts for new measurements. It attaches to an explicit Linux parent PID and pins its
 kernel starttime, samples descendants' `smaps_rollup`, records missing processes/counters, and
 stops on parent exit or its duration cap. It never controls the browser lifecycle. See the
-[CLI and limitations](../../../examples/web-host/README.md#sample-browser-process-memory-on-linux).
+[CLI and limitations](../../../examples/web-host/PROBES.md#sample-browser-process-memory-on-linux).
 Enumeration and counter reads are sequential, not an atomic tree snapshot; new/short-lived
 processes and between-sample peaks may be missed. `enumerated_processes_readable` describes only
 the enumerated set. Partial sums are retained but excluded from the table below.
@@ -1073,7 +1073,7 @@ PID identity, partial reads and malformed counters); Ruff check/format pass for 
 `SurfaceRenderer::resource_stats()` and WASM `gpuStats().requestedResources` now expose current
 owned buffer sizes and logical texture bytes separately from cumulative upload traffic. This
 is application resource accounting, not measured VRAM or a transition peak. The existing GPU
-budget model is unchanged. See [scope and exclusions](../../../examples/web-host/README.md#requested-gpu-resource-sizes).
+budget model is unchanged. See [scope and exclusions](../../../examples/web-host/PROBES.md#requested-gpu-resource-sizes).
 
 Release WASM/bindings rebuilt offline, Firefox 157.0.1 headless, WebGPU enabled, presentation
 fixture with RGB sidecar at 480×360. Existing rendering/picking checks pass together with new
@@ -1165,7 +1165,7 @@ The process sampler now accepts `--root-pss-capture-mib`: its first readable par
 sample crossing the threshold triggers one identity-checked raw `smaps` capture. The companion
 file is created exclusively; failed attempts are recorded and not retried. Capture timestamps
 are separate from the triggering tree sample. Default sampling remains unchanged, without
-mapping capture. [Command and limits](../../../examples/web-host/README.md#capture-a-transient-parent-process-mapping-event).
+mapping capture. [Command and limits](../../../examples/web-host/PROBES.md#capture-a-transient-parent-process-mapping-event).
 
 Three fresh Firefox 157.0.1 headless profiles, WebGPU enabled, Albuera coordinates only
 (gray fallback), fitted 1280×720, 4 px, 256 MiB decoded cache; HTTP disk/memory cache disabled,

@@ -1,6 +1,6 @@
 # Evaluación y plan de mejora — 28-10-2026
 
-Registro inmutable de la evaluación realizada sobre la rama `chore/assessment-2026-10-28`. Sustituye como referencia vigente a la [evaluación del 24-10-2026](CODE_ASSESSMENT_2026-10-24.md); las prioridades activas siguen en el [README](../../../README.md#prioridades-pendientes).
+Registro inmutable de la evaluación realizada sobre la rama `chore/assessment-2026-10-28`. Sustituye como referencia vigente a la [evaluación del 24-10-2026](CODE_ASSESSMENT_2026-10-24.md); las prioridades activas siguen en el [estado](../../estado.md#prioridades-pendientes).
 
 ## Método
 

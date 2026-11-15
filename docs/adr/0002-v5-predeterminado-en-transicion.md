@@ -21,7 +21,7 @@ Quien no pase `--format-version` obtiene V5. La promoción de V7 requiere regene
 V7 final se promueve (fase 6) o aparece evidencia de pareja completa que justifique otro default.
 
 ## Evidencia
-[Plan V7](../plans/format-v7-plan.md); [README](../../README.md#prioridades-pendientes)
+[Plan V7](../plans/format-v7-plan.md); [estado](../estado.md#prioridades-pendientes)
 
 ## Revisión 30-10-2026
 El alcance y el congelado de V7 final se definen en la [ADR 0022](0022-alcance-y-congelacion-de-v7-final.md). V5 sigue siendo el valor por defecto hasta ese congelado.

@@ -59,7 +59,8 @@ Los `.oct` pequeños de Belvedere y Stanford Bunny se regeneraron en la misma ve
 están excluidos de Git, sus parejas quedan en el checkout local.
 
 El registro no declara una licencia en sus metadatos; se usa la copia solo para pruebas locales, sin
-redistribuirla. El README y los archivos del [registro](https://zenodo.org/records/20000277) describen
+redistribuirla. Por eso, al hacer público el repositorio (15-11-2026), los renders de Majadas y
+Albuera se retiraron del árbol; los registros que los citaban conservan sus cifras. El README y los archivos del [registro](https://zenodo.org/records/20000277) describen
 los sensores, fechas y zonas UTM. Los conteos se leen de la cabecera LAS de cada archivo. Los checksums MD5
 publicados por el registro y verificados en ambas copias son: Albuera
 `71ff22c046d6eb83c371791f680bea13`; Majadas `fd0b4433e805246f2442df037dfadb6b`.
